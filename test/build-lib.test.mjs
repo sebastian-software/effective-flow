@@ -1826,7 +1826,7 @@ test('code-validator remains a harness-neutral adapter to central validation', (
     });
 
     assert.deepEqual(findForeignHarnessToolParameters(rendered, target), [], target);
-    assert.match(rendered, /`software-validation` is the declared domain owner/, target);
+    assert.match(rendered, /`effective-delivery` is the declared domain owner/, target);
     assert.match(rendered, /do not keep\s+a second ecosystem command matrix/is, target);
     assert.match(rendered, /`full`.*`quick`.*`off`/s, target);
     assert.match(rendered, /`PASSED`, `FAILED`, `SKIPPED \(<reason>\)`, or `TIMEOUT`/, target);
@@ -1840,11 +1840,11 @@ test('code-validator remains a harness-neutral adapter to central validation', (
 test('central-skill adapters retain Effective Flow ownership without duplicate handbooks', () => {
   const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
   const adapters = {
-    'agents/docs-writer.md': 'tech-docs',
-    'agents/code-documenter.md': 'tech-docs',
-    'agents/test-writer.md': 'software-testing',
+    'agents/docs-writer.md': 'effective-delivery',
+    'agents/code-documenter.md': 'effective-delivery',
+    'agents/test-writer.md': 'effective-engineering',
     'agents/e2e-tester.md': 'effective-web',
-    'agents/code-validator.md': 'software-validation',
+    'agents/code-validator.md': 'effective-delivery',
   };
 
   for (const [path, owner] of Object.entries(adapters)) {
@@ -1856,26 +1856,26 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
 
   const iterate = readSource('tools/iterate.md');
   assert.match(iterate, /pr-review-handoff\/v1/);
-  assert.match(iterate, /performs no discovery, implementation, Git/);
+  assert.match(iterate, /performs no discovery,\s+implementation, Git/);
   assert.match(iterate, /Effective Flow remains the caller and owns freshness, approval/);
 
   const discovery = readSource('shared/skill-discovery.md');
-  assert.match(discovery, /Never load the alternative orchestrator `effective-workflow`/);
+  assert.match(discovery, /Never load the `effective-flow` router recursively/);
 
   const dependencyPolicy = readSource('shared/dependency-version-policy.md');
-  assert.match(dependencyPolicy, /`smart-dependency-updater` is the declared domain owner/);
+  assert.match(dependencyPolicy, /`effective-delivery` is the declared domain owner/);
   assert.doesNotMatch(dependencyPolicy, /pnpm view|cargo search|stable major tag/);
 
-  // The docs tool delegates documentation craft to tech-docs. Anchor each removal
-  // beside the positive delegation assertion so a rewritten section cannot pass
-  // the negative greps vacuously.
+  // The docs tool delegates documentation craft to effective-delivery. Anchor each
+  // removal beside the positive delegation assertion so a rewritten section cannot
+  // pass the negative greps vacuously.
   const docs = readSource('tools/docs.md');
-  assert.match(docs, /`tech-docs` is the declared domain owner/);
+  assert.match(docs, /`effective-delivery` is the declared domain owner/);
   assert.doesNotMatch(docs, /Do not invent substantive statements/);
   assert.doesNotMatch(docs, /Keep examples runnable/);
 
   const codeDocumenter = readSource('agents/code-documenter.md');
-  assert.match(codeDocumenter, /`tech-docs` is the declared domain owner/);
+  assert.match(codeDocumenter, /`effective-delivery` is the declared domain owner/);
   assert.doesNotMatch(codeDocumenter, /Prefer self-documenting code/);
 
   // An established repository documentation structure outranks the prescribed
@@ -1896,7 +1896,7 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   // The documentation sync gate routes documentation work and is therefore an
   // adapter surface where a second craft handbook could grow unnoticed.
   const syncContract = readSource('shared/documentation-sync-contract.md').replace(/\s+/g, ' ');
-  assert.match(syncContract, /`tech-docs` is the declared domain owner/);
+  assert.match(syncContract, /`effective-delivery` is the declared domain owner/);
   assert.match(syncContract, /minimal repository-led fallback declared in/);
   assert.doesNotMatch(syncContract, /audience|reading order|runnable example/i);
 });
@@ -2961,7 +2961,7 @@ test('workflow report consumers retain bilingual status and remote epic prose', 
 test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {
   assert.deepEqual(
     findStaleAdrContractClaims(
-      'The living ADR model is a deliberate divergence from the host `decision-records` skill.',
+      'The living ADR model is a deliberate divergence from the host `effective-product` skill.',
     ),
     [
       {
@@ -2975,26 +2975,26 @@ test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {
 
 test('findStaleAdrContractClaims supports verb-adverb divergence order', () => {
   assert.deepEqual(
-    findStaleAdrContractClaims('Effective Flow diverges deliberately from decision-records.'),
+    findStaleAdrContractClaims('Effective Flow diverges deliberately from effective-product.'),
     [{ line: 1, kind: 'stale-divergence', claim: 'diverges deliberately' }],
   );
 });
 
 test('findStaleAdrContractClaims supports intentional divergence wording', () => {
   assert.deepEqual(
-    findStaleAdrContractClaims('Effective Flow intentionally diverges from decision-records.'),
+    findStaleAdrContractClaims('Effective Flow intentionally diverges from effective-product.'),
     [{ line: 1, kind: 'stale-divergence', claim: 'intentionally diverges' }],
   );
 });
 
 test('findStaleAdrContractClaims allows locally negated divergence wording', () => {
   assert.deepEqual(
-    findStaleAdrContractClaims('This is not a deliberate divergence from decision-records.'),
+    findStaleAdrContractClaims('This is not a deliberate divergence from effective-product.'),
     [],
   );
   assert.deepEqual(
     findStaleAdrContractClaims(
-      'Effective Flow no longer deliberately diverges from decision-records.',
+      'Effective Flow no longer deliberately diverges from effective-product.',
     ),
     [],
   );
@@ -3004,9 +3004,9 @@ test('findStaleAdrContractClaims rejects immutable and numbered skill-contract v
   const markdown = [
     '# ADR guidance',
     '',
-    'The `decision-records` skill requires immutable ADRs.',
+    'The `effective-product` skill requires immutable ADRs.',
     '',
-    'Numbered records are mandatory under `decision-records`.',
+    'Numbered records are mandatory under `effective-product`.',
   ].join('\n');
 
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
@@ -3025,14 +3025,14 @@ test('findStaleAdrContractClaims rejects immutable and numbered skill-contract v
 
 test('findStaleAdrContractClaims accepts the aligned ownership wording', () => {
   const markdown =
-    'The authoritative `decision-records` skill discovers and follows this repository’s living, mutable, numberless, slug-named ADR convention.';
+    'The authoritative `effective-product` skill discovers and follows this repository’s living, mutable, numberless, slug-named ADR convention.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), []);
 });
 
 test('findStaleAdrContractClaims allows explicitly corrected historical context', () => {
   const markdown = [
     'Earlier versions described the slug model as a deliberate divergence from an allegedly',
-    'immutable/numbered `decision-records` skill. That premise is outdated: `decision-records`',
+    'immutable/numbered `effective-product` skill. That premise is outdated: `effective-product`',
     'now supports the declared living model, so this is no longer a divergence.',
   ].join('\n');
   assert.deepEqual(findStaleAdrContractClaims(markdown), []);
@@ -3040,13 +3040,13 @@ test('findStaleAdrContractClaims allows explicitly corrected historical context'
 
 test('findStaleAdrContractClaims rejects historical wording without an explicit correction', () => {
   const markdown =
-    'Earlier guidance called `decision-records` immutable and numbered, and this remains our contract.';
+    'Earlier guidance called `effective-product` immutable and numbered, and this remains our contract.';
   assert.equal(findStaleAdrContractClaims(markdown).length, 2);
 });
 
 test('findStaleAdrContractClaims does not let corrected history waive a later current claim', () => {
   const markdown =
-    'Earlier guidance described a deliberate divergence from `decision-records`, but that premise is outdated; Effective Flow now deliberately diverges from `decision-records`.';
+    'Earlier guidance described a deliberate divergence from `effective-product`, but that premise is outdated; Effective Flow now deliberately diverges from `effective-product`.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
     { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
   ]);
@@ -3054,7 +3054,7 @@ test('findStaleAdrContractClaims does not let corrected history waive a later cu
 
 test('findStaleAdrContractClaims evaluates later immutable claims independently', () => {
   const markdown =
-    'Earlier guidance said decision-records is immutable and numbered. That premise is outdated. Current guidance says decision-records is immutable.';
+    'Earlier guidance said effective-product is immutable and numbered. That premise is outdated. Current guidance says effective-product is immutable.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
     { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
   ]);
@@ -3062,7 +3062,7 @@ test('findStaleAdrContractClaims evaluates later immutable claims independently'
 
 test('findStaleAdrContractClaims associates an immediate skill-contract continuation', () => {
   const markdown =
-    'The decision-records skill defines the contract. It requires immutable, numbered ADRs.';
+    'The effective-product skill defines the contract. It requires immutable, numbered ADRs.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
     { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
     { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'numbered' },
@@ -3070,19 +3070,19 @@ test('findStaleAdrContractClaims associates an immediate skill-contract continua
 });
 
 test('findStaleAdrContractClaims allows locally negated immutable and numbered wording', () => {
-  const markdown = 'The decision-records skill does not require immutable or numbered ADRs.';
+  const markdown = 'The effective-product skill does not require immutable or numbered ADRs.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), []);
 });
 
 test('findStaleAdrContractClaims does not associate an unrelated divergence sentence', () => {
   const markdown =
-    'Effective Flow deliberately diverges from another policy. The decision-records skill follows the repository convention.';
+    'Effective Flow deliberately diverges from another policy. The effective-product skill follows the repository convention.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), []);
 });
 
 test('findStaleAdrContractClaims does not use unrelated old and support prose as a waiver', () => {
   const markdown =
-    'The old ADR directory remains readable. The decision-records skill requires immutable ADRs. The parser now supports tables.';
+    'The old ADR directory remains readable. The effective-product skill requires immutable ADRs. The parser now supports tables.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
     { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
   ]);
@@ -3090,7 +3090,7 @@ test('findStaleAdrContractClaims does not use unrelated old and support prose as
 
 test('findStaleAdrContractClaims requires history in the stale candidate sentence', () => {
   const markdown =
-    'Earlier releases used Markdown. Effective Flow deliberately diverges from decision-records. The build now supports Windows.';
+    'Earlier releases used Markdown. Effective Flow deliberately diverges from effective-product. The build now supports Windows.';
   assert.deepEqual(findStaleAdrContractClaims(markdown), [
     { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
   ]);

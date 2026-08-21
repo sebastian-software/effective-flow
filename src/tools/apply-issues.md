@@ -54,7 +54,7 @@ commit-message-rules
 
 ## Recommended skills
 
-- `pr-review`
+- `effective-delivery`
 
 ## Project conventions
 

@@ -52,7 +52,7 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 ## Recommended skills
 
-- `pr-review`
+- `effective-delivery`
 
 ## Project conventions
 

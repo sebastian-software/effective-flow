@@ -75,7 +75,7 @@ If the project contains an `AGENTS.md`, read it early in the workflow and observ
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ## Tracker integration
 
@@ -198,7 +198,7 @@ and do not widen the tracker-write boundary defined above.
 skill-discovery
 ```
 
-The generic plan-quality and plan-review **judgment** comes from `codebase-improvement`; Effective
+The generic plan-quality and plan-review **judgment** comes from `effective-delivery`; Effective
 Flow owns the issue-comment artifact, the per-issue lifecycle, and the readiness gate. Apply the
 same central delegation contract as `{{SKILL:plan}}`:
 
@@ -249,7 +249,7 @@ For each chosen issue in turn:
 Before offering the deep interactive review, run the same quality baseline as the local planning
 workflow for the active issue only:
 
-1. Ask `codebase-improvement` for the generic gap judgment from `{{SKILL:plan}}` Phase 4:
+1. Ask `effective-delivery` for the generic gap judgment from `{{SKILL:plan}}` Phase 4:
    over-engineering, scope creep, hidden assumptions, missing or non-measurable acceptance
    criteria, edge cases, implementation risks, and evidence versus guessing. Use another declared
    domain owner only when the issue crosses that specialist boundary.
@@ -257,7 +257,7 @@ workflow for the active issue only:
    from `{{SKILL:plan}}` Phase 5: concrete scope and file references, measurable acceptance
    criteria, sufficient verified context, explicit purpose/workflow, no-code compliance, and a
    fitting workflow recommendation.
-3. Obtain the internal plan-review judgment from `codebase-improvement` exactly as in
+3. Obtain the internal plan-review judgment from `effective-delivery` exactly as in
    `{{SKILL:plan}}` Phase 6. Classify findings as Critical, Important, or Note across Architecture,
    Security, Data protection, Error cases, Testability, Scope, and Maintainability. Incorporate all
    critical findings and every directly resolvable important finding; record remaining

@@ -4,11 +4,12 @@ This group brings finished changes into the repository and all the way to the me
 `commit` creates a commit, `pr` opens a pull request from it, and `merge-gate` drives that pull
 request to merge-readiness and, if allowed, merges it. `commit` and `pr` deliberately run **no**
 project validation of their own (linting, tests, build checks) – the implementation tools and their
-model-configured validation/test workers are responsible for that, applying central
-`software-validation` and `software-testing` guidance when available. `merge-gate` starts no local
-validation of its own either; it waits for the checks the forge reports and has failures repaired by
-`/effective-flow iterate`. The one thing it has verified locally – a merge conflict it resolved – is
-checked inside delegated workers, never by a command the gate runs itself.
+model-configured validation/test workers are responsible for that, applying central guidance when
+available: `effective-delivery` for running the repository's own checks, `effective-engineering`
+for test strategy and regression tests. `merge-gate` starts no local validation of its own either;
+it waits for the checks the forge reports and has failures repaired by `/effective-flow iterate`.
+The one thing it has verified locally – a merge conflict it resolved – is checked inside delegated
+workers, never by a command the gate runs itself.
 
 ## `/effective-flow commit`
 

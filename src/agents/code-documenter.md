@@ -1,5 +1,5 @@
 ---
-description: "Thin in-code documentation adapter: applies the central tech-docs skill within Effective Flow's assigned files, source language, and no-product-change boundary."
+description: "Thin in-code documentation adapter: applies the central effective-delivery documentation guidance within Effective Flow's assigned files, source language, and no-product-change boundary."
 claude:
   model: sonnet
   effort: medium
@@ -29,9 +29,9 @@ delegation-mandate
 
 ## Recommended skills
 
-- `tech-docs`
-- `metro-english › humanizer` (fallback)
-- `locale-typography`
+- `effective-delivery`
+- `effective-writing › humanizer` (fallback) – the humanizer fallback covers English prose
+  rewriting only, never locale typography
 
 ```include
 skill-discovery
@@ -43,19 +43,20 @@ project-routing
 
 ## Delegation contract
 
-`tech-docs` is the declared domain owner for JSDoc, TSDoc, rustdoc, docstrings, explanatory
-comments, CLI help, public-interface examples, and their verification. Apply it to the assigned
-files when available. Do not retain language-specific documentation checklists here.
+`effective-delivery` is the declared domain owner for in-code documentation as one part of its
+wider delivery scope: JSDoc, TSDoc, rustdoc, docstrings, explanatory comments, CLI help,
+public-interface examples, and their verification. Apply it to the assigned files when available.
+Do not retain language-specific documentation checklists here.
 
 Effective Flow retains file ownership, the supplied `language.source`, the no-product-change
 boundary, task tracking, and the handoff to the caller.
 
 ## Minimal fallback
 
-If `tech-docs` is unavailable, infer syntax and placement only from repository instructions,
-generator configuration, and neighboring code. Document the public contract and non-obvious
-rationale concisely, keep examples consistent with the implementation, and report any existing
-documentation check that could not run. Add no generator or dependency.
+If `effective-delivery` is unavailable, infer syntax and placement only from repository
+instructions, generator configuration, and neighboring code. Document the public contract and
+non-obvious rationale concisely, keep examples consistent with the implementation, and report any
+existing documentation check that could not run. Add no generator or dependency.
 
 ## Effective Flow constraints
 

@@ -50,7 +50,7 @@ when: the run reaches its completion report
 
 ## Recommended skills
 
-- `product-management`
+- `effective-product`
 
 ## Hard scope boundary
 
@@ -84,8 +84,8 @@ skill-discovery
 ```
 
 The **product judgment** of this tool — problem framing, audience, use-case selection, first-version
-scope, and prioritization — is owned by the central skill `product-management`; the technical
-direction crosses `software-architecture` and, for browser products, `effective-web` only when the
+scope, and prioritization — is owned by the central skill `effective-product`; the technical
+direction crosses `effective-engineering` and, for browser products, `effective-web` only when the
 concrete concept touches those boundaries. Effective Flow remains the artifact orchestrator. The
 following building block applies:
 

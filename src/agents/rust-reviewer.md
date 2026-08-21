@@ -29,7 +29,7 @@ delegation-mandate
 
 ## Recommended skills
 
-- `software-architecture`
+- `effective-engineering`
 
 ```include
 skill-discovery

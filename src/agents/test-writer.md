@@ -1,5 +1,5 @@
 ---
-description: "Thin test adapter: routes browser test depth to effective-web, focused non-frontend test design to software-testing, and existing-check execution to software-validation."
+description: "Thin test adapter: routes browser test depth to effective-web, focused non-frontend test design to effective-engineering, and existing-check execution to effective-delivery."
 claude:
   model: sonnet
   effort: medium
@@ -29,9 +29,9 @@ delegation-mandate
 
 ## Recommended skills
 
-- `software-testing`
+- `effective-engineering`
 - `effective-web`
-- `software-validation`
+- `effective-delivery`
 
 ```include
 skill-discovery
@@ -46,9 +46,9 @@ project-routing
 Route by the test's primary mission:
 
 - `effective-web` owns browser, component, visual, accessibility, and browser-E2E test depth.
-- `software-testing` owns focused non-frontend test design and implementation for services, APIs,
-  databases, async work, CLIs, Rust, regressions, and repository-native benchmarks.
-- `software-validation` owns discovery and execution when the assignment is only to run existing
+- `effective-engineering` owns focused non-frontend test design and implementation for services,
+  APIs, databases, async work, CLIs, Rust, regressions, and repository-native benchmarks.
+- `effective-delivery` owns discovery and execution when the assignment is only to run existing
   tests or quality commands, such as an Effective Flow before-baseline.
 
 The selected central skill is authoritative for test selection, evidence boundaries, fixtures,

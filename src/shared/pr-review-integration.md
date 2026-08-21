@@ -3,8 +3,8 @@
 This shared building block publishes Effective Flow's own review findings onto an existing pull
 request. Both entry points use it: the explicit `{{SKILL:review}} <PR>` invocation and the automatic
 step that runs after a delivery created a pull request. It owns **which** findings are published,
-which gates run first and in what order, the judgment handoff to `pr-review`, the trigger, and the
-idempotency key.
+which gates run first and in what order, the judgment handoff to `effective-delivery`, the
+trigger, and the idempotency key.
 
 Three of its four call sites — the delivery completion action, `{{SKILL:apply-issues}}`, and
 `{{SKILL:apply-review-remote}}` — carry neither the PR plumbing nor the security gate in their own
@@ -83,7 +83,7 @@ Regardless of entry point, run exactly this order and publish nothing before it 
    notes for their internal correction rounds, and that deeper set must not reach a public pull
    request unmodified. Mention the notes this filter removes in the run summary, never on the pull
    request.
-2. **Judgment handoff** to `pr-review`.
+2. **Judgment handoff** to `effective-delivery`.
 3. **Design-decision filter** — a finding covered by a documented design decision is not published.
    Which side runs it depends on the caller, so the caller declares it: `{{SKILL:review}}` filters
    centrally in its Phase 3 and hands over an already-filtered set. `{{SKILL:build}}`,
@@ -95,13 +95,13 @@ Regardless of entry point, run exactly this order and publish nothing before it 
 4. **Security classification and the loaded "Security disclosure gate".**
 5. **Publication.**
 
-### Judgment handoff to pr-review
+### Judgment handoff to effective-delivery
 
-`pr-review` is the declared domain owner for PR-level review-item judgment. Pack each finding as a
-Mode C item with its stable ID, its location, and surrounding-code evidence resolved from the refs
-above. Supply the caller constraints: Effective Flow owns authority, approval, publication, and
-delivery; the analysis performs no discovery, implementation, Git, CI, or forge action and may only
-classify the supplied context.
+`effective-delivery` is the declared domain owner for PR-level review-item judgment. Pack each
+finding as a Mode C item with its stable ID, its location, and surrounding-code evidence resolved
+from the refs above. Supply the caller constraints: Effective Flow owns authority, approval,
+publication, and delivery; the analysis performs no discovery, implementation, Git, CI, or forge
+action and may only classify the supplied context.
 
 Consume the returned `pr-review-handoff/v1` object and require exactly one returned item per
 supplied ID. Map its classifications:
@@ -112,11 +112,12 @@ supplied ID. Map its classifications:
 - `question_or_information` → reported to the user, never posted as a defect.
 - `needs_evidence` → dropped, with the exact missing proof recorded.
 
-**These five are `pr-review`'s judgment vocabulary, and no workflow returns them as an outcome.** They
-sit **behind** the outcome vocabularies of the workflows that consume this handoff – `unsupported` is
-where `{{SKILL:iterate}}`'s `skipped` is produced, for one – so a caller that consumes a per-item
-outcome from a delegated run reads that run's own closed vocabulary instead, never these values.
-Keeping the two apart is what stops a third set from being mistaken for the agreed one.
+**These five are `effective-delivery`'s judgment vocabulary, and no workflow returns them as an
+outcome.** They sit **behind** the outcome vocabularies of the workflows that consume this handoff
+– `unsupported` is where `{{SKILL:iterate}}`'s `skipped` is produced, for one – so a caller that
+consumes a per-item outcome from a delegated run reads that run's own closed vocabulary instead,
+never these values. Keeping the two apart is what stops a third set from being mistaken for the
+agreed one.
 
 **The "exactly one returned item per supplied ID" requirement above is a sibling of the same
 requirement on a workflow handoff, not the same contract.** This one binds a skill's analysis handoff,
@@ -125,9 +126,9 @@ where the caller holds both ends within a single run. The one on the `{{SKILL:me
 delegating, and whose receiver counts an outcome only for a key it recorded; that contract lives in
 those two tools and is not restated here.
 
-If `pr-review` is unavailable (not installed, `skills.enabled: false`, excluded), publish the
-findings that survive the remaining steps and disclose that the PR-level judgment was unavailable.
-Never invent the missing classification.
+If `effective-delivery` is unavailable (not installed, `skills.enabled: false`, excluded), publish
+the findings that survive the remaining steps and disclose that the PR-level judgment was
+unavailable. Never invent the missing classification.
 
 ### Security binding
 

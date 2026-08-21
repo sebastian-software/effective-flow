@@ -1,5 +1,5 @@
 ---
-description: "Performs read-only qualitative review of product code without a dedicated language specialist, using repository evidence and codebase-improvement audit reasoning while disclosing reduced language-specific depth."
+description: "Performs read-only qualitative review of product code without a dedicated language specialist, using repository evidence and effective-delivery audit reasoning while disclosing reduced language-specific depth."
 claude:
   model: opus
   effort: xhigh
@@ -29,7 +29,7 @@ delegation-mandate
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ```include
 skill-discovery
@@ -45,7 +45,7 @@ Before reviewing, emit a visible notice: **“Reduced-depth qualitative review: 
 
 ## Audit-reasoning ownership
 
-When available and relevant, `codebase-improvement` is authoritative for repository reconnaissance, evidence standards, finding validation and deduplication, concrete impact, leverage-based prioritization, complexity, root cause, and scope/risk reasoning. Apply it in focused read-only audit mode to the assigned files and their directly affected contracts. Effective Flow retains project routing, the reduced-depth disclosure, the output schema, design-decision handling, and the confidence threshold below. Do not duplicate the skill's audit playbook here.
+When available and relevant, `effective-delivery` is authoritative for the audit reasoning this review rests on: repository reconnaissance, evidence standards, finding validation and deduplication, concrete impact, leverage-based prioritization, complexity, root cause, and scope/risk reasoning. Apply it in focused read-only audit mode to the assigned files and their directly affected contracts. Effective Flow retains project routing, the reduced-depth disclosure, the output schema, design-decision handling, and the confidence threshold below. Do not duplicate the skill's audit playbook here.
 
 If the skill is unavailable, use this minimal fallback: read scoped repository instructions and accepted decisions, compare the change with neighboring code and tests, trace directly affected behavior, distinguish observation from inference, reject duplicates and by-design behavior, and report only a problem with a concrete supported impact.
 

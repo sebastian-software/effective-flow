@@ -49,7 +49,7 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ## Hard scope boundary
 
@@ -102,7 +102,7 @@ skill-discovery
 ```
 
 The generic plan-review **judgment** of this tool (Phase 2) comes from the central skill
-`codebase-improvement`; Effective Flow remains the plan-artifact orchestrator (interactive loop,
+`effective-delivery`; Effective Flow remains the plan-artifact orchestrator (interactive loop,
 adapter-scoped persistence, status and open-points normalization). The following building block
 applies:
 
@@ -155,16 +155,17 @@ central-reasoning-delegation
 
 ### Phase 2: Identify findings
 
-The domain review **judgment** is provided by `codebase-improvement` (see "Delegating the
+The domain review **judgment** is provided by `effective-delivery` (see "Delegating the
 domain judgment to central skills"): apply the skill to the loaded planning artifact so that it
 assesses the findings — among others logical contradictions between requirement,
 architecture decisions, approach, edge cases, acceptance criteria, and validation plan;
 data security/data protection; security; feasibility; error cases; testability; scope and
-maintainability. If the artifact crosses a declared specialist boundary, bring in the responsible owner
-via the relevance gate — browser/UI/accessibility detail to `effective-web`,
-product/design questions to `product-management`/`product-design`, further owners analogously; a
-narrow plan stays narrow. If `codebase-improvement` is missing, the minimal generic
-fallback from the building block applies instead of a local full checklist.
+maintainability. If the artifact crosses a declared specialist boundary, bring in the responsible
+owner via the relevance gate — browser/UI/accessibility detail to `effective-web`, product and
+design questions to `effective-product`, system and data-model architecture to
+`effective-engineering`, further owners analogously; a narrow plan stays narrow. If
+`effective-delivery` is missing, the minimal generic fallback from the building block applies
+instead of a local full checklist.
 
 Split the reported findings into two groups (Effective Flow artifact handling):
 

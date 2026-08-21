@@ -167,9 +167,11 @@ inside the four categories, and `docs` asks only when a required value is missin
 category contradicts its target path.
 
 **Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
-Flow workers, but apply the authoritative `tech-docs` guidance. Effective Flow retains category,
-path, language, approval, and delivery decisions; the workers no longer duplicate general
-README, API/CLI, example, JSDoc/TSDoc, or rustdoc playbooks. For details on language routing, see
+Flow workers, but apply the authoritative documentation guidance of the central
+`effective-delivery` skill, which owns migration and technical documentation as one strand of its
+wider delivery scope. Effective Flow retains category, path, language, approval, and delivery
+decisions; the workers no longer duplicate general README, API/CLI, example, JSDoc/TSDoc, or
+rustdoc playbooks. For details on language routing, see
 [Language support](language-support.md); for details on the category and
 naming convention, see [Plan conventions](../developer-guide/plan-conventions.md).
 
@@ -191,9 +193,9 @@ is a group overview (safe batch, major individually, security) for selection, th
 dedicated commit per implemented group and a summary of the deferred
 "manual" updates.
 
-**Interplay:** `maintain` is a **thin adapter** around the central skill
-`smart-dependency-updater` – it provides the actual update mechanics (ecosystem detection,
-risk grouping, changelog research, compatibility adaptation, validation strategy,
+**Interplay:** `maintain` is a **thin adapter** around the **dependency path** of the central
+`effective-delivery` skill – that path provides the actual update mechanics (ecosystem
+detection, risk grouping, changelog research, compatibility adaptation, validation strategy,
 update reporting), while `maintain` owns only the orchestration and delivery (scope gate, green
 baseline, one commit per group, worktree/PR handback) and tells the skill "Effective Flow owns
 delivery", so that two delivery loops don't run. If the skill is missing, a deliberately

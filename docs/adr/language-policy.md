@@ -58,8 +58,10 @@ ADR on ordinary updates; changing the configured language does not translate it 
 
 Visible product strings such as UI, CLI, and error messages remain governed by the target
 project's product localization requirements. Interactive non-persisted replies follow the
-current user's language. Locale-specific typography is delegated to `locale-typography`, using
-`en-US` for `en` and `de-DE` for `de`.
+current user's language. Locale-specific typography is delegated to `effective-writing`, the
+consolidated central skill that took over the retired `locale-typography` skill upstream, using
+`en-US` for `en` and `de-DE` for `de`. Only the delegation target changed; the typography
+contract itself is unchanged.
 
 `plan.markerLanguage` is retired. During one compatibility generation, runtime readers may use it
 as a workflow fallback only when neither a valid `language.workflow` nor a valid
@@ -97,4 +99,5 @@ introduces another persisted artifact surface, or changes its squash-merge/relea
 - `src/shared/config-migration.md`
 - `docs/user-guide/configuration.md`
 - `docs/developer-guide/plan-conventions.md`
+- `docs/developer-guide/skill-ownership.md` (retired central-skill names and their successors)
 - `docs/plan/archive/2026-07-21-sprachkonfiguration-fuer-zielprojekte.md`

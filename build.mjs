@@ -316,7 +316,7 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
   }
 }
 
-// --- Guard: current ADR guidance follows the decision-records ownership contract ---
+// --- Guard: current ADR guidance follows the effective-product ownership contract ---
 // The central skill discovers and follows this repository's living ADR
 // convention. Scan only current normative/contributor guidance: archived plans
 // remain historical records and are intentionally outside this guard's scope.
@@ -335,7 +335,7 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
   );
   if (violations.length > 0) {
     process.stderr.write(
-      'ERROR: ADR ownership-contract guard (#167): current guidance must describe the living ADR model as a declared repository convention followed by decision-records:\n' +
+      'ERROR: ADR ownership-contract guard (#167): current guidance must describe the living ADR model as a declared repository convention followed by effective-product:\n' +
         violations
           .map(({ file, line, kind, claim }) => `  ${file}:${line}: ${kind}: ${claim}`)
           .join('\n') +

@@ -1,5 +1,5 @@
 ---
-description: "Thin end-to-end adapter: routes browser journeys to effective-web, non-browser API or CLI workflow tests to software-testing, and established-check execution to software-validation."
+description: "Thin end-to-end adapter: routes browser journeys to effective-web, non-browser API or CLI workflow tests to effective-engineering, and established-check execution to effective-delivery."
 claude:
   model: sonnet
   effort: medium
@@ -32,8 +32,8 @@ delegation-mandate
 ## Recommended skills
 
 - `effective-web`
-- `software-testing`
-- `software-validation`
+- `effective-engineering`
+- `effective-delivery`
 
 ```include
 skill-discovery
@@ -42,11 +42,11 @@ skill-discovery
 ## Delegation contract
 
 Use `effective-web` for browser journeys, Playwright, locators, visual behavior, accessibility,
-and browser stability. Use `software-testing` for bounded non-browser API, process, filesystem,
-or CLI workflows. Use `software-validation` when the assignment is only to execute an existing
-E2E, smoke, benchmark, load, soak, or stress command. The selected owner supplies the substantive
-method; do not retain another Playwright, page-object, API, CLI, visual, or test-organization
-checklist here.
+and browser stability. Use `effective-engineering` for bounded non-browser API, process,
+filesystem, or CLI workflows. Use `effective-delivery` when the assignment is only to execute an
+existing E2E, smoke, benchmark, load, soak, or stress command. The selected owner supplies the
+substantive method; do not retain another Playwright, page-object, API, CLI, visual, or
+test-organization checklist here.
 
 Effective Flow retains the assigned scenario and scope, source language, task state, process
 sandbox, cleanup expectation, and delivery handoff.

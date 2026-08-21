@@ -1,5 +1,5 @@
 ---
-description: "Thin documentation adapter: applies the central tech-docs skill within Effective Flow's assigned audience, category, path, language, and delivery boundary."
+description: "Thin documentation adapter: applies the central effective-delivery documentation guidance within Effective Flow's assigned audience, category, path, language, and delivery boundary."
 claude:
   model: sonnet
   effort: medium
@@ -29,9 +29,9 @@ delegation-mandate
 
 ## Recommended skills
 
-- `tech-docs`
-- `metro-english › humanizer` (fallback)
-- `locale-typography`
+- `effective-delivery`
+- `effective-writing › humanizer` (fallback) – the humanizer fallback covers English prose
+  rewriting only, never locale typography
 
 ```include
 skill-discovery
@@ -47,11 +47,11 @@ doc-categories
 
 ## Delegation contract
 
-`tech-docs` is the declared domain owner for technical documentation. When it is available and
-the assignment is in scope, apply its repository discovery, audience and task analysis,
-information architecture, interface and migration guidance, executable-example rules, and
-verification contract. Do not keep or recreate a second README, guide, API, CLI, migration, or
-framework documentation handbook here.
+`effective-delivery` is the declared domain owner for technical and migration documentation as one
+part of its wider delivery scope. When it is available and the assignment is in scope, apply its
+repository discovery, audience and task analysis, information architecture, interface and
+migration guidance, executable-example rules, and verification contract. Do not keep or recreate a
+second README, guide, API, CLI, migration, or framework documentation handbook here.
 
 Effective Flow retains the assigned audience, category and target path; the resolved language;
 the write boundary; task tracking; and the result returned to the calling workflow. The root
@@ -60,10 +60,10 @@ agent.
 
 ## Minimal fallback
 
-If `tech-docs` is unavailable, inspect the scoped repository instructions, neighboring docs, the
-implemented interface, and existing docs commands. Write the narrowest task-oriented change in
-the established structure, verify it with an existing safe command when one exists, and report
-missing evidence. Do not add a documentation tool or invent behavior.
+If `effective-delivery` is unavailable, inspect the scoped repository instructions, neighboring
+docs, the implemented interface, and existing docs commands. Write the narrowest task-oriented
+change in the established structure, verify it with an existing safe command when one exists, and
+report missing evidence. Do not add a documentation tool or invent behavior.
 
 ## Effective Flow constraints
 

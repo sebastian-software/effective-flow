@@ -34,39 +34,33 @@ resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are n
 touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
 established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Relationship to the `decision-records` skill (declared convention + fallback)
+### Relationship to the `effective-product` skill (declared convention + fallback)
 
 The living slug model described above is the **declared ADR convention of this
-repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
-decision is even ADR-worthy, lifecycle, supersession, index); its first
-operating rule is to **discover the existing repo convention and follow it**, rather than
+repo**. The host skill `effective-product` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its Decision Records route
+begins by **discovering the existing repository convention and following it**, rather than
 enforcing its own. This very building block is that convention — so the skill authors
 Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
 above), not in an immutably numbered one.
 
 The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+- **`effective-product` is authoritative when present.** The skill decides **whether** a finding
   is a durable decision and — if so — authors it according to the convention declared here.
   If the target repo declares its **own** ADR convention (different directory,
   title/status format, index), the skill follows that; the living slug model is only the
   default when the repo declares nothing else.
-- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+- **Minimal fallback when the skill is absent.** If `effective-product` is unavailable (not
   installed, `skills.enabled: false`, or disabled via `exclude`), the
   calling tool itself authors according to the **minimal fallback structure**
   below — **no** silent invention of a second convention.
 
-Earlier versions of this building block described the slug model as a **deliberate divergence**
-from an allegedly immutable/numbered `decision-records` skill. That premise is
-outdated: `decision-records` now supports a declared living/mutable model (opt-in)
-and follows the repo convention anyway. The living slug model is therefore no longer a
-divergence but the declared convention the skill follows.
-
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
-convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
-`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
+convention in the target repo (the skill follows it) or toggles `effective-product` deliberately
+via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimal fallback structure (only without `decision-records`)
+### Minimal fallback structure (only without `effective-product`)
 
 A short core structure so that a calling tool can record a rejected decision as a living
 slug ADR even without the skill — **not** a second full ADR handbook. Location

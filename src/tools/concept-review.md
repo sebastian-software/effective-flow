@@ -45,9 +45,8 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 ## Recommended skills
 
-- `codebase-improvement`
-- `product-management`
-- `decision-records`
+- `effective-delivery`
+- `effective-product`
 
 ## Hard scope boundary
 
@@ -84,9 +83,9 @@ active concept file, and generate no code.
 skill-discovery
 ```
 
-The generic artifact-level **judgment** of this tool comes from `codebase-improvement`, the
-**product judgment** from `product-management`, and the judgment about which decision deserves an
-ADR from `decision-records`. Effective Flow remains the artifact orchestrator (interactive loop,
+The generic artifact-level **judgment** of this tool comes from `effective-delivery`; the
+**product judgment** and the judgment about which decision deserves an ADR both come from
+`effective-product`. Effective Flow remains the artifact orchestrator (interactive loop,
 persistence, status, roadmap and open-points normalization). The following building block applies:
 
 ```include
@@ -115,9 +114,10 @@ concept so that they assess the findings — among others contradictions between
 use cases, scope, and technical direction; a first version that is not viable; missing non-goals;
 unrealistic technical direction; data protection and security surface; and feasibility. If the
 concept crosses a declared specialist boundary, bring in the responsible owner via the relevance
-gate — browser/UI detail to `effective-web`, architecture to `software-architecture`, legal
-disclosure duties to `web-legal-compliance`; a narrow concept stays narrow. If a skill is missing,
-the minimal generic fallback from the building block applies instead of a local full checklist.
+gate — browser/UI detail and browser-facing disclosure duties to `effective-web`, system and
+data-model architecture to `effective-engineering`; a narrow concept stays narrow. If a skill is
+missing, the minimal generic fallback from the building block applies instead of a local full
+checklist.
 
 Split the reported findings into two groups:
 

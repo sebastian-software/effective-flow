@@ -98,8 +98,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
 
 ## Recommended skills
 
-- `codebase-improvement`
-- `pr-review`
+- `effective-delivery`
 
 ```include
 audit-reasoning-delegation
@@ -413,7 +412,7 @@ type: approval
 
 ### Phase 2: Parallel data collection
 
-First review the available skills and include `codebase-improvement` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
+First review the available skills and include `effective-delivery` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
 
 ```include
 skill-discovery
@@ -497,7 +496,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 **Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
 
 1. Aggregate findings from `## Technical findings` and all sub-sections under `## Reviewer findings`.
-2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `codebase-improvement` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
+2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `effective-delivery` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
    - filter out confidence < 80
    - remove duplicates (same area, same file+line, similar problem)
    - check severity consistency
@@ -579,7 +578,7 @@ when: a review report is written or an existing one is augmented
 
 ## Minimal fallback without the skill
 
-Only relevant if `codebase-improvement` is not available. Brief core guidance for the finding-quality reasoning in Phase 3 so that `review` degrades cleanly – **not** a second full audit handbook:
+Only relevant if `effective-delivery` is not available. Brief core guidance for the finding-quality reasoning in Phase 3 so that `review` degrades cleanly – **not** a second full audit handbook:
 
 - A finding counts only with concrete evidence (file+line, reproducible cause); discard vague or purely stylistic guesses.
 - Merge duplicates via the content signature (file+line, area, similar problem), not via the wording.

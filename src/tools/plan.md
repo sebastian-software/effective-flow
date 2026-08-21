@@ -86,7 +86,7 @@ when: the run reaches its completion report
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ## Hard scope boundary
 
@@ -115,7 +115,7 @@ skill-discovery
 ```
 
 The generic plan-quality and plan-review **judgment** of this tool (Phases 4–6) comes from
-the central skill `codebase-improvement`; Effective Flow remains the plan-artifact orchestrator.
+the central skill `effective-delivery`; Effective Flow remains the plan-artifact orchestrator.
 The following building block applies:
 
 ```include
@@ -403,7 +403,7 @@ Rules:
 
 ### Phase 4: Gap analysis
 
-The gap judgment rests with `codebase-improvement` (see "Delegating the domain judgment to
+The gap judgment rests with `effective-delivery` (see "Delegating the domain judgment to
 central skills"). Apply the skill to the plan and let it assess the generic gaps —
 over-engineering, scope creep, unspoken assumptions, missing or non-measurable acceptance
 criteria, edge cases, hidden intentions, implementation risks, evidence vs. guessing. If the
@@ -412,7 +412,7 @@ architecture, legal …), bring in the responsible owner via the relevance gate;
 engineering plan stays narrow.
 
 Incorporate the reported gaps into the plan and clean it up before you report it as complete. If
-`codebase-improvement` is missing, the minimal generic fallback from the building block applies
+`effective-delivery` is missing, the minimal generic fallback from the building block applies
 (a short core checklist), **not** a second plan-quality handbook.
 
 ### Phase 5: Plan validation
@@ -444,12 +444,12 @@ Rules:
 - Check the planned changes against the verified code context from Phase 1.
 - Do not output complete code suggestions; adhere to the code-frugality rule.
 
-The review **judgment** is provided by `codebase-improvement` (see "Delegating the domain
+The review **judgment** is provided by `effective-delivery` (see "Delegating the domain
 judgment to central skills"): apply the skill to the plan so that it assesses the findings at the
 plan level — among others architecture fit, security surface, data protection, error cases,
 testability, scope, and maintainability. If the plan crosses a declared specialist boundary
 (product, design, browser/accessibility, architecture, legal …), bring in the responsible owner
-via the relevance gate. If `codebase-improvement` is missing, the minimal generic fallback from
+via the relevance gate. If `effective-delivery` is missing, the minimal generic fallback from
 the building block applies instead of a local full checklist.
 
 Classify the findings reported by the skill into the Effective Flow severity (artifact form):
@@ -460,7 +460,7 @@ Classify the findings reported by the skill into the Effective Flow severity (ar
 
 Approach:
 
-1. Obtain the review judgment via `codebase-improvement` (plus relevant specialists).
+1. Obtain the review judgment via `effective-delivery` (plus relevant specialists).
 2. Incorporate all critical findings directly into the plan.
 3. Incorporate important findings or document in the matching `## Plan-Review` / `## Plan review` section why they are deliberately not implemented.
 4. Update that language-matching review section with the result, summary, and findings.

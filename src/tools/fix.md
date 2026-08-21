@@ -65,7 +65,7 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 
 ## Recommended skills
 
-- `pr-review`
+- `effective-delivery`
 
 ## Project conventions
 
