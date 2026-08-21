@@ -172,6 +172,11 @@ At the start, generate a session ID (e.g. via timestamp) and use
 - the received item filter (free-text-only, an explicit thread-ID list, or none), whether the
   caller suppressed the summary comment or the next-step block, and whether it announced an
   established review guard
+- the caller's item manifest: every supplied stable identifier with the item it names – a
+  body-carried finding's provenance from its `Item:` line, or a thread item's thread ID from its
+  `Thread item:` line. The thread ID is how this run addresses the thread; the identifier paired with
+  it here is what that item's outcome is returned under, so the pairing is what keeps the record from
+  going back under a value the caller does not key on
 - the pull-request status read alongside the threads (head SHA, `headCommittedAt`, `checksReported`),
   or the reason it was unavailable
 - the observed state of every configured automatic reviewer with the evidence that established it,
@@ -742,8 +747,11 @@ commit-message-rules
   Answer a control keyword repeated above the delimiter, or a manifest and body that do not pair one
   to one, with `ABORT` rather than with a best guess.
 - Return exactly one outcome from the closed vocabulary of "Returned outcome record" for every
-  caller-supplied item identifier – minted identifier and thread ID alike – and return every such
-  identifier unchanged. Mint no identifier of your own for a caller-supplied item and merge no two
+  caller-supplied item identifier – the one the caller minted for a body-carried finding and the one
+  it minted for a thread item alike – and return every such identifier unchanged. A **forge thread ID
+  is not one of those identifiers**: it arrives in the `threads=` list so this run knows which thread
+  to address, and a thread item's outcome goes back under the caller's minted identifier, never under
+  the thread ID. Mint no identifier of your own for a caller-supplied item and merge no two
   identified items into one outcome. Every `ABORT` this workflow returns is whole-run; a failed item
   comes back as `unassessed`, never as a per-item `ABORT`.
 - Post no automatic substantive reply to pure reviewer questions; defer them and

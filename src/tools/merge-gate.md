@@ -721,7 +721,10 @@ At the start, generate a session ID (e.g. via timestamp) and use
 - the bot round: the observed state of every configured reviewer – **running**, **not started**, or
   **has run** – together with the evidence that established it (the check context with its status,
   the two timestamps, or the value that was missing), which trigger was posted, which threads went to
-  `{{SKILL:iterate}}`, and which findings were deferred and reported in chat instead
+  `{{SKILL:iterate}}` **with the per-message identifier minted for each recorded against its thread
+  ID before that delegation went out** – that identifier→thread-ID mapping is what conditions 6 and 7
+  resolve a returned outcome back to its thread through, and it is why a thread ID appearing in a
+  return resolves to nothing – and which findings were deferred and reported in chat instead
 - per configured reviewer, its **latest review for `VERIFIED_HEAD_SHA`** with that review's id,
   state, submission time and URL, or the reason the verdict could not be established; and, where that
   state is changes-requested, one entry per finding of that review with its outcome from the closed

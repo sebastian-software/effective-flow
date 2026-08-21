@@ -6860,6 +6860,120 @@ test('iterate returns exactly one outcome per caller-supplied item identifier', 
   );
 });
 
+test("iterate's rules return a thread item's outcome under the minted identifier", () => {
+  const rules = prose(section(source('src/tools/iterate.md'), '## Rules', '\n## '));
+
+  // The Rules entry is the standalone restatement of "Returned outcome record", so it is the one
+  // site a reader can apply without the section beside it. It named the thread ID as a key of its
+  // own, which the gate stopped supplying: the gate would then find the minted identifier missing
+  // and the thread ID inert, and the round would end unsuccessfully on a mismatch of its own making.
+  assert.match(
+    rules,
+    near('Return exactly one outcome', 'minted for a thread item', 300),
+    'the rule must promise an outcome per minted identifier, thread items included',
+  );
+  assert.match(
+    rules,
+    near('forge thread ID is not one of those identifiers', 'never under the thread ID', 400),
+    'the rule must exclude the forge thread ID from the identifiers it returns an outcome under',
+  );
+  assert.match(
+    rules,
+    near('threads=', 'which thread to address', 300),
+    'the rule must say what the thread ID is still for on the way in',
+  );
+  // The rest of the entry is unchanged and must stay: dropping either half while correcting the key
+  // would trade one defect for another.
+  assert.match(
+    rules,
+    near('Mint no identifier of your own', 'merge no two', 300),
+    'the rule must still forbid minting an identifier and merging two items',
+  );
+  assert.match(
+    rules,
+    near('whole-run', '`unassessed`', 300),
+    'the rule must still map a failed item onto unassessed rather than a per-item abort',
+  );
+});
+
+test('no site presents a forge thread ID as a valid return key', () => {
+  // Whole files, not one section each: the defect this pins was a Rules entry restating a section
+  // that had already been corrected, so a scan bounded to the section would have missed it.
+  const sites = [
+    [prose(source('src/tools/iterate.md')), 'iterate'],
+    [prose(source('src/tools/merge-gate.md')), 'merge-gate'],
+    [prose(source('docs/user-guide/tools-deliver.md')), 'the user guide'],
+  ];
+
+  // Every phrasing that put the forge's own thread ID into the pre-committed key set. Each was true
+  // while a thread item travelled under its thread ID, and each readmits a publicly visible value as
+  // a return key — which is exactly how a quoted review body forges an assessment.
+  for (const [text, label] of sites) {
+    for (const [claim, why] of [
+      [/thread IDs? alike/i, 'a thread ID promised beside a minted identifier'],
+      [/plus the forge thread IDs/i, 'the thread IDs added to the recorded key set'],
+      [
+        /thread IDs? (?:is|are) (?:also )?(?:a|the|one) (?:valid |return |recorded )*keys?\b/i,
+        'a thread ID named as a key',
+      ],
+      [/outcome naming a thread this run never handed over/i, 'an outcome that names a thread'],
+    ]) {
+      assert.doesNotMatch(text, claim, `${label} must not present ${why}`);
+    }
+  }
+
+  // The positive half, so a deletion cannot pass as a correction: each site states the exclusion
+  // rather than merely omitting the retired claim.
+  for (const [text, label] of sites) {
+    assert.match(
+      text,
+      near('thread ID', '(?:not one of those identifiers|not a key|not part of that list)', 400),
+      `${label} must state that a forge thread ID is not a return key`,
+    );
+  }
+});
+
+test('both ends record the identifier a thread item travels under beside its thread ID', () => {
+  // The mapping conditions 6 and 7 resolve a returned outcome through lives in the wisdom file, so
+  // the two wisdom schemas are where it has to be written down. The gate's schema recorded which
+  // threads went out and nothing about the identifiers they went out under, and iterate's recorded
+  // the received thread-ID list alone — both correct while the thread ID was the key, and both
+  // silent about the value that replaced it.
+  const gateWisdom = prose(
+    section(source('src/tools/merge-gate.md'), '## Wisdom accumulation', '\n## '),
+  );
+  const iterateWisdom = prose(
+    section(source('src/tools/iterate.md'), '## Wisdom Accumulation', '\n## '),
+  );
+
+  assert.match(
+    gateWisdom,
+    near('which threads went to', 'per-message identifier minted for each', 300),
+    'the gate must record the minted identifier beside every thread it delegates',
+  );
+  assert.match(
+    gateWisdom,
+    near('identifier→thread-ID mapping', 'conditions 6 and 7', 400),
+    'the gate must record that mapping as what conditions 6 and 7 read',
+  );
+  assert.match(
+    gateWisdom,
+    near('recorded against its thread ID', 'before that delegation went out', 200),
+    'the mapping must be recorded before the delegation, never after it',
+  );
+
+  assert.match(
+    iterateWisdom,
+    near("caller's item manifest", 'Thread item:', 400),
+    'iterate must record the manifest that pairs an identifier with its thread',
+  );
+  assert.match(
+    iterateWisdom,
+    near('Thread item:', 'returned under', 400),
+    'iterate must record which identifier a thread item outcome goes back under',
+  );
+});
+
 test('the gate mints its item identifier per message, to the token concrete requirement', () => {
   const gate = source('src/tools/merge-gate.md');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
