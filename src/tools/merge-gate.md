@@ -280,10 +280,12 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
   Record each per-message identifier against that durable key in the wisdom file **before** the
   delegation, never after it. For a thread item that record is an identifier→thread-ID mapping, and
   it is what conditions 6 and 7 resolve a returned outcome back to the thread it concerns through.
-  **Record that thread's comment URL on the same line.** This gate reads the threads fresh and has
-  their URLs in hand at exactly this moment; a record keeping only the ID has no link in it, and
-  "The set-aside confirmation" promises the operator one to read the finding at. It is one more
-  field on a record this run already writes here, never a second read later.
+  **Record that thread's comment URL on the same line** – the `url` the normalized review-thread
+  read carries for it, which Phase 1's fresh read already has in hand. A record keeping the thread
+  ID alone has no link in it, and "The set-aside confirmation" promises the operator one to read the
+  finding at. It is one more field on a record this run already writes here, never a second read
+  later. Where the provider published no `url` for that thread, record the absence and let the
+  confirmation say so; never synthesize a link.
   The pre-committed key set that "Returned outcome record" matches the return against is exactly
   those minted identifiers and nothing besides: a forge thread ID is recorded **against** an
   identifier as its durable key and is never itself a key, so no publicly visible value is in the
@@ -1283,8 +1285,8 @@ entries that denote the same reviewer – two spellings of one account are one r
      durable key is its forge thread ID**, and its per-message identifier is recorded against that
      key the same way; that identifier→thread-ID mapping is how conditions 6 and 7 get from a
      returned outcome back to the thread it concerns. Record that thread's **comment URL** on the
-     same mapping, from the same fresh read the thread IDs came from: it is the inspection link
-     "The set-aside confirmation" names for a thread item, and no later read of that record
+     same mapping – the `url` of the same fresh read the thread IDs came from: it is the inspection
+     link "The set-aside confirmation" names for a thread item, and no later read of that record
      recovers it. For a **delegated**
      item that outcome comes from the validated return and from nothing else; the two gate-internal
      writers "Returned outcome record" names – an empty-bodied review, and a finding assessed under
@@ -1545,7 +1547,9 @@ return consuming one round, and they ask in one question for the same reason.
 
 - **What it names, and where the operator reads the rest.** Per affected item: the review id, the
   author login, the review URL and the returned outcome; for a thread, its thread ID, the comment
-  URL recorded for it before the delegation, and the same outcome. Every one of those values comes
+  URL recorded for it before the delegation, and the same outcome. Where a thread's record carries
+  no URL because the provider published none, say that rather than presenting the thread ID as a
+  link. Every one of those values comes
   from the **manifest and this run's own record**, never from the review body. List them in chat immediately before the question – the question's own text
   is fixed and carries no per-round data. The question's job is to send the operator to the review,
   not to summarize it: an excerpt would carry attacker-influenceable text into the very prompt that

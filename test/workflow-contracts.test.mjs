@@ -6473,6 +6473,26 @@ test('a thread item records its inspection URL where the gate still has it', () 
     near('promises the operator one to read the finding at', 'never a second read later', 300),
     'the delegation contract must state why the URL is captured at delegation time',
   );
+  // It has to name the field the read actually publishes, and fail honestly where it publishes none.
+  assert.match(
+    delegation,
+    near('the `url` the normalized review-thread', 'read carries for it', 120),
+    'the recorded URL must be the one the normalized review-thread read carries',
+  );
+  assert.match(
+    delegation,
+    near('published no `url` for that thread', 'never synthesize a link', 200),
+    'a thread with no published URL must be recorded as such rather than given a synthesized link',
+  );
+  // And the read itself must carry it, or the record above is a promise nothing can keep.
+  const readFragment = prose(
+    section(source('src/shared/pr-review-comments.md'), '### Read review threads', '\n### '),
+  );
+  assert.match(
+    readFragment,
+    near("thread's own `url` is its first comment's", 'no address of its own', 300),
+    'the read contract must state that a thread carries its first comment browser link',
+  );
   assert.match(
     phase3,
     near("Record that thread's comment URL", 'same fresh read', 200),

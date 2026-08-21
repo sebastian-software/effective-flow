@@ -3039,7 +3039,7 @@ export function buildCommandPlan(operation, input, repository) {
           jsonStdin(buildReviewPayload(payload)),
         );
       case 'review-threads-read': {
-        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
+        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
         return mutationPlan(
           'gh',
           ['api', ...hostArgs, 'graphql', '--input', '-'],
@@ -4850,6 +4850,10 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               comment.created_at,
               comment.created,
             );
+            const url =
+              typeof comment.url === 'string' && comment.url.trim() !== ''
+                ? comment.url.trim()
+                : undefined;
             return {
               id: comment.id,
               databaseId: comment.databaseId,
@@ -4859,6 +4863,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               line: comment.line ?? comment.originalLine,
               startLine: comment.startLine ?? comment.originalStartLine,
               ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
             };
           });
           // A thread has no creation time of its own in the provider's schema; its first comment is
@@ -4866,6 +4871,12 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           // and a thread whose first comment carries no timestamp still reports none. Every reply
           // keeps its own timestamp, because a bot that answers later must count as newer.
           const threadCreatedAt = comments[0]?.createdAt;
+          // The thread's browser link is its first comment's, for the same reason its instant is:
+          // the provider gives a thread no address of its own, and the comment that opened it is
+          // where a reader lands. A consumer that promises somebody a link to read the finding at -
+          // `merge-gate`'s set-aside confirmation - has nowhere else to take it from, and a record
+          // carrying the thread ID alone cannot supply one at all.
+          const threadUrl = comments[0]?.url;
           return {
             id: thread.id,
             isResolved: thread.isResolved === true,
@@ -4873,6 +4884,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
             line: thread.line ?? thread.comments.nodes[0]?.line,
             startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
             ...(threadCreatedAt === undefined ? {} : { createdAt: threadCreatedAt }),
+            ...(threadUrl === undefined ? {} : { url: threadUrl }),
             comments,
           };
         }
@@ -4890,6 +4902,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         // earlier read has to be told which side of the change produced it.
         const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
         const line = thread.position ?? thread.line;
+        // `HTMLURL json:"html_url"` per the struct comment above - the tag, never the Go field name.
+        const rawUrl = thread.html_url ?? thread.url;
+        const url = typeof rawUrl === 'string' && rawUrl.trim() !== '' ? rawUrl.trim() : undefined;
         return {
           id: String(thread.id),
           // `resolver` is `null` while a thread is open and an object once someone resolved it, so
@@ -4898,6 +4913,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           path: thread.path,
           line,
           ...(createdAt === undefined ? {} : { createdAt }),
+          ...(url === undefined ? {} : { url }),
           comments: [
             {
               id: String(thread.id),
@@ -4909,6 +4925,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               path: thread.path,
               line,
               ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
             },
           ],
         };
