@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.61.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.2...effective-flow-v1.61.0) (2026-08-21)
+
+
+### Features
+
+* put the work reference first in the session title ([#371](https://github.com/sebastian-software/effective-flow/issues/371)) ([9c87034](https://github.com/sebastian-software/effective-flow/commit/9c87034f87a2c21e29fa2de249f3b9df9d989bd5))
+* raise the merge gate's default round budget to ten ([#369](https://github.com/sebastian-software/effective-flow/issues/369)) ([8a5a331](https://github.com/sebastian-software/effective-flow/commit/8a5a331b2434fb6be4f8afdf02c5fd193cb656ee))
+* read pull-request reviews and block a merge on an unassessed verdict ([#366](https://github.com/sebastian-software/effective-flow/issues/366)) ([4e79ff9](https://github.com/sebastian-software/effective-flow/commit/4e79ff9925f8656ab7f95d5f4ad080a8333e2983)), closes [#364](https://github.com/sebastian-software/effective-flow/issues/364)
+* send the butler rename request as soon as the title is fixed ([#373](https://github.com/sebastian-software/effective-flow/issues/373)) ([24c8c8f](https://github.com/sebastian-software/effective-flow/commit/24c8c8f69a94b530dfb16afb348b5e4af22675c0))
+
+
+### Bug Fixes
+
+* bind the merge gate's return consumption to pre-recorded item identifiers ([#368](https://github.com/sebastian-software/effective-flow/issues/368)) ([1dbf453](https://github.com/sebastian-software/effective-flow/commit/1dbf453512e256933e58b275790b81fa44089fb8))
+* block an undecided review verdict and delimit the delegation channel ([#367](https://github.com/sebastian-software/effective-flow/issues/367)) ([73a9498](https://github.com/sebastian-software/effective-flow/commit/73a949868a10836e2a81371d716626f528cd5a0b))
+* give the plan archive handshake a state model it can execute ([#365](https://github.com/sebastian-software/effective-flow/issues/365)) ([4e2b432](https://github.com/sebastian-software/effective-flow/commit/4e2b43298d2f70d03defae1117128736dbbdd1b7))
+* move a revised plan back from the archive without staging the rename ([#362](https://github.com/sebastian-software/effective-flow/issues/362)) ([830e07a](https://github.com/sebastian-software/effective-flow/commit/830e07a8599420682f4ade4422e757629df66e8d))
+* point every central-skill reference at its consolidated successor ([#374](https://github.com/sebastian-software/effective-flow/issues/374)) ([05c4733](https://github.com/sebastian-software/effective-flow/commit/05c4733d5e32639872554508de89c97af4c0ddcc))
+* render nested lazy-include fences in shipped shared fragments ([#361](https://github.com/sebastian-software/effective-flow/issues/361)) ([cbcea61](https://github.com/sebastian-software/effective-flow/commit/cbcea6117ebfcca5cedd30453510bbd4195a7210))
+* stop the merge gate from merging on a delegated outcome alone ([#372](https://github.com/sebastian-software/effective-flow/issues/372)) ([c1d96db](https://github.com/sebastian-software/effective-flow/commit/c1d96db099a1136d51ce439a4804ab76f8c1b1bf))
+
 ## [1.60.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.1...effective-flow-v1.60.2) (2026-08-19)
 
 
