@@ -71,7 +71,7 @@ comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).
 
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
-human), file + line, comment text, and the `resolved` status.
+human), file + line, comment text, the `resolved` status, and the thread's `url`.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read
@@ -89,6 +89,14 @@ comparing a reported login against a configured one resolves it through "Matchin
 login" instead of comparing the two strings literally.
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
+
+A normalized review thread and each of its comments additionally carry a `url`, the browser link to
+that comment, whenever the provider exposes one; an unexposed value is absent rather than guessed. A
+thread's own `url` is its **first** comment's, for the same reason its `createdAt` is: the provider
+gives a thread no address of its own, and the comment that opened it is where a reader lands. This is
+the only link these reads provide, so a consumer that promises somebody a place to read a finding –
+`{{SKILL:merge-gate}}`'s set-aside confirmation is the one that does – has to take the thread's `url`
+here and record it, because a record holding the thread ID alone can supply none.
 
 Normalized pull-request comments, review threads, and thread replies additionally carry
 `createdAt`, an RFC-3339 timestamp, whenever the provider exposes one; an unexposed value is absent

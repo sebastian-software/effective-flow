@@ -3426,6 +3426,130 @@ test('the Forgejo review-thread read walks the two documented raw-API routes', a
   assert.equal(envelope.data.result[0].comments[0].id, '5');
 });
 
+test('a review thread carries the browser link its first comment sits at', async () => {
+  // `merge-gate`'s set-aside confirmation promises the operator somewhere to read the finding, and
+  // a thread record holding only the thread ID could supply none. Both providers publish the link
+  // on the comment; the thread takes its first comment's, exactly as it takes its `createdAt`.
+  const github = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    path: 'src/a.mjs',
+                    line: 42,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-1',
+                          databaseId: 7,
+                          url: 'https://github.com/example/flow/pull/2#discussion_r7',
+                          body: 'Handle this case',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          author: { __typename: 'Bot', login: 'review-app' },
+                        },
+                        {
+                          id: 'comment-1-reply',
+                          databaseId: 8,
+                          url: 'https://github.com/example/flow/pull/2#discussion_r8',
+                          body: 'Answered',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          author: { __typename: 'User', login: 'reviewer' },
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    id: 'thread-2',
+                    isResolved: false,
+                    path: 'src/b.mjs',
+                    line: 7,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-2',
+                          databaseId: 9,
+                          body: 'No link published',
+                          path: 'src/b.mjs',
+                          line: 7,
+                          author: { __typename: 'Bot', login: 'review-app' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+      stderr: '',
+    },
+  ]);
+  const fromGithub = await executeOperation(
+    'review-threads-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner: github, skipProbe: true },
+  );
+  assert.match(github.calls[0].stdin, /comments\(first:100\)\{nodes\{id databaseId url /);
+  assert.equal(
+    fromGithub.data.result[0].url,
+    'https://github.com/example/flow/pull/2#discussion_r7',
+  );
+  assert.equal(
+    fromGithub.data.result[0].comments[0].url,
+    'https://github.com/example/flow/pull/2#discussion_r7',
+  );
+  assert.equal(
+    fromGithub.data.result[0].comments[1].url,
+    'https://github.com/example/flow/pull/2#discussion_r8',
+  );
+  // An unexposed link is absent rather than guessed, exactly as an unexposed timestamp is.
+  assert.equal('url' in fromGithub.data.result[1], false);
+
+  // Forgejo publishes the same link under the `html_url` JSON tag of `PullReviewComment`.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const forgejo = fakeRunner([
+    teaApi([{ id: 31 }]),
+    teaApi([]),
+    teaApi([
+      {
+        id: 5,
+        body: 'Handle this case',
+        user: { login: 'review-app' },
+        position: 42,
+        path: 'src/a.mjs',
+        html_url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
+      },
+    ]),
+  ]);
+  const fromForgejo = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner: forgejo, skipProbe: true },
+  );
+  assert.equal(
+    fromForgejo.data.result[0].url,
+    'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
+  );
+  assert.equal(
+    fromForgejo.data.result[0].comments[0].url,
+    'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
+  );
+});
+
 test('a pull request without reviews reads as an empty thread list, not as a failure', async () => {
   const runner = fakeRunner([
     { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 0\r\n' },

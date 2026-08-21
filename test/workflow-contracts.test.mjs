@@ -3546,15 +3546,36 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
 
   const unassessed = flat(conditions[unassessedIndex]);
 
-  // What "assessed" covers has to be enumerated, or the condition is unexecutable: a deferred or
-  // rejected finding is an outcome this run reached and must not block a second time.
-  for (const outcome of ['implement', 'defer', 'reject']) {
-    assert.match(
-      unassessed,
-      new RegExp(outcome, 'i'),
-      `the condition must name ${outcome} as an outcome that counts as assessed`,
-    );
-  }
+  // What "assessed" covers has to be enumerated, or the condition is unexecutable. This used to be
+  // a loop over `implement`, `defer` and `reject` asserting that each "counts as assessed". Those
+  // three words still stand in the condition, so that loop stayed green while its message became
+  // false: a deferred or rejected thread no longer clears on its own, and being handed over was
+  // never an assessment at all. Each value is pinned to what it now does.
+  assert.match(
+    unassessed,
+    near('assessment that clears it', 'implemented', 200),
+    'the condition must still name the outcome that clears it on its own',
+  );
+  assert.match(
+    unassessed,
+    near('`unassessed` thread', '(?:blocks|as unassessed as)', 200),
+    'an `unassessed` thread must be stated to block, exactly as an unassessed verdict does',
+  );
+  assert.match(
+    unassessed,
+    near('(?:deselected|implementation delegation aborted)', '`unassessed`', 300),
+    'the condition must name where an `unassessed` thread comes from',
+  );
+  assert.match(
+    unassessed,
+    near('(?:`deferred` or `rejected`|deferred.{0,20}rejected)', 'set-aside confirmation', 300),
+    'a deferred or rejected thread must reach the shared confirmation rather than clear itself',
+  );
+  assert.match(
+    unassessed,
+    near('Delegation membership', '(?:never cleared|assessed)', 300),
+    'the condition must state that delegation membership never cleared it',
+  );
   assert.match(
     unassessed,
     near('(?:nobody|no round|neither)', 'block', 300),
@@ -5958,13 +5979,25 @@ test('the unassessed-verdict condition blocks the absence of an outcome, never t
   assert.ok(condition, 'Phase 4 must carry condition 10');
 
   assert.match(condition, /`VERIFIED_HEAD_SHA`/, 'the condition must bind to the verified head');
-  for (const outcome of ['implement', 'defer', 'reject']) {
-    assert.match(
-      condition,
-      new RegExp(outcome, 'i'),
-      `the condition must name ${outcome} as an outcome that counts as assessed`,
-    );
-  }
+  // The same repair as in the condition-7 test above, and for the same reason: the loop that
+  // asserted `implement`, `defer` and `reject` each "counts as assessed" kept passing on words that
+  // never left the condition, while the claim in its message stopped being true. Each value is
+  // pinned to the disposal it now produces.
+  assert.match(
+    condition,
+    /only `implemented` clears/i,
+    'the condition must state that only an implemented outcome clears a delegated finding',
+  );
+  assert.match(
+    condition,
+    near('`rejected`, `deferred` and `unassessed`', 'fail-closed', 200),
+    'the other three values must be stated as fail-closed',
+  );
+  assert.match(
+    condition,
+    near('fail-closed', 'set-aside confirmation', 400),
+    'a rejected or deferred finding must reach the confirmation rather than clear itself',
+  );
 
   // The gate writes no verdict of its own and must not start enforcing one it is forbidden to
   // write: what blocks is the missing outcome, not the reviewer's disagreement.
@@ -6279,6 +6312,756 @@ test('condition 10 retains an undecidable review before it applies its filters',
   // Order is behaviour here: an executor applying the condition top-down has already discarded the
   // author-unestablishable and head-unbindable reviews before it reaches the fail-closed clause.
   ordered(condition, 'retained, never dropped', 'keep those whose author is a login');
+});
+
+// --- What a delegated outcome may decide (conditions 7 and 10) ---
+//
+// The receiver rule authenticates the key an outcome is stated for and says nothing about the
+// value. These assertions pin the consequence: the two conditions that turn a value into a merge
+// stop clearing on one, and the operator confirmation that keeps the gate usable against a nitpicky
+// reviewer is posed once per round for both surfaces.
+
+test('a non-implemented outcome from a delegated return no longer clears condition 10', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+
+  assert.match(
+    condition,
+    near('only `implemented` clears', 'delegated return', 200),
+    'the clearing rule must be scoped to an outcome that came from a delegated return',
+  );
+  assert.match(
+    condition,
+    near('`unassessed` is not clearable', '(?:confirmation|that way)', 200),
+    'an unassessed finding must not be clearable by the confirmation either',
+  );
+
+  // The reason has to travel with the rule, or the next reader reads it as strictness for its own
+  // sake and trades it away: the value is one delegated run's classification of the reviewer's own
+  // text, and the receiver rule proves the key rather than the value.
+  assert.match(
+    condition,
+    near(
+      "read the reviewer's own text",
+      '(?:evidence of what that run concluded|never evidence)',
+      400,
+    ),
+    'the condition must state why a delegated outcome is not evidence that the finding was disposed of',
+  );
+  assert.match(
+    condition,
+    near('authenticates the', 'key', 200),
+    'the condition must name the receiver rule as authenticating the key',
+  );
+  assert.match(
+    condition,
+    near('key', '(?:nothing whatever about the|says nothing).{0,20}value', 200),
+    'the condition must state that the key says nothing about the value',
+  );
+  // And why no verification substitutes for the trust: neither merge-enabling value leaves a trace.
+  assert.match(
+    condition,
+    near('no trace on the forge', '(?:no reply and no resolution|no finding reference)', 400),
+    'the condition must state that the merge-enabling values leave no forge trace to check',
+  );
+});
+
+test('an implemented body finding counts only with an observed head movement, stated as coarse', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+
+  assert.match(
+    condition,
+    near('`implemented` counts only', 'observed head movement', 200),
+    'an implemented body finding must require an observed head movement in that round',
+  );
+  assert.match(
+    condition,
+    near('head SHA read after the round', 'differ', 200),
+    'the corroboration must be stated as a concrete comparison of the two head reads',
+  );
+  // The caveat is the whole honesty of this rule and is a criterion of its own: it proves a commit,
+  // never a relation between that commit and this finding.
+  assert.match(
+    condition,
+    near('proves that a', 'commit', 120),
+    'the caveat must state that the movement proves a commit existed',
+  );
+  assert.match(
+    condition,
+    near('never that the commit addressed this finding', 'one real commit', 200),
+    'the caveat must state the coarseness: one commit satisfies every finding of the round',
+  );
+  assert.match(
+    condition,
+    near('Without an observed head movement', 'fail-closed', 200),
+    'an uncorroborated implemented finding must fail closed',
+  );
+});
+
+test('one set-aside confirmation per round covers both returning conditions and quotes no review', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const confirmation = section(gate, '#### The set-aside confirmation', '\n**Report every');
+  const flatConfirmation = prose(confirmation);
+
+  // It sits after the numbered list and is referenced from inside it, never written as an
+  // eleventh precondition — a question inside the list would be evaluated as one.
+  const { conditions, afterList } = mergeConditionsAndTail(gate);
+  assert.ok(
+    afterList.includes('```ask'),
+    'the confirmation question must sit after the numbered preconditions',
+  );
+  for (const item of conditions) {
+    assert.ok(!item.includes('```ask'), 'no numbered precondition may carry the ask block itself');
+  }
+  for (const number of [7, 10]) {
+    assert.match(
+      prose(mergeCondition(conditions, number)),
+      /The set-aside confirmation/,
+      `condition ${number} must reference the confirmation by name`,
+    );
+  }
+
+  // One question, one round, both surfaces. Per finding it would be a question per nitpick, and the
+  // reviewer that produces nitpicks in bulk is the case this exists for.
+  assert.match(
+    flatConfirmation,
+    near('Conditions 7 and 10', 'one', 200),
+    'one question must clear both conditions',
+  );
+  assert.match(
+    flatConfirmation,
+    near('once per Phase-4 evaluation', '(?:every affected|together)', 300),
+    'the question must be posed at most once per evaluation, covering both conditions together',
+  );
+
+  // Provenance from the manifest, and no reviewer text: an excerpt would put attacker-influenceable
+  // prose into the prompt that exists to resist it.
+  for (const value of ['review id', 'author login', 'review URL', 'returned outcome']) {
+    assert.ok(
+      flatConfirmation.includes(value),
+      `the question must name the ${value} of every affected item`,
+    );
+  }
+  assert.match(
+    flatConfirmation,
+    near("manifest and this run's own record", 'never from the review body', 200),
+    'every named value must come from the manifest rather than from the body',
+  );
+  assert.match(
+    flatConfirmation,
+    near('send the operator to the review', '(?:excerpt|quote none)', 400),
+    'the question must send the operator to the review instead of summarizing it',
+  );
+
+  // What it clears, and the one value it must never clear.
+  assert.match(
+    flatConfirmation,
+    near('What it clears', '`rejected` and `deferred`', 120),
+    'the confirmation must clear the two set-aside values',
+  );
+  assert.match(
+    flatConfirmation,
+    near('Never `unassessed`', '(?:nobody read|different things)', 300),
+    'the confirmation must never clear an unassessed item',
+  );
+
+  // The three endings, each of which an implementer copying the wrong precedent gets wrong.
+  assert.match(
+    flatConfirmation,
+    near('decline, or no answer, ends the run', 'never returns into Phase 3', 200),
+    'a declined or unanswered confirmation must end the run rather than return into Phase 3',
+  );
+  assert.match(
+    flatConfirmation,
+    near('non-interactive', '`prReviewsRead`', 200),
+    'a non-interactive run must take the prReviewsRead degradation',
+  );
+  assert.match(
+    flatConfirmation,
+    near('not the completion-gate shape', '(?:degrades to `report`|continues)', 200),
+    'the completion-gate degradation must be named as the wrong precedent',
+  );
+  assert.match(
+    flatConfirmation,
+    near('completion mode is not `merge`', '(?:Condition 1|report-mode)', 300),
+    'no confirmation may be posed where the completion mode is not merge',
+  );
+
+  // The block itself, to the two mechanical constraints the harness and the reader impose.
+  const ask = confirmation.match(/```ask\n([\s\S]*?)```/);
+  assert.ok(ask, 'the confirmation must be written as an ask block');
+  const header = ask[1].match(/^header: (.+)$/m);
+  assert.ok(header, 'the ask block must carry a header');
+  assert.ok(header[1].length <= 12, `the ask header must stay within 12 characters: ${header[1]}`);
+  assert.match(
+    ask[1],
+    /when:.*completion mode is `merge`.*gated/,
+    'the ask block must fire only in a gated run allowed to merge',
+  );
+  assert.doesNotMatch(
+    ask[1].match(/^question: .*$/m)[0],
+    /(?:body|excerpt|says|wrote)/i,
+    'the question itself must carry no reviewer text',
+  );
+  assert.match(
+    ask[1],
+    /read them at the review URL/i,
+    'the block must send the operator to the review rather than to a quoted excerpt',
+  );
+});
+
+test('a mixed Phase-4 evaluation poses the confirmation and returns in the same one round', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const rawConfirmation = section(gate, '#### The set-aside confirmation', '\n**Report every');
+  const confirmation = prose(rawConfirmation);
+  const conditions = mergeConditions(gate);
+
+  // One evaluation used to lose the set-aside item of a mixed outcome set entirely: the
+  // confirmation was gated on the set-aside value being the *only* unmet cause, while the return
+  // carried only the items the confirmation could not clear. The item sat in neither branch.
+  assert.match(
+    confirmation,
+    near('A mixed evaluation still poses it', 'Pose the question anyway', 300),
+    'the confirmation must be posed even where the same evaluation also holds returning items',
+  );
+  assert.match(
+    confirmation,
+    near('the returning items travel into Phase 3', 'consuming one round', 200),
+    'the returning items of a mixed evaluation must travel in the one shared return',
+  );
+  assert.match(
+    confirmation,
+    near('Nothing is stranded outside both branches', 'not put to them a second time', 250),
+    'the mixed case must state that nothing falls outside both branches and nothing is re-asked',
+  );
+
+  // The trade the fix makes, stated rather than left for a reader to discover.
+  assert.match(
+    confirmation,
+    near('posed in a round that will not merge', 'intended trade', 150),
+    'the confirmation must state that it may be posed in a round that will not merge',
+  );
+  assert.match(
+    confirmation,
+    near('Withholding it until no returning item remains', 'strands the set-aside item', 200),
+    'the trade must name the stranding that withholding the question would cause',
+  );
+
+  // The gate on the question itself. "only because" is what suppressed it in a mixed evaluation.
+  const ask = rawConfirmation.match(/```ask\n([\s\S]*?)```/);
+  assert.ok(ask, 'the confirmation must be written as an ask block');
+  const when = ask[1].match(/^when: .*$/m)[0];
+  assert.doesNotMatch(
+    when,
+    /only because/i,
+    'the ask block must not require the set-aside outcome to be the only unmet cause',
+  );
+  assert.match(
+    when,
+    /whatever else the same evaluation left unmet/i,
+    'the ask block must fire regardless of what else the same evaluation left unmet',
+  );
+
+  // Both halves of the single return, so a confirmed item is not carried back a second time.
+  assert.match(
+    prose(mergeCondition(conditions, 7)),
+    near('return to Phase 3', 'never a thread "The set-aside confirmation" cleared', 250),
+    "condition 7's return must exclude a thread the confirmation cleared",
+  );
+  assert.match(
+    prose(mergeCondition(conditions, 10)),
+    near(
+      'declined or unanswered confirmation ends the run',
+      'unassessed item would otherwise have returned',
+      250,
+    ),
+    'a declined confirmation must end the run even in a mixed evaluation',
+  );
+  assert.match(
+    confirmation,
+    near('That holds in a mixed evaluation too', 'decline ends the run', 200),
+    'the decline bullet must state that it also governs a mixed evaluation',
+  );
+
+  // The user guide describes the same round, so a reader is not told the answer means a merge.
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('does not always mean the run merges that round', 'same single return', 400),
+    'the guide must say a confirmed round can still return for another one',
+  );
+});
+
+// A confirmation that clears an item "for the round" and is recorded nowhere is re-asked from the
+// next fresh read on, because that read still finds the same unresolved thread and the same standing
+// verdict. The gate then spends its whole round budget re-posing one question the operator already
+// answered. What makes the answer survive is a record keyed by something that outlives the round.
+test('a confirmed item is recorded durably, consumed later, and expired by a head movement', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
+
+  // The key has to be the durable one. The per-message identifier is minted afresh per delegation,
+  // so a record keyed by it matches nothing the next round and loses the answer exactly when it is
+  // needed.
+  assert.match(
+    confirmation,
+    near('durable key', 'review id plus a finding ordinal', 200),
+    'a confirmed body-carried finding must be recorded under the review id plus finding ordinal',
+  );
+  assert.match(
+    confirmation,
+    near('durable key', 'forge thread ID', 300),
+    'a confirmed thread item must be recorded under its forge thread ID',
+  );
+  assert.match(
+    confirmation,
+    near('Never the per-message identifier', 'minted afresh for every delegation', 200),
+    'the record must state why the per-message identifier cannot carry the answer',
+  );
+
+  // Consumption: recording it changes nothing unless a later evaluation reads it before asking.
+  assert.match(
+    confirmation,
+    near('later Phase-4 evaluation reads that record', 'before it composes the question', 120),
+    'every later evaluation must read the record before composing the question',
+  );
+  assert.match(
+    confirmation,
+    near('is not put to the operator again', 'clears conditions 7 and 10', 400),
+    'a recorded item must clear both conditions without being asked a second time',
+  );
+  assert.match(
+    confirmation,
+    near('covers every set-aside item', 'poses no question', 120),
+    'an evaluation whose set-aside items are all recorded must pose no question',
+  );
+  // "no question is posed" and "cannot be posed at all" sit three bullets apart and end opposite
+  // ways — one continues the evaluation, the other ends the run.
+  assert.match(
+    confirmation,
+    near('covered', 'never the "cannot be posed at all" ending', 200),
+    'a covered evaluation must be distinguished from the ending that cannot pose the question',
+  );
+
+  // A confirmed item must not be handed over again: Phase 3 step 5 re-derives its item set from the
+  // fresh read, where a deferred thread is still unresolved and a review body still carries every
+  // finding — so it would write a new outcome under the very key the record is keyed by.
+  assert.match(
+    confirmation,
+    near('confirmed item is not delegated again', 'Phase 3 step 5 excludes it', 200),
+    'a confirmed item must be excluded from the next delegation',
+  );
+  assert.match(
+    prose(section(gate, '### Phase 3')),
+    near('durable confirmation record', 'Exclude every item', 120),
+    "Phase 3's own delegation step must carry the exclusion an executor reads there",
+  );
+
+  // Expiry rides on the one head value this workflow records, and mirrors what a head movement
+  // already invalidates — so it is the rule the file lives by, not an exception for this question.
+  assert.match(
+    confirmation,
+    near('head movement expires every confirmation', 'no second head SHA is recorded', 120),
+    'the expiry must not introduce a second recorded head SHA',
+  );
+  assert.match(
+    confirmation,
+    near(
+      'bound to `VERIFIED_HEAD_SHA`',
+      'Discard the whole record wherever that value is discarded',
+      200,
+    ),
+    'the record must be discarded with VERIFIED_HEAD_SHA',
+  );
+  assert.match(
+    confirmation,
+    near('either side is unprovable', 'discard rather than consume', 120),
+    'an unprovable head must discard the record rather than consume it',
+  );
+  assert.match(
+    confirmation,
+    near('one this file already lives by', "every reviewer's observed state", 200),
+    'the expiry must be tied to what a head movement already invalidates',
+  );
+  // Phase 2's claim that it records the only head SHA has to stay true.
+  assert.match(
+    prose(section(gate, '### Phase 2')),
+    /nothing else in this workflow records a head SHA for later use/,
+    'Phase 2 must still state that it records the only head SHA kept for later use',
+  );
+
+  // The residual the head binding does not catch, named rather than left to be discovered.
+  assert.match(
+    confirmation,
+    near('rewrites its review body in place', 'unchanged head', 200),
+    'the residual of a same-head body rewrite must be stated',
+  );
+
+  // The three endings write no record, so consumption can never turn one of them into a merge.
+  assert.match(
+    confirmation,
+    near('Only a `Confirm` writes that record', '(?:decline|non-interactive)', 400),
+    'only a confirmed answer may write a consumable record',
+  );
+  assert.match(
+    confirmation,
+    near('gate-internal writers', 'stay outside the record', 300),
+    'the two gate-internal writers must stay outside the record as they stay outside the question',
+  );
+
+  // And it stays four values: what is durable is that an item was confirmed, not a fifth outcome.
+  assert.match(
+    confirmation,
+    near('What becomes durable is the record that an item was confirmed', 'four values', 400),
+    'the durable record must not become a fifth outcome value',
+  );
+
+  // Written where the run actually keeps state, and visible in the report.
+  assert.match(
+    wisdom,
+    near('durable confirmation record', "each confirmed item's durable key", 200),
+    'the wisdom schema must carry the durable confirmation record and its keys',
+  );
+  assert.match(
+    wisdom,
+    near('bound to `VERIFIED_HEAD_SHA` and discarded with it', 'no second head SHA', 120),
+    'the wisdom schema must bind the record to VERIFIED_HEAD_SHA rather than to a second head SHA',
+  );
+  assert.match(
+    phase6,
+    near('durable confirmation record', 'the round whose answer authorized it', 200),
+    'Phase 6 must report which round authorized an item a later round cleared',
+  );
+
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('not put to you again next round', "(?:the thread's forge ID|reads that record)", 300),
+    'the guide must say what makes the answer survive the round',
+  );
+  assert.match(
+    guide,
+    near('Unless the head moves', 'expires', 300),
+    'the guide must say that a new commit expires a confirmation',
+  );
+
+  const edgeCases = prose(section(gate, '## Edge cases', '\n## '));
+  assert.match(
+    edgeCases,
+    near('already confirmed', 'durable confirmation record', 200),
+    'the edge cases must cover a later evaluation meeting an already confirmed item',
+  );
+  assert.match(
+    edgeCases,
+    near('head movement between the two evaluations', 'posed afresh at the new head', 200),
+    'the edge cases must cover the expiry of a confirmation on a head movement',
+  );
+});
+
+test('a thread item records its inspection URL where the gate still has it', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const delegation = prose(section(gate, '## Delegation contract', '\n## '));
+  const phase3 = prose(section(gate, '### Phase 3'));
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+
+  // The confirmation promises the operator a link. A thread record carrying only the thread ID has
+  // none, and the fresh read that had it is over by the time Phase 4 asks.
+  assert.match(
+    confirmation,
+    near('for a thread, its thread ID', 'comment URL recorded for it before the delegation', 150),
+    'the confirmation must name the thread comment URL beside the thread ID',
+  );
+
+  // Written at the one site that already writes this record, in every place that describes it.
+  assert.match(
+    delegation,
+    near("Record that thread's comment URL on the same line", 'identifier→thread-ID mapping', 400),
+    'the delegation contract must record the comment URL beside the identifier→thread-ID mapping',
+  );
+  assert.match(
+    delegation,
+    near('promises the operator one to read the finding at', 'never a second read later', 300),
+    'the delegation contract must state why the URL is captured at delegation time',
+  );
+  // It has to name the field the read actually publishes, and fail honestly where it publishes none.
+  assert.match(
+    delegation,
+    near('the `url` the normalized review-thread', 'read carries for it', 120),
+    'the recorded URL must be the one the normalized review-thread read carries',
+  );
+  assert.match(
+    delegation,
+    near('published no `url` for that thread', 'never synthesize a link', 200),
+    'a thread with no published URL must be recorded as such rather than given a synthesized link',
+  );
+  // And the read itself must carry it, or the record above is a promise nothing can keep.
+  const readFragment = prose(
+    section(source('src/shared/pr-review-comments.md'), '### Read review threads', '\n### '),
+  );
+  assert.match(
+    readFragment,
+    near("thread's own `url` is its first comment's", 'no address of its own', 300),
+    'the read contract must state that a thread carries its first comment browser link',
+  );
+  assert.match(
+    phase3,
+    near("Record that thread's comment URL", 'same fresh read', 200),
+    "Phase 3's per-thread record must carry the comment URL from the same fresh read",
+  );
+  assert.match(
+    wisdom,
+    near(
+      "recorded against its thread ID and that thread's comment URL",
+      'before that delegation went out',
+      200,
+    ),
+    'the wisdom schema must carry the comment URL beside the thread ID it maps',
+  );
+  assert.match(
+    wisdom,
+    near('set-aside confirmation', 'its thread ID and its comment URL', 600),
+    'the wisdom record of the confirmation must carry the thread comment URL',
+  );
+
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('its thread ID and its own comment link', 'somewhere you can go and read it', 200),
+    'the guide must promise a thread item its own link rather than a review URL',
+  );
+});
+
+test('condition 7 blocks an unassessed thread and shares the confirmation with condition 10', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const condition = prose(mergeCondition(mergeConditions(gate), 7));
+
+  // Delegation membership used to clear this condition, which made it read its own heading
+  // backwards: an item nobody judged came back `unassessed` and cleared anyway.
+  assert.match(
+    condition,
+    near('outcome recorded for each thread it delegated', 'outcome-derived', 300),
+    'the record this condition matches against must be outcome-derived throughout',
+  );
+  assert.match(
+    condition,
+    near('handing a thread over is not an assessment', 'outcome-derived', 300),
+    'the condition must state that handing a thread over is not an assessment of it',
+  );
+  assert.match(
+    condition,
+    /as unassessed as an `unassessed` verdict/i,
+    'an unassessed thread must be aligned with the unassessed verdict of condition 10',
+  );
+
+  // Aligning it makes it outcome-derived, which is exactly the hole condition 10 closes — so the
+  // same confirmation has to cover it, at no extra prompt.
+  assert.match(
+    condition,
+    near('set-aside confirmation', "condition 10's findings", 200),
+    "condition 7's set-aside items must reach the same confirmation as condition 10's",
+  );
+  assert.match(
+    condition,
+    near('`implemented` clears it as before', 'condition 6', 200),
+    'an implemented thread must still clear here, with condition 6 carrying the forge-side proof',
+  );
+});
+
+test('the retired rejected-merges sentence is gone and condition 6 is disambiguated by surface', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const conditions = mergeConditions(gate);
+  const condition = prose(mergeCondition(conditions, 10));
+
+  assert.doesNotMatch(
+    prose(gate),
+    /findings this run read and deliberately rejected merges/i,
+    'the sentence stating that a deliberately rejected finding merges must be gone',
+  );
+  assert.match(
+    condition,
+    near('replaces the retired sentence', 'only once the operator has confirmed', 300),
+    'the retired sentence must be replaced by one stating the new rule',
+  );
+
+  // Condition 6's wording is asserted elsewhere and cannot be softened, so the two are separated by
+  // surface instead — and folding them is the failure mode condition 7 already defends against.
+  assert.ok(
+    prose(mergeCondition(conditions, 6)).includes(
+      'A finding this run deferred or rejected does not block the merge',
+    ),
+    "condition 6's asserted wording must stay exactly as it is",
+  );
+  assert.match(
+    condition,
+    near('Condition 6 states the opposite', 'the surface', 200),
+    'condition 10 must disambiguate itself against condition 6 by surface',
+  );
+  assert.match(
+    condition,
+    near('reviewer thread', 'review body', 400),
+    'the disambiguation must name both surfaces',
+  );
+
+  // And the scoping that keeps the two gate-internal writers out of the rule. Without it the
+  // empty-bodied review — which has no finding to implement — could never clear.
+  assert.match(
+    condition,
+    near('empty body', '(?:assessed by this gate itself|nothing to delegate)', 300),
+    'the empty-bodied review must be named as a gate-internal writer this rule does not reach',
+  );
+  assert.match(
+    condition,
+    near('human-comment guard', "(?:gate's own decision|delegates nothing)", 300),
+    'a finding assessed under the guard must be named as the second gate-internal writer',
+  );
+  assert.match(
+    condition,
+    near('empty-bodied review would deadlock', 'only `implemented` clears', 300),
+    'the scoping must state the deadlock it prevents',
+  );
+});
+
+test('the confirmation is recorded as a per-round fact and adds no fifth outcome value', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
+  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+
+  assert.match(
+    wisdom,
+    near('set-aside confirmation', "(?:operator's answer|whether it was posed)", 400),
+    'the wisdom file must record the confirmation of every round',
+  );
+  assert.match(
+    wisdom,
+    near('set-aside confirmation', 'never a fifth outcome value', 500),
+    'the wisdom record must state that the confirmation is not an outcome',
+  );
+  assert.match(
+    phase6,
+    near('set-aside confirmation', 'how the operator answered', 300),
+    'Phase 6 must report the confirmation and its answer',
+  );
+  // Without it the report shows a merged pull request whose findings all read `rejected` with
+  // nobody named — which is the state that made this a criterion rather than a nicety.
+  assert.match(
+    phase6,
+    near('confirmed finding still reads', '(?:who authorized|`rejected`)', 400),
+    'the report must keep the outcome and the confirmation apart',
+  );
+  assert.match(
+    confirmation,
+    near('per-round fact, never an outcome', 'four values', 400),
+    'the confirmation must be stated as a per-round fact that leaves the vocabulary at four values',
+  );
+});
+
+test('the returned outcome record states the residual the confirmation does not close', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const record = returnedRecord(gate, 'merge-gate');
+
+  // The honest floor: an attacker who can steer the delegated run forges nothing, because the
+  // review body is the input to the classification that produces the value.
+  assert.match(
+    record,
+    near('steer that run', '(?:forge nothing|genuinely)', 300),
+    'the residual must state that a steered run needs to forge nothing',
+  );
+  assert.match(
+    record,
+    near('genuinely', '(?:maps honestly onto `rejected`|well-formed channel)', 300),
+    'the residual must state that an honest-looking rejection is reachable',
+  );
+  assert.match(
+    record,
+    near('confirmation', '(?:makes no value truer|without somebody having looked)', 400),
+    'the residual must state what the confirmation does and does not change',
+  );
+  assert.match(
+    record,
+    near('not', 'fifth outcome', 200),
+    'the residual must state that the confirmation is not a fifth outcome value',
+  );
+});
+
+test('the user guide describes the confirmation and states no fixed count of ways out', () => {
+  const deliver = prose(source('docs/user-guide/tools-deliver.md'));
+
+  // The enumeration this change invalidates. The negative assertion on "exactly three ways" already
+  // guards the retired count; the replacement must not introduce a new fixed one.
+  assert.doesNotMatch(
+    deliver,
+    /stops blocking in these ways and no others/i,
+    'the guide must not enumerate a closed set of ways a verdict stops blocking',
+  );
+  assert.match(
+    deliver,
+    near('A verdict stops blocking', 'when you confirm the findings the run set aside', 400),
+    'the guide must name the confirmation among the ways a verdict stops blocking',
+  );
+  assert.match(
+    deliver,
+    near('not a fixed count of routes out', 'how the delegated run classified it', 300),
+    'the guide must say why the list is not a fixed count',
+  );
+
+  // The merge-precondition summary at the top of the tool description has to match the condition.
+  assert.match(
+    deliver,
+    near('disposed of finding by finding', 'takes your confirmation', 300),
+    'the overview precondition must match the new rule',
+  );
+
+  // And the section a reader lands on from both of those.
+  const confirming = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    confirming,
+    near('one question per round', 'no reviewer text', 500),
+    'the guide must describe one question per round that quotes no reviewer text',
+  );
+  assert.match(
+    confirming,
+    near('never clears an `unassessed` item', '(?:another round|different things)', 300),
+    'the guide must say the confirmation never clears an unassessed item',
+  );
+  assert.match(
+    confirming,
+    near('report-mode', 'non-interactive', 300),
+    'the guide must name both runs in which the question is not posed',
+  );
+  assert.match(
+    confirming,
+    near('head commit actually moved', '(?:proves a commit existed|coarse)', 300),
+    'the guide must describe the head-movement corroboration and its coarseness',
+  );
 });
 
 test('the gate delimits caller-supplied item text from the control lines it announces', () => {

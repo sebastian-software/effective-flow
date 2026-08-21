@@ -280,6 +280,12 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
   Record each per-message identifier against that durable key in the wisdom file **before** the
   delegation, never after it. For a thread item that record is an identifier→thread-ID mapping, and
   it is what conditions 6 and 7 resolve a returned outcome back to the thread it concerns through.
+  **Record that thread's comment URL on the same line** – the `url` the normalized review-thread
+  read carries for it, which Phase 1's fresh read already has in hand. A record keeping the thread
+  ID alone has no link in it, and "The set-aside confirmation" promises the operator one to read the
+  finding at. It is one more field on a record this run already writes here, never a second read
+  later. Where the provider published no `url` for that thread, record the absence and let the
+  confirmation say so; never synthesize a link.
   The pre-committed key set that "Returned outcome record" matches the return against is exactly
   those minted identifiers and nothing besides: a forge thread ID is recorded **against** an
   identifier as its durable key and is never itself a key, so no publicly visible value is in the
@@ -517,6 +523,18 @@ content, not from prose describing what the delegated run did, not from a headin
 provenance line inside an item's own text. A value stated for a recorded identifier is the only thing
 that counts. That sentence is the rule, and its absence is the defect this section exists to fix.
 
+**What a value is worth, and the residual that leaves.** A value here is one delegated run's
+classification of text the reviewer wrote, and the receiver rule proves the **key** while saying
+nothing about the **value**. An attacker who can steer that run therefore has to forge nothing: the
+review body is the input to a language-model classification, so it can make the run **genuinely**
+classify a finding as unsupported, which maps honestly onto `rejected` and arrives through a
+completely well-formed channel. No architecture in this repository closes that floor. What Phase 4
+does about it is narrow and is stated as such: conditions 7 and 10 stop clearing on such a value by
+itself, and "The set-aside confirmation" moves the decision to a human who can read the finding at
+its review URL. That confirmation makes no value truer – it means only that no merge happens on one
+without somebody having looked. It is recorded as a per-round fact and is **not** a fifth outcome;
+the closed vocabulary above keeps its four values.
+
 **What writes the Phase 3 per-finding record.** For a **delegated** item, nothing but the validated
 return above. Exactly two writers are gate-internal, and neither is an exception to that rule,
 because neither has a delegated return at all:
@@ -711,6 +729,19 @@ At the start, generate a session ID (e.g. via timestamp) and use
   back – including every returned outcome the receiver rule of "Returned outcome record" counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
   `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
+- per round, the **set-aside confirmation** of Phase 4: whether it was posed, skipped because the
+  resolved completion mode is not `merge`, or could not be posed at all; every finding and thread it
+  covered with its review id, author login, review URL – or, for a thread, its thread ID and its
+  comment URL – and returned outcome; and the operator's answer. This is a per-round fact about
+  who authorized a merge and never a fifth outcome value – a confirmed finding keeps the outcome it
+  came back with. Record the fourth not-posed case beside the other two – that the evaluation was
+  **covered**, every set-aside item of it already carried by the record. Where the answer was
+  `Confirm`, also record the **durable confirmation record** the same section defines: each confirmed
+  item's durable key – the review id plus finding ordinal, or the thread's forge thread ID. That
+  record is what a later Phase-4 evaluation consumes so it poses no second question for an item
+  already confirmed; record each such consumption with the item and the round whose answer authorized
+  it, because that is what Phase 6 reports. It is bound to `VERIFIED_HEAD_SHA` and discarded with it,
+  so no second head SHA is recorded here either
 - per round, where the base-into-head merge conflicted: the observed merge state and which entry
   point detected the conflict, the resolved `mergeGate.conflictResolution` mode with its source, the
   conflicted paths with their risk classification, `{{AGENT:merge-conflict-resolver}}`'s per-file
@@ -722,9 +753,11 @@ At the start, generate a session ID (e.g. via timestamp) and use
   **has run** – together with the evidence that established it (the check context with its status,
   the two timestamps, or the value that was missing), which trigger was posted, which threads went to
   `{{SKILL:iterate}}` **with the per-message identifier minted for each recorded against its thread
-  ID before that delegation went out** – that identifier→thread-ID mapping is what conditions 6 and 7
-  resolve a returned outcome back to its thread through, and it is why a thread ID appearing in a
-  return resolves to nothing – and which findings were deferred and reported in chat instead
+  ID and that thread's comment URL before that delegation went out** – that identifier→thread-ID
+  mapping is what conditions 6 and 7 resolve a returned outcome back to its thread through, and it is
+  why a thread ID appearing in a return resolves to nothing; the URL recorded beside it is what
+  "The set-aside confirmation" names for a thread item, which a record holding the ID alone could
+  not supply – and which findings were deferred and reported in chat instead
 - per configured reviewer, its **latest review for `VERIFIED_HEAD_SHA`** with that review's id,
   state, submission time and URL, or the reason the verdict could not be established; and, where that
   state is changes-requested, one entry per finding of that review with its outcome from the closed
@@ -1241,6 +1274,13 @@ entries that denote the same reviewer – two spellings of one account are one r
 5. **When the bot has run:** hand its unresolved threads to `{{SKILL:iterate}} <PR>` with the item
    filter set to **exactly those thread IDs**. `{{SKILL:iterate}}` classifies them, implements the
    valid ones as new commits, replies, and resolves them.
+   - **Exclude every item the durable confirmation record of "The set-aside confirmation" holds** –
+     a thread by its forge thread ID, a body finding by its review id and ordinal – from both halves
+     of that item set, however the phase was entered. The fresh read still reports them: a
+     `deferred` thread stays unresolved by design, and a review body still carries every finding it
+     carried before. Re-delegating one would write a new outcome under the same durable key the
+     record is keyed by, and an item that came back `unassessed` that time would be cleared and
+     unclearable at once.
    - **Mint and record one per-message identifier per thread** as the "Delegation contract"
      requires, and carry it on that thread's `Thread item:` manifest line. The thread IDs travel in
      the item filter because the delegated run addresses the threads through them; the **return**
@@ -1258,7 +1298,10 @@ entries that denote the same reviewer – two spellings of one account are one r
      stable identifier the finding was delegated under recorded against that key. **A thread item's
      durable key is its forge thread ID**, and its per-message identifier is recorded against that
      key the same way; that identifier→thread-ID mapping is how conditions 6 and 7 get from a
-     returned outcome back to the thread it concerns. For a **delegated**
+     returned outcome back to the thread it concerns. Record that thread's **comment URL** on the
+     same mapping – the `url` of the same fresh read the thread IDs came from: it is the inspection
+     link "The set-aside confirmation" names for a thread item, and no later read of that record
+     recovers it. For a **delegated**
      item that outcome comes from the validated return and from nothing else; the two gate-internal
      writers "Returned outcome record" names – an empty-bodied review, and a finding assessed under
      an active human-comment guard – have no delegated return to validate.
@@ -1318,25 +1361,41 @@ returning condition unbounded the day it is added.
    left untouched. That scoping is deliberate, not an oversight – nothing in this workflow may write
    into such a thread any more (see "A deferred finding gets no thread reply"), so requiring an
    answer there would be a condition no run could ever satisfy;
-7. **every unresolved thread of a configured reviewer has been assessed by this run** – implemented,
-   or deliberately deferred or rejected. Take every unresolved thread of the same fresh read whose
+7. **every unresolved thread of a configured reviewer has been assessed by this run, and every
+   assessment that clears it is one this gate may act on** – implemented, or deliberately deferred
+   or rejected. Take every unresolved thread of the same fresh read whose
    author is a login in `mergeGate.bots` under "Matching a configured login" – the threads arrive
    from the surface that reports a bot without its `[bot]` suffix, so a literal comparison against a
    configured login matches nothing here and reports this condition satisfied while open findings
    sit there – and match it against the record this run kept per round:
-   the thread IDs it handed to `{{SKILL:iterate}}`, plus the threads whose findings it deferred or
-   rejected. That second list is **outcome-derived**, so it is built under "Returned outcome record"
-   and nowhere else – and it is built through the identifier→thread-ID mapping this run recorded
+   **the outcome recorded for each thread it delegated**, and nothing besides. That record is
+   **outcome-derived** throughout – handing a thread over is not an assessment of it – so it is
+   built under "Returned outcome record" and nowhere else – and it is built through the
+   identifier→thread-ID mapping this run recorded
    before delegating, never from anything the return names directly. An outcome carries a minted
    identifier, and that identifier resolves to the thread it was minted for. An outcome naming an
-   identifier this run never recorded resolves to no thread and never enters the list, and a
+   identifier this run never recorded resolves to no thread and never enters the record, and a
    **thread ID** appearing in the return resolves to nothing at all, because it is not a key. That is
    what keeps a returned outcome from adding a never-assessed thread to the
-   record this condition matches against. A thread in neither list arrived after the Phase-3 observation that fixed this run's
-   item filter – the reviewer's check had gone terminal by then, which states that the reviewer
+   record this condition matches against. A thread with no recorded outcome arrived after the
+   Phase-3 observation that fixed this run's item filter – the reviewer's check had gone terminal by then, which states that the reviewer
    finished and never that every thread it wrote had already arrived (see "Automatic reviewer
    state") – so nobody reached any outcome about it, and it blocks. An **empty** `mergeGate.bots`
    list produces no such thread and satisfies this condition, as it satisfies condition 5.
+
+   **An `unassessed` thread is as unassessed as an `unassessed` verdict, and blocks the same way.**
+   An item whose implementation delegation aborted and an item deselected at the delegated run's own
+   approval gate both come back `unassessed`, and nobody judged either. Delegation membership never
+   cleared this condition – the heading says assessed, and that is what it means – and reading it as
+   membership is the defect this paragraph closes.
+
+   **A `deferred` or `rejected` thread reaches "The set-aside confirmation" below, exactly as
+   condition 10's findings do.**
+   Its outcome came from a delegated return and carries exactly the weight stated there, so it
+   clears this condition only once the operator has confirmed it – at the head that confirmation
+   was given for – and blocks otherwise. `implemented` clears it as before, and condition 6 then requires that thread's own
+   reply and resolution – the forge-side corroboration the review-body surface has to ask for
+   separately.
 
    **This is not condition 6 widened, and the two must never be folded into one.** Condition 6 asks
    whether a thread this run **implemented** was answered and resolved, and its narrow scope stays
@@ -1348,9 +1407,10 @@ returning condition unbounded the day it is added.
    condition exists for: it would either demand a reply no run may write, or wave through a finding
    no run ever saw.
 
-   **Unmet while rounds remain: return to Phase 3** with exactly those threads, instead of ending
-   the run. That return **consumes a round** under "Round accounting", precisely as a Phase-3
-   restart does – the round counter is the only thing that bounds a reviewer which keeps publishing.
+   **Unmet while rounds remain: return to Phase 3** with exactly the threads this condition did
+   not clear – the unassessed ones, and never a thread "The set-aside confirmation" cleared –
+   instead of ending the run. That return **consumes a round** under "Round accounting", precisely
+   as a Phase-3 restart does – the round counter is the only thing that bounds a reviewer which keeps publishing.
    Once the counter has reached `mergeGate.maxRounds`, the run ends with a report naming every
    unassessed thread; never with a merge.
 
@@ -1369,8 +1429,9 @@ returning condition unbounded the day it is added.
    here.
 
 10. **every changes-requested review of a configured reviewer at `VERIFIED_HEAD_SHA` has been
-    assessed by this run** – implemented, deliberately deferred, or rejected, per finding. Take the
-    submitted reviews of the same fresh read. **A review the two filters below cannot decide is
+    assessed by this run, and every assessment that clears it is one this gate may act on** – per
+    finding: implemented, deliberately deferred, or rejected. Take the submitted reviews of the same
+    fresh read. **A review the two filters below cannot decide is
     retained, never dropped** – a review whose author cannot be established and a review with no
     establishable head binding stay in the set and reach the fail-closed clause at the end of this
     condition. That clause sits here, before the filters, because this is the order an executor
@@ -1380,22 +1441,67 @@ returning condition unbounded the day it is added.
     under "Matching a configured login", resolve each reviewer's **latest** review for
     `VERIFIED_HEAD_SHA` through the supersession rule of the loaded "Automatic reviewer state", and
     match a changes-requested verdict against the per-finding assessment record this run kept in
-    Phase 3. A verdict whose every finding this run assessed does **not** block, and neither does a
-    verdict from a reviewer with no findings to assess beyond the review itself once that review has
-    an outcome. An **empty** `mergeGate.bots` list produces no such review and satisfies this
+    Phase 3. A verdict whose every finding this run **cleared** under the rules below does **not**
+    block, and neither does a verdict from a reviewer with no findings to assess beyond the review
+    itself once that review has an outcome. An **empty** `mergeGate.bots` list produces no such review and satisfies this
     condition, exactly as it satisfies conditions 5 and 7.
+
+    **Only `implemented` clears a finding whose outcome came from a delegated return.** `rejected`,
+    `deferred` and `unassessed` are **fail-closed** here: each blocks, `rejected` and `deferred` are
+    cleared at their confirmed head by "The set-aside confirmation" below and by nothing else, and
+    `unassessed` is not clearable that way at all. The ground is what the value is. An outcome from
+    a delegated return was produced by a run that **read the reviewer's own text** and classified
+    it, so it is evidence of what that run concluded and never evidence that the finding was
+    disposed of. The receiver rule of "Returned outcome record" authenticates the **key** – that the
+    identifier is one this run minted and recorded before delegating – and says nothing whatever
+    about the **value**. And the two merge-enabling values leave no trace on the forge to check them
+    against, by design: this gate writes no reply and no resolution for a finding it did not
+    implement (see "A deferred finding gets no thread reply"), and a commit message carries no
+    finding reference. Verification cannot stand in for trust here, so the gate stops deciding a
+    merge on the strength of one such value.
+
+    **`implemented` counts only together with an observed head movement in that round.** The head
+    SHA read after the round must differ from the one read before it. The corroboration is coarse
+    and is stated as what it is: it proves that a **commit** existed in that round, never that the
+    commit addressed this finding, and one real commit satisfies it for every finding of the same
+    round. It closes the "claim implemented, change nothing" path and nothing beyond it. Without an
+    observed head movement the finding is fail-closed exactly as `rejected` is, and the confirmation
+    does **not** reach it: that question is about a finding the delegated run deliberately set
+    aside, never about one it claimed to have fixed.
 
     **The verdict itself is never the blocker.** This gate never approves and never requests changes,
     and it must not begin enforcing a verdict it is forbidden to write: what blocks is the **absence
-    of an outcome** about the reviewer's findings, not the reviewer's disagreement. A pull request
-    whose changes-requested findings this run read and deliberately rejected merges, and the rejection
-    is reported in Phase 6 rather than argued with here.
+    of a disposal this gate may act on**, not the reviewer's disagreement. This is what replaces the
+    retired sentence stating that a deliberately rejected finding merges: a pull request whose
+    changes-requested findings the delegated run rejected merges **only once the operator has
+    confirmed them at the review itself**, and it is that confirmation, never the classification,
+    which authorizes the merge. The rejection is still reported in Phase 6 rather than argued with
+    here.
 
     **A review bound to an earlier head does not block on its own.** The head binding is what makes
     this condition decidable, and a verdict submitted against a commit that is no longer the verified
     head says nothing about the head being merged. What keeps the reviewer in the loop for a head that
     moved is condition 5, not this one: a new head resets every reviewer's state, and the run may not
     merge until each configured reviewer has run for it.
+
+    **Condition 6 states the opposite four conditions away, and the difference is the surface.**
+    Condition 6's "a finding this run deferred or rejected does **not** block the merge" stays
+    exactly true where it stands, because it is about a **reviewer thread** whose deferral or
+    rejection this gate may write nowhere – requiring an answer there would be a condition no run
+    could satisfy. This condition is about a finding carried in a **review body**, where those same
+    two values are what a merge would otherwise be decided on. The two are never folded together,
+    and folding them is the failure mode condition 7 already defends against: one direction demands
+    a reply nothing may write, the other merges on a value nobody corroborated.
+
+    **The rule is scoped to a delegated return, and the two gate-internal writers are untouched by
+    it.** "Returned outcome record" names them, and neither has a delegated return to distrust: a
+    review with an **empty body** is assessed by this gate itself – there is no finding text, so
+    there is nothing to delegate and nothing a reviewer's text could steer – and a finding assessed
+    under an **active human-comment guard** is this gate's own decision, taken in a phase that
+    delegates nothing. Each clears this condition with the outcome the gate itself wrote, whatever
+    that outcome is. Without this scoping the empty-bodied review would deadlock outright: it has no
+    finding to implement, so under a rule reading "only `implemented` clears" no round could ever
+    clear it.
 
     **Fail closed.** Wherever the fresh read cannot establish the latest changes-requested review, the
     verdict counts as **unassessed** and blocks: a review whose author cannot be established, a review
@@ -1425,13 +1531,140 @@ returning condition unbounded the day it is added.
     outcome record" carries that fourth value for exactly this case – a delegated implementation that
     failed, and an item deselected at the delegated run's approval gate – and neither is a judgment
     anybody reached about the finding. It therefore blocks here precisely as a finding with no
-    returned outcome at all would, and the round it came back in still counts as successful.
+    returned outcome at all would, and the round it came back in still counts as successful. The
+    confirmation below does not reach it either: an operator can confirm a judgment they are able to
+    go and read, and here there is none.
 
-    **Unmet while rounds remain: return to Phase 3** with exactly those reviews and their unassessed
-    findings, instead of ending the run. That return **consumes a round** under "Round accounting",
+    **Unmet while rounds remain: return to Phase 3** with exactly those reviews and the findings
+    this condition did not clear – the unassessed ones, and any `implemented` without an observed
+    head movement – instead of ending the run. That return **consumes a round** under "Round accounting",
     and where condition 7 is unmet in the same evaluation the two travel together in **one** return
     consuming **one** round. Once the counter has reached `mergeGate.maxRounds`, the run ends with a
     report naming every unassessed verdict; never with a merge.
+
+    **The confirmation path is exempt from that return.** A confirmation that is **declined**, that
+    goes unanswered, or that cannot be posed at all ends the run with a report and sends nothing
+    back into Phase 3, however many rounds remain. A decline is an operator's decision about a
+    finding that was already assessed: no further round changes the input, and every re-delegation
+    is one more chance for the reviewer's own text to steer the next classification towards
+    `implemented`. That ending holds whatever else the same evaluation left unmet: a declined or
+    unanswered confirmation ends the run even where an unassessed item would otherwise have
+    returned. Only a **confirmed** one leaves the return standing, and "A mixed evaluation still
+    poses it" states what then travels in it.
+
+#### The set-aside confirmation
+
+Conditions 7 and 10 both fail closed on a `deferred` or `rejected` outcome from a delegated return,
+and **one** question clears both. It is posed at most **once per Phase-4 evaluation**, covering every
+affected finding and thread of both conditions together – the two conditions already travel in one
+return consuming one round, and they ask in one question for the same reason.
+
+- **What it names, and where the operator reads the rest.** Per affected item: the review id, the
+  author login, the review URL and the returned outcome; for a thread, its thread ID, the comment
+  URL recorded for it before the delegation, and the same outcome. Where a thread's record carries
+  no URL because the provider published none, say that rather than presenting the thread ID as a
+  link. Every one of those values comes
+  from the **manifest and this run's own record**, never from the review body. List them in chat immediately before the question – the question's own text
+  is fixed and carries no per-round data. The question's job is to send the operator to the review,
+  not to summarize it: an excerpt would carry attacker-influenceable text into the very prompt that
+  exists to resist it. Say that the findings are readable at that URL and quote none of them.
+- **What it clears.** `rejected` and `deferred`, at the head they were confirmed at, on both
+  conditions. **Never**
+  `unassessed`: a judgment the operator can go and read and no judgment at all are different things,
+  and confirming the second waves through a finding nobody read. An `unassessed` item keeps
+  returning into Phase 3 exactly as it does today.
+- **A mixed evaluation still poses it, and the return still happens.** One Phase-4 evaluation can
+  hold set-aside items and returning items at once – an `unassessed` thread or verdict, or an
+  `implemented` without the observed head movement. Pose the question anyway: it clears the
+  set-aside items at the current head, and the returning items travel into Phase 3 in the **one** return
+  conditions 7 and 10 already share, consuming **one** round. Nothing is stranded outside both
+  branches, and an item the operator already confirmed is not put to them a second time in the next
+  round.
+- **So the confirmation is sometimes posed in a round that will not merge**, and that is the
+  intended trade rather than an oversight. Withholding it until no returning item remains is what
+  strands the set-aside item: the confirmation would be suppressed and the return excludes it, so it
+  sits in neither branch and every following round rediscovers it unchanged until the round budget
+  runs out. Asking in a round that cannot merge costs one question and carries its answer forward;
+  not asking costs the merge.
+- **A decline, or no answer, ends the run** with a report naming every listed item, and never
+  returns into Phase 3 – see "The confirmation path is exempt from that return" in condition 10.
+  That holds in a mixed evaluation too: the decline ends the run instead of returning the items the
+  bullet above would otherwise have sent back.
+- **A non-interactive delegated run cannot pose it, so it blocks and reports.** Take the
+  `prReviewsRead` shape of Phase 0 step 2 – report the affected findings and end the run, never
+  merge – and deliberately **not** the completion-gate shape, which degrades to `report` and
+  continues. They are different endings, and copying the wrong one changes how the run finishes.
+- **Not posed at all where the resolved completion mode is not `merge`.** Condition 1 is unmet in a
+  report-mode run, so no answer could authorize a merge; the report names the affected findings and
+  threads instead.
+- **The answer is recorded against the item's durable identity, and every later evaluation consumes
+  it.** A `Confirm` records, per item the question listed, that item's **durable key** – the review
+  id plus a finding ordinal where the review carries several findings, the forge thread ID for a
+  thread item: the two durable keys the "Delegation contract" defines, and the same keys Phase 3
+  step 5 already writes its per-finding outcome under. **Never the per-message identifier**: that one
+  is minted afresh for every delegation, so the next round's identifier for the same finding matches
+  nothing and the answer would be lost at the moment it is needed. Every later Phase-4 evaluation
+  reads that record **before** it composes the question: an item whose durable key the record holds
+  clears conditions 7 and 10 exactly as it did in the evaluation that confirmed it, is left off the
+  list, and is not put to the operator again. Where the record already covers every set-aside item,
+  the evaluation poses no question and those items are simply clear – a **covered** evaluation, which
+  continues on its remaining conditions and is never the "cannot be posed at all" ending two bullets
+  down. This is the mechanism behind "not put to them a second time" above; without it the
+  confirmation clears an item for one round only, the next fresh read finds the same thread
+  unresolved and the same verdict standing, and the gate poses the identical question every round
+  until the budget is spent.
+- **A confirmed item is not delegated again, so no later round overwrites its outcome.** Phase 3
+  step 5 excludes it from the item set it hands over, exactly as conditions 7 and 10 exclude it from
+  the return that reached Phase 3. Without that exclusion step 5 would re-derive the full set from
+  the fresh read – a `deferred` thread stays unresolved by design, and a review body still carries
+  its findings – hand a confirmed item over once more, and write a fresh outcome under the very key
+  the record holds. An item that came back `unassessed` that time would then be both cleared and
+  unclearable, and every re-delegation is one more chance for the reviewer's own text to steer the
+  next classification, which is the exact cost the Stop option names.
+- **A head movement expires every confirmation, and no second head SHA is recorded for it.** The
+  record is bound to `VERIFIED_HEAD_SHA` and to nothing else, so Phase 2's statement that nothing
+  else in this workflow records a head SHA for later use stays true. Discard the whole record
+  wherever that value is discarded – a Phase-3 restart does exactly that (Phase 3 step 6) – and
+  consume nothing from it in an evaluation whose freshly read head does not equal it, which is
+  condition 8's own comparison. Where either side is unprovable, discard rather than consume: an
+  unprovable head is not the head the operator looked at. This is not a special rule for this
+  question but the one this file already lives by – a new commit invalidates every reviewer's
+  observed state too (see "Automatic reviewer state"), because the reviewer runs again and its
+  findings are re-derived against the new head. Carrying an answer across that would clear a finding
+  on the strength of a look the operator took at a head that no longer exists – and, for a thread
+  that survives a head movement under the same forge ID, one the reviewer may have written into
+  again since.
+- **What the head binding does not catch, stated rather than left to be discovered.** A reviewer that
+  **rewrites its review body in place** at an unchanged head keeps its review id and its submission
+  time, so a confirmed ordinal can name a different finding than the one the operator read – the same
+  blindness "A bot edits its review body in place" already records for the per-finding assessment
+  record, which this record is keyed the same way as. A reviewer that adds a comment to a confirmed
+  thread at an unchanged head keeps that thread's forge ID likewise. Neither is created by carrying
+  the answer forward; both are widened by it, from an assessment nobody re-derived to an
+  authorization nobody re-gave.
+- **Only a `Confirm` writes that record, and only where the question was posed.** A decline, an
+  unanswered question, and a question that cannot be posed at all each end the run, so none of them
+  leaves anything for a later evaluation to consume; a non-interactive delegated run never poses the
+  question, holds no record, and is therefore blocked exactly as it is today. The two gate-internal
+  writers of "Returned outcome record" – an empty-bodied review, and a finding assessed under an
+  active human-comment guard – stay outside the record for the same reason they stay outside the
+  question: neither has a delegated return, so neither ever reaches the confirmation.
+- **It is a per-round fact, never an outcome.** Record each round's question in the wisdom file and
+  report it in Phase 6 as its own entry: what it listed and how the operator answered. What becomes
+  durable is the **record that an item was confirmed**, never a fifth value – the closed vocabulary
+  of "Returned outcome record" keeps its four values, and a confirmed finding still reads `rejected`
+  or `deferred`.
+
+```ask
+when: condition 7 or condition 10 is unmet for a `deferred` or `rejected` outcome from a delegated return, whatever else the same evaluation left unmet, the resolved completion mode is `merge`, and the run is gated
+header: Findings
+question: The delegated run set the reviewer findings listed above aside instead of implementing them. May this run treat them as disposed of and merge once every other precondition holds?
+options:
+  - label: Confirm
+    description: Treat every listed rejected or deferred item as disposed of at the current head and continue the gate; read them at the review URL first, because this run quotes no reviewer text
+  - label: Stop
+    description: End the run with a report naming every listed item; no further round is delegated, because a re-delegation hands the same reviewer text to another classification
+```
 
 **Report every unresolved thread that matched no configured login.** When `mergeGate.bots` is
 non-empty and **at least one** unresolved thread of the same fresh read matched no configured login
@@ -1592,6 +1825,15 @@ ends this phase without heuristic tracker access.
      the thing a reader most needs to see, and suppressing it behind an earlier failure is how it
      stays invisible. Where a verdict could not be established at all, say so and name which of the
      four fail-closed causes applied;
+   - **the set-aside confirmation of every round that posed one** – what it covered, per item, and
+     how the operator answered; every item a later round cleared on the durable confirmation record
+     an earlier round wrote, named beside the round whose answer authorized it; and, where a round
+     did not pose one, that it was skipped in a
+     report-mode run, could not be posed in a non-interactive one, or had nothing left to ask
+     because the record already covered every set-aside item. It is reported beside those
+     outcomes and never folded into them: a confirmed finding still reads `rejected` or `deferred`,
+     and without this entry the report would show a merged pull request whose findings all read
+     `rejected` with nothing anywhere naming who authorized that;
    - **every changes-requested review that matched no configured login**, when Phase 4 carried that
      case here, each with the author it carries, its review id and its URL – this one blocked nothing
      and nothing is written back onto the review, so this summary is where it reaches the user;
@@ -1777,7 +2019,28 @@ ends this phase without heuristic tracker access.
   count, which is what keeps a routine "looks good" from holding a guard nothing ever clears.
 - **A changes-requested review with an empty body:** it still has to be assessed explicitly. The
   **review** is the unit of condition 10, not the finding, so an empty body means there is no finding
-  text to delegate – never that there is nothing to reach an outcome about.
+  text to delegate – never that there is nothing to reach an outcome about. The gate assesses it
+  itself, so condition 10's delegated-return rule does not reach it and it cannot deadlock under a
+  rule on which only `implemented` clears.
+- **A reviewer that published nothing but nitpicks:** the common case, and the reason the
+  confirmation exists. The delegated run rejects or defers them, condition 10 fails closed on every
+  one, and the operator answers **one** question for the whole round – never one per finding.
+- **The operator declines the confirmation, or nobody answers it:** the run ends with a report
+  naming every listed finding and thread. It does not return into Phase 3, whatever the round
+  counter says.
+- **A later Phase-4 evaluation of the same run meets an item already confirmed:** the answer is
+  consumed from the durable confirmation record, so that item clears conditions 7 and 10 without
+  being put to the operator a second time, is excluded from the next Phase-3 delegation, and leaves
+  a covered evaluation with no question to pose. A head movement between the two evaluations
+  discards the record with `VERIFIED_HEAD_SHA`, and the question is posed afresh at the new head.
+- **A set-aside finding in a `report`-mode run:** no confirmation is posed at all, because condition
+  1 is unmet and no answer could authorize a merge. The report names the findings instead.
+- **A set-aside finding in a non-interactive delegated run:** the question cannot be posed, so the
+  run blocks and reports – the `prReviewsRead` shape, which ends the run, and never the completion
+  gate's degradation to `report`.
+- **An item deselected at the delegated run's approval gate:** it comes back `unassessed`, so
+  condition 7 now blocks on it exactly as condition 10 does on an unassessed verdict, and the
+  confirmation cannot clear it. While rounds remain the run returns into Phase 3 with it.
 - **A dismissed changes-requested verdict:** cleared, and it blocks nothing. The two forges state a
   dismissal differently and the helper's neutral enum reconciles them, so a dismissal clears the
   verdict on Forgejo exactly as it does on GitHub – without that fold a dismissed Forgejo verdict
@@ -1944,6 +2207,13 @@ ends this phase without heuristic tracker access.
 - Ask the entry gate exactly once, at the start. A configured `mergeGate.completion` of `merge` or
   `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive
   delegation behaves as `report`.
+- Clear a `deferred` or `rejected` finding of conditions 7 and 10 only through "The set-aside
+  confirmation": at most one question per Phase-4 evaluation covering both conditions, never posed
+  where the resolved completion mode is not `merge`, and never applied to an `unassessed` item. A
+  decline, an unanswered question, and a non-interactive delegated run each end the run with a
+  report instead of returning into Phase 3.
+- Count an `implemented` body finding only where the head moved in that round. That proves a commit
+  existed, never that it addressed the finding, and one commit covers every finding of the round.
 - `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
   merge commit, the bot trigger for a bot that has **not started**, and the delegated
   `{{SKILL:iterate}}` rounds still run.
