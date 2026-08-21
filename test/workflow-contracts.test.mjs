@@ -132,10 +132,16 @@ function defaultCell(text, cell) {
   const lines = text.split('\n');
   const rowIndex = lines.findIndex((line) => line.startsWith('|') && rowCells(line)[0] === cell);
   assert.notEqual(rowIndex, -1, `missing table row: ${cell}`);
-  const header = lines
-    .slice(0, rowIndex)
-    .reverse()
-    .find((line) => line.startsWith('|') && rowCells(line).includes('Default'));
+  // Only the row's own table is searched. The upward scan stops at the first non-table line
+  // above the row, so a target table whose `Default` header was renamed fails loudly instead
+  // of silently borrowing the column index of an earlier table in the same slice and reporting
+  // some other table's cell as this row's default. A `|---|---|` separator row starts with `|`
+  // and keeps counting as part of the block.
+  const tableLines = [];
+  for (let index = rowIndex - 1; index >= 0 && lines[index].startsWith('|'); index -= 1) {
+    tableLines.push(lines[index]);
+  }
+  const header = tableLines.find((line) => rowCells(line).includes('Default'));
   assert.ok(header, `missing a Default column header above the table row: ${cell}`);
   return rowCells(lines[rowIndex])[rowCells(header).indexOf('Default')];
 }
@@ -3991,7 +3997,7 @@ test('the conflict-resolution mode gate is resolved before any write and degrade
   );
   assert.match(
     flatStep,
-    near('`mergeGate.maxRounds`', 'bounds', 120),
+    near('`mergeGate\\.maxRounds`', 'bounds', 120),
     'how often the run may come back here must stay bounded by `mergeGate.maxRounds`',
   );
   assert.doesNotMatch(
@@ -4055,10 +4061,13 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
   // The dedicated "Block `mergeGate`" table carries the untraded key/default pairs. Read from the
   // Default column, not from the row: this table's Values column lists every accepted value, so a
   // whole-row match on `` `auto` `` is already satisfied by `off` / `ask` / `auto` and survives a
-  // Default column flipped to `off`. Same default as setup.md's block-9 table and the shared
-  // configuration fragment — the three places are read by three different audiences, and a
-  // divergence here is a project running a gate that resolves conflicts while its documentation
-  // says it does not.
+  // Default column flipped to `off`. The same defaults live in setup.md's block-9 table and in
+  // the shared configuration fragment, three places read by three different audiences, and a
+  // divergence is a project running a gate that resolves conflicts while its documentation says
+  // it does not. Only `completion`, `conflictResolution`, `requireAllChecks` and `bots` are
+  // actually pinned in all three: the fragment's own test asserts those four Default cells and
+  // no others, so `checkWaitMinutes`, `maxRounds` and `botWaitMinutes` are pinned here and in
+  // setup.md while the fragment carries their values with nothing asserting them.
   const block = section(docs, '## Block `mergeGate`', '\n## ');
   for (const [key, value] of [
     ['completion', '`ask`'],
