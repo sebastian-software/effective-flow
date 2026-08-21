@@ -337,6 +337,13 @@ test('the session-title contract ships in the router and stays out of the budget
     contract,
     near('whitespace-free run of letters, digits, `#` and `-`', 'at most 16 characters', 200),
   );
+
+  // The token grammar excludes `+`, while the several-issues form appends `+N`. Without the
+  // "before any `+N`" carve-out the two rules contradict each other and a multi-issue title
+  // loses its reference entirely, because a non-matching candidate is omitted rather than
+  // trimmed. A review bot caught exactly that on the delivering pull request, so pin the
+  // carve-out rather than trusting the two clauses to stay compatible by accident.
+  assert.match(contract, /A reference token, before any `\+N`, is a whitespace-free run/);
   assert.match(
     contract,
     near('non-matching candidate is omitted', 'never trimmed or sanitized', 160),

@@ -420,6 +420,16 @@ tested as, net lines.
 
 **External review report:** `.effective-flow/review/review-report-2026-08-21-plan-reference-first-session-titles.md`
 
+### Bot review on the delivering pull request, 2026-08-21
+
+Greptile reviewed pull request #371 and reported one P1 finding, which was correct and is fixed on
+the same branch as a follow-up commit. The reference-token grammar excluded `+`, while the
+several-issues rule appends `+N` to the first issue's reference — and a candidate failing the
+grammar is omitted rather than trimmed. A multi-issue title would therefore have lost its reference
+entirely, which is the opposite of this change's purpose. The grammar now applies to the token
+`before any \`+N\``, and the carve-out is pinned by a mutation-proved assertion so the two clauses
+cannot drift back apart.
+
 ## Open points
 
 - No open points.

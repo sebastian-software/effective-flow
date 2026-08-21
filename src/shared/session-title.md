@@ -43,10 +43,10 @@ subject, propose a better title — once.
   issue or pull request `#<number>`, a tracker issue's tool-native id such as `SEB-123`, or a
   finding `R-XXXXXXX` absent a tracker reference; several issues, the first one's reference plus
   `+N`; anything else, a legacy plan number included, none. Exactly one segment, tracker reference
-  over finding ID. A reference token is a whitespace-free run of letters, digits, `#` and `-`, at
-  most 16 characters; a non-matching candidate is omitted, never trimmed or sanitized into shape.
-  Over the cap cut the subject, then the `<tool>` segment, never the reference; a bare reference
-  over it yields none. No workflow-name prefix, no echo of the invocation, no AI attribution.
+  over finding ID. A reference token, before any `+N`, is a whitespace-free run of letters, digits,
+  `#` and `-`, at most 16 characters; a non-matching candidate is omitted, never trimmed or
+  sanitized into shape. Over the cap cut the subject, then the `<tool>` segment, never the
+  reference; a bare reference over it yields none. No workflow-name prefix, no echo of the invocation, no AI attribution.
 - **One line, never blocking:** output `**Suggested session title:** <title>` and nothing else — no
   explanation, no follow-up question, and never in place of the run's own output. Wherever it is
   emitted at all, it is printed in the run's completion report, by which time the reference is
