@@ -277,7 +277,7 @@ test('the session-title contract ships in the router and stays out of the budget
 
   // Load-bearing clauses: only the explicitly established app-native path may
   // target the caller, arbitrary cross-session renames stay forbidden, and the
-  // title remains a single subject-first emission. This is an instruction
+  // title stays a reference-first emission decided once. This is an instruction
   // contract; it does not claim to execute the Desktop operation.
   const contract = prose(fragment);
   assert.match(contract, near('app-native current-task path', 'takes no task id', 200));
@@ -287,6 +287,103 @@ test('the session-title contract ships in the router and stays out of the budget
   assert.match(contract, near('later automatic title', 'replace one the user set manually', 200));
   assert.match(contract, /a delegate never repeats a subject its parent already proposed/);
   assert.match(contract, /at most 60 characters/);
+
+  // The reference becomes the leading segment, and a run holding none keeps the
+  // previous title byte for byte - that fallback is the majority case, so a
+  // regression there would be the least visible one this bullet can produce.
+  assert.match(contract, /`<Reference> · <Subject> · <tool>`/);
+  assert.match(contract, near('no reference leaves', '`<Subject> · <tool>`', 80));
+
+  // The clause this change inverts. Left standing beside the new shape it would
+  // forbid exactly what the shape prescribes, so its absence is the pin.
+  assert.doesNotMatch(contract, /never in front/);
+
+  // The four reference sources, each rendered as its source renders it, plus the
+  // one candidate deliberately excluded: a legacy plan number resolves nowhere
+  // and is therefore not a lookup handle.
+  assert.match(contract, near('forge issue or pull request', '`#<number>`', 80));
+  assert.match(contract, near('tool-native id such as', '`SEB-123`', 80));
+  assert.match(contract, near('finding `R-XXXXXXX`', 'absent a tracker reference', 120));
+  assert.match(contract, near('several issues', '`\\+N`', 120));
+  // Pinned as one clause rather than as two loose tokens in a window: `legacy plan
+  // number` near `none` also matches the exact inversion this guards against - a
+  // rewrite like "a legacy plan number where none of the above is present" would
+  // make the plan number a valid reference and still satisfy a loose pin.
+  assert.match(contract, near('a legacy plan number included', 'none', 20));
+
+  // A remote review finding carries a tracker reference and a finding ID at the
+  // same time; only the tracker reference resolves in a forge or tracker UI, so
+  // one segment wins rather than both being rendered.
+  assert.match(contract, near('Exactly one segment', 'tracker reference over finding ID', 120));
+
+  // Truncation is pinned as a sequence, not as three separate mentions: the
+  // whole reason it sits in the contract is that two hosts must not cut the same
+  // over-long title differently.
+  ordered(contract, 'cut the subject', '`<tool>` segment', 'never the reference');
+
+  // The one case where reference-first yields no title at all: a bare reference
+  // already over the cap. Without this the precedence above has no terminating
+  // rule and a host is left to invent one.
+  assert.match(contract, near('a bare reference over it', 'yields none', 40));
+
+  // The token shape is stated generically so an unknown tracker is covered
+  // without enumerating trackers, and a candidate outside it is dropped rather
+  // than forced into shape - the butler refuses control characters outright, so
+  // sanitizing would only hide a malformed reference instead of omitting it.
+  // The allowed character class is part of the pin: without it a rewrite to
+  // "letters, digits and any punctuation" stays green and reopens exactly the
+  // under-specification the plan's deep review closed.
+  assert.match(
+    contract,
+    near('whitespace-free run of letters, digits, `#` and `-`', 'at most 16 characters', 200),
+  );
+  assert.match(
+    contract,
+    near('non-matching candidate is omitted', 'never trimmed or sanitized', 160),
+  );
+
+  // Late binding is what lets every late-applying path stay at one emission: the
+  // subject is fixed when it becomes known, the reference is read at the moment
+  // the title is actually used.
+  assert.match(contract, /the reference is resolved when the title is applied or emitted/);
+
+  // The bounded second emission must name the ChatGPT Desktop native call itself
+  // rather than a class of early-applying hosts, or a later host inherits it
+  // silently; and it stays gated on all three conditions together.
+  assert.match(contract, near('ChatGPT Desktop native call', 'emit once more per run', 160));
+  ordered(
+    contract,
+    'ChatGPT Desktop native call',
+    'carried no reference',
+    'one now exists',
+    'the resulting title differs',
+  );
+  // ordered() pins sequence but not distance, so the three gates would survive
+  // being scattered into separate bullets - where they read as three independent
+  // permissions rather than one conjunction. This binds them into one window.
+  assert.match(contract, near('carried no reference', 'the resulting title differs', 120));
+
+  // The suggestion line is printed in the completion report unconditionally. An
+  // earlier draft scoped it to "where no established rename path applies", which
+  // left ChatGPT Desktop with a failed capability printing an early,
+  // reference-less line while session-rename.md simultaneously claimed that line
+  // already carried the reference. Pinning only the completion-report wording
+  // would pass on that broken draft, so the qualifier is pinned absent too.
+  //
+  // The positive pin below carries the scope: `Wherever it is emitted at all` is
+  // the wording that makes the line unconditional. Pinning only the absence of
+  // the earlier draft's phrase would let any equivalent re-scoping - "only on
+  // hosts without a rename path", "unless a rename path applied the title" -
+  // restore the broken semantics with the suite green.
+  assert.match(
+    contract,
+    near('Wherever it is emitted at all', 'printed in the run.s completion report', 120),
+  );
+  assert.match(
+    contract,
+    near('printed in the run.s completion report', 'never earlier and never twice', 200),
+  );
+  assert.doesNotMatch(contract, /where no established rename path applies/i);
 
   // V6: the butler carve-out is what makes an unmandated session refuse. An
   // unmandated session declines a cross-session rename request on two grounds,
@@ -312,8 +409,25 @@ test('the session-title contract ships in the router and stays out of the budget
     'Only where sessions carry titles',
     'Only from work-subject tools',
     'Once, as soon as the subject exists',
-    'Subject first',
+    'Reference first',
     'One line, never blocking',
+  );
+});
+
+// The fragment is eagerly inlined into every session on all three build targets, so every
+// line it gains is paid once per session everywhere - which is why the plan turned the
+// former advisory maintainability note into a measurable cap. Base is `1dbf453` at 44
+// lines and the cap is +12 net, so 56 is the ceiling. Counted off the file rather than
+// shelled out to `git diff --numstat`, so the guard also holds in an exported tree that
+// carries no history, and so future growth fails loudly instead of accruing silently.
+test('the eagerly inlined session-title fragment stays inside its line budget', () => {
+  const lines = source('src/shared/session-title.md').trimEnd().split('\n').length;
+  assert.ok(
+    lines <= 56,
+    `src/shared/session-title.md is ${lines} lines, over its 56-line cap (44 at 1dbf453 plus 12 ` +
+      `net). This fragment is eagerly inlined into every session on all three build targets, so ` +
+      `every line is paid once per session everywhere - trim the fragment rather than raise the ` +
+      `cap. If the cap is being raised deliberately, restate the new baseline in this test.`,
   );
 });
 
@@ -425,6 +539,16 @@ test('the Desktop section requires one title-only current-task call and visible 
   assert.match(contract, /resolve or supply an id/);
   assert.match(contract, /target another task/);
   assert.match(contract, /retry with this or another title/);
+
+  // The retry ban above stays, and the one event that is not a retry is named beside
+  // it: a reference that only became available after a *successful* call. Without that
+  // carve-out an implementer reads the ban as forbidding the bounded second emission,
+  // and this fragment then contradicts the session-title contract it serves.
+  assert.match(
+    contract,
+    near('after a successful call is not the retry', 'licenses exactly one further call', 240),
+  );
+
   assert.match(contract, near('call succeeded', 'stay silent', 200));
   assert.match(contract, near('capability is absent or denied', 'Suggested session title', 400));
   assert.match(contract, near('call errors', 'Do not block', 400));
@@ -591,6 +715,21 @@ test('the Claude Code butler section carries its load-bearing clauses', () => {
   const fragment = source('src/shared/session-rename.md');
   const claudeSection = section(fragment, '### Claude Code: a mandated butler renames on request');
 
+  // Because the request is the run's last action, a reference produced during the run is
+  // already bound in the title it carries, so this path needs no second request.
+  //
+  // Sliced to the section's own prose, before its first `#### ` subheading. `section()`
+  // stops at the next `### `, and Claude Code is the last `###`-level section, so the
+  // default slice runs to EOF and swallows the degradation table's pre-existing
+  // "at most one request per run" sentence - against which a pin on this clause is
+  // vacuous and survives deleting the whole paragraph it claims to protect.
+  const claudeIntro = section(
+    fragment,
+    '### Claude Code: a mandated butler renames on request',
+    '\n#### ',
+  );
+  assert.match(prose(claudeIntro), near('needs no second request', 'stays at one per run', 120));
+
   // The pasteable mandate block: `{{SKILL:setup}}` prints this fenced block
   // verbatim for the user to paste, so losing the fence or the standing-mandate
   // opener would silently ship a broken paste target. The info string is a
@@ -637,6 +776,12 @@ test('the Claude Code butler section carries its load-bearing clauses', () => {
   // Every reply defect - absent, stale, malformed, refused - must fail open to
   // the suggestion line; none of them may produce silence.
   assert.match(prose(butlerDegradation), near('fails open', 'may produce silence', 300));
+
+  // The pre-existing closing sentence of the degradation subsection, pinned where
+  // it actually lives. It is the second half of the one-request-per-run guarantee
+  // the section intro states in its own words; both halves are pinned separately
+  // so neither can stand in for the other.
+  assert.match(prose(butlerDegradation), /at most one request per run/);
 
   // The single row that contradicts the fail-open rule above, and therefore the
   // one a later reader is likeliest to "fix" into printing a suggestion line
