@@ -39,6 +39,7 @@ a pure runtime directory and completely gitignored.
 | worktree.baseDir                          | .effective-flow/.worktrees |
 | tracker.mode                              | remote                     |
 | tracker.remoteToolOverride                | auto                       |
+| mergeGate.completion                      | merge                      |
 | mergeGate.bots                            | greptile-apps[bot]         |
 | mergeGate.bots.greptile-apps[bot].trigger | @greptileai                |
 | mergeGate.bots.greptile-apps[bot].check   | Greptile Review            |
