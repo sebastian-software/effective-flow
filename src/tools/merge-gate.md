@@ -500,7 +500,7 @@ building block. A missing line means the default.
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -964,7 +964,7 @@ checkout is the one step 1 provisioned – never a second one.
      This deliberately deviates from `mergeGate.completion`'s once-per-run entry gate: that question
      settles one fixed decision for the whole run, while each round's conflict is a **different**
      conflict against a base that moved again, so consent given for one is not consent for the next.
-     With the default `mergeGate.maxRounds: 3` a run may therefore pose it up to three times.
+     With the default `mergeGate.maxRounds: 10` a run may therefore pose it up to ten times.
    - **`ask` in a non-interactive delegated run:** the question cannot be posed, so it behaves as
      `off`, and the report names `mergeGate.conflictResolution: auto` as the setting that would
      authorize the resolution.
@@ -1017,8 +1017,9 @@ keeps publishing threads or verdicts would cycle between Phase 4 and Phase 3 wit
 returning conditions are unmet in the same evaluation, they do not return twice: the single return
 carries **every** unmet returning condition's items together – the unassessed threads and the
 unassessed verdicts in one Phase-3 round – and the counter increases by one. Counting them separately
-would spend two of the default three rounds on a pull request whose findings a single round can
-assess.
+would spend two rounds on a pull request whose findings a single round can assess, and would at
+worst halve, rounding down, how many genuine repair attempts `mergeGate.maxRounds` allows – at any
+configured value.
 
 Nothing resets the
 counter and nothing bypasses it, because a round never jumps backwards into itself: a bot round that

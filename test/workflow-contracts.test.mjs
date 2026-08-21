@@ -4018,7 +4018,7 @@ test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys 
     ['mergeGate.conflictResolution', '`auto`'],
     ['mergeGate.requireAllChecks', '`true`'],
     ['mergeGate.checkWaitMinutes', '`20`'],
-    ['mergeGate.maxRounds', '`3`'],
+    ['mergeGate.maxRounds', '`10`'],
     ['mergeGate.botWaitMinutes', '`10`'],
     ['mergeGate.bots', '`(empty)`'],
   ]) {
@@ -4065,7 +4065,7 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
     ['conflictResolution', '`auto`'],
     ['requireAllChecks', '`true`'],
     ['checkWaitMinutes', '`20`'],
-    ['maxRounds', '`3`'],
+    ['maxRounds', '`10`'],
     ['botWaitMinutes', '`10`'],
     ['bots', '`(empty)`'],
   ]) {
