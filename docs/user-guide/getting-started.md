@@ -156,12 +156,13 @@ says nothing once several runs are open at the same time. Two things help:
   - On **Claude Code**, the host refuses a self-rename outright – its session-management tools
     reject the calling session by design – so a run applies its title through a second session
     acting as a rename butler, which you set up once through `/effective-flow setup`. That request
-    goes out as the run's last action, so the one title it carries already includes the reference.
-    Without a butler, the run prints the suggestion. With one, the first rename request in a
-    session still prints it once while the rename happens in the background; a later request in
-    the same continuing session stays silent. If you rename that session manually, the butler
-    reads the retained title back and stops sending further rename requests, so Claude preserves
-    the title you chose.
+    goes out as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
+    a reference that only turns up later – a pull request the run itself opened – follows in a
+    further request, so the listed title still ends up carrying it. Without a butler, the run
+    prints the suggestion. With one, the first run in a session still prints it once while the
+    rename happens in the background; a later run in the same continuing session stays silent. If
+    you rename that session manually, the butler reads the retained title back and stops sending
+    further rename requests, so Claude preserves the title you chose.
   - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion – in
     the completion report, reference included – when its host carries titles. Other hosts without
     an established rename path behave the same; hosts without titled sessions stay silent.
