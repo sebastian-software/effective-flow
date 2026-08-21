@@ -1,6 +1,6 @@
 # effective-flow-test-writer
 
-Thin test adapter: routes browser test depth to effective-web, focused non-frontend test design to software-testing, and existing-check execution to software-validation.
+Thin test adapter: routes browser test depth to effective-web, focused non-frontend test design to effective-engineering, and existing-check execution to effective-delivery.
 
 ## Portable worker delegation
 
@@ -82,8 +82,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -119,9 +119,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 ## Recommended skills
 
-- `software-testing`
+- `effective-engineering`
 - `effective-web`
-- `software-validation`
+- `effective-delivery`
 
 ## Skill discovery
 
@@ -137,8 +137,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -150,7 +151,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -239,9 +240,9 @@ Do not invent commands, install a toolchain or dependency without approval, or c
 Route by the test's primary mission:
 
 - `effective-web` owns browser, component, visual, accessibility, and browser-E2E test depth.
-- `software-testing` owns focused non-frontend test design and implementation for services, APIs,
-  databases, async work, CLIs, Rust, regressions, and repository-native benchmarks.
-- `software-validation` owns discovery and execution when the assignment is only to run existing
+- `effective-engineering` owns focused non-frontend test design and implementation for services,
+  APIs, databases, async work, CLIs, Rust, regressions, and repository-native benchmarks.
+- `effective-delivery` owns discovery and execution when the assignment is only to run existing
   tests or quality commands, such as an Effective Flow before-baseline.
 
 The selected central skill is authoritative for test selection, evidence boundaries, fixtures,
@@ -258,12 +259,13 @@ and every skipped prerequisite. Do not add a test framework or dependency withou
 
 ## External dependency introduction
 
-`smart-dependency-updater` is the declared domain owner for selecting and introducing a new
-external package, crate, action, image, SDK, toolchain, or other versioned dependency. When the
-current task needs one, apply that skill through the current agent's skill discovery before
-changing a manifest, lockfile, workflow, or tool configuration. Pass it the missing capability,
-local runtime and compatibility constraints, allowed files, and Effective Flow's delivery
-boundary. Effective Flow retains scope approval, worktrees, commits, and delivery.
+`effective-delivery` is the declared domain owner for dependency research and upgrades, including
+selecting and introducing a new external package, crate, action, image, SDK, toolchain, or other
+versioned dependency. When the current task needs one, apply that skill through the current
+agent's skill discovery before changing a manifest, lockfile, workflow, or tool configuration.
+Pass it the missing capability, local runtime and compatibility constraints, allowed files, and
+Effective Flow's delivery boundary. Effective Flow retains scope approval, worktrees, commits, and
+delivery.
 
 If the owner is unavailable, use only this minimal fallback: verify the current stable release
 from official registry or upstream evidence; avoid prereleases unless explicitly required;

@@ -8,7 +8,7 @@ You are the orchestrator for the automated implementation of review report findi
 
 ## Goal
 
-This workflow reads an existing review report file from `.effective-flow/review/`, evaluates the developer notes per finding and delegates the implementation to the matching workflows. Findings that should deliberately not be implemented are handed by the workflow as decision candidates to the `decision-records` skill; only permanent decisions are documented as an ADR, non-permanent rejections stay in the report or tracker artifact.
+This workflow reads an existing review report file from `.effective-flow/review/`, evaluates the developer notes per finding and delegates the implementation to the matching workflows. Findings that should deliberately not be implemented are handed by the workflow as decision candidates to the `effective-product` skill; only permanent decisions are documented as an ADR, non-permanent rejections stay in the report or tracker artifact.
 
 If the resolved tracker target is the forge or an external tool, the workflow reads the findings from that issue tracker instead: it is passed an epic/container issue or a list of concrete finding issues, one PR is created per finding, and the container entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
@@ -84,8 +84,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -230,7 +230,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -346,39 +346,33 @@ resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are n
 touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
 established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Relationship to the `decision-records` skill (declared convention + fallback)
+### Relationship to the `effective-product` skill (declared convention + fallback)
 
 The living slug model described above is the **declared ADR convention of this
-repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
-decision is even ADR-worthy, lifecycle, supersession, index); its first
-operating rule is to **discover the existing repo convention and follow it**, rather than
+repo**. The host skill `effective-product` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its Decision Records route
+begins by **discovering the existing repository convention and following it**, rather than
 enforcing its own. This very building block is that convention — so the skill authors
 Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
 above), not in an immutably numbered one.
 
 The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+- **`effective-product` is authoritative when present.** The skill decides **whether** a finding
   is a durable decision and — if so — authors it according to the convention declared here.
   If the target repo declares its **own** ADR convention (different directory,
   title/status format, index), the skill follows that; the living slug model is only the
   default when the repo declares nothing else.
-- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+- **Minimal fallback when the skill is absent.** If `effective-product` is unavailable (not
   installed, `skills.enabled: false`, or disabled via `exclude`), the
   calling tool itself authors according to the **minimal fallback structure**
   below — **no** silent invention of a second convention.
 
-Earlier versions of this building block described the slug model as a **deliberate divergence**
-from an allegedly immutable/numbered `decision-records` skill. That premise is
-outdated: `decision-records` now supports a declared living/mutable model (opt-in)
-and follows the repo convention anyway. The living slug model is therefore no longer a
-divergence but the declared convention the skill follows.
-
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
-convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
-`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
+convention in the target repo (the skill follows it) or toggles `effective-product` deliberately
+via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimal fallback structure (only without `decision-records`)
+### Minimal fallback structure (only without `effective-product`)
 
 A short core structure so that a calling tool can record a rejected decision as a living
 slug ADR even without the skill — **not** a second full ADR handbook. Location
@@ -431,7 +425,7 @@ an ADR.
 
 ## Recommended skills
 
-- `decision-records`
+- `effective-product`
 
 ## Task tracking in detail
 
@@ -444,7 +438,7 @@ Right at the start of Phase 1 (after a successful report classification), create
 1. **Phase-level tasks** for each workflow phase, in order:
    - "Phase 1: Read and validate the report"
    - "Phase 2: Determine commit and stash strategy"
-   - "Phase 3: Hand rejected findings to decision-records"
+   - "Phase 3: Hand rejected findings to effective-product"
    - "Phase 4: Pre-analysis and parallel delegation"
    - "Phase 5: Update the report"
    - "Phase 6: Stash cleanup"
@@ -837,7 +831,7 @@ First determine the tracker target via the "apply-source detection" (report file
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
    - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report, because the local report and the issue would otherwise be implemented twice. Collect these findings with their issue numbers for the handover in step 9; the local flow never processes them silently. If a note is present but its issue number is unreadable or ambiguous, ask instead of guessing, and do not treat the finding as implementable in the meantime.
-   - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
+   - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `effective-product` as a decision candidate (ADR only for a permanent decision)
    - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
 8. Give the user an overview:
@@ -849,7 +843,7 @@ First determine the tracker target via the "apply-source detection" (report file
 | Status | Count |
 |---|---|
 | To implement | X |
-| Do not implement (→ decision-records) | Y |
+| Do not implement (→ effective-product) | Y |
 | Already implemented | Z |
 | Already published (→ issue) | P |
 | Total | N |
@@ -899,9 +893,9 @@ Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `disc
 
 The detailed mechanics of the committing strategies — **Individually** (git commit mutex) and **Individually with worktrees** (worktree isolation including cherry-pick conflict assessment) — are in the internal sub-file `tools/apply-review-commit-mechanics.md`. Read it once the strategy is fixed in Phase 2 and commits are created; with **No commits** it is omitted. The later phases refer to this sub-file for the detailed rules.
 
-### Phase 3: Rejected findings → decision candidate (delegation to `decision-records`)
+### Phase 3: Rejected findings → decision candidate (delegation to `effective-product`)
 
-The ADR authoring is owned by the host skill `decision-records` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Firmo keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
+The ADR authoring is owned by the host skill `effective-product` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index — one branch of the broader product-decision scope that skill carries). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Firmo keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
 
 First survey the available skills:
 
@@ -919,8 +913,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -932,7 +927,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -963,9 +958,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
 
 1. **Form the decision candidate.** From the finding and the developer note, summarize a candidate: a descriptive title, context (report filename + finding ID or issue/epic number), the rejection rationale (full note/`wontfix` text) and a traceable **backlink** to the source finding.
-2. **Delegate to `decision-records`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.
-3. **Non-permanent rejection.** If `decision-records` classifies the candidate as pure delivery history without permanent effect (no ADR justified), **no** ADR is forced — the rejection stays documented in the review report or (remote mode) on the issue/epic (see Phase 5).
-4. **Minimal fallback (skill missing).** If `decision-records` is unavailable (not installed, `skills.enabled: false` or disabled via `exclude`), this workflow authors the permanent decision itself per the **minimal fallback structure** from `adr-convention.md` (living slug ADR under the detected ADR directory, default `docs/adr/<slug>.md`; update an existing thematically matching ADR in place, reading the file fresh first). **Do not** invent a second convention.
+2. **Delegate to `effective-product`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.
+3. **Non-permanent rejection.** If `effective-product` classifies the candidate as pure delivery history without permanent effect (no ADR justified), **no** ADR is forced — the rejection stays documented in the review report or (remote mode) on the issue/epic (see Phase 5).
+4. **Minimal fallback (skill missing).** If `effective-product` is unavailable (not installed, `skills.enabled: false` or disabled via `exclude`), this workflow authors the permanent decision itself per the **minimal fallback structure** from `adr-convention.md` (living slug ADR under the detected ADR directory, default `docs/adr/<slug>.md`; update an existing thematically matching ADR in place, reading the file fresh first). **Do not** invent a second convention.
 5. Give the user a status update about the created or updated records and reference each by slug, e.g. `(ADR: <slug>)`; name the rejections classified as non-permanent separately.
 
 ### Phase 4: Pre-analysis and parallel delegation
@@ -1088,7 +1083,7 @@ Example (across actions) with five findings over multiple actions:
 2. Append to each successfully implemented finding as the last entry in the preserved report
    language: `✅ Implemented on YYYY-MM-DD via Effective Flow Apply-Review` or
    `✅ Umgesetzt am YYYY-MM-DD über Effective Flow Apply-Review`.
-3. Append to each rejected finding as the last entry — depending on the classification by `decision-records`:
+3. Append to each rejected finding as the last entry — depending on the classification by `effective-product`:
    - permanent decision with ADR: use matching English/German prose and retain `(ADR: <slug>)`
    - non-permanent rejection without ADR: use matching English/German prose; IDs and references
      remain stable

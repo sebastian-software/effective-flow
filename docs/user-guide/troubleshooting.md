@@ -32,9 +32,11 @@ run, so you find out before implementation instead of at the delivery point.
 
 The Forgejo merge-gate operations do **not** raise that floor. They ride on `tea api`, which landed
 in v0.12.0, and the flag they need on top of it (`--include`) is probed rather than versioned: a
-`tea` without it reports `pr-status-read`, `pr-merge` and `viewer-read` as
+`tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge` and `viewer-read` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
-every run.
+every run. Without `pr-reviews-read` the merge gate cannot establish a reviewer's changes-requested
+verdict, so it reports that and asks once instead of merging – and never merges at all in a
+non-interactive run.
 
 ## The external tracker connection could not be resolved
 
@@ -102,7 +104,9 @@ linked issue is freshly observed terminal.
 ## Worktree conflicts and uncommitted changes
 
 By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not
-touch your current checkout in the process. Two situations still lead to a
+touch your current checkout in the process. The one file it may remove there is the redundant,
+still untracked copy of a plan file it has archived, and only once the archived state is safely in
+the delivery branch and that copy has not changed in the meantime. Two situations still lead to a
 follow-up question instead of an automatic continuation:
 
 - **Uncommitted changes in the main checkout**, when delivery is to happen without a worktree

@@ -82,8 +82,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -116,6 +116,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+**Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent.
 
@@ -282,7 +284,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -395,14 +397,12 @@ Rules:
 
 ## Recommended skills
 
-- `codebase-improvement`
-- `port-codebases`
-- `pr-review`
+- `effective-delivery`
 
 ## Delegation contract: generic audit reasoning
 
-The central skill `codebase-improvement` is the **declared owner** of the generic audit
-reasoning (classification `route-when-relevant`, see
+The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
+(classification `delegate`, see
 [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
@@ -431,21 +431,24 @@ the persistence, the baseline, and the delivery are owned exclusively by this to
 two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
-`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
-(architecture reasoning), `port-codebases` (cross-language/runtime migration),
-`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
-consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+`effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
+with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
-installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
-tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+Cross-language or runtime migration and dependency updates are **not** special branches any more:
+`effective-delivery` owns them itself, so the default owner above already covers them and there is
+nothing to re-route.
+
+**Minimal fallback (skill missing).** If `effective-delivery` is not available (not installed,
+`skills.enabled: false`, or disabled via `exclude`), the short core guidance in this tool's
+"Minimal fallback without skill" section applies. It keeps the workflow functional but
 holds **no** second full audit handbook on hand – full depth comes only with the skill.
 
 `refactor.md` carries more inline reasoning than `effective-flow review`; the delegable part is
 the **gap analysis and plan validation** in Phase 1 (root cause, complexity/over-engineering,
-scope, risk, refactor-plan quality). The cross-language/runtime migration branch routes
-further to `port-codebases`. Baseline, behavior invariance, reports and delivery remain
-Effective Flow contract.
+scope, risk, refactor-plan quality). The cross-language/runtime migration branch stays with the
+same owner, whose porting guidance covers it. Baseline, behavior invariance, reports and delivery
+remain Effective Flow contract.
 
 ## Project conventions
 
@@ -1000,7 +1003,8 @@ At the start of the actual implementation work, determine the effective mode:
 - If the worktree is disabled via config (`worktree.enabled: false`), give a brief
   note that the (default) worktree mode is off via config. If the user then also
   requests no delivery action, perform no further steps from this fragment
-  (in-place without delivery).
+  (in-place without delivery). Plan archival still applies in that mode: it is owned by
+  `plan-archival`, which the workflow loads through its own pointer rather than from here.
 
 ### Shared preconditions
 
@@ -1234,22 +1238,15 @@ stop and report the conflict instead of overwriting history.
 1. **Mark the plan as implemented, archive it and take it into the delivery branch:**
    Provided the workflow kept a plan file, this is the **delivery point** at which
    the plan counts as implemented (immediately before the PR is opened or the delivery branch
-   is merged):
-   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve the complete plan
-     language: German plan → `**Planungsstatus:** Umgesetzt`, English plan →
-     `**Plan status:** Implemented`).
-   - Move the plan file via `git mv` to `<plan.dir>/archive/` (create the directory if
-     needed), per "Archive of implemented plans" of the plan-file convention.
-   - If the implementation ran in a worktree or partial-diff worktree, provide this final,
-     archived and implemented-marked state in the worktree (under
-     `<plan.dir>/archive/<file>`). Marking and move are **committed along with it** and
-     are thereby part of the PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the
-     main repo.
-   - If the workflow kept no plan file, this step does not apply.
-   - If the workflow exceptionally runs in-place without delivery (no worktree, no
-     branch/PR/merge action), the workflow performs the same status switch and
-     archive move directly in the working tree; the final commit/merge into the
-     target branch is then the delivery event.
+   is merged). The contract for that — which state the plan is in, what that state's action is,
+   where every operation runs, and how the main-checkout copy is cleaned up — is owned by
+   `plan-archival`, which every workflow that keeps a plan file loads through its own deferred
+   pointer. Hand it the inputs it declares: `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` from this
+   run's verified receipt, `plan.dir`, the plan file's repository-relative path, the plan's complete
+   language, the delivery shape, and — only when this run recorded one — the delivery branch's
+   creation OID. Marking and move are **committed along with it** by step 2 and are thereby part of the
+   PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the main repo.
+   If the workflow kept no plan file, this step does not apply.
 2. **Ensure commit:** Commit all intended changes in the delivery branch
    – code, test and documentation deliverables as well as the taken-over plan file – via the
    commit logic from `effective-flow commit` (stage exclusively known changed files
@@ -1581,7 +1578,7 @@ the plan passes the gate:
    - before -> after
    - affected files and dependencies
    - risks and side effects
-5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `codebase-improvement` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
+5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `effective-delivery` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
 6. Perform the plan validation. The substantive judgment (is the refactor plan viable, executable, correctly scoped) follows the same skill; the following **deterministic scorecard thresholds** and the **behavior invariance** remain Effective Flow output contract and are not handed off to the skill:
    - Clarity: file references, target >= 80%
    - Verification: measurable acceptance criteria beyond "tests pass"
@@ -1629,8 +1626,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -1642,7 +1640,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -1799,7 +1797,7 @@ Before every commit, the checks configured in the project must pass without erro
 
 ## Minimal fallback without the skill
 
-Only relevant when `codebase-improvement` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
+Only relevant when `effective-delivery` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
 
 - Place the cause in the right spot: address the structural problem itself, not the nearest symptom.
 - Keep the scope narrow: only the planned restructuring; no features, no bug fixes, no gold-plating (over-engineering lens).

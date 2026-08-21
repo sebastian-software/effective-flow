@@ -259,7 +259,8 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-native sub-issue read/create, comment read/create/update, label create/change, PR review-thread read/reply/resolve,
+native sub-issue read/create, comment read/create/update, label create/change, PR review-thread
+read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
@@ -554,7 +555,7 @@ parent reads, and eligible completion writes are idempotent.
 
 ## Recommended skills
 
-- `pr-review`
+- `effective-delivery`
 
 ## Remote mode (issue tracker)
 
@@ -613,7 +614,7 @@ Findings with the same target PR run sequentially so that new commits are create
 
 ### Phase 3 remote: Rejected finding → decision candidate
 
-For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `decision-records` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. **No** numbered ADR is created. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
+For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `effective-product` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. **No** numbered ADR is created. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
 
 ### Phase 4 remote: Implementation, PR and deferred epic completion
 

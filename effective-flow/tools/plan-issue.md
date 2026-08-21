@@ -101,8 +101,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -247,7 +247,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -333,7 +333,7 @@ If the project contains an `AGENTS.md`, read it early in the workflow and observ
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ## Tracker integration
 
@@ -591,7 +591,8 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-native sub-issue read/create, comment read/create/update, label create/change, PR review-thread read/reply/resolve,
+native sub-issue read/create, comment read/create/update, label create/change, PR review-thread
+read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
@@ -869,8 +870,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -882,7 +884,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -910,7 +912,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
 7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-The generic plan-quality and plan-review **judgment** comes from `codebase-improvement`; Effective
+The generic plan-quality and plan-review **judgment** comes from `effective-delivery`; Effective
 Flow owns the issue-comment artifact, the per-issue lifecycle, and the readiness gate. Apply the
 same central delegation contract as `effective-flow plan`:
 
@@ -918,8 +920,9 @@ same central delegation contract as `effective-flow plan`:
 
 The **generic technical judgment** of the calling tool — for planning, the plan-quality and
 plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
-verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
-Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+verification, maintenance focus) — is owned by the central skill `effective-delivery`, which
+covers repository audit, improvement ranking, and delivery judgment as one domain. Effective
+Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
 own source carries **no second copy** of these heuristics, but delegates the judgment and
 normalizes the result into its own artifact contract (status, scorecard/finding form, open
 points, handoff).
@@ -932,7 +935,7 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+For this, apply `effective-delivery`, provided it is available and relevant to the concrete
 task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
 into the Effective Flow artifact form.
 
@@ -943,15 +946,16 @@ concrete task crosses the declared boundary of a specialist, load its owner via 
 gate (building block "Skill discovery") and the ownership inventory
 (`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-<!-- skill-ownership:relevance-gate-owners ["product-management","product-design","effective-web","software-architecture","web-legal-compliance"] -->
+<!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
-- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
-- `product-design` — research, problem framing, information architecture, flows, prototype;
-- `effective-web` — browser implementation and accessibility detail;
-- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
+- `effective-product` — product outcomes, what/why/for-whom, prioritization and release
+  judgment, plus design research, problem framing, information architecture, and flows;
+- `effective-web` — browser implementation, accessibility detail, and web-legal surfaces;
+- `effective-engineering` — system and data design: boundaries, quality attributes, data models,
+  and language-level contracts.
 
-The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
-product nor design owners, and product discovery is not forced.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan does not load the
+product owner, and product discovery is not forced.
 
 ### Authority contract and minimal fallback
 
@@ -1007,7 +1011,7 @@ For each chosen issue in turn:
 Before offering the deep interactive review, run the same quality baseline as the local planning
 workflow for the active issue only:
 
-1. Ask `codebase-improvement` for the generic gap judgment from `effective-flow plan` Phase 4:
+1. Ask `effective-delivery` for the generic gap judgment from `effective-flow plan` Phase 4:
    over-engineering, scope creep, hidden assumptions, missing or non-measurable acceptance
    criteria, edge cases, implementation risks, and evidence versus guessing. Use another declared
    domain owner only when the issue crosses that specialist boundary.
@@ -1015,7 +1019,7 @@ workflow for the active issue only:
    from `effective-flow plan` Phase 5: concrete scope and file references, measurable acceptance
    criteria, sufficient verified context, explicit purpose/workflow, no-code compliance, and a
    fitting workflow recommendation.
-3. Obtain the internal plan-review judgment from `codebase-improvement` exactly as in
+3. Obtain the internal plan-review judgment from `effective-delivery` exactly as in
    `effective-flow plan` Phase 6. Classify findings as Critical, Important, or Note across Architecture,
    Security, Data protection, Error cases, Testability, Scope, and Maintainability. Incorporate all
    critical findings and every directly resolvable important finding; record remaining

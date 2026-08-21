@@ -180,9 +180,17 @@ reports the conflict, instead of overwriting the history.
 ## Plan file: status change at the delivery point
 
 If the workflow led a plan file, Effective Flow marks it as implemented only right at the
-delivery point – that is, just before the PR is opened or the branch is merged – and moves it
-to `<plan.dir>/archive/`. This status change is committed along with it and is thus part of the
-PR or merge. Details on the plan format are in [Understanding tools](./tools-understand.md).
+delivery point – that is, just before the PR is opened or the branch is merged – and archives it
+under `<plan.dir>/archive/`. This status change is committed along with it and is thus part of the
+PR or merge.
+
+What archiving does depends on the state the plan is in: a plan Git already tracks in the delivery
+checkout is renamed, a plan the planning run left untracked is written into the archive and added,
+and a plan an earlier run already archived is refreshed where it is rather than re-added at top
+level. The redundant, still untracked copy left behind in your main checkout is removed once the
+archived state is safely in the delivery branch and the copy has not changed in the meantime –
+that copy is what would otherwise make a later `git pull` refuse. Details on the plan format are
+in [Understanding tools](./tools-understand.md).
 
 ## Interplay with `/effective-flow pr`
 

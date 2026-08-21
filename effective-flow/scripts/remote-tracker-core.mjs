@@ -57,6 +57,7 @@ const REMOTE_OPERATIONS = new Set([
   'sf-label-migrate',
   'pr-read',
   'pr-comments-read',
+  'pr-reviews-read',
   'pr-list',
   'pr-status-read',
   'pr-checks-wait',
@@ -89,6 +90,11 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'sf-label-migrate': 'labelMigration',
   'pr-read': 'pullRequestRead',
   'pr-comments-read': 'prCommentsRead',
+  // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
+  // an operation missing from this table is waved through unprobed on every provider — which for a
+  // read the merge gate treats as a merge precondition would report "no reviewer requested changes"
+  // on a forge that never answered the question.
+  'pr-reviews-read': 'prReviewsRead',
   'pr-list': 'pullRequestList',
   'pr-status-read': 'pullRequestStatus',
   'pr-checks-wait': 'pullRequestChecksWait',
@@ -2889,6 +2895,23 @@ export function buildCommandPlan(operation, input, repository) {
           '--slurp',
           ghEndpoint(`issues/${prNumber(input)}/comments`),
         ]);
+      // `--paginate --slurp` **plus** an explicit `per_page=100`, which is the pairing `label-list`,
+      // `issue-list` and `pr-list` use and which `pr-comments-read` omits. `--paginate` follows the
+      // `Link` header whatever the page size, so the flag alone is not wrong — it is merely thirty
+      // items per request on an endpoint that serves a hundred, and a reviewer that submits a review
+      // per push turns that into a request per three reviews. The gate reads this list on every
+      // Phase-1 and Phase-4 evaluation, so the page size is the difference between one request and
+      // several on an ordinary pull request.
+      case 'pr-reviews-read': {
+        const query = new URLSearchParams({ per_page: '100' });
+        return mutationPlan('gh', [
+          'api',
+          ...hostArgs,
+          '--paginate',
+          '--slurp',
+          `${ghEndpoint(`pulls/${prNumber(input)}/reviews`)}?${query}`,
+        ]);
+      }
       case 'pr-list': {
         const query = new URLSearchParams({ state: input.state ?? 'open', per_page: '100' });
         if (input.head) query.set('head', input.head);
@@ -3016,7 +3039,7 @@ export function buildCommandPlan(operation, input, repository) {
           jsonStdin(buildReviewPayload(payload)),
         );
       case 'review-threads-read': {
-        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
+        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
         return mutationPlan(
           'gh',
           ['api', ...hostArgs, 'graphql', '--input', '-'],
@@ -3332,6 +3355,16 @@ export function buildCommandPlan(operation, input, repository) {
     // at all** — and the field list carries no timestamp under any spelling. Both are read here
     // from the raw API, where `modules/structs` states them.
     case 'review-threads-read':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(apiEndpoint(`pulls/${prNumber(input)}/reviews`), 1),
+      );
+    // Class A: raw API JSON (`modules/structs.PullReview`), and the **same** endpoint the
+    // review-thread walk pages — this operation is that walk's call 1 without its per-review comment
+    // fan-out, kept as an operation of its own because the review object itself is what a verdict
+    // lives on and the thread walk discards everything but `id`. The preview is page 1 alone;
+    // `executeOperation` pages it and publishes every request in `data.commands`.
+    case 'pr-reviews-read':
       return teaApiReadPlan(
         repository,
         forgejoPagedEndpoint(apiEndpoint(`pulls/${prNumber(input)}/reviews`), 1),
@@ -3790,6 +3823,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         pullRequests: true,
         pullRequestRead: true,
         prCommentsRead: true,
+        prReviewsRead: true,
         pullRequestList: true,
         // Tied to the gate's own version floor: an older gh parses none of the flags these three
         // operations depend on, and an unsupported capability is the honest answer there — not a
@@ -3910,6 +3944,12 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       pullRequests: pulls,
       pullRequestRead: pulls,
       prCommentsRead: pulls && pullComments,
+      // The review listing is a raw-API read on the same `tea api` transport the status read and the
+      // review-thread walk already ride, so it derives from that one probe exactly as `reviewThreads`
+      // does and adds no `probeTeaHelp` spawn of its own. `tea` has no review-listing subcommand
+      // whose `--help` could attest anything here, and the renderer that comes closest states no
+      // login and no timestamp — the same reason the thread walk left it.
+      prReviewsRead: teaApiTransport,
       pullRequestList: pulls,
       // Two of the three gate operations ride on the `tea api` transport: the status read composes
       // the pull-request object, the combined commit status and the head commit's date, and the
@@ -4096,6 +4136,23 @@ function normalizeTimestamp(...values) {
     return parsed.toISOString();
   }
   return undefined;
+}
+
+// **The Go zero instant is not a timestamp; it is the marshalled form of "never set".** Gitea
+// declares its review submission field as a plain `time.Time` with no `omitempty`, so a review that
+// was never submitted serialises `0001-01-01T00:00:00Z` instead of omitting the field.
+//
+// What counts as that instant is decided by the **instant**, never by the string: every
+// serialisation that parses to the same moment counts — the bare `Z` form, any UTC-offset variant of
+// it (`0001-01-01T00:00:00+00:00`, `0000-12-31T23:00:00-01:00`), and any sub-second form
+// (`0001-01-01T00:00:00.000Z`). Every other timestamp is left untouched, so the only thing this can
+// misread is a genuine year-1 submission time, which no forge can produce.
+const GO_ZERO_INSTANT_MS = Date.parse('0001-01-01T00:00:00Z');
+
+function isGoZeroInstant(value) {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  const parsed = Date.parse(value.trim());
+  return !Number.isNaN(parsed) && parsed === GO_ZERO_INSTANT_MS;
 }
 
 // A pending check has no conclusion yet. Every state that is not a finished one counts as pending,
@@ -4498,6 +4555,86 @@ function normalizeComment(comment) {
   };
 }
 
+// The provider-neutral review verdict, and the reason it exists: the two forges spell the same five
+// outcomes differently, and a consumer keyed on either spelling is a rule that silently never fires
+// on the other provider. This is the same reconciliation `AUTHOR_ACCOUNT_TYPES` performs for the
+// account class, one level up: the mapping lives here so every workflow contract can name one token
+// set and no prompt has to know which forge answered.
+//
+// Gitea's authority is `modules/structs/pull_review.go`, read by JSON tag and never by Go field
+// name — `Reviewer` is `user`, `ReviewerTeam` is `team`, `CommitID` is `commit_id`, `Submitted` is
+// `submitted_at`, `HTMLURL` is `html_url`. Its `ReviewStateType` constants are `APPROVED`,
+// `PENDING`, `COMMENT`, `REQUEST_CHANGES`, `REQUEST_REVIEW` and the empty string; GitHub's REST
+// review object spells the middle three `COMMENTED`, `CHANGES_REQUESTED` and nothing at all.
+const REVIEW_STATES = Object.freeze({
+  APPROVED: 'APPROVED',
+  CHANGES_REQUESTED: 'CHANGES_REQUESTED',
+  REQUEST_CHANGES: 'CHANGES_REQUESTED',
+  COMMENTED: 'COMMENTED',
+  COMMENT: 'COMMENTED',
+  DISMISSED: 'DISMISSED',
+  PENDING: 'PENDING',
+  REQUEST_REVIEW: 'REVIEW_REQUESTED',
+});
+
+// **Dismissal is a state on one forge and a flag on the other.** GitHub restates a withdrawn verdict
+// as the `DISMISSED` state; Gitea leaves `state` at `REQUEST_CHANGES` and sets a separate
+// `dismissed` boolean, so a consumer reading `state` alone would keep a merge blocked on Forgejo
+// with no clearing path at all. Folding the flag in here is what gives both forges one token.
+//
+// An unrecognized value **fails closed and is never passed through**: `UNKNOWN` is this record's
+// word for "the provider stated no verdict this contract can name", exactly as `authorType:
+// 'unknown'` is for the account class. Returning the raw string instead would let a future provider
+// spelling flow into a rule that compares against the neutral tokens and quietly match none of them.
+function normalizeReviewState(state, dismissed) {
+  if (dismissed === true) return 'DISMISSED';
+  const declared = typeof state === 'string' ? state.trim().toUpperCase() : '';
+  return REVIEW_STATES[declared] ?? 'UNKNOWN';
+}
+
+// One submitted (or pending) review, normalized for both providers. The author goes through
+// `normalizeAuthor` verbatim — the same record, the same `[bot]` inference and the same `unknown`
+// fallback every other authorship surface reports — so "Matching a configured login" resolves a
+// reviewer here exactly as it does on a comment or a thread.
+//
+// `commitSha` is the head binding, and it is what makes a verdict decidable against one head rather
+// than against the pull request as a whole. `submittedAt` is absent for a **pending** review, which
+// both forges return in this listing and neither has submitted: an absent submission time is how a
+// consumer tells a draft verdict from a published one, so it is reported as absent and never
+// defaulted to the read's own instant. **The two forges state that absence differently** — GitHub
+// omits the field or nulls it, Gitea serialises the Go zero instant — and normalizing the second
+// onto the first is what makes that one sentence true on both. The `PENDING` state token is the
+// portable cross-check for a consumer that wants a second signal: both providers emit it, so the
+// state answers the same question the missing instant does.
+// A **team**-authored review carries `team` rather than `user`;
+// it is a real review and its team name is what the author record can state, so the team is read as
+// the author rather than leaving the review author-unestablished.
+function normalizeReview(review) {
+  if (!review || typeof review !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned a review that is not an object');
+  }
+  // **Short-circuit the whole candidate chain**, not merely the candidate that states it. The chain
+  // resolves `submitted_at → submittedAt → submitted → created_at`, so skipping only the declared
+  // submission field would let `created_at` resurface as a submission time and re-break the pending
+  // discriminator one candidate later.
+  const declaredSubmission = [review.submitted_at, review.submittedAt, review.submitted];
+  const submittedAt = declaredSubmission.some(isGoZeroInstant)
+    ? undefined
+    : normalizeTimestamp(...declaredSubmission, review.created_at);
+  const commitSha = review.commit_id ?? review.commitId ?? review.commit?.sha;
+  return {
+    id: review.id,
+    url: review.html_url ?? review.url,
+    author: normalizeAuthor(review.user ?? review.reviewer ?? review.author ?? review.team),
+    ...(typeof commitSha === 'string' && commitSha.trim() !== ''
+      ? { commitSha: commitSha.trim() }
+      : {}),
+    state: normalizeReviewState(review.state, review.dismissed),
+    body: review.body ?? '',
+    ...(submittedAt === undefined ? {} : { submittedAt }),
+  };
+}
+
 function flattenPages(value) {
   return Array.isArray(value) && value.every(Array.isArray) ? value.flat() : value;
 }
@@ -4611,6 +4748,13 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       return (Array.isArray(flattened) ? flattened : (flattened?.comments ?? [])).map(
         normalizeComment,
       );
+    // Both providers answer with a plain array of review objects — GitHub's REST pages collapsed by
+    // `flattenPages`, Forgejo's pages concatenated by `readForgejoPaginated` — so one branch serves
+    // both and the neutral state enum is applied in exactly one place.
+    case 'pr-reviews-read':
+      return (Array.isArray(flattened) ? flattened : (flattened?.reviews ?? [])).map(
+        normalizeReview,
+      );
     case 'issue-comment-update':
       return normalizeComment(flattened);
     case 'pr-read':
@@ -4706,6 +4850,10 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               comment.created_at,
               comment.created,
             );
+            const url =
+              typeof comment.url === 'string' && comment.url.trim() !== ''
+                ? comment.url.trim()
+                : undefined;
             return {
               id: comment.id,
               databaseId: comment.databaseId,
@@ -4715,6 +4863,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               line: comment.line ?? comment.originalLine,
               startLine: comment.startLine ?? comment.originalStartLine,
               ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
             };
           });
           // A thread has no creation time of its own in the provider's schema; its first comment is
@@ -4722,6 +4871,12 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           // and a thread whose first comment carries no timestamp still reports none. Every reply
           // keeps its own timestamp, because a bot that answers later must count as newer.
           const threadCreatedAt = comments[0]?.createdAt;
+          // The thread's browser link is its first comment's, for the same reason its instant is:
+          // the provider gives a thread no address of its own, and the comment that opened it is
+          // where a reader lands. A consumer that promises somebody a link to read the finding at -
+          // `merge-gate`'s set-aside confirmation - has nowhere else to take it from, and a record
+          // carrying the thread ID alone cannot supply one at all.
+          const threadUrl = comments[0]?.url;
           return {
             id: thread.id,
             isResolved: thread.isResolved === true,
@@ -4729,6 +4884,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
             line: thread.line ?? thread.comments.nodes[0]?.line,
             startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
             ...(threadCreatedAt === undefined ? {} : { createdAt: threadCreatedAt }),
+            ...(threadUrl === undefined ? {} : { url: threadUrl }),
             comments,
           };
         }
@@ -4746,6 +4902,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         // earlier read has to be told which side of the change produced it.
         const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
         const line = thread.position ?? thread.line;
+        // `HTMLURL json:"html_url"` per the struct comment above - the tag, never the Go field name.
+        const rawUrl = thread.html_url ?? thread.url;
+        const url = typeof rawUrl === 'string' && rawUrl.trim() !== '' ? rawUrl.trim() : undefined;
         return {
           id: String(thread.id),
           // `resolver` is `null` while a thread is open and an object once someone resolved it, so
@@ -4754,6 +4913,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           path: thread.path,
           line,
           ...(createdAt === undefined ? {} : { createdAt }),
+          ...(url === undefined ? {} : { url }),
           comments: [
             {
               id: String(thread.id),
@@ -4765,6 +4925,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               path: thread.path,
               line,
               ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
             },
           ],
         };
@@ -5537,6 +5698,47 @@ export async function executeOperation(operation, input = {}, options = {}) {
           ? {}
           : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
       });
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, paginated.items, activeRepository, input),
+          commands: paginated.commands,
+          pagesFetched: paginated.pagesFetched,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // A **named** Forgejo branch, because the generic pagination branch above is hard-coded to
+    // `issue-list` and `pr-list` and nothing routes a third operation into it. Without this branch
+    // the read falls through to the generic mutation tail, issues exactly one request for page 1,
+    // and reports whatever `MAX_RESPONSE_ITEMS` returned as the complete list — the truncation
+    // `readForgejoPaginated` exists to prevent, and on this operation it would drop precisely the
+    // changes-requested review a merge precondition is evaluated over.
+    //
+    // `totalIsExact: false` for the same reason the thread walk keeps it: `ListPullReviews` counts
+    // the review rows with `CountReviews` while `convert.ToPullReviewList` omits every pending
+    // review belonging to another user, so the header legitimately exceeds the body and may end the
+    // walk early but never condemn it. And the envelope publishes `data.commands` **plural**, as
+    // every paginated Forgejo read does — the generic tail's singular `data.command` states one
+    // request, which this path is not.
+    if (operation === 'pr-reviews-read' && activeRepository.provider === 'forgejo') {
+      const reviewsEndpoint = `repos/${activeRepository.owner}/${activeRepository.repository}/pulls/${prNumber(input)}/reviews`;
+      const paginated = await readForgejoPaginated(
+        activeRepository,
+        reviewsEndpoint,
+        runner,
+        operation,
+        {
+          totalIsExact: false,
+          ...(input.limit === undefined ? {} : { limit: requireNumber(input.limit, 'limit') }),
+          ...(input.maxPages === undefined
+            ? {}
+            : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
+        },
+      );
       return {
         ok: true,
         operation,

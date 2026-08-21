@@ -101,7 +101,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |

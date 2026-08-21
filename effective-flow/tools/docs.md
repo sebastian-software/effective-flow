@@ -39,6 +39,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
+**Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
@@ -213,9 +215,7 @@ If the project has an `AGENTS.md`, read it before analysis and implementation an
 
 ## Recommended skills
 
-- `tech-docs`
-- `codebase-improvement`
-- `pr-review`
+- `effective-delivery`
 
 ## Skill discovery
 
@@ -231,8 +231,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -244,7 +245,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -274,11 +275,14 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 ## Delegation contract
 
-`tech-docs` is the declared domain owner for technical-documentation craft. It owns repository
-and audience discovery, document-shape judgment, interface and migration accuracy, executable
-examples, in-code documentation, and verification design. This tool owns the Effective Flow
-entry point, optional standard categories, target-path and replacement approval, plan/report
-state, worker selection, validation phase, worktrees, commits, and delivery.
+`effective-delivery` is the declared domain owner for the documentation craft this tool needs.
+Its scope is wider than documentation — repository audits, pull-request judgment, dependency
+work, porting, and repository-native validation belong to it as well — and the part delegated
+here is repository and audience discovery, document-shape judgment, interface and migration
+accuracy, executable examples, in-code documentation, and verification design. This tool owns
+the Effective Flow entry point, optional standard categories, target-path and replacement
+approval, plan/report state, worker selection, validation phase, worktrees, commits, and
+delivery.
 
 When the skill is unavailable, use only a minimal repository-led fallback: derive facts from the
 implementation and neighboring docs, follow the existing structure, write the narrow requested
@@ -287,9 +291,11 @@ anything the implementation does not verify, and keep every example consistent w
 recreate a documentation handbook here or add tooling without approval.
 
 A request for a repository-wide documentation audit, gap inventory, or prioritization is not this
-tool's job: route it to `codebase-improvement`, or to `effective-flow review` when the user wants the
-Effective Flow report artifact, and return here for the selected documentation work. A single
-scoped documentation change is not an audit and must not trigger this route.
+tool's job. It belongs to `effective-flow review` when the user wants the Effective Flow report
+artifact, or to a standalone `effective-delivery` audit run outside `docs`; this tool never
+performs one itself and must not enter the skill's audit route from here. Return here for the
+selected documentation work: a single scoped documentation change is not an audit and must not
+trigger this route.
 
 ## Completion protocol
 
@@ -441,10 +447,10 @@ the plan passes the gate:
 
 ### Phase 1: Scope and analysis
 
-1. Apply `tech-docs` to establish the audience, reader task, owning source of truth, narrowest
-   documentation surface, connected references, and verification strategy. Check early whether
-   this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode
-   and create the three roles of the standard structure in a coordinated single run.
+1. Apply `effective-delivery` to establish the audience, reader task, owning source of truth,
+   narrowest documentation surface, connected references, and verification strategy. Check early
+   whether this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow
+   that mode and create the three roles of the standard structure in a coordinated single run.
 2. Determine the Effective Flow route and doc category per `Doc categories`:
    - User guide, developer guide, operations or runbooks
    - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to ``effective-flow-marketing-writer``
@@ -494,11 +500,11 @@ Ask the user: **Documentation plan approved?**
 
 ### Phase 3: Validation
 
-1. Have the active `tech-docs` owner verify the changed documentation against its owning
-   implementation and examples, and return the exact evidence and remaining gaps. The owner designs
-   the verification and judges the evidence; ``effective-flow-code-validator`` executes the established
-   repository checks (step 4). Neither re-runs the other's work, and a check that neither can run
-   is reported as an evidence gap rather than silently dropped.
+1. Have the active `effective-delivery` owner verify the changed documentation against its owning
+   implementation and examples, and return the exact evidence and remaining gaps. The owner
+   designs the verification and judges the evidence; ``effective-flow-code-validator`` executes the
+   established repository checks (step 4). Neither re-runs the other's work, and a check that
+   neither can run is reported as an evidence gap rather than silently dropped.
 2. Check Effective Flow's write paths:
    - all newly created or changed final documents lie within the category directories from `Doc categories`, within the approved established repository structure when that structure took precedence, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
    - for category docs, slugs follow the convention (kebab-case, no date or number prefix); a document in an approved established repository structure follows that structure's naming instead and is never renamed to satisfy the category convention

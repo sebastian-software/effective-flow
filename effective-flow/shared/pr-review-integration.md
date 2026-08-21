@@ -7,8 +7,8 @@ Names matching `effective-flow-<worker>` in this instruction identify bundled wo
 This shared building block publishes Effective Flow's own review findings onto an existing pull
 request. Both entry points use it: the explicit `effective-flow review <PR>` invocation and the automatic
 step that runs after a delivery created a pull request. It owns **which** findings are published,
-which gates run first and in what order, the judgment handoff to `pr-review`, the trigger, and the
-idempotency key.
+which gates run first and in what order, the judgment handoff to `effective-delivery`, the
+trigger, and the idempotency key.
 
 Three of its four call sites — the delivery completion action, ``tools/apply-issues.md``, and
 ``tools/apply-review-remote.md`` — carry neither the PR plumbing nor the security gate in their own
@@ -19,14 +19,14 @@ context. This fragment therefore loads both itself instead of assuming a host su
 This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, replying to a thread, resolving a thread, submitting a review with inline
-comments, posting a PR summary comment, reading the pull-request status, waiting for pending
-checks, and merging the pull request.
+reading review threads, reading the submitted reviews themselves, replying to a thread, resolving a
+thread, submitting a review with inline comments, posting a PR summary comment, reading the
+pull-request status, waiting for pending checks, and merging the pull request.
 
 It serves both directions plus the merge gate. **Inbound**, `effective-flow iterate` reads and answers
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
-this one provides the operations. **The gate**, `effective-flow merge-gate`, reads status and checks,
+this one provides the operations. **The gate**, `effective-flow merge-gate`, reads status, checks and reviews,
 waits, posts its configured bot trigger — its only own write onto the pull request's **discussion** —
 and finally merges; it owns the ordered gate and the merge decision, while this one again provides
 the operations. Its writes to the head **branch** are a different surface, bounded by that tool's own
@@ -87,7 +87,7 @@ comments (for the inbound direction see the error cases in `effective-flow itera
 
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
-human), file + line, comment text, and the `resolved` status.
+human), file + line, comment text, the `resolved` status, and the thread's `url`.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read
@@ -105,6 +105,14 @@ comparing a reported login against a configured one resolves it through "Matchin
 login" instead of comparing the two strings literally.
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
+
+A normalized review thread and each of its comments additionally carry a `url`, the browser link to
+that comment, whenever the provider exposes one; an unexposed value is absent rather than guessed. A
+thread's own `url` is its **first** comment's, for the same reason its `createdAt` is: the provider
+gives a thread no address of its own, and the comment that opened it is where a reader lands. This is
+the only link these reads provide, so a consumer that promises somebody a place to read a finding –
+`effective-flow merge-gate`'s set-aside confirmation is the one that does – has to take the thread's `url`
+here and record it, because a record holding the thread ID alone can supply none.
 
 Normalized pull-request comments, review threads, and thread replies additionally carry
 `createdAt`, an RFC-3339 timestamp, whenever the provider exposes one; an unexposed value is absent
@@ -218,6 +226,39 @@ require named checks, an approval, an up-to-date branch, or linear history, so "
 and "mergeable" are different statements. The forge's merge state is authoritative; a blocked state
 is reported, never worked around.
 
+### Read the submitted reviews
+
+Use the helper's `pr-reviews-read` operation (capability key `prReviewsRead`). It is a **read**, and
+it returns per review the normalized author record, the commit the review was submitted against, its
+state, its body, its submission time, its id and its URL. The author record is normalized exactly as
+a comment's and a thread's are, so "Matching a configured login" resolves a reviewer here without a
+second rule.
+
+**This is the third surface, beside the review threads and the top-level comments, and it carries
+what neither of the others can.** A reviewer's verdict — approved, changes requested, dismissed —
+exists only on the review object, and so does any finding a reviewer states in its review body rather
+than as an inline comment. A workflow reasoning about a reviewer from threads and comments alone is
+blind to both.
+
+**The state is a provider-neutral enum, resolved inside the helper.** The two forges spell the same
+verdicts differently, and one of them models a withdrawal as a separate flag beside an unchanged
+state rather than as a state of its own; the helper reconciles both vocabularies onto one token set
+so a consumer never branches on the provider. A value outside that set fails closed and is reported
+as undecided rather than passed through, exactly as `authorType` is for an account class the provider
+did not state.
+
+**Two absences mean two different things.** A review with no submission time is a **pending** draft —
+both providers return one in this listing — and is never a verdict. The two spell that absence
+differently and the helper reconciles them: one omits the field, the other serialises a zero instant
+the helper normalizes to absent, so the sentence above is true on both. The `PENDING` state token is
+the portable cross-check for a consumer that wants a second signal, since both providers emit it. A review whose head binding or
+whose author cannot be established is undecidable, and a consumer treats it in whichever fail-closed
+direction its own rule states, never as an absence.
+
+`effective-flow merge-gate` reads this to decide a merge precondition and `effective-flow iterate` to see a
+finding carried in a review body; the shared "Automatic reviewer state" owns which review decides and
+what supersedes a standing verdict, so neither tool restates that rule.
+
 ### Wait for pending checks
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
@@ -247,10 +288,14 @@ pull request and never requests changes — not even to unblock a merge.
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
-date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
+date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
 `review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
-provider request.
+provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+the raw route it reads is the same one the review-thread walk already pages there, and the listing it
+returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
+and its page count is reported, since a truncated review list would report a verdict that is missing
+as a verdict that does not exist.
 
 ### Idempotency via the Effective Flow markers
 
@@ -481,7 +526,7 @@ Regardless of entry point, run exactly this order and publish nothing before it 
    notes for their internal correction rounds, and that deeper set must not reach a public pull
    request unmodified. Mention the notes this filter removes in the run summary, never on the pull
    request.
-2. **Judgment handoff** to `pr-review`.
+2. **Judgment handoff** to `effective-delivery`.
 3. **Design-decision filter** — a finding covered by a documented design decision is not published.
    Which side runs it depends on the caller, so the caller declares it: `effective-flow review` filters
    centrally in its Phase 3 and hands over an already-filtered set. `effective-flow build`,
@@ -493,13 +538,13 @@ Regardless of entry point, run exactly this order and publish nothing before it 
 4. **Security classification and the loaded "Security disclosure gate".**
 5. **Publication.**
 
-### Judgment handoff to pr-review
+### Judgment handoff to effective-delivery
 
-`pr-review` is the declared domain owner for PR-level review-item judgment. Pack each finding as a
-Mode C item with its stable ID, its location, and surrounding-code evidence resolved from the refs
-above. Supply the caller constraints: Effective Flow owns authority, approval, publication, and
-delivery; the analysis performs no discovery, implementation, Git, CI, or forge action and may only
-classify the supplied context.
+`effective-delivery` is the declared domain owner for PR-level review-item judgment. Pack each
+finding as a Mode C item with its stable ID, its location, and surrounding-code evidence resolved
+from the refs above. Supply the caller constraints: Effective Flow owns authority, approval,
+publication, and delivery; the analysis performs no discovery, implementation, Git, CI, or forge
+action and may only classify the supplied context.
 
 Consume the returned `pr-review-handoff/v1` object and require exactly one returned item per
 supplied ID. Map its classifications:
@@ -510,9 +555,23 @@ supplied ID. Map its classifications:
 - `question_or_information` → reported to the user, never posted as a defect.
 - `needs_evidence` → dropped, with the exact missing proof recorded.
 
-If `pr-review` is unavailable (not installed, `skills.enabled: false`, excluded), publish the
-findings that survive the remaining steps and disclose that the PR-level judgment was unavailable.
-Never invent the missing classification.
+**These five are `effective-delivery`'s judgment vocabulary, and no workflow returns them as an
+outcome.** They sit **behind** the outcome vocabularies of the workflows that consume this handoff
+– `unsupported` is where `effective-flow iterate`'s `skipped` is produced, for one – so a caller that
+consumes a per-item outcome from a delegated run reads that run's own closed vocabulary instead,
+never these values. Keeping the two apart is what stops a third set from being mistaken for the
+agreed one.
+
+**The "exactly one returned item per supplied ID" requirement above is a sibling of the same
+requirement on a workflow handoff, not the same contract.** This one binds a skill's analysis handoff,
+where the caller holds both ends within a single run. The one on the `effective-flow merge-gate` →
+`effective-flow iterate` channel binds a workflow handoff whose key set the caller pre-commits before
+delegating, and whose receiver counts an outcome only for a key it recorded; that contract lives in
+those two tools and is not restated here.
+
+If `effective-delivery` is unavailable (not installed, `skills.enabled: false`, excluded), publish
+the findings that survive the remaining steps and disclose that the PR-level judgment was
+unavailable. Never invent the missing classification.
 
 ### Security binding
 
@@ -534,9 +593,11 @@ content. The helper's payload builder stamps the marker — never hand-write it.
 
 - Each inline comment is anchored to the finding's `file:line` **inside the diff**.
 - A finding on a line **outside the diff** cannot be anchored onto a wrong line. It does not go into
-  the review body either: the review body is not readable through the plumbing's read operations, so
-  a finding parked there would be invisible to the idempotency check below and republished on every
-  rerun. Publish those findings as one additional marked pull-request comment instead, built through
+  the review body either: the idempotency check below reads the review threads and the pull-request
+  comments and nothing else, so a finding parked in a review body would be invisible to it and
+  republished on every rerun. The ground is that **scope**, not a missing capability — the review
+  body is readable, through the plumbing's review read — and the conclusion is unchanged: widening
+  the check to a third surface buys nothing that publishing on a surface it already reads does not. Publish those findings as one additional marked pull-request comment instead, built through
   the loaded `pr-review-comment-build` operation, under a clearly labelled section. The review body
   stays human-facing prose and carries no idempotency key.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
@@ -557,8 +618,8 @@ content. The helper's payload builder stamps the marker — never hand-write it.
 Read **fresh before every write**, and read both surfaces this fragment publishes to: the inline
 review threads and the ordinary pull-request comments. Together they cover every published finding,
 because outside-diff findings are published as a marked pull-request comment rather than in the
-review body — a review body is not readable through those operations and would silently escape this
-check.
+review body — this check reads those two surfaces only, so a finding in a review body would silently
+escape it.
 
 Parse the `Signature` lines of the marked results with the helper's `signature-parse` operation and
 compare the normalized values it returns; never hand-roll the normalization. A finding whose

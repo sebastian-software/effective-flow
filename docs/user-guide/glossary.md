@@ -95,13 +95,14 @@ A Markdown file created by [`/effective-flow plan`](./tools-understand.md) under
 (default `docs/plan`) that analyzes a requirement, clarifies open questions, records
 architecture and implementation decisions, and recommends the appropriate subsequent workflow
 (`build`, `fix`, `refactor`, or `docs`). The file name follows the pattern
-`YYYY-MM-DD-<slug>.md`; after implementation the file is marked as implemented and moved to
-`<plan.dir>/archive/`.
+`YYYY-MM-DD-<slug>.md`; after implementation the file is marked as implemented and archived
+under `<plan.dir>/archive/`, by a rename or an add depending on whether the plan was already
+tracked, and never re-added at top level if an earlier run already archived it.
 
 ## Skill discovery
 
 The mechanism with which Effective Flow tools and agents survey available host skills at
-runtime (e.g. `humanizer`, `impeccable`, `context7`) and additionally include the ones
+runtime (e.g. `humanizer`, `impeccable`, `context7-mcp`) and additionally include the ones
 suited to the concrete task – controlled via `skills.*` rows in the project-setup ADR, globally
 and per agent or tool. Details in [Skill Discovery](./skill-discovery.md).
 

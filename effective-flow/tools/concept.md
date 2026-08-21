@@ -44,7 +44,7 @@ If no task tool is available, give the user a short progress update after each c
 
 ## Recommended skills
 
-- `product-management`
+- `effective-product`
 
 ## Hard scope boundary
 
@@ -87,8 +87,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -100,7 +101,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -129,8 +130,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
 The **product judgment** of this tool — problem framing, audience, use-case selection, first-version
-scope, and prioritization — is owned by the central skill `product-management`; the technical
-direction crosses `software-architecture` and, for browser products, `effective-web` only when the
+scope, and prioritization — is owned by the central skill `effective-product`; the technical
+direction crosses `effective-engineering` and, for browser products, `effective-web` only when the
 concrete concept touches those boundaries. Effective Flow remains the artifact orchestrator. The
 following building block applies:
 
@@ -138,8 +139,9 @@ following building block applies:
 
 The **generic technical judgment** of the calling tool — for planning, the plan-quality and
 plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
-verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
-Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+verification, maintenance focus) — is owned by the central skill `effective-delivery`, which
+covers repository audit, improvement ranking, and delivery judgment as one domain. Effective
+Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
 own source carries **no second copy** of these heuristics, but delegates the judgment and
 normalizes the result into its own artifact contract (status, scorecard/finding form, open
 points, handoff).
@@ -152,7 +154,7 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+For this, apply `effective-delivery`, provided it is available and relevant to the concrete
 task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
 into the Effective Flow artifact form.
 
@@ -163,15 +165,16 @@ concrete task crosses the declared boundary of a specialist, load its owner via 
 gate (building block "Skill discovery") and the ownership inventory
 (`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-<!-- skill-ownership:relevance-gate-owners ["product-management","product-design","effective-web","software-architecture","web-legal-compliance"] -->
+<!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
-- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
-- `product-design` — research, problem framing, information architecture, flows, prototype;
-- `effective-web` — browser implementation and accessibility detail;
-- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
+- `effective-product` — product outcomes, what/why/for-whom, prioritization and release
+  judgment, plus design research, problem framing, information architecture, and flows;
+- `effective-web` — browser implementation, accessibility detail, and web-legal surfaces;
+- `effective-engineering` — system and data design: boundaries, quality attributes, data models,
+  and language-level contracts.
 
-The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
-product nor design owners, and product discovery is not forced.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan does not load the
+product owner, and product discovery is not forced.
 
 ### Authority contract and minimal fallback
 

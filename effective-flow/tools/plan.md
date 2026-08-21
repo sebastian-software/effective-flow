@@ -93,7 +93,7 @@ Rules:
 
 ## Recommended skills
 
-- `codebase-improvement`
+- `effective-delivery`
 
 ## Hard scope boundary
 
@@ -131,8 +131,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -144,7 +145,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -173,15 +174,16 @@ no skill directory or none fits, this step is a no-op — continue without an er
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
 The generic plan-quality and plan-review **judgment** of this tool (Phases 4–6) comes from
-the central skill `codebase-improvement`; Effective Flow remains the plan-artifact orchestrator.
+the central skill `effective-delivery`; Effective Flow remains the plan-artifact orchestrator.
 The following building block applies:
 
 ## Delegating the domain judgment to central skills
 
 The **generic technical judgment** of the calling tool — for planning, the plan-quality and
 plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
-verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
-Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+verification, maintenance focus) — is owned by the central skill `effective-delivery`, which
+covers repository audit, improvement ranking, and delivery judgment as one domain. Effective
+Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
 own source carries **no second copy** of these heuristics, but delegates the judgment and
 normalizes the result into its own artifact contract (status, scorecard/finding form, open
 points, handoff).
@@ -194,7 +196,7 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+For this, apply `effective-delivery`, provided it is available and relevant to the concrete
 task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
 into the Effective Flow artifact form.
 
@@ -205,15 +207,16 @@ concrete task crosses the declared boundary of a specialist, load its owner via 
 gate (building block "Skill discovery") and the ownership inventory
 (`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-<!-- skill-ownership:relevance-gate-owners ["product-management","product-design","effective-web","software-architecture","web-legal-compliance"] -->
+<!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
-- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
-- `product-design` — research, problem framing, information architecture, flows, prototype;
-- `effective-web` — browser implementation and accessibility detail;
-- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
+- `effective-product` — product outcomes, what/why/for-whom, prioritization and release
+  judgment, plus design research, problem framing, information architecture, and flows;
+- `effective-web` — browser implementation, accessibility detail, and web-legal surfaces;
+- `effective-engineering` — system and data design: boundaries, quality attributes, data models,
+  and language-level contracts.
 
-The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
-product nor design owners, and product discovery is not forced.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan does not load the
+product owner, and product discovery is not forced.
 
 ### Authority contract and minimal fallback
 
@@ -251,7 +254,7 @@ handbook.
    path with the plan's title and status first, then ask exactly once:
 
 If the revision target was resolved from a legacy number or a title slug, or the resolved plan does not carry the canonical open status: Ask the user: **Revise the resolved plan file in place, start a new plan, or stop?**
-- Revise in place -- Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan back to <plan.dir>/
+- Revise in place -- Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan file back to <plan.dir>/ without staging that move
 - New plan -- Leave the resolved plan untouched and write a new dated plan file for this requirement
 - Abort -- End the run without changing any plan file
 
@@ -262,10 +265,70 @@ On a revision run:
   and not only when the plan was archived. A plan left at `Umgesetzt` / `Implemented` inside
   `<plan.dir>/` would make the emitted `effective-flow apply <plan-file>` reopen the implemented-plan
   question this revision just answered, and `effective-flow open-plans` would not list it. An archived
-  plan additionally moves back to `<plan.dir>/` with `git mv`, exactly as the question stated.
+  plan additionally moves back from `<plan.dir>/archive/` to `<plan.dir>/`, exactly as the question
+  stated.
+- **For an archived plan the move comes first, and the status reset follows on the file at its
+  final path.** The order is what keeps a refused move from leaving a half-applied revision behind:
+  reset first and a move that is then refused strands an archived file marked open — an
+  implemented plan sitting in `<plan.dir>/archive/` under the canonical open status, which
+  `effective-flow apply` and `effective-flow open-plans` both read as a plan that was never implemented. In
+  this order the run writes nothing at all until the plan is at its new path, so every stop below
+  leaves the archive exactly as it found it. A plan that was not archived has no move and is reset
+  where it lies.
+- **Ask everything before the move; after the move, only write.** Every question this revision owes
+  the user — the revision question above, and the unclear-status confirmation below — is asked and
+  answered before the plan is moved, and no question is posed once it has been. This is the general
+  rule the two orderings above are instances of, and it is what makes a decline safe at every point:
+  before the move a decline changes nothing because nothing has been written, and after the move
+  there is nothing left to decline. Posing the unclear-status question after the move would leave
+  the declining user a plan sitting in `<plan.dir>/` without a valid status marker — visible only
+  in `effective-flow open-plans`'s status-unclear list rather than among the open plans, and answering
+  the same question again on the next `effective-flow apply`.
+- Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
+  commit, so a staged rename would sit in the user's index until some later, unrelated commit
+  swept it up. Nothing depends on the move being staged: `effective-flow open-plans` lists the top level
+  of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
+  `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
+  moment the file lands at its new path.
+- **The destination must be absent, and the move itself has to enforce that.** `git mv` refuses to
+  clobber an existing file without `-f`; a plain move carries no such refusal, so the requirement
+  is stated here instead. A check alone cannot carry it — a check and a move are two steps, and a
+  file created in between would be overwritten by a move that already read the destination as
+  absent. Perform the move with a primitive that refuses to clobber on its own, `mv -n` or an
+  equivalent no-overwrite move, so the absence is enforced at the moment it matters rather than at
+  the moment it was read. Such a primitive may report success while silently skipping, so confirm
+  afterwards that the archived path is gone and the destination holds the plan; a skipped move is
+  the collision case, not a completed one.
+- **On a collision, stop having written nothing.** A present destination is not this run's to
+  resolve: it is a same-name duplicate across `<plan.dir>/` and `<plan.dir>/archive/`, which the
+  plan-file convention forbids and `effective-flow open-plans` reports on its own. Report both paths,
+  revise nothing, and stop, so the user decides which of the two files survives. Because the status
+  reset happens only after the move has been confirmed, this stop needs no cleanup of its own —
+  there is no rewritten marker to undo.
+- Report the move as an uncommitted working-tree change that this run does not stage and no later
+  step of it cleans up. Establish the Git state of **both** paths first, with one
+  `git -C <project root> ls-files -z -- ':(literal)<archived path>' ':(literal)<plan.dir>/<file>'`
+  call, and match each path against the NUL-separated entries that come back. Both pieces of that
+  invocation earn their place, and each guards the same failure. `-z` is load-bearing rather than
+  tidy: without it Git quotes any path `core.quotePath` covers, and a quoted entry matches neither
+  path literally. `:(literal)` is what makes the arguments paths rather than patterns: `--` only
+  separates paths from revisions and does not disable pathspec globbing, so a `plan.dir` carrying
+  `*`, `?`, or `[` would be matched as a glob. Either one omitted lets the probe read a tracked
+  file as untracked — the one direction it must not fail in. **Never infer one side from the other
+  either:** an index entry left at
+  `<plan.dir>/<file>` whose file was absent from the working tree is tracked there while the
+  archived copy never was, so a probe of the source alone would report a restored tracked path as
+  untracked. Report each side as the listing found it — a listed archived path means its removal is
+  an unstaged deletion and an unlisted one leaves no deletion to mention; a listed destination means
+  the move restored a tracked path rather than producing a new untracked file, and an unlisted one
+  means the plan is now untracked at `<plan.dir>/<file>`. Any nonzero exit or command-launch error —
+  a missing Git, a non-repository checkout — is not permission to guess: report the completed move
+  and state that its Git effect could not be determined.
 - If the status line was missing, duplicated, or invalid, report that unclear status and obtain
   explicit confirmation before writing the canonical open value — the same confirmation any other
-  header change needs.
+  header change needs. Obtain it **before the move**, per the ask-before-the-move rule above; a
+  decline then ends the run with the plan untouched in `<plan.dir>/archive/`, rather than moved and
+  left without a valid status.
 - Preserve a legacy `# NNNN: <title>` H1 verbatim; the `# <title>` rule of Phase 3 covers newly
   created plans only.
 - Append this run's review to `## Plan review` / `## Plan-Review` as a **dated subsection**; never
@@ -439,7 +502,7 @@ Rules:
 
 ### Phase 4: Gap analysis
 
-The gap judgment rests with `codebase-improvement` (see "Delegating the domain judgment to
+The gap judgment rests with `effective-delivery` (see "Delegating the domain judgment to
 central skills"). Apply the skill to the plan and let it assess the generic gaps —
 over-engineering, scope creep, unspoken assumptions, missing or non-measurable acceptance
 criteria, edge cases, hidden intentions, implementation risks, evidence vs. guessing. If the
@@ -448,7 +511,7 @@ architecture, legal …), bring in the responsible owner via the relevance gate;
 engineering plan stays narrow.
 
 Incorporate the reported gaps into the plan and clean it up before you report it as complete. If
-`codebase-improvement` is missing, the minimal generic fallback from the building block applies
+`effective-delivery` is missing, the minimal generic fallback from the building block applies
 (a short core checklist), **not** a second plan-quality handbook.
 
 ### Phase 5: Plan validation
@@ -480,12 +543,12 @@ Rules:
 - Check the planned changes against the verified code context from Phase 1.
 - Do not output complete code suggestions; adhere to the code-frugality rule.
 
-The review **judgment** is provided by `codebase-improvement` (see "Delegating the domain
+The review **judgment** is provided by `effective-delivery` (see "Delegating the domain
 judgment to central skills"): apply the skill to the plan so that it assesses the findings at the
 plan level — among others architecture fit, security surface, data protection, error cases,
 testability, scope, and maintainability. If the plan crosses a declared specialist boundary
 (product, design, browser/accessibility, architecture, legal …), bring in the responsible owner
-via the relevance gate. If `codebase-improvement` is missing, the minimal generic fallback from
+via the relevance gate. If `effective-delivery` is missing, the minimal generic fallback from
 the building block applies instead of a local full checklist.
 
 Classify the findings reported by the skill into the Effective Flow severity (artifact form):
@@ -496,7 +559,7 @@ Classify the findings reported by the skill into the Effective Flow severity (ar
 
 Approach:
 
-1. Obtain the review judgment via `codebase-improvement` (plus relevant specialists).
+1. Obtain the review judgment via `effective-delivery` (plus relevant specialists).
 2. Incorporate all critical findings directly into the plan.
 3. Incorporate important findings or document in the matching `## Plan-Review` / `## Plan review` section why they are deliberately not implemented.
 4. Update that language-matching review section with the result, summary, and findings.
@@ -529,6 +592,8 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - the scorecard result
    - a note that no code changes were made
    - on a revision run: that the existing file was revised in place, plus every confirmed header change
+   - on a revision run that brought a plan back from `<plan.dir>/archive/`: the unstaged move and
+     its Git effect, per the revision-mode reporting rule of Phase 1
 4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
    returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
    not the ready one — implementation comes after those points are closed.
@@ -538,5 +603,9 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 - Do not start any implementation phase.
 - Do not run any tests that could change project files.
 - Do not create any commits.
+- Do not stage anything or otherwise write to the Git index. The revision-mode move back
+  from `<plan.dir>/archive/` is the one file move this tool performs, and it is a plain
+  filesystem move for that reason — this tool has no step that would ever commit a staged
+  rename it left behind.
 - Give the user a brief status update after each phase.
 - If the plan would not be reliable due to missing information, ask instead of guessing.

@@ -6,7 +6,7 @@ argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.60.2 (b303757)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.61.0 (c6f810d)).
 
 This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -61,17 +61,29 @@ subject, propose a better title — once.
   delegate, and a delegate never repeats a subject its parent already proposed. Restate the title
   in the completion report only if the final scope diverged from it. Deciding the title and applying
   it are separate moments: decide it here, while the mechanism fragment owns when its host-specific
-  operation is sent.
-- **Subject first:** `<Subject> · <tool>`, at most 60 characters, cut at a word boundary. Reuse an
+  operation is sent. The subject is fixed here while the reference is resolved when the title is
+  applied or emitted, so every late-applying path needs nothing further. An early-applying path —
+  the ChatGPT Desktop native call and the Claude Code butler request — re-derives the title when
+  its inputs change, as when the first carried no reference, one now exists, and the resulting
+  title differs. Its mechanism applies it again, as often as that fragment allows.
+- **Reference first:** `<Reference> · <Subject> · <tool>` with the same `·` separator, and
+  at most 60 characters, cut at a word boundary; no reference leaves `<Subject> · <tool>`. Reuse an
   existing artifact title verbatim — plan H1 without a legacy number, issue title without its
   `[R-XXXXXXX]` prefix, pull-request title without its Conventional Commit type — instead of
-  paraphrasing it; otherwise use a short noun phrase from the requirement. For several issues, name
-  the first subject and append `+N`. Append an identifier such as `#123` only where it aids lookup,
-  never in front. No workflow-name prefix, no echo of the invocation, no AI attribution.
+  paraphrasing it; otherwise use a short noun phrase from the requirement. A reference is a forge
+  issue or pull request `#<number>`, a tracker issue's tool-native id such as `SEB-123`, or a
+  finding `R-XXXXXXX` absent a tracker reference; several issues, the first one's reference plus
+  `+N`; anything else, a legacy plan number included, none. Exactly one segment, tracker reference
+  over finding ID. A reference token, before any `+N`, is a whitespace-free run of letters, digits,
+  `#` and `-`, at most 16 characters; a non-matching candidate is omitted, never trimmed or
+  sanitized into shape. Over the cap cut the subject, then the `<tool>` segment, never the
+  reference; a bare reference over it yields none. No workflow-name prefix, no echo of the invocation, no AI attribution.
 - **One line, never blocking:** output `**Suggested session title:** <title>` and nothing else — no
-  explanation, no follow-up question, and never in place of the run's own output. The label follows
-  the conversation language while a reused artifact title keeps its own. Never put secrets or
-  credential values in a title; the session list is a persistent visible surface.
+  explanation, no follow-up question, and never in place of the run's own output. Wherever it is
+  emitted at all, it is printed in the run's completion report, by which time the reference is
+  bound — never earlier and never twice. The label follows the conversation language while a
+  reused artifact title keeps its own. Never put secrets or credential values in a title; the
+  session list is a persistent visible surface.
 
 ## Tools
 

@@ -4,7 +4,7 @@ Names matching `effective-flow-<worker>` in this instruction identify bundled wo
 
 # Effective Flow Maintain
 
-You are the orchestrator for recurring project maintenance – a **thin adapter** around the central `smart-dependency-updater` skill.
+You are the orchestrator for recurring project maintenance – a **thin adapter** around the dependency path of the central `effective-delivery` skill.
 
 ## Goal
 
@@ -90,8 +90,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -290,7 +290,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -372,12 +372,11 @@ still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
 
 ## Recommended skills
 
-- `smart-dependency-updater`
-- `pr-review`
+- `effective-delivery`
 
 ## Delegation contract
 
-`smart-dependency-updater` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
+`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
 
 **The skill owns the update mechanics (the "how"):**
 
@@ -396,7 +395,7 @@ still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
 
 **Delivery constraint on the skill (binding).** By default the skill delivers on its own (one PR per group, its own branch/worktree, push). In `maintain`, **Effective Flow owns the delivery**: explicitly tell the skill that it **creates no branches or worktrees, pushes nothing, and creates no pull requests** and does **not** stop after a mere chat summary. It confines itself to **analysis, research, update, and local validation per group**; the commit per group, the worktree, and the handback are done exclusively by `maintain`. This way two delivery loops do not run in parallel.
 
-**Minimal fallback (skill missing).** If `smart-dependency-updater` is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance under "Minimal fallback without the skill" applies. It keeps `maintain` functional but holds **no** second complete update manual – full depth comes only with the skill.
+**Minimal fallback (skill missing).** If `effective-delivery` is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance under "Minimal fallback without the skill" applies. It keeps `maintain` functional but holds **no** second complete update manual – full depth comes only with the skill.
 
 ## Project conventions
 
@@ -951,7 +950,8 @@ At the start of the actual implementation work, determine the effective mode:
 - If the worktree is disabled via config (`worktree.enabled: false`), give a brief
   note that the (default) worktree mode is off via config. If the user then also
   requests no delivery action, perform no further steps from this fragment
-  (in-place without delivery).
+  (in-place without delivery). Plan archival still applies in that mode: it is owned by
+  `plan-archival`, which the workflow loads through its own pointer rather than from here.
 
 ### Shared preconditions
 
@@ -1185,22 +1185,15 @@ stop and report the conflict instead of overwriting history.
 1. **Mark the plan as implemented, archive it and take it into the delivery branch:**
    Provided the workflow kept a plan file, this is the **delivery point** at which
    the plan counts as implemented (immediately before the PR is opened or the delivery branch
-   is merged):
-   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve the complete plan
-     language: German plan → `**Planungsstatus:** Umgesetzt`, English plan →
-     `**Plan status:** Implemented`).
-   - Move the plan file via `git mv` to `<plan.dir>/archive/` (create the directory if
-     needed), per "Archive of implemented plans" of the plan-file convention.
-   - If the implementation ran in a worktree or partial-diff worktree, provide this final,
-     archived and implemented-marked state in the worktree (under
-     `<plan.dir>/archive/<file>`). Marking and move are **committed along with it** and
-     are thereby part of the PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the
-     main repo.
-   - If the workflow kept no plan file, this step does not apply.
-   - If the workflow exceptionally runs in-place without delivery (no worktree, no
-     branch/PR/merge action), the workflow performs the same status switch and
-     archive move directly in the working tree; the final commit/merge into the
-     target branch is then the delivery event.
+   is merged). The contract for that — which state the plan is in, what that state's action is,
+   where every operation runs, and how the main-checkout copy is cleaned up — is owned by
+   `plan-archival`, which every workflow that keeps a plan file loads through its own deferred
+   pointer. Hand it the inputs it declares: `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` from this
+   run's verified receipt, `plan.dir`, the plan file's repository-relative path, the plan's complete
+   language, the delivery shape, and — only when this run recorded one — the delivery branch's
+   creation OID. Marking and move are **committed along with it** by step 2 and are thereby part of the
+   PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the main repo.
+   If the workflow kept no plan file, this step does not apply.
 2. **Ensure commit:** Commit all intended changes in the delivery branch
    – code, test and documentation deliverables as well as the taken-over plan file – via the
    commit logic from `effective-flow commit` (stage exclusively known changed files
@@ -1266,6 +1259,10 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
    `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.
    Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
    explicitly report the actual branch as a side effect.
+
+This workflow keeps no plan file — its basis is the dependency and security surface, not a plan —
+so it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
+archiving.
 
 ## Wisdom Accumulation
 
@@ -1409,7 +1406,7 @@ Rules:
 
 ### Phase 1: Skill discovery and delivery setup
 
-1. Review the available skills and bring in `smart-dependency-updater` per skill discovery. If it is missing, the "Minimal fallback without the skill" at the end applies.
+1. Review the available skills and bring in `effective-delivery` per skill discovery. If it is missing, the "Minimal fallback without the skill" at the end applies.
 
 ## Skill discovery
 
@@ -1425,8 +1422,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -1438,7 +1436,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -1494,7 +1492,7 @@ broken before any update):
 
 ### Phase 3: Delegated update implementation
 
-For the actual update work, follow the `smart-dependency-updater` skill under the **delivery constraint** established above. The skill handles: the update inventory (outdated + audit), grouping by risk and coupling, changelog/migration research, local impact analysis and compatibility adaptation, as well as the validation strategy per group. `maintain` steers the orchestration, the selection gate, and the delivery around this work.
+For the actual update work, follow the dependency path of `effective-delivery` under the **delivery constraint** established above. The skill handles: the update inventory (outdated + audit), grouping by risk and coupling, changelog/migration research, local impact analysis and compatibility adaptation, as well as the validation strategy per group. `maintain` steers the orchestration, the selection gate, and the delivery around this work.
 
 1. **Selection gate:** Present the groups proposed by the skill and clarify which are implemented now.
 
@@ -1590,7 +1588,7 @@ Before every commit, the checks configured in the project must pass without erro
 
 ## Minimal fallback without the skill
 
-Only relevant when `smart-dependency-updater` is unavailable. Short core guidance so that `maintain` degrades cleanly – **not** a second complete update manual:
+Only relevant when `effective-delivery` is unavailable. Short core guidance so that `maintain` degrades cleanly – **not** a second complete update manual:
 
 - Detect the package manager from the lockfile (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lockb` → bun, otherwise `package-lock.json`/npm) and derive all commands from it – never hardcode npm.
 - Collect outdated dependencies (`outdated`) and security findings (`audit`) via the detected manager.

@@ -6,10 +6,10 @@ Names matching `effective-flow-<worker>` in this instruction identify bundled wo
 
 The detail of the mandatory documentation sync gate. It owns **when** documentation work happens,
 **which** surfaces are in scope, **who** writes them and **what** counts as a finished verdict.
-`tech-docs` is the declared domain owner for how documentation itself is written, and this
-fragment carries no second copy of that playbook. When the skill is unavailable, the minimal
-repository-led fallback declared in `effective-flow docs` applies unchanged; do not reconstruct a
-documentation handbook here.
+`effective-delivery` is the declared domain owner for how documentation itself is written, as one
+part of its wider delivery scope, and this fragment carries no second copy of that playbook. When
+the skill is unavailable, the minimal repository-led fallback declared in `effective-flow docs` applies
+unchanged; do not reconstruct a documentation handbook here.
 
 ### Input
 

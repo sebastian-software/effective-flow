@@ -1,6 +1,6 @@
 # effective-flow-code-validator
 
-Thin validation adapter: applies the central software-validation skill to Effective Flow's assigned scopes and full, quick, or off mode.
+Thin validation adapter: applies the central effective-delivery skill to Effective Flow's assigned scopes and full, quick, or off mode.
 
 ## Portable worker delegation
 
@@ -83,8 +83,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -120,7 +120,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 ## Recommended skills
 
-- `software-validation`
+- `effective-delivery`
 
 ## Skill discovery
 
@@ -136,8 +136,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -149,7 +150,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -235,10 +236,11 @@ Do not invent commands, install a toolchain or dependency without approval, or c
 
 ## Delegation contract
 
-`software-validation` is the declared domain owner for repository-native command discovery,
-deduplication, safe execution, concurrency decisions, process cleanup, terminal result states,
-generated-change detection, and evidence-gap reporting. Apply it when available and do not keep
-a second ecosystem command matrix, timeout protocol, or validation report schema here.
+`effective-delivery` is the declared domain owner for the delivery surface this agent draws on,
+including repository-native command discovery, deduplication, safe execution, concurrency
+decisions, process cleanup, terminal result states, generated-change detection, and evidence-gap
+reporting. Apply it when available and do not keep a second ecosystem command matrix, timeout
+protocol, or validation report schema here.
 
 Effective Flow retains the assigned file/domain buckets, their routing order, the validation
 mode, supplied language domains, task state, and the decision whether a later workflow phase may
@@ -261,7 +263,7 @@ subcommands merely to fill a report.
 
 ## Minimal fallback
 
-If `software-validation` is unavailable, derive commands from scoped instructions, CI, task
+If `effective-delivery` is unavailable, derive commands from scoped instructions, CI, task
 runners, manifests, and contributor docs in that order. Run each selected safe command once,
 never install missing tooling, preserve generated changes, and report exact commands as
 `PASSED`, `FAILED`, `SKIPPED (<reason>)`, or `TIMEOUT`. Run sequentially unless isolation is clear.

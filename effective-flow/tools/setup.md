@@ -88,8 +88,8 @@ changes the complete artifact, not only one marker or heading.
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
+central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
+locale guidance is authoritative; Effective Flow keeps no second typography checklist.
 
 If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
@@ -155,39 +155,33 @@ resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are n
 touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
 established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Relationship to the `decision-records` skill (declared convention + fallback)
+### Relationship to the `effective-product` skill (declared convention + fallback)
 
 The living slug model described above is the **declared ADR convention of this
-repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
-decision is even ADR-worthy, lifecycle, supersession, index); its first
-operating rule is to **discover the existing repo convention and follow it**, rather than
+repo**. The host skill `effective-product` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its Decision Records route
+begins by **discovering the existing repository convention and following it**, rather than
 enforcing its own. This very building block is that convention — so the skill authors
 Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
 above), not in an immutably numbered one.
 
 The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+- **`effective-product` is authoritative when present.** The skill decides **whether** a finding
   is a durable decision and — if so — authors it according to the convention declared here.
   If the target repo declares its **own** ADR convention (different directory,
   title/status format, index), the skill follows that; the living slug model is only the
   default when the repo declares nothing else.
-- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+- **Minimal fallback when the skill is absent.** If `effective-product` is unavailable (not
   installed, `skills.enabled: false`, or disabled via `exclude`), the
   calling tool itself authors according to the **minimal fallback structure**
   below — **no** silent invention of a second convention.
 
-Earlier versions of this building block described the slug model as a **deliberate divergence**
-from an allegedly immutable/numbered `decision-records` skill. That premise is
-outdated: `decision-records` now supports a declared living/mutable model (opt-in)
-and follows the repo convention anyway. The living slug model is therefore no longer a
-divergence but the declared convention the skill follows.
-
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
-convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
-`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
+convention in the target repo (the skill follows it) or toggles `effective-product` deliberately
+via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimal fallback structure (only without `decision-records`)
+### Minimal fallback structure (only without `effective-product`)
 
 A short core structure so that a calling tool can record a rejected decision as a living
 slug ADR even without the skill — **not** a second full ADR handbook. Location
@@ -325,7 +319,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
@@ -420,7 +414,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
-- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -688,7 +682,7 @@ config value or default as the pre-selection:
 5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`, `delivery.mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when the merge gate in block 9 merges it; with `squash` the pull-request title becomes the commit subject and therefore the release signal)
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState`. Re-run state discovery before changing the latter; never accept arbitrary free text or a display-name-only match.
-8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
+8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block: see below.
 
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
@@ -730,7 +724,7 @@ value or default as the pre-selection:
 | `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.maxRounds`            | positive integer                   | `10`      |
 | `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |

@@ -18,10 +18,10 @@ invocation keeps working, and it does two things.
 - Repeat the notice only once per run, including when the gate reports an error afterwards.
 - Add nothing to the gate. No checks, no reviewer handling, no merge decision, and no summary of
   your own — everything after the notice comes from `tools/merge-gate.md`.
-- **This tool is not the central `pr-review` skill, and it must not load it.** The names collide by
-  accident. `effective-flow merge-gate` forbids that skill because it brings its own approve and
-  request-changes submissions, its own CI recovery, and its own summary conventions; a tool source
-  sharing its name is exactly the accident that rule exists for, so the exclusion applies here
-  unchanged.
+- **This tool is not a central skill, and it loads none.** Its name once collided by accident with a
+  central skill also called `pr-review`; that skill has since been consolidated into
+  `effective-delivery`, so this alias no longer shares a name with anything central. The collision
+  is history, and nothing here depended on it: `effective-flow merge-gate` excludes `effective-delivery`
+  on behavioral grounds it states itself, and that exclusion applies to this forward unchanged.
 - Removal horizon: this alias is removed with the next deliberate major release. Build nothing new
   on the old name.

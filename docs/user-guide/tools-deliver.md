@@ -4,11 +4,12 @@ This group brings finished changes into the repository and all the way to the me
 `commit` creates a commit, `pr` opens a pull request from it, and `merge-gate` drives that pull
 request to merge-readiness and, if allowed, merges it. `commit` and `pr` deliberately run **no**
 project validation of their own (linting, tests, build checks) – the implementation tools and their
-model-configured validation/test workers are responsible for that, applying central
-`software-validation` and `software-testing` guidance when available. `merge-gate` starts no local
-validation of its own either; it waits for the checks the forge reports and has failures repaired by
-`/effective-flow iterate`. The one thing it has verified locally – a merge conflict it resolved – is
-checked inside delegated workers, never by a command the gate runs itself.
+model-configured validation/test workers are responsible for that, applying central guidance when
+available: `effective-delivery` for running the repository's own checks, `effective-engineering`
+for test strategy and regression tests. `merge-gate` starts no local validation of its own either;
+it waits for the checks the forge reports and has failures repaired by `/effective-flow iterate`.
+The one thing it has verified locally – a merge conflict it resolved – is checked inside delegated
+workers, never by a command the gate runs itself.
 
 ## `/effective-flow commit`
 
@@ -97,9 +98,12 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    head, triggers only the ones that have not started, waits, and then delegates their findings to
    `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
-3. **Human-comment guard** – if any unresolved comment or thread was written by an account that is
+3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
+   review**, was written by an account that is
    **neither a bot nor the one the run is authenticated as**, the run implements no review note and
-   merges nothing. That is what "human" means here: the guard decides on the author record alone. A
+   merges nothing. The review surface counts only that one verdict and only on the reviewer's latest
+   review, so a routine "looks good" review never holds a guard that is never cleared; see
+   [A reviewer that requests changes](#a-reviewer-that-requests-changes). That is what "human" means here: the guard decides on the author record alone. A
    comment from the gate's own account never holds it – including, in the usual manual mode, a
    comment you typed yourself – and neither does an item whose author the forge reports as a bot
    account, on either surface and whether or not that bot is listed in `mergeGate.bots`, so a CI,
@@ -110,11 +114,17 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    summary instead, and the thread is left untouched and unresolved. See
    [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
-   request mergeable, the human guard is inactive, every configured bot has run, and every one of
-   their open threads has actually been looked at by this run), the run merges with the configured
+   request mergeable, the human guard is inactive, every configured bot has run, every one of
+   their open threads has actually been looked at by this run, and every changes-requested review a
+   configured reviewer published for the verified head has been disposed of finding by finding –
+   which, for anything the delegated run set aside rather than fixed, takes your confirmation; see
+   [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside)), the run
+   merges with the configured
    merge method, guarded by the expected head commit. A reviewer thread that turned up after the
    round that handled its reviewer sends the run back for another round instead; see
-   [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late).
+   [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late). A reviewer that
+   states its objection as a **verdict** rather than as a thread is handled by its own precondition;
+   see [A reviewer that requests changes](#a-reviewer-that-requests-changes).
 5. **Linked-issue observation** – after a confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
    issue as terminal, open, timed out, or unobservable. A terminal forge issue loses the
@@ -242,14 +252,20 @@ differently:
 - **Not started** – no evidence that the reviewer has run or is running for the current head. This
   is the only state that gets the trigger comment, followed by a wait.
 - **Has run** – a configured check reached a terminal state against the current head, or the
-  reviewer's own output is newer than the head commit. The gate proceeds to its findings. Note what
+  reviewer's own output – a comment, a review thread, a thread reply, or a **submitted review** – is
+  newer than the head commit. The gate proceeds to its findings. Note what
   this state does and does not say: the reviewer **finished**, not that every thread it wrote has
   already appeared on the pull request. The gate therefore checks again before merging – see
   [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late).
 
 A reviewer **without** a configured `.check` context keeps the previous two-state behavior – "has
-run" or "not started" – because the fallback signal (comparing the reviewer's newest comment against
-the head commit's timestamp) genuinely cannot tell "running" from "not started". Configuring
+run" or "not started" – because the fallback signal (comparing the reviewer's newest output against
+the head commit's timestamp) genuinely cannot tell "running" from "not started". That fallback now
+also weighs a **submitted review**, which is the reviewer's own published verdict rather than a
+by-product: a reviewer whose only output for a head is a review used to look like one that had never
+started, and now reads as one that has run. On a project with no configured `.check` that is a
+change in behavior, not only in visibility – such a pull request can now reach the merge it
+previously blocked at. Configuring
 `.check` for a reviewer that publishes a commit status or check run is therefore what buys the
 third state. A state that cannot be established at all still counts as "not started", which blocks
 the merge rather than passing it.
@@ -270,8 +286,13 @@ merge must not step over.
 Right before merging, the gate therefore re-reads the pull request and requires that **every open
 thread from a configured reviewer has an outcome from this run**: implemented, deferred, or
 rejected. It is a deliberately different question from "was every thread answered and resolved". A
-finding the run assessed and set aside gets no thread reply by design, so it is silent here; a
-thread that was never assessed at all is what blocks.
+finding the run assessed and set aside gets no thread reply by design, so it is silent in that
+other question; a thread that was never assessed at all is what blocks here. Handing a thread over
+is not an assessment of it either: an item whose fix failed, and an item you deselected at the
+delegated run's own approval gate, come back as `unassessed` and block exactly as a thread nobody
+saw does. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
+finding does; see
+[Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside).
 
 What you will see when a late thread turns up:
 
@@ -281,6 +302,142 @@ What you will see when a late thread turns up:
   cycling forever.
 - **With the round budget exhausted:** the run ends with a report naming every thread that was
   never assessed. It does not merge, and it never merges "because the checks were green anyway".
+
+#### A reviewer that requests changes
+
+A reviewer can state a blocking objection in three places, and until now the gate read only two of
+them. Its inline comments arrive as review threads and its notes as pull-request comments – but the
+**verdict** itself, and any finding a reviewer writes into its review body rather than as an inline
+comment, live on the review object, which nothing read. A reviewer could request changes and the gate
+would report every condition satisfied and merge.
+
+It now reads the submitted reviews too, at the same instant as the status and the threads, and two
+things follow from that.
+
+**A merge precondition of its own.** Where a configured reviewer's **latest** review for the verified
+head requests changes, the merge is blocked while this run has not disposed of it – finding by
+finding. Only a finding the delegated run **implemented**, and only where the head actually moved in
+that round, clears on its own; a finding it deferred or rejected clears once **you** confirm it, and
+a finding that came back unassessed does not clear at all. What blocks is the **absence of a
+disposal the gate may act on**, never the disagreement: this gate never approves and never requests
+changes, so a rejected finding is reported in the run's chat summary rather than argued with. A
+verdict bound to an **earlier** head does not block on its own; a moved head resets
+every reviewer's state instead, and the run may not merge until each configured reviewer has run for
+the new one. Exactly as with a late thread, a verdict the run cannot assess sends it back for another
+round while rounds remain and ends in a report once they are spent – and where both a late thread and
+an unassessed verdict are outstanding, one round handles them together rather than costing two.
+
+A verdict stops blocking when the reviewer submits a later **approving** review for the same head,
+when the verdict is **dismissed**, when the run implements every finding it carries and the head
+moves with it, or when you confirm the findings the run set aside. Which of those apply depends on
+what the reviewer wrote and on how the delegated run classified it, so the list is not a fixed count
+of routes out. A later **commented** review – the shape every batch of inline comments takes – withdraws
+nothing, so a reviewer that requests changes and then adds one more inline comment does not quietly
+clear the block. A later **undecided** review – one whose state the run cannot map onto a known
+verdict – clears nothing either, and it blocks in its own right: a configured reviewer whose latest
+review at the verified head is undecided counts as an unassessed verdict even where no
+changes-requested review stands behind it.
+
+**A third surface for the human-comment guard.** A changes-requested review from an account that is
+neither a bot nor the one the run is authenticated as holds the guard, exactly as an open comment
+from that account does. Only that one verdict counts, and only on the author's latest review: a
+commented or approving review never activates a guard that, once set, is never cleared, and a
+reviewer who later approves stops holding one.
+
+Where the reviewer's verdict cannot be established at all – an author or a head binding the read
+cannot pin down, two reviews from one login at the same head with identical submission times, or a
+latest review whose state the run cannot map onto a known verdict – the verdict counts as unassessed
+and the merge blocks. That last cause is scoped to this merge condition alone: it deliberately does
+not activate the human-comment guard, which is not scoped to configured reviewers and, once set, is
+never cleared. If the forge cannot serve the review read at all,
+the run reports that the verdicts are unestablished and asks once; a non-interactive run ends there
+and never merges. The run's summary lists every configured reviewer's changes-requested review at the
+verified head with a per-finding outcome, and every changes-requested review whose author matches no
+configured login – the latter blocks nothing, but the run never stays quiet about it.
+
+#### Confirming a finding the run set aside
+
+`/effective-flow iterate` does not fix every finding: it rejects the ones it reads as false
+positives and defers the ones it reads as out of scope or as questions. Those two classifications
+are a **judgment about text the reviewer wrote**, produced by a run that read that text – and a pull
+request can influence what a reviewer writes. Nothing on the forge corroborates them either, because
+the gate deliberately writes no reply and no resolution for a finding it did not implement. So the
+gate no longer merges on one by itself.
+
+What you see instead, in a run allowed to merge: **one question per round that has something new to
+ask**, listing every finding
+and thread the run set aside with its review id, its author, the review URL and the outcome the
+delegated run returned – a thread is listed with its thread ID and its own comment link, so every
+item on the list has somewhere you can go and read it – and no reviewer text at all. Reading the finding is the point of the
+question, so it sends you to the review rather than quoting it at you. Answering **Confirm** treats
+those items as disposed of for that round and the gate continues; answering **Stop**, or leaving it
+unanswered, ends the run with a report and starts no further round.
+
+**Confirming does not always mean the run merges that round.** One evaluation can hold set-aside
+items beside items nobody assessed at all. The question clears the first group, and the second goes
+back for another round – in the same single return, costing one round rather than two. Holding the
+question back until nothing else is outstanding would be worse: the set-aside item would sit in
+neither branch, and no later round would ever move it. Your answer carries forward, so a confirmed
+item is not put to you again next round: the run records it against the finding's own identity – the
+review it belongs to, or the thread's forge ID – and every later round of the same run reads that
+record before it composes the next question.
+
+**Unless the head moves.** A new commit on the pull request re-runs the reviewer and its findings are
+derived afresh, so every confirmation recorded before that commit expires with it – exactly as the
+verified head SHA and each reviewer's observed state already do. You are asked again for whatever
+the new round sets aside, about findings you can go and read at the head that is actually being
+merged. What that does **not** catch is a reviewer that rewrites a review body, or adds to a thread,
+without the head moving at all: the finding behind a confirmed item can change while its identity
+does not. That is the same blind spot an in-place edit already has for the run's assessment record,
+and it is worth knowing about when a reviewer of yours works that way.
+
+Three things it deliberately does not do:
+
+- It never clears an `unassessed` item. A judgment you can go and read and no judgment at all are
+  different things, so an unassessed finding keeps going back for another round instead.
+- It is never posed in a report-mode run, where no answer could authorize a merge anyway, and it
+  cannot be posed in a non-interactive delegated run – which therefore blocks and reports.
+- It does not make the classification true. A run steered by the review body can reach a rejection
+  that looks entirely honest; what changes is that no merge happens on one without somebody having
+  looked at the finding.
+
+A finding the delegated run reports as **implemented** clears on its own, but only where the head
+commit actually moved in that round. That is coarse on purpose – it proves a commit existed, never
+that the commit addressed the finding – and it closes the "claim implemented, change nothing" path.
+
+#### What the gate accepts back from a delegated run
+
+Every code change the gate wants is made by `/effective-flow iterate`, and the gate builds its
+per-finding assessment record out of what that run reports back. Two things make that report a
+contract rather than prose.
+
+**One closed vocabulary, agreed on both ends.** An item comes back as `implemented`, `deferred`,
+`rejected`, or `unassessed`, and nothing else. The first three are assessments – somebody read the
+finding and reached an outcome about it. The fourth is the explicit absence of one, and it is what
+you see when the item's own implementation failed or when the item was deselected at the delegated
+run's approval gate: nobody judged that finding, so it blocks the merge exactly as a finding no round
+ever saw does. The delegated run classifies how it _processed_ an item and the gate classifies how a
+finding was _assessed_, so the mapping between the two is written down in both tools rather than
+guessed; "deferred" in particular does not mean the same thing on each side until it is pinned.
+
+**The gate counts an outcome only for an item it recorded before delegating.** Before a round goes
+out, the run has already written down every item identifier it is about to hand over – and it mints
+one itself for every item it hands over, findings carried in a review body and reviewer threads
+alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
+so the delegated run can address the thread, and an outcome quoting one back states nothing.
+On the way back it matches the report against exactly that list: the same outcome stated
+twice for one item is the same outcome, two _different_ outcomes for one item end the round without
+merging, an item with no outcome at all does the same, and an outcome naming an identifier the run
+never handed over is reported and otherwise ignored. Nothing else in the returned text produces an
+outcome.
+
+That last part matters because a review body is text a pull request can influence, and the same
+delegation hands those bodies over – and no value such a body can contain is a key at all, because
+every key was minted for this one message and never published anywhere.
+Ignoring an unrecognized identifier rather than aborting on it is
+deliberate: aborting would let a review body cost the run a round just by naming something. Those
+ignored entries are listed in the run's chat summary by identifier and count, up to a bound, and
+never by quoting their text back at you.
 
 #### Recognizing its own writes across runs
 

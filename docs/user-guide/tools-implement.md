@@ -91,9 +91,10 @@ and terminates.
 
 **Input/output:** Input is the feature requirement or a referenced plan file.
 Output is the code changes including tests and docs, an updated plan file (status
-`Umgesetzt`/`Implemented`, review-findings summary, archive move to
-`<plan.dir>/archive/`) as well as – with delivery/worktree mode active – a delivery branch with
-PR, merge, or left-standing branch.
+`Umgesetzt`/`Implemented`, review-findings summary, archived under `<plan.dir>/archive/` – by a
+rename or an add, depending on whether the plan was already tracked, and never re-added at top
+level if an earlier run already archived it) as well as – with delivery/worktree mode active – a
+delivery branch with PR, merge, or left-standing branch.
 
 **Interplay:** Delegates internally per affected file/domain to specialized or reduced-depth
 implementer and reviewer workers, plus repository-native test, validation, and documentation
@@ -166,9 +167,11 @@ inside the four categories, and `docs` asks only when a required value is missin
 category contradicts its target path.
 
 **Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
-Flow workers, but apply the authoritative `tech-docs` guidance. Effective Flow retains category,
-path, language, approval, and delivery decisions; the workers no longer duplicate general
-README, API/CLI, example, JSDoc/TSDoc, or rustdoc playbooks. For details on language routing, see
+Flow workers, but apply the authoritative documentation guidance of the central
+`effective-delivery` skill, which owns migration and technical documentation as one strand of its
+wider delivery scope. Effective Flow retains category, path, language, approval, and delivery
+decisions; the workers no longer duplicate general README, API/CLI, example, JSDoc/TSDoc, or
+rustdoc playbooks. For details on language routing, see
 [Language support](language-support.md); for details on the category and
 naming convention, see [Plan conventions](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/plan-conventions.md).
 
@@ -190,9 +193,9 @@ is a group overview (safe batch, major individually, security) for selection, th
 dedicated commit per implemented group and a summary of the deferred
 "manual" updates.
 
-**Interplay:** `maintain` is a **thin adapter** around the central skill
-`smart-dependency-updater` – it provides the actual update mechanics (ecosystem detection,
-risk grouping, changelog research, compatibility adaptation, validation strategy,
+**Interplay:** `maintain` is a **thin adapter** around the **dependency path** of the central
+`effective-delivery` skill – that path provides the actual update mechanics (ecosystem
+detection, risk grouping, changelog research, compatibility adaptation, validation strategy,
 update reporting), while `maintain` owns only the orchestration and delivery (scope gate, green
 baseline, one commit per group, worktree/PR handback) and tells the skill "Effective Flow owns
 delivery", so that two delivery loops don't run. If the skill is missing, a deliberately
@@ -226,7 +229,11 @@ classifies each point (actionable, already addressed, or pure question), and obt
 approval. Output is **one commit per implemented point** on the PR head branch (only new
 commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
 thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
-not automatically answered on the merits. Without a PR (**local mode**), `iterate` iterates
+not automatically answered on the merits. When another workflow delegates to it and supplies an
+identifier per item, `iterate` additionally returns exactly one outcome for each of those
+identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
+that item – so the caller can match the result against what it handed over; see
+[`/effective-flow merge-gate`](tools-deliver.md). Without a PR (**local mode**), `iterate` iterates
 based on the free-text instructions on the diff of the current branch against the base branch
 and commits locally, without pushing or commenting.
 

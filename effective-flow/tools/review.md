@@ -98,13 +98,12 @@ Tasks are created at **two** points in time, because the directory split in Phas
 
 ## Recommended skills
 
-- `codebase-improvement`
-- `pr-review`
+- `effective-delivery`
 
 ## Delegation contract: generic audit reasoning
 
-The central skill `codebase-improvement` is the **declared owner** of the generic audit
-reasoning (classification `route-when-relevant`, see
+The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
+(classification `delegate`, see
 [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
@@ -133,14 +132,17 @@ the persistence, the baseline, and the delivery are owned exclusively by this to
 two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
-`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
-(architecture reasoning), `port-codebases` (cross-language/runtime migration),
-`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
-consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+`effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
+with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
-installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
-tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+Cross-language or runtime migration and dependency updates are **not** special branches any more:
+`effective-delivery` owns them itself, so the default owner above already covers them and there is
+nothing to re-route.
+
+**Minimal fallback (skill missing).** If `effective-delivery` is not available (not installed,
+`skills.enabled: false`, or disabled via `exclude`), the short core guidance in this tool's
+"Minimal fallback without skill" section applies. It keeps the workflow functional but
 holds **no** second full audit handbook on hand – full depth comes only with the skill.
 
 `review.md` is already mostly orchestration; the delegable part is the
@@ -445,7 +447,7 @@ If a scope confirmation is required per the rules above: Ask the user: **Review 
 
 ### Phase 2: Parallel data collection
 
-First review the available skills and include `codebase-improvement` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
+First review the available skills and include `effective-delivery` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
 
 ## Skill discovery
 
@@ -461,8 +463,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
    group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
-   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
-   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -474,7 +477,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
 4. **Library docs:** For an unknown or current library or framework, use an available
-   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -580,7 +583,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 **Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
 
 1. Aggregate findings from `## Technical findings` and all sub-sections under `## Reviewer findings`.
-2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `codebase-improvement` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
+2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `effective-delivery` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
    - filter out confidence < 80
    - remove duplicates (same area, same file+line, similar problem)
    - check severity consistency
@@ -659,7 +662,7 @@ Reuse the Phase-1 `language.forge` value for finding issues, the container, and 
 
 ## Minimal fallback without the skill
 
-Only relevant if `codebase-improvement` is not available. Brief core guidance for the finding-quality reasoning in Phase 3 so that `review` degrades cleanly – **not** a second full audit handbook:
+Only relevant if `effective-delivery` is not available. Brief core guidance for the finding-quality reasoning in Phase 3 so that `review` degrades cleanly – **not** a second full audit handbook:
 
 - A finding counts only with concrete evidence (file+line, reproducible cause); discard vague or purely stylistic guesses.
 - Merge duplicates via the content signature (file+line, area, similar problem), not via the wording.
