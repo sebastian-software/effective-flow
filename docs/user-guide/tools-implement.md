@@ -227,7 +227,11 @@ classifies each point (actionable, already addressed, or pure question), and obt
 approval. Output is **one commit per implemented point** on the PR head branch (only new
 commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
 thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
-not automatically answered on the merits. Without a PR (**local mode**), `iterate` iterates
+not automatically answered on the merits. When another workflow delegates to it and supplies an
+identifier per item, `iterate` additionally returns exactly one outcome for each of those
+identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
+that item – so the caller can match the result against what it handed over; see
+[`/effective-flow merge-gate`](tools-deliver.md). Without a PR (**local mode**), `iterate` iterates
 based on the free-text instructions on the diff of the current branch against the base branch
 and commits locally, without pushing or commenting.
 
