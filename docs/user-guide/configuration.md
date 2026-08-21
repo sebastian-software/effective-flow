@@ -143,7 +143,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | mergeGate.conflictResolution         | auto                       |
 | mergeGate.requireAllChecks           | true                       |
 | mergeGate.checkWaitMinutes           | 20                         |
-| mergeGate.maxRounds                  | 3                          |
+| mergeGate.maxRounds                  | 10                         |
 | mergeGate.botWaitMinutes             | 10                         |
 | mergeGate.bots                       | (empty)                    |
 | language.project                     | en                         |
@@ -252,7 +252,7 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base      |
 | `requireAllChecks`     | `true` / `false`                    | `true`    | Require every reported check green, not only the forge's required ones   |
 | `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks                      |
-| `maxRounds`            | Positive integer                    | `3`       | Upper bound on check-gate rounds for the whole run                       |
+| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                       |
 | `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer |
 | `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers       |
 | `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted to re-trigger that reviewer when it has not started yet   |
@@ -279,8 +279,8 @@ commit; this key covers the case where that same merge does not apply cleanly.
   same stop path.
 - `ask` poses the question once per **conflicted round** in a gated run — once per conflict, not once
   per run. Each round's conflict is a different conflict against a base that has moved again, so
-  consent given for one is not consent for the next, and with the default `mergeGate.maxRounds: 3` a
-  single run may therefore pose the question up to three times. This deliberately deviates from
+  consent given for one is not consent for the next, and with the default `mergeGate.maxRounds: 10`
+  a single run may therefore pose the question up to ten times. This deliberately deviates from
   `mergeGate.completion`, whose entry question settles one fixed decision for the whole run and is
   never asked again. A **non-interactive delegated** run has nobody to ask, so that combination
   behaves as `off` and the report names `mergeGate.conflictResolution: auto` as the setting that
@@ -487,7 +487,7 @@ values are retained unless the user explicitly confirms a change.
 | `mergeGate.conflictResolution`      | `auto`                       |
 | `mergeGate.requireAllChecks`        | `true`                       |
 | `mergeGate.checkWaitMinutes`        | `20`                         |
-| `mergeGate.maxRounds`               | `3`                          |
+| `mergeGate.maxRounds`               | `10`                         |
 | `mergeGate.botWaitMinutes`          | `10`                         |
 | `language.project`                  | `en`                         |
 | `worktree.enabled`                  | `true`                       |
