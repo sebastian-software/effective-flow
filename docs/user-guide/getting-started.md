@@ -135,28 +135,36 @@ says nothing once several runs are open at the same time. Two things help:
 
 - **Open with one descriptive sentence** before the command. The host then has something to work
   with from the start, and this is the only thing that fixes the title from the very beginning.
-- **Take the suggestion, or let it apply itself.** As soon as a run knows its real subject – the
-  plan title, the issue title, the review scope – it proposes one line such as
-  `**Suggested session title:** Harden test-server configuration · plan`.
+- **Take the suggestion, or let it apply itself.** A run fixes its subject the moment it knows it –
+  the plan title, the issue title, the review scope – but prints the finished line with its
+  completion report. That later moment is what lets the title lead with the work reference:
+  `**Suggested session title:** SEB-123 · Harden test-server configuration · plan`, or
+  `#368 · Bind merge gate return consumption · iterate` for a pull request the run only opened
+  along the way. The reference – a tracker issue, a forge issue or PR number – is what lets you
+  find the session again beside the work it belongs to. A run with nothing to reference keeps the
+  shorter `Harden test-server configuration · plan`.
 
   - In the **Codex tab embedded in the ChatGPT Desktop app**, Effective Flow applies the title to
     the current task through the app's native capability. It needs no installation or hook. A
     successful rename stays silent; if the capability is absent, denied, or fails, the run prints
-    the suggestion once and continues. `/effective-flow setup` can run a consented visible probe
+    the suggestion once and continues. Because it applies the title early, a reference that only
+    turns up later in the run – a pull request the run itself opened – buys exactly one further
+    rename, and nothing after that. `/effective-flow setup` can run a consented visible probe
     titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
     expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
     title you set manually.
   - On **Claude Code**, the host refuses a self-rename outright – its session-management tools
     reject the calling session by design – so a run applies its title through a second session
-    acting as a rename butler, which you set up once through `/effective-flow setup`. Without a
-    butler, the run prints the suggestion. With one, the first rename request in a session still
-    prints it once while the rename happens in the background; a later request in the same
-    continuing session stays silent. If you rename that session manually, the butler reads the
-    retained title back and stops sending further rename requests, so Claude preserves the title
-    you chose.
-  - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion when
-    its host carries titles. Other hosts without an established rename path behave the same; hosts
-    without titled sessions stay silent.
+    acting as a rename butler, which you set up once through `/effective-flow setup`. That request
+    goes out as the run's last action, so the one title it carries already includes the reference.
+    Without a butler, the run prints the suggestion. With one, the first rename request in a
+    session still prints it once while the rename happens in the background; a later request in
+    the same continuing session stays silent. If you rename that session manually, the butler
+    reads the retained title back and stops sending further rename requests, so Claude preserves
+    the title you chose.
+  - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion – in
+    the completion report, reference included – when its host carries titles. Other hosts without
+    an established rename path behave the same; hosts without titled sessions stay silent.
 
   If you previously installed the retired Codex hook, remove only the `Stop` handler whose command
   invokes `session-title.mjs apply`. Preserve unrelated handlers and the containing personal or

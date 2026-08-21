@@ -31,10 +31,14 @@ liveness receipt, project root, or cross-worktree rendezvous. Do not load runtim
 or write-safety guidance for it.
 
 - When the host reports that the call succeeded, stay silent. Do not poll, list, or read tasks to
-  reinterpret the acknowledgement or infer whether the previous title was user-set.
+  reinterpret the acknowledgement or infer whether the previous title was user-set. A work reference
+  that becomes available only after a successful call is not the retry banned above: it licenses
+  exactly one further call, carrying the title the session-title contract derives once the reference
+  is bound, and nothing after that.
 - When the capability is absent or denied, the call errors, or no successful result is reported,
   emit the one `**Suggested session title:**` line the session-title contract defines. Do not block
-  the workflow, retry, or claim that a title was applied.
+  the workflow, retry, or claim that a title was applied; a later reference licenses no call here
+  either, because that line already carries it.
 
 The app contract exposes no `titleSource` or conditional write. A later automatic title may therefore
 replace a title the user set manually; that explicit Desktop behavior does not alter the Claude Code
@@ -61,7 +65,10 @@ decides. The asymmetry is a role a model assigns to itself and nothing verifies 
 The order of a run is: decide the title early per the session-title contract, discover the butler,
 decide from **this session's own context** whether a line is printed, and send the request as the
 run's last action, after the run's own output. The request does not expire, but the send stays last so
-the run's own output is never delayed and the reply lands at the top of the next turn.
+the run's own output is never delayed and the reply lands at the top of the next turn. Because the send
+is last, a work reference the run only produced along the way — a pull request opened during it — is
+already bound in the title the request carries, so this path needs no second request and stays at one
+per run.
 **Where exactly one butler was discovered, send the request either way** — the liveness check decides
 whether one line is printed, never whether a rename is asked for. Every other discovery outcome sends
 nothing, and one observation stops the sending for good: once a reply has reported a title differing
