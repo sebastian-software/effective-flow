@@ -32,12 +32,17 @@ The result is a merged pull request, an observer-only post-merge issue report, o
 exact condition that blocks the merge. This workflow implements nothing itself and produces no
 review findings of its own.
 
-## The central `pr-review` skill stays out of this run
+## `effective-delivery` stays out of this run
 
-**Do not load the central `pr-review` skill here.** That is why it is deliberately absent from a
+**Do not load `effective-delivery` here.** That is why it is deliberately absent from a
 recommended-skills section: a recommended skill is authoritative for its domain, and this one brings
 its own approve and request-changes submissions, its own CI recovery, and its own summary
-conventions — three things this workflow forbids.
+conventions — three behaviors this workflow forbids. The exclusion rests on those three behaviors,
+not on the skill's name.
+
+The exclusion now covers a broader skill, but its audit, documentation, dependency, porting, and
+validation guidance was never reachable from a gate that implements nothing itself; what this run
+deliberately gives up is the review half's second opinion about whether to approve.
 
 The judgment that skill owns still happens, one delegation away. `{{SKILL:iterate}}` loads it and
 performs the caller-owned Mode C handoff, which is the one place that judgment belongs. This

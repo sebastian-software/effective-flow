@@ -183,10 +183,11 @@ The build aborts with an error message if any of these guards is violated:
 - **ADR ownership-contract guard (#167):** `AGENTS.md`,
   `docs/developer-guide/configuration.md`, `docs/developer-guide/skill-ownership.md`, and
   `src/shared/adr-convention.md` are scanned for stale current claims that Effective Flow
-  deliberately or intentionally diverges, deviates, or conflicts with `decision-records`, or
-  that the central skill requires immutable, numbered ADRs. An explicitly historical paragraph is accepted only
-  when it also marks that premise as outdated or no longer a conflict. The guard intentionally
-  excludes `docs/plan/archive/` and other historical records. The pure detector,
+  deliberately or intentionally diverges, deviates, or conflicts with `effective-product` – the
+  central skill that owns ADR craft – or that this skill requires immutable, numbered ADRs. An
+  explicitly historical paragraph is accepted only when it also marks that premise as outdated or
+  no longer a conflict. The guard intentionally excludes `docs/plan/archive/` and other
+  historical records. The pure detector,
   `findStaleAdrContractClaims`, lives in `build-lib.mjs` and is covered in
   `test/build-lib.test.mjs`.
 

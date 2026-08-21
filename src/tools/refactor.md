@@ -62,9 +62,7 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 
 ## Recommended skills
 
-- `codebase-improvement`
-- `port-codebases`
-- `pr-review`
+- `effective-delivery`
 
 ```include
 audit-reasoning-delegation
@@ -72,9 +70,9 @@ audit-reasoning-delegation
 
 `refactor.md` carries more inline reasoning than `{{SKILL:review}}`; the delegable part is
 the **gap analysis and plan validation** in Phase 1 (root cause, complexity/over-engineering,
-scope, risk, refactor-plan quality). The cross-language/runtime migration branch routes
-further to `port-codebases`. Baseline, behavior invariance, reports and delivery remain
-Effective Flow contract.
+scope, risk, refactor-plan quality). The cross-language/runtime migration branch stays with the
+same owner, whose porting guidance covers it. Baseline, behavior invariance, reports and delivery
+remain Effective Flow contract.
 
 ## Project conventions
 
@@ -164,7 +162,7 @@ the plan passes the gate:
    - before -> after
    - affected files and dependencies
    - risks and side effects
-5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `codebase-improvement` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
+5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `effective-delivery` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
 6. Perform the plan validation. The substantive judgment (is the refactor plan viable, executable, correctly scoped) follows the same skill; the following **deterministic scorecard thresholds** and the **behavior invariance** remain Effective Flow output contract and are not handed off to the skill:
    - Clarity: file references, target >= 80%
    - Verification: measurable acceptance criteria beyond "tests pass"
@@ -310,7 +308,7 @@ commit-message-rules
 
 ## Minimal fallback without the skill
 
-Only relevant when `codebase-improvement` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
+Only relevant when `effective-delivery` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
 
 - Place the cause in the right spot: address the structural problem itself, not the nearest symptom.
 - Keep the scope narrow: only the planned restructuring; no features, no bug fixes, no gold-plating (over-engineering lens).

@@ -33,9 +33,10 @@ commit-message-rules
 
 ## Recommended skills
 
-- `metro-english › humanizer` (fallback) – apply it to the Conventional Commit title description
-  only when resolved `language.git` is `en`, and to the PR body only when resolved
-  `language.forge` is `en`; never apply English rewriting to a German artifact
+- `effective-writing › humanizer` (fallback) – the primary skill applies to the Conventional
+  Commit title description and the PR body in either language; the `humanizer` fallback rewrites
+  English prose only, so it stands in only when the resolved `language.git` (title) or
+  `language.forge` (body) is `en`, and never rewrites German output
 
 ```include
 skill-discovery

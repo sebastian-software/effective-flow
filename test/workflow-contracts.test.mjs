@@ -4287,21 +4287,22 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
   );
 });
 
-test('skill-ownership.json names no merge gate among the consumers of the pr-review skill', () => {
+test('skill-ownership.json names no merge gate among the consumers of effective-delivery', () => {
   // The manifest used to declare the gate as a delegate consumer of the central `pr-review`
   // skill, which the gate's own source forbids in bold: that skill brings its own approve and
   // request-changes submissions, its own CI recovery, and its own summary conventions, and this
-  // workflow allows none of them. The row survived only because consumer and skill shared a
-  // name and it read as a tautology. Asserted for both names, so the entry cannot come back
-  // under the new one either.
+  // workflow allows none of them. `pr-review` has since been consolidated into
+  // `effective-delivery`, and the exclusion travels with the skill rather than with the old name.
+  // Asserted for both consumer names, so the row cannot come back under the deprecated tool alias
+  // either.
   const ownership = JSON.parse(source('docs/developer-guide/skill-ownership.json'));
-  const entry = ownership.relationships.find((skill) => skill.skill === 'pr-review');
-  assert.ok(entry, 'skill-ownership.json must list a "pr-review" skill entry');
+  const entry = ownership.relationships.find((skill) => skill.skill === 'effective-delivery');
+  assert.ok(entry, 'skill-ownership.json must list an "effective-delivery" skill entry');
   for (const forbidden of ['pr-review', 'merge-gate']) {
     assert.equal(
       entry.consumers.some((consumer) => consumer.consumer === forbidden),
       false,
-      `the "pr-review" skill entry must not list "${forbidden}" as a consumer`,
+      `the "effective-delivery" skill entry must not list "${forbidden}" as a consumer`,
     );
   }
 
@@ -4314,8 +4315,8 @@ test('skill-ownership.json names no merge gate among the consumers of the pr-rev
   const gate = flat(source('src/tools/merge-gate.md'));
   assert.match(
     gate,
-    /Do not load the central `pr-review` skill/,
-    'the gate must forbid loading the central pr-review skill',
+    /Do not load `effective-delivery` here\./,
+    'the gate must forbid loading the central delivery skill',
   );
   for (const forbidden of [
     'approve and request-changes submissions',
@@ -5017,22 +5018,23 @@ test('src/tools/pr-review.md is a minimal alias that reports deprecation before 
   );
 });
 
-test('src/tools/pr-review.md states it is not the central pr-review skill and must not load it', () => {
-  // merge-gate forbids loading the central `pr-review` skill in bold (see the neighboring test
-  // "skill-ownership.json names no merge gate among the consumers of the pr-review skill"). A
-  // tool source that now shares that skill's name is exactly the accident that rule exists for:
-  // without an explicit exclusion here, the alias is the one place an agent could plausibly
-  // reach for "the pr-review skill" by name and get it wrong.
+test('src/tools/pr-review.md states it is no central skill and inherits the gate exclusion', () => {
+  // merge-gate forbids loading `effective-delivery` in bold (see the neighboring test
+  // "skill-ownership.json names no merge gate among the consumers of effective-delivery"). The
+  // alias once shared a name with the central `pr-review` skill that has since been consolidated
+  // into `effective-delivery`; the accidental collision is gone, but the alias still forwards into
+  // a gate that excludes that skill, so it must say so rather than leave an agent guessing that a
+  // forward re-opens what the gate closed.
   const alias = flat(source('src/tools/pr-review.md'));
   assert.match(
     alias,
-    /not the central `pr-review` skill/,
-    'the alias must state it is not the central pr-review skill',
+    /This tool is not a central skill, and it loads none\./,
+    'the alias must state that it is no central skill and loads none',
   );
   assert.match(
     alias,
-    /must not load it/,
-    'the alias must state that it must not load the central pr-review skill',
+    /excludes `effective-delivery`/,
+    'the alias must state that the gate it forwards to excludes `effective-delivery`',
   );
 });
 

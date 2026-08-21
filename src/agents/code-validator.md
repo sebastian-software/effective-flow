@@ -1,5 +1,5 @@
 ---
-description: "Thin validation adapter: applies the central software-validation skill to Effective Flow's assigned scopes and full, quick, or off mode."
+description: "Thin validation adapter: applies the central effective-delivery skill to Effective Flow's assigned scopes and full, quick, or off mode."
 claude:
   model: sonnet
   effort: medium
@@ -30,7 +30,7 @@ delegation-mandate
 
 ## Recommended skills
 
-- `software-validation`
+- `effective-delivery`
 
 ```include
 skill-discovery
@@ -42,10 +42,11 @@ project-routing
 
 ## Delegation contract
 
-`software-validation` is the declared domain owner for repository-native command discovery,
-deduplication, safe execution, concurrency decisions, process cleanup, terminal result states,
-generated-change detection, and evidence-gap reporting. Apply it when available and do not keep
-a second ecosystem command matrix, timeout protocol, or validation report schema here.
+`effective-delivery` is the declared domain owner for the delivery surface this agent draws on,
+including repository-native command discovery, deduplication, safe execution, concurrency
+decisions, process cleanup, terminal result states, generated-change detection, and evidence-gap
+reporting. Apply it when available and do not keep a second ecosystem command matrix, timeout
+protocol, or validation report schema here.
 
 Effective Flow retains the assigned file/domain buckets, their routing order, the validation
 mode, supplied language domains, task state, and the decision whether a later workflow phase may
@@ -68,7 +69,7 @@ subcommands merely to fill a report.
 
 ## Minimal fallback
 
-If `software-validation` is unavailable, derive commands from scoped instructions, CI, task
+If `effective-delivery` is unavailable, derive commands from scoped instructions, CI, task
 runners, manifests, and contributor docs in that order. Run each selected safe command once,
 never install missing tooling, preserve generated changes, and report exact commands as
 `PASSED`, `FAILED`, `SKIPPED (<reason>)`, or `TIMEOUT`. Run sequentially unless isolation is clear.

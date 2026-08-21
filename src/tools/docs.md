@@ -73,9 +73,7 @@ If the project has an `AGENTS.md`, read it before analysis and implementation an
 
 ## Recommended skills
 
-- `tech-docs`
-- `codebase-improvement`
-- `pr-review`
+- `effective-delivery`
 
 ```include
 skill-discovery
@@ -83,11 +81,14 @@ skill-discovery
 
 ## Delegation contract
 
-`tech-docs` is the declared domain owner for technical-documentation craft. It owns repository
-and audience discovery, document-shape judgment, interface and migration accuracy, executable
-examples, in-code documentation, and verification design. This tool owns the Effective Flow
-entry point, optional standard categories, target-path and replacement approval, plan/report
-state, worker selection, validation phase, worktrees, commits, and delivery.
+`effective-delivery` is the declared domain owner for the documentation craft this tool needs.
+Its scope is wider than documentation — repository audits, pull-request judgment, dependency
+work, porting, and repository-native validation belong to it as well — and the part delegated
+here is repository and audience discovery, document-shape judgment, interface and migration
+accuracy, executable examples, in-code documentation, and verification design. This tool owns
+the Effective Flow entry point, optional standard categories, target-path and replacement
+approval, plan/report state, worker selection, validation phase, worktrees, commits, and
+delivery.
 
 When the skill is unavailable, use only a minimal repository-led fallback: derive facts from the
 implementation and neighboring docs, follow the existing structure, write the narrow requested
@@ -96,9 +97,11 @@ anything the implementation does not verify, and keep every example consistent w
 recreate a documentation handbook here or add tooling without approval.
 
 A request for a repository-wide documentation audit, gap inventory, or prioritization is not this
-tool's job: route it to `codebase-improvement`, or to `{{SKILL:review}}` when the user wants the
-Effective Flow report artifact, and return here for the selected documentation work. A single
-scoped documentation change is not an audit and must not trigger this route.
+tool's job. It belongs to `{{SKILL:review}}` when the user wants the Effective Flow report
+artifact, or to a standalone `effective-delivery` audit run outside `docs`; this tool never
+performs one itself and must not enter the skill's audit route from here. Return here for the
+selected documentation work: a single scoped documentation change is not an audit and must not
+trigger this route.
 
 ```include
 completion-protocol
@@ -196,10 +199,10 @@ the plan passes the gate:
 
 ### Phase 1: Scope and analysis
 
-1. Apply `tech-docs` to establish the audience, reader task, owning source of truth, narrowest
-   documentation surface, connected references, and verification strategy. Check early whether
-   this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode
-   and create the three roles of the standard structure in a coordinated single run.
+1. Apply `effective-delivery` to establish the audience, reader task, owning source of truth,
+   narrowest documentation surface, connected references, and verification strategy. Check early
+   whether this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow
+   that mode and create the three roles of the standard structure in a coordinated single run.
 2. Determine the Effective Flow route and doc category per `Doc categories`:
    - User guide, developer guide, operations or runbooks
    - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to `{{AGENT:marketing-writer}}`
@@ -255,11 +258,11 @@ options:
 
 ### Phase 3: Validation
 
-1. Have the active `tech-docs` owner verify the changed documentation against its owning
-   implementation and examples, and return the exact evidence and remaining gaps. The owner designs
-   the verification and judges the evidence; `{{AGENT:code-validator}}` executes the established
-   repository checks (step 4). Neither re-runs the other's work, and a check that neither can run
-   is reported as an evidence gap rather than silently dropped.
+1. Have the active `effective-delivery` owner verify the changed documentation against its owning
+   implementation and examples, and return the exact evidence and remaining gaps. The owner
+   designs the verification and judges the evidence; `{{AGENT:code-validator}}` executes the
+   established repository checks (step 4). Neither re-runs the other's work, and a check that
+   neither can run is reported as an evidence gap rather than silently dropped.
 2. Check Effective Flow's write paths:
    - all newly created or changed final documents lie within the category directories from `Doc categories`, within the approved established repository structure when that structure took precedence, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
    - for category docs, slugs follow the convention (kebab-case, no date or number prefix); a document in an approved established repository structure follows that structure's naming instead and is never renamed to satisfy the category convention

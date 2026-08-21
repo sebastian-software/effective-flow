@@ -33,7 +33,8 @@ delegation-mandate
 - `copywriting`
 - `copy-editing`
 - `marketing-psychology`
-- `locale-typography`
+- `effective-writing` – locale typography of the produced copy; voice and structure stay with the
+  copy skills above
 
 ```include
 skill-discovery

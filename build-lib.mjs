@@ -2439,7 +2439,7 @@ export function findRetiredConfigDocViolations(file, markdown) {
 // --- ADR ownership-contract guard (#167) ---
 //
 // Effective Flow's living, mutable, numberless ADR model is a repository
-// convention that the central `decision-records` skill discovers and follows.
+// convention that the central `effective-product` skill discovers and follows.
 // Older guidance described that relationship as a deliberate divergence from
 // an immutable/numbered skill contract. Current contributor guidance must not
 // restore that obsolete premise, while an explicitly corrected historical
@@ -2538,13 +2538,13 @@ export function findStaleAdrContractClaims(markdown) {
   const hits = [];
 
   for (const paragraph of markdownParagraphs(markdown)) {
-    if (!/\bdecision-records\b/i.test(paragraph.text)) continue;
+    if (!/\beffective-product\b/i.test(paragraph.text)) continue;
     const sentences = markdownSentences(paragraph.text);
     const candidates = [];
 
     for (const [sentenceIndex, sentence] of sentences.entries()) {
-      const namesDecisionRecords = /\bdecision-records\b/i.test(sentence.text);
-      if (namesDecisionRecords) {
+      const namesAdrOwner = /\beffective-product\b/i.test(sentence.text);
+      if (namesAdrOwner) {
         for (const match of sentence.text.matchAll(STALE_ADR_DIVERGENCE_RE)) {
           candidates.push({
             kind: 'stale-divergence',
@@ -2556,14 +2556,13 @@ export function findStaleAdrContractClaims(markdown) {
         }
       }
 
-      const previousNamesDecisionRecords =
-        sentenceIndex > 0 && /\bdecision-records\b/i.test(sentences[sentenceIndex - 1].text);
-      const inheritsDecisionRecords =
-        previousNamesDecisionRecords && continuesPreviousSkillClaim(sentence.text);
+      const previousNamesAdrOwner =
+        sentenceIndex > 0 && /\beffective-product\b/i.test(sentences[sentenceIndex - 1].text);
+      const inheritsAdrOwner = previousNamesAdrOwner && continuesPreviousSkillClaim(sentence.text);
       const isLegacyCompatibility =
         /\blegacy\b/i.test(sentence.text) &&
         /\b(?:compatib\w*|readable|resolvable)\b/i.test(sentence.text);
-      if ((namesDecisionRecords || inheritsDecisionRecords) && !isLegacyCompatibility) {
+      if ((namesAdrOwner || inheritsAdrOwner) && !isLegacyCompatibility) {
         for (const match of sentence.text.matchAll(STALE_ADR_DESCRIPTOR_RE)) {
           candidates.push({
             kind: 'immutable-numbered-skill-contract',

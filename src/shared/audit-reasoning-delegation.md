@@ -1,7 +1,7 @@
 ## Delegation contract: generic audit reasoning
 
-The central skill `codebase-improvement` is the **declared owner** of the generic audit
-reasoning (classification `route-when-relevant`, see
+The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
+(classification `delegate`, see
 [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
@@ -30,12 +30,15 @@ the persistence, the baseline, and the delivery are owned exclusively by this to
 two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
-`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
-(architecture reasoning), `port-codebases` (cross-language/runtime migration),
-`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
-consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+`effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
+with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
-installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
-tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+Cross-language or runtime migration and dependency updates are **not** special branches any more:
+`effective-delivery` owns them itself, so the default owner above already covers them and there is
+nothing to re-route.
+
+**Minimal fallback (skill missing).** If `effective-delivery` is not available (not installed,
+`skills.enabled: false`, or disabled via `exclude`), the short core guidance in this tool's
+"Minimal fallback without skill" section applies. It keeps the workflow functional but
 holds **no** second full audit handbook on hand – full depth comes only with the skill.

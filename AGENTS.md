@@ -201,13 +201,13 @@ Conventional-Commit types, branch slugs, and runtime schemas remain language-sta
 CLI, and error-message localization belongs to the target project's product i18n policy.
 
 Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing,
-number and date formats) is owned by the central
-[`locale-typography`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/locale-typography)
-skill—the canonical source, `en-US` for English and `de-DE` for German. Effective Flow keeps no
-second typography guide; see
-[`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md) and
-[`docs/developer-guide/terminology.md`](docs/developer-guide/terminology.md) for the migration
-glossary.
+number and date formats) is one strand of the central
+[`effective-writing`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-writing)
+skill, which owns prose craft from structure to locale punctuation. For typography it is the
+canonical source, `en-US` for English and `de-DE` for German. Effective Flow keeps no second
+typography guide; see
+[`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md) for the
+migration glossary of retired skill names.
 
 ## Commit messages
 
@@ -229,6 +229,6 @@ The concept directory is configurable via `concept.dir` (default `docs/concept`)
 
 ## Configuration and ADRs (target-project behavior)
 
-Effective Flow configuration lives in a **living "Projektsetup" ADR** (default `docs/adr/effective-flow-project-setup.md`) as a Markdown key/value table, **not** in `.effective-flow/config.json`. Effective Flow locates it via a canonical marker line `**Effective Flow project setup:** <path>` in the target project's `AGENTS.md` (resolution order and table encoding are defined in `src/shared/config-migration.md`; `/effective-flow setup` writes the ADR, the marker, and migrates a legacy `.effective-flow/config.json`). The central [`decision-records`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/decision-records) skill is authoritative for ADR craft and follows the repository's declared convention. For ADRs produced by Effective Flow, [`src/shared/adr-convention.md`](src/shared/adr-convention.md) declares the living lifecycle: mutable, numberless, slug-named documents whose current file is the truth. The project-setup ADR's key/value table is the narrow exception to keeping exact configuration values out of ordinary rationale ADRs: this record is itself the owning tracked configuration artifact.
+Effective Flow configuration lives in a **living "Projektsetup" ADR** (default `docs/adr/effective-flow-project-setup.md`) as a Markdown key/value table, **not** in `.effective-flow/config.json`. Effective Flow locates it via a canonical marker line `**Effective Flow project setup:** <path>` in the target project's `AGENTS.md` (resolution order and table encoding are defined in `src/shared/config-migration.md`; `/effective-flow setup` writes the ADR, the marker, and migrates a legacy `.effective-flow/config.json`). Architecture Decision Records belong to the central [`effective-product`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-product) skill, which owns product decisions from evidence through to the durable record; it is authoritative for ADR craft and follows the repository's declared convention. For ADRs produced by Effective Flow, [`src/shared/adr-convention.md`](src/shared/adr-convention.md) declares the living lifecycle: mutable, numberless, slug-named documents whose current file is the truth. The project-setup ADR's key/value table is the narrow exception to keeping exact configuration values out of ordinary rationale ADRs: this record is itself the owning tracked configuration artifact.
 
 Consequently `.effective-flow/` **in the target project** now holds runtime state only (`memory.json`, `cache.json`, `review/`, `.worktrees/`, wisdom files) and is **fully gitignored**. Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/effective-flow-dir-migration.md`); `/effective-flow cleanup` inventories whatever remains in a given checkout and deletes it only after a dry run and explicit confirmation. Issue-tracker labels use the `effective-flow-` prefix; the predecessor `firmo-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (one generation of read backward-compatibility), while the older `sf-` prefix is migrated once (on first remote access) to `effective-flow-` and not recognised on an ongoing basis. New labels are created with `effective-flow-` only. The tracker target itself is configurable: besides `local` and `remote`, `tracker.mode: external` points issue work at a project-management tool named by `tracker.externalTool` (with the free-text `tracker.externalToolHint` for connection discovery), for which Effective Flow ships no product-specific adapter and fails closed rather than falling back. The label vocabulary above keeps its exact strings in every target, pull requests stay on the Git forge behind `origin`, and plan files stay committed under `plan.dir`; the full contract is `src/shared/tracker-target.md`.

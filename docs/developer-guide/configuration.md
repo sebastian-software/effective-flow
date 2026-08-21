@@ -239,9 +239,10 @@ procedure and idempotency contract remain in
 ## Living ADR model
 
 Effective Flow ADRs are mutable, numberless, slug-named documents whose current file is the truth.
-The authoritative central
-[`decision-records`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/decision-records) skill follows
-a repository's declared convention. For Effective Flow-generated ADRs, the living lifecycle and
-minimal fallback in [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) are that
-declared convention, not a competing second playbook. Consult the central skill for ADR
-worthiness, lifecycle, and authoring; this guide does not duplicate that playbook.
+Architecture Decision Records are owned by the authoritative central
+[`effective-product`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-product)
+skill, which follows a repository's declared convention. For Effective Flow-generated ADRs, the
+living lifecycle and minimal fallback in
+[`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) are that declared convention,
+not a competing second playbook. Consult the central skill for ADR worthiness, lifecycle, and
+authoring; this guide does not duplicate that playbook.

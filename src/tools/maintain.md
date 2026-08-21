@@ -1,11 +1,11 @@
 ---
-description: "Thin adapter for recurring Node project maintenance: delegates the dependency-update mechanics (ecosystem detection, risk grouping, changelog research, compatibility adaptation, validation strategy, update reporting) to the central smart-dependency-updater skill and owns only the orchestration itself: scope gate, green baseline, one commit per group, review-report backlinks, and delivery/worktree handback. Not a feature, bugfix, or refactoring workflow, and not a scheduler."
+description: "Thin adapter for recurring Node project maintenance: delegates the dependency-update mechanics (ecosystem detection, risk grouping, changelog research, compatibility adaptation, validation strategy, update reporting) to the dependency path of the central effective-delivery skill and owns only the orchestration itself: scope gate, green baseline, one commit per group, review-report backlinks, and delivery/worktree handback. Not a feature, bugfix, or refactoring workflow, and not a scheduler."
 catalogHint: "Runs recurring maintenance: dependency updates and security fixes."
 ---
 
 # Effective Flow Maintain
 
-You are the orchestrator for recurring project maintenance – a **thin adapter** around the central `smart-dependency-updater` skill.
+You are the orchestrator for recurring project maintenance – a **thin adapter** around the dependency path of the central `effective-delivery` skill.
 
 ## Goal
 
@@ -56,12 +56,11 @@ config-migration
 
 ## Recommended skills
 
-- `smart-dependency-updater`
-- `pr-review`
+- `effective-delivery`
 
 ## Delegation contract
 
-`smart-dependency-updater` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
+`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
 
 **The skill owns the update mechanics (the "how"):**
 
@@ -80,7 +79,7 @@ config-migration
 
 **Delivery constraint on the skill (binding).** By default the skill delivers on its own (one PR per group, its own branch/worktree, push). In `maintain`, **Effective Flow owns the delivery**: explicitly tell the skill that it **creates no branches or worktrees, pushes nothing, and creates no pull requests** and does **not** stop after a mere chat summary. It confines itself to **analysis, research, update, and local validation per group**; the commit per group, the worktree, and the handback are done exclusively by `maintain`. This way two delivery loops do not run in parallel.
 
-**Minimal fallback (skill missing).** If `smart-dependency-updater` is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance under "Minimal fallback without the skill" applies. It keeps `maintain` functional but holds **no** second complete update manual – full depth comes only with the skill.
+**Minimal fallback (skill missing).** If `effective-delivery` is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance under "Minimal fallback without the skill" applies. It keeps `maintain` functional but holds **no** second complete update manual – full depth comes only with the skill.
 
 ## Project conventions
 
@@ -145,7 +144,7 @@ when: the run reaches its completion report
 
 ### Phase 1: Skill discovery and delivery setup
 
-1. Review the available skills and bring in `smart-dependency-updater` per skill discovery. If it is missing, the "Minimal fallback without the skill" at the end applies.
+1. Review the available skills and bring in `effective-delivery` per skill discovery. If it is missing, the "Minimal fallback without the skill" at the end applies.
 
 ```include
 skill-discovery
@@ -179,7 +178,7 @@ broken before any update):
 
 ### Phase 3: Delegated update implementation
 
-For the actual update work, follow the `smart-dependency-updater` skill under the **delivery constraint** established above. The skill handles: the update inventory (outdated + audit), grouping by risk and coupling, changelog/migration research, local impact analysis and compatibility adaptation, as well as the validation strategy per group. `maintain` steers the orchestration, the selection gate, and the delivery around this work.
+For the actual update work, follow the dependency path of `effective-delivery` under the **delivery constraint** established above. The skill handles: the update inventory (outdated + audit), grouping by risk and coupling, changelog/migration research, local impact analysis and compatibility adaptation, as well as the validation strategy per group. `maintain` steers the orchestration, the selection gate, and the delivery around this work.
 
 1. **Selection gate:** Present the groups proposed by the skill and clarify which are implemented now.
 
@@ -256,7 +255,7 @@ commit-message-rules
 
 ## Minimal fallback without the skill
 
-Only relevant when `smart-dependency-updater` is unavailable. Short core guidance so that `maintain` degrades cleanly – **not** a second complete update manual:
+Only relevant when `effective-delivery` is unavailable. Short core guidance so that `maintain` degrades cleanly – **not** a second complete update manual:
 
 - Detect the package manager from the lockfile (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lockb` → bun, otherwise `package-lock.json`/npm) and derive all commands from it – never hardcode npm.
 - Collect outdated dependencies (`outdated`) and security findings (`audit`) via the detected manager.

@@ -2,8 +2,9 @@
 
 The **generic technical judgment** of the calling tool — for planning, the plan-quality and
 plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
-verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
-Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+verification, maintenance focus) — is owned by the central skill `effective-delivery`, which
+covers repository audit, improvement ranking, and delivery judgment as one domain. Effective
+Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
 own source carries **no second copy** of these heuristics, but delegates the judgment and
 normalizes the result into its own artifact contract (status, scorecard/finding form, open
 points, handoff).
@@ -16,7 +17,7 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+For this, apply `effective-delivery`, provided it is available and relevant to the concrete
 task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
 into the Effective Flow artifact form.
 
@@ -27,15 +28,16 @@ concrete task crosses the declared boundary of a specialist, load its owner via 
 gate (building block "Skill discovery") and the ownership inventory
 (`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-<!-- skill-ownership:relevance-gate-owners ["product-management","product-design","effective-web","software-architecture","web-legal-compliance"] -->
+<!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
-- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
-- `product-design` — research, problem framing, information architecture, flows, prototype;
-- `effective-web` — browser implementation and accessibility detail;
-- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
+- `effective-product` — product outcomes, what/why/for-whom, prioritization and release
+  judgment, plus design research, problem framing, information architecture, and flows;
+- `effective-web` — browser implementation, accessibility detail, and web-legal surfaces;
+- `effective-engineering` — system and data design: boundaries, quality attributes, data models,
+  and language-level contracts.
 
-The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
-product nor design owners, and product discovery is not forced.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan does not load the
+product owner, and product discovery is not forced.
 
 ### Authority contract and minimal fallback
 
