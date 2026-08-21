@@ -363,7 +363,8 @@ request can influence what a reviewer writes. Nothing on the forge corroborates 
 the gate deliberately writes no reply and no resolution for a finding it did not implement. So the
 gate no longer merges on one by itself.
 
-What you see instead, in a run allowed to merge: **one question per round**, listing every finding
+What you see instead, in a run allowed to merge: **one question per round that has something new to
+ask**, listing every finding
 and thread the run set aside with its review id, its author, the review URL and the outcome the
 delegated run returned – a thread is listed with its thread ID and its own comment link, so every
 item on the list has somewhere you can go and read it – and no reviewer text at all. Reading the finding is the point of the
@@ -376,7 +377,18 @@ items beside items nobody assessed at all. The question clears the first group, 
 back for another round – in the same single return, costing one round rather than two. Holding the
 question back until nothing else is outstanding would be worse: the set-aside item would sit in
 neither branch, and no later round would ever move it. Your answer carries forward, so a confirmed
-item is not put to you again next round.
+item is not put to you again next round: the run records it against the finding's own identity – the
+review it belongs to, or the thread's forge ID – and every later round of the same run reads that
+record before it composes the next question.
+
+**Unless the head moves.** A new commit on the pull request re-runs the reviewer and its findings are
+derived afresh, so every confirmation recorded before that commit expires with it – exactly as the
+verified head SHA and each reviewer's observed state already do. You are asked again for whatever
+the new round sets aside, about findings you can go and read at the head that is actually being
+merged. What that does **not** catch is a reviewer that rewrites a review body, or adds to a thread,
+without the head moving at all: the finding behind a confirmed item can change while its identity
+does not. That is the same blind spot an in-place edit already has for the run's assessment record,
+and it is worth knowing about when a reviewer of yours works that way.
 
 Three things it deliberately does not do:
 

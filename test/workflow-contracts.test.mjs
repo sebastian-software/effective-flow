@@ -6447,6 +6447,180 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
   );
 });
 
+// A confirmation that clears an item "for the round" and is recorded nowhere is re-asked from the
+// next fresh read on, because that read still finds the same unresolved thread and the same standing
+// verdict. The gate then spends its whole round budget re-posing one question the operator already
+// answered. What makes the answer survive is a record keyed by something that outlives the round.
+test('a confirmed item is recorded durably, consumed later, and expired by a head movement', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
+
+  // The key has to be the durable one. The per-message identifier is minted afresh per delegation,
+  // so a record keyed by it matches nothing the next round and loses the answer exactly when it is
+  // needed.
+  assert.match(
+    confirmation,
+    near('durable key', 'review id plus a finding ordinal', 200),
+    'a confirmed body-carried finding must be recorded under the review id plus finding ordinal',
+  );
+  assert.match(
+    confirmation,
+    near('durable key', 'forge thread ID', 300),
+    'a confirmed thread item must be recorded under its forge thread ID',
+  );
+  assert.match(
+    confirmation,
+    near('Never the per-message identifier', 'minted afresh for every delegation', 200),
+    'the record must state why the per-message identifier cannot carry the answer',
+  );
+
+  // Consumption: recording it changes nothing unless a later evaluation reads it before asking.
+  assert.match(
+    confirmation,
+    near('later Phase-4 evaluation reads that record', 'before it composes the question', 120),
+    'every later evaluation must read the record before composing the question',
+  );
+  assert.match(
+    confirmation,
+    near('is not put to the operator again', 'clears conditions 7 and 10', 400),
+    'a recorded item must clear both conditions without being asked a second time',
+  );
+  assert.match(
+    confirmation,
+    near('covers every set-aside item', 'poses no question', 120),
+    'an evaluation whose set-aside items are all recorded must pose no question',
+  );
+  // "no question is posed" and "cannot be posed at all" sit three bullets apart and end opposite
+  // ways — one continues the evaluation, the other ends the run.
+  assert.match(
+    confirmation,
+    near('covered', 'never the "cannot be posed at all" ending', 200),
+    'a covered evaluation must be distinguished from the ending that cannot pose the question',
+  );
+
+  // A confirmed item must not be handed over again: Phase 3 step 5 re-derives its item set from the
+  // fresh read, where a deferred thread is still unresolved and a review body still carries every
+  // finding — so it would write a new outcome under the very key the record is keyed by.
+  assert.match(
+    confirmation,
+    near('confirmed item is not delegated again', 'Phase 3 step 5 excludes it', 200),
+    'a confirmed item must be excluded from the next delegation',
+  );
+  assert.match(
+    prose(section(gate, '### Phase 3')),
+    near('durable confirmation record', 'Exclude every item', 120),
+    "Phase 3's own delegation step must carry the exclusion an executor reads there",
+  );
+
+  // Expiry rides on the one head value this workflow records, and mirrors what a head movement
+  // already invalidates — so it is the rule the file lives by, not an exception for this question.
+  assert.match(
+    confirmation,
+    near('head movement expires every confirmation', 'no second head SHA is recorded', 120),
+    'the expiry must not introduce a second recorded head SHA',
+  );
+  assert.match(
+    confirmation,
+    near(
+      'bound to `VERIFIED_HEAD_SHA`',
+      'Discard the whole record wherever that value is discarded',
+      200,
+    ),
+    'the record must be discarded with VERIFIED_HEAD_SHA',
+  );
+  assert.match(
+    confirmation,
+    near('either side is unprovable', 'discard rather than consume', 120),
+    'an unprovable head must discard the record rather than consume it',
+  );
+  assert.match(
+    confirmation,
+    near('one this file already lives by', "every reviewer's observed state", 200),
+    'the expiry must be tied to what a head movement already invalidates',
+  );
+  // Phase 2's claim that it records the only head SHA has to stay true.
+  assert.match(
+    prose(section(gate, '### Phase 2')),
+    /nothing else in this workflow records a head SHA for later use/,
+    'Phase 2 must still state that it records the only head SHA kept for later use',
+  );
+
+  // The residual the head binding does not catch, named rather than left to be discovered.
+  assert.match(
+    confirmation,
+    near('rewrites its review body in place', 'unchanged head', 200),
+    'the residual of a same-head body rewrite must be stated',
+  );
+
+  // The three endings write no record, so consumption can never turn one of them into a merge.
+  assert.match(
+    confirmation,
+    near('Only a `Confirm` writes that record', '(?:decline|non-interactive)', 400),
+    'only a confirmed answer may write a consumable record',
+  );
+  assert.match(
+    confirmation,
+    near('gate-internal writers', 'stay outside the record', 300),
+    'the two gate-internal writers must stay outside the record as they stay outside the question',
+  );
+
+  // And it stays four values: what is durable is that an item was confirmed, not a fifth outcome.
+  assert.match(
+    confirmation,
+    near('What becomes durable is the record that an item was confirmed', 'four values', 400),
+    'the durable record must not become a fifth outcome value',
+  );
+
+  // Written where the run actually keeps state, and visible in the report.
+  assert.match(
+    wisdom,
+    near('durable confirmation record', "each confirmed item's durable key", 200),
+    'the wisdom schema must carry the durable confirmation record and its keys',
+  );
+  assert.match(
+    wisdom,
+    near('bound to `VERIFIED_HEAD_SHA` and discarded with it', 'no second head SHA', 120),
+    'the wisdom schema must bind the record to VERIFIED_HEAD_SHA rather than to a second head SHA',
+  );
+  assert.match(
+    phase6,
+    near('durable confirmation record', 'the round whose answer authorized it', 200),
+    'Phase 6 must report which round authorized an item a later round cleared',
+  );
+
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('not put to you again next round', "(?:the thread's forge ID|reads that record)", 300),
+    'the guide must say what makes the answer survive the round',
+  );
+  assert.match(
+    guide,
+    near('Unless the head moves', 'expires', 300),
+    'the guide must say that a new commit expires a confirmation',
+  );
+
+  const edgeCases = prose(section(gate, '## Edge cases', '\n## '));
+  assert.match(
+    edgeCases,
+    near('already confirmed', 'durable confirmation record', 200),
+    'the edge cases must cover a later evaluation meeting an already confirmed item',
+  );
+  assert.match(
+    edgeCases,
+    near('head movement between the two evaluations', 'posed afresh at the new head', 200),
+    'the edge cases must cover the expiry of a confirmation on a head movement',
+  );
+});
+
 test('a thread item records its inspection URL where the gate still has it', () => {
   const gate = source('src/tools/merge-gate.md');
   const delegation = prose(section(gate, '## Delegation contract', '\n## '));
