@@ -359,16 +359,20 @@ finding was _assessed_, so the mapping between the two is written down in both t
 guessed; "deferred" in particular does not mean the same thing on each side until it is pinned.
 
 **The gate counts an outcome only for an item it recorded before delegating.** Before a round goes
-out, the run has already written down every item identifier it is about to hand over – the
-identifiers it mints for findings carried in a review body, plus the forge thread IDs in the item
-filter. On the way back it matches the report against exactly that list: the same outcome stated
+out, the run has already written down every item identifier it is about to hand over – and it mints
+one itself for every item it hands over, findings carried in a review body and reviewer threads
+alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
+so the delegated run can address the thread, and an outcome quoting one back states nothing.
+On the way back it matches the report against exactly that list: the same outcome stated
 twice for one item is the same outcome, two _different_ outcomes for one item end the round without
 merging, an item with no outcome at all does the same, and an outcome naming an identifier the run
 never handed over is reported and otherwise ignored. Nothing else in the returned text produces an
 outcome.
 
 That last part matters because a review body is text a pull request can influence, and the same
-delegation hands those bodies over. Ignoring an unrecognized identifier rather than aborting on it is
+delegation hands those bodies over – and no value such a body can contain is a key at all, because
+every key was minted for this one message and never published anywhere.
+Ignoring an unrecognized identifier rather than aborting on it is
 deliberate: aborting would let a review body cost the run a round just by naming something. Those
 ignored entries are listed in the run's chat summary by identifier and count, up to a bound, and
 never by quoting their text back at you.

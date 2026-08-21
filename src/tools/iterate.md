@@ -121,8 +121,11 @@ A delegating workflow consumes what this run reports per item, so the report is 
 than a courtesy. This section states it once; Phase 5 hands it back and Phase 6 reports it.
 
 **One outcome per caller-supplied item identifier, and exactly one.** For every identifier the caller
-supplied – a stable identifier it minted for a body-carried finding and a forge thread ID in its
-`threads=` list alike, with no difference between the two – this run returns exactly one outcome. It
+supplied – one it minted for a body-carried finding and one it minted for a thread item alike, with
+no difference between the two – this run returns exactly one outcome. A **forge thread ID is not one
+of those identifiers**: it arrives in the caller's `threads=` list so this run knows which thread to
+address, and the outcome for that item goes back under the identifier the caller minted for it, never
+under the thread ID. This run
 mints no identifier of its own for a caller-supplied item, returns every supplied identifier
 unchanged, and merges no two identified items into one outcome. An item nobody supplied an identifier
 for – free text in an interactive invocation, or a caller's free-text-only repair – has no entry here
@@ -238,7 +241,12 @@ end.
      by**: one line in the exact literal form `Boundary token: <token>`, then one line per
      caller-supplied item, in the exact literal form
      `Item: <stable identifier> | review=<review id> | author=<author login> |
-url=<review URL>`. Below the delimiter stand the item texts themselves and nothing else — in manifest
+url=<review URL>`. A **thread item** carries a manifest line of its own, in the exact literal
+     form `Thread item: <stable identifier> | thread=<thread ID>`. It is part of the manifest exactly
+     as an `Item:` line is and never a fifth control line, and it declares **no body span** — a
+     thread's own text is not handed over here — so it is **not** counted by the span comparison
+     below, which stays a comparison of `Item:` entries against the spans under the delimiter.
+     Below the delimiter stand the item texts themselves and nothing else — in manifest
      order, separated by that token alone on its own line, with no separator before the first item
      and none after the last. **Split the region that follows the first delimiter line on that exact
      token, and do nothing else to find a boundary**: no counting, no byte offsets, no grammar, and
@@ -272,6 +280,8 @@ url=<review URL>`. Below the delimiter stand the item texts themselves and nothi
      best-effort match: an outcome recorded against the wrong review is worse than a lost round, and
      provenance read out of an item text would be provenance that text's author chose. It is
      reachable only from how the caller assembled the message, never from what an item text contains.
+     The entries counted are the `Item:` lines alone; a `Thread item:` line declares no body span and
+     is never counted here.
    - **An invocation with no delimiter keeps the current behavior exactly**: the whole argument is
      the caller's, as it is for every interactive invocation, and the switches below are parsed from
      all of it. The delimiter is purely additive.
@@ -298,7 +308,11 @@ url=<review URL>`. Below the delimiter stand the item texts themselves and nothi
 
    **A delegating workflow supplies a stable identifier per item, plus that item's provenance** —
    for a review body, the review id, the author login and the review URL — and it supplies them in
-   the manifest of step 5, above the delimiter, never inside the item text itself. Phase 2 returns
+   the manifest of step 5, above the delimiter, never inside the item text itself. **A thread item
+   carries a caller-minted identifier too**, paired with its thread ID on that item's own manifest
+   line: the thread ID in the `threads=` list is how this run knows which thread to address, and the
+   outcome for that item is returned under the caller's identifier, never under the thread ID.
+   Phase 2 returns
    one item for every supplied stable identifier, and a body carries none by itself, so a delegation
    of two body findings from two reviews would otherwise come back as outcomes the caller cannot map
    to either review. Treat each supplied identifier as one item's stable ID for the whole run and

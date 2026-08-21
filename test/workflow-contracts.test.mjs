@@ -3411,6 +3411,25 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
     'the condition must state how it differs from the implemented-and-answered one',
   );
 
+  // The outcome-derived list is built through the mapping this run recorded before delegating, never
+  // from a thread the return names: with every key minted, a thread ID in the return is not a key at
+  // all, so a condition that read one out of the return would resolve nothing.
+  assert.match(
+    unassessed,
+    near('identifier→thread-ID mapping', '(?:recorded|before delegating)', 300),
+    'the outcome-derived list must be built through the recorded identifier-to-thread mapping',
+  );
+  assert.match(
+    unassessed,
+    near('thread ID', '(?:not a key|resolves to nothing)', 300),
+    'a thread ID appearing in the return must resolve to nothing here',
+  );
+  assert.doesNotMatch(
+    unassessed,
+    /outcome naming a thread this run never handed over/i,
+    'the condition must no longer claim a returned outcome names a thread directly',
+  );
+
   // Blocking alone would end the run; the agreed behaviour is to pull the round back and let the
   // late threads be assessed. Bounded by the same counter as every other round, or a reviewer that
   // keeps publishing holds the run open forever.
@@ -6259,6 +6278,14 @@ test('the item framing below the delimiter is a minted token no item text can fo
     [manifest, 'iterate'],
   ]) {
     assert.match(text, /Item: <stable identifier> \| review=<review id>/, `${label} manifest form`);
+    // A thread item travels under a minted identifier too, on a manifest line of its own. Both ends
+    // have to carry that form: the sender writes it, and the receiver returns the outcome under it
+    // rather than under the publicly visible thread ID.
+    assert.match(
+      text,
+      /Thread item: <stable identifier> \| thread=<thread ID>/,
+      `${label} thread-item manifest form`,
+    );
     assert.match(text, /`Boundary token: <token>`/, `${label} must declare the boundary token`);
     assert.match(
       text,
@@ -6574,9 +6601,10 @@ test('the gate consumes the iterate return only through identifiers it recorded 
     'the retired consumption sentence must be gone rather than supplemented',
   );
 
-  // Keyed to what was recorded, and recorded covers both halves: the identifiers this run mints for
-  // body findings and the forge thread IDs it hands over. Keyed to the minted half alone, every
-  // thread outcome would be inert and conditions 6 and 7 would have nothing to read.
+  // Keyed to what was recorded, and every recorded key is one this run minted — a thread item's as
+  // much as a body finding's. A publicly visible forge value in the key set was the hole: a review
+  // body quoting its own thread ID beside a valid outcome would have forged an assessment, because
+  // the receiver applies no framing and counts any value stated for a recorded identifier.
   assert.match(
     record,
     near('receiver rule', 'recorded', 200),
@@ -6584,13 +6612,54 @@ test('the gate consumes the iterate return only through identifiers it recorded 
   );
   assert.match(
     record,
-    near('recorded every item identifier it is about to supply', 'forge thread IDs', 300),
-    'the pre-committed key set must cover the forge thread IDs beside the minted identifiers',
+    near(
+      'recorded every item identifier it is about to supply',
+      'every one of them is minted by this run',
+      300,
+    ),
+    'every identifier in the pre-committed key set must be minted by this run',
   );
   assert.match(
     record,
+    near('minted', 'no publicly visible value is a key', 300),
+    'the section must state that no publicly visible value is a valid return key',
+  );
+  // The forge thread ID is the value that used to be one, so it is excluded by name rather than
+  // left to be inferred from "minted".
+  assert.match(
+    record,
+    near('thread ID', 'it is not a key', 200),
+    'the section must state that a forge thread ID is not a key',
+  );
+  assert.match(
+    record,
+    near('outcome stated for a thread ID', '(?:names no recorded identifier|inert)', 300),
+    'an outcome stated for a thread ID must name no recorded identifier and stay inert',
+  );
+  assert.match(
+    record,
+    near('quoted review body', '(?:states nothing at all|inert)', 300),
+    'a review body reproducing its own thread ID beside an outcome must state nothing',
+  );
+  // Pre-commitment is still the ground the rule rests on — an identifier counts because it was
+  // written down first, not because it is hard to guess. What changed is that unpredictability now
+  // holds for the whole key set instead of one half of it.
+  assert.match(
+    record,
     near('pre-commitment', 'unpredictability', 400),
-    'the rule must rest on pre-commitment rather than on the unpredictability of one half',
+    'the rule must still rest on pre-commitment rather than on unpredictability',
+  );
+  assert.match(
+    record,
+    near('unpredictability', '(?:uniform across the key set|instead of asymmetric)', 300),
+    'unpredictability must be stated as uniform across the key set rather than asymmetric',
+  );
+  // With no public key left, the return never names a thread directly, so conditions 6 and 7 reach
+  // the thread through the mapping recorded before delegating instead.
+  assert.match(
+    record,
+    near('identifier→thread-ID mapping', 'conditions 6 and 7', 300),
+    'the recorded mapping must be what keeps conditions 6 and 7 reading the thread half',
   );
 
   // The four outcomes of a match, each of which a naive rule gets wrong in a different direction.
@@ -6753,17 +6822,24 @@ test('iterate returns exactly one outcome per caller-supplied item identifier', 
     near('One outcome per caller-supplied item identifier', 'exactly one', 200),
     'iterate must state one outcome per supplied identifier',
   );
-  // Both halves of the key set, and explicitly no difference between them: a rule stated only for
-  // the minted identifiers would leave every thread outcome unpromised.
+  // Both halves of the key set are caller-minted identifiers, and explicitly no different from each
+  // other: a rule stated only for the body-finding half would leave every thread outcome unpromised.
   assert.match(
     record,
-    near('minted for a body-carried finding', 'forge thread ID', 100),
-    'both a minted identifier and a thread ID must be covered by the same promise',
+    near('minted for a body-carried finding', 'minted for a thread item', 100),
+    'both halves of the key set must be identifiers the caller minted',
   );
   assert.match(
     record,
-    near('forge thread ID', 'no difference between the two', 100),
+    near('minted for a thread item', 'no difference between the two', 100),
     'the two halves of the key set must be promised identically',
+  );
+  // The forge's own thread ID is not one of them. It addresses the thread on the way in; the outcome
+  // goes back under the caller's identifier, so nothing publicly visible is a return key.
+  assert.match(
+    record,
+    near('forge thread ID is not one of those identifiers', 'never under the thread ID', 400),
+    'a thread item outcome must be returned under the minted identifier, not the thread ID',
   );
   assert.match(
     record,
@@ -6826,7 +6902,42 @@ test('the gate mints its item identifier per message, to the token concrete requ
   assert.match(
     contract,
     near('pre-committed key set', '(?:forge thread ID|thread ID)', 400),
-    'the recorded key set must include the thread IDs the item filter carries',
+    'the recorded key set must be stated beside the thread IDs it deliberately excludes',
+  );
+  // A thread ID is recorded **against** an identifier as that item's durable key, and is never a key
+  // itself: that is what stops a review body from quoting a publicly visible value back as one.
+  assert.match(
+    contract,
+    near('forge thread ID is recorded', 'never itself a key', 300),
+    'a forge thread ID must be recorded against an identifier rather than be a key of its own',
+  );
+  // The minting obligation covers every delegated item, thread items included — a thread item that
+  // travelled under its public thread ID alone would put a forgeable value back into the key set.
+  assert.match(
+    contract,
+    near(
+      'Mint that identifier',
+      "a thread item's identifier is minted exactly as a body-carried finding's is",
+      300,
+    ),
+    'the minting obligation must cover thread items, not body-carried findings alone',
+  );
+  assert.match(
+    contract,
+    /Thread item: <stable identifier> \| thread=<thread ID>/,
+    'a thread item must travel under its minted identifier on its own manifest line',
+  );
+  // That line is manifest, not a fifth control line, and it carries no body span — so the span
+  // comparison the framing test pins stays a count of `Item:` entries against the bodies.
+  assert.match(
+    contract,
+    near('`Thread item:`', 'no body span', 500),
+    'a `Thread item:` line must be stated to declare no body span',
+  );
+  assert.match(
+    contract,
+    near('`Thread item:`', 'never counted', 500),
+    'a `Thread item:` line must never enter the manifest/body count',
   );
 
   // The absence check keeps the identifiers in scope and drops only the wrong label. The scope
