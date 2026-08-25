@@ -258,6 +258,97 @@ test('selection preserves renames, deletions, executable modes, and tracked syml
   assert.equal(readlinkSync(join(deliveryRoot, 'link.txt')), 'working.txt');
 });
 
+test('mixed staged modification and working rename bind to their actual endpoints', async (t) => {
+  const { sourceRoot } = createRepository(t);
+  git(sourceRoot, 'config', 'status.renames', 'true');
+  write(sourceRoot, 'rename.txt', 'staged before working rename\n');
+  git(sourceRoot, 'add', '--', 'rename.txt');
+  const stagedOid = git(sourceRoot, 'rev-parse', ':rename.txt');
+  renameSync(join(sourceRoot, 'rename.txt'), join(sourceRoot, 'renamed.txt'));
+  // Intent-to-add exposes the destination to Git's worktree rename detection without staging it.
+  git(sourceRoot, 'add', '--intent-to-add', '--', 'renamed.txt');
+
+  const inventory = await inventoryRepository({ root: sourceRoot }, { runner: processRunner });
+  const stagedModification = inventory.entries.find((entry) => entry.path === 'rename.txt');
+  assert.equal(stagedModification.kind, 'ordinary');
+  assert.equal(stagedModification.indexStatus, 'M');
+  assert.equal(stagedModification.worktreeStatus, '.');
+  const workingRename = inventory.entries.find((entry) => entry.path === 'renamed.txt');
+  assert.equal(workingRename.kind, 'rename');
+  assert.equal(workingRename.indexStatus, '.');
+  assert.equal(workingRename.worktreeStatus, 'R');
+  assert.equal(workingRename.renameFrom, 'rename.txt');
+
+  const staged = await bind(sourceRoot, [{ path: 'rename.txt', state: 'staged' }]);
+  assert.equal(staged.entries[0].path, 'rename.txt');
+  assert.equal(staged.entries[0].renameFrom, null);
+  assert.equal(staged.entries[0].selected.kind, 'blob');
+  assert.equal(staged.entries[0].selected.oid, stagedOid);
+
+  const working = await bind(sourceRoot, [{ path: 'renamed.txt', state: 'working' }]);
+  assert.equal(working.entries[0].path, 'renamed.txt');
+  assert.equal(working.entries[0].renameFrom, 'rename.txt');
+
+  await assert.rejects(
+    bind(sourceRoot, [{ path: 'renamed.txt', state: 'staged' }]),
+    (error) => error.code === 'INVALID_PATH',
+  );
+
+  const [headMode, , headOid] = git(sourceRoot, 'ls-tree', 'HEAD', '--', 'rename.txt').split(/\s+/);
+  const [indexMode, stagedIndexOid] = git(
+    sourceRoot,
+    'ls-files',
+    '--stage',
+    '--',
+    'rename.txt',
+  ).split(/\s+/);
+  const aggregateStatus = Buffer.from(
+    `2 MR N... ${headMode} ${indexMode} ${indexMode} ${headOid} ${stagedIndexOid} R100 renamed.txt\0rename.txt\0`,
+  );
+  const porcelainArgs = [
+    '-C',
+    sourceRoot,
+    'status',
+    '--porcelain=v2',
+    '-z',
+    '--untracked-files=all',
+    '--ignored=matching',
+  ];
+  const aggregateRunner = (call) => {
+    if (
+      call.executable === 'git' &&
+      call.args.length === porcelainArgs.length &&
+      call.args.every((arg, index) => arg === porcelainArgs[index])
+    ) {
+      return {
+        status: 0,
+        stdout: aggregateStatus,
+        stderr: Buffer.alloc(0),
+        error: undefined,
+      };
+    }
+    return processRunner(call);
+  };
+  const aggregateBind = async (selection) =>
+    await bindSelectionManifest({ sourceRoot, selection }, { runner: aggregateRunner });
+
+  const aggregateStaged = await aggregateBind([{ path: 'rename.txt', state: 'staged' }]);
+  assert.equal(aggregateStaged.entries[0].inventory.kind, 'ordinary');
+  assert.equal(aggregateStaged.entries[0].path, 'rename.txt');
+  assert.equal(aggregateStaged.entries[0].renameFrom, null);
+  assert.equal(aggregateStaged.entries[0].selected.oid, stagedIndexOid);
+
+  const aggregateWorking = await aggregateBind([{ path: 'renamed.txt', state: 'working' }]);
+  assert.equal(aggregateWorking.entries[0].inventory.kind, 'rename');
+  assert.equal(aggregateWorking.entries[0].path, 'renamed.txt');
+  assert.equal(aggregateWorking.entries[0].renameFrom, 'rename.txt');
+
+  await assert.rejects(
+    aggregateBind([{ path: 'renamed.txt', state: 'staged' }]),
+    (error) => error.code === 'INVALID_PATH',
+  );
+});
+
 test('ignored paths and untracked symlinks fail closed', async (t) => {
   const { sourceRoot } = createRepository(t);
   write(sourceRoot, 'ignored.txt', 'ignored\n');

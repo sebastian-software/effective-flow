@@ -566,10 +566,28 @@ function normalizeSelection(value) {
 }
 
 function inventoryByEndpoint(inventory) {
-  const endpoints = new Map();
+  const endpoints = {
+    staged: new Map(),
+    working: new Map(),
+  };
   for (const entry of inventory.entries) {
-    endpoints.set(entry.path, entry);
-    if (entry.renameFrom) endpoints.set(entry.renameFrom, entry);
+    if (entry.staged) {
+      if (entry.kind === 'rename' && !['R', 'C'].includes(entry.indexStatus)) {
+        endpoints.staged.set(entry.renameFrom, {
+          ...entry,
+          path: entry.renameFrom,
+          renameFrom: undefined,
+          kind: 'ordinary',
+          worktreeStatus: '.',
+          unstaged: false,
+          renamed: false,
+          partiallyStaged: false,
+        });
+      } else {
+        endpoints.staged.set(entry.path, entry);
+      }
+    }
+    if (entry.unstaged || entry.untracked) endpoints.working.set(entry.path, entry);
   }
   return endpoints;
 }
@@ -585,7 +603,7 @@ export async function bindSelectionManifest(input, options = {}) {
 
   for (const selected of selection) {
     await checkIgnored(source.root, selected.path, options.runner);
-    const status = byEndpoint.get(selected.path);
+    const status = byEndpoint[selected.state].get(selected.path);
     if (!status) {
       fail('INVALID_PATH', 'selected path has no staged or working-tree change', {
         path: selected.path,
