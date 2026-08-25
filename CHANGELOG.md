@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.62.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.61.0...effective-flow-v1.62.0) (2026-08-25)
+
+
+### Features
+
+* add recensor to merge gate ([933826e](https://github.com/sebastian-software/effective-flow/commit/933826ee14788fcea1b52dc03c31397194544f50))
+* deliver local changes through clean pull request branches ([874a897](https://github.com/sebastian-software/effective-flow/commit/874a89771c530a8d5f50ad61d5bd89927a25a2c8))
+* suggest setup for unconfigured reviewers ([#376](https://github.com/sebastian-software/effective-flow/issues/376)) ([b460a1c](https://github.com/sebastian-software/effective-flow/commit/b460a1c28351dd5957aaee6cf1b1d39e27592a1a))
+
 ## [1.61.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.2...effective-flow-v1.61.0) (2026-08-21)
 
 
