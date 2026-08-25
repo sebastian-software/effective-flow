@@ -100,7 +100,7 @@ Invoking a tool is the user's standing request for internal delegation: a harnes
 discourages unrequested sub-agents does not apply inside a run.
 [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md) is the single source
 of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`, `docs`,
-`maintain`, `review`, `iterate`, `apply-review`, `apply-issues`, `plan`, `plan-issue`,
+`maintain`, `review`, `iterate`, `deliver`, `apply-review`, `apply-issues`, `plan`, `plan-issue`,
 `investigate`, `merge-gate`) and in every worker under `src/agents/`; `plan-review` and
 `concept-review` carry
 it for read-only analysis fan-out only, restating their existing ban on starting implementers,
@@ -179,13 +179,53 @@ canonicalize their nearest existing ancestor, so `..` and existing symlink escap
 An in-place main-checkout run has identical roots; linked/native and Effective Flow-owned
 worktrees have different roots.
 
-Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be
-used or reused where appropriate, but Effective Flow neither nests its own delivery worktree
-around an existing native checkout nor removes a harness-managed one. Effective Flow-created
-delivery, partial-diff and review-component worktrees have distinct receipts and may be cleaned
-up only after fresh ownership and state verification. Cleanup never targets or alters
-`RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
+Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be used
+or reused where appropriate, and Effective Flow never removes one. Normal implementation does not
+nest another delivery worktree around an existing native checkout. The standalone `deliver`
+partial-diff lifecycle is the narrow exception: it treats the dirty or detached harness checkout as
+immutable source evidence and creates a separate Effective Flow-owned delivery worktree from the
+refreshed configured base. The source and delivery receipts remain distinct, and neither may be
+substituted for the other.
+
+Effective Flow-created delivery, partial-diff and review-component worktrees have distinct receipts
+and may be cleaned up only after fresh ownership and state verification. Cleanup never targets or
+alters `RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
 worktree removal.
+
+## Delivery orchestration boundaries
+
+Delivery is split across one orchestrator and two narrow leaf tools:
+
+- `deliver` owns candidate discovery from current-session file-operation evidence, mandatory
+  confirmation of the exact file/state manifest, mandatory confirmation of ordered coherent commit
+  groups, fresh branch/worktree creation, selected-state transfer, validation, per-group staging,
+  and verification of the resulting commits. Ambiguity stops before mutation. The dependency-free
+  `delivery-selection` runtime binds the selected staged or working-tree states to source `HEAD`,
+  applies them to the refreshed base with conflict detection, and reconciles the exact resulting
+  diff without emitting file content.
+- `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
+  validates files. A delivery caller supplies a verified execution-location receipt, declared path
+  group, and expected index-tree OID; the result reports enough exact Git state for the caller to
+  verify the parent, branch, commit tree, and remaining changes.
+- `pr` owns only publication of commits from a prepared branch. A direct call requires a clean,
+  attached, non-base checkout. A returning delivery caller supplies the exact head, base, verified
+  head OID, and successful commit-only evidence. `pr` never creates or switches a branch, stages or
+  commits files, or treats dirt in another checkout as PR content.
+
+`deliver` stages and verifies one confirmed group at a time. If a later group, hook, receipt check,
+or tree comparison fails, earlier commits and all remaining local states stay on the run-owned
+branch/worktree; no push or PR occurs and no successful commit is rewritten. Only a clean final
+branch with a non-empty verified commit range is handed to `pr`, after the worktree is removed
+through its ownership-safe lifecycle and the local branch is retained.
+
+Implementation workflows use the same boundary at handback: they preserve verified earlier
+commits, stage only their recorded residual output, call `commit`, verify its receipt, and call `pr`
+only for an effective `pr` completion. Completion precedence is established before delivery setup.
+Exactly one unambiguous affirmative current-invocation request for `pr`, `merge`, or `branch`
+overrides `delivery.completion`; negated, hypothetical, descriptive, or alternative wording does
+not. The report records both configured and applied values without mutating configuration.
+Invoking `deliver` is itself explicit `pr` intent, so that tool never inherits another completion
+action.
 
 ## Persisted worktree lifecycle
 

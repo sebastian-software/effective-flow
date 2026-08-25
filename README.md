@@ -6,17 +6,19 @@ clarification through implementation to handover – invoked via `/effective-flo
 
 Not a grab-bag of individual prompts, but a coherent set of tools that know one another:
 `plan` recommends the matching follow-up workflow; `build`, `fix`, `refactor` and `docs`
-share the same conventions for tests, review and completion; and `commit`/`pr`/`merge-gate`
-close the loop all the way to the merge.
+share the same conventions for tests, review and completion; `deliver` turns confirmed local
+session changes into coherent commits on a fresh branch and opens a pull request; staged-only
+`commit`, commit-only `pr` and `merge-gate` remain focused tools for the steps through to the merge.
 
 ## Why Effective Flow
 
 - **One tool for the whole cycle.** `investigate` and `plan` clarify the task,
   `build`, `fix`, `refactor`, `docs` and `maintain` implement it, `review` checks it,
-  `commit` and `pr` bring the change in, and `merge-gate` drives an open pull request the rest
-  of the way – answering automatic reviewers and merging once it is genuinely clean, but
-  never past an open comment from an account other than the one it runs as – with no break
-  between the phases.
+  `deliver` moves confirmed local changes through a fresh branch and coherent commits into a
+  pull request, and the narrower `commit` and `pr` tools handle work that is already staged or
+  committed. `merge-gate` drives an open pull request the rest of the way – answering automatic
+  reviewers and merging once it is genuinely clean, but never past an open comment from an
+  account other than the one it runs as – with no break between the phases.
 - **Thin router, lazy loading.** Effective Flow loads only the tool catalog at startup; the
   full instruction of a tool arrives only on invocation. This keeps sessions lean and
   prevents the token limit from being exhausted by tools loaded up front.

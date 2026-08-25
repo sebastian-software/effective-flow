@@ -398,6 +398,19 @@ dedicated delivery branch.
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 | `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
 
+`delivery.completion` is the fallback when the current invocation does not already contain one
+unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch`. A qualifying
+directive overrides the configured value for that run; Effective Flow reports the configured value
+and the applied override without editing the ADR. Negated, hypothetical, descriptive, and merely
+mentioned actions are not override evidence. Alternatives or simultaneous requests for several
+actions trigger a focused question and abort before delivery mutation if no single action is
+confirmed.
+
+`/effective-flow deliver` is deliberately narrower: invoking it is itself affirmative `pr` intent.
+It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
+action default, and reports when its `pr` outcome replaces a different configured value. The other
+delivery settings still control its refreshed base, branch prefix, setup, and worktree location.
+
 ## Block `worktree`
 
 Controls the execution location of the overall implementation, independently of

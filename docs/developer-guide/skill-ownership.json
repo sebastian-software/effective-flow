@@ -9,6 +9,7 @@
       "skill": "effective-delivery",
       "consumers": [
         { "consumer": "maintain", "classification": "delegate" },
+        { "consumer": "deliver", "classification": "delegate" },
         {
           "consumer": "dependency-version-policy",
           "classification": "route-when-relevant"

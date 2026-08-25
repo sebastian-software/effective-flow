@@ -2,9 +2,11 @@
 
 As soon as an Effective Flow tool changes code, tests, or documentation (`build`, `fix`,
 `refactor`, `docs`, `maintain`, `apply`), the same question comes up twice: **where** does the
-work run, and **how** does the result come back into your target branch? Both are governed by
-two separate, independent configuration blocks – `worktree` for the execution location,
-`delivery` for the delivery branch and its completion. The exact field values are in
+work run, and **how** does the result come back into your target branch? The same delivery boundary
+also matters when [`/effective-flow deliver`](./tools-deliver.md#effective-flow-deliver) turns
+current-session local changes into a pull request. Two separate, independent configuration blocks
+govern the normal implementation path – `worktree` for the execution location and `delivery` for
+the delivery branch and its completion. The exact field values are in
 [Configuration](./configuration.md#block-worktree) – this guide explains the interplay.
 
 ## Worktree: the execution location
@@ -133,6 +135,29 @@ a numeric suffix and reports the chosen name.
 ref, Effective Flow first fetches the current state via `git fetch`, so the delivery branch does
 not start out stale.
 
+### Delivering local changes from the current session
+
+`/effective-flow deliver` is the standalone bridge from uncommitted local work to a pull request.
+It derives a candidate file/state selection from concrete changes made in the current session,
+reconciles it with Git, and always asks you to confirm the complete ordered selection. Unstaged and
+untracked files can be selected. A partially staged file is shown as two choices – its staged state
+and its complete working-tree state. When session evidence is missing, contradictory, or admits
+several scopes, the tool asks for clarification; without an exact selection, it aborts before
+creating a branch or changing any index, commit, remote, or forge state.
+
+After selection, `deliver` proposes an ordered partition into coherent commits and asks you to
+confirm the exact paths, order, and tentative commit effect for every group. It then refreshes the
+configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch in an
+Effective Flow-owned worktree. Only the confirmed states are transferred. The source checkout may
+be dirty, detached, on the base branch, or harness-managed; it remains unchanged, including its
+index and all non-selected files.
+
+Each group is staged separately in the delivery worktree and committed through the staged-only
+`commit` tool. The pull request is opened through the commit-only `pr` tool only after all groups
+and the final clean branch have been verified. If a later group fails, the branch and worktree stay
+available with earlier commits and the remaining uncommitted groups exactly at that boundary;
+nothing is pushed, no pull request is opened, and successful commits are not rewritten.
+
 ### In-place only, without worktree
 
 If `worktree.enabled: false` but a delivery action (PR, merge, branch) is still wanted,
@@ -148,10 +173,17 @@ review reports, investigations, the worktrees themselves) remain pure bookkeepin
 repo and are never carried into the delivery branch. Report-name collision checks and finding
 number reads/writes also inspect only that main-checkout runtime directory.
 
+Implementation workflows preserve any verified commits they created earlier, then inventory only
+their known residual output: code, tests, documentation, and the applicable plan state. They stage
+only those literal paths and delegate the actual commit to the staged-only `commit` tool. An extra
+changed path blocks delivery instead of being swept into the commit. The returned parent, branch,
+tree, and remaining state must match before the workflow can continue to PR or merge.
+
 ## Completion action (`delivery.completion`)
 
-After the actual work is finished, `delivery.completion` (default `merge`) decides what
-happens with the finished delivery branch:
+After the actual work is finished, `delivery.completion` (default `merge`) decides what happens
+with the finished delivery branch unless the current invocation contains one unambiguous,
+affirmative request for `pr`, `merge`, or `branch`:
 
 | Value    | Behavior                                                                                                                                                                                                |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -161,6 +193,18 @@ happens with the finished delivery branch:
 
 If `delivery.completion` is not set (`null`), Effective Flow asks again on every run for the
 desired action.
+
+An explicit completion request has precedence over the configured value for that run. Effective
+Flow records the evidence before delivery setup and reports both values when, for example, an
+explicit request for `pr` replaces configured `merge`; it does not modify the project-setup ADR.
+Negated requests ("do not open a PR"), hypothetical or descriptive mentions, and a bare mention of
+an action are not overrides. Alternatives or simultaneous requests for several actions are
+ambiguous: Effective Flow asks you to choose one and aborts before delivery mutation if the choice
+remains unresolved.
+
+Invoking `/effective-flow deliver` is itself an affirmative request for `pr`. It always opens a
+pull request after successful commits and reports when this replaces a different configured
+completion action. It does not use `delivery.completion` as its default.
 
 After successful completion, Effective Flow removes a worktree only when its receipt proves
 that this workflow created that exact path and branch for the recorded purpose and a fresh
@@ -194,13 +238,17 @@ in [Understanding tools](./tools-understand.md).
 
 ## Interplay with `/effective-flow pr`
 
-At `delivery.completion: pr`, the final step delegates to
-[`/effective-flow pr`](./tools-deliver.md) and hands over the delivery and base branch.
-`/effective-flow pr` itself knows no dedicated worktree mode – it assumes that the branch
-already exists and can be pushed, and only takes care of the PR creation (including host
-detection for `gh` or `tea`, see [Remote Tracker](./remote-tracker.md)). If you call
-`/effective-flow pr` directly for a manually created branch, the same rules on the base branch
-and on not rewriting existing PR commits apply as described above.
+At effective `pr` completion, the final step delegates to
+[`/effective-flow pr`](./tools-deliver.md#effective-flow-pr) with the exact prepared head branch,
+base branch, verified head OID, and successful commit-only handoff. `pr` creates no branch and
+accepts no working-tree content: it pushes only the verified commit range and handles PR creation
+or exact head/base reuse, including host detection for `gh` or `tea` (see
+[Remote Tracker](./remote-tracker.md)).
+
+A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
+commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation
+abort rather than silently excluding it. Use `deliver` when local content still needs selection or
+isolation.
 
 ## Distinction: the apply-review-specific worktree
 
@@ -221,6 +269,6 @@ integrated component remains available for inspection.
 - [Configuration](./configuration.md) – complete field reference for `delivery` and
   `worktree`
 - [Implementation tools](./tools-implement.md) – tools that use this mechanism
-- [Delivery tools](./tools-deliver.md) – `/effective-flow commit` and `/effective-flow pr`
+- [Delivery tools](./tools-deliver.md) – `/effective-flow deliver`, `commit`, and `pr`
 - [Troubleshooting](./troubleshooting.md) – worktree conflicts and uncommitted changes
 - [Glossary](./glossary.md) – worktree, delivery, delivery branch

@@ -1,15 +1,71 @@
 # Tool reference: Deliver changes
 
-This group brings finished changes into the repository and all the way to the merge:
-`commit` creates a commit, `pr` opens a pull request from it, and `merge-gate` drives that pull
-request to merge-readiness and, if allowed, merges it. `commit` and `pr` deliberately run **no**
-project validation of their own (linting, tests, build checks) – the implementation tools and their
-model-configured validation/test workers are responsible for that, applying central guidance when
-available: `effective-delivery` for running the repository's own checks, `effective-engineering`
-for test strategy and regression tests. `merge-gate` starts no local validation of its own either;
-it waits for the checks the forge reports and has failures repaired by `/effective-flow iterate`.
-The one thing it has verified locally – a merge conflict it resolved – is checked inside delegated
-workers, never by a command the gate runs itself.
+This group brings finished changes into the repository and all the way to the merge. `deliver`
+turns a confirmed selection of current-session local changes into coherent commits on a fresh
+branch and opens a pull request. The narrower tools keep strict boundaries: `commit` consumes only
+an already staged diff, while `pr` consumes only commits on an already prepared branch.
+`merge-gate` then drives the pull request to merge-readiness and, if allowed, merges it.
+
+`commit` and `pr` deliberately run **no** project validation of their own (linting, tests, build
+checks). `deliver` runs the repository's established pre-commit validation in its isolated
+delivery checkout before it starts committing. Implementation tools and their model-configured
+validation/test workers remain responsible for validating implementation handbacks, applying
+central guidance when available: `effective-delivery` for running the repository's own checks and
+`effective-engineering` for test strategy and regression tests. `merge-gate` starts no local
+validation of its own either; it waits for the checks the forge reports and has failures repaired
+by `/effective-flow iterate`. The one thing it has verified locally – a merge conflict it resolved
+– is checked inside delegated workers, never by a command the gate runs itself.
+
+## `/effective-flow deliver`
+
+**Purpose:** Delivers an exact, user-confirmed selection of local changes as one or more coherent
+commits on a fresh delivery branch, then opens a pull request without changing the source checkout
+or its index.
+
+**When to use:** After work was completed locally and the relevant files are not yet all staged or
+committed, especially when the checkout also contains unrelated changes. Use `commit` instead when
+the exact intended diff is already staged, and use `pr` only when the intended commits are already
+on a prepared branch.
+
+**Typical call:** `/effective-flow deliver`
+
+**Selection:** `deliver` reconstructs a candidate from the files changed in the current session and
+checks those paths against Git. It never treats all repository dirt or recent files as session
+output. Before any branch, worktree, index, commit, push, or forge mutation, it displays the complete
+ordered candidate with each path's selected state and asks you to confirm it. Unstaged and untracked
+files are eligible when you identify them; ignored paths, directories, globs, path aliases, and
+untracked symbolic links are not. For a partially staged file, `deliver` shows the staged state and
+the complete working-tree state as separate choices instead of choosing one for you.
+
+There is no path-list argument to prepare. If session evidence is missing, contradictory, or admits
+more than one plausible scope, `deliver` asks you to refine the selection in normal conversation.
+If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
+
+**Commit groups:** After the file/state selection is confirmed, `deliver` proposes an ordered set of
+coherent commits based on the session's task boundaries and the substantive diffs. It shows every
+group's exact paths and tentative Conventional Commit effect, and requires a second confirmation.
+The groups must form a complete, non-overlapping partition of the selected changes. Ambiguous
+grouping or order stops before staging; `deliver` never creates a mixed catch-all commit merely to
+finish.
+
+Each confirmed group is staged by literal path in sequence and handed to the staged-only `commit`
+tool. After each commit, `deliver` verifies the parent, branch, tree, and remaining groups. If a
+later group or commit hook fails, the fresh worktree and branch are retained together with all
+earlier verified commits and the still-uncommitted groups. Nothing is pushed and no pull request is
+created; successful commits are never amended, reordered, squashed, or retried.
+
+**Isolation and result:** `deliver` refreshes `delivery.baseBranch` and creates a collision-safe
+`<delivery.branchPrefix>/deliver/<slug>` branch in a new Effective Flow-owned worktree. Only the
+confirmed states are transferred, and any conflict with newer base content stops instead of
+overwriting it. The dirty, detached, base-branch, or harness-managed source checkout remains the
+immutable source of evidence: `deliver` never switches, stages, commits in, or removes it.
+
+After every group is a verified commit and the delivery checkout is clean, `deliver` removes only
+its verified clean worktree, retains the local branch, and hands the exact branch, base, and head
+commit to `pr`. The invocation itself is an affirmative request for a pull request, so `deliver`
+does not inherit a different `delivery.completion`; when the configured value differs, the result
+reports both values without changing the configuration. Updating an existing pull request belongs
+to `/effective-flow iterate`, not this fresh-branch workflow.
 
 ## `/effective-flow commit`
 
@@ -27,29 +83,34 @@ maintenance, `docs:` documentation, `refactor:` structural improvement without b
 `test:` test change), description in `language.git`, without `Co-Authored-By` lines. The type and
 other Conventional-Commit syntax remain English and language-stable.
 
-**Interplay:** Typically used at the end of a `/effective-flow build`, `/effective-flow fix`,
-`/effective-flow refactor`, `/effective-flow docs`, or `/effective-flow maintain` run (which follow these
-commit rules internally as well), or standalone for manually staged changes.
-Respects existing Husky hooks (commitlint, prettier, lint); if they fail, `commit`
-briefly relays the cause instead of bypassing the hooks. With multiple unrelated
-topics in the staged diff, it suggests splitting first.
+**Interplay:** Use it standalone for manually staged changes, or let `deliver` and implementation
+workflows call it with a verified delivery receipt after they have staged only their known output.
+`commit` never selects, stages, unstages, restores, or validates files. It respects existing hooks;
+if a hook fails, it reports the cause instead of bypassing it. With multiple unrelated topics in a
+directly staged diff, it suggests splitting first. A delivery caller additionally receives the
+created commit OID, branch, tree OID, and remaining staged, unstaged, and untracked state so it can
+verify the boundary before continuing.
 
 ## `/effective-flow pr`
 
-**Purpose:** Creates or reuses a pull request from a local branch – or via a freshly created
-delivery branch – on the detected Git host: GitHub via `gh` or
-Forgejo via `tea`. Detects the host automatically from the `origin` URL, pushes the branch if
-needed, derives the title and description for a new pull request, and restores the checkout after
-a successful creation or reuse.
+**Purpose:** Creates or reuses a pull request from an already prepared, committed branch on the
+detected Git host: GitHub via `gh` or Forgejo via `tea`. It verifies the exact head and base, pushes
+the branch if needed, and derives the title and description for a new pull request. It never creates
+or switches a branch, stages or commits content, or restores a checkout.
 
-**When to use:** When finished changes on a branch are to be submitted as a pull request for
-review, instead of merging them directly.
+**When to use:** When every intended change is already committed on an attached, non-base branch
+and that branch is ready to publish. If local staged, unstaged, or untracked changes still need to
+be included, use `deliver`; direct `pr` aborts on a dirty checkout rather than omitting them.
 
 **Typical call:** `/effective-flow pr`
 
-**Input/output:** Input is the head branch (default: currently checked-out branch) and the
-base branch (default from `delivery.baseBranch`, legacy fallback `worktree.baseBranch`, otherwise
-`main`). Output is the PR URL, the branch name, and the final local checkout state.
+**Input/output:** A direct invocation takes the clean currently checked-out branch as its head. A
+returning delivery handback supplies an exact head branch, base branch, and verified head OID, even
+if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`,
+with the legacy `worktree.baseBranch` and then `main` as fallbacks. Output is the PR URL, head and
+base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
+no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
+before publishing.
 
 **Existing pull requests:** After pushing the branch, `pr` queries the detected host for open
 pull requests and exact-matches both the requested head and base branches. Exactly one match is
@@ -72,13 +133,12 @@ subject. The PR body and subsequent PR or review-thread comments follow `languag
 may intentionally differ without producing a mixed artifact: each surface uses one resolved
 language, while types, branch names, paths, labels, and other machine-facing tokens stay stable.
 
-**Interplay:** `pr` is one of the three possible completion actions
-(`delivery.completion: pr`) that `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`,
-`/effective-flow docs`, and `/effective-flow maintain` can trigger at the end of their delivery/worktree handback
-– alongside `merge` and `branch`. But `pr` can also be called standalone, e.g. to
-open an already-prepared delivery branch as a PR after the fact. For details on
-delivery branch and completion actions, see [Worktree and delivery](worktree-and-delivery.md);
-for the associated config keys, see [Configuration](configuration.md).
+**Interplay:** `pr` is the commit-only leaf used by `deliver` and by the `pr` completion action of
+implementation workflows. It can also be called standalone for a clean, already-prepared branch.
+Fresh branch creation and local-change transfer belong to `deliver` or an implementation handback,
+not to `pr`. For details on delivery branches and completion actions, see
+[Worktree and delivery](worktree-and-delivery.md); for the associated config keys, see
+[Configuration](configuration.md).
 
 ## `/effective-flow merge-gate [<PR reference>]`
 
