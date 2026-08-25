@@ -11,35 +11,37 @@ a pure runtime directory and completely gitignored.
 
 ## Configuration
 
-| Key                                       | Value                      |
-| ----------------------------------------- | -------------------------- |
-| review.profile                            | focused                    |
-| review.autoConfirmScope                   | false                      |
-| review.designDecisionSources              | standard                   |
-| review.validation                         | full                       |
-| applyReview.defaultCommitStrategy         | null                       |
-| applyReview.finalValidation               | full                       |
-| applyReview.stashPolicy                   | interactive                |
-| applyReview.worktree.baseDir              | .effective-flow/.worktrees |
-| applyReview.worktree.setup                | auto                       |
-| plan.dir                                  | docs/plan                  |
-| language.project                          | en                         |
-| language.source                           | en                         |
-| language.documentation.user               | en                         |
-| language.documentation.technical          | en                         |
-| language.workflow                         | en                         |
-| language.forge                            | en                         |
-| language.git                              | en                         |
-| delivery.baseBranch                       | origin/develop             |
-| delivery.branchPrefix                     | effective-flow             |
-| delivery.completion                       | pr                         |
-| delivery.returnBranch                     | auto                       |
-| worktree.enabled                          | true                       |
-| worktree.setup                            | auto                       |
-| worktree.baseDir                          | .effective-flow/.worktrees |
-| tracker.mode                              | remote                     |
-| tracker.remoteToolOverride                | auto                       |
-| mergeGate.completion                      | merge                      |
-| mergeGate.bots                            | greptile-apps[bot]         |
-| mergeGate.bots.greptile-apps[bot].trigger | @greptileai                |
-| mergeGate.bots.greptile-apps[bot].check   | Greptile Review            |
+| Key                                       | Value                        |
+| ----------------------------------------- | ---------------------------- |
+| review.profile                            | focused                      |
+| review.autoConfirmScope                   | false                        |
+| review.designDecisionSources              | standard                     |
+| review.validation                         | full                         |
+| applyReview.defaultCommitStrategy         | null                         |
+| applyReview.finalValidation               | full                         |
+| applyReview.stashPolicy                   | interactive                  |
+| applyReview.worktree.baseDir              | .effective-flow/.worktrees   |
+| applyReview.worktree.setup                | auto                         |
+| plan.dir                                  | docs/plan                    |
+| language.project                          | en                           |
+| language.source                           | en                           |
+| language.documentation.user               | en                           |
+| language.documentation.technical          | en                           |
+| language.workflow                         | en                           |
+| language.forge                            | en                           |
+| language.git                              | en                           |
+| delivery.baseBranch                       | origin/develop               |
+| delivery.branchPrefix                     | effective-flow               |
+| delivery.completion                       | pr                           |
+| delivery.returnBranch                     | auto                         |
+| worktree.enabled                          | true                         |
+| worktree.setup                            | auto                         |
+| worktree.baseDir                          | .effective-flow/.worktrees   |
+| tracker.mode                              | remote                       |
+| tracker.remoteToolOverride                | auto                         |
+| mergeGate.completion                      | merge                        |
+| mergeGate.bots                            | greptile-apps[bot], recensor |
+| mergeGate.bots.greptile-apps[bot].trigger | @greptileai                  |
+| mergeGate.bots.greptile-apps[bot].check   | Greptile Review              |
+| mergeGate.bots.recensor.trigger           | /recensor review             |
+| mergeGate.bots.recensor.check             | recensor/review              |
