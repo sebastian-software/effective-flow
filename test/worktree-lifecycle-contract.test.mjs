@@ -270,3 +270,28 @@ test('the lifecycle contract survives every harness render', () => {
     assert.doesNotMatch(rendered, /```(?:lazy-)?include/);
   }
 });
+
+test('deliver owns only its partial-diff lifecycle and retains artifacts on incomplete delivery', () => {
+  const deliverTool = extractBody(readSource('tools', 'deliver.md'));
+
+  assert.match(deliverTool, /```include\nworktree-lifecycle\n```/);
+  assertClauses(deliverTool, [
+    [/purpose `partial-diff`[\s\S]{0,240}lifecycle record as `active`/i, 'active registration'],
+    [
+      /If delegation, a hook, tree comparison, receipt validation, or residual comparison fails[\s\S]{0,360}preserve\s+the worktree, branch, verified earlier commits, and remaining\s+uncommitted groups/i,
+      'later-group failure retention',
+    ],
+    [
+      /After every group is a verified commit[\s\S]{0,320}transition only the run-owned lifecycle record through `cleanup-ready` and\s+`cleanup-in-progress`/i,
+      'commit-gated cleanup transition',
+    ],
+    [/remove only its verified clean worktree without force/i, 'ordinary owned cleanup'],
+    [/A PR failure retains the committed branch/i, 'PR failure branch retention'],
+  ]);
+
+  assert.doesNotMatch(
+    deliverTool,
+    /remove[^\n]*harness-managed source checkout/i,
+    'deliver must never remove the harness-owned source checkout',
+  );
+});

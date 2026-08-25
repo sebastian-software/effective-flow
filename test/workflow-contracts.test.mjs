@@ -2995,11 +2995,11 @@ test('the merge gate is exposed in the "Deliver changes" group', () => {
   // it read as a reviewer.
   //
   // Membership is not enough: the router renders a group's members in array order, and
-  // `commit` → `pr` → `merge-gate` is the delivery chain in the order it is walked. A gate
+  // `deliver` → `commit` → `pr` → `merge-gate` is the delivery chain in the order it is walked. A gate
   // listed first would present the group as "merge, then commit", which is the reading the
   // group move exists to remove. The whole sequence is therefore pinned.
   const deliver = section(source('build.mjs'), "title: 'Deliver changes',", '\n  {');
-  assert.match(deliver, /tools: \['commit', 'pr', 'merge-gate'\]/);
+  assert.match(deliver, /tools: \['deliver', 'commit', 'pr', 'merge-gate'\]/);
 
   // And the group it left keeps only the tool that actually reviews.
   const quality = section(source('build.mjs'), "title: 'Ensure quality',", '\n  {');
@@ -8331,4 +8331,80 @@ test('every site stating the pending discriminator is true on both providers', (
     assert.match(window, /zero instant/i, `${path} must name the zero instant it normalizes`);
     assert.match(window, /PENDING/, `${path} must name the portable PENDING cross-check`);
   }
+});
+
+test('deliver is exposed with its shipped helper and requires two exact confirmations', () => {
+  const build = source('build.mjs');
+  const deliver = source('src/tools/deliver.md');
+
+  assert.match(build, /tools: \['deliver', 'commit', 'pr', 'merge-gate'\]/);
+  assert.match(build, /'delivery-selection\.mjs'/);
+  assert.match(build, /'delivery-selection-core\.mjs'/);
+  assert.match(deliver, /There is no structured public path argument/);
+  assert.match(deliver, /Recency or repository dirt alone is never evidence/);
+  assert.match(
+    deliver,
+    /Abort before branch, worktree, index, commit, remote, or forge\s+mutation/,
+  );
+  ordered(
+    deliver,
+    'Should exactly this ordered file/state manifest be delivered?',
+    'Should the confirmed selection be committed in exactly these groups and this order?',
+    'Create the isolated delivery branch',
+    'Commit each confirmed group',
+    'Publish only the verified commits',
+  );
+  assert.match(
+    deliver,
+    /invocation is itself affirmative current-run PR intent[\s\S]*does not inherit `delivery\.completion`/,
+  );
+  assert.match(
+    deliver,
+    /reports that its explicit PR intent replaces any different configured\s+`delivery\.completion`[\s\S]*does not change the stored value/,
+  );
+});
+
+test('deliver commits confirmed groups in order and stops after a later-group failure', () => {
+  const deliver = source('src/tools/deliver.md');
+
+  assert.match(
+    deliver,
+    /complete, non-overlapping partition whose\s+ordered union equals the confirmed manifest exactly/,
+  );
+  assert.match(deliver, /Process groups sequentially in their confirmed order/);
+  assert.match(deliver, /Stage only the current group's literal paths/);
+  assert.match(deliver, /expected index-tree OID and pre-commit `HEAD`/);
+  assert.match(
+    deliver,
+    /residual changed\s+paths equal the ordered union of all later groups, with no staged residue/,
+  );
+  assert.match(
+    deliver,
+    /preserve\s+the worktree, branch, verified earlier commits, and remaining\s+uncommitted groups/,
+  );
+  assert.match(deliver, /never amend, squash, reorder, delete, or retry successful\s+commits/);
+  assert.match(deliver, /never push or create a PR/);
+});
+
+test('commit and pr preserve the staged-only and committed-only boundaries', () => {
+  const commit = source('src/tools/commit.md');
+  const pr = source('src/tools/pr.md');
+
+  assert.match(commit, /commit only files that are already staged/);
+  assert.match(commit, /Never select, stage, unstage, stash, restore/);
+  assert.match(commit, /expected staged-tree OID/);
+  assert.match(commit, /commit OID, its parent, branch, and tree OID/);
+  assert.match(commit, /remaining staged, unstaged, and untracked paths/);
+
+  assert.match(pr, /publish only the verified commit range/);
+  assert.match(pr, /There is no fresh-branch or local-change-transfer mode/);
+  assert.match(pr, /detached invocation or base branch as head aborts/);
+  assert.match(pr, /complete working tree and index to be clean, including\s+untracked paths/);
+  assert.match(pr, /successful commit-only evidence/);
+  assert.match(pr, /branch and require it still equals the\s+supplied OID/);
+  assert.match(pr, /No commits found:[\s\S]*stop without any remote mutation/);
+  assert.match(
+    pr,
+    /Consume commits only\. Never create or switch branches, stage or commit changes/,
+  );
 });

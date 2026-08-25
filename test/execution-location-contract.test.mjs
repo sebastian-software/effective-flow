@@ -85,7 +85,10 @@ test('the execution-location contract survives every harness render unchanged', 
         .trim()
         .replaceAll('`/effective-flow setup`', '`{{SKILL:setup}}`')
         .replaceAll('`$effective-flow setup`', '`{{SKILL:setup}}`')
-        .replaceAll('`effective-flow setup`', '`{{SKILL:setup}}`'),
+        .replaceAll('`effective-flow setup`', '`{{SKILL:setup}}`')
+        .replaceAll('`/effective-flow deliver`', '`{{SKILL:deliver}}`')
+        .replaceAll('`$effective-flow deliver`', '`{{SKILL:deliver}}`')
+        .replaceAll('`effective-flow deliver`', '`{{SKILL:deliver}}`'),
       contract,
     );
     assert.ok(renderedDelivery.includes(renderedContract.trim()), `delivery output for ${harness}`);
@@ -278,28 +281,47 @@ test('forge operations are rooted in the runtime state root, not the execution w
   }
 });
 
-test('the pr tool keeps its invocation checkout separate from the execution root', () => {
+test('the pr tool consumes a prepared branch without creating or restoring a checkout', () => {
   const pr = extractBody(readSource('tools', 'pr.md'));
 
   assert.match(
     pr,
-    /\*\*The invocation checkout stays separate\.\*\*/,
+    /\*\*A direct invocation checkout stays separate\.\*\*/,
     'pr.md must separate the invocation checkout from the execution root',
   );
   assert.match(
     pr,
-    /Default: the branch checked out in the invocation checkout,\s+never the one in the execution root/,
-    'the head branch must default from the invocation checkout',
+    /There is no fresh-branch or local-change-transfer mode in this tool/,
+    'pr.md must reject branch creation and local-change transfer',
   );
   assert.match(
     pr,
-    /Branch creation, branch checkout and the\s+working-tree check below happen in the invocation checkout, never in the execution root/,
-    'lifecycle branch preparation must stay in the invocation checkout',
+    /Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,\s+squash, or force-update a ref/,
+    'pr.md must preserve the prepared committed head',
   );
   assert.match(
     pr,
-    /switch the invocation\s+checkout — the one step 3 may have switched, never the execution root — back to/,
-    'the checkout restore must target the invocation checkout',
+    /Never switch or otherwise restore a checkout: this\s+tool did not create or change one/,
+    'pr.md must not restore a checkout it never changed',
+  );
+});
+
+test('deliver keeps dirty or detached source evidence separate from its owned delivery root', () => {
+  const deliver = extractBody(readSource('tools', 'deliver.md'));
+
+  assert.match(deliver, /```include\nexecution-location\n```/);
+  assert.match(deliver, /leave the source checkout and its index\s+unchanged/i);
+  assert.match(
+    deliver,
+    /The source may be detached, on the configured base, dirty, or harness-managed[\s\S]*creates its own verified delivery worktree/,
+  );
+  assert.match(
+    deliver,
+    /source receipt[\s\S]*deliveryReceipt: \{repositoryIdentity, executionRoot,[\s\S]*headOid\}/,
+  );
+  assert.match(
+    contract,
+    /source and delivery receipts remain distinct and must both pass preflight[\s\S]*neither receipt may be substituted for the other/,
   );
 });
 
@@ -316,7 +338,7 @@ test('the completion action and the pr tool root their forge work in the runtime
   );
   assert.match(
     resolvedDeliveryFragment,
-    /pass the delivery branch, base branch, the verified\s+`RUNTIME_STATE_ROOT` as its execution root/,
+    /pass the exact delivery branch, base branch, verified final head OID,[\s\S]{0,180}verified `RUNTIME_STATE_ROOT` as its execution\s+root/,
     'the pr handback must pass the runtime root',
   );
 

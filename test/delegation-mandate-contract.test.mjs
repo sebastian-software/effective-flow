@@ -23,6 +23,7 @@ const planTool = readSource('tools', 'plan.md');
 const planIssueTool = readSource('tools', 'plan-issue.md');
 
 const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
+  'deliver',
   'build',
   'fix',
   'refactor',
