@@ -330,6 +330,21 @@ previously blocked at. Configuring
 third state. A state that cannot be established at all still counts as "not started", which blocks
 the merge rather than passing it.
 
+**Unconfigured-reviewer hint.** When a normal gate read sees a bot-typed submitted review or review
+thread, but the effective configuration either lacks that reviewer login or has the login without a
+`.check`, the final chat summary includes one non-blocking advisory immediately before its next
+steps. Repeated sightings and the bare/`[bot]` spellings are reported once. A check name by itself or
+a top-level bot comment does not qualify, so ordinary CI, coverage, deployment, and dependency
+activity does not produce the hint; a reviewer that writes only a top-level or sticky comment can
+therefore go unnoticed. The advisory does not enroll the reviewer in the current run, trigger or
+wait for it, change a merge condition, write the project-setup ADR, or post to the pull request. To
+complete the configuration, run `/effective-flow setup`, choose **Guided**, open **Advanced
+settings**, and select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
+existing login and trigger when only `.check` is missing, set a distinctive per-reviewer trigger
+only when the tool supports one, and copy the exact `.check` context from the checks list of a pull
+request that reviewer has handled. Never guess the context; leave it unset only when the reviewer
+publishes no check.
+
 The same reviewer states guard [`/effective-flow iterate`](tools-implement.md). Called directly on
 a pull request where a configured reviewer is still running, `iterate` no longer classifies a thread
 set that is still growing: it names the reviewer, says what proved it, and asks once whether to wait

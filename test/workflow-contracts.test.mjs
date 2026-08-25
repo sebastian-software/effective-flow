@@ -8408,3 +8408,241 @@ test('commit and pr preserve the staged-only and committed-only boundaries', () 
     /Consume commits only\. Never create or switch branches, stage or commit changes/,
   );
 });
+
+// --- Advisory for observed but incompletely configured automatic reviewers ---
+
+test('the reviewer advisory conservatively classifies and retains candidates without gating', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const advisory = flat(section(gate, '## Unconfigured automatic-reviewer advisory', '\n## '));
+  const wisdom = flat(section(gate, '## Wisdom accumulation', '\n## '));
+
+  // Pin the normalized fields rather than generic surface names: otherwise a pending review or a
+  // thread whose first comment has no established author can silently become a candidate.
+  assert.match(
+    advisory,
+    /`thread\.comments\[0\]\.author\.authorType` is established as `bot`/i,
+    'a thread candidate must use the first comment normalized bot type',
+  );
+  assert.match(
+    advisory,
+    /`thread\.comments\[0\]\.author\.login` is established/i,
+    'a thread candidate must have an established first-comment login',
+  );
+  assert.match(
+    advisory,
+    /`review\.author\.authorType` is established as `bot`/i,
+    'a review candidate must use the normalized review-author bot type',
+  );
+  assert.match(
+    advisory,
+    /`review\.author\.login` is established/i,
+    'a review candidate must have an established review-author login',
+  );
+  assert.match(
+    advisory,
+    /`review\.submittedAt` is established/i,
+    'a review candidate must carry an established submission time',
+  );
+  assert.match(
+    advisory,
+    /pending (?:review|draft) without `submittedAt` does not qualify/i,
+    'a pending review without submittedAt must be explicitly excluded',
+  );
+  assert.match(
+    advisory,
+    near('top-level bot comment alone', 'does not qualify', 120),
+    'a top-level bot comment alone must not suggest an automatic reviewer',
+  );
+  assert.match(
+    advisory,
+    near('arbitrary check name', 'neither does|does not qualify', 120),
+    'an arbitrary check name alone must not suggest an automatic reviewer',
+  );
+  assert.match(
+    advisory,
+    /read no thread or review body/i,
+    'untrusted review prose must not become advisory direction',
+  );
+  assert.match(
+    advisory,
+    /reuse "Matching a configured login" in full/i,
+    'candidate classification must use the established effective-login rule',
+  );
+  for (const [claim, pattern] of [
+    ['the one trailing bot suffix rule', /bot-typed one-suffix rule/i],
+    ['the legacy per-key fallback', /per-key legacy `prReview\.\*` fallback/i],
+    ['collapsed duplicate entries', /collapsed duplicate entries/i],
+  ]) {
+    assert.match(advisory, pattern, `candidate classification must retain ${claim}`);
+  }
+  assert.match(
+    advisory,
+    near('No effective reviewer login', 'record `missing reviewer`', 160),
+    'an absent effective login must be classified as a missing reviewer',
+  );
+  assert.match(
+    advisory,
+    near('Effective reviewer login, no effective `.check`', 'record `missing check`', 180),
+    'an existing login without an effective check must be classified separately',
+  );
+  assert.match(
+    advisory,
+    near('Effective reviewer login and effective `.check`', 'record nothing', 180),
+    'a fully configured reviewer must be suppressed',
+  );
+  assert.match(
+    advisory,
+    /create no second login normalizer/i,
+    'the advisory must not drift into a second login-matching implementation',
+  );
+  assert.match(
+    advisory,
+    near('De-duplicate candidates across reads and surfaces', 'one-suffix equivalence', 180),
+    'one reviewer observed on several surfaces or reads must remain one candidate',
+  );
+  assert.match(
+    advisory,
+    /merge later sightings into that record/i,
+    'later observations must enrich the existing candidate instead of duplicating it',
+  );
+  assert.match(
+    advisory,
+    near('later read no longer carries the item', 'never remove', 180),
+    'a later snapshot must not erase evidence already observed in this run',
+  );
+  assert.match(
+    wisdom,
+    near('every candidate', '`missing reviewer` or `missing check`', 240),
+    'wisdom must retain the candidate classification',
+  );
+  assert.match(
+    wisdom,
+    near(
+      'compact thread/review evidence',
+      'whether any qualifying sighting reported a check list',
+      240,
+    ),
+    'wisdom must retain enough compact evidence to render the final hint honestly',
+  );
+  assert.match(
+    wisdom,
+    near('every applicable fresh read', 'never shorten it from a later snapshot', 220),
+    'every qualifying read must accumulate rather than replace advisory evidence',
+  );
+  assert.match(
+    advisory,
+    near(
+      'reporting observation only',
+      'enters neither the automatic-reviewer round nor any merge precondition',
+      300,
+    ),
+    'candidate discovery must not become a gate input',
+  );
+  assert.match(
+    advisory,
+    near('changes no configuration', 'final chat advisory', 180),
+    'candidate discovery must remain chat-only instead of writing configuration',
+  );
+  for (const forbiddenEffect of [
+    'trigger',
+    'wait',
+    'retry',
+    'delegation',
+    'pull-request write',
+    'ADR write',
+    'blocked merge',
+  ]) {
+    assert.match(
+      advisory,
+      new RegExp(`never causes a[\\s\\S]{0,180}${forbiddenEffect}`, 'i'),
+      `candidate discovery must explicitly forbid a ${forbiddenEffect}`,
+    );
+  }
+});
+
+test('every fresh review read accumulates advisory candidates before evaluation', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase1 = flat(section(gate, '### Phase 1', '\n### Phase 2'));
+  const phase3 = section(gate, '### Phase 3', '\n### Phase 4');
+  const postWait = flat(
+    section(
+      phase3,
+      '4. **The wait is one blocking wait, not a poll.**',
+      '\n5. **When the bot has run:**',
+    ),
+  );
+  const phase4 = flat(section(gate, '### Phase 4', '\n### Phase 5'));
+
+  ordered(
+    phase1,
+    'Before evaluating the guard',
+    'apply "Unconfigured automatic-reviewer advisory"',
+    'merge its candidates into the wisdom record',
+    '2. Evaluate every comment, thread, and counting review',
+  );
+  ordered(
+    postWait,
+    'then re-read exactly once',
+    'Apply "Unconfigured automatic-reviewer advisory"',
+    'merge its candidates into the wisdom record',
+    'only then decide whether the reviewer has run',
+  );
+  ordered(
+    phase4,
+    'against a **fresh** read',
+    'Apply "Unconfigured automatic-reviewer advisory"',
+    'merge its candidates into the wisdom record',
+    'before evaluating any condition',
+    '1. the resolved completion mode is `merge`',
+  );
+});
+
+test('Phase 6 gives the complete setup route before the literal final next-step block', () => {
+  const phase6Raw = section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## ');
+  const phase6 = prose(phase6Raw);
+
+  ordered(
+    phase6Raw,
+    '**as the final conditional summary item, one non-blocking configuration advisory**',
+    '3. Emit the next-step block per `next-steps` as the last element of that chat report.',
+  );
+  for (const [claim, pattern] of [
+    ['the setup invocation', /`\{\{SKILL:setup\}\}`/],
+    ['Guided mode', /Guided/],
+    ['Advanced settings', /Advanced settings/],
+    ['Block 9', /Block 9 \(`mergeGate`\)/],
+    ['the reviewer list', /`mergeGate\.bots`/],
+    [
+      'a supported distinctive trigger',
+      /distinctive per-reviewer `\.trigger` only when the reviewer supports one/i,
+    ],
+    ['a manually confirmed exact check', /exact context manually confirmed/i],
+    [
+      'the recent reviewed-PR fallback',
+      /recent pull request reviewed by (?:the same|the|that) tool/i,
+    ],
+    ['the no-invention rule', /never invent a check name/i],
+    ['setup as the sole ADR writer', /setup is the sole ADR writer/i],
+    [
+      'the unchanged gate and pull request',
+      /changed neither this gate result nor the pull request/i,
+    ],
+  ]) {
+    assert.match(phase6, pattern, `the final advisory must retain ${claim}`);
+  }
+  assert.match(
+    phase6,
+    near('preserve the configured login and trigger', 'adding only the context', 180),
+    'a missing-check hint must preserve the existing login and trigger',
+  );
+  assert.match(
+    phase6,
+    near('record says one was reported', 'otherwise to a recent pull request', 220),
+    'checksReported false must route to a recent pull request reviewed by the same tool',
+  );
+  assert.match(
+    phase6,
+    /next-step block[^.]*last element of that chat report/i,
+    'the unchanged next-step block must remain the literal final report element',
+  );
+});
