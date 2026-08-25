@@ -95,6 +95,7 @@ backstop for one that carries open points.
 | review      | concept file mode, ready                                     | {{SKILL:plan}} <work package>        | —                                       |
 | review      | concept file mode, open points remain                        | {{SKILL:review}} <concept-file>      | —                                       |
 | review      | pull-request mode                                            | {{SKILL:merge-gate}} <PR>            | {{SKILL:iterate}} <PR>                  |
+| deliver     | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | —                                       |
 | commit      | commit created on a non-base branch                          | {{SKILL:pr}}                         | —                                       |
 | pr          | always                                                       | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
 | merge-gate  | blocked by review notes                                      | {{SKILL:iterate}} <PR>               | {{SKILL:merge-gate}} <PR>               |

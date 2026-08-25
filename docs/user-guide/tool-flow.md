@@ -90,6 +90,7 @@ only one. Fill every `<...>` placeholder with the run's actual state.
 | `review`      | concept file mode, ready                                     | `/effective-flow plan <work package>`        | —                                               |
 | `review`      | concept file mode, open points remain                        | `/effective-flow review <concept-file>`      | —                                               |
 | `review`      | pull-request mode                                            | `/effective-flow merge-gate <PR>`            | `/effective-flow iterate <PR>`                  |
+| `deliver`     | PR opened                                                    | `/effective-flow merge-gate <PR>`            | —                                               |
 | `commit`      | commit created on a non-base branch                          | `/effective-flow pr`                         | —                                               |
 | `pr`          | always                                                       | `/effective-flow merge-gate <PR>`            | `/effective-flow review <PR>`                   |
 | `merge-gate`  | blocked by review notes                                      | `/effective-flow iterate <PR>`               | `/effective-flow merge-gate <PR>`               |
@@ -107,5 +108,7 @@ implements it and, once a pull request is open, recommends `merge-gate`; `merge-
 merges (and points you back at `open-plans` for what's next) or sends you to `iterate` when review
 notes block it. Everything else in the table – `investigate`, `concept`, `plan-issue`,
 `open-plans`, the direct implementation tools (`build`, `fix`, `refactor`, `docs`, `maintain`),
-`review`, `commit`, `pr`, `setup`, and `cleanup` – feeds into that same spine from a different
-entry point or closes a smaller loop around one of its stops.
+`review`, `deliver`, `commit`, `pr`, `setup`, and `cleanup` – feeds into that same spine from a
+different entry point or closes a smaller loop around one of its stops. `deliver` is the local
+changes entry point: after it opens the confirmed multi-commit pull request, it points directly to
+`merge-gate`.
