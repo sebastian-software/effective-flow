@@ -48,9 +48,7 @@ See the [language support matrix](docs/user-guide/language-support.md) for detai
 
 ## Quick start
 
-Effective Flow is installed from the repository's built default-branch payload. Because the
-repository is currently private, your local Git client must already have access to it. Public
-availability is tracked in [issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
+Effective Flow is installed from the repository's built default-branch payload.
 
 The preferred path is [DALO](https://github.com/sebastian-software/dalo):
 
