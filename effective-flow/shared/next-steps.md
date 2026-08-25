@@ -95,6 +95,7 @@ backstop for one that carries open points.
 | review      | concept file mode, ready                                     | effective-flow plan <work package>        | —                                       |
 | review      | concept file mode, open points remain                        | effective-flow review <concept-file>      | —                                       |
 | review      | pull-request mode                                            | effective-flow merge-gate <PR>            | effective-flow iterate <PR>                  |
+| deliver     | PR opened                                                    | effective-flow merge-gate <PR>            | —                                       |
 | commit      | commit created on a non-base branch                          | effective-flow pr                         | —                                       |
 | pr          | always                                                       | effective-flow merge-gate <PR>            | effective-flow review <PR>                   |
 | merge-gate  | blocked by review notes                                      | effective-flow iterate <PR>               | effective-flow merge-gate <PR>               |

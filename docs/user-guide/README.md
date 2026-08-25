@@ -17,7 +17,7 @@ New to Effective Flow? Read in this order:
    - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
      `refactor`, `docs`, `maintain`, `iterate`.
    - [Ensure quality](tools-quality.md) – `review`.
-   - [Deliver changes](tools-deliver.md) – `commit`, `pr`, `merge-gate`.
+   - [Deliver changes](tools-deliver.md) – `deliver`, `commit`, `pr`, `merge-gate`.
    - [Set up & info](tools-setup.md) – `setup`, `cleanup`, `version`.
 3. In-depth guides:
    - [Tool flow](tool-flow.md) – how a completed run recommends its own next step, and every
@@ -36,19 +36,19 @@ New to Effective Flow? Read in this order:
 
 ## All documents in this category
 
-| Document                                             | Content                                               |
-| ---------------------------------------------------- | ----------------------------------------------------- |
-| [getting-started.md](getting-started.md)             | Installation, first invocation, typical flow, recipes |
-| [tool-flow.md](tool-flow.md)                         | Next-step recommendations after a completed run       |
-| [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                   |
-| [tools-implement.md](tools-implement.md)             | Tool reference: implementation                        |
-| [tools-quality.md](tools-quality.md)                 | Tool reference: review                                |
-| [tools-deliver.md](tools-deliver.md)                 | Tool reference: commit, pull request & merge gate     |
-| [tools-setup.md](tools-setup.md)                     | Tool reference: setup, cleanup & version              |
-| [configuration.md](configuration.md)                 | Complete project-setup ADR reference                  |
-| [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types           |
-| [remote-tracker.md](remote-tracker.md)               | Remote issue mode (GitHub/Forgejo)                    |
-| [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                      |
-| [language-support.md](language-support.md)           | Specialist and reduced-depth language support         |
-| [troubleshooting.md](troubleshooting.md)             | FAQ and common problems                               |
-| [glossary.md](glossary.md)                           | Terms from tool to skill discovery                    |
+| Document                                             | Content                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| [getting-started.md](getting-started.md)             | Installation, first invocation, typical flow, recipes   |
+| [tool-flow.md](tool-flow.md)                         | Next-step recommendations after a completed run         |
+| [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                     |
+| [tools-implement.md](tools-implement.md)             | Tool reference: implementation                          |
+| [tools-quality.md](tools-quality.md)                 | Tool reference: review                                  |
+| [tools-deliver.md](tools-deliver.md)                 | Tool reference: local delivery, commit, PR & merge gate |
+| [tools-setup.md](tools-setup.md)                     | Tool reference: setup, cleanup & version                |
+| [configuration.md](configuration.md)                 | Complete project-setup ADR reference                    |
+| [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types             |
+| [remote-tracker.md](remote-tracker.md)               | Remote issue mode (GitHub/Forgejo)                      |
+| [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                        |
+| [language-support.md](language-support.md)           | Specialist and reduced-depth language support           |
+| [troubleshooting.md](troubleshooting.md)             | FAQ and common problems                                 |
+| [glossary.md](glossary.md)                           | Terms from tool to skill discovery                      |

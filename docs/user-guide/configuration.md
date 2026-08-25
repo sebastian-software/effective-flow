@@ -333,11 +333,21 @@ both values, posts no trigger for that reviewer, and blocks the merge on it rath
 which of the two you meant.
 
 `bots.<login>.check` names a commit status or check run that reviewer publishes, for example
-`recensor/review`. With it, the gate can tell a reviewer that is **still running** from one that has
-**not started**: it waits for the former and triggers only the latter. Leave it unset for a reviewer
-that publishes no such check (Greptile today), and the gate keeps its previous two-state behavior
-for that reviewer. See
+`recensor/review` or `Greptile Review`. With it, the gate can tell a reviewer that is **still
+running** from one that has **not started**: it waits for the former and triggers only the latter.
+Leave it unset only for a reviewer that publishes no such check; Greptile publishes the `Greptile
+Review` check and should use that exact context. Without `.check`, the gate keeps its previous
+two-state behavior for that reviewer. See
 [Three reviewer states, not two](./tools-deliver.md#three-reviewer-states-not-two).
+
+When the gate conservatively observes a bot-typed submitted review or review thread whose login is
+missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
+effective `.check`, its final chat summary recommends `/effective-flow setup` → **Guided** →
+**Advanced settings** → **Block 9 (`mergeGate`)**. Add or select the reviewer there and copy only an
+exact `.check` context confirmed in a pull request that tool reviewed. A normal check name or
+top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
+writer, and the current gate result does not change. See the
+[unconfigured-reviewer hint](./tools-deliver.md#three-reviewer-states-not-two) for the full behavior.
 
 **Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
 controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
@@ -397,6 +407,19 @@ dedicated delivery branch.
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 | `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+
+`delivery.completion` is the fallback when the current invocation does not already contain one
+unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch`. A qualifying
+directive overrides the configured value for that run; Effective Flow reports the configured value
+and the applied override without editing the ADR. Negated, hypothetical, descriptive, and merely
+mentioned actions are not override evidence. Alternatives or simultaneous requests for several
+actions trigger a focused question and abort before delivery mutation if no single action is
+confirmed.
+
+`/effective-flow deliver` is deliberately narrower: invoking it is itself affirmative `pr` intent.
+It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
+action default, and reports when its `pr` outcome replaces a different configured value. The other
+delivery settings still control its refreshed base, branch prefix, setup, and worktree location.
 
 ## Block `worktree`
 

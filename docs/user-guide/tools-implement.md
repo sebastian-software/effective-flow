@@ -12,8 +12,18 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   `/effective-flow plan` or `/effective-flow review <plan file>`.
 - With delivery/worktree mode active, the actual implementation runs in a separate
   delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
-  `branch`). For details see [Worktree and delivery](worktree-and-delivery.md).
+  `branch`). One unambiguous affirmative request for exactly one of those actions in the current
+  invocation overrides `delivery.completion` for that run, and the result reports both the
+  configured value and the applied override. Negated, hypothetical, descriptive, or merely
+  mentioned actions are not overrides; ambiguous alternatives trigger a question and abort before
+  delivery mutation if unresolved. For details see
+  [Worktree and delivery](worktree-and-delivery.md#completion-action-deliverycompletion).
   `/effective-flow apply` itself implements nothing, it only delegates.
+- At handback, implementation workflows preserve any verified commits already created, then stage
+  only the literal paths in their recorded residual output. They delegate the actual commit to the
+  staged-only `commit` tool and verify its parent, branch, tree, and remaining state. Only a
+  successful committed handoff may reach commit-only `pr`; an unknown extra path blocks delivery
+  instead of being added implicitly.
 - Before implementation starts, they declare one measurable completion condition derived from the
   acceptance criteria and the validation plan, and they verify it through the validator and the
   routed reviewers rather than by self-assessment. Correction rounds are bounded; if the condition

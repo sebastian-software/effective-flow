@@ -659,6 +659,15 @@ branch all stay in `EXECUTION_ROOT`.
   pins its OID. If delivery requires a branch, create or adopt that branch through the supported
   app flow, then issue and verify a new branch receipt before committing.
 
+The standalone `effective-flow deliver` partial-diff lifecycle is the narrow exception to reusing a
+harness-managed source checkout as the delivery checkout. Its dirty or detached source receipt is
+immutable input evidence, not the place where delivery work occurs. After confirming an exact
+selection, `deliver` may create a separate `effective-flow-created` delivery worktree from the
+refreshed configured base, issue a new purpose-scoped receipt for that worktree, and transfer only
+the bound selection. It never switches, adopts, stages, commits in, or removes the harness-managed
+source checkout. The source and delivery receipts remain distinct and must both pass preflight at
+every cross-check; neither receipt may be substituted for the other.
+
 ### Setup and cleanup ownership
 
 Automatic setup runs only when a receipt is `effective-flow-created` and its setup status is
@@ -985,6 +994,16 @@ per-block migration anymore. Until a config is migrated, reading applies: new va
 
 At the start of the actual implementation work, determine the effective mode:
 
+- Before delivery setup, classify completion intent from the current invocation. Only an
+  unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch` in this
+  run is explicit intent. A negated, hypothetical, descriptive, or merely mentioned action is not
+  override evidence. Alternatives such as "create a PR or keep a branch" and simultaneous requests
+  for more than one action are ambiguous: interact for one affirmative action and abort before any
+  mutation if unresolved.
+- Record the explicit action and its evidence separately from configuration. When one exists, it is
+  the effective completion even when it differs from `delivery.completion`; do not modify the
+  configured value. The completion report names both the configured value and applied override.
+  With no qualifying directive, retain the configured value and existing fallback behavior.
 - Before any fetch, setup, branch change or other write-capable action, issue and verify an
   execution-location receipt for the current checkout. Before worktree creation, resolve and
   retain its verified `RUNTIME_STATE_ROOT` from the first record of
@@ -1138,23 +1157,34 @@ preconditions are met:
 
 1. `git worktree` is available.
 2. `delivery.baseBranch` is resolvable and, for remote refs, updatable.
-3. The workflow knows an explicit list of the files that should go into the PR.
+3. The workflow knows the exact repository-relative files and final states that belong to its own
+   output. A standalone local-change selection uses `effective-flow deliver`; implementation handback
+   uses only the workflow's recorded output set plus any explicitly confirmed additions.
 
 The procedure:
 
-1. Create a fresh worktree branch from `delivery.baseBranch`, then immediately issue and verify
+1. Refresh and resolve `delivery.baseBranch`. Create a fresh worktree branch from that exact OID,
+   then immediately issue and verify
    a separate `effective-flow-created` receipt whose purpose is `partial-diff`. Before setup or
    file transfer, initialize its lifecycle record as `active` with branch policy `retain`; a
    record-creation failure retains both worktree and branch and aborts the partial-diff flow.
-2. Take only the selected delivery files from the main checkout into the worktree.
-   Permitted sources for this selection are plan affected files,
-   review finding scope, issue scope, known files produced by the workflow, or
-   an explicit user selection.
-3. In the verified execution root, check whether the taken-over files produce a meaningful diff
-   against the base ref. If not, abort and create no empty PR.
-4. Commit in the verified execution root and run `effective-flow pr` against
-   `delivery.baseBranch`.
-5. Remove the worktree only through the shared lifecycle transition, claim, ordinary remove, and
+2. Take only the selected delivery states from the source checkout into the worktree. Permitted
+   evidence is plan affected-file scope reconciled with actual output, review finding scope, issue
+   scope, files recorded as produced by the workflow, or explicit user confirmation. Preserve
+   additions, modifications, modes, deletions, and both rename endpoints; never use a whole-tree
+   copy or infer ownership from recency.
+3. Run setup only under the new receipt's setup ownership, then require its tracked tree and index
+   to be clean before transfer. In the verified execution root, compare the exact transferred
+   changed-path/state set with the selected output and require a meaningful diff against the base.
+   Any extra, missing, or mismatched path aborts; an empty diff creates no commit or PR.
+4. Stage only the explicitly known residual output and delegate the actual commit to
+   `effective-flow commit` with the full verified receipt, expected branch and staged-tree OID plus the
+   literal line `Next steps: suppressed`. Verify the returned commit OID, parent, branch, tree and
+   residual state before continuing. Never describe locally reproduced commit behavior as a commit
+   delegation.
+5. Run `effective-flow pr` only for effective `pr` completion and only with the exact verified committed
+   head handoff described below.
+6. Remove the worktree only through the shared lifecycle transition, claim, ordinary remove, and
    reconciliation sequence after the receipt passes every ownership-safe cleanup check. Leave
    the delivery branch locally and the main checkout unchanged. Non-selected changes in the
    main checkout remain untouched.
@@ -1247,19 +1277,29 @@ stop and report the conflict instead of overwriting history.
    creation OID. Marking and move are **committed along with it** by step 2 and are thereby part of the
    PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the main repo.
    If the workflow kept no plan file, this step does not apply.
-2. **Ensure commit:** Commit all intended changes in the delivery branch
-   – code, test and documentation deliverables as well as the taken-over plan file – via the
-   commit logic from `effective-flow commit` (stage exclusively known changed files
-   explicitly, derive a concrete Conventional Commit message, never set a
-   `Co-Authored-By` trailer). Resolve `language.git` for the human-readable commit description;
-   keep Conventional Commit types stable. Workflows that have already committed their work
-   (e.g. `effective-flow maintain` with one commit per group) only commit the
-   plan file here afterwards, if needed. If there is nothing to commit: inform the user,
-   remove an automatically created empty delivery branch and end without
-   PR/merge.
-3. **Determine completion action:** If `delivery.completion` has a valid value,
-   use it and briefly report that the action was taken from the Effective Flow configuration
-   (project setup ADR). Otherwise ask:
+2. **Ensure committed handoff:** Preserve every verified commit already created by the implementing
+   workflow, such as `effective-flow maintain`'s per-group commits. Verify that each expected commit is
+   still reachable in order from the exact delivery branch and never amend, squash, reorder, or
+   replace it. Then inventory only the uncommitted residual output: known code, test and
+   documentation deliverables plus the plan state from step 1. An unselected changed path blocks
+   handback rather than being swept into the commit.
+   - When residual output exists, stage exclusively its literal known paths, reconcile the complete
+     staged set, and record the exact staged-tree OID and pre-commit `HEAD`. Delegate the actual
+     commit to `effective-flow commit` with the full verified execution-location receipt, expected branch,
+     declared residual paths and expected tree, plus the literal line `Next steps: suppressed`.
+     Resolve `language.git` for the human-readable description and keep Conventional Commit types
+     stable. Require the returned commit to be a new child of the expected `HEAD` on the exact
+     branch with the expected tree and no unaccounted residual state before advancing the receipt.
+   - When no residual output exists but verified earlier commits do, continue without creating an
+     empty commit.
+   - When neither residual output nor a verified commit range exists, inform the user, safely remove
+     only an automatically created empty delivery branch/worktree under its ownership contract, and
+     end without PR or merge.
+3. **Determine completion action:** Use the unambiguous affirmative current-run action recorded
+   during setup first. If it overrides a valid `delivery.completion`, report both the configured
+   value and the applied explicit action. If no qualifying explicit action exists and
+   `delivery.completion` has a valid value, use it and briefly report that the action came from the
+   Effective Flow configuration (project setup ADR). Otherwise ask:
 
 If Delivery was active and no valid value for `delivery.completion` is set: Ask the user: **How should the delivery branch be completed?**
 - Pull request -- Push the branch and create a PR against the base branch via pr
@@ -1291,8 +1331,11 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      behind its remote-tracking ref, point that out. Merge the delivery branch –
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
-   - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
-     `RUNTIME_STATE_ROOT` as its execution root, the workflow/change type
+   - `pr`: resolve and record the final delivery-branch head OID after every intended commit and
+     require a non-empty verified commit range against the refreshed base. Delegate to
+     `effective-flow pr` and pass the exact delivery branch, base branch, verified final head OID,
+     successful commit-only handoff evidence, the verified `RUNTIME_STATE_ROOT` as its execution
+     root, and the workflow/change type
      (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal — and the literal line `Next steps: suppressed` on its own

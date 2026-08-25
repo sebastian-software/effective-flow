@@ -188,11 +188,12 @@ For new functionality or a larger change, this is the usual three-step process:
    By default (`worktree.enabled: true`) this runs in its own Git worktree on
    its own delivery branch, so your current checkout stays untouched.
 3. **Completion** follows `delivery.completion`: merge locally onto the base branch
-   (default), leave the branch standing, or – with `completion: "pr"` or on
-   request in the workflow – open a pull request directly. Without a worktree or with a
-   left-standing branch, you open the pull request manually afterwards:
-   **`/effective-flow pr`** opens it from the current branch on GitHub (`gh`) or Forgejo
-   (`tea`), including a title and description derived from the commits.
+   (default), leave the branch standing, or – with `completion: "pr"` – open a pull request
+   directly. One unambiguous affirmative request for `pr`, `merge`, or `branch` in the current
+   invocation overrides that setting for the run and is reported as an override. A left-standing
+   clean branch whose intended changes are already committed can be published afterwards with
+   **`/effective-flow pr`** on GitHub (`gh`) or Forgejo (`tea`), including a title and description
+   derived from the commits.
 
 In Codex the syntax is identical – only the prefix changes from `/effective-flow` to
 `$effective-flow`. The handoff there is thus `$effective-flow plan "<description of the task>"`
@@ -204,6 +205,32 @@ Details on worktree, delivery branch, and the three completion types are in
 [Implement the tools](tools-implement.md), and [Deliver the tools](tools-deliver.md). Each
 completed run also closes with up to two ready-to-paste follow-up invocations for exactly this
 state — see [Tool flow](tool-flow.md) for the full map.
+
+## From current local changes to a pull request
+
+When the implementation is already present as local changes, use:
+
+```text
+/effective-flow deliver
+```
+
+You do not need to prepare a structured path list. `deliver` derives a candidate from concrete file
+changes made in the current session, shows the complete ordered file/state selection, and asks you
+to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
+partially staged, choose either its staged state or its complete working-tree state. If session and
+Git evidence do not identify one exact scope, the tool asks for clarification and aborts without
+mutation if the scope remains ambiguous.
+
+Next, confirm the proposed ordered commit groups. `deliver` transfers only the confirmed states to
+a fresh branch and worktree based on the refreshed configured base, commits each coherent group in
+order, and opens a pull request only after every commit and the final clean branch are verified.
+Your source checkout and its unrelated changes remain untouched. If a later commit group fails,
+the delivery branch and worktree remain available with earlier commits and the uncommitted groups;
+nothing is pushed and no PR is opened.
+
+Use `/effective-flow commit` instead when the exact intended diff is already staged. Use
+`/effective-flow pr` only when all intended content is already committed on a clean, attached,
+non-base branch.
 
 ## Short recipes
 

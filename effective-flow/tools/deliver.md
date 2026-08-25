@@ -1,49 +1,44 @@
 
-# Effective Flow Apply Review – Commit mechanics
+# Effective Flow Deliver
 
-This internal sub-file is loaded by `tools/apply-review.md` as soon as the commit strategy `Individually` or `Individually with worktrees` is fixed in Phase 2. With `No commits` it is not needed.
+You turn an exact, user-confirmed selection of local changes into one or more coherent commits on a
+fresh delivery branch, then open a pull request. You leave the source checkout and its index
+unchanged.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when the commit lock or a component worktree below `.effective-flow/` is about to be mutated.
+## Task tracking
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the commit lock or a component worktree below `.effective-flow/` is about to be mutated.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-#### Git commit mutex for "Individually"
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.
+### When to use
 
-Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-Mutex convention:
+### When not to use
 
-- Lock handle: absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock`. Every concurrent delegation
-  for the repository uses this one retained main-checkout handle, even when its
-  `EXECUTION_ROOT` is linked or native.
-- If the runtime directory is missing, from `RUNTIME_STATE_ROOT` apply “Runtime-state write
-  safety” to that exact parent directory immediately before its `mkdir`. Immediately before
-  every acquisition attempt, from the same root apply the guard again to the exact
-  repository-relative lock target `.effective-flow/apply-review-commit.lock`. Do not create or
-  remove a lock when the relevant guard blocks.
-- Lock acquisition: atomically via `mkdir <absolute-lock-handle>`.
-- Lock content: after a successful acquisition, write a short `owner` file below that absolute
-  lock handle, with finding ID, component and timestamp.
-- Lock release: delete only the lock you acquired yourself, after a commit success, commit abort or error handling.
-- If the lock already exists: wait and retry. If the lock clearly seems orphaned, ask the user before removing it.
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-Critical section under the lock:
+## Delegation mandate
 
-1. Run `git status --porcelain`.
-2. If staged changes are already present that do not clearly belong to this finding: **do not commit**, inform the user and end with `ABORT` for this finding. Foreign staged changes must not be taken over or cleaned up.
-3. Stage exclusively the files known from the pre-analysis and the actual implementation of this finding. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
-4. Check `git diff --cached --name-only`. The list may only contain files of this finding.
-5. Check `git diff --cached` whether the staged diff belongs content-wise to the current finding.
-6. Run the commit with the message fixed in Phase 2.
-   Its human-readable description uses the `language.git` value resolved by the orchestrator;
-   the Conventional Commit type and other machine tokens remain stable English/ASCII.
-7. Determine the commit hash directly afterwards with `git rev-parse HEAD` and log the `finding ID -> commit hash` mapping in the wisdom file.
-8. Run `git status --porcelain` directly afterwards and log in the wisdom file whether uncommitted changes of other parallel findings still lie in the working tree. These residual changes are allowed as long as they are not staged and not part of the current commit.
+Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
-If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
+- Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
+- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
+- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+**Load on demand:** Read `shared/language-rules.md`, when commit and forge output languages are resolved.
+
+**Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
+
+**Load on demand:** Read `shared/runtime-state-safety.md`, when worktree lifecycle state below .effective-flow is read or mutated.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when worktree lifecycle state below .effective-flow is read or mutated.
 
 ## Verified execution location
 
@@ -453,167 +448,281 @@ status, one concrete retention reason, and one safe next step. Never collapse se
 behind a shared reason. State explicitly when no linked worktrees remain. Report unmatched
 lifecycle records separately so partial cleanup evidence is not hidden.
 
-#### Git worktree isolation for "Individually with worktrees"
+**Load on demand:** Read `shared/session-rename.md`, when the confirmed delivery subject is known and a session title is about to be applied or emitted.
 
-If the commit strategy **Individually with worktrees** was chosen, a worktree isolation per delegation component applies instead of the git commit mutex.
+## Completion protocol
 
-Preconditions:
+When you use internal sub-agents, give them this response protocol:
 
-- The original working tree must be clean before creating the worktrees (`git status --porcelain` empty), apart from ignored Effective Flow files under `.effective-flow/`.
-- `git worktree` must be available.
-- Read the Effective Flow configuration (project-setup ADR), if present. If it is missing or contains no worktree values, use the defaults.
-- Issue and verify the original integration root's own execution-location receipt before
-  creating any component worktree. That receipt retains the verified main checkout as
-  `RUNTIME_STATE_ROOT`, even if the original integration root is itself linked or native.
-  Revalidate both roots before every integration or runtime-state write.
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
-Worktree paths:
+Check by the orchestrator:
 
-1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"`.
-2. Use `applyReview.worktree.baseDir` from the Effective Flow configuration (project-setup ADR) as the BaseDir, or the default `.effective-flow/.worktrees`.
-   Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`; an explicitly configured absolute
-   external BaseDir remains absolute and must still pass the environment and ownership checks.
-3. Create worktrees under:
-   `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
-4. `GROUP_NAME` must be deterministic, short and filesystem-safe and identify the component from Phase 4.2, e.g. `component-1`, `component-2` or a slugified component description. Not an action-bound name, since a component can contain findings of multiple actions.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+3. No keyword: retry with escalation.
 
-The default deliberately lies inside the project root. This keeps worktree creation, file changes and setup commands within the usual workspace sandbox. External BaseDirs are to be used only if they are explicitly fixed in the Effective Flow configuration (project-setup ADR) and the environment allows write and execute rights for them.
+### Retry escalation
 
-Branch convention:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
-- Per component: `apply-review/<SESSION_ID>/<GROUP_NAME>`
-- When the concrete worktree path is below `.effective-flow/`, resolve every missing base or
-  parent directory. From `RUNTIME_STATE_ROOT`, apply “Runtime-state write safety” to each exact
-  directory immediately before its `mkdir`. Guard the exact absolute `WORKTREE_PATH` separately
-  from that same root and immediately before the worktree operation. Create the worktree with:
-  `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
-- Immediately issue and verify a separate `effective-flow-created` execution-location receipt
-  for the component path, branch, repository, component owner and `apply-review` purpose. Keep
-  the original integration root under its own receipt and the main checkout under the unchanged
-  runtime-state handle. Immediately after the receipt succeeds, initialize a version 1
-  lifecycle record for this component as `active`, with branch policy
-  `delete-after-integration`, below the verified `RUNTIME_STATE_ROOT`. Create it before setup or
-  delegation and retain its record ID and absolute handle with the component receipt. If receipt
-  or lifecycle-record creation fails, retain the new worktree and branch for reconciliation and
-  do not delegate.
+1. Retry 1: same task with a continuation hint
+2. Retry 2: simplified task with reduced scope
+3. Retry 3: minimal task for only the most critical subtask
+4. After 3 failed attempts:
+   - inform the user
+   - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-Setup detection in the worktree:
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
-- `applyReview.worktree.setup: "auto"` or a missing value:
-  - `pnpm-lock.yaml` → `pnpm install --frozen-lockfile --prefer-offline`
-  - `package-lock.json` → `npm ci`
-  - `yarn.lock` → `yarn install --frozen-lockfile`
-  - `Cargo.toml` → `cargo fetch --locked`
-  - `go.mod` → `go mod download`
-  - `uv.lock` → `uv sync --frozen`
-  - `poetry.lock` → `poetry install --sync`
-  - no known file → no setup
-- `applyReview.worktree.setup: "none"`: run no setup.
-- `applyReview.worktree.setup` as a string: run this explicit setup command in the worktree.
+## Goal
 
-Git hooks are not used for this setup. The setup is an explicit `apply-review` step so that it stays visible, reproducible and limited to the temporary worktree.
+- derive the candidate files and selected states from changes made in the current session
+- require confirmation of the exact ordered selection and an exact ordered commit partition
+- transfer only those states to a fresh branch/worktree based on the refreshed configured base
+- stage and commit one confirmed coherent group at a time through `effective-flow commit`
+- call commit-only `effective-flow pr` only after every group is a verified commit
+- preserve the source checkout byte-for-byte and index-for-index
 
-Before running the worktree setup, briefly show which setup mode is active and which command is planned. With `setup: "none"` no install/fetch command is run; if a sub-agent later fails due to missing dependencies, name the setup profile in the summary as a possible cause.
-Record the component receipt's final setup status as `complete` or `skipped` before delegation.
+This tool always targets a pull request. Its invocation is itself affirmative current-run PR intent,
+so it does not inherit `delivery.completion`. Existing pull-request updates belong to
+`effective-flow iterate`, not this fresh-branch workflow.
 
-Delegation in the worktree:
+## Recommended skills
 
-- Pass the delegation sub-agent the component receipt and its canonical absolute execution
-  root together with the unchanged canonical `RUNTIME_STATE_ROOT`. Require its fail-closed
-  preflight before the first write and explicitly rooted file, shell, validation, staging and
-  commit operations throughout. Reports, backlinks, memory, cache, migrations, and wisdom use
-  only retained absolute handles below the runtime root.
-- Pass it the commit strategy `Individually with worktrees`.
-- Within the verified component root, sub-agents commit after each finding individually,
-  without an internal finding ID in the commit message.
-- Log in the wisdom file per finding: execution-location receipt, commit hash and commit message.
+- `effective-delivery`
 
-The component lifecycle remains `active` after a successful delegation because its commits are
-not yet proven integrated. Under the per-record lock, transition it to `failed` when the
-component implementation, commit, integration, or validation fails, or to `aborted` when the
-workflow deliberately stops that component before integration. Retain the worktree and branch in
-both states. An unexpected interruption leaves `active`; never infer an outcome from age.
+## Skill discovery
 
-Integration back into the original branch:
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-1. Wait for all worktree component final statuses.
-2. Process the successful components in the **deterministic component order from Phase 4.2, step 5** (by report position of their first finding). Determine per component the new commits on its branch since `HEAD` of the original branch, in component order.
-3. Revalidate the original integration receipt, then integrate the commits back into that
-   verified root sequentially with `git -C <ORIGINAL_ROOT> cherry-pick <commit>`.
-4. On a cherry-pick conflict: first run the cherry-pick conflict assessment. Resolve low-risk conflicts directly; ask the user only on high-risk or unclear conflicts.
-5. After successful integration and validation, acquire the component lifecycle lock and
-   reverify that its receipt and lifecycle record still prove `effective-flow-created`, Git
-   registration, exact checkout identity, clean state, and proof that every component commit was
-   integrated. Transition `active` to `cleanup-ready`, claim it as `cleanup-in-progress`, and
-   run only `git worktree remove <WORKTREE_PATH>` without force while retaining the lock.
-   Reconcile the absence of the worktree, then apply the recorded `delete-after-integration`
-   policy only when integration is still proven, using exclusively
-   `git branch -d <BRANCH_NAME>`. Delete only the fully reconciled lifecycle record. A remove or
-   branch-cleanup refusal becomes `cleanup-failed` with the exact error and retains the remaining
-   record, branch, or partial state. Never use `git worktree prune`, `git branch -D`, or alter
-   `RUNTIME_STATE_ROOT` and its local review state.
-6. On a failed component, transition an `active` lifecycle record to `failed` under its lock,
-   keep the worktree and branch, name both paths and the record in the summary, and obtain a user
-   decision only for manual reconciliation. On a controlled cancellation, use `aborted` instead.
-   Neither status is eligible for automatic cleanup.
+### Approach
 
-Cherry-pick conflict assessment:
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
+2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
+   0–2), never "on suspicion". Never load the `effective-flow` router recursively as a
+   **discovered skill**: re-entering the host of this run would create competing lifecycle and
+   delivery owners. Declared tool-to-tool delegation is a different mechanism and stays allowed.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** For an unknown or current library or framework, use an available
+   current-docs skill (e.g. `context7-mcp`) when needed instead of guessing from memory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-1. Capture the conflict state:
-   - `git status --porcelain`
-   - affected conflict files
-   - current commit, worktree branch and finding assignment from the wisdom file
-   - conflict markers and affected sections per file
-2. Assess the risk per file and for the entire conflict.
+## Project conventions
 
-A conflict counts as **low-risk** only if all conditions are met:
+Read the project's `AGENTS.md` before any mutation. Use the repository's configured base, branch
+prefix, setup, validation, language, and forge conventions. No external dependency is required: use
+the shipped dependency-free `scripts/delivery-selection.mjs` helper for its `inventory`,
+`bind-manifest`, `verify-source`, `transfer`, and `reconcile` operations.
 
-- The conflict is small, locally contained and unambiguously understandable.
-- The affected changes are additive or mechanically combinable.
-- There are no contradictory functional statements.
-- No code paths with non-obvious runtime logic are affected.
-- The resolution requires no new architecture or product decision.
+## Selection contract
 
-Typical low-risk cases:
+There is no structured public path argument. Reconstruct the candidate from the current session's
+known output set and concrete file-operation evidence, then reconcile it with the helper's NUL-safe
+`inventory {root}` result for staged, unstaged, untracked, deleted, renamed, and partially staged
+paths. Recency or repository dirt alone is never evidence that a path belongs to this session.
 
-- identical changes on both sides
-- additive Markdown or documentation sections that can both be preserved
-- independent entries in lists, tables or changelogs
-- trivial ordering conflicts without semantic meaning
-- formatting or comment conflicts without effect on behavior
+For every candidate, show the exact repository-relative literal path, state, and selection origin in
+a stable order. A partially staged path exposes its staged state and full working-tree state as two
+different choices. Never collapse them or infer which one the user means.
 
-A conflict counts as **high-risk** as soon as at least one condition applies:
+If session and Git evidence are absent, incomplete, contradictory, or admit several scopes, interact
+with the user until the exact manifest is clear. The user may identify unstaged or untracked paths in
+normal conversation; reconcile every name literally against Git instead of interpreting a glob,
+directory, alias, or inferred path. Abort before branch, worktree, index, commit, remote, or forge
+mutation when exact agreement cannot be reached.
 
-- Production code, tests with behavior assertions, public APIs, schemas, migrations, lockfiles or build/runtime configurations are affected.
-- Both sides change the same logic, the same control flow, the same data structure or the same error message with a different meaning.
-- The resolution could remove, hide or recombine behavior.
-- The conflict area is large, distributed or not safely assessable without full context.
-- An automatic resolution would make assumptions about product behavior, architecture or priority between findings.
+Always show the complete ordered manifest immediately before asking:
 
-When in doubt, treat the conflict as high-risk.
+Ask the user: **Should exactly this ordered file/state manifest be delivered?**
+- Confirm -- Bind this exact selection and continue to commit grouping
+- Refine -- Correct the files or selected states before any mutation
 
-Automatic resolution of low-risk conflicts:
+Confirmation binds the helper's internal ordered `selection: [{path, state}]` array, where `state`
+is exactly `staged` or `working`; it does not introduce a public structured-input syntax. Reject
+paths outside the repository, ignored paths, force-add
+behavior, directories, globs, aliases, and untracked symlinks. Preserve a tracked symlink as its link
+blob and mode without dereferencing it. Bind each selected state to source `HEAD`, source blob/mode or
+absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
+file contents.
 
-1. Edit exclusively the conflict-affected files.
-2. Preserve both sides if they are independent and additive.
-3. Remove conflict markers completely.
-4. Stage only the resolved conflict files with explicit paths.
-5. Run `git cherry-pick --continue`.
-6. Log in the wisdom file: commit, worktree branch, affected files, risk level, resolution strategy and rationale.
+## Approach
 
-User query on high-risk or unclear conflicts:
+### 1. Establish immutable source evidence
 
-Stop the integration and give the user a compact conflict assessment:
+1. Issue and verify a source execution-location receipt before any operation that may write. Record
+   the source `HEAD`, branch or detached OID, complete index state, worktree state, repository
+   identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`.
+2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
+   `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
+   contract. `deliver` reports that its explicit PR intent replaces any different configured
+   `delivery.completion`; it does not change the stored value.
+3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
+   `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
+   later comparison. Do not write it to tracked files or runtime state.
+4. Verify after confirmation that source `HEAD`, the complete source index, and every selected state
+   still match the captured evidence through `verify-source {manifest, sourceRoot}`. Drift requires
+   a newly displayed and confirmed manifest.
 
-- commit and worktree branch
-- affected files
-- conflict type per file
-- suspected cause
-- risk level with rationale
-- proposed options:
-  - resolve manually
-  - specify a concrete resolution strategy
-  - skip the commit
-  - abort the workflow
+### 2. Confirm coherent commit groups
 
-Do not perform any automatic conflict resolution as long as the user has given no direction.
+Derive candidate groups from the current session's task boundaries and substantive diff
+relationships. Present each group in order with its exact selected paths and tentative Conventional
+Commit type/effect. Require explicit confirmation of a complete, non-overlapping partition whose
+ordered union equals the confirmed manifest exactly.
+
+Ask the user: **Should the confirmed selection be committed in exactly these groups and this order?**
+- Confirm -- Create the displayed coherent commits in order
+- Refine -- Correct group boundaries, order, or commit effect before staging
+
+Interact when a path's topic, group, order, or effect is unclear. Abort before staging when an exact
+partition cannot be confirmed. Never create a mixed catch-all commit merely to finish the run.
+
+### 3. Create the isolated delivery branch
+
+1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
+   exact OID before creating delivery artifacts.
+2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name. Verify both the proposed
+   branch and absolute worktree path are unused in refs and `git worktree list --porcelain`.
+3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
+   cleaning, resetting, or otherwise changing the source checkout. Issue a separate
+   `effective-flow-created` receipt with purpose `partial-diff`, record the exact creation OID and
+   current-run ownership flags, and initialize its version 1 lifecycle record as `active` with
+   branch policy `retain`. Receipt or record failure retains both artifacts and stops.
+4. Run setup only for the newly owned receipt according to `worktree.setup`, record its terminal
+   setup status, then require its tracked tree and index to remain clean. A tracked setup change is
+   not selected content and aborts before transfer.
+
+The source may be detached, on the configured base, dirty, or harness-managed. Those states are why
+this tool creates its own verified delivery worktree; they never authorize switching or committing
+in the source checkout.
+
+### 4. Transfer and validate the confirmed selection
+
+1. Revalidate both receipts and invoke `transfer` with
+   `{manifest, sourceRoot, deliveryRoot, deliveryReceipt: {repositoryIdentity, executionRoot,
+headOid}}` in its default redacted dry-run mode. Inspect the planned paths, modes, additions,
+   modifications, deletions, and rename endpoints; no file content may appear in its output.
+2. Invoke the same `transfer` payload with `--apply` only when the dry run matches the confirmed
+   manifest. The helper compares the refreshed base blob with the captured source-HEAD blob. It may
+   apply a selected delta directly only when the base is unchanged; otherwise it uses deterministic
+   three-way application and fails closed on unresolved content, binary, mode, rename, or
+   delete/modify conflicts.
+3. Run the repository's established pre-commit validation in the isolated checkout under
+   `effective-delivery`'s repository-validation contract. Do not invent commands or duplicate its
+   validation playbook here.
+4. Immediately after validation, invoke
+   `reconcile {manifest, deliveryRoot, sourceRoot}` to compare every selected content digest/blob
+   and mode plus the complete changed-path set with the confirmed manifest. Any selected drift,
+   missing or extra path, different origin, or validation-produced change stops and requires a new
+   selection; never silently refresh or broaden the manifest.
+5. Revalidate that the source receipt, source `HEAD`, complete source index, and non-selected source
+   paths are unchanged. A mismatch retains the delivery artifacts and blocks commit and PR.
+
+### 5. Commit each confirmed group
+
+Process groups sequentially in their confirmed order:
+
+1. Stage only the current group's literal paths in the verified delivery `EXECUTION_ROOT`. Never use
+   a repository-wide staging sweep. Reconcile the complete staged path set with exactly that group.
+2. Record the exact expected index-tree OID and pre-commit `HEAD`.
+3. Delegate to `effective-flow commit` with the full delivery execution-location receipt, exact branch,
+   resolved base, declared group paths, expected index-tree OID, and this literal line:
+
+   `Next steps: suppressed`
+
+4. Require the returned commit OID to be a new child of the expected `HEAD` on the exact delivery
+   branch, and require its tree OID to equal the expected index-tree OID. Verify the residual changed
+   paths equal the ordered union of all later groups, with no staged residue from the completed
+   group. Advance the receipt's expected commit only after all checks pass.
+
+If delegation, a hook, tree comparison, receipt validation, or residual comparison fails, preserve
+the worktree, branch, verified earlier commits, and remaining uncommitted groups. Report the exact
+boundary and expected/actual state; never amend, squash, reorder, delete, or retry successful
+commits, and never push or create a PR.
+
+### 6. Publish only the verified commits
+
+After every group is a verified commit, require a clean delivery worktree and a non-empty commit
+range against the refreshed base. Record the final head OID and strongest Conventional Commit effect
+across the range. Transition only the run-owned lifecycle record through `cleanup-ready` and
+`cleanup-in-progress`, remove only its verified clean worktree without force, reconcile the result,
+and retain the local branch.
+
+Delegate to `effective-flow pr` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base
+branch, final verified head OID, successful committed-handoff evidence, strongest type/effect hint,
+and this literal line:
+
+`Next steps: suppressed`
+
+`pr` may push and create or reuse the exact head/base pull request; it must not stage, commit, create
+a branch, or publish a changed OID. On mutation uncertainty, use the exact head/base lookup once and
+never repeat a possibly successful creation. A PR failure retains the committed branch and reports
+its exact state.
+
+### 7. Report
+
+Report the confirmed selected paths/states, ordered groups, created commit OIDs, delivery branch,
+base, pull-request URL, lifecycle result, explicit-PR override when configuration differed, and the
+final source-checkout/index comparison. Never report file content or claim that `delivery.completion`
+was changed. Emit the `deliver` next-step block last unless this run itself received
+`Next steps: suppressed`.
+
+## Abort boundaries
+
+Every helper call must return its normalized `{ok, operation, data, dryRun}` envelope. A failure
+uses the helper's stable code, details, and exit code; report that structured diagnostic and stop at
+the operation's mutation boundary instead of guessing a recovery or calling an unrecognized
+operation.
+
+- No meaningful selected diff against the refreshed base creates no commit or PR; clean up only
+  empty artifacts proven current-run-owned.
+- A dirty direct `effective-flow pr` invocation is not a fallback. Keep the exact manifest in this tool.
+- An existing open PR is not updated here; use `effective-flow iterate` or an explicitly prepared branch
+  followed by staged-only `effective-flow commit` and commit-only `effective-flow pr`.
+- Never treat all current dirt as session-owned, force-add ignored content, dereference an untracked
+  symlink, overwrite newer base content, rewrite commit history, or force cleanup.
+- A failure after artifact creation records `aborted`, `failed`, or `cleanup-failed` through the
+  shared lifecycle contract when safely possible and otherwise retains the artifacts with the
+  failed proof.

@@ -4,15 +4,12 @@ Names matching `effective-flow-<worker>` in this instruction identify bundled wo
 
 # Effective Flow PR
 
-You create a pull request on the detected Git host from a local branch or via a fresh delivery
-branch.
+You create a pull request on the detected Git host from a prepared committed branch.
 
 ## Goal
 
 - create a pull request from a delivery branch against a base branch, or reuse the exact existing open pull request
-- optionally create a fresh delivery branch from `delivery.baseBranch`
-- after a successful PR creation or reuse, restore the local checkout to the target
-  branch
+- publish only the verified commit range of a named, prepared head branch
 - support GitHub via `gh` and Forgejo via `tea`
 - automatically detect the host from the `origin` remote URL
 - derive title and description from the branch's commits
@@ -208,14 +205,11 @@ supply it, verify it, and use it as the per-call working directory: `git -C <ROO
 calls and the top-level `cwd` field for every helper payload. In an in-place run the root is the
 current checkout, so nothing changes. Never fall back to an inherited directory.
 
-**The invocation checkout stays separate.** Everything that reads or changes a working tree belongs
-to the checkout this tool was invoked from, which may be a linked worktree: the default head
-branch, noting the branch that was checked out, creating and checking out a lifecycle branch, the
-working-tree cleanliness checks, and the final switch-back. Resolve those against that checkout
-before rooting the operations above. Never take the head branch from the execution root's checkout
-— in a worktree-based invocation that is the base branch or an unrelated branch, which would push
-the wrong branch or stop on a head with no commits. In an in-place run both checkouts are the same
-path and the distinction has no effect.
+**A direct invocation checkout stays separate.** Resolve its branch and complete dirty state before
+using the repository-wide execution root. A returning committed handoff instead supplies the exact
+head branch and verified head OID; its delivery worktree may already have been withdrawn, so this
+tool neither requires nor changes that checkout. Never derive a handed-off head from the main
+checkout, which may be on the base branch or an unrelated branch.
 
 **Load on demand:** Read `shared/execution-location.md`, when the supplied or resolved execution root must be verified before a push, helper call, or checkout restore.
 
@@ -229,69 +223,58 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
 - **Execution root:** the verified absolute `RUNTIME_STATE_ROOT` from a delivery handback. If it is
   missing, resolve and verify it per "Execution root".
-- **Head branch:** the delivery branch. Default: the branch checked out in the invocation checkout,
-  never the one in the execution root (see "Execution root"). A delivery handback always passes it
-  explicitly.
-- **Lifecycle mode:** an optional instruction to create a delivery branch fresh from the
-  base ref or to finalize an already-prepared delivery branch.
+- **Head branch:** the prepared delivery branch. A direct invocation uses the named branch checked
+  out in its invocation checkout. A delivery handback always passes the branch explicitly.
+- **Committed handoff:** an optional returning-caller receipt containing the exact head branch,
+  resolved base branch, verified head OID, and confirmation that every intended group was committed
+  and verified. Missing or contradictory handoff evidence fails closed.
 - **Base branch:** the PR target. Default: the branch part of
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);
   legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
-- **Switch-back target:** default from `delivery.returnBranch`; for `auto`, the local
-  branch part of `delivery.baseBranch`.
 - **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
 - **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 9.
 
 ## Approach
 
-1. **Determine the execution root, config and mode:**
+1. **Determine the execution root, config and invocation shape:**
    - Establish and verify the execution root per "Execution root" before any other step, and keep
-     the invocation checkout separate from it. Every helper payload and every repository-wide
-     `git` call below uses the execution root; every working-tree operation uses the invocation
-     checkout.
+     a direct invocation checkout separate from it. Every helper payload and every repository-wide
+     `git` call below uses the execution root.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     `delivery.branchPrefix`, and `delivery.returnBranch`; for
-     `baseBranch`/`branchPrefix`, fall back to the old `worktree.*` values.
-   - If the invocation explicitly requests a fresh branch or comes from a
-     delivery/worktree handback, lifecycle mode is active. Otherwise the compatible
-     legacy mode stays active.
+     falling back to the old `worktree.baseBranch` value and then the documented default.
+   - Classify the call as either a direct invocation from its current checkout or a returning
+     committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
+     `effective-flow deliver` for that lifecycle.
 2. **Check preconditions:**
    - A Git repository with an `origin` remote is present. If `origin` is missing, no PR can be created: report clearly and abort.
-   - In legacy mode, the head branch exists locally. In lifecycle mode, either a prepared
-     delivery branch exists locally or the new delivery branch is created
-     in step 3.
-3. **Prepare the lifecycle branch, if requested:** Branch creation, branch checkout and the
-   working-tree check below happen in the invocation checkout, never in the execution root.
-   - Note the branch currently checked out there.
-   - If an already-prepared delivery branch is passed, use it as the head.
-   - If a new delivery branch is to be created: resolve `delivery.baseBranch`,
-     update remote refs via `git fetch REMOTE BRANCH`, form a branch name
-     `<delivery.branchPrefix>/pr/<slug>`, and create it from the base ref. Record
-     explicitly that this invocation created this exact local branch; never infer
-     branch ownership from its name or from lifecycle mode alone.
-   - If the current working tree contains changes that do not clearly belong to the
-     PR: do not stage, stash, or overwrite them. Ask for an
-     explicit file selection or abort.
+   - The head exists as an exact local branch, is not detached, and differs from both the resolved
+     base ref and its local branch part. A detached invocation or base branch as head aborts.
+   - For a direct invocation, require the complete working tree and index to be clean, including
+     untracked paths. If it is dirty, abort before fetch or push and direct the user to
+     `effective-flow deliver`; never omit local content silently.
+   - For a returning committed handoff, require its exact head, base, verified head OID, and
+     successful commit-only evidence. Resolve the supplied branch and require it still equals the
+     supplied OID. Unrelated dirt in `RUNTIME_STATE_ROOT` is not PR content and does not replace or
+     weaken this exact ref check.
+3. **Verify the prepared head:** Preserve the resolved head OID as the immutable handoff boundary.
+   Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
+   squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
+   handoff must already have supplied the same OID.
 4. **Resolve the base and inspect the head before any push:** Refresh the configured base ref if
-   step 3 did not already do so, resolve its remote-tracking ref, and determine the commits in
+   needed, resolve its remote-tracking ref, and determine the commits in
    `<remote-tracking-base>..<head-branch>`. Preserve this discovered commit range for the later
    title and description derivation. If the base cannot be refreshed or resolved, abort before
    any push and preserve the head branch.
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
-   - **No commits found:** Do not push or perform any other remote branch mutation. Handle the
-     empty head according to its ownership:
-     - **Branch created by this invocation:** Restore the checkout recorded before branch
-       creation and delete only the exact transient local branch created in step 3, using safe,
-       non-forcing branch deletion and only when the working tree permits both operations. Never
-       stage, stash, overwrite, or discard working-tree changes for this cleanup. If restoration
-       or deletion is unsafe or fails, preserve the branch and report the actual checkout state.
-     - **Prepared or legacy branch:** Preserve it. A branch not created by this invocation is
-       user-owned for cleanup purposes, even when it has a lifecycle-style name.
-     - **After cleanup:** Report that the head has no commits against the resolved base, include
-       the resulting local state, and stop.
+   - **No commits found:** Preserve the prepared branch, report that it has no commits against the
+     resolved base, and stop without any remote mutation.
 5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
 6. **Check tool availability:** Invoke the helper probe once — again with the execution root as `cwd` — and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. A `tea` below the supported minimum surfaces here as `UNSUPPORTED_CAPABILITY` with its `installed` and `minimum` versions, which is the intended early gate. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
-7. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git -C <execution-root> push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
+7. **Push the branch:** Immediately before the push, require the exact head branch still resolves to
+   the OID preserved in step 3. Push it to `origin` if it is not yet there or not up to date
+   (`git -C <execution-root> push -u origin <head-branch>`). If the ref changed or the push is
+   rejected (e.g. diverged remote history), report the cause briefly and abort instead of
+   publishing a different commit or overwriting remote state.
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
    PR history via `commit --amend`, rebase, squash, or force push.
@@ -333,27 +316,28 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
       URL is the result. If the lookup finds no match or cannot run, report the error with the
       preserved branch and let the user decide. Retrying the creation is forbidden on every
       provider, whatever the error message suggests.
-11. **Restore the checkout:** After a successful PR creation or reuse, switch the invocation
-    checkout — the one step 3 may have switched, never the execution root — back to
-    `delivery.returnBranch`, or for `auto` to the local branch part of
-    `delivery.baseBranch`, provided its working tree is clean. If the
-    switch-back fails, report the actual branch explicitly. The
-    PR head branch is preserved locally and remotely.
-12. **Report the result:** Output the PR URL, the branch name, and the final local
-    checkout state. Emit the next-step block per `next-steps` as the last element of that report.
+11. **Reverify the published head:** Require the local head branch still resolves to the verified
+    OID and report any unexpected ref movement. Never switch or otherwise restore a checkout: this
+    tool did not create or change one. Preserve the PR head branch locally and remotely.
+12. **Report the result:** Output the PR URL, head and base branches, and verified head OID. Emit the
+    next-step block per `next-steps` as the last element of that report, unless the caller passed
+    the literal line `Next steps: suppressed`.
 
 ## Rules
 
 - Inspect the head branch's commits against the resolved remote-tracking base before any push;
   do not create a PR from a branch with no commits in that range.
+- Consume commits only. Never create or switch branches, stage or commit changes, or infer omitted
+  working-tree content as part of the pull request.
+- A direct invocation requires a clean, attached, non-base checkout. A returning handoff requires
+  an exact committed head/base/OID receipt and never substitutes the main checkout's state.
 - Do not start project validation such as linting, tests, or build checks; that responsibility lies with other skills such as ``effective-flow-code-validator``.
 - Never overwrite remote history and never force a push.
 - Always update existing PRs via additional commits on the PR branch, never
   by rewriting existing PR commits.
 - Do not automatically delete the PR head branch after a successful PR creation.
-- If only part of the local changes should go into the PR, take only
-  explicitly selected files into the delivery branch or refer to a
-  worktree-based handback. Do not guess based on file paths.
+- If only part of local changes should go into a PR, stop and use `effective-flow deliver` to confirm and
+  isolate that selection. This tool never guesses paths or transfers working-tree content.
 - If the CLI or authentication is missing, abort cleanly without leaving a half state behind.
 - Never put `Co-Authored-By` trailers in commits, PR titles, or PR descriptions.
 - Do not add AI attribution to the PR title or description: no "Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) – not even when the harness appends them by default. Factual mentions of Claude Code or Codex remain permitted; generation attribution does not.

@@ -1,12 +1,12 @@
 ---
 name: effective-flow
 description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, iterate, commit, pr, merge-gate, setup, cleanup, open-plans, investigate, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|merge-gate|setup|cleanup|version]"
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.61.0 (c6f810d)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.62.0 (2eda90b)).
 
 This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -115,6 +115,7 @@ _from a clarified plan/issue to code_
 
 ### Deliver changes
 
+- `effective-flow deliver` — Delivers confirmed local changes as coherent commits in a clean pull request.
 - `effective-flow commit` — Commits the staged changes with a fitting commit message.
 - `effective-flow pr` — Opens a pull request from your branch (GitHub or Forgejo).
 - `effective-flow merge-gate` — Drives an open pull request through checks, bot notes, and – if allowed – the merge.

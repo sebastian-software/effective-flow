@@ -132,6 +132,15 @@ branch all stay in `EXECUTION_ROOT`.
   pins its OID. If delivery requires a branch, create or adopt that branch through the supported
   app flow, then issue and verify a new branch receipt before committing.
 
+The standalone `effective-flow deliver` partial-diff lifecycle is the narrow exception to reusing a
+harness-managed source checkout as the delivery checkout. Its dirty or detached source receipt is
+immutable input evidence, not the place where delivery work occurs. After confirming an exact
+selection, `deliver` may create a separate `effective-flow-created` delivery worktree from the
+refreshed configured base, issue a new purpose-scoped receipt for that worktree, and transfer only
+the bound selection. It never switches, adopts, stages, commits in, or removes the harness-managed
+source checkout. The source and delivery receipts remain distinct and must both pass preflight at
+every cross-check; neither receipt may be substituted for the other.
+
 ### Setup and cleanup ownership
 
 Automatic setup runs only when a receipt is `effective-flow-created` and its setup status is
