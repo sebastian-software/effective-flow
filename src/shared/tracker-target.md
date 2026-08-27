@@ -96,10 +96,17 @@ The connection must cover the provider-neutral operations the forge flows alread
 Issue-backed implementation adds two **phase-specific** native lifecycle capabilities: list the
 workflow states writable in the exact selected workspace/team/project context, including stable ID
 or exact accepted token, display name, normalized category, terminal flag, and writability; and
-transition one issue to a selected writable state. Require both only when an issue is about to enter
-implementation. Post-merge observation requires only a fresh native-state read (and an optional
-bounded monitor); review publication, planning, and other tracker reads do not inherit the started
-state write requirement.
+transition one issue to a selected writable state. Require both when an issue is about to enter
+implementation, and again for the **offered** post-merge terminal transition. Post-merge
+_observation_ still requires only a fresh native-state read (and an optional bounded monitor); review
+publication, planning, and other tracker reads do not inherit the started state write requirement.
+
+A connection that covers neither or only one of the two makes the post-merge transition
+**unavailable** for that issue without aborting — the one place this contract deviates from its own
+abort-before-the-first-write rule, and deliberately so: that write is optional and comes after a
+merge that already succeeded, so failing the run closed would turn a missing optional capability into
+a louder failure than the merge it follows. Name the missing capability, leave the issue nonterminal,
+and continue.
 
 Before the first implementation delegation, list those states fresh and resolve
 `tracker.externalStartedState`. A configured value must match the stable state ID, or only when the
@@ -114,6 +121,22 @@ run may use that value for this run only after confirmation; only `{{SKILL:setup
 non-interactive run, zero candidates, or multiple candidates aborts before code and lists the
 evidence without choosing a favorite. Never infer a state from `tracker.externalTool` or from a
 brand-specific name such as "In Progress".
+
+Before the offered post-merge terminal transition, list those states fresh in the same context and
+resolve `tracker.externalDoneState` by the same rules with `terminal` replacing `non-terminal` and
+`started`. A configured value must match the stable state ID, or only when the connection exposes no
+ID the exact accepted token, in this same tracker context; it must be writable and **terminal**, and
+normalized as a done category. A display-name match is never enough. A stale, cross-context,
+non-terminal, read-only, or missing value makes the transition unavailable for that issue and reports
+the current candidates; unlike the started state it never aborts the run, because the merge has
+already happened.
+
+When the key is unset, filter the fresh states to writable, terminal candidates. Exactly one
+candidate may be proposed with both its display name and stable value. A gated run may use that value
+for this run only after confirmation; only `{{SKILL:setup}}` persists it. A non-interactive run, zero
+candidates, or multiple candidates makes the transition unavailable and lists the candidates without
+choosing a favorite. Never infer a state from `tracker.externalTool` or from a brand-specific name
+such as "Done".
 
 A connection that cannot cover one of them makes the flows depending on it unavailable: abort
 before the first write and name the missing capability — the external equivalent of

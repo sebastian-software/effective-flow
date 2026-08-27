@@ -201,7 +201,7 @@ identity.
 ## External target
 
 With `tracker.mode: external`, issue work lives in a project-management tool outside your Git
-forge. Three settings describe it:
+forge. Four settings describe it:
 
 - `tracker.externalTool` – the short, stable identifier of the tool that holds the issues.
   Required for this mode.
@@ -210,12 +210,16 @@ forge. Three settings describe it:
   convention, or the names of its states.
 - `tracker.externalStartedState` – the stable ID of the native state that means started in that
   exact tracker context, or the connection's exact write token only when it exposes no ID.
+- `tracker.externalDoneState` – the same, for the **terminal** state that means done. Only the merge
+  gate's offered post-merge transition reads it; unset, it makes that offer unavailable and changes
+  nothing else.
 
 Effective Flow ships **no** adapter, no list of supported tools, and no mapping onto any
 product's API. `externalTool` and `externalToolHint` are connection hints for the run, not a
-dispatch table; `externalStartedState` is a tracker-native value that the run verifies against that
-connection. A run establishes the connection and its capabilities at run time, from a connection
-you have already set up on this machine – an MCP connection or an installed, authenticated CLI.
+dispatch table; `externalStartedState` and `externalDoneState` are tracker-native values that the run
+verifies against that connection. A run establishes the connection and its capabilities at run
+time, from a connection you have already set up on this machine – an MCP connection or an
+installed, authenticated CLI.
 There is no whitelist, and no capability is ever inferred from the tool's name. Naming your tool
 here does not make it a supported integration: a run knows only what the connection you provide
 can actually do.
@@ -386,10 +390,10 @@ publishing.
 ## Merge gate operations
 
 [`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, reads the submitted
-reviews, waits for checks, and
-merges through six additional forge operations of the same remote-tracker helper. Like all PR
-work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
-repository, an `origin` remote, and an authenticated CLI.
+reviews, waits for checks, merges, and – after the merge and only on your explicit confirmation –
+closes a linked issue it assessed as completed, through seven additional forge operations of the
+same remote-tracker helper. Like all PR work, they are inherently forge-bound: they never evaluate
+`tracker.mode` and only need a Git repository, an `origin` remote, and an authenticated CLI.
 
 | Operation          | Capability              | What it does                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -399,10 +403,21 @@ repository, an `origin` remote, and an authenticated CLI.
 | `pr-merge`         | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                                                                                                                                                                 |
 | `viewer-read`      | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                                                                                                                                                                 |
 | `issue-state-wait` | `issueRead`             | Reads a linked forge issue, waits once for the fixed 30-second grace period when it is still open, then performs one final read; it never polls or closes the issue                                                                                                                                                                                                                                                                   |
+| `issue-close`      | `issueClose`            | Sets a linked forge issue to closed, on GitHub with the completed state reason; a mutation, so a run without `--apply` produces a dry-run plan and closes nothing. It takes the issue number only – the state and its reason are fixed, never caller-supplied – and it runs only after the gate's post-merge completion assessment and your explicit confirmation                                                                     |
 
 `issue-state-wait` uses the adapter's general CLI floor, not the higher GitHub merge-gate floor.
 Its 30-second bound is fixed and has no configuration key. A still-open issue is a successful
 observation result, not a merge failure.
+
+`issue-close` is the only forge write the gate ever performs that changes an issue's **state**, and
+nothing reaches it unattended. The gate does write to an issue in two other ways after a merge — it
+removes `effective-flow-issue-in-progress` and it may patch a `checklist` container body — and
+neither of those touches the issue's state. It runs only where the post-merge assessment recorded a `complete` verdict for that
+issue, only in an interactive run, and only after you confirmed the single question that covers every
+eligible issue at once. Declining, a non-interactive run, and a missing `issueClose` capability all
+leave the issue exactly as the merge left it. If the capability is missing, the gate reports which
+one and continues – a merge that already succeeded is never re-opened or rolled back over an
+unavailable optional write.
 
 `pr-reviews-read` normalizes the two forges' different spellings of the same verdicts onto one
 token set, and folds Gitea's separate dismissal flag into the dismissed token, so a rule written
@@ -418,11 +433,12 @@ failing mid-run on an unknown flag, and `merge-gate` degrades to report-only the
 message on GitHub, upgrade `gh` rather than suspect your repository's forge access. `viewer-read`
 needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh` already holds, so
 it is unaffected by that version floor; it maps to `gh api user`. `pr-reviews-read` is likewise
-unaffected: it is a paginated REST read available on every `gh` 2.x line.
+unaffected: it is a paginated REST read available on every `gh` 2.x line. `issue-close` is likewise
+unaffected by that floor, though it is a **mutation** rather than a read: it maps to a `gh api` PATCH
+of the issue resource, which every `gh` 2.x line serves, so it is always available on GitHub.
 
-**Forgejo** supports `pr-status-read`, `pr-reviews-read`, `pr-merge`, and `viewer-read`, and
-declares only
-`pr-checks-wait` unsupported among them: `tea` has no `checks` subcommand and Forgejo offers no
+**Forgejo** supports `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read`, and
+`issue-close`, and declares only `pr-checks-wait` unsupported among them: `tea` has no `checks` subcommand and Forgejo offers no
 server-side blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented
 no-watch degradation there – report the pending checks by name and ask once – instead of blocking. A
 Forgejo run is therefore the whole gate minus the blocking wait. Three other operations `merge-gate`
@@ -451,10 +467,12 @@ then asks each review for its comments – `ceil(N/50) + N` requests for `N` rev
 timestamp under any spelling, so the read now goes through the raw API, where `modules/structs`
 declares both.
 
-The three capabilities are gated on a `tea api` transport probe rather than on a version floor.
+Five of the merge-gate operations – `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read`,
+and `issue-close` – are gated on one `tea api` transport probe rather than on a version floor.
+`issue-state-wait` is not: it rides the `tea issues` probe instead and derives `issueRead` from it.
 `tea api` itself landed in `tea` v0.12.0, below the adapter's existing 0.14.2 minimum, so nothing
 here raises that floor; what is probed is the `--include` flag, which is source-verified for
-`v0.15.1`/`main` only. A `tea` whose `api` command lacks it reports all three as
+`v0.15.1`/`main` only. A `tea` whose `api` command lacks it reports all five as
 `UNSUPPORTED_CAPABILITY` rather than issuing a request whose HTTP status it could never read – and
 reading that status matters, because `tea api` exits `0` on every 4xx and 5xx alike. The probe
 attests transport only: `head_commit_id`, the field that makes the merge's head guard atomic, is a
@@ -643,14 +661,40 @@ no tracker access and is never replaced by guessing identifiers from PR prose.
 
 Once the pull request is confirmed merged, `merge-gate` gives tracker automation one fixed
 30-second grace period and reads every receipted issue again. It never force-closes an issue. A
-terminal forge issue loses its in-progress label. For a GitHub-native container, `merge-gate`
+transition you confirmed after a `complete` assessment verdict is not a forced close and is the one
+authorized path.
+
+For every issue that is still open or timed out after that read, `merge-gate` then assesses – without
+asking – whether the merged pull request completes it, and records one of three verdicts: `complete`,
+`incomplete`, or `undetermined`. `complete` requires an issue that states acceptance criteria under
+an `Acceptance criteria`, `Akzeptanzkriterien`, or `Done criteria` heading, every one of them covered
+by a statement in the merged pull request's title or body, no open sub-item, no unchecked entry in
+its own task list, and no `effective-flow-needs-planning` classification. An issue that states no
+criteria at all is `undetermined`, never `complete`. Only `complete` leads anywhere further.
+
+Where a `complete` issue also has a proven transition path – a probed `issueClose` on the forge, or
+both native lifecycle capabilities plus a resolved `tracker.externalDoneState` on an external target
+– `merge-gate` **offers** to set it to its terminal state. The offer is one question for the whole
+run, asked only in an interactive session, and it lists each eligible issue with its verdict and a
+locator per criterion: which criterion, and whether its covering statement sat in the pull request's
+title or body. No issue or pull-request text is ever quoted into that listing, the question, or the
+summary – you read the wording at the issue and pull-request URLs. Confirming authorizes three
+writes per issue: the transition, the in-progress label removal, and the container completion, and
+the option text says so. Declining transitions nothing. A non-interactive run poses nothing and
+transitions nothing; it carries the recommendation into its summary instead. A missing capability or
+an unset `externalDoneState` makes the offer unavailable for that issue, which is reported with the
+missing value named and is not the same result as an issue found incomplete.
+
+A terminal forge issue loses its in-progress label. For a GitHub-native container, `merge-gate`
 re-reads the parent, verifies that the completed issue is still its child, and reports the remaining
 open children; GitHub derives parent progress from child state, so Effective Flow performs no
 second completion write or checklist patch. External-native containers use only the connection's
 previously proven completion operation. For an open, missing, mismatched, or unobservable issue,
 the container remains unchanged and the report names the first observable closing step: an
 intentional `Refs` relationship, open sub-items or checklist entries, the planning path, a
-still-started external state, or the remaining terminal tracker transition. Run
+still-started external state, or the remaining terminal tracker transition – and where that last case
+is the one the offer covers, the report names the verdict and whether the offer was posed, answered,
+or unavailable, instead of leaving the transition as an open task with no owner. Run
 `/effective-flow merge-gate <PR>` again to use its observer-only path when automation takes longer
 or tracker access was unavailable.
 

@@ -281,6 +281,30 @@ returns is what a merge precondition is evaluated over. Its Forgejo read is pagi
 and its page count is reported, since a truncated review list would report a verdict that is missing
 as a verdict that does not exist.
 
+### Close an issue as completed
+
+Use the helper's `issue-close` operation (capability key `issueClose`). It is a **mutation**, so a run
+without `apply` produces a dry-run plan and closes nothing. It takes the issue number only: the closed
+state and, on GitHub, its completed state reason are fixed in the plan builder and are never
+caller-supplied, because the one workflow that reaches this operation only ever transitions an issue
+it assessed as completed and Forgejo has no state-reason concept at all. Never re-run the mutation
+after a structured error carrying `mutationMayHaveSucceeded: true` — re-read the issue state and
+report what it shows.
+
+This is an **issue** operation documented in the pull-request building block deliberately. It is
+reached only from `{{SKILL:merge-gate}}`'s post-merge phase, and that tool does not load
+`issue-tracker`: it reaches the helper contract solely through the "Remote helper" reference above,
+so this fragment is its one reachable path to per-operation documentation.
+
+The transition this operation performs is offered only after an evidence-backed completion assessment
+and an explicit operator confirmation in a gated run. It is never a force-close, never runs
+unattended, and never substitutes for a linked issue's own auto-close.
+
+**Forgejo limitation:** `issue-close` rides the same probed `tea api … --method PATCH` transport as
+`issue-comment-update`, so a `tea` built without `--include` reports it `UNSUPPORTED_CAPABILITY`
+beside the other operations that depend on that transport. The offer is then unavailable for forge
+issues and nothing else degrades. On GitHub the capability is constant.
+
 ### Idempotency via the Effective Flow markers
 
 Two distinct HTML markers keep the directions and the writers apart:

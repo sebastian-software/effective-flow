@@ -21,6 +21,7 @@ const MUTATIONS = new Set([
   'issue-create',
   'issue-sub-issue-create',
   'issue-update-body',
+  'issue-close',
   'issue-comment',
   'issue-comment-update',
   'issue-labels',
@@ -49,6 +50,7 @@ const REMOTE_OPERATIONS = new Set([
   'issue-sub-issues-read',
   'issue-sub-issue-create',
   'issue-update-body',
+  'issue-close',
   'issue-comment',
   'issue-comment-update',
   'issue-labels',
@@ -82,6 +84,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'issue-sub-issues-read': 'issueSubIssuesRead',
   'issue-sub-issue-create': 'issueSubIssueCreate',
   'issue-update-body': 'issueUpdate',
+  'issue-close': 'issueClose',
   'issue-comment': 'issueComment',
   'issue-comment-update': 'issueCommentUpdate',
   'issue-labels': 'issueLabelAdd',
@@ -1450,6 +1453,46 @@ function jsonStdin(payload) {
 
 function issueNumber(input) {
   return requireNumber(input.number ?? input.issue, 'issue number');
+}
+
+// `issue-close` takes an issue number and nothing else: the state, and on GitHub its reason, are
+// literals of the plan builders. A caller-supplied value is refused rather than dropped. `state`
+// is the field that makes this a guard rather than a nicety — it is the wire key on both providers
+// and the one a caller reaches for first, so accepting `state: 'open'` and sending `closed` would
+// not drop a nuance but silently invert the transition into its opposite. A caller-supplied reason
+// is refused for its own reason: this operation only ever transitions an issue that was assessed as
+// completed, and Forgejo states no state reason at all, so the field would carry one legal value on
+// one provider and none on the other.
+//
+// Both levels are inspected. The builders read `input.payload ?? input`, so a field set beside a
+// `payload` object would otherwise never be looked at — harmless for the plan that is built, but
+// this guard is the operation's stated contract and a contract that silently skips half its input
+// is not one.
+const ISSUE_CLOSE_REJECTED_FIELDS = Object.freeze([
+  'state',
+  'reason',
+  'stateReason',
+  'state_reason',
+]);
+
+function assertNoIssueCloseStateOverride(input) {
+  const sources =
+    input.payload === undefined
+      ? [[input, 'payload']]
+      : [
+          [input.payload, 'payload'],
+          [input, 'input'],
+        ];
+  for (const [source, label] of sources) {
+    if (source === null || typeof source !== 'object') continue;
+    for (const field of ISSUE_CLOSE_REJECTED_FIELDS) {
+      if (source[field] !== undefined) {
+        fail('INVALID_PAYLOAD', 'issue-close takes an issue number and no state or reason field', {
+          field: `${label}.${field}`,
+        });
+      }
+    }
+  }
 }
 
 const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
@@ -2822,6 +2865,26 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      // A close is a state change of the issue itself, so it is a `PATCH` of the issue resource
+      // exactly as `issue-update-body` is — not a `POST` to a sub-resource the way
+      // `issue-label-add` is. Both body values are literals rather than payload fields: the only
+      // transition this adapter offers is the one that records a completed issue, and `completed`
+      // is the only state reason that statement has.
+      case 'issue-close':
+        assertNoIssueCloseStateOverride(input);
+        return mutationPlan(
+          'gh',
+          [
+            'api',
+            ...hostArgs,
+            '-X',
+            'PATCH',
+            ghEndpoint(`issues/${issueNumber(input)}`),
+            '--input',
+            '-',
+          ],
+          jsonStdin({ state: 'closed', state_reason: 'completed' }),
+        );
       case 'issue-comment':
         return mutationPlan(
           'gh',
@@ -3212,6 +3275,37 @@ export function buildCommandPlan(operation, input, repository) {
         ],
         undefined,
         { expectsJson: false },
+      );
+    // The close rides the `tea api` transport, which is what lets its capability derive from a
+    // probe that already runs — but it carries `--include`, and `issue-comment-update` does not.
+    // That divergence is deliberate and is the whole point of the case. `tea api` never inspects
+    // `resp.StatusCode` and exits 0 on every 4xx and 5xx alike (see `teaApiReadPlan` above), so
+    // without the status line a refusal arrives as an ordinary body and a close the forge rejected
+    // would be reported to the operator as a completed transition. The refusals are ordinary rather
+    // than exotic — a token without `write:issue`, a locked or archived issue, a rate limit, and
+    // Gitea's 412 for an issue with open blocking dependencies, which is exactly the population an
+    // issue assessed as complete belongs to. `pr-merge` is the precedent this follows, not
+    // `issue-comment-update`: both are state mutations, and it carries the flag for this reason.
+    //
+    // The body travels on stdin for the reason the merge body does: the dry-run preview publishes
+    // the argv, so an inline `--data '<json>'` would put the request body into that preview. It
+    // carries the state alone — Forgejo states no state reason on an issue, so GitHub's
+    // `completed` has nothing here to map onto.
+    case 'issue-close':
+      assertNoIssueCloseStateOverride(input);
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(`issues/${issueNumber(input)}`),
+          '--method',
+          'PATCH',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({ state: 'closed' }),
       );
     case 'issue-comment':
       return mutationPlan('tea', [
@@ -3815,6 +3909,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         issueSubIssuesRead: true,
         ...(issueSubIssueCreate === undefined ? {} : { issueSubIssueCreate }),
         issueUpdate: true,
+        issueClose: true,
         issueComment: true,
         issueCommentUpdate: true,
         issueLabelAdd: true,
@@ -3936,6 +4031,13 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       issueSubIssuesRead: false,
       issueSubIssueCreate: false,
       issueUpdate,
+      // The close is a raw-API write on the `tea api` transport the gate reads and the merge
+      // already ride, so it derives from that one probe and adds no `probeTeaHelp` spawn of its
+      // own — the same reasoning `prReviewsRead` and `reviewThreads` below carry. The fit is
+      // exact rather than merely safe: `teaApiTransport` attests `--method`, `--data` and
+      // `--include`, and the close plan uses all three, so the capability and the plan state one
+      // requirement rather than the capability over-gating a plan that needs less.
+      issueClose: teaApiTransport,
       issueComment: comment,
       issueCommentUpdate: commentUpdate,
       issueLabelAdd,
@@ -4722,8 +4824,14 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
   switch (operation) {
     case 'viewer-read':
       return normalizeViewer(flattened);
+    // Both providers answer this endpoint with the full updated issue, and `issue-close` is the
+    // same resource under a different field, so it shares the branch its sibling mutation already
+    // uses. A consumer confirming the transition then reads one normalized lowercase `state`
+    // instead of knowing that GitHub says `number`/`html_url` where Forgejo says `index`/`url`.
+    // It also fails loudly on a body that is not an issue: `normalizeIssue` requires a number.
     case 'issue-read':
     case 'issue-update-body':
+    case 'issue-close':
       return flattened?.output !== undefined
         ? { ...flattened, repository: repository.slug }
         : normalizeIssue(flattened, repository, metadata);

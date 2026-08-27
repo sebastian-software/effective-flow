@@ -7971,3 +7971,278 @@ test('issue-state-wait rejects timing overrides and malformed or unknown provide
     assert.match(envelope.error.message, /unsupported issue lifecycle state/);
   }
 });
+
+// --- issue-close ------------------------------------------------------------
+// The merge gate's one forge write to an issue: the operator-confirmed terminal transition its
+// post-merge completion assessment offers. It is a mutation, so the dry-run/apply discipline and
+// the capability gate are what keep it from ever firing unattended.
+
+test('issue-close plans a PATCH of the issue resource on both providers', () => {
+  // A close changes the state of the issue itself, so it mirrors `issue-update-body` — a PATCH of
+  // the issue resource — rather than `issue-label-add`, which POSTs to a sub-resource.
+  const github = buildCommandPlan(
+    'issue-close',
+    { repository: githubRepository, number: 7 },
+    githubRepository,
+  );
+  assert.equal(github.executable, 'gh');
+  assert.deepEqual(github.args, [
+    'api',
+    '-X',
+    'PATCH',
+    'repos/example/flow/issues/7',
+    '--input',
+    '-',
+  ]);
+  // Both values are literals of the plan builder: the only transition this adapter offers is the
+  // one that records a completed issue, and `completed` is the only reason that statement has.
+  assert.deepEqual(JSON.parse(github.stdin), { state: 'closed', state_reason: 'completed' });
+
+  const forgejo = buildCommandPlan(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    forgejoRepository,
+  );
+  assert.equal(forgejo.executable, 'tea');
+  // The `tea api` transport a probe that already runs attests — carrying `--include`, as
+  // `pr-merge` does and `issue-comment-update` does not. `tea api` exits 0 on every 4xx and 5xx,
+  // so the status line is the only thing that tells a refused close from a performed one.
+  assert.deepEqual(forgejo.args, [
+    'api',
+    'repos/team/flow/issues/7',
+    '--method',
+    'PATCH',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+    '--data',
+    '@-',
+  ]);
+  // Forgejo states no state reason on an issue, so GitHub's `completed` has nothing here to map
+  // onto. The body carries the state alone rather than a field the forge would ignore.
+  assert.deepEqual(JSON.parse(forgejo.stdin), { state: 'closed' });
+
+  // The body travels on stdin on both providers, for the reason the merge body does: the dry-run
+  // preview publishes the argv, so an inline body would put the request payload into that preview.
+  for (const plan of [github, forgejo]) {
+    assert.equal(
+      plan.args.some((argument) => argument.includes('closed')),
+      false,
+      `${plan.executable} must carry the close body on stdin, not in the argv`,
+    );
+  }
+});
+
+test('issue-close accepts no caller-supplied state or reason on either provider', () => {
+  // Refused rather than dropped. `state` is the sharp case: it is the wire key both providers use,
+  // so a silently ignored `state: 'open'` would not lose a nuance but perform the opposite
+  // transition. A caller-supplied reason is refused on its own grounds — it would carry one legal
+  // value on one provider and none on the other, so the field has no accepted spelling at all.
+  for (const repository of [githubRepository, forgejoRepository]) {
+    for (const field of ['state', 'reason', 'stateReason', 'state_reason']) {
+      assert.throws(
+        () =>
+          buildCommandPlan(
+            'issue-close',
+            {
+              repository,
+              number: 7,
+              payload: { [field]: field === 'state' ? 'open' : 'not_planned' },
+            },
+            repository,
+          ),
+        (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === `payload.${field}`,
+        `${repository.provider} must refuse payload.${field}`,
+      );
+
+      // The builders read `input.payload ?? input`, so a field set beside a `payload` object is
+      // invisible to them. The guard is the operation's stated contract, so it inspects that level
+      // too rather than accepting an input it never looked at.
+      assert.throws(
+        () =>
+          buildCommandPlan(
+            'issue-close',
+            { repository, number: 7, payload: {}, [field]: 'open' },
+            repository,
+          ),
+        (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === `input.${field}`,
+        `${repository.provider} must refuse a top-level ${field}`,
+      );
+
+      // And a flat input, where the payload *is* the input, is reported against the payload.
+      assert.throws(
+        () =>
+          buildCommandPlan('issue-close', { repository, number: 7, [field]: 'open' }, repository),
+        (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === `payload.${field}`,
+        `${repository.provider} must refuse a flat ${field}`,
+      );
+    }
+  }
+});
+
+test('issue-close previews without apply and performs exactly one call with it, on both providers', async () => {
+  // The forge answers this endpoint with the full updated issue on both providers, so the fixtures
+  // are that issue and not an empty object: `{}` is byte-for-byte the shape a *refused* Forgejo
+  // close also takes, and a test fed that shape passes whether or not the code detects refusals.
+  for (const [repository, executable, applyResult] of [
+    [
+      githubRepository,
+      'gh',
+      {
+        status: 0,
+        stdout: JSON.stringify({
+          number: 7,
+          title: 'Ship the offer',
+          state: 'closed',
+          state_reason: 'completed',
+          html_url: 'https://github.com/example/flow/issues/7',
+        }),
+        stderr: '',
+      },
+    ],
+    [
+      forgejoRepository,
+      'tea',
+      teaApiResult(200, {
+        index: 7,
+        title: 'Ship the offer',
+        state: 'closed',
+        url: 'https://code.example.test/team/flow/issues/7',
+      }),
+    ],
+  ]) {
+    const input = { repository, number: 7 };
+    const plan = buildCommandPlan('issue-close', input, repository);
+
+    const previewRunner = fakeRunner([]);
+    const preview = await executeOperation('issue-close', input, {
+      runner: previewRunner,
+      skipProbe: true,
+    });
+    assert.equal(preview.ok, true);
+    assert.equal(
+      preview.dryRun,
+      true,
+      `${repository.provider}: a mutation without apply must stay a dry run`,
+    );
+    assert.equal(preview.data.command.executable, executable);
+    // What this establishes is that the preview *is* the plan — the operator approves the exact
+    // request that will be sent. It says nothing about redaction: no reachable input can put a
+    // secret into this argv or its fixed-literal body, so `redact(plan)` deep-equals `plan` here.
+    // The redaction guarantee is pinned where a credential can actually reach a plan.
+    assert.deepEqual(preview.data.command, redact(plan));
+    assert.equal(
+      previewRunner.calls.length,
+      0,
+      `${repository.provider}: a dry run must touch the forge zero times`,
+    );
+
+    const applyRunner = fakeRunner([applyResult]);
+    const applied = await executeOperation('issue-close', input, {
+      runner: applyRunner,
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(applied.ok, true);
+    assert.equal(applied.dryRun, false);
+    // Normalized like its sibling `issue-update-body`, so a caller confirming the transition reads
+    // one lowercase `state` rather than knowing which provider spells the issue which way.
+    assert.deepEqual(applied.data.result, {
+      number: 7,
+      title: 'Ship the offer',
+      body: '',
+      state: 'closed',
+      labels: [],
+      url:
+        repository.provider === 'github'
+          ? 'https://github.com/example/flow/issues/7'
+          : 'https://code.example.test/team/flow/issues/7',
+      repository: `${repository.owner}/${repository.repository}`,
+    });
+    assert.equal(
+      applyRunner.calls.length,
+      1,
+      `${repository.provider}: the close is exactly one request`,
+    );
+    assert.deepEqual(applyRunner.calls[0].args, plan.args);
+    assert.deepEqual(JSON.parse(applyRunner.calls[0].stdin), JSON.parse(plan.stdin));
+
+    // The envelope shape agents parse is stable across the new operation as well.
+    for (const envelope of [preview, applied]) {
+      assert.deepEqual(Object.keys(envelope), ['ok', 'operation', 'provider', 'data', 'dryRun']);
+      assert.equal(envelope.operation, 'issue-close');
+      assert.equal(envelope.provider, repository.provider);
+    }
+  }
+});
+
+test('a Forgejo close the forge refuses is an error, not a reported transition', async () => {
+  // The pin that keeps the `--include` in the Forgejo plan from being dropped again. `tea api`
+  // never inspects `resp.StatusCode`: it copies the response body to stdout and exits 0 on every
+  // 4xx and 5xx alike, so a refusal and a success are indistinguishable on stdout. Without the
+  // status line the refusal reaches `normalizeIssue`, which rejects this particular body for its
+  // missing number — but a non-2xx whose body does parse as an issue, such as Gitea's 412
+  // `ErrDependenciesLeft`, then reads `ok: true` with the forge's error object sitting in
+  // `data.result`, and the merge gate would tell the operator it closed an issue that is still
+  // open. The refusals are ordinary: a token without `write:issue`, a locked or archived issue, a
+  // rate limit, and Gitea's 412 for an issue with open blocking dependencies.
+  const runner = fakeRunner([
+    teaApiResult(403, {
+      message: 'token does not have at least one of required scope(s): [write:issue]',
+      url: 'https://code.example.test/api/swagger',
+    }),
+  ]);
+  const envelope = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.error.details.status, 403);
+  // A 4xx repeats identically, so it is not offered for a retry the way a 5xx is.
+  assert.equal(envelope.error.retryable, false);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('a probe reporting issueClose false refuses the close and performs zero runner calls', async () => {
+  // This is also the only observable proof that `issue-close` has a named
+  // `CAPABILITY_BY_OPERATION` entry: that map is module-private and not importable, and an
+  // operation missing from it is waved through unprobed because the gate tests
+  // `capabilities[key] === false`.
+  const unsupported = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  assert.equal(unsupported.capabilities.issueClose, false);
+
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7, probe: unsupported },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(envelope.error.details.capability, 'issueClose');
+  assert.equal(runner.calls.length, 0);
+
+  // The same probe with the `tea api` transport available closes the gate the other way, so the
+  // refusal is that one capability's doing and not a blanket Forgejo exclusion. No probe of its
+  // own was added: `issue-close` rides the transport the gate's reads already attest.
+  const supported = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(supported.capabilities.issueClose, true);
+
+  // On GitHub the capability is a hardcoded literal, because a `gh api` PATCH is available on
+  // every 2.x line and there is nothing to probe.
+  const github = await probeProvider(
+    githubRepository,
+    fakeRunner([
+      { status: 0, stdout: 'gh version 2.70.0\n', stderr: '' },
+      { status: 0, stdout: '', stderr: '' },
+    ]),
+  );
+  assert.equal(github.capabilities.issueClose, true);
+});

@@ -189,19 +189,29 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late). A reviewer that
    states its objection as a **verdict** rather than as a thread is handled by its own precondition;
    see [A reviewer that requests changes](#a-reviewer-that-requests-changes).
-5. **Linked-issue observation** – after a confirmed merge, validates the pull request's lifecycle
+5. **Linked-issue observation, completion assessment, and the offered transition** – after a
+   confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
-   issue as terminal, open, timed out, or unobservable. A terminal forge issue loses the
-   `effective-flow-issue-in-progress` label, and a recorded native sub-item or checklist entry is
-   completed only after its linked issue is observed terminal.
+   issue as terminal, open, timed out, or unobservable. For every issue still open or timed out it
+   then assesses – without asking – whether the merged pull request completes it, recording
+   `complete`, `incomplete`, or `undetermined`. Only a `complete` verdict, and only in an interactive
+   run, produces an **offer**: one question covering every eligible issue, which on your confirmation
+   sets those issues to their terminal tracker state. A decline transitions nothing, and neither
+   does a non-interactive run. A terminal forge issue loses the `effective-flow-issue-in-progress`
+   label, and a recorded native sub-item or checklist entry is
+   completed only after its linked issue is observed terminal – which an issue transitioned here now
+   is.
 
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
 bot notes by hand. Also useful as a pure merge-readiness report: run it in report mode to see
 exactly what is still blocking a pull request. Re-enter it with an already merged PR when a linked
 issue was still open, timed out, or could not be observed. That observer-only path skips checks,
-reviewers, branch writes, and merge, then validates the receipt and repeats only post-merge issue
-observation and eligible reconciliation.
+reviewers, branch writes, and merge, then validates the receipt and repeats post-merge issue
+observation, the completion assessment with its offered terminal transition, and eligible
+reconciliation – which makes it the intended recovery path for a run that could not pose the offer.
+An issue that is already terminal on re-entry skips the assessment and the question entirely, so such
+a re-entry retries only the reconciliation a previous run left open.
 
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
@@ -213,8 +223,11 @@ the one it runs as. It implements no code itself: CI repairs and bot-finding fix
 itself only ever writes that one merge commit and pushes it.
 
 It also never force-closes a linked issue and never treats PR prose as a substitute for a valid
-lifecycle receipt. A missing, malformed, duplicated, or mismatched receipt leaves the merge result
-unchanged and authorizes no tracker access. Post-merge tracker failure likewise cannot roll back a
+lifecycle receipt. A transition you confirmed after a `complete` assessment verdict is not a forced
+close and is the one authorized path: the gate closes nothing on its own authority, nothing at all in
+a non-interactive run, and nothing for an issue whose verdict was `incomplete` or `undetermined`. A
+missing, malformed, duplicated, or mismatched receipt leaves the merge result unchanged and
+authorizes no tracker access. Post-merge tracker failure likewise cannot roll back a
 successful merge.
 
 #### Resolving a conflict with the base
@@ -604,9 +617,18 @@ Two further things worth knowing about what the gate writes:
   order, for an intentional non-closing `Refs` relationship, open sub-items or checklist entries,
   `effective-flow-needs-planning`, a still-started external state, and finally a remaining terminal
   tracker transition. It does not invent unobserved work.
-- The check gate and the merge are performed by the remote-tracker helper described in
-  [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo supports the
-  status read, the merge and the identity read; only the blocking check wait is unsupported there,
+- The report also names, per linked issue, the completion verdict – `complete`, `incomplete`, or
+  `undetermined` – and the criterion locators behind it: which criterion, and whether its covering
+  statement sat in the merged pull request's title or body. It quotes no criterion text and no
+  pull-request text; you read the wording at the issue and pull-request URLs. Per issue it then says
+  whether the terminal transition was offered, how you answered, and what the transition did –
+  including, for a non-interactive run, the transition it recommended instead of posing, and, where
+  the offer was unavailable, which capability or configuration value was missing on which connection.
+  That last case is reported as unavailable, never as an incomplete issue.
+- The check gate, the merge, and the offered issue close are performed by the remote-tracker helper
+  described in [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo
+  supports the status read, the merge, the identity read and the issue close; only the blocking
+  check wait is unsupported there,
   because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
   gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
