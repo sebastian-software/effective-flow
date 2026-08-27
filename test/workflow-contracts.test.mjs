@@ -8333,7 +8333,7 @@ test('every site stating the pending discriminator is true on both providers', (
   }
 });
 
-test('deliver is exposed with its shipped helper and requires two exact confirmations', () => {
+test('deliver is exposed with its shipped helper and continues automatically after manifest confirmation', () => {
   const build = source('build.mjs');
   const deliver = source('src/tools/deliver.md');
 
@@ -8346,12 +8346,30 @@ test('deliver is exposed with its shipped helper and requires two exact confirma
     deliver,
     /Abort before branch, worktree, index, commit, remote, or forge\s+mutation/,
   );
+  assert.equal(deliver.match(/^```ask$/gm)?.length, 1, 'deliver must contain exactly one ask');
+  assert.equal(
+    deliver.match(/question: Should exactly this ordered file\/state manifest be delivered\?/g)
+      ?.length,
+    1,
+    'the sole ask must confirm the exact ordered file/state manifest',
+  );
+  assert.doesNotMatch(
+    deliver,
+    /Should the confirmed selection be committed in exactly these groups and this order\?/,
+  );
+  assert.doesNotMatch(deliver, /Correct group boundaries, order, or commit effect before staging/);
+  assert.match(
+    deliver,
+    /manifest confirmation is the sole routine approval[\s\S]*affirmative answer authorizes automatic\s+derivation, non-blocking display, validation, and sequential execution of coherent commit groups/,
+  );
   ordered(
     deliver,
     'Should exactly this ordered file/state manifest be delivered?',
-    'Should the confirmed selection be committed in exactly these groups and this order?',
+    'Derive and display coherent commit groups',
+    'Present a non-blocking progress update',
+    'complete, non-overlapping ordered partition',
     'Create the isolated delivery branch',
-    'Commit each confirmed group',
+    'Process groups sequentially in their displayed order',
     'Publish only the verified commits',
   );
   assert.match(
@@ -8364,14 +8382,14 @@ test('deliver is exposed with its shipped helper and requires two exact confirma
   );
 });
 
-test('deliver commits confirmed groups in order and stops after a later-group failure', () => {
+test('deliver commits derived groups in order and stops after a later-group failure', () => {
   const deliver = source('src/tools/deliver.md');
 
   assert.match(
     deliver,
-    /complete, non-overlapping partition whose\s+ordered union equals the confirmed manifest exactly/,
+    /complete, non-overlapping ordered partition: every confirmed path belongs to exactly\s+one group and the ordered union equals the confirmed manifest exactly/,
   );
-  assert.match(deliver, /Process groups sequentially in their confirmed order/);
+  assert.match(deliver, /Process groups sequentially in their displayed order/);
   assert.match(deliver, /Stage only the current group's literal paths/);
   assert.match(deliver, /expected index-tree OID and pre-commit `HEAD`/);
   assert.match(
@@ -8384,6 +8402,10 @@ test('deliver commits confirmed groups in order and stops after a later-group fa
   );
   assert.match(deliver, /never amend, squash, reorder, delete, or retry successful\s+commits/);
   assert.match(deliver, /never push or create a PR/);
+  assert.match(
+    deliver,
+    /Report the confirmed selected paths\/states, ordered groups, created commit OIDs, delivery branch/,
+  );
 });
 
 test('commit and pr preserve the staged-only and committed-only boundaries', () => {

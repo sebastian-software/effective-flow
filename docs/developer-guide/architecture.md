@@ -197,12 +197,13 @@ worktree removal.
 Delivery is split across one orchestrator and two narrow leaf tools:
 
 - `deliver` owns candidate discovery from current-session file-operation evidence, mandatory
-  confirmation of the exact file/state manifest, mandatory confirmation of ordered coherent commit
-  groups, fresh branch/worktree creation, selected-state transfer, validation, per-group staging,
-  and verification of the resulting commits. Ambiguity stops before mutation. The dependency-free
-  `delivery-selection` runtime binds the selected staged or working-tree states to source `HEAD`,
-  applies them to the refreshed base with conflict detection, and reconciles the exact resulting
-  diff without emitting file content.
+  confirmation of the exact file/state manifest as the sole routine approval, automatic derivation
+  and non-blocking display of ordered coherent commit groups, exact partition validation, fresh
+  branch/worktree creation, selected-state transfer, validation, per-group staging, and verification
+  of the resulting commits. There is no commit-group approval or refinement round; unresolved
+  grouping stops before staging. The dependency-free `delivery-selection` runtime binds the selected
+  staged or working-tree states to source `HEAD`, applies them to the refreshed base with conflict
+  detection, and reconciles the exact resulting diff without emitting file content.
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to
@@ -212,11 +213,14 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   head OID, and successful commit-only evidence. `pr` never creates or switches a branch, stages or
   commits files, or treats dirt in another checkout as PR content.
 
-`deliver` stages and verifies one confirmed group at a time. If a later group, hook, receipt check,
-or tree comparison fails, earlier commits and all remaining local states stay on the run-owned
-branch/worktree; no push or PR occurs and no successful commit is rewritten. Only a clean final
-branch with a non-empty verified commit range is handed to `pr`, after the worktree is removed
-through its ownership-safe lifecycle and the local branch is retained.
+After manifest confirmation, `deliver` proceeds automatically through transfer, validation,
+sequential commit execution, and PR publication while preserving every fail-closed boundary.
+Manifest drift requires redisplay and reconfirmation. It stages and verifies one derived group at a
+time. If a later group, hook, receipt check, or tree comparison fails, earlier commits and all
+remaining local states stay on the run-owned branch/worktree; no push or PR occurs and no successful
+commit is rewritten. Only a clean final branch with a non-empty verified commit range is handed to
+`pr`, after the worktree is removed through its ownership-safe lifecycle and the local branch is
+retained.
 
 Implementation workflows use the same boundary at handback: they preserve verified earlier
 commits, stage only their recorded residual output, call `commit`, verify its receipt, and call `pr`
