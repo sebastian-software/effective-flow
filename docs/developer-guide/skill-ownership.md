@@ -108,9 +108,10 @@ mistaken for an external skill.
 - **`effective-delivery` and `deliver`:** The central skill supplies repository-native validation
   discovery and execution for the isolated delivery checkout. Effective Flow retains the complete
   local-change orchestration contract: deriving and confirming the session-owned selection,
-  confirming ordered commit groups, creating and tracking the fresh worktree and branch, staging
-  each group, delegating commits, verifying the exact committed handoff, and publishing it through
-  `pr`. The workflow source therefore carries no second validation playbook.
+  automatically deriving, displaying, and validating the ordered commit partition after that sole
+  routine approval, creating and tracking the fresh worktree and branch, staging each group,
+  delegating commits, verifying the exact committed handoff, and publishing it through `pr`. The
+  workflow source therefore carries no second validation playbook.
 - **`effective-delivery` and Effective Flow's own reviewer findings:** the shared
   `pr-review-integration` fragment hands Effective Flow's own reviewer findings to the same
   caller-owned Mode C contract, reached from `{{SKILL:review}}` when its argument resolves to a

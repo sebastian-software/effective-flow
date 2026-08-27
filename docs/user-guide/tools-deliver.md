@@ -40,15 +40,19 @@ the complete working-tree state as separate choices instead of choosing one for 
 There is no path-list argument to prepare. If session evidence is missing, contradictory, or admits
 more than one plausible scope, `deliver` asks you to refine the selection in normal conversation.
 If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
+This manifest confirmation is the workflow's sole routine approval. If source state drifts after
+confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
+continues.
 
 **Commit groups:** After the file/state selection is confirmed, `deliver` proposes an ordered set of
 coherent commits based on the session's task boundaries and the substantive diffs. It shows every
-group's exact paths and tentative Conventional Commit effect, and requires a second confirmation.
-The groups must form a complete, non-overlapping partition of the selected changes. Ambiguous
-grouping or order stops before staging; `deliver` never creates a mixed catch-all commit merely to
-finish.
+group's exact paths and tentative Conventional Commit effect as a non-blocking progress update,
+validates that the groups form a complete, non-overlapping ordered partition of the selected
+changes, and continues automatically without a second approval or refinement round. Ambiguous
+grouping or order stops before staging; `deliver` never guesses or creates a mixed catch-all commit
+merely to finish.
 
-Each confirmed group is staged by literal path in sequence and handed to the staged-only `commit`
+Each derived group is staged by literal path in sequence and handed to the staged-only `commit`
 tool. After each commit, `deliver` verifies the parent, branch, tree, and remaining groups. If a
 later group or commit hook fails, the fresh worktree and branch are retained together with all
 earlier verified commits and the still-uncommitted groups. Nothing is pushed and no pull request is

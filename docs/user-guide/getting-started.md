@@ -221,12 +221,15 @@ partially staged, choose either its staged state or its complete working-tree st
 Git evidence do not identify one exact scope, the tool asks for clarification and aborts without
 mutation if the scope remains ambiguous.
 
-Next, confirm the proposed ordered commit groups. `deliver` transfers only the confirmed states to
-a fresh branch and worktree based on the refreshed configured base, commits each coherent group in
-order, and opens a pull request only after every commit and the final clean branch are verified.
-Your source checkout and its unrelated changes remain untouched. If a later commit group fails,
-the delivery branch and worktree remain available with earlier commits and the uncommitted groups;
-nothing is pushed and no PR is opened.
+That manifest confirmation is the only routine approval. `deliver` then derives and displays the
+ordered commit groups, validates their exact partition, and continues automatically without a
+commit-group confirmation. If grouping is ambiguous, it aborts before staging; if the manifest
+drifts, it displays the changed selection and asks you to confirm it again. It transfers only the
+confirmed states to a fresh branch and worktree based on the refreshed configured base, commits
+each coherent group in order, and opens a pull request only after every commit and the final clean
+branch are verified. Your source checkout and its unrelated changes remain untouched. If a later
+commit group fails, the delivery branch and worktree remain available with earlier commits and the
+uncommitted groups; nothing is pushed and no PR is opened.
 
 Use `/effective-flow commit` instead when the exact intended diff is already staged. Use
 `/effective-flow pr` only when all intended content is already committed on a clean, attached,
