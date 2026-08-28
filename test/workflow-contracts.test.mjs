@@ -10260,6 +10260,41 @@ test('setup treats a several-match locator result as an explicit stop, not as "n
     ),
     'item 5 must ask which reported ADR is authoritative and must not offer creating a new one',
   );
+  // The choice resolves an ADR, and the two items that turn a resolved ADR into carried state sit
+  // *above* item 5. Without an explicit return path the run leaves the stop with `<adr-convention>`
+  // unresolved and the current values rebuilt from unset state, so the chosen ADR's own recorded
+  // configuration is silently dropped on the next write — the loss this branch exists to prevent.
+  assert.match(
+    item5,
+    near('the run continues through item 3 and item 4 with it', 'before it goes on to Step 3', 200),
+    'the selected ADR must return through items 3 and 4 before Express or Guided is entered',
+  );
+  assert.match(
+    item5,
+    near('resolving `<adr-convention>`', "parsing that ADR's table into the current values", 120),
+    'the return path must name both the convention it resolves and the current values it forms',
+  );
+  // The two items on the receiving end have to admit that entry, or the return path points at
+  // wording that only describes being reached from item 2.
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
+  );
+  assert.match(
+    prose(
+      boundedSlice(
+        setup,
+        '3. **Detect the ADR naming convention.**',
+        '\n4. **Form the current values.**',
+      ),
+    ),
+    near('item 2 resolved it directly or item 5 selected', 'several-match stop state', 80),
+    'item 3 must accept an ADR that item 5 selected out of a several-match stop state',
+  );
+  assert.match(
+    item4,
+    near('the one item 2 resolved, or the authoritative one', 'item 5 selected', 80),
+    'item 4 must parse the ADR item 5 selected, not only the one item 2 resolved',
+  );
 
   // The pre-write re-resolution is the second place a several-match can appear: the locator's
   // match family covers numeric prefixes, so a second matching file can show up between Step 2 and

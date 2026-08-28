@@ -180,7 +180,8 @@ options:
    an undefined handle, and the several-match state is a distinct fourth value precisely so it is
    never collapsed into "no source".
 3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup
-   ADR resolved, resolve the ADR file-name convention as defined in the building block above
+   ADR resolved — whether item 2 resolved it directly or item 5 selected the authoritative one out
+   of a several-match stop state — resolve the ADR file-name convention as defined in the building block above
    (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved
    form, the resolution tier (a declaring source, the observed evidence, or the Effective Flow
    default), the zero-pad width where the form carries numbers, and the file path that established
@@ -196,7 +197,8 @@ options:
    observed evidence deciding next, and the Effective Flow default only where that is inconclusive
    too — sets the not-posed flag, and carries every speaking source and its outcome forward for
    Step 8.
-4. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
+4. **Form the current values.** If an ADR exists — the one item 2 resolved, or the authoritative one
+   item 5 selected out of a several-match stop state — parse either canonical `## Configuration` /
    `| Key | Value |` or `## Konfiguration` / `| Schlüssel | Wert |` table per the encoding into
    an internal "current values" overview (key → currently recorded value), and retain the
    envelope language for a later update. In the
@@ -215,7 +217,12 @@ options:
    handle, ask whether the configuration should be newly created (old backup/overwrite) or the run
    aborted. For the several-match state, ask instead which of the reported ADRs is the authoritative
    one to update in place, the remaining options being to abort; creating a new ADR is not offered,
-   because the ambiguity is that too many already exist. Without the workflow's explicit
+   because the ambiguity is that too many already exist. Once that choice is made the stop state is
+   cleared and the selected ADR is the resolved project setup ADR: the run continues through item 3
+   and item 4 with it — resolving `<adr-convention>` and parsing that ADR's table into the current
+   values — before it goes on to Step 3. Returning straight to Express or Guided instead would enter
+   the setup with no resolved convention to carry forward and with the current values rebuilt from
+   unset state, silently discarding the configuration the chosen ADR already records. Without the workflow's explicit
    invalid-source decision, do not write a replacement ADR, create a new one, untrack either JSON
    file, or mark the migration complete.
 
