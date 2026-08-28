@@ -5,7 +5,7 @@ catalogHint: "Sets up Effective Flow in the project – guided wizard, starts wi
 
 # Effective Flow Setup
 
-You prepare a target project for using Effective Flow: a `.gitignore` entry for the pure runtime directory `.effective-flow/` and interactive maintenance of the Effective Flow configuration in a living **project setup ADR** (default `docs/adr/effective-flow-project-setup.md`) that a marker in `AGENTS.md` points to.
+You prepare a target project for using Effective Flow: a `.gitignore` entry for the pure runtime directory `.effective-flow/` and interactive maintenance of the Effective Flow configuration in a living **project setup ADR** (by default `docs/adr/effective-flow-project-setup.md`, unless the project declares its own ADR naming convention) that a marker in `AGENTS.md` points to.
 
 ## Goal
 
@@ -162,16 +162,41 @@ options:
    → transitional `.effective-flow/config.json`, otherwise `.firmo/config.json`; see the building block above). If a marker points to a dead
    path, continue down the order and note the outdated marker for correction. If an ADR resolves,
    it is authoritative and neither transitional JSON file is a migration source or may be
-   untracked. Otherwise, capture the locator's exact verified absolute transitional JSON handle
+   untracked. If the locator instead reports **several** matching project setup ADRs and falls
+   through on that ambiguity, that is **not** a "no ADR" result: record it as an explicit stop/ask
+   state carrying every reported path and route it to item 5. While that state holds, nothing is
+   written — do not enter the new-ADR branch of Step 6 item 4, and do not treat either transitional
+   JSON file as a migration source. Writing under an unresolved several-match state would create a
+   further project setup ADR beside the ones the locator just reported, which is exactly the
+   duplication this resolution exists to prevent. Otherwise, capture the locator's exact verified absolute transitional JSON handle
    under `RUNTIME_STATE_ROOT` as `<source-handle>`; never replace it with or inspect a same-named
    fallback under `EXECUTION_ROOT`. For Git commands only, derive `<source-path>` as the verified
    repository-relative pathspec that identifies the same file after the locator's root/common-
    directory and containment checks. When both JSON files exist,
    `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` wins; leave the unselected
    `<RUNTIME_STATE_ROOT>/.firmo/config.json` untouched throughout the run. Record whether Step 2
-   resolved an ADR, a transitional JSON source, or no source; Step 6 uses this source state to
-   detect intervening changes without inventing an undefined handle.
-3. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
+   resolved an ADR, hit the several-match stop state, selected a transitional JSON source, or found
+   no source at all; Step 6 uses this source state to detect intervening changes without inventing
+   an undefined handle, and the several-match state is a distinct fourth value precisely so it is
+   never collapsed into "no source".
+3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup
+   ADR resolved, resolve the ADR file-name convention as defined in the building block above
+   (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved
+   form, the resolution tier (a declaring source, the observed evidence, or the Effective Flow
+   default), the zero-pad width where the form carries numbers, and the file path that established
+   it where that tier has one, plus any unanimous observed evidence that contradicted the
+   declaration, every speaking source with its classified outcome wherever more than one spoke, any
+   width divergence between speaking sources that agreed on the classification axis, and a flag
+   recording whether the ambiguity fence was reached but could not be posed. Step 6 item 4 writes
+   through this value and Step 8 reports it, that flag included — so the flag is a carried component
+   rather than something Step 8 has to reconstruct. If the resolution reaches its
+   ambiguity fence, answer the fence before continuing; nothing is written until it is answered.
+   A run that cannot ask does not stall there: an unanswered, skipped, or non-interactive run
+   resolves exactly as the fence's `Inconclusive` option does — every declaration set aside, the
+   observed evidence deciding next, and the Effective Flow default only where that is inconclusive
+   too — sets the not-posed flag, and carries every speaking source and its outcome forward for
+   Step 8.
+4. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
    `| Key | Value |` or `## Konfiguration` / `| Schlüssel | Wert |` table per the encoding into
    an internal "current values" overview (key → currently recorded value), and retain the
    envelope language for a later update. In the
@@ -183,11 +208,16 @@ options:
    for each such row note whether a `mergeGate.*` row with the same trailing key already exists.
    `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the recorded
    block in place.
-4. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
-   not valid JSON, do not overwrite silently. Inform the user with that exact handle and the
-   error, and ask whether the configuration should be newly created (old backup/overwrite) or the
-   run aborted. Without the workflow's explicit invalid-source decision, do not write a
-   replacement ADR, untrack either JSON file, or mark the migration complete.
+5. **Invalid source.** If the ADR table is invalid/ambiguous, the selected `<source-handle>` is
+   not valid JSON, or item 2 recorded the locator's several-match stop state, do not overwrite
+   silently. Inform the user with that exact handle and the error — or, for the several-match
+   state, with every path the locator reported — and ask how to proceed. For an invalid table or
+   handle, ask whether the configuration should be newly created (old backup/overwrite) or the run
+   aborted. For the several-match state, ask instead which of the reported ADRs is the authoritative
+   one to update in place, the remaining options being to abort; creating a new ADR is not offered,
+   because the ambiguity is that too many already exist. Without the workflow's explicit
+   invalid-source decision, do not write a replacement ADR, create a new one, untrack either JSON
+   file, or mark the migration complete.
 
 ### Step 3: Express or Guided
 
@@ -588,8 +618,31 @@ options:
    completion marker, report the inconsistent state and ask whether to begin a separate normal
    non-migration setup or abort. Do not continue this migration path.
 
-4. **Write the project setup ADR.** Determine the ADR directory (Step 2) and write the
-   ADR to `<adr-dir>/effective-flow-project-setup.md` (default slug `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
+4. **Write the project setup ADR.** Determine the ADR directory (Step 2 item 1). The write target
+   is then decided by precedence, not by the convention alone:
+   The two bullets below are complementary halves of one predicate — an ADR resolved by **either**
+   resolution, or by neither — so no state falls between them:
+   - **An existing project setup ADR wins.** If an ADR was resolved either by Step 2 item 2 **or**
+     by the fresh re-resolution in item 3 of this step — that fresh one being authoritative even
+     where Step 2 found none — that ADR's own path is the write target and it is updated in place
+     — never duplicated at a second, convention-shaped path. A resolved `<adr-convention>` that
+     its path contradicts is reported as a divergence only (`project-adr-convention`, "No rename
+     on the convention axis"), and the collision procedure does not apply to it. The no-rename rule
+     decides only which path is written, not whether writing it is safe: that existing path stays
+     subject to `project-adr-convention`'s symlink hard stop and its physical containment check,
+     evaluated in that order. A symlink at that path is never a write target — report the path and
+     write nothing rather than writing through it, outside the repository.
+   - **The convention names only a new ADR.** Where **neither** Step 2 item 2 nor the fresh
+     re-resolution in item 3 of this step resolved an ADR, resolve the
+     file name for the slug `effective-flow-project-setup` through the `<adr-convention>` value
+     carried forward from Step 2 item 3, applying `project-adr-convention` in full — its
+     allocation, containment, and collision rules included, not a selection from them. That
+     includes its unconditional pre-write existence check, which stops a numberless write onto an
+     existing file. Never enter this branch while Step 2 item 2's several-match stop state holds:
+     that state routes to Step 2 item 5 and is resolved there before anything is written.
+
+   Write the ADR to the resolved path inside the detected directory (default slug
+   `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
    living ADR format:
    - For a new ADR, resolve `language.documentation.technical` through `language.project` and
      the default. Use the complete English envelope (`# Effective Flow project setup`,
@@ -844,6 +897,15 @@ Report to the user:
   `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
+- the ADR naming convention applied to that path and its source — the declaring file path, the
+  observed evidence, or the Effective Flow default, per the resolution tier carried forward from
+  Step 2 item 3, since only the declared tier has a single establishing file path; plus, where
+  applicable, unanimous observed evidence that contradicted the declaration, an existing ADR path
+  left unrenamed on the convention axis, a widened zero-pad, a width divergence between sources
+  that agreed on the classification axis, an ambiguity fence that could not be posed — reported
+  from the flag carried in `<adr-convention>`, together with every speaking source and its outcome
+  and the tier that then decided — or inconclusive evidence that made the Effective Flow default
+  apply. Name file paths and classified outcomes only, never verbatim prose from a declaring source
 - for the capability step of Step 7: the detected harness, which path it followed, whether the
   Desktop native path was explained or the Claude marker title and mandate were printed, whether the
   verification ran and with which concrete result, whether stale-hook removal guidance was relevant,

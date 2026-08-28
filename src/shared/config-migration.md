@@ -20,9 +20,25 @@ first matching step wins:
    marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
    there, but fall through in this order and report the stale marker
    (correction in {{SKILL:setup}}).
-2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
-   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
-   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
+   detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
+   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
+   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
+   its body carries one of the canonical configuration envelopes listed under "Table encoding"
+   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
+   what a new file is named. That tolerance widens the scan to a family of names, so **several**
+   files can match inside this one step; "the first matching step wins" ranks the four steps, not
+   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
+   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
+   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
+   stem over a prefixed one. Stated as two independent preferences,
+   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
+   neither would survive both. If more than one match still ties at the top of that ranking, report
+   every matching path and fall through to the next step instead of picking one. Falling through
+   here is not the same result as finding nothing: a tool that **writes** configuration treats a
+   reported several-match state as an explicit stop that its user resolves, never as "no project
+   setup ADR exists", because writing a new ADR into that state adds a further one beside the
+   matches already reported.
 3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
    verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
    a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise

@@ -61,8 +61,16 @@ Diese ADR enthält die versionierte Effective-Flow-Konfiguration dieses Projekts
 | skills.exclude   | (empty) |
 ```
 
-The file name is a kebab-case slug without a number. Effective Flow updates the ADR in place when
-the configuration changes; it does not create a superseding record for each edit.
+By default the file name is a kebab-case slug without a number. Where your project declares its
+own ADR file-naming rule — in `AGENTS.md`, `CLAUDE.md`, or a decision register such as
+`DECISIONS.md` at the repository root or at `docs/DECISIONS.md`, or a `README.md`/`index.md`
+directly inside the ADR directory — setup follows that rule instead, so the file may well be
+`docs/adr/0002-effective-flow-project-setup.md`. Effective Flow updates the ADR in place when the
+configuration changes; it does not create a superseding record for each edit. An ADR that already
+exists is never renamed to match the convention and never duplicated at a second,
+convention-shaped path: it keeps its own path, and the divergence is reported once. Setup also never
+writes over a file already sitting at the name it resolved, and a symlink at that path stops the
+write outright.
 
 The canonical locator line is:
 
@@ -84,7 +92,15 @@ Every config-reading tool uses the following order and stops at the first valid 
    A marker whose target no longer exists is reported and does not block the later fallbacks.
 2. **Default path and ADR scan.** Try `docs/adr/effective-flow-project-setup.md`, then scan the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, or `adr/`) for the project-setup ADR.
-   The former `firmo-project-setup` slug remains readable during this scan.
+   The scan also matches the ADR under a leading numeric prefix, so a project that names its ADRs
+   that way stays resolvable. The former `firmo-project-setup` slug remains readable during this
+   scan. Because that tolerance matches a family of names, several files can match here. They are
+   ranked in one order rather than by two separate preferences: the current slug wins over the
+   former one first, and only between files carrying the same slug does an unprefixed name win over
+   a prefixed one. If more than one match still ties at the top, every matching path is reported and
+   the lookup moves on to the next step rather than guessing. For a tool that only reads, that means
+   built-in defaults for the run; `/effective-flow setup` instead stops and asks which of those ADRs
+   to update, rather than treating the project as having none and writing another.
 3. **Transitional legacy input.** If no ADR exists, read a still-present legacy JSON config
    without writing anything, and direct the user to `/effective-flow setup`. See
    [Migrating a legacy JSON configuration](#migrating-a-legacy-json-configuration).
