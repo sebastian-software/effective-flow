@@ -3630,17 +3630,42 @@ function teaApiMessage(body) {
     : undefined;
 }
 
-// A non-2xx status becomes a structured error rather than data. A 5xx is reported as retryable, a
-// 4xx is not: an auth, path or permission failure repeats identically.
+// The three operations whose documented recovery is "never re-run after
+// `mutationMayHaveSucceeded: true`; re-read the state instead". Every failure path that can end one
+// of them has to agree about which three they are, so the membership lives here rather than in each
+// path: `runChecked` reads it when the CLI itself failed, and `teaApiSuccess` reads it when
+// `tea api` exited 0 and the forge answered 5xx, which on that transport is the same ambiguity
+// wearing a status line. Two copies of the rule are what let a Forgejo `issue-close` take the one
+// path neither of them covered.
+const POSSIBLY_APPLIED_MUTATIONS = new Set(['pr-merge', 'issue-sub-issue-create', 'issue-close']);
+
+function mutationMayHaveApplied(label) {
+  return POSSIBLY_APPLIED_MUTATIONS.has(label);
+}
+
+// A non-2xx status becomes a structured error rather than data. A 4xx is never retryable: an auth,
+// path or permission failure repeats identically. A 5xx is retryable for a read, which observes
+// nothing and changes nothing by being repeated — but for one of the mutations above it is the
+// ambiguous outcome this transport would otherwise hide. `tea api` exits 0 whatever the status, so
+// such a 5xx never reaches `runChecked`'s exit-code tolerance and would be reported as a plain
+// retryable refusal: the forge may have applied the request before it failed to answer, and a
+// caller that reads that as "the forge did not act" retries a write that already landed and skips
+// the re-read the operation documents. It is reported as possibly applied and non-retryable
+// instead, and its message stops claiming a refusal nobody stated.
 function teaApiSuccess(result, label) {
   const response = readTeaApiResponse(result, label);
   if (response.status < 200 || response.status >= 300) {
     const message = teaApiMessage(response.body);
+    const mayHaveApplied = response.status >= 500 && mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',
-      `${label} was refused by the forge`,
-      { status: response.status, ...(message === undefined ? {} : { message }) },
-      response.status >= 500,
+      mayHaveApplied ? `${label} left its outcome unstated` : `${label} was refused by the forge`,
+      {
+        status: response.status,
+        ...(message === undefined ? {} : { message }),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
+      },
+      response.status >= 500 && !mayHaveApplied,
     );
   }
   return response;
@@ -3783,9 +3808,10 @@ async function runChecked(runner, plan, label) {
     // in-progress label on a closed issue and its container entry open. Membership is therefore
     // decided by the operation's documented recovery — each of these three is documented as "never
     // re-run after `mutationMayHaveSucceeded: true`; re-read the state instead" — and not by whether
-    // a repeat would duplicate anything.
-    const mayHaveApplied =
-      label === 'pr-merge' || label === 'issue-sub-issue-create' || label === 'issue-close';
+    // a repeat would duplicate anything. The membership itself lives beside `teaApiSuccess`, which
+    // applies the same three to a 5xx the forge did state: on the `tea api` transport that failure
+    // exits 0 and never reaches this exit-code path at all.
+    const mayHaveApplied = mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -5944,14 +5970,23 @@ export async function executeOperation(operation, input = {}, options = {}) {
       // The second, cheaper assertion beside the status: Forgejo answers an accepted merge with 200
       // and an **empty** body, which `parseJsonOutput` turns into `null`, so any returned object is
       // a rejection carrying `{"message":…}` however the status was spelled.
+      //
+      // A 5xx is the one rejection here the server did not choose, and it is exactly as
+      // unobservable as a dropped connection: Forgejo may have merged before it failed to answer.
+      // It therefore carries the possibly-applied flag rather than denying it, and the message
+      // stops calling it a refusal. Every status below 500 stays a deliberate answer — 409 was
+      // already taken above, 405 for a merge style the repository does not allow, 403 for a
+      // permission or branch-protection refusal — and a 2xx carrying a body is the forge stating a
+      // rejection it spelled as success.
       if (response.status < 200 || response.status >= 300 || response.body !== null) {
+        const mayHaveApplied = response.status >= 500;
         fail(
           'COMMAND_FAILED',
-          'forgejo refused the merge',
+          mayHaveApplied ? 'forgejo left the merge outcome unstated' : 'forgejo refused the merge',
           {
             number: prNumber(input),
             status: response.status,
-            mutationMayHaveSucceeded: false,
+            mutationMayHaveSucceeded: mayHaveApplied,
             ...(message === undefined ? {} : { message }),
           },
           false,

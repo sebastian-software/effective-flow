@@ -421,12 +421,15 @@ leave the issue exactly as the merge left it. If the capability is missing, the 
 one and continues – a merge that already succeeded is never re-opened or rolled back over an
 unavailable optional write.
 
-A close that fails in **transport** – the CLI itself failed, so the request may have been applied and
-its response lost – reports `retryable: false` and `mutationMayHaveSucceeded: true`, exactly as a
-failed `pr-merge` does. Re-read the issue state and report what it shows; never blind-retry the
-close. A refusal the forge actually stated is the other case: the adapter reads the status line, so a
-403 for a missing scope or Gitea's 412 for open blocking dependencies is reported as the rejection it
-is.
+A close whose outcome the adapter could not observe reports `retryable: false` and
+`mutationMayHaveSucceeded: true`, exactly as a failed `pr-merge` does. Two failures land there: the
+CLI itself failed, or on Forgejo the forge answered `5xx`. Both mean the request may have been
+applied and its response lost. Re-read the issue state and report what it shows; never blind-retry
+the close. A refusal the forge actually stated is the other case: the adapter reads the status line,
+so a 403 for a missing scope or Gitea's 412 for open blocking dependencies is reported as the
+rejection it is and stays non-retryable, because it repeats identically. The `5xx` belongs to the
+first case rather than the second precisely because `tea api` exits 0 on it: nothing but the status
+line distinguishes a server that failed after applying the PATCH from one that failed before.
 
 `pr-reviews-read` normalizes the two forges' different spellings of the same verdicts onto one
 token set, and folds Gitea's separate dismissal flag into the dismissed token, so a rule written
@@ -621,7 +624,8 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   whose status the adapter reads, so a refusal the server actually stated is reported as what it is:
   a rejection for a moved head (409) becomes `STALE_WRITE` with `merged: false`, and a rejection for
   merge style or permission carries `mutationMayHaveSucceeded: false`. Only a merge whose outcome the
-  adapter could not observe at all – a transport failure – carries `true` there.
+  adapter could not observe at all carries `true` there: a transport failure, and a `5xx` the forge
+  answered with, which is that same unobservable outcome with a status line in front of it.
 
 ## Interplay with issue-driven tools
 

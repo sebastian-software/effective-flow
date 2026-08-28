@@ -6751,6 +6751,27 @@ test('a Forgejo merge the server refused is never reported as merged', async () 
     assert.equal(refused.error.details.status, status);
   }
 
+  // A 5xx is the one rejection the forge did not choose. It may have merged before it failed to
+  // answer, so its outcome is exactly as unobservable as a dropped connection's and it must not
+  // deny that the merge applied — `mutationMayHaveSucceeded: false` there would send the gate
+  // looking for a merge that already happened.
+  for (const status of [500, 503]) {
+    const unstated = await executeOperation('pr-merge', mergeInput, {
+      runner: fakeRunner([
+        ...forgejoStatusResults(),
+        teaApiResult(status, { message: 'internal server error' }),
+      ]),
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(unstated.ok, false);
+    assert.equal(unstated.error.code, 'COMMAND_FAILED');
+    assert.equal(unstated.error.details.status, status);
+    assert.equal(unstated.error.details.mutationMayHaveSucceeded, true);
+    assert.equal(unstated.error.retryable, false);
+    assert.doesNotMatch(unstated.error.message, /refused/);
+  }
+
   // The cheap second assertion: an accepted merge answers 200 with an empty body, so a returned
   // object is a rejection however the status was spelled.
   const bodied = await executeOperation('pr-merge', mergeInput, {
@@ -8278,6 +8299,67 @@ test('a Forgejo close the forge refuses is an error, not a reported transition',
   // A 4xx repeats identically, so it is not offered for a retry the way a 5xx is.
   assert.equal(envelope.error.retryable, false);
   assert.equal(runner.calls.length, 1);
+});
+
+test('a Forgejo 5xx on a possibly-applied mutation is possibly applied, not retryable', async () => {
+  // The gap between the two failure paths of the `tea api` transport, and it is a gap between two
+  // fixes rather than an oversight in either. `runChecked` marks `issue-close`, `pr-merge` and
+  // `issue-sub-issue-create` as possibly applied when the CLI itself fails — but `tea api` exits 0
+  // on every HTTP status, so a 5xx never reaches that path. It lands in `teaApiSuccess`, which
+  // reported every 5xx alike as an ordinary retryable refusal. A close the forge answered with 500
+  // may well have applied the PATCH before it failed to answer, and a gate told "retryable,
+  // nothing happened" repeats the write and skips the state re-read the operation documents: the
+  // in-progress label stays on a closed issue and its container entry stays open.
+  for (const status of [500, 502, 503]) {
+    const envelope = await executeOperation(
+      'issue-close',
+      { repository: forgejoRepository, number: 7 },
+      {
+        runner: fakeRunner([teaApiResult(status, { message: 'internal server error' })]),
+        skipProbe: true,
+        apply: true,
+      },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'COMMAND_FAILED');
+    assert.equal(envelope.error.details.status, status);
+    assert.equal(
+      envelope.error.details.mutationMayHaveSucceeded,
+      true,
+      `a ${status} close must be reported as possibly applied`,
+    );
+    assert.equal(envelope.error.retryable, false);
+    // And it may not keep claiming a refusal the forge never stated: the operator reading that
+    // message is the same one who has to decide whether to re-read the issue.
+    assert.doesNotMatch(envelope.error.message, /refused/);
+  }
+
+  // A read over the same transport is unchanged: repeating it observes nothing and changes
+  // nothing, so its 5xx stays retryable and carries no flag. The discriminator has to keep meaning
+  // "the caller has to re-read the state", not "a 5xx happened".
+  const read = await executeOperation(
+    'viewer-read',
+    { repository: forgejoRepository },
+    { runner: fakeRunner([teaApiResult(503, { message: 'unavailable' })]), skipProbe: true },
+  );
+  assert.equal(read.ok, false);
+  assert.equal(read.error.details.status, 503);
+  assert.equal(read.error.retryable, true);
+  assert.equal(Object.hasOwn(read.error.details, 'mutationMayHaveSucceeded'), false);
+
+  // A 4xx close is unchanged too: the forge chose that answer, it repeats identically, and Gitea's
+  // 412 for open blocking dependencies is the population an issue assessed as complete belongs to.
+  const dependencies = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    {
+      runner: fakeRunner([teaApiResult(412, { message: 'blocked by open dependencies' })]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(dependencies.error.retryable, false);
+  assert.equal(Object.hasOwn(dependencies.error.details, 'mutationMayHaveSucceeded'), false);
 });
 
 test('a close that fails in transport is reported as possibly applied and never as retryable', async () => {
