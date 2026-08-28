@@ -5685,6 +5685,96 @@ test('the post-merge completion assessment states a closed verdict vocabulary an
   assert.match(observation, /replaces that issue's recorded observation outcome/);
 });
 
+test('the confirmed transition revalidates the whole assessment basis before each mutation', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+
+  // The offer is posed once for the whole run and the confirmed issues are then mutated in turn, so
+  // a state-only recheck closes an issue whose task list, classifications, children or covering
+  // pull-request text moved while the prompt stood open — and steps 5 and 6 then strip its label and
+  // tick its container entry with the newly raised work signalled nowhere.
+  assert.match(
+    observation,
+    /revalidate the whole assessment basis immediately before the mutation/,
+  );
+  assert.match(
+    observation,
+    /one fresh forge `pr-read` of the merged pull request supplies its title and body again — one read for the whole loop/,
+  );
+  assert.match(
+    observation,
+    /re-read that issue's own basis with the same operations and the same target split step 3 uses/,
+  );
+  assert.match(
+    observation,
+    /one fresh read of the issue for its state, body and classifications, and one fresh read of its direct children/,
+  );
+  // The rules live in step 3 and are re-applied, never restated: a second copy is what drifts.
+  assert.match(
+    observation,
+    /Re-derive the verdict from that fresh basis by step 3's existing rules/,
+  );
+
+  // All three outcomes fail closed. Without the middle one a changed basis still closes the issue;
+  // without the last one an unreadable basis does, which step 3 already refuses to call satisfied.
+  assert.match(
+    observation,
+    /Where the fresh verdict is no longer `complete`, transition nothing for that issue/,
+  );
+  assert.match(
+    observation,
+    /Where a revalidation read fails or cannot be performed, treat it exactly as a verdict that is no longer `complete`/,
+  );
+
+  // A revalidation that could add an issue would write past the confirmation the operator gave, and
+  // asking again would break the one-question-per-run rule; the set may therefore only shrink.
+  assert.match(observation, /The confirmed set therefore only ever shrinks/);
+  assert.match(
+    observation,
+    /an issue whose verdict newly becomes `complete` here is not transitioned and the run poses no second question/,
+  );
+
+  // Step 4's budget is its own. Folding it into step 3's identically shaped one would make every
+  // revalidation read look already spent, which is how the widened re-read quietly becomes optional.
+  assert.match(
+    observation,
+    /These bounds are step 4's own, distinct from step 3's identically shaped ones and never read as one shared budget/,
+  );
+  assert.match(
+    observation,
+    /exactly one `pr-read` for the whole revalidation, and at most one issue read and one sub-issue read per confirmed issue/,
+  );
+});
+
+test('the condensed lifecycle rule and the Phase-6 summary carry the widened revalidation', () => {
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const summary = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  );
+
+  // The shared contract is the condensed statement of the same rule, so leaving it on a state-only
+  // recheck would contradict the widened one wherever a reader stops at the include.
+  assert.match(
+    lifecycle,
+    /revalidate each item's whole assessment basis fresh immediately before its mutation/,
+  );
+  assert.match(
+    lifecycle,
+    /one whose verdict is no longer `complete`, and one whose revalidation read fails, is not transitioned at all/,
+  );
+  assert.match(lifecycle, /The confirmed set only ever shrinks, and nothing enters it late/);
+
+  // Without this the report spells a declined issue and a revalidation-blocked one identically, and
+  // the case where the operator said yes while the run still wrote nothing goes unreported.
+  assert.match(
+    summary,
+    /Where a confirmed issue was not transitioned because step 4's revalidation found its basis changed, name the dimension that changed/,
+  );
+});
+
 test('the terminal-transition offer quotes no text and its option discloses the whole cascade', () => {
   const gate = source('src/tools/merge-gate.md');
   const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));

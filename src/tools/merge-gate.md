@@ -1902,21 +1902,54 @@ ends this phase without heuristic tracker access.
    container completion of step 6 — which on an external `native` container is a completion write and
    on a `checklist` container a hash-guarded body patch.
 
-   On confirmation, and for each listed issue in turn: read its state fresh **immediately before the
-   mutation** and skip it as an already-satisfied no-op where it is now terminal — a `timed out`
-   issue is by definition one whose auto-close may still be in flight, and this read is what keeps
-   the run from closing an issue that closed itself. Otherwise transition it: on the forge through
-   the `issue-close` operation, inspecting the default dry-run command preview and then repeating
-   with `--apply` per the mutation discipline of the loaded "PR review comment integration"; on an
-   external target through the connection's own transition operation to the resolved
-   `tracker.externalDoneState`. Then re-read that issue once — a fresh read, not a second 30-second
-   wait — and what the re-read shows **replaces that issue's recorded observation outcome** from
-   step 2. That re-read is the **only** proof the transition took effect: a re-read that still shows
-   a nonterminal state is a **failed** transition regardless of what the operation reported, handled
-   by the failure rule below exactly as a refused or errored one is. The replacement is what makes
-   steps 5 and 6 fire on the new state without their own text changing. Step 5 stays forge-only:
-   an external issue that became terminal here reaches step 6 and not step 5, and the summary
-   reflects that instead of reporting a label removal that never applied.
+   On confirmation, and for each listed issue in turn: **revalidate the whole assessment basis
+   immediately before the mutation**, and transition nothing on evidence that no longer holds. The
+   offer is posed once for the whole run and the listed issues are then mutated sequentially, so
+   every input step 3 read can have moved while the prompt stood open or while an earlier issue was
+   still being processed — and the `complete` verdict rests on the issue's body, its classifications,
+   its direct children and the pull-request text just as much as on its state. A state-only recheck
+   would let this run close an issue whose own task-list entry was unticked in the meantime, which
+   acquired the `effective-flow-needs-planning` classification, or under which a native sub-issue was
+   just opened — and step 5 would then strip its in-progress label and step 6 tick its container
+   entry, with the newly raised work signalled nowhere. So, after confirmation and before the
+   mutation loop, one fresh forge `pr-read` of the merged pull request supplies its title and body
+   again — one read for the whole loop, mirroring step 3's own whole-run bound for the same object.
+   Then, immediately before **each** issue's mutation, re-read that issue's own basis with the same
+   operations and the same target split step 3 uses — a forge issue uses `issue-read` and
+   `issue-sub-issues-read`, an external issue uses the connection's own equivalents, and neither
+   target's operations are ever invoked against the other: one fresh read of the issue for its state,
+   body and classifications, and one fresh read of its direct children wherever the resolved target
+   supports a native sub-issue relation at all. Re-derive the verdict from that fresh basis by step
+   3's existing rules — the rules are not restated here, they are re-applied. These bounds are step
+   4's own, distinct from step 3's identically shaped ones and never read as one shared budget, and
+   they are fixed literals carrying no configuration key: exactly one `pr-read` for the whole
+   revalidation, and at most one issue read and one sub-issue read per confirmed issue.
+
+   The three outcomes of that revalidation all **fail closed**. Where the issue is **now terminal**,
+   skip it as an already-satisfied no-op — a `timed out` issue is by definition one whose auto-close
+   may still be in flight, and this read is what keeps the run from closing an issue that closed
+   itself. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
+   name the dimension that changed, keep its `effective-flow-issue-in-progress` label and its
+   container entry open, and continue with the remaining confirmed issues. Where a revalidation read
+   **fails or cannot be performed**, treat it exactly as a verdict that is no longer `complete`: an
+   unverifiable basis is not a verified one, which mirrors step 3's own rule that a target unable to
+   read children yields `undetermined` and never a satisfied condition. The confirmed set therefore
+   only ever **shrinks**. Nothing that was not listed and confirmed enters this loop, so an issue
+   whose verdict newly becomes `complete` here is not transitioned and the run poses no second
+   question: the operator authorized this set of writes, and a smaller set stays inside that
+   authorization while a larger one would not.
+
+   Otherwise transition it: on the forge through the `issue-close` operation, inspecting the default
+   dry-run command preview and then repeating with `--apply` per the mutation discipline of the
+   loaded "PR review comment integration"; on an external target through the connection's own
+   transition operation to the resolved `tracker.externalDoneState`. Then re-read that issue once — a
+   fresh read, not a second 30-second wait — and what the re-read shows **replaces that issue's
+   recorded observation outcome** from step 2. That re-read is the **only** proof the transition took
+   effect: a re-read that still shows a nonterminal state is a **failed** transition regardless of
+   what the operation reported, handled by the failure rule below exactly as a refused or errored one
+   is. The replacement is what makes steps 5 and 6 fire on the new state without their own text
+   changing. Step 5 stays forge-only: an external issue that became terminal here reaches step 6 and
+   not step 5, and the summary reflects that instead of reporting a label removal that never applied.
 
    A decline transitions nothing. A **non-interactive** run poses nothing, transitions nothing, and
    carries the recommended transition into the Phase-6 summary — the same shape the `ask` conflict
@@ -2057,7 +2090,10 @@ options:
      whether the terminal transition was offered, how the operator answered, and what the transition
      did — including, for a **non-interactive** run, the recommended transition that was reported
      instead of posed, and, where the offer was **unavailable**, which capability or configuration
-     value was missing on which connection;
+     value was missing on which connection. Where a confirmed issue was **not** transitioned because
+     step 4's revalidation found its basis changed, name the dimension that changed: a decline and a
+     changed basis are different outcomes, and reporting both as merely not transitioned would hide
+     the one where the operator said yes and the run still wrote nothing;
    - **as the final conditional summary item, one non-blocking configuration advisory** when the
      wisdom record retains candidates from "Unconfigured automatic-reviewer advisory". Group every
      candidate under one setup route, list each reviewer once with its compact non-body evidence,
