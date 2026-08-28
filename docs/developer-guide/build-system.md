@@ -244,10 +244,15 @@ The build aborts with an error message if any of these guards is violated:
   side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
-- **Context-budget guard (#99):** The always-loaded core of the largest tools (`build`, `fix`,
-  `docs`, `review`, `plan`) – the built tool file without the lazy fragments – stays under
-  **700 lines**. The build prints the measured sizes as a report and aborts if a tool exceeds
-  the budget.
+- **Context-budget guard (#99):** The always-loaded core of the largest tools – the built tool
+  file without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
+  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**. The build prints each
+  measured size next to the budget it was measured against and aborts if a tool exceeds **its
+  own** limit, naming the tool, its size and that limit. `merge-gate` differs because it is an
+  orchestration gate: its phases, delegation contracts and provider rules do not compress to
+  the size of an implementation tool. Its 3250 is a ratchet against renewed growth rather than
+  a target – it sits just above the measured size, so the number falls as the gate is trimmed
+  and never becomes room to fill.
 - **`catalogHint` guard:** Every tool listed in `TOOL_GROUPS` (exposed) needs a non-empty,
   strictly quoted `catalogHint` field – the line the router catalog shows per tool.
 - **`TOOL_GROUPS` completeness guard:** Every exposed tool is in exactly one group; duplicates
@@ -338,16 +343,30 @@ and directive syntax").
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
   `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
-  `effective-flow-dir-migration`. The load trigger (`when:`) sits at the decision point where
-  the mode/branch is determined. `plan-archival` is pointed at from the four tool sources that
-  keep a plan file rather than from inside `worktree-integration`: its decision point is the
-  delivery point of the handback, and in-place execution without delivery reaches that point
-  while performing no other step of that fragment.
+  `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
+  trigger (`when:`) sits at the decision point where the mode/branch is determined.
+  `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
+  inside `worktree-integration`: its decision point is the delivery point of the handback, and
+  in-place execution without delivery reaches that point while performing no other step of that
+  fragment. The last two names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle` and `pr-merge-completion` from `pr-review-comments`, and
+  both remaining halves stay eager because the gate reads them on every run. Cutting a fragment
+  along the seam between an always-read part and a one-decision-point part is what lets the second
+  half qualify for deferral at all.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
 configuration schema, for instance — deferring it would move the measured number without saving
 anything real, so it stays inline.
+
+Splitting also pays off without any deferral, when the halves have **different consumers**:
+`config-migration` kept the config locator and the table encoding every reader needs, while the
+`mergeGate.*` key table moved to `config-merge-gate-keys` (included by `setup` and `iterate`,
+while `merge-gate` states the keys in its own `## Configuration` section) and the setup-only
+language and legacy-`config.json` contracts moved to `config-setup-migration` (included by `setup`
+alone). `pr-review-thread-writes` is the same cut on the write side of `pr-review-comments`,
+included by `iterate` and `pr-review-integration`. Each half is still eagerly included where it is
+needed; the saving is that a consumer no longer inlines the part it never reads.
 
 The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
 directory and rendered there through the same pipeline as a tool body (nested eager includes,
@@ -380,11 +399,15 @@ Portable tool references use the harness-neutral notation `effective-flow <tool>
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
 so both managers install the same bytes instead of selecting by traversal order.
 
-**Context budget.** The always-loaded core of the five largest tools stays under **700 lines**
-(measured and enforced during the build, see "Guards"); the build prints the sizes as a report.
-The current cores are `build` 528, `fix` 424, `docs` 557, `review` 675, and `plan` 488 lines —
-headroom ranges from `review`'s 25 lines, the tightest since the eager `delegation-mandate`
-include was added, to `fix`'s 276 lines. The rest is loaded only when the mode is reached.
+**Context budget.** The always-loaded core of the largest tools is measured and enforced during
+the build (see "Guards"), each against its own budget; the build prints the sizes as a report.
+The five implementation tools share **700 lines** and currently measure `build` 536, `fix` 432,
+`docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the tightest
+since the eager `delegation-mandate` include was added, to `fix`'s 268 lines. `merge-gate` is
+budgeted separately at **3250** and measures 3160: an orchestration gate whose phases, delegation
+contracts and provider rules do not compress to the size of an implementation tool, so it is held
+to a number that ratchets its own history down rather than to the shared 700. The rest is loaded
+only when the mode is reached.
 
 ## Optional upstream ownership audit
 

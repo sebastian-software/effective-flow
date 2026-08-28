@@ -2917,7 +2917,7 @@ test('checked-in language configuration remains complete and migration-only', ()
   );
   assert.deepEqual(markerReferences, [
     ['tools/setup.md', 4],
-    ['shared/config-migration.md', 1],
+    ['shared/config-setup-migration.md', 1],
     ['shared/language-rules.md', 2],
   ]);
 });

@@ -1050,6 +1050,93 @@ test('every lazy-include fragment referenced by a tool has a source in src/share
   }
 });
 
+// A deferred fragment is only correctly deferred while its pointer still says *when* to load it.
+// `LAZY_INCLUDE_RE` in build-lib.mjs makes the `when:` line optional and `assertNoEagerLazyOverlap`
+// is the build's only lazy-side guard, so a pointer that loses its condition still renders (as a
+// bare "Load on demand: Read `shared/<name>.md`"), still builds, and still ships - while the agent
+// is left with no documented moment to reach for it. On the merge gate that is worse than not
+// deferring at all: the rule stops running instead of failing loudly. Slimming merge-gate's
+// always-loaded core from 4744 to ~3150 lines is what created that surface, so the gate's own
+// pointers are pinned here.
+//
+// Each fragment is pinned by the *trigger token* of its decision point, never by the whole
+// sentence, so rewording the clause stays free while dropping the decision point fails.
+test('every merge-gate lazy pointer names the decision point that loads it', () => {
+  const triggers = new Map(
+    [...source('src/tools/merge-gate.md').matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+
+  const pinned = [
+    // Deferred by the context-slimming work:
+    {
+      fragment: 'worktree-integration',
+      trigger: /behind|dirty/i,
+      decision: 'the head branch reading BEHIND or DIRTY',
+    },
+    {
+      // Not merely "language" plus "resolve": a clause saying language must somehow be resolved
+      // names no decision point. The pointer has to name *what* is resolved — the artifact output
+      // language, or the language context handed to a delegate — because that is the moment the
+      // fragment is needed.
+      fragment: 'language-rules',
+      trigger: /(?=[\s\S]*resolv)(?=[\s\S]*(?:output language|delegated language context))/i,
+      decision: 'an output language or a delegated language context having to be resolved',
+    },
+    {
+      // `merge` alone is satisfied by any sentence about merging, and this pointer's whole job is
+      // to name the *post*-merge phase. Only the phase number pins it.
+      fragment: 'issue-post-merge-observation',
+      trigger: /Phase 5\.5/,
+      decision: 'Phase 5.5',
+    },
+    {
+      // `/Phase 5\b/` matches inside `Phase 5.5` — the word boundary sits between the `5` and the
+      // `.` — so the observation pointer's own clause would satisfy this one. Require a `Phase 5`
+      // that is not `Phase 5.5`, *and* the closure token, since this fragment is loaded for both
+      // the merge and the closure offer and a clause naming only one of them is incomplete.
+      fragment: 'pr-merge-completion',
+      trigger: /(?=[\s\S]*Phase 5(?!\.5))(?=[\s\S]*closure)/i,
+      decision: 'Phase 5 (not Phase 5.5) and the issue-closure offer',
+    },
+    // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
+    // strip a condition that predates it:
+    { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
+    {
+      fragment: 'runtime-state-safety',
+      trigger: /`\.effective-flow\/`/,
+      decision: 'a mutation below `.effective-flow/`',
+    },
+    {
+      fragment: 'effective-flow-dir-migration',
+      trigger: /`\.effective-flow\/`/,
+      decision: 'a mutation below `.effective-flow/`',
+    },
+    { fragment: 'tracker-target', trigger: /`external`/, decision: 'the external tracker target' },
+  ];
+
+  for (const { fragment, trigger, decision } of pinned) {
+    const when = triggers.get(fragment);
+    assert.ok(
+      when !== undefined,
+      `src/tools/merge-gate.md must keep its lazy-include pointer for ${fragment}`,
+    );
+    assert.notEqual(
+      when,
+      '',
+      `the ${fragment} pointer in src/tools/merge-gate.md must carry a non-empty when: clause - ` +
+        `without it the fragment ships with no documented moment to load it`,
+    );
+    assert.match(
+      when,
+      trigger,
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    );
+  }
+});
+
 test('plan-issue runs the full quality baseline before its per-issue deep-review gate', () => {
   const planIssue = source('src/tools/plan-issue.md');
 
@@ -4591,12 +4678,24 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
   // Asserted as the guarantee the sources must carry, not as the absence of the one sentence that
   // was deleted. A negative pinned to that wording passes again for any paraphrase of it — dropping
   // the single word "either" was enough — and it says nothing about what has to stand there
-  // instead. Every claim below is therefore bound to the edge-case bullet that must carry it, and
-  // the one negative left is a second lock on the formulation that already misled a reader once.
-  const edgeCases = section(source('src/tools/merge-gate.md'), '## Edge cases', '\n## ');
+  // instead. Every claim below is therefore bound to the paragraph that must carry it, and the one
+  // negative left is a second lock on the formulation that already misled a reader once.
+  //
+  // Both claims now sit where the key they qualify is documented — the `.check` bullet of the gate's
+  // configuration — rather than in a separate edge-case list. A reader deciding whether to configure
+  // `.check` for a reviewer reads that bullet; the pairs below are unchanged, only their home is.
+  const gateSource = source('src/tools/merge-gate.md');
+  const gateCheckKey =
+    section(gateSource, '## Configuration', '\n## ')
+      .split(/\n-\s+/)
+      .find((entry) => entry.includes('`mergeGate.bots.<login>.check` names')) ?? '';
+  assert.ok(
+    gateCheckKey,
+    'the gate must document `mergeGate.bots.<login>.check` in its own bullet',
+  );
   const bullet = (marker) => {
-    const entry = edgeCases.split(/\n-\s+/).find((item) => item.includes(marker));
-    assert.ok(entry, `the gate's edge cases must carry the bullet about: ${marker}`);
+    const entry = gateCheckKey.split(/\n\n/).find((part) => flat(part).includes(marker));
+    assert.ok(entry, `the gate's \`.check\` documentation must carry the case about: ${marker}`);
     return flat(entry);
   };
 
@@ -4612,9 +4711,9 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     "a reaction must be stated not to be evidence about the reviewer's check context",
   );
   assert.doesNotMatch(
-    flat(edgeCases),
+    flat(gateSource),
     /publishes no check/i,
-    'no edge case may reintroduce the claim that this reviewer publishes no check context',
+    'no part of the gate may reintroduce the claim that this reviewer publishes no check context',
   );
 
   // The sticky-comment case is the concrete failure the fallback cannot survive, and it is the
@@ -4995,10 +5094,11 @@ test('setup rewrites a legacy prReview.* block in place instead of leaving both 
 });
 
 test('the shared configuration fragment documents every merge-gate key and the legacy fallback', () => {
-  // The fragment is what every consumer loads, so a key missing here is a key no run resolves —
-  // it silently falls back to a default instead, turning a configured `merge` completion into
+  // This fragment is what `setup` and `iterate` load to resolve these keys — `merge-gate` documents
+  // them in its own Configuration section instead — so a key missing here is a key those runs do
+  // not resolve: it silently falls back to a default, turning a configured `merge` completion into
   // `ask` or a configured bot list into "no bots expected".
-  const migration = source('src/shared/config-migration.md');
+  const migration = source('src/shared/config-merge-gate-keys.md');
   const block = section(
     migration,
     '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
@@ -5570,7 +5670,7 @@ test('container completion is deferred until a linked issue is observed terminal
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
 
   const nativeReconciliation = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   assert.match(
     nativeReconciliation,
@@ -5783,7 +5883,7 @@ test('the confirmed transition revalidates the whole assessment basis before eac
 
 test('the condensed lifecycle rule and the Phase-6 summary carry the widened revalidation', () => {
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const summary = prose(
     section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
@@ -5865,7 +5965,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
 
   for (const contract of [observation, lifecycle]) {
@@ -5893,7 +5993,7 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const gate = source('src/tools/merge-gate.md');
 
@@ -5927,7 +6027,7 @@ test('a terminal outcome is split into done and cancelled before anything is rec
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
 
   // Terminal and done are two facts. The in-progress removal and the container tick are the writes
@@ -5977,7 +6077,7 @@ test('the external done state is re-resolved before every transition, not once b
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const target = prose(source('src/shared/tracker-target.md'));
 
@@ -6006,7 +6106,7 @@ test('an already-terminal external issue resolves its done state where the split
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const target = prose(source('src/shared/tracker-target.md'));
 
@@ -6140,7 +6240,7 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
   const carveOut =
     /An operator-confirmed transition after a `complete` assessment verdict is not a forced close and is the one authorized path\./;
 
-  const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
+  const lifecycle = prose(source('src/shared/issue-post-merge-observation.md'));
   assert.match(lifecycle, /Do not force-close an issue\./);
   assert.match(lifecycle, carveOut);
   assert.match(
@@ -6337,11 +6437,15 @@ test('external done-state configuration mirrors the started state and never abor
   );
 });
 
-test('the completion offer adds no mergeGate.* key: all three key tables still carry nine rows', () => {
+test('the completion offer adds no mergeGate.* key: all four key tables still carry nine rows', () => {
   // The operator chose "report, transition nothing" for the non-interactive case, so there is no
   // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
-  // tenth row would be a fourth place to keep in sync and a guarantee that quietly became
+  // tenth row would be a fifth place to keep in sync and a guarantee that quietly became
   // configurable — which is why the row set is asserted rather than only its length.
+  //
+  // The gate's own Configuration table is the fourth copy and was, until this assertion, the one
+  // nobody compared: the configuration split gave `merge-gate` a table of its own precisely so it
+  // would not have to load `config-merge-gate-keys`, which made it the copy that can drift alone.
   const prefixed = [
     '`mergeGate.completion`',
     '`mergeGate.conflictResolution`',
@@ -6366,11 +6470,11 @@ test('the completion offer adds no mergeGate.* key: all three key tables still c
   assert.deepEqual(
     keyRows(
       section(
-        source('src/shared/config-migration.md'),
+        source('src/shared/config-merge-gate-keys.md'),
         '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
         '\n### ',
       ),
-      'src/shared/config-migration.md',
+      'src/shared/config-merge-gate-keys.md',
     ),
     prefixed,
   );
@@ -6391,6 +6495,54 @@ test('the completion offer adds no mergeGate.* key: all three key tables still c
     ),
     bare,
   );
+
+  // The gate documents `delivery.mergeMethod` in the same table, because it is the one non-gate
+  // key a gate run reads. Allowed explicitly and only in that position: an unlisted extra row
+  // here is a key the other three tables never learned about.
+  assert.deepEqual(
+    keyRows(
+      section(source('src/tools/merge-gate.md'), '## Configuration', '\n## '),
+      'src/tools/merge-gate.md',
+    ),
+    [...prefixed, '`delivery.mergeMethod`'],
+  );
+});
+
+// The fail-closed rule for one of those nine keys, pinned in every source that carries it. It is
+// the rule the configuration split nearly lost: `merge-gate` stopped loading
+// `config-merge-gate-keys`, the paragraph stayed behind in the fragment, and the gate's own
+// Configuration section restated the table and the mode semantics but not this. An unparseable
+// line would then have fallen through to the documented default `auto` and authorized an
+// automatic resolution, a commit and a push — while both guides still promised `off`.
+test('an unreadable conflictResolution resolves to off in every source that documents the key', () => {
+  for (const [path, heading, until] of [
+    ['src/tools/merge-gate.md', '## Configuration', '\n## '],
+    [
+      'src/shared/config-merge-gate-keys.md',
+      '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
+      '\n### ',
+    ],
+    ['docs/user-guide/configuration.md', '## Block `mergeGate`', '\n## '],
+  ]) {
+    const block = flat(section(source(path), heading, until));
+    assert.match(
+      block,
+      near('(?:unreadable|invalid)', 'resolves to `off`', 200),
+      `${path} must state that an unreadable or invalid mergeGate.conflictResolution resolves ` +
+        'to `off`',
+    );
+    assert.match(
+      block,
+      near('resolves to `off`', 'not to (?:the documented default )?`auto`', 120),
+      `${path} must say the fallback is not the documented default \`auto\` - the whole point of ` +
+        'the rule is that this key is where the safe default and the documented default diverge',
+    );
+    assert.match(
+      block,
+      near('unparseable', 'never authorize a commit and a push', 200),
+      `${path} must give the reason: an unparseable line must never authorize a commit and a push`,
+    );
+  }
 });
 
 test('the merge-gate operation table gains issue-close and the tea note reports it unsupported', () => {
@@ -7740,22 +7892,35 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     near('not put to you again next round', "(?:the thread's forge ID|reads that record)", 300),
     'the guide must say what makes the answer survive the round',
   );
+  // Widened past "expires": the retired edge-case list used to pin "the question is posed afresh
+  // at the new head", and after the slimming no source in `src/` carries that phrase at all. The
+  // guide's "You are asked again" is the surviving copy of that fact, so the assertion has to
+  // reach it - a confirmation that expires without the question coming back is a different
+  // guarantee, and the one that used to be pinned is the re-ask.
   assert.match(
     guide,
-    near('Unless the head moves', 'expires', 300),
-    'the guide must say that a new commit expires a confirmation',
+    /Unless the head moves[\s\S]{0,300}?expires[\s\S]{0,250}?You are asked again/i,
+    'the guide must say that a new commit expires a confirmation and that the question is then ' +
+      'posed afresh at the new head',
   );
 
-  const edgeCases = prose(section(gate, '## Edge cases', '\n## '));
+  // The two facts the gate's own edge-case list used to restate — a later evaluation meeting an
+  // already confirmed item, and a head movement expiring the record — are asserted where the
+  // mechanism is defined instead of where it was paraphrased. Same guarantees, one home.
+  // Kept rather than dropped: each pairing joins two facts the assertions above pin only
+  // separately - the record being read and the two conditions it clears, the expiry and the value
+  // it rides on. The leading determiners are trimmed off both anchors, because `Every` -> `Each`
+  // and `A` -> `Any` are pure synonym swaps that would turn the suite red without changing a
+  // guarantee.
   assert.match(
-    edgeCases,
-    near('already confirmed', 'durable confirmation record', 200),
-    'the edge cases must cover a later evaluation meeting an already confirmed item',
+    confirmation,
+    near('later Phase-4 evaluation reads that record', 'clears conditions 7 and 10', 200),
+    'a later evaluation meeting an already confirmed item must consume the record rather than ask again',
   );
   assert.match(
-    edgeCases,
-    near('head movement between the two evaluations', 'posed afresh at the new head', 200),
-    'the edge cases must cover the expiry of a confirmation on a head movement',
+    confirmation,
+    near('head movement expires every confirmation', 'bound to `VERIFIED_HEAD_SHA`', 200),
+    'the expiry of a confirmation on a head movement must be stated with what it is bound to',
   );
 });
 

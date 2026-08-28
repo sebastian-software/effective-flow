@@ -3,9 +3,16 @@
 This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, reading the submitted reviews themselves, replying to a thread, resolving a
-thread, submitting a review with inline comments, posting a PR summary comment, reading the
-pull-request status, waiting for pending checks, and merging the pull request.
+reading review threads, reading the submitted reviews themselves, posting a PR summary comment,
+reading the pull-request status, and waiting for pending checks.
+
+Two sibling building blocks carry write operations this one does not hold. **PR review thread
+writes** (`pr-review-thread-writes`) owns replying to a thread, resolving a thread, and submitting a
+review with inline comments; `{{SKILL:iterate}}` and "PR review publication" load it beside this
+one, while `{{SKILL:merge-gate}}` performs none of those operations and does not load it. **PR merge
+completion** (`pr-merge-completion`) owns merging the pull request and closing an issue as
+completed; `{{SKILL:merge-gate}}` is its only consumer and defers it until its merge phase. The read
+surface, the marker contract, and the history rule stay here.
 
 It serves both directions plus the merge gate. **Inbound**, `{{SKILL:iterate}}` reads and answers
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
@@ -137,42 +144,6 @@ consumer compares the login and nothing else. Where the capability is absent, or
 consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
 its own as someone else's.
 
-### Reply to a thread
-
-Use the helper's review-thread reply operation. It stamps the marker
-`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
-never write that marker by hand (see idempotency). This matters beyond tidiness: the marker is what a
-later `{{SKILL:iterate}}` run reads to recognize a thread it has already answered, so an unstamped
-reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
-second time.
-
-### Resolve a thread
-
-Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
-leave the thread unresolved, and note that manual resolution is needed; do not improvise.
-
-### Submit a review with inline comments
-
-The outbound direction. Use the helper's review-create operation (`review-create`, capability key
-`reviewCreate`): **one** review submission per run, carrying a review body plus an optional array of
-inline comments anchored to `file:line`. The body is mandatory, the comment array is not, so a
-body-only submission is valid. Never approve and never request changes – the submission carries
-comments only.
-
-The helper stamps the marker `<!-- effective-flow-pr-review -->` onto the review body and every
-comment body from its own marker table, idempotently. Never write that marker by hand: idempotency
-and the `{{SKILL:iterate}}` separation are exact string matches, so a hand-written variant silently
-defeats both.
-
-On `UNSUPPORTED_CAPABILITY` – Forgejo supports none of review submission (`review-create`), a reply
-into a review thread (`review-thread-reply`), or thread resolution (`review-thread-resolve`); the
-last because the forge serves no resolve route, not because `tea` lacks the subcommand – fall
-back to exactly one structured PR comment carrying the `file:line`
-references in its text, and report the reduced fidelity; do not improvise a provider request. Build
-that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
-`pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
-`{{SKILL:iterate}}` reads as its own already-processed work.
-
 ### Post summary comment
 
 Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **at most one**
@@ -254,56 +225,20 @@ Never rebuild this wait as a prompt-driven poll loop around the status read: tha
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
 report the still-pending checks and ask the user once instead.
 
-### Merge a pull request
-
-Use the helper's `pr-merge` operation (capability key `pullRequestMerge`). It is a **mutation**, so a
-run without `apply` produces a dry-run plan and merges nothing. It takes the pull-request number,
-the merge method (`delivery.mergeMethod`), and the **expected head SHA**: the merge must apply to
-exactly the commit that was verified, so a head that moved in the meantime fails closed instead of
-merging a state nobody checked. Never re-run the mutation after a structured error carrying
-`mutationMayHaveSucceeded: true` — re-read the pull-request state and report what it shows.
-
-Merging is the most irreversible mutation in this tool set and belongs to `{{SKILL:merge-gate}}`. It
-is never used to work around a blocked merge state, and this building block still never approves a
-pull request and never requests changes — not even to unblock a merge.
-
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
-this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
-`review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
-provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
+but they belong to the sibling fragment `pr-review-thread-writes`, which states its own
+degradation; the gate still fails closed on anything it cannot read, improvising no provider
+request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
 and its page count is reported, since a truncated review list would report a verdict that is missing
 as a verdict that does not exist.
-
-### Close an issue as completed
-
-Use the helper's `issue-close` operation (capability key `issueClose`). It is a **mutation**, so a run
-without `apply` produces a dry-run plan and closes nothing. It takes the issue number only: the closed
-state and, on GitHub, its completed state reason are fixed in the plan builder and are never
-caller-supplied, because the one workflow that reaches this operation only ever transitions an issue
-it assessed as completed and Forgejo has no state-reason concept at all. Never re-run the mutation
-after a structured error carrying `mutationMayHaveSucceeded: true` — re-read the issue state and
-report what it shows.
-
-This is an **issue** operation documented in the pull-request building block deliberately. It is
-reached only from `{{SKILL:merge-gate}}`'s post-merge phase, and that tool does not load
-`issue-tracker`: it reaches the helper contract solely through the "Remote helper" reference above,
-so this fragment is its one reachable path to per-operation documentation.
-
-The transition this operation performs is offered only after an evidence-backed completion assessment
-and an explicit operator confirmation in a gated run. It is never a force-close, never runs
-unattended, and never substitutes for a linked issue's own auto-close.
-
-**Forgejo limitation:** `issue-close` rides the same probed `tea api … --method PATCH` transport as
-`issue-comment-update`, so a `tea` built without `--include` reports it `UNSUPPORTED_CAPABILITY`
-beside the other operations that depend on that transport. The offer is then unavailable for forge
-issues and nothing else degrades. On GitHub the capability is constant.
 
 ### Idempotency via the Effective Flow markers
 

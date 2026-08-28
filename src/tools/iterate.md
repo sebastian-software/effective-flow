@@ -64,6 +64,10 @@ when: the run reaches its completion report
 config-migration
 ```
 
+```include
+config-merge-gate-keys
+```
+
 ## Recommended skills
 
 - `effective-delivery`
@@ -98,6 +102,10 @@ archiving.
 
 ```include
 pr-review-comments
+```
+
+```include
+pr-review-thread-writes
 ```
 
 ```include

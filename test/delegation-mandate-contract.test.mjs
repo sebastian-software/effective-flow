@@ -98,7 +98,7 @@ test('delegation-mandate.md exists and stays within the always-loaded context bu
     lineCount <= 16,
     `src/shared/delegation-mandate.md has ${lineCount} lines but must stay at 16 or fewer. ` +
       'It is eagerly included by every delegating tool, and build.mjs enforces a 700-line ' +
-      'always-loaded context budget (CONTEXT_BUDGET_MAX_LINES) for build, fix, docs, review, ' +
+      'always-loaded context budget (CONTEXT_BUDGET_LINES) for build, fix, docs, review, ' +
       'and plan; those tools already sit close to the budget, so growing this fragment risks ' +
       'tripping the build guard.',
   );

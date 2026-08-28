@@ -48,6 +48,14 @@ adr-convention
 config-migration
 ```
 
+```include
+config-merge-gate-keys
+```
+
+```include
+config-setup-migration
+```
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before writing and follow its guidance on configuration, file formats, and project-wide conventions.

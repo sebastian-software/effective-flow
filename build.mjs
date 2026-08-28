@@ -443,7 +443,7 @@ function resolveIncludes(body, context) {
 
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
-let budgetReport = []; // [{ name, lines }] — always-loaded size of the largest tools (#99)
+let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of the largest tools (#99)
 
 try {
   const toolFiles = readdirSync(TOOLS_DIR)
@@ -1278,19 +1278,35 @@ try {
   // no longer inlines the mode-gated fragments — under a documented line budget.
   // A routine invocation that never reaches a deferred mode loads only this core.
   // See docs/developer-guide/build-system.md ("Progressive Disclosure").
-  const CONTEXT_BUDGET_MAX_LINES = 700;
-  const BUDGET_TOOLS = ['build', 'fix', 'docs', 'review', 'plan'];
-  budgetReport = BUDGET_TOOLS.map((name) => {
+  //
+  // Only the six tools named below are measured, out of the 28 files in src/tools;
+  // the rest carry no budget at all. Each measured tool gets its own limit rather
+  // than a share of one number: the five implementation tools happen to agree on
+  // 700 lines, while `merge-gate` carries 3250, because it is an orchestration gate
+  // whose phases, delegation contracts and provider rules do not compress to the
+  // size of an implementation tool, and it is measured here so it can never grow
+  // unwatched again. Its 3250 is a ratchet a little above the measured 3160, not a
+  // target — the small headroom keeps the next justified rule from failing the
+  // build, while any renewed drift trips the guard.
+  const CONTEXT_BUDGET_LINES = {
+    build: 700,
+    fix: 700,
+    docs: 700,
+    review: 700,
+    plan: 700,
+    'merge-gate': 3250,
+  };
+  budgetReport = Object.entries(CONTEXT_BUDGET_LINES).map(([name, limit]) => {
     const lines = [CLAUDE_SKILL_DIR, CODEX_SKILL_DIR, PORTABLE_SKILL_DIR].map(
       (skillDir) => readFileSync(join(skillDir, 'tools', `${name}.md`), 'utf8').split('\n').length,
     );
-    return { name, lines: Math.max(...lines) };
+    return { name, lines: Math.max(...lines), limit };
   });
-  const overBudget = budgetReport.filter((r) => r.lines > CONTEXT_BUDGET_MAX_LINES);
+  const overBudget = budgetReport.filter((r) => r.lines > r.limit);
   if (overBudget.length > 0) {
     throw new Error(
-      `context budget (#99): always-loaded tool core exceeds the ${CONTEXT_BUDGET_MAX_LINES}-line budget: ` +
-        overBudget.map((r) => `${r.name} (${r.lines})`).join(', '),
+      'context budget (#99): always-loaded tool core exceeds its line budget: ' +
+        overBudget.map((r) => `${r.name} (${r.lines} lines, budget ${r.limit})`).join(', '),
     );
   }
 
@@ -1376,6 +1392,6 @@ process.stdout.write(
   `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${FIRMO_SKILL_NAME}/\n`,
 );
 if (budgetReport.length > 0) {
-  const sizes = budgetReport.map((r) => `${r.name} ${r.lines}`).join(', ');
-  process.stdout.write(`  Always-loaded core (lines, budget 700): ${sizes}\n`);
+  const sizes = budgetReport.map((r) => `${r.name} ${r.lines}/${r.limit}`).join(', ');
+  process.stdout.write(`  Always-loaded core (lines/budget): ${sizes}\n`);
 }
