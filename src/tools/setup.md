@@ -587,6 +587,13 @@ options:
 2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
+   - If the fresh locator reports **several** matching project setup ADRs and falls through on
+     that ambiguity, that is again **not** a "no ADR" result, whatever Step 2 recorded: record the
+     several-match stop state carrying every path the fresh locator reported and return to Step 2
+     item 5 before anything is written. This outcome is decided ahead of the bullets below,
+     because a fall-through on ambiguity resolves no ADR and would otherwise be mistaken for one
+     of their "no ADR now resolves" conditions and write a further ADR beside the ones just
+     reported.
    - If an ADR now resolves, it is authoritative: re-read its table and do not migrate or touch
      either JSON fallback.
    - If Step 2 selected a transitional JSON source and no ADR now resolves, require the freshly
@@ -621,7 +628,10 @@ options:
 4. **Write the project setup ADR.** Determine the ADR directory (Step 2 item 1). The write target
    is then decided by precedence, not by the convention alone:
    The two bullets below are complementary halves of one predicate — an ADR resolved by **either**
-   resolution, or by neither — so no state falls between them:
+   resolution, or by neither — so no state falls between them. They stay complementary because no
+   several-match stop state ever reaches this item: item 2 routes one to Step 2 item 5, item 3 of
+   this step routes a freshly observed one there as well, so "neither resolved an ADR" here always
+   means a genuine absence and never an unresolved ambiguity.
    - **An existing project setup ADR wins.** If an ADR was resolved either by Step 2 item 2 **or**
      by the fresh re-resolution in item 3 of this step — that fresh one being authoritative even
      where Step 2 found none — that ADR's own path is the write target and it is updated in place
@@ -638,8 +648,9 @@ options:
      carried forward from Step 2 item 3, applying `project-adr-convention` in full — its
      allocation, containment, and collision rules included, not a selection from them. That
      includes its unconditional pre-write existence check, which stops a numberless write onto an
-     existing file. Never enter this branch while Step 2 item 2's several-match stop state holds:
-     that state routes to Step 2 item 5 and is resolved there before anything is written.
+     existing file. Never enter this branch while a several-match stop state holds, whether it was
+     recorded by Step 2 item 2 **or** first observed by the fresh re-resolution in item 3 of this
+     step: either state routes to Step 2 item 5 and is resolved there before anything is written.
 
    Write the ADR to the resolved path inside the detected directory (default slug
    `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the

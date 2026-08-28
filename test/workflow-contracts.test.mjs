@@ -10056,6 +10056,18 @@ test('the setup write step keys both write-target halves on the same two resolut
     near('complementary halves of one predicate', 'so no state falls between them', 200),
     'the two write-target bullets must be introduced as complementary halves of one predicate',
   );
+  // The claim is only true because a several-match stop state is routed away before this item. Left
+  // unstated, "neither resolved an ADR" reads as covering an unresolved ambiguity too, and the
+  // new-ADR branch writes a duplicate under exactly the state the stop exists to prevent.
+  assert.match(
+    prose(writeStep),
+    near(
+      'no several-match stop state ever reaches this item',
+      'never an unresolved ambiguity',
+      260,
+    ),
+    'the complementarity claim must state why no several-match stop state reaches this item',
+  );
   assert.match(
     existing,
     near(
@@ -10201,15 +10213,52 @@ test('setup treats a several-match locator result as an explicit stop, not as "n
     'item 5 must ask which reported ADR is authoritative and must not offer creating a new one',
   );
 
+  // The pre-write re-resolution is the second place a several-match can appear: the locator's
+  // match family covers numeric prefixes, so a second matching file can show up between Step 2 and
+  // the write. Its bullets enumerate the outcomes, and a fall-through on ambiguity resolves no ADR
+  // — so without its own bullet it is read as one of their "no ADR now resolves" cases and the run
+  // writes a further ADR beside the ones the locator just reported.
+  const precheck = prose(
+    boundedSlice(
+      setup,
+      '3. Resolve the project setup ADR freshly once more directly before writing',
+      '\n4. **Write the project setup ADR.**',
+    ),
+  );
+  assert.match(
+    precheck,
+    near(
+      'If the fresh locator reports several matching project setup ADRs',
+      'return to Step 2 item 5 before anything is written',
+      260,
+    ),
+    'the pre-write re-resolution must route its own several-match result back to Step 2 item 5',
+  );
+  assert.match(
+    precheck,
+    near(
+      'record the several-match stop state carrying every path the fresh locator reported',
+      'decided ahead of the bullets below',
+      160,
+    ),
+    'the fresh several-match state must carry every reported path and be decided before the other outcomes',
+  );
+
   const { fresh } = setupWriteTargetBullets(setup);
+  // Scoping this guard to Step 2 item 2 alone is what left the fresh several-match uncovered.
   assert.match(
     fresh,
     near(
-      "Never enter this branch while Step 2 item 2's several-match stop state holds",
-      'resolved there before anything is written',
-      160,
+      'Never enter this branch while a several-match stop state holds',
+      'first observed by the fresh re-resolution in item 3 of this step',
+      120,
     ),
-    'the new-ADR branch must be closed while the several-match stop state holds',
+    'the new-ADR branch must be closed for a several-match state from either resolution, not only Step 2 item 2',
+  );
+  assert.match(
+    fresh,
+    near('either state routes to Step 2 item 5', 'resolved there before anything is written', 80),
+    'both several-match states must route to Step 2 item 5 and be resolved before anything is written',
   );
 });
 
