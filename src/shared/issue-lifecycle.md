@@ -112,12 +112,33 @@ carry the split through every step that acts on it:
   `tracker.externalDoneState`.
 - **terminal (cancelled)** — any other terminal outcome: a forge state reason such as `not_planned`,
   or an external terminal state that is not the resolved done state.
+- **terminal (reconciliation unavailable)** — an external item whose done state could not be resolved
+  at all. Its state was read and it is terminal, but nothing establishes which terminal state means
+  done, so the split is undecidable: not done, and no observed withdrawal either.
 
 The forge half follows what each provider states. GitHub spells a closed issue's reason in the
 normalized `stateReason` field and Forgejo spells none, so an **absent** reason means "this provider
 states none" and never "this item was cancelled": inferring a cancellation from an absence would make
-every Forgejo item permanently unreconcilable. Only a **stated** contrary reason cancels. Record the
-stated reason, or its absence, as the evidence for the split.
+every Forgejo item permanently unreconcilable. Only a **stated** contrary reason cancels.
+
+**The external half needs a resolved done state, so this observation resolves one.** The split is
+recorded here and an item already terminal at this instant reaches no later step that would resolve
+anything — a terminal item is not assessed, and only a `complete` verdict reaches the transition
+whose re-resolution follows. So for every external item observed terminal, list that context's states
+fresh and resolve `tracker.externalDoneState` by the loaded `tracker-target` rules at this same
+instant, and split against that value; observation needs only the **listing** half of that contract's
+two phase-specific native lifecycle capabilities, so a connection that can list but not transition
+still reconciles a done item. Resolve by those rules exactly, with one bound: observation never poses
+their unset-key proposal, because that proposal exists to enable a write an operator is about to
+authorize and this read asks nothing and writes nothing — inventing a mapping to classify an item
+nobody is about to transition would file a done record on a guess. An unset key therefore resolves
+nothing here, as a stale, cross-context, non-terminal, read-only, or unlistable one does, and each of
+them records **terminal (reconciliation unavailable)** with the missing capability or configuration
+value named. One resolution rule for observation and transition alike is what keeps the two from
+disagreeing about which state means done.
+
+Record the stated reason or its absence — on an external target the resolved done state, or the exact
+reason it did not resolve — as the evidence for the split.
 
 **Assess completion for every item observed `open` or `timed out`, without asking.** A `terminal`
 item has nothing left to assess and an `unobservable` one offers no state to reason from; neither is
@@ -174,8 +195,12 @@ rather than once for the loop**, because this loop writes between its items — 
 item, **re-resolve `tracker.externalDoneState`** against a freshly listed set of that context's
 writable states, because a mapping resolved before the question is as old as the verdict and a state
 reclassified out of the done category while the prompt stood open would otherwise be written and then
-matched against itself. A value that no longer resolves is treated exactly as a failed revalidation
-read. Then re-derive
+matched against itself. Being part of the **basis**, it is re-resolved before every branch below and
+not only before the ones that transition: the branch for an item that closed itself records the split
+above, whose external half is this same value. A value that no longer resolves is treated exactly as
+a failed revalidation read, and where the same re-read finds that item already terminal it
+additionally leaves the split undecidable, so the promotion records
+**terminal (reconciliation unavailable)** rather than a guessed `terminal (done)`. Then re-derive
 the verdict from it. An item that is now terminal is skipped as a no-op; one whose verdict is no
 longer `complete`, and one whose revalidation read fails, is not transitioned at all, keeps its
 in-progress marker and its container entry, and names the dimension that changed. Skipping the
@@ -186,13 +211,15 @@ terminal, so leaving the earlier `open` or `timed out` outcome standing would ke
 marker on a closed item and leave its container entry open. It replaces it with the **split**
 outcome above and never with a bare "terminal", which is what keeps that repair from overshooting
 into the opposite error: an item somebody cancelled while the prompt stood open records
-`terminal (cancelled)`, so nothing below writes for it. The confirmed set
+`terminal (cancelled)` and an external item whose done state no longer resolves records
+`terminal (reconciliation unavailable)`, so nothing below writes for either. The confirmed set
 only ever shrinks, and nothing enters it late. Otherwise transition the item and re-read it once.
 What that re-read shows **replaces that item's recorded observation outcome**, again as the split
 outcome, which is what lets the
 in-progress removal and the container reconciliation below act on the new state. That re-read has to
-prove `terminal (done)` rather than merely terminal: a still-nonterminal state **and** a
-`terminal (cancelled)` one are both **failed** transitions whatever the operation reported, because
+prove `terminal (done)` rather than merely terminal: a still-nonterminal state, a
+`terminal (cancelled)` one **and** a `terminal (reconciliation unavailable)` one are all **failed**
+transitions whatever the operation reported, because
 the transition and the re-read are two instants and a terminal state reached by withdrawal is the
 one this split exists to distinguish. A transition that
 fails names its exact connection blocker and does not abandon the remaining items.
@@ -200,7 +227,12 @@ fails names its exact connection blocker and does not abandon the remaining item
 When an item is not `terminal (done)`, derive the closure guidance in this order and stop at the
 first observable match — except for a `terminal (cancelled)` item, which is not open work: report the
 withdrawal with the stated state reason or external state that established it and derive no guidance
-for it, so nobody is sent to finish work somebody has withdrawn. The order is:
+for it, so nobody is sent to finish work somebody has withdrawn. A
+`terminal (reconciliation unavailable)` item is not open work either, and for a different reason: it
+is closed, and what is missing is the mapping rather than the work. Report the unresolved done state
+with the missing capability or configuration value named, point at `{{SKILL:setup}}` for a
+`tracker.externalDoneState` that is unset or no longer resolves, and derive no guidance for it. The
+order is:
 
 1. `relationship: refs` — the relationship is intentionally non-closing and needs an explicit
    terminal tracker transition after acceptance;
@@ -232,6 +264,6 @@ provider-verified native relation: lifecycle observation continues by the receip
 issue identity. For an external native
 container, use only the connection's previously proven completion operation. Complete a checklist
 entry only after the linked issue is observed `terminal (done)`. An open, timed-out, unobservable,
-`terminal (cancelled)`, missing,
+`terminal (cancelled)`, `terminal (reconciliation unavailable)`, missing,
 or mismatched child leaves the container unchanged and is reported. Repeated observation, native
 parent reads, and eligible completion writes are idempotent.

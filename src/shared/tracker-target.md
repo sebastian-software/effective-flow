@@ -98,7 +98,11 @@ workflow states writable in the exact selected workspace/team/project context, i
 or exact accepted token, display name, normalized category, terminal flag, and writability; and
 transition one issue to a selected writable state. Require both when an issue is about to enter
 implementation, and again for the **offered** post-merge terminal transition. Post-merge
-_observation_ still requires only a fresh native-state read (and an optional bounded monitor); review
+_observation_ requires a fresh native-state read (and an optional bounded monitor) — plus, for an
+issue that read finds **terminal**, the **listing** capability alone, because terminal is not the
+same as done and separating the two means resolving `tracker.externalDoneState` at that instant. The
+transition capability is not required to observe, so a connection that can list but not transition
+still tells a done issue from a withdrawn one. Review
 publication, planning, and other tracker reads do not inherit the started state write requirement.
 
 A connection that covers neither or only one of the two makes the post-merge transition
@@ -122,14 +126,21 @@ non-interactive run, zero candidates, or multiple candidates aborts before code 
 evidence without choosing a favorite. Never infer a state from `tracker.externalTool` or from a
 brand-specific name such as "In Progress".
 
-Before the offered post-merge terminal transition, list those states fresh in the same context and
+Before the offered post-merge terminal transition, **and before recording the terminal split for an
+issue post-merge observation finds already terminal**, list those states fresh in the same context and
 resolve `tracker.externalDoneState` by the same rules with `terminal` replacing `non-terminal` and
 `started`. A configured value must match the stable state ID, or only when the connection exposes no
 ID the exact accepted token, in this same tracker context; it must be writable and **terminal**, and
 normalized as a done category. A display-name match is never enough. A stale, cross-context,
 non-terminal, read-only, or missing value makes the transition unavailable for that issue and reports
 the current candidates; unlike the started state it never aborts the run, because the merge has
-already happened.
+already happened. **At the observation site the same failure makes that issue's reconciliation
+unavailable rather than its transition**: the issue is terminal and its state was read, but which
+terminal state means done is unestablished, so it is recorded as neither done nor cancelled and no
+delivery write follows. That site also never poses the unset-key proposal below. The proposal exists
+to enable a write an operator is about to authorize, and observation asks nothing and writes nothing;
+minting a mapping there in order to classify an issue nobody is about to transition would file a done
+record on a guess. An unset key therefore resolves nothing at that site, exactly as a stale one does.
 
 **Resolve it again immediately before every transition, not once before the offer.** The offer is
 posed once for a whole set of issues that are then transitioned one after another, so a resolution

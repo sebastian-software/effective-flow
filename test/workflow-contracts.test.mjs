@@ -5565,7 +5565,7 @@ test('container completion is deferred until a linked issue is observed terminal
   );
   assert.match(
     mergeObservation,
-    /An open, timed-out, unobservable, or `terminal \(cancelled\)` issue leaves its container entry open/,
+    /An open, timed-out, unobservable, `terminal \(cancelled\)`, or `terminal \(reconciliation unavailable\)` issue leaves its container entry open/,
   );
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
 
@@ -5952,7 +5952,7 @@ test('a terminal outcome is split into done and cancelled before anything is rec
   );
   assert.match(
     observation,
-    /a re-read that still shows a nonterminal state or one that shows `terminal \(cancelled\)` is a failed transition/,
+    /a re-read that still shows a nonterminal state, one that shows `terminal \(cancelled\)`, or one that shows `terminal \(reconciliation unavailable\)` is a failed transition/,
   );
   assert.match(
     observation,
@@ -5998,6 +5998,59 @@ test('the external done state is re-resolved before every transition, not once b
   );
   for (const contract of [observation, lifecycle]) {
     assert.match(contract, /treated exactly as a failed revalidation\s*read/);
+  }
+});
+
+test('an already-terminal external issue resolves its done state where the split is recorded', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const target = prose(source('src/shared/tracker-target.md'));
+
+  // The split's external half is the resolved `tracker.externalDoneState`, but the transition that
+  // re-resolves it is a path an already-terminal issue never takes: it is not assessed, so it never
+  // earns the `complete` verdict the transition loop consumes. The observation that records the
+  // split therefore has to resolve the value itself, or it is classifying against nothing.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /The external half needs a resolved done state/);
+    assert.match(contract, /resolve `tracker.externalDoneState` by the loaded `tracker-target`/);
+    // Observation needs the listing half only — a connection that cannot transition still tells a
+    // done issue from a withdrawn one.
+    assert.match(contract, /needs only the listing half/);
+    assert.match(contract, /never poses their unset-key proposal|observation never poses/);
+  }
+  assert.match(
+    target,
+    /before recording the terminal split for an issue post-merge observation finds already terminal/,
+  );
+  // The capability statement used to say observation needed only a state read, which is what left
+  // the split with no value to compare against.
+  assert.doesNotMatch(
+    target,
+    /Post-merge _observation_ still requires only a fresh native-state read/,
+  );
+
+  // Where it cannot be resolved the outcome is a third one: terminal, but not classifiable. Not
+  // done, so no delivery write follows; not cancelled either, since nobody observed a withdrawal.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /terminal \(reconciliation unavailable\)/);
+    assert.match(contract, /the split is undecidable/);
+  }
+  // It reaches every site the split reaches: the promotion of an issue that closed itself, the
+  // post-transition proof, the container write, and the closure guidance.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(
+      contract,
+      /records terminal \(reconciliation unavailable\) rather than a guessed `terminal \(done\)`/,
+    );
+    assert.match(
+      contract,
+      /`terminal \(reconciliation unavailable\)` (?:issue|one)[\s\S]{0,120}?(?:leaves its container|are all failed)/,
+    );
+    assert.match(contract, /what is missing is the mapping rather than the work/);
   }
 });
 
@@ -6157,7 +6210,7 @@ test('external done-state configuration mirrors the started state and never abor
 
   assert.match(
     tracker,
-    /Before the offered post-merge terminal transition, list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
+    /Before the offered post-merge terminal transition, and before recording the terminal split for an issue post-merge observation finds already terminal, list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
   );
   assert.match(tracker, /it must be writable and terminal, and normalized as a done category/);
   // Discovery has to carry the done category too, not only the terminal flag. A tracker that spells

@@ -1844,18 +1844,45 @@ ends this phase without heuristic tracker access.
    - **terminal (cancelled)** — the fresh read states any other terminal outcome: a forge state
      reason such as `not_planned`, or an external terminal state that is not the resolved done
      state.
+   - **terminal (reconciliation unavailable)** — an external issue whose done state could not be
+     resolved at all. Its state was read and it is terminal, but nothing establishes which terminal
+     state means done, so the split is undecidable. It is not `terminal (done)`, so steps 5 and 6
+     write nothing for it, and it is not `terminal (cancelled)` either — nobody observed a
+     withdrawal.
 
    The forge half is shaped by what each provider states rather than by leniency. GitHub spells a
    closed issue's reason in the normalized `stateReason` field and Forgejo spells none at all, so an
    **absent** reason means "this provider states none", never "this issue was cancelled" — reading
    an absence as a cancellation would make every Forgejo issue permanently unreconcilable, and every
    GitHub issue closed before that field existed with it. Only a **stated** contrary reason cancels.
-   Record the stated reason, or its absence, as the evidence for the split, and report it.
+
+   **The external half needs a resolved done state, so this step resolves one.** The split is
+   recorded here, and an issue that is already terminal at this instant reaches no later step that
+   would resolve anything: step 3 does not assess a terminal outcome, and step 4 transitions only
+   what step 3 verdicted `complete`, so its re-resolution before every transition is a path this
+   issue never takes. For every external issue this step observes as terminal, therefore, list that
+   context's states fresh and resolve `tracker.externalDoneState` by the loaded `tracker-target`
+   rules at this same instant, and split against that value. Observation needs only the **listing**
+   half of that contract's two phase-specific native lifecycle capabilities; the transition half
+   belongs to step 4 alone, so a connection that can list but not transition still reconciles a done
+   issue.
+
+   Resolve it by those rules exactly, with one bound: this step never poses their unset-key
+   proposal. That proposal exists to enable a write an operator is about to authorize, and this step
+   asks nothing and writes nothing — inventing a mapping in order to classify an issue nobody is
+   about to transition would file a done record on a guess. An unset key therefore resolves nothing
+   here, exactly as a stale, cross-context, non-terminal, read-only, or unlistable one does, and
+   every one of them records **terminal (reconciliation unavailable)** with the missing capability
+   or configuration value named. Resolving by the same rule the transition uses is what keeps
+   observation and transition from ever disagreeing about which state means done.
+
+   Record the stated reason or its absence — on an external target the resolved done state, or the
+   exact reason it did not resolve — as the evidence for the split, and report it.
 
 3. **Assess completion, without asking.** This assessment is not gated: it runs without asking, for
-   every issue whose step-2 outcome is `open` or `timed out`. It does not run for a `terminal`
-   outcome, where nothing is left to do, nor for an `unobservable` one, where there is no state to
-   reason from. Its inputs, per issue, are one fresh read of the issue itself for its body and its
+   every issue whose step-2 outcome is `open` or `timed out`. It does not run for a terminal outcome
+   in any of its three forms, where nothing is left to do, nor for an `unobservable` one, where there
+   is no state to reason from. Its inputs, per issue, are one fresh read of the issue itself for its body and its
    classifications and one read of that issue's **direct children**, wherever the resolved target
    supports a native sub-issue relation at all. Split the two targets the way steps 1, 2, 4 and 6 do:
    a forge issue uses the `issue-read` and `issue-sub-issues-read` helper operations, an external
@@ -1954,8 +1981,14 @@ ends this phase without heuristic tracker access.
    as the verdict, and a state reclassified out of the done category, closed to writes, or renamed
    while the prompt stood open would otherwise still be written — and then matched against itself by
    the re-read below, so the transition would report success against a target that no longer means
-   done. A value that no longer resolves makes the transition unavailable for that issue and is
-   treated exactly as a failed revalidation read.
+   done. Being part of the **basis**, it is re-resolved before every branch below and not only before
+   the ones that transition: the branch for an issue that closed itself records step 2's split, whose
+   external half is this same value, so a run that resolved it only where it writes would reach that
+   record with nothing to compare against. A value that no longer resolves makes the transition
+   unavailable for that issue and is treated exactly as a failed revalidation read; where the same
+   re-read finds that issue already terminal, it additionally leaves the split undecidable, so the
+   promotion below records **terminal (reconciliation unavailable)** rather than a guessed
+   `terminal (done)`.
    Step 3 reads the pull request once for its whole run and this step deliberately does not: that
    whole-run bound is earned by a pass that only reads, while this loop **writes between its
    issues**, so a title and body read before the first issue's mutation is an older instant than the
@@ -1982,7 +2015,10 @@ ends this phase without heuristic tracker access.
    opposite error: an issue somebody **cancelled** while the prompt stood open is `terminal
 (cancelled)`, so steps 5 and 6 write nothing for it and step 7 names the withdrawal instead —
    this branch promotes an observation it did not cause, and promoting it to a bare terminal outcome
-   would turn that withdrawal into a delivery record. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
+   would turn that withdrawal into a delivery record. An external issue whose done state no longer
+   resolves is `terminal (reconciliation unavailable)` for the same reason one step further out:
+   the promotion is real, what it means is not readable, and steps 5 and 6 write nothing on an
+   unreadable record. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
    name the dimension that changed, keep its `effective-flow-issue-in-progress` label and its
    container entry open, and continue with the remaining confirmed issues. Where a revalidation read
    **fails or cannot be performed**, treat it exactly as a verdict that is no longer `complete`: an
@@ -2001,8 +2037,9 @@ ends this phase without heuristic tracker access.
    recorded observation outcome** from step 2, again as the split outcome and never as a bare
    "terminal". That re-read is the **only** proof the transition took effect, and what it has to
    prove is `terminal (done)` rather than merely terminal: a re-read that still shows a nonterminal
-   state **or** one that shows `terminal (cancelled)` is a **failed** transition regardless of what
-   the operation reported, handled by the failure rule below exactly as a refused or errored one is.
+   state, one that shows `terminal (cancelled)`, **or** one that shows
+   `terminal (reconciliation unavailable)` is a **failed** transition regardless of what the
+   operation reported, handled by the failure rule below exactly as a refused or errored one is.
    The second half is not hypothetical, because the transition and the re-read are two instants: a
    forge close the operation reported can be followed by somebody reopening the issue and closing it
    as `not_planned`, and an external transition can land in a terminal state that is no longer the
@@ -2040,9 +2077,11 @@ ends this phase without heuristic tracker access.
    observation by normalized issue identity, report the diagnostic, and never substitute marker
    matching for the receipted child number. For an external `native` container, use only the connection's previously proven
    completion operation. A `checklist` update uses a fresh container body and exact hash-guarded
-   patch. An open, timed-out, unobservable, or `terminal (cancelled)` issue leaves its container
+   patch. An open, timed-out, unobservable, `terminal (cancelled)`, or
+   `terminal (reconciliation unavailable)` issue leaves its container
    entry open — ticking a cancelled child's row is the false delivery record the split exists to
-   prevent. A missing or
+   prevent, and ticking one whose done state never resolved would file the same record on a guess.
+   A missing or
    parent-mismatched child likewise leaves its container unchanged. Mixed or invalid mechanisms
    perform no write.
 7. For every result that is not `terminal (done)` derive the exact closure guidance in the contract's
@@ -2055,7 +2094,12 @@ ends this phase without heuristic tracker access.
    nonterminal state, or a `terminal (cancelled)` one — name that reason instead of re-deriving the
    evidence order from scratch. A `terminal (cancelled)` issue is not open work either: report the
    withdrawal with the stated state reason or external state that established it, and derive no
-   closure guidance for it, so nobody is sent to finish work somebody has withdrawn. Do not invent
+   closure guidance for it, so nobody is sent to finish work somebody has withdrawn. A
+   `terminal (reconciliation unavailable)` issue is not open work either, and for a third reason
+   again: it is closed, and what is missing is the mapping rather than the work. Report the
+   unresolved done state with the missing capability or configuration value named, point at
+   `{{SKILL:setup}}` for a `tracker.externalDoneState` that is unset or no longer resolves, and
+   derive no closure guidance for it. Do not invent
    work. Include `{{SKILL:merge-gate}} <PR>` as the re-entry path for delayed or unavailable
    observation.
 

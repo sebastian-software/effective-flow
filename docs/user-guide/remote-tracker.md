@@ -210,9 +210,11 @@ forge. Four settings describe it:
   convention, or the names of its states.
 - `tracker.externalStartedState` – the stable ID of the native state that means started in that
   exact tracker context, or the connection's exact write token only when it exposes no ID.
-- `tracker.externalDoneState` – the same, for the **terminal** state that means done. Only the merge
-  gate's offered post-merge transition reads it; unset, it makes that offer unavailable and changes
-  nothing else.
+- `tracker.externalDoneState` – the same, for the **terminal** state that means done. The merge
+  gate's offered post-merge transition reads it, and so does its post-merge observation of an issue
+  that is already closed, which needs it to tell a completed issue from a withdrawn one. Unset, it
+  makes that offer unavailable and leaves an already-closed issue recorded as reconciliation
+  unavailable; it changes nothing else.
 
 Effective Flow ships **no** adapter, no list of supported tools, and no mapping onto any
 product's API. `externalTool` and `externalToolHint` are connection hints for the run, not a
@@ -700,9 +702,18 @@ the merge, while the question stood open, or right after a confirmed transition 
 cancelled: it keeps its in-progress label, its container entry stays open, and the summary names the
 withdrawal instead of a closure step. Forgejo states no reason at all, so a closed Forgejo issue is
 taken as done; an absent reason is never read as a cancellation. On an external target the same
-distinction is the resolved `tracker.externalDoneState`, which `merge-gate` re-resolves immediately
-before each transition rather than once before the question, so a state reclassified while the
-question stood open cannot be written and then matched against itself.
+distinction is the resolved `tracker.externalDoneState`, which `merge-gate` resolves at every point
+where it records that distinction: when it first observes an issue as terminal, and again
+immediately before each transition rather than once before the question, so a state reclassified
+while the question stood open cannot be written and then matched against itself.
+
+Resolving it needs to list that tracker context's states, so where the connection cannot list them,
+or where `externalDoneState` is unset or no longer resolves, an already-closed external issue is
+recorded as **reconciliation unavailable** — a third outcome that is neither done nor cancelled. The
+issue stays closed, keeps its in-progress label and its container entry, and the summary names the
+missing capability or configuration value and points at `/effective-flow setup`. Nothing about the
+issue is guessed: a run that assumed any terminal state meant done would file a withdrawn issue as
+delivered, which is exactly what the distinction exists to prevent.
 
 An issue observed terminal-as-done loses its in-progress label. For a GitHub-native container, `merge-gate`
 re-reads the parent, verifies that the completed issue is still its child, and reports the remaining
