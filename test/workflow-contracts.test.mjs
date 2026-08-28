@@ -4591,12 +4591,24 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
   // Asserted as the guarantee the sources must carry, not as the absence of the one sentence that
   // was deleted. A negative pinned to that wording passes again for any paraphrase of it — dropping
   // the single word "either" was enough — and it says nothing about what has to stand there
-  // instead. Every claim below is therefore bound to the edge-case bullet that must carry it, and
-  // the one negative left is a second lock on the formulation that already misled a reader once.
-  const edgeCases = section(source('src/tools/merge-gate.md'), '## Edge cases', '\n## ');
+  // instead. Every claim below is therefore bound to the paragraph that must carry it, and the one
+  // negative left is a second lock on the formulation that already misled a reader once.
+  //
+  // Both claims now sit where the key they qualify is documented — the `.check` bullet of the gate's
+  // configuration — rather than in a separate edge-case list. A reader deciding whether to configure
+  // `.check` for a reviewer reads that bullet; the pairs below are unchanged, only their home is.
+  const gateSource = source('src/tools/merge-gate.md');
+  const gateCheckKey =
+    section(gateSource, '## Configuration', '\n## ')
+      .split(/\n-\s+/)
+      .find((entry) => entry.includes('`mergeGate.bots.<login>.check` names')) ?? '';
+  assert.ok(
+    gateCheckKey,
+    'the gate must document `mergeGate.bots.<login>.check` in its own bullet',
+  );
   const bullet = (marker) => {
-    const entry = edgeCases.split(/\n-\s+/).find((item) => item.includes(marker));
-    assert.ok(entry, `the gate's edge cases must carry the bullet about: ${marker}`);
+    const entry = gateCheckKey.split(/\n\n/).find((part) => flat(part).includes(marker));
+    assert.ok(entry, `the gate's \`.check\` documentation must carry the case about: ${marker}`);
     return flat(entry);
   };
 
@@ -4612,9 +4624,9 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     "a reaction must be stated not to be evidence about the reviewer's check context",
   );
   assert.doesNotMatch(
-    flat(edgeCases),
+    flat(gateSource),
     /publishes no check/i,
-    'no edge case may reintroduce the claim that this reviewer publishes no check context',
+    'no part of the gate may reintroduce the claim that this reviewer publishes no check context',
   );
 
   // The sticky-comment case is the concrete failure the fallback cannot survive, and it is the
@@ -7747,16 +7759,18 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     'the guide must say that a new commit expires a confirmation',
   );
 
-  const edgeCases = prose(section(gate, '## Edge cases', '\n## '));
+  // The two facts the gate's own edge-case list used to restate — a later evaluation meeting an
+  // already confirmed item, and a head movement expiring the record — are asserted where the
+  // mechanism is defined instead of where it was paraphrased. Same guarantees, one home.
   assert.match(
-    edgeCases,
-    near('already confirmed', 'durable confirmation record', 200),
-    'the edge cases must cover a later evaluation meeting an already confirmed item',
+    confirmation,
+    near('Every later Phase-4 evaluation reads that record', 'clears conditions 7 and 10', 200),
+    'a later evaluation meeting an already confirmed item must consume the record rather than ask again',
   );
   assert.match(
-    edgeCases,
-    near('head movement between the two evaluations', 'posed afresh at the new head', 200),
-    'the edge cases must cover the expiry of a confirmation on a head movement',
+    confirmation,
+    near('A head movement expires every confirmation', 'bound to `VERIFIED_HEAD_SHA`', 200),
+    'the expiry of a confirmation on a head movement must be stated with what it is bound to',
   );
 });
 
