@@ -6052,6 +6052,20 @@ test('an already-terminal external issue resolves its done state where the split
     );
     assert.match(contract, /what is missing is the mapping rather than the work/);
   }
+
+  // And it reaches the report. The Phase 6 row per linked issue names the observed state from a
+  // closed list, so an outcome missing from that list has no valid row: a reconciliation-unavailable
+  // issue would have to be filed as done, cancelled, open, timed out or unobservable, and every one
+  // of those five says something about it that nobody established.
+  const summary = prose(section(source('src/tools/merge-gate.md'), '### Phase 6: Summary'));
+  assert.match(
+    summary,
+    /one row per linked issue with its observed terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
+  );
+  assert.match(
+    summary,
+    /a reconciliation-unavailable one naming the missing capability or configuration value that left `tracker.externalDoneState` unresolved/,
+  );
 });
 
 test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {
@@ -6268,6 +6282,35 @@ test('external done-state configuration mirrors the started state and never abor
   assert.match(
     setup,
     /the confirmed `tracker\.externalStartedState` and `tracker\.externalDoneState` stable values or `null`/,
+  );
+
+  // The key gained a second reader when post-merge observation started resolving it to split an
+  // already-terminal issue into done and withdrawn. Every surface that describes the key has to say
+  // so: an operator told the offered transition is its only reader concludes that leaving it unset
+  // costs nothing but that offer, when it also costs every already-closed issue its reconciliation.
+  for (const [name, text] of [
+    ['setup.md', setup],
+    ['config-migration.md', migration],
+    ['configuration.md', prose(guide)],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /only (?:by )?the (?:merge gate's )?offered post-merge (?:terminal )?transition/i,
+      `${name} must not describe the offered transition as the only reader of externalDoneState`,
+    );
+  }
+  assert.match(setup, /and by the post-merge observation that tells an already-terminal issue/);
+  assert.match(
+    setup,
+    /so does that gate's post-merge observation of an issue it finds already terminal/,
+  );
+  assert.match(
+    migration,
+    /That transition is not the only reader: the post-merge observation of an issue found already terminal resolves the same value by the same rules/,
+  );
+  assert.match(
+    prose(guide),
+    /Two readers use it, both in \[`\/effective-flow merge-gate`\]\(\.\/tools-deliver\.md\) and both after a merge/,
   );
 
   assert.equal(

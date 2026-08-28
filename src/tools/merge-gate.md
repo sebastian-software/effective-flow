@@ -2189,8 +2189,13 @@ options:
      user;
    - the merge result, or the precise blocking condition;
    - after a confirmed merge, the lifecycle receipt result and one row per linked issue with its
-     observed terminal-done/terminal-cancelled/open/timed-out/unobservable state — a cancelled
-     terminal issue naming the stated state reason, or the external state, that established it — the
+     observed terminal-done/terminal-cancelled/terminal-reconciliation-unavailable/open/timed-out/unobservable
+     state — a cancelled terminal issue naming the stated state reason, or the external state, that
+     established it, and a reconciliation-unavailable one naming the missing capability or
+     configuration value that left `tracker.externalDoneState` unresolved. An already-terminal
+     external issue whose done state cannot be resolved is neither done nor withdrawn, so the other
+     five outcomes have no row for it and a report forced to pick one of them would file it as
+     something it is not — the
      evidence-based closure action, whether
      the forge in-progress label was removed, and the optional container result — checklist or
      external-native completion, or for forge-native containment the freshly observed remaining

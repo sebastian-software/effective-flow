@@ -470,9 +470,12 @@ candidates and non-interactive runs fail closed instead of choosing a familiar s
 `externalDoneState` is the terminal counterpart and follows the same rules with one deliberate
 difference in consequence. It stores the stable ID — or, only where the connection exposes none, the
 exact accepted token — of the writable, **terminal** state normalized as done, resolved fresh in the
-same workspace, team, or project context. A display-name match is never enough. Exactly one reader
-uses it: the terminal transition that [`/effective-flow merge-gate`](./tools-deliver.md) offers after
-a merge, for an issue its completion assessment found complete. It closes nothing by itself. Because
+same workspace, team, or project context. A display-name match is never enough. Two readers use it, both in
+[`/effective-flow merge-gate`](./tools-deliver.md) and both after a merge: the terminal transition it
+offers for an issue its completion assessment found complete, and its observation of an issue it
+finds already terminal, which needs the value to tell a completed issue from a withdrawn one. It
+closes nothing by itself, and where it cannot be resolved at the observation site the issue is
+recorded as reconciliation unavailable rather than as done. Because
 that write is optional and follows a merge that already succeeded, a missing, stale, cross-context,
 read-only, non-terminal, or not-done-category value makes that offer unavailable for the issue and
 lists the observed candidates — it never aborts the run, which is where it differs from
