@@ -163,25 +163,26 @@ options:
    path, continue down the order and note the outdated marker for correction. If an ADR resolves,
    it is authoritative and neither transitional JSON file is a migration source or may be
    untracked. If the locator instead reports **several** matching project setup ADRs and falls
-   through on that ambiguity, that is **not** a "no ADR" result: record it as an explicit stop/ask
-   state carrying every reported path and route it to item 5. While that state holds, nothing is
-   written — do not enter the new-ADR branch of Step 6 item 4, and do not treat either transitional
-   JSON file as a migration source. Writing under an unresolved several-match state would create a
-   further project setup ADR beside the ones the locator just reported, which is exactly the
-   duplication this resolution exists to prevent. Otherwise, capture the locator's exact verified absolute transitional JSON handle
+   through on that ambiguity, that is **not** a "no ADR" result and it is **not** recoverable
+   inside this run: the run ends here. Report every matching path the locator returned and state
+   that the duplicate project setup ADRs have to be resolved by hand before setup can continue.
+   Nothing is written and nothing is asked — no ADR among them is picked as the authoritative one,
+   neither transitional JSON file becomes a migration source, and the run never reaches Step 3.
+   Continuing under an unresolved several-match result would create a further project setup ADR
+   beside the ones the locator just reported, which is exactly the duplication this resolution
+   exists to prevent. Otherwise, capture the locator's exact verified absolute transitional JSON handle
    under `RUNTIME_STATE_ROOT` as `<source-handle>`; never replace it with or inspect a same-named
    fallback under `EXECUTION_ROOT`. For Git commands only, derive `<source-path>` as the verified
    repository-relative pathspec that identifies the same file after the locator's root/common-
    directory and containment checks. When both JSON files exist,
    `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` wins; leave the unselected
    `<RUNTIME_STATE_ROOT>/.firmo/config.json` untouched throughout the run. Record whether Step 2
-   resolved an ADR, hit the several-match stop state, selected a transitional JSON source, or found
-   no source at all; Step 6 uses this source state to detect intervening changes without inventing
-   an undefined handle, and the several-match state is a distinct fourth value precisely so it is
-   never collapsed into "no source".
+   resolved an ADR, selected a transitional JSON source, or found no source at all; Step 6 uses
+   this source state to detect intervening changes without inventing an undefined handle. A
+   several-match result is not one of those recorded values, because it ends the run instead of
+   travelling forward as a state a later step has to interpret.
 3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup
-   ADR resolved — whether item 2 resolved it directly or item 5 selected the authoritative one out
-   of a several-match stop state — resolve the ADR file-name convention as defined in the building block above
+   ADR resolved, resolve the ADR file-name convention as defined in the building block above
    (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved
    form, the resolution tier (a declaring source, the observed evidence, or the Effective Flow
    default), the zero-pad width where the form carries numbers, and the file path that established
@@ -197,8 +198,7 @@ options:
    observed evidence deciding next, and the Effective Flow default only where that is inconclusive
    too — sets the not-posed flag, and carries every speaking source and its outcome forward for
    Step 8.
-4. **Form the current values.** If an ADR exists — the one item 2 resolved, or the authoritative one
-   item 5 selected out of a several-match stop state — parse either canonical `## Configuration` /
+4. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
    `| Key | Value |` or `## Konfiguration` / `| Schlüssel | Wert |` table per the encoding into
    an internal "current values" overview (key → currently recorded value), and retain the
    envelope language for a later update. In the
@@ -210,21 +210,11 @@ options:
    for each such row note whether a `mergeGate.*` row with the same trailing key already exists.
    `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the recorded
    block in place.
-5. **Invalid source.** If the ADR table is invalid/ambiguous, the selected `<source-handle>` is
-   not valid JSON, or item 2 recorded the locator's several-match stop state, do not overwrite
-   silently. Inform the user with that exact handle and the error — or, for the several-match
-   state, with every path the locator reported — and ask how to proceed. For an invalid table or
-   handle, ask whether the configuration should be newly created (old backup/overwrite) or the run
-   aborted. For the several-match state, ask instead which of the reported ADRs is the authoritative
-   one to update in place, the remaining options being to abort; creating a new ADR is not offered,
-   because the ambiguity is that too many already exist. Once that choice is made the stop state is
-   cleared and the selected ADR is the resolved project setup ADR: the run continues through item 3
-   and item 4 with it — resolving `<adr-convention>` and parsing that ADR's table into the current
-   values — before it goes on to Step 3. Returning straight to Express or Guided instead would enter
-   the setup with no resolved convention to carry forward and with the current values rebuilt from
-   unset state, silently discarding the configuration the chosen ADR already records. Without the workflow's explicit
-   invalid-source decision, do not write a replacement ADR, create a new one, untrack either JSON
-   file, or mark the migration complete.
+5. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
+   not valid JSON, do not overwrite silently. Inform the user with that exact handle and the error,
+   and ask whether the configuration should be newly created (old backup/overwrite) or the run
+   aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
+   ADR, create a new one, untrack either JSON file, or mark the migration complete.
 
 ### Step 3: Express or Guided
 
@@ -595,12 +585,13 @@ options:
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
    - If the fresh locator reports **several** matching project setup ADRs and falls through on
-     that ambiguity, that is again **not** a "no ADR" result, whatever Step 2 recorded: record the
-     several-match stop state carrying every path the fresh locator reported and return to Step 2
-     item 5 before anything is written. This outcome is decided ahead of the bullets below,
-     because a fall-through on ambiguity resolves no ADR and would otherwise be mistaken for one
-     of their "no ADR now resolves" conditions and write a further ADR beside the ones just
-     reported.
+     that ambiguity, that is again **not** a "no ADR" result, whatever Step 2 recorded: the run
+     ends here exactly as it does at the first detection point. Report every path the fresh
+     locator returned and state that the duplicate project setup ADRs have to be resolved by hand
+     before setup can continue; nothing is written. This outcome is decided ahead of the bullets
+     below, because a fall-through on ambiguity resolves no ADR and would otherwise be mistaken
+     for one of their "no ADR now resolves" conditions and write a further ADR beside the ones
+     just reported.
    - If an ADR now resolves, it is authoritative: re-read its table and do not migrate or touch
      either JSON fallback.
    - If Step 2 selected a transitional JSON source and no ADR now resolves, require the freshly
@@ -635,10 +626,11 @@ options:
 4. **Write the project setup ADR.** Determine the ADR directory (Step 2 item 1). The write target
    is then decided by precedence, not by the convention alone:
    The two bullets below are complementary halves of one predicate — an ADR resolved by **either**
-   resolution, or by neither — so no state falls between them. They stay complementary because no
-   several-match stop state ever reaches this item: item 2 routes one to Step 2 item 5, item 3 of
-   this step routes a freshly observed one there as well, so "neither resolved an ADR" here always
-   means a genuine absence and never an unresolved ambiguity.
+   resolution, or by neither — so no state falls between them. A several-match locator result
+   cannot reach this item in any form, so nothing here guards against one: both places that detect
+   it end the run — Step 2 item 2 for the initial resolution, item 3 of this step for the fresh one
+   — so "neither resolved an ADR" here always means a genuine absence and never an unresolved
+   ambiguity.
    - **An existing project setup ADR wins.** If an ADR was resolved either by Step 2 item 2 **or**
      by the fresh re-resolution in item 3 of this step — that fresh one being authoritative even
      where Step 2 found none — that ADR's own path is the write target and it is updated in place
@@ -662,9 +654,7 @@ options:
      carried forward from Step 2 item 3, applying `project-adr-convention` in full — its
      allocation, containment, and collision rules included, not a selection from them. That
      includes its unconditional pre-write existence check, which stops a numberless write onto an
-     existing file. Never enter this branch while a several-match stop state holds, whether it was
-     recorded by Step 2 item 2 **or** first observed by the fresh re-resolution in item 3 of this
-     step: either state routes to Step 2 item 5 and is resolved there before anything is written.
+     existing file.
 
    Write the ADR to the resolved path inside the detected directory (default slug
    `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the

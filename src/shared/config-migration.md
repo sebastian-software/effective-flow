@@ -35,10 +35,10 @@ first matching step wins:
    `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
    neither would survive both. If more than one match still ties at the top of that ranking, report
    every matching path and fall through to the next step instead of picking one. Falling through
-   here is not the same result as finding nothing: a tool that **writes** configuration treats a
-   reported several-match state as an explicit stop that its user resolves, never as "no project
-   setup ADR exists", because writing a new ADR into that state adds a further one beside the
-   matches already reported.
+   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
+   on a reported several-match result, reporting every matching path so its user resolves the
+   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
+   ADR into that state adds a further one beside the matches already reported.
 3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
    verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
    a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise

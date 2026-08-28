@@ -10104,17 +10104,22 @@ test('the setup write step keys both write-target halves on the same two resolut
     near('complementary halves of one predicate', 'so no state falls between them', 200),
     'the two write-target bullets must be introduced as complementary halves of one predicate',
   );
-  // The claim is only true because a several-match stop state is routed away before this item. Left
+  // The claim is only true because both places that can detect a several-match end the run. Left
   // unstated, "neither resolved an ADR" reads as covering an unresolved ambiguity too, and the
-  // new-ADR branch writes a duplicate under exactly the state the stop exists to prevent.
+  // new-ADR branch writes a duplicate under exactly the state the hard stop exists to prevent.
   assert.match(
     prose(writeStep),
     near(
-      'no several-match stop state ever reaches this item',
+      'A several-match locator result cannot reach this item in any form',
       'never an unresolved ambiguity',
-      260,
+      320,
     ),
-    'the complementarity claim must state why no several-match stop state reaches this item',
+    'the complementarity claim must state why no several-match result reaches this item',
+  );
+  assert.match(
+    prose(writeStep),
+    near('both places that detect it end the run', 'item 3 of this step for the fresh one', 160),
+    'the claim must name both detection points as the reason, not a guard inside this item',
   );
   assert.match(
     existing,
@@ -10226,8 +10231,11 @@ test('the setup write step keeps the existing ADR path under the symlink and con
 
 // The locator can match several project setup ADRs inside one step. Read as "no ADR exists", that
 // result sends the run into the new-ADR branch and adds a further ADR beside the ones just
-// reported — the same duplicate-write finding from its other end.
-test('setup treats a several-match locator result as an explicit stop, not as "no ADR"', () => {
+// reported — the same duplicate-write finding from its other end. Four rounds of patching an
+// in-run recovery for that state produced a new defect each time, ending in a loop between the
+// pre-write re-resolution and the choice it returned to, so the state no longer has a recovery
+// path at all: both places that can detect it end the run.
+test('setup ends the run on a several-match locator result at both detection points', () => {
   const setup = source('src/tools/setup.md');
   const item2 = prose(
     boundedSlice(
@@ -10249,78 +10257,65 @@ test('setup treats a several-match locator result as an explicit stop, not as "n
   );
   assert.match(
     item2,
+    near('the run ends here', 'Report every matching path the locator returned', 120),
+    'the first detection point must end the run and report every matching path',
+  );
+  assert.match(
+    item2,
     near(
-      'record it as an explicit stop/ask state carrying every reported path',
-      'route it to item 5',
+      'the duplicate project setup ADRs have to be resolved by hand',
+      'before setup can continue',
       80,
     ),
-    'the several-match state must be recorded with every reported path and routed to item 5',
+    'the report must say the duplicates are resolved by hand outside the run',
+  );
+  // The two doors the removed recovery path used: an in-run question that picks one of the matches,
+  // and a write reached from that choice. Both are closed by the same sentence.
+  assert.match(
+    item2,
+    near('Nothing is written and nothing is asked', 'the run never reaches Step 3', 200),
+    'the stop must write nothing, ask nothing, and not continue into the rest of the wizard',
   );
   assert.match(
     item2,
-    near(
-      'While that state holds, nothing is written',
-      'do not enter the new-ADR branch of Step 6 item 4',
-      120,
-    ),
-    'the new-ADR branch must not be entered while the several-match stop state holds',
+    near('no ADR among them is picked as the authoritative one', 'Nothing is written', 200),
+    'no authoritative-ADR choice may be offered for a several-match result',
   );
-  // A fourth recorded value, deliberately distinct. Collapsed into "no source", the state is
-  // indistinguishable from a fresh project at the point where Step 6 decides what to write.
+  // The state used to travel forward as a fourth recorded source value so a later step could
+  // consume it. Nothing consumes it now, and a recorded value is what a return path would key on.
   assert.match(
     item2,
-    near(
-      'the several-match state is a distinct fourth value',
-      'never collapsed into "no source"',
-      160,
+    near('is not one of those recorded values', 'it ends the run', 160),
+    'a several-match result must not travel forward as a recorded source state',
+  );
+  // Item 5 is where the recovery path lived. It is an invalid-source item again, and the three
+  // items around it must not name a several-match at all — any mention is a route back into the
+  // loop that was removed.
+  assert.doesNotMatch(
+    item5,
+    /several/i,
+    'the invalid-source item must not carry a several-match branch any more',
+  );
+  const item3 = prose(
+    boundedSlice(
+      setup,
+      '3. **Detect the ADR naming convention.**',
+      '\n4. **Form the current values.**',
     ),
-    'the recorded source state must keep the several-match state distinct from "no source"',
   );
-  // The other end of the routing: item 5 has to offer a resolution that is not "create one more".
-  assert.match(
-    item5,
-    near(
-      'which of the reported ADRs is the authoritative one to update in place',
-      'creating a new ADR is not offered',
-      200,
-    ),
-    'item 5 must ask which reported ADR is authoritative and must not offer creating a new one',
-  );
-  // The choice resolves an ADR, and the two items that turn a resolved ADR into carried state sit
-  // *above* item 5. Without an explicit return path the run leaves the stop with `<adr-convention>`
-  // unresolved and the current values rebuilt from unset state, so the chosen ADR's own recorded
-  // configuration is silently dropped on the next write — the loss this branch exists to prevent.
-  assert.match(
-    item5,
-    near('the run continues through item 3 and item 4 with it', 'before it goes on to Step 3', 200),
-    'the selected ADR must return through items 3 and 4 before Express or Guided is entered',
-  );
-  assert.match(
-    item5,
-    near('resolving `<adr-convention>`', "parsing that ADR's table into the current values", 120),
-    'the return path must name both the convention it resolves and the current values it forms',
-  );
-  // The two items on the receiving end have to admit that entry, or the return path points at
-  // wording that only describes being reached from item 2.
   const item4 = prose(
     boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
   );
-  assert.match(
-    prose(
-      boundedSlice(
-        setup,
-        '3. **Detect the ADR naming convention.**',
-        '\n4. **Form the current values.**',
-      ),
-    ),
-    near('item 2 resolved it directly or item 5 selected', 'several-match stop state', 80),
-    'item 3 must accept an ADR that item 5 selected out of a several-match stop state',
-  );
-  assert.match(
-    item4,
-    near('the one item 2 resolved, or the authoritative one', 'item 5 selected', 80),
-    'item 4 must parse the ADR item 5 selected, not only the one item 2 resolved',
-  );
+  for (const [label, item] of [
+    ['3', item3],
+    ['4', item4],
+  ]) {
+    assert.doesNotMatch(
+      item,
+      /item 5/i,
+      `item ${label} must not accept an ADR reached through a return from item 5`,
+    );
+  }
 
   // The pre-write re-resolution is the second place a several-match can appear: the locator's
   // match family covers numeric prefixes, so a second matching file can show up between Step 2 and
@@ -10338,36 +10333,31 @@ test('setup treats a several-match locator result as an explicit stop, not as "n
     precheck,
     near(
       'If the fresh locator reports several matching project setup ADRs',
-      'return to Step 2 item 5 before anything is written',
+      'the run ends here exactly as it does at the first detection point',
       260,
     ),
-    'the pre-write re-resolution must route its own several-match result back to Step 2 item 5',
+    'the pre-write re-resolution must end the run on its own several-match result',
   );
   assert.match(
     precheck,
     near(
-      'record the several-match stop state carrying every path the fresh locator reported',
-      'decided ahead of the bullets below',
+      'Report every path the fresh locator returned',
+      'resolved by hand before setup can continue',
       160,
     ),
-    'the fresh several-match state must carry every reported path and be decided before the other outcomes',
+    'the second detection point must report every path and name the by-hand resolution too',
   );
-
-  const { fresh } = setupWriteTargetBullets(setup);
-  // Scoping this guard to Step 2 item 2 alone is what left the fresh several-match uncovered.
-  assert.match(
-    fresh,
-    near(
-      'Never enter this branch while a several-match stop state holds',
-      'first observed by the fresh re-resolution in item 3 of this step',
-      120,
-    ),
-    'the new-ADR branch must be closed for a several-match state from either resolution, not only Step 2 item 2',
+  // The one thing this bullet must not do again: hand the state to another step. That return is
+  // what the fresh re-resolution then saw again on its next pass, which is the loop.
+  assert.doesNotMatch(
+    precheck,
+    /return to Step 2 item 5/i,
+    'the pre-write several-match must not return into the wizard, which is what looped',
   );
   assert.match(
-    fresh,
-    near('either state routes to Step 2 item 5', 'resolved there before anything is written', 80),
-    'both several-match states must route to Step 2 item 5 and be resolved before anything is written',
+    precheck,
+    near('decided ahead of the bullets below', 'would otherwise be mistaken', 200),
+    'the several-match outcome must still be decided before the other pre-write outcomes',
   );
 });
 
@@ -10518,11 +10508,16 @@ test('the config locator and the review exclusion tolerate a numeric ADR prefix'
   assert.match(
     flatStep2,
     near(
-      'treats a reported several-match state as an explicit stop that its user resolves',
-      'never as "no project setup ADR exists"',
-      160,
+      'ends its run on a reported several-match result',
+      'never reads it as "no project setup ADR exists"',
+      240,
     ),
-    'a several-match fall-through must be an explicit stop for a writing tool, not a "no ADR" result',
+    'a several-match fall-through must end a writing tool\'s run, not read as a "no ADR" result',
+  );
+  assert.match(
+    flatStep2,
+    near('reporting every matching path', 'resolves the duplicates by hand', 120),
+    'the writer contract must name the report and the by-hand resolution that follows the stop',
   );
 
   const review = source('src/tools/review.md');
