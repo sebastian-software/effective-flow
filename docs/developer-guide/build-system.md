@@ -404,7 +404,7 @@ the build (see "Guards"), each against its own budget; the build prints the size
 The five implementation tools share **700 lines** and currently measure `build` 536, `fix` 432,
 `docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the tightest
 since the eager `delegation-mandate` include was added, to `fix`'s 268 lines. `merge-gate` is
-budgeted separately at **3250** and measures 3151: an orchestration gate whose phases, delegation
+budgeted separately at **3250** and measures 3160: an orchestration gate whose phases, delegation
 contracts and provider rules do not compress to the size of an implementation tool, so it is held
 to a number that ratchets its own history down rather than to the shared 700. The rest is loaded
 only when the mode is reached.

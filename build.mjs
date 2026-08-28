@@ -1285,7 +1285,7 @@ try {
   // 700 lines, while `merge-gate` carries 3250, because it is an orchestration gate
   // whose phases, delegation contracts and provider rules do not compress to the
   // size of an implementation tool, and it is measured here so it can never grow
-  // unwatched again. Its 3250 is a ratchet a little above the measured 3151, not a
+  // unwatched again. Its 3250 is a ratchet a little above the measured 3160, not a
   // target — the small headroom keeps the next justified rule from failing the
   // build, while any renewed drift trips the guard.
   const CONTEXT_BUDGET_LINES = {
