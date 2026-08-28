@@ -49,8 +49,9 @@ performs the caller-owned Mode C handoff, which is the one place that judgment b
 workflow adds no second judgment layer; it consumes one outcome per item identifier it recorded
 before delegating, under "Returned outcome record" and nowhere else.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
