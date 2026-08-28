@@ -159,14 +159,15 @@ mistaken for an external skill.
 - **The surviving `pr-review` literals are not a central skill.** No skill carries that name any
   more, so a repository-wide sweep for it finds only names that belong to other concepts and must
   stay: the deprecated tool `src/tools/pr-review.md` with its tool token and its
-  `DEPRECATED_TOOL_ALIASES` entry; the shared fragments `src/shared/pr-review-comments.md` and
-  `src/shared/pr-review-integration.md` with their include tokens; the caller-owned handoff schema
-  id `pr-review-handoff/v1`; the helper operations `pr-reviews-read` and `pr-review-comment-build`;
+  `DEPRECATED_TOOL_ALIASES` entry; the shared fragments `src/shared/pr-review-comments.md`,
+  `src/shared/pr-review-thread-writes.md` and `src/shared/pr-review-integration.md` with their
+  include tokens; the caller-owned handoff schema id `pr-review-handoff/v1`; the helper operations
+  `pr-reviews-read` and `pr-review-comment-build`;
   the marker `<!-- effective-flow-pr-review -->`; the comment-kind enum value `'pr-review'` in
   `src/scripts/remote-tracker-core.mjs`; and two distinct camelCase configuration namespaces —
   `delivery.prReview`, which decides whether a delivery publishes its own findings onto the pull
   request it created, and the legacy `prReview.*` merge-gate block, still read for one compatibility
-  generation as the fallback behind `mergeGate.<key>` (see `src/shared/config-migration.md` and
+  generation as the fallback behind `mergeGate.<key>` (see `src/shared/config-merge-gate-keys.md` and
   `src/tools/merge-gate.md`). Those two namespaces mean entirely different things and are never read
   for one another. Renaming any of these crosses a concept boundary. What is frozen is each name,
   not each file's contents: `pr-review-integration.md` names the central skill in its body and was

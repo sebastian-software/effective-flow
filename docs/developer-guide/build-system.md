@@ -343,16 +343,30 @@ and directive syntax").
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
   `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
-  `effective-flow-dir-migration`. The load trigger (`when:`) sits at the decision point where
-  the mode/branch is determined. `plan-archival` is pointed at from the four tool sources that
-  keep a plan file rather than from inside `worktree-integration`: its decision point is the
-  delivery point of the handback, and in-place execution without delivery reaches that point
-  while performing no other step of that fragment.
+  `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
+  trigger (`when:`) sits at the decision point where the mode/branch is determined.
+  `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
+  inside `worktree-integration`: its decision point is the delivery point of the handback, and
+  in-place execution without delivery reaches that point while performing no other step of that
+  fragment. The last two names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle` and `pr-merge-completion` from `pr-review-comments`, and
+  both remaining halves stay eager because the gate reads them on every run. Cutting a fragment
+  along the seam between an always-read part and a one-decision-point part is what lets the second
+  half qualify for deferral at all.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
 configuration schema, for instance — deferring it would move the measured number without saving
 anything real, so it stays inline.
+
+Splitting also pays off without any deferral, when the halves have **different consumers**:
+`config-migration` kept the config locator and the table encoding every reader needs, while the
+`mergeGate.*` key table moved to `config-merge-gate-keys` (included by `setup` and `iterate`,
+while `merge-gate` states the keys in its own `## Configuration` section) and the setup-only
+language and legacy-`config.json` contracts moved to `config-setup-migration` (included by `setup`
+alone). `pr-review-thread-writes` is the same cut on the write side of `pr-review-comments`,
+included by `iterate` and `pr-review-integration`. Each half is still eagerly included where it is
+needed; the saving is that a consumer no longer inlines the part it never reads.
 
 The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
 directory and rendered there through the same pipeline as a tool body (nested eager includes,

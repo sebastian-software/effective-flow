@@ -96,7 +96,7 @@ introduces another persisted artifact surface, or changes its squash-merge/relea
 ## References
 
 - `src/shared/language-rules.md`
-- `src/shared/config-migration.md`
+- `src/shared/config-setup-migration.md`
 - `docs/user-guide/configuration.md`
 - `docs/developer-guide/plan-conventions.md`
 - `docs/developer-guide/skill-ownership.md` (retired central-skill names and their successors)

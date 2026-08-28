@@ -2,9 +2,12 @@
 
 The tracked Effective Flow configuration is a living project-setup ADR, not runtime state. This
 page summarizes the developer contract; the binding sources are
-[`src/shared/config-migration.md`](../../src/shared/config-migration.md) for lookup, encoding, and
-migration, [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) for the living ADR
-model, and [`src/tools/setup.md`](../../src/tools/setup.md) for all Git-touching writes.
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md) for lookup and encoding,
+[`src/shared/config-setup-migration.md`](../../src/shared/config-setup-migration.md) for the
+language keys and the legacy-config migration,
+[`src/shared/config-merge-gate-keys.md`](../../src/shared/config-merge-gate-keys.md) for the
+`mergeGate.*` block, [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) for the
+living ADR model, and [`src/tools/setup.md`](../../src/tools/setup.md) for all Git-touching writes.
 
 ## Tracked source and runtime boundary
 
@@ -233,7 +236,7 @@ separate `/effective-flow cleanup` workflow may later remove confirmed remnants.
 Outside setup, configuration-to-ADR migration does not occur. Cleanup may trigger only the
 separate marker-driven runtime-directory prerequisite described above. The exact legacy config
 procedure and idempotency contract remain in
-[`src/shared/config-migration.md`](../../src/shared/config-migration.md) and
+[`src/shared/config-setup-migration.md`](../../src/shared/config-setup-migration.md) and
 [`src/tools/setup.md`](../../src/tools/setup.md).
 
 ## Living ADR model
