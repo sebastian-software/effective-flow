@@ -68,7 +68,10 @@ directly inside the ADR directory — setup follows that rule instead, so the fi
 `docs/adr/0002-effective-flow-project-setup.md`. Effective Flow updates the ADR in place when the
 configuration changes; it does not create a superseding record for each edit. An ADR that already
 exists is never renamed to match the convention and never duplicated at a second,
-convention-shaped path: it keeps its own path, and the divergence is reported once. Setup also never
+convention-shaped path: it keeps its own path on that naming axis, and the divergence is reported
+once. One path change is not on that axis and still happens: an ADR found under the former
+`firmo-project-setup` slug is written under the current `effective-flow-project-setup` slug, so
+`docs/adr/firmo-project-setup.md` does become `docs/adr/effective-flow-project-setup.md`. Setup also never
 writes over a file already sitting at the name it resolved, and a symlink at that path stops the
 write outright.
 
