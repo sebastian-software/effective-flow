@@ -1077,19 +1077,29 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision: 'the head branch reading BEHIND or DIRTY',
     },
     {
+      // Not merely "language" plus "resolve": a clause saying language must somehow be resolved
+      // names no decision point. The pointer has to name *what* is resolved — the artifact output
+      // language, or the language context handed to a delegate — because that is the moment the
+      // fragment is needed.
       fragment: 'language-rules',
-      trigger: /(?=.*language)(?=.*resolv)/i,
-      decision: 'a language having to be resolved',
+      trigger: /(?=[\s\S]*resolv)(?=[\s\S]*(?:output language|delegated language context))/i,
+      decision: 'an output language or a delegated language context having to be resolved',
     },
     {
+      // `merge` alone is satisfied by any sentence about merging, and this pointer's whole job is
+      // to name the *post*-merge phase. Only the phase number pins it.
       fragment: 'issue-post-merge-observation',
-      trigger: /Phase 5\.5|merge/i,
-      decision: 'Phase 5.5 / the confirmed merge',
+      trigger: /Phase 5\.5/,
+      decision: 'Phase 5.5',
     },
     {
+      // `/Phase 5\b/` matches inside `Phase 5.5` — the word boundary sits between the `5` and the
+      // `.` — so the observation pointer's own clause would satisfy this one. Require a `Phase 5`
+      // that is not `Phase 5.5`, *and* the closure token, since this fragment is loaded for both
+      // the merge and the closure offer and a clause naming only one of them is incomplete.
       fragment: 'pr-merge-completion',
-      trigger: /Phase 5\b|closure/i,
-      decision: 'Phase 5 / the issue-closure offer',
+      trigger: /(?=[\s\S]*Phase 5(?!\.5))(?=[\s\S]*closure)/i,
+      decision: 'Phase 5 (not Phase 5.5) and the issue-closure offer',
     },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
@@ -6427,11 +6437,15 @@ test('external done-state configuration mirrors the started state and never abor
   );
 });
 
-test('the completion offer adds no mergeGate.* key: all three key tables still carry nine rows', () => {
+test('the completion offer adds no mergeGate.* key: all four key tables still carry nine rows', () => {
   // The operator chose "report, transition nothing" for the non-interactive case, so there is no
   // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
-  // tenth row would be a fourth place to keep in sync and a guarantee that quietly became
+  // tenth row would be a fifth place to keep in sync and a guarantee that quietly became
   // configurable — which is why the row set is asserted rather than only its length.
+  //
+  // The gate's own Configuration table is the fourth copy and was, until this assertion, the one
+  // nobody compared: the configuration split gave `merge-gate` a table of its own precisely so it
+  // would not have to load `config-merge-gate-keys`, which made it the copy that can drift alone.
   const prefixed = [
     '`mergeGate.completion`',
     '`mergeGate.conflictResolution`',
@@ -6481,6 +6495,54 @@ test('the completion offer adds no mergeGate.* key: all three key tables still c
     ),
     bare,
   );
+
+  // The gate documents `delivery.mergeMethod` in the same table, because it is the one non-gate
+  // key a gate run reads. Allowed explicitly and only in that position: an unlisted extra row
+  // here is a key the other three tables never learned about.
+  assert.deepEqual(
+    keyRows(
+      section(source('src/tools/merge-gate.md'), '## Configuration', '\n## '),
+      'src/tools/merge-gate.md',
+    ),
+    [...prefixed, '`delivery.mergeMethod`'],
+  );
+});
+
+// The fail-closed rule for one of those nine keys, pinned in every source that carries it. It is
+// the rule the configuration split nearly lost: `merge-gate` stopped loading
+// `config-merge-gate-keys`, the paragraph stayed behind in the fragment, and the gate's own
+// Configuration section restated the table and the mode semantics but not this. An unparseable
+// line would then have fallen through to the documented default `auto` and authorized an
+// automatic resolution, a commit and a push — while both guides still promised `off`.
+test('an unreadable conflictResolution resolves to off in every source that documents the key', () => {
+  for (const [path, heading, until] of [
+    ['src/tools/merge-gate.md', '## Configuration', '\n## '],
+    [
+      'src/shared/config-merge-gate-keys.md',
+      '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
+      '\n### ',
+    ],
+    ['docs/user-guide/configuration.md', '## Block `mergeGate`', '\n## '],
+  ]) {
+    const block = flat(section(source(path), heading, until));
+    assert.match(
+      block,
+      near('(?:unreadable|invalid)', 'resolves to `off`', 200),
+      `${path} must state that an unreadable or invalid mergeGate.conflictResolution resolves ` +
+        'to `off`',
+    );
+    assert.match(
+      block,
+      near('resolves to `off`', 'not to (?:the documented default )?`auto`', 120),
+      `${path} must say the fallback is not the documented default \`auto\` - the whole point of ` +
+        'the rule is that this key is where the safe default and the documented default diverge',
+    );
+    assert.match(
+      block,
+      near('unparseable', 'never authorize a commit and a push', 200),
+      `${path} must give the reason: an unparseable line must never authorize a commit and a push`,
+    );
+  }
 });
 
 test('the merge-gate operation table gains issue-close and the tea note reports it unsupported', () => {
@@ -7830,23 +7892,34 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     near('not put to you again next round', "(?:the thread's forge ID|reads that record)", 300),
     'the guide must say what makes the answer survive the round',
   );
+  // Widened past "expires": the retired edge-case list used to pin "the question is posed afresh
+  // at the new head", and after the slimming no source in `src/` carries that phrase at all. The
+  // guide's "You are asked again" is the surviving copy of that fact, so the assertion has to
+  // reach it - a confirmation that expires without the question coming back is a different
+  // guarantee, and the one that used to be pinned is the re-ask.
   assert.match(
     guide,
-    near('Unless the head moves', 'expires', 300),
-    'the guide must say that a new commit expires a confirmation',
+    /Unless the head moves[\s\S]{0,300}?expires[\s\S]{0,250}?You are asked again/i,
+    'the guide must say that a new commit expires a confirmation and that the question is then ' +
+      'posed afresh at the new head',
   );
 
   // The two facts the gate's own edge-case list used to restate — a later evaluation meeting an
   // already confirmed item, and a head movement expiring the record — are asserted where the
   // mechanism is defined instead of where it was paraphrased. Same guarantees, one home.
+  // Kept rather than dropped: each pairing joins two facts the assertions above pin only
+  // separately - the record being read and the two conditions it clears, the expiry and the value
+  // it rides on. The leading determiners are trimmed off both anchors, because `Every` -> `Each`
+  // and `A` -> `Any` are pure synonym swaps that would turn the suite red without changing a
+  // guarantee.
   assert.match(
     confirmation,
-    near('Every later Phase-4 evaluation reads that record', 'clears conditions 7 and 10', 200),
+    near('later Phase-4 evaluation reads that record', 'clears conditions 7 and 10', 200),
     'a later evaluation meeting an already confirmed item must consume the record rather than ask again',
   );
   assert.match(
     confirmation,
-    near('A head movement expires every confirmation', 'bound to `VERIFIED_HEAD_SHA`', 200),
+    near('head movement expires every confirmation', 'bound to `VERIFIED_HEAD_SHA`', 200),
     'the expiry of a confirmation on a head movement must be stated with what it is bound to',
   );
 });

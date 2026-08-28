@@ -146,9 +146,12 @@ resolved merge conflict – inside the delegated `{{AGENT:merge-conflict-resolve
 ## Checkout provisioning boundary
 
 Read this before loading the delivery and worktree integration fragment, because only a narrow
-part of that fragment applies here. Two things are used: the verified execution location with its
-two roots, and provisioning a checkout for the Git write of Phase 2 step 1 – the same one checkout
-whether that merge applies cleanly or has to be resolved first.
+part of that fragment applies here. One thing is used from it: provisioning a checkout for the Git
+write of Phase 2 step 1 – the same one checkout whether that merge applies cleanly or has to be
+resolved first. That is why the fragment is deferred until that step. The verified execution
+location with its two roots is **not** what this pointer brings: it reaches the run earlier, through
+the runtime-state write safety block, which includes `execution-location` eagerly and is itself
+loaded before the first write below `.effective-flow/`.
 
 Provision that checkout the way `{{SKILL:iterate}}` does: fetch the pull request's **existing** head
 branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
@@ -710,6 +713,12 @@ building block. A missing line means the default.
   below therefore finds nothing for it: a project that configured the old namespace and nothing since
   gets the default `auto`, which is a behavior change on upgrade; `off` restores the previous
   behavior exactly.
+- **An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to the documented
+  default `auto`.** The loaded configuration building block says to continue with a safe default and
+  to report the affected key. For every other key this gate reads, that safe default and the
+  documented default are the same value; for this one they are not, because an unparseable line must
+  never authorize a commit and a push. Report the key as that rule requires and run the conflict
+  branch as `off`.
 - `mergeGate.bots` is a flat comma list of reviewer logins; the trigger text and the check context of
   each bot are their own dotted keys. A login containing brackets (`greptileai[bot]`) is a valid
   middle segment, because the encoding splits on `.` only.

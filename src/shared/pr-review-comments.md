@@ -3,9 +3,8 @@
 This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, reading the submitted reviews themselves, replying to a thread, resolving a
-thread, submitting a review with inline comments, posting a PR summary comment, reading the
-pull-request status, waiting for pending checks, and merging the pull request.
+reading review threads, reading the submitted reviews themselves, posting a PR summary comment,
+reading the pull-request status, and waiting for pending checks.
 
 Two sibling building blocks carry write operations this one does not hold. **PR review thread
 writes** (`pr-review-thread-writes`) owns replying to a thread, resolving a thread, and submitting a
@@ -232,9 +231,10 @@ blocking watch, so the gate takes its documented no-watch degradation (report th
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
-this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
-`review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
-provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
+but they belong to the sibling fragment `pr-review-thread-writes`, which states its own
+degradation; the gate still fails closed on anything it cannot read, improvising no provider
+request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
 and its page count is reported, since a truncated review list would report a verdict that is missing
