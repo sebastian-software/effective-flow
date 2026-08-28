@@ -8154,6 +8154,11 @@ test('issue-close previews without apply and performs exactly one call with it, 
       title: 'Ship the offer',
       body: '',
       state: 'closed',
+      // GitHub states why a closed issue is closed and Forgejo states nothing of the kind, so the
+      // normalized record carries the reason on one provider and omits it on the other. This is
+      // the field the merge gate proves `terminal (done)` with; without it a `not_planned` close
+      // reads exactly like a completed one and the gate reconciles a withdrawal as a delivery.
+      ...(repository.provider === 'github' ? { stateReason: 'completed' } : {}),
       labels: [],
       url:
         repository.provider === 'github'
@@ -8175,6 +8180,74 @@ test('issue-close previews without apply and performs exactly one call with it, 
       assert.equal(envelope.operation, 'issue-close');
       assert.equal(envelope.provider, repository.provider);
     }
+  }
+});
+
+test('a normalized issue reports a stated state reason and omits an unstated one', async () => {
+  // Terminal is not the same as done, and this field is the only thing that separates them. An
+  // issue closed as `not_planned` has had its work withdrawn: the merge gate must not strip its
+  // in-progress label or tick its container entry, and it can only tell the two apart here.
+  const notPlanned = await executeOperation(
+    'issue-read',
+    { repository: githubRepository, number: 7 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 7,
+            title: 'Withdrawn',
+            state: 'closed',
+            state_reason: 'not_planned',
+            html_url: 'https://github.com/example/flow/issues/7',
+          }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(notPlanned.ok, true);
+  assert.equal(notPlanned.data.result.stateReason, 'not_planned');
+
+  // An absence is the provider's silence, never a cancellation. Forgejo states no reason at all
+  // and a GitHub issue closed before the field existed states none either, so guessing one here
+  // would make both permanently unreconcilable.
+  for (const [repository, result] of [
+    [
+      githubRepository,
+      {
+        status: 0,
+        stdout: JSON.stringify({
+          number: 7,
+          title: 'Legacy close',
+          state: 'closed',
+          html_url: 'https://github.com/example/flow/issues/7',
+        }),
+        stderr: '',
+      },
+    ],
+    [
+      forgejoRepository,
+      teaApiResult(200, {
+        index: 7,
+        title: 'Legacy close',
+        state: 'closed',
+        url: 'https://code.example.test/team/flow/issues/7',
+      }),
+    ],
+  ]) {
+    const envelope = await executeOperation(
+      'issue-read',
+      { repository, number: 7 },
+      { runner: fakeRunner([result]), skipProbe: true },
+    );
+    assert.equal(envelope.ok, true);
+    assert.equal(
+      Object.hasOwn(envelope.data.result, 'stateReason'),
+      false,
+      `${repository.provider}: an unstated reason must be absent rather than guessed`,
+    );
   }
 });
 

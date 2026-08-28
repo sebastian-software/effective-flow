@@ -4181,6 +4181,18 @@ function normalizeIssue(item, repository, metadata = {}) {
     title: item.title ?? '',
     body: item.body ?? item.description ?? '',
     state: String(item.state ?? '').toLowerCase(),
+    // Terminal and done are two facts, and only this field separates them. GitHub states why a
+    // closed issue is closed — `completed` for delivered work, `not_planned` for withdrawn work —
+    // while Forgejo states nothing of the kind, so the field is emitted only where the provider
+    // actually spells one and is **absent** rather than guessed otherwise. A consumer therefore
+    // reads an absence as "this provider states no reason" and never as a cancellation: inferring
+    // one would make every Forgejo issue, and every GitHub issue closed before the field existed,
+    // permanently unreconcilable. The merge gate's post-merge observation phase is the consumer, and it
+    // is what keeps a cancelled issue from having its in-progress label stripped and its container
+    // entry ticked as if the work had shipped.
+    ...(typeof item.state_reason === 'string' && item.state_reason.length > 0
+      ? { stateReason: item.state_reason.toLowerCase() }
+      : {}),
     labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,

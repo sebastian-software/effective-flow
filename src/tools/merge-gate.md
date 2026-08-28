@@ -1831,6 +1831,27 @@ ends this phase without heuristic tracker access.
    lifecycle". Use the bounded `issue-state-wait` helper operation for forge issues. For an external issue use one
    connection-native monitor with the same bound, or exactly one 30-second wait and one fresh read.
    Never model-poll. Record each issue as terminal, open, timed out, or unobservable.
+
+   **A terminal outcome additionally records _how_ the issue became terminal, because terminal is
+   not the same as done.** Steps 5 and 6 are the writes that record delivery — they strip the
+   in-progress marker and tick the container entry — and an issue withdrawn as cancelled has had its
+   work abandoned rather than delivered, so reconciling it as done would file abandoned work as
+   shipped. Split the terminal outcome once here and carry the split through steps 4, 5, 6 and 7:
+
+   - **terminal (done)** — on the forge, the fresh read states either no state reason at all or a
+     state reason of `completed`; on an external target, the issue's state is the resolved
+     `tracker.externalDoneState`.
+   - **terminal (cancelled)** — the fresh read states any other terminal outcome: a forge state
+     reason such as `not_planned`, or an external terminal state that is not the resolved done
+     state.
+
+   The forge half is shaped by what each provider states rather than by leniency. GitHub spells a
+   closed issue's reason in the normalized `stateReason` field and Forgejo spells none at all, so an
+   **absent** reason means "this provider states none", never "this issue was cancelled" — reading
+   an absence as a cancellation would make every Forgejo issue permanently unreconcilable, and every
+   GitHub issue closed before that field existed with it. Only a **stated** contrary reason cancels.
+   Record the stated reason, or its absence, as the evidence for the split, and report it.
+
 3. **Assess completion, without asking.** This assessment is not gated: it runs without asking, for
    every issue whose step-2 outcome is `open` or `timed out`. It does not run for a `terminal`
    outcome, where nothing is left to do, nor for an `unobservable` one, where there is no state to
@@ -1918,7 +1939,15 @@ ends this phase without heuristic tracker access.
    step 3 uses — a forge issue uses `issue-read` and `issue-sub-issues-read`, an external issue uses
    the connection's own equivalents, and neither target's operations are ever invoked against the
    other: one fresh read of the issue for its state, body and classifications, and one fresh read of
-   its direct children wherever the resolved target supports a native sub-issue relation at all.
+   its direct children wherever the resolved target supports a native sub-issue relation at all. For
+   an external issue that basis carries one value more: **re-resolve `tracker.externalDoneState`**
+   against a freshly listed set of that context's writable states by the loaded `tracker-target`
+   rules, immediately before each transition. The mapping resolved before the offer is exactly as old
+   as the verdict, and a state reclassified out of the done category, closed to writes, or renamed
+   while the prompt stood open would otherwise still be written — and then matched against itself by
+   the re-read below, so the transition would report success against a target that no longer means
+   done. A value that no longer resolves makes the transition unavailable for that issue and is
+   treated exactly as a failed revalidation read.
    Step 3 reads the pull request once for its whole run and this step deliberately does not: that
    whole-run bound is earned by a pass that only reads, while this loop **writes between its
    issues**, so a title and body read before the first issue's mutation is an older instant than the
@@ -1935,12 +1964,17 @@ ends this phase without heuristic tracker access.
    whose auto-close may still be in flight, and this read is what keeps the run from closing an issue
    that closed itself. Skipping the transition is not skipping the **record**: this fresh read
    replaces that issue's recorded observation outcome from step 2 exactly as the post-transition
-   re-read below does. Steps 5, 6 and 7 fire on the recorded outcome and never on how it became
+   re-read below does — and it replaces it with the **split** outcome step 2 defines, never with a
+   bare "terminal". Steps 5, 6 and 7 fire on the recorded outcome and never on how it became
    terminal, so leaving step 2's `open` or `timed out` outcome standing here would keep the
    `effective-flow-issue-in-progress` label on a closed issue, leave its container entry open, and
    send step 7 deriving closure guidance for work that is already done — the same stale cleanup this
    phase exists to prevent, reached through the one branch that observes the terminal state without
-   having caused it. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
+   having caused it. Recording the **split** is what keeps that repair from overshooting into the
+   opposite error: an issue somebody **cancelled** while the prompt stood open is `terminal
+(cancelled)`, so steps 5 and 6 write nothing for it and step 7 names the withdrawal instead —
+   this branch promotes an observation it did not cause, and promoting it to a bare terminal outcome
+   would turn that withdrawal into a delivery record. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
    name the dimension that changed, keep its `effective-flow-issue-in-progress` label and its
    container entry open, and continue with the remaining confirmed issues. Where a revalidation read
    **fails or cannot be performed**, treat it exactly as a verdict that is no longer `complete`: an
@@ -1956,10 +1990,17 @@ ends this phase without heuristic tracker access.
    loaded "PR review comment integration"; on an external target through the connection's own
    transition operation to the resolved `tracker.externalDoneState`. Then re-read that issue once — a
    fresh read, not a second 30-second wait — and what the re-read shows **replaces that issue's
-   recorded observation outcome** from step 2. That re-read is the **only** proof the transition took
-   effect: a re-read that still shows a nonterminal state is a **failed** transition regardless of
-   what the operation reported, handled by the failure rule below exactly as a refused or errored one
-   is. The replacement is what makes steps 5 and 6 fire on the new state without their own text
+   recorded observation outcome** from step 2, again as the split outcome and never as a bare
+   "terminal". That re-read is the **only** proof the transition took effect, and what it has to
+   prove is `terminal (done)` rather than merely terminal: a re-read that still shows a nonterminal
+   state **or** one that shows `terminal (cancelled)` is a **failed** transition regardless of what
+   the operation reported, handled by the failure rule below exactly as a refused or errored one is.
+   The second half is not hypothetical, because the transition and the re-read are two instants: a
+   forge close the operation reported can be followed by somebody reopening the issue and closing it
+   as `not_planned`, and an external transition can land in a terminal state that is no longer the
+   done state re-resolved above. Accepting any terminal state here would confirm as completed exactly
+   the withdrawal step 2's split exists to distinguish, and would then let steps 5 and 6 record it as
+   delivered. The replacement is what makes steps 5 and 6 fire on the new state without their own text
    changing. Step 5 stays forge-only: an external issue that became terminal here reaches step 6 and
    not step 5, and the summary reflects that instead of reporting a label removal that never applied.
 
@@ -1972,12 +2013,15 @@ ends this phase without heuristic tracker access.
    connection blocker. A failed issue keeps its in-progress label and its container entry, nothing is
    retried blindly, and no fallback write goes to a different target.
 
-5. For every freshly observed terminal forge issue, remove
-   `effective-flow-issue-in-progress` idempotently. Keep the marker for every other outcome. Never
+5. For every forge issue freshly observed **terminal (done)**, remove
+   `effective-flow-issue-in-progress` idempotently. Keep the marker
+   for every other outcome, `terminal (cancelled)` included: the marker states that an Effective Flow
+   run is implementing this issue, and a withdrawal this run neither caused nor assessed is exactly
+   the state an operator should still be able to see. Never
    force-close an issue and never write a fallback classification to a different target. An
    operator-confirmed transition after a `complete` assessment verdict is not a forced close and is
    the one authorized path.
-6. Only for an observed terminal issue, complete its optional receipted container reconciliation
+6. Only for an issue observed **terminal (done)**, complete its optional receipted container reconciliation
    using the recorded mechanism. For a forge
    `native` container, call `issue-sub-issues-read` on the recorded parent, verify that the linked
    issue is still one of its native children, and report every remaining open child. GitHub derives
@@ -1987,16 +2031,21 @@ ends this phase without heuristic tracker access.
    observation by normalized issue identity, report the diagnostic, and never substitute marker
    matching for the receipted child number. For an external `native` container, use only the connection's previously proven
    completion operation. A `checklist` update uses a fresh container body and exact hash-guarded
-   patch. An open, timed-out, or unobservable issue leaves its container entry open. A missing or
+   patch. An open, timed-out, unobservable, or `terminal (cancelled)` issue leaves its container
+   entry open — ticking a cancelled child's row is the false delivery record the split exists to
+   prevent. A missing or
    parent-mismatched child likewise leaves its container unchanged. Mixed or invalid mechanisms
    perform no write.
-7. For every nonterminal result derive the exact closure guidance in the contract's evidence order:
+7. For every result that is not `terminal (done)` derive the exact closure guidance in the contract's
+   evidence order:
    non-closing `refs`, observed open sub-items/checklist entries, needs-planning classification,
    still-started external state, or otherwise only the terminal tracker transition. Where an issue is
    still nonterminal because the step-4 offer was declined, could not be posed, was unavailable for
-   it, or was confirmed and attempted but did not take effect — the post-transition re-read still
-   showed a nonterminal state — name that reason instead of re-deriving the evidence order from
-   scratch. Do not invent
+   it, or was confirmed and attempted but did not take effect — the post-transition re-read showed a
+   nonterminal state, or a `terminal (cancelled)` one — name that reason instead of re-deriving the
+   evidence order from scratch. A `terminal (cancelled)` issue is not open work either: report the
+   withdrawal with the stated state reason or external state that established it, and derive no
+   closure guidance for it, so nobody is sent to finish work somebody has withdrawn. Do not invent
    work. Include `{{SKILL:merge-gate}} <PR>` as the re-entry path for delayed or unavailable
    observation.
 
@@ -2086,7 +2135,9 @@ options:
      user;
    - the merge result, or the precise blocking condition;
    - after a confirmed merge, the lifecycle receipt result and one row per linked issue with its
-     observed terminal/open/timed-out/unobservable state, the evidence-based closure action, whether
+     observed terminal-done/terminal-cancelled/open/timed-out/unobservable state — a cancelled
+     terminal issue naming the stated state reason, or the external state, that established it — the
+     evidence-based closure action, whether
      the forge in-progress label was removed, and the optional container result — checklist or
      external-native completion, or for forge-native containment the freshly observed remaining
      child count and references;
@@ -2120,7 +2171,8 @@ options:
      writer, `.check` stays unset only when the reviewer publishes none, and the advisory changed
      neither this gate result nor the pull request. With no retained candidate, emit nothing.
 3. Emit the next-step block per `next-steps` as the last element of that chat report. When at least
-   one linked issue is open, timed out, or unobservable, select the merged-but-linked-issues-open row
+   one linked issue is open, timed out, unobservable, or `terminal (cancelled)`, select the
+   merged-but-linked-issues-open row
    before the general merged row. It stays chat
    only: nothing of it is written onto the pull request. Omit it after a successful merge when
    `<plan.dir>/` holds no open plan — the merged row's only edge is `{{SKILL:open-plans}}`, which

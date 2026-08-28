@@ -5561,11 +5561,11 @@ test('container completion is deferred until a linked issue is observed terminal
   assert.match(applyReview, /Do not set a native sub-item to done or tick an epic checklist/);
   assert.match(
     mergeObservation,
-    /Only for an observed terminal issue, complete its optional receipted container/,
+    /Only for an issue observed terminal \(done\), complete its optional receipted container/,
   );
   assert.match(
     mergeObservation,
-    /An open, timed-out, or unobservable issue leaves its container entry open/,
+    /An open, timed-out, unobservable, or `terminal \(cancelled\)` issue leaves its container entry open/,
   );
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
 
@@ -5609,9 +5609,12 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   assert.match(observation, /Never model-poll/);
   assert.match(
     observation,
-    /freshly observed terminal forge issue, remove `effective-flow-issue-in-progress` idempotently/,
+    /freshly observed terminal \(done\), remove `effective-flow-issue-in-progress` idempotently/,
   );
-  assert.match(observation, /Keep the marker for every other outcome/);
+  assert.match(
+    observation,
+    /Keep the marker\s*for every other outcome, `terminal \(cancelled\)` included/,
+  );
   assert.match(observation, /Never force-close an issue/);
 });
 
@@ -5883,6 +5886,85 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
     /Never pull a criterion out of prose by collecting "must" or "shall" sentences/,
   );
   assert.match(lifecycle, /a criterion is never derived from prose/);
+});
+
+test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+
+  // Terminal and done are two facts. The in-progress removal and the container tick are the writes
+  // that record delivery, so an issue withdrawn as cancelled must not reach either of them.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /terminal is not the same as done/);
+    assert.match(
+      contract,
+      /terminal \(done\)[^.]*state reason of `completed`[^.]*resolved `tracker.externalDoneState`/,
+    );
+    assert.match(contract, /terminal \(cancelled\)/);
+    // Forgejo states no reason at all, so an absence is the provider's silence and never a
+    // withdrawal; reading it the other way would make every Forgejo issue unreconcilable forever.
+    assert.match(contract, /Only a stated contrary reason cancels/);
+  }
+
+  // The three sites the split has to reach: the pre-transition promotion of an already-terminal
+  // issue, the post-transition proof, and the two cleanup writes.
+  assert.match(
+    observation,
+    /it replaces it with the split outcome step 2 defines, never with a bare "terminal"/,
+  );
+  assert.match(
+    observation,
+    /a re-read that still shows a nonterminal state or one that shows `terminal \(cancelled\)` is a failed transition/,
+  );
+  assert.match(
+    observation,
+    /For every forge issue freshly observed terminal \(done\), remove `effective-flow-issue-in-progress`/,
+  );
+  assert.match(
+    observation,
+    /Only for an issue observed terminal \(done\), complete its optional receipted container reconciliation/,
+  );
+  assert.match(
+    lifecycle,
+    /Complete a checklist entry only after the linked issue is observed `terminal \(done\)`/,
+  );
+
+  // A cancelled issue is not open work either: no closure guidance is derived for it.
+  assert.match(observation, /derive no\s*closure guidance for it/);
+  assert.match(lifecycle, /derive no guidance\s*for it/);
+});
+
+test('the external done state is re-resolved before every transition, not once before the offer', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const target = prose(source('src/shared/tracker-target.md'));
+
+  // The offer is posed once and the issues are transitioned one after another, so a mapping
+  // resolved before the question is exactly as old as the verdict beside it. A state reclassified
+  // out of the done category while the prompt stood open would otherwise be written and then
+  // matched against itself by the post-transition re-read, reporting success against a target that
+  // no longer means done.
+  assert.match(observation, /re-resolve `tracker.externalDoneState`/);
+  assert.match(lifecycle, /re-resolve `tracker.externalDoneState`/);
+  assert.match(
+    target,
+    /Resolve it again immediately before every transition, not once before the offer/,
+  );
+  assert.match(
+    target,
+    /the post-transition re-read would then match the issue against that same stale value/,
+  );
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /treated exactly as a failed revalidation\s*read/);
+  }
 });
 
 test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {

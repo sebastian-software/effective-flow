@@ -131,6 +131,14 @@ non-terminal, read-only, or missing value makes the transition unavailable for t
 the current candidates; unlike the started state it never aborts the run, because the merge has
 already happened.
 
+**Resolve it again immediately before every transition, not once before the offer.** The offer is
+posed once for a whole set of issues that are then transitioned one after another, so a resolution
+taken before the question is as old as the verdict beside it: a state reclassified out of the done
+category, closed to writes, or moved to another context while the prompt stood open would otherwise
+still be written, and the post-transition re-read would then match the issue against that same stale
+value and report success. One fresh listing per transition, by the rules above; a value that no
+longer resolves makes the transition unavailable for that issue exactly as a stale one does.
+
 When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done
 category. Terminal alone is not that filter: a tracker that spells cancellation as a terminal state
 offers a writable, terminal candidate that means the opposite of done, so a workspace carrying both

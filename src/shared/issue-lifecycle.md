@@ -101,6 +101,24 @@ Do not force-close an issue. An operator-confirmed transition after a `complete`
 is not a forced close and is the one authorized path. For each item report `terminal`, `open`,
 `timed out`, or `unobservable` with the fresh evidence.
 
+**A terminal outcome also records _how_ the item became terminal, because terminal is not the same
+as done.** The in-progress removal and the container reconciliation below are the writes that record
+delivery, and an item withdrawn as cancelled has had its work abandoned rather than delivered, so
+reconciling it as done would file abandoned work as shipped. Split the terminal outcome once and
+carry the split through every step that acts on it:
+
+- **terminal (done)** — on the forge, the fresh read states either no state reason at all or a state
+  reason of `completed`; on an external target, the item's state is the resolved
+  `tracker.externalDoneState`.
+- **terminal (cancelled)** — any other terminal outcome: a forge state reason such as `not_planned`,
+  or an external terminal state that is not the resolved done state.
+
+The forge half follows what each provider states. GitHub spells a closed issue's reason in the
+normalized `stateReason` field and Forgejo spells none, so an **absent** reason means "this provider
+states none" and never "this item was cancelled": inferring a cancellation from an absence would make
+every Forgejo item permanently unreconcilable. Only a **stated** contrary reason cancels. Record the
+stated reason, or its absence, as the evidence for the split.
+
 **Assess completion for every item observed `open` or `timed out`, without asking.** A `terminal`
 item has nothing left to assess and an `unobservable` one offers no state to reason from; neither is
 assessed. The inputs are one fresh issue read for the body and the classifications, one read of that
@@ -148,7 +166,12 @@ non-interactive run, transition nothing and carry the recommendation into the su
 On confirmation, revalidate each item's **whole assessment basis** fresh immediately before its
 mutation — the pull request's title and body, and that item's own state, body, classifications and
 direct children, all through the same operations the assessment used, and all re-read **per item
-rather than once for the loop**, because this loop writes between its items — and re-derive
+rather than once for the loop**, because this loop writes between its items — and, for an external
+item, **re-resolve `tracker.externalDoneState`** against a freshly listed set of that context's
+writable states, because a mapping resolved before the question is as old as the verdict and a state
+reclassified out of the done category while the prompt stood open would otherwise be written and then
+matched against itself. A value that no longer resolves is treated exactly as a failed revalidation
+read. Then re-derive
 the verdict from it. An item that is now terminal is skipped as a no-op; one whose verdict is no
 longer `complete`, and one whose revalidation read fails, is not transitioned at all, keeps its
 in-progress marker and its container entry, and names the dimension that changed. Skipping the
@@ -156,14 +179,24 @@ in-progress marker and its container entry, and names the dimension that changed
 replaces the item's recorded observation outcome exactly as the post-transition re-read below does,
 because everything after this point acts on the recorded outcome and never on how the item became
 terminal, so leaving the earlier `open` or `timed out` outcome standing would keep the in-progress
-marker on a closed item and leave its container entry open. The confirmed set
+marker on a closed item and leave its container entry open. It replaces it with the **split**
+outcome above and never with a bare "terminal", which is what keeps that repair from overshooting
+into the opposite error: an item somebody cancelled while the prompt stood open records
+`terminal (cancelled)`, so nothing below writes for it. The confirmed set
 only ever shrinks, and nothing enters it late. Otherwise transition the item and re-read it once.
-What that re-read shows **replaces that item's recorded observation outcome**, which is what lets the
-in-progress removal and the container reconciliation below act on the new state. A transition that
+What that re-read shows **replaces that item's recorded observation outcome**, again as the split
+outcome, which is what lets the
+in-progress removal and the container reconciliation below act on the new state. That re-read has to
+prove `terminal (done)` rather than merely terminal: a still-nonterminal state **and** a
+`terminal (cancelled)` one are both **failed** transitions whatever the operation reported, because
+the transition and the re-read are two instants and a terminal state reached by withdrawal is the
+one this split exists to distinguish. A transition that
 fails names its exact connection blocker and does not abandon the remaining items.
 
-When an item remains open, derive the closure guidance in this order and stop at the first observable
-match:
+When an item is not `terminal (done)`, derive the closure guidance in this order and stop at the
+first observable match — except for a `terminal (cancelled)` item, which is not open work: report the
+withdrawal with the stated state reason or external state that established it and derive no guidance
+for it, so nobody is sent to finish work somebody has withdrawn. The order is:
 
 1. `relationship: refs` — the relationship is intentionally non-closing and needs an explicit
    terminal tracker transition after acceptance;
@@ -181,9 +214,11 @@ Never invent product work, acceptance criteria, or an unobserved blocker. A post
 failure is non-transactional: preserve and report the successful merge, perform no fallback forge
 write, name the connection remediation, and give the observer-only re-entry command.
 
-After a forge issue is freshly observed terminal, remove
-`effective-flow-issue-in-progress` idempotently. Keep it for open, timed-out, and unobservable
-outcomes. For a forge-native container, do not issue a second completion mutation: GitHub derives
+After a forge issue is freshly observed **terminal (done)**, remove
+`effective-flow-issue-in-progress` idempotently. Keep it for open, timed-out,
+unobservable, and `terminal (cancelled)` outcomes — the marker states that a run is implementing this
+item, and a withdrawal the run neither caused nor assessed is a state its operator should still
+see. For a forge-native container, do not issue a second completion mutation: GitHub derives
 parent progress from the child's own terminal state. Instead, re-read the recorded parent through
 `issue-sub-issues-read`, verify that the receipted child still belongs to it, and report the
 remaining open native children; this read is the idempotent reconciliation. A per-child
@@ -191,6 +226,7 @@ remaining open native children; this read is the idempotent reconciliation. A pe
 provider-verified native relation: lifecycle observation continues by the receipted normalized
 issue identity. For an external native
 container, use only the connection's previously proven completion operation. Complete a checklist
-entry only after the linked issue is observed terminal. An open, timed-out, unobservable, missing,
+entry only after the linked issue is observed `terminal (done)`. An open, timed-out, unobservable,
+`terminal (cancelled)`, missing,
 or mismatched child leaves the container unchanged and is reported. Repeated observation, native
 parent reads, and eligible completion writes are idempotent.
