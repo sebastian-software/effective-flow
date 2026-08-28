@@ -710,9 +710,12 @@ building block. A missing line means the default.
   `pr-status-read`'s check list, per the loaded "Automatic reviewer state". Unset is the default and
   selects that block's fallback signal, so a project that configures nothing keeps its previous
   behavior exactly.
-- The legacy `prReview.*` names are still read: the loaded configuration building block resolves
-  `mergeGate.<key>` first, falls back to `prReview.<key>`, and reports once that it did. This
-  workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
+- The legacy `prReview.*` names are still read, and this workflow resolves them itself: take
+  `mergeGate.<key>` wherever its line is present, and only where that line is absent read
+  `prReview.<key>` and use its value. Precedence is per key – a present `mergeGate.<key>` always
+  wins over a present `prReview.<key>`, and the two namespaces are never merged at a coarser grain
+  than the individual key. Report **once per run** that the legacy namespace was read. Reading is
+  all of it: this workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
 - **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a

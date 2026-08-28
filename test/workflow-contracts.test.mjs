@@ -4995,10 +4995,11 @@ test('setup rewrites a legacy prReview.* block in place instead of leaving both 
 });
 
 test('the shared configuration fragment documents every merge-gate key and the legacy fallback', () => {
-  // The fragment is what every consumer loads, so a key missing here is a key no run resolves —
-  // it silently falls back to a default instead, turning a configured `merge` completion into
+  // This fragment is what `setup` and `iterate` load to resolve these keys — `merge-gate` documents
+  // them in its own Configuration section instead — so a key missing here is a key those runs do
+  // not resolve: it silently falls back to a default, turning a configured `merge` completion into
   // `ask` or a configured bot list into "no bots expected".
-  const migration = source('src/shared/config-migration.md');
+  const migration = source('src/shared/config-merge-gate-keys.md');
   const block = section(
     migration,
     '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
@@ -6366,11 +6367,11 @@ test('the completion offer adds no mergeGate.* key: all three key tables still c
   assert.deepEqual(
     keyRows(
       section(
-        source('src/shared/config-migration.md'),
+        source('src/shared/config-merge-gate-keys.md'),
         '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
         '\n### ',
       ),
-      'src/shared/config-migration.md',
+      'src/shared/config-merge-gate-keys.md',
     ),
     prefixed,
   );

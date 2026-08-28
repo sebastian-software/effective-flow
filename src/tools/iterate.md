@@ -64,6 +64,10 @@ when: the run reaches its completion report
 config-migration
 ```
 
+```include
+config-merge-gate-keys
+```
+
 ## Recommended skills
 
 - `effective-delivery`
