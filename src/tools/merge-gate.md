@@ -142,10 +142,10 @@ resolved merge conflict – inside the delegated `{{AGENT:merge-conflict-resolve
 
 ## Checkout provisioning boundary
 
-Read this before the delivery and worktree integration below, because only a narrow part of that
-fragment applies here. Two things are used: the verified execution location with its two roots, and
-provisioning a checkout for the Git write of Phase 2 step 1 – the same one checkout whether that
-merge applies cleanly or has to be resolved first.
+Read this before loading the delivery and worktree integration fragment, because only a narrow
+part of that fragment applies here. Two things are used: the verified execution location with its
+two roots, and provisioning a checkout for the Git write of Phase 2 step 1 – the same one checkout
+whether that merge applies cleanly or has to be resolved first.
 
 Provision that checkout the way `{{SKILL:iterate}}` does: fetch the pull request's **existing** head
 branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
@@ -174,8 +174,9 @@ left clean, then transition it to `aborted`; on an error transition it to `faile
 inspection. Never end a run leaving an `active` record behind – `{{SKILL:cleanup}}` will correctly
 refuse to remove it.
 
-```include
+```lazy-include
 worktree-integration
+when: Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`
 ```
 
 ```include
