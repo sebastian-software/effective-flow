@@ -1911,19 +1911,24 @@ ends this phase without heuristic tracker access.
    would let this run close an issue whose own task-list entry was unticked in the meantime, which
    acquired the `effective-flow-needs-planning` classification, or under which a native sub-issue was
    just opened — and step 5 would then strip its in-progress label and step 6 tick its container
-   entry, with the newly raised work signalled nowhere. So, after confirmation and before the
-   mutation loop, one fresh forge `pr-read` of the merged pull request supplies its title and body
-   again — one read for the whole loop, mirroring step 3's own whole-run bound for the same object.
-   Then, immediately before **each** issue's mutation, re-read that issue's own basis with the same
-   operations and the same target split step 3 uses — a forge issue uses `issue-read` and
-   `issue-sub-issues-read`, an external issue uses the connection's own equivalents, and neither
-   target's operations are ever invoked against the other: one fresh read of the issue for its state,
-   body and classifications, and one fresh read of its direct children wherever the resolved target
-   supports a native sub-issue relation at all. Re-derive the verdict from that fresh basis by step
-   3's existing rules — the rules are not restated here, they are re-applied. These bounds are step
-   4's own, distinct from step 3's identically shaped ones and never read as one shared budget, and
-   they are fixed literals carrying no configuration key: exactly one `pr-read` for the whole
-   revalidation, and at most one issue read and one sub-issue read per confirmed issue.
+   entry, with the newly raised work signalled nowhere. So, immediately before **each** issue's
+   mutation, re-read that issue's whole basis — **the pull-request text included, per issue rather
+   than once for the loop**. One fresh forge `pr-read` of the merged pull request supplies its title
+   and body, and that issue's own basis comes from the same operations and the same target split
+   step 3 uses — a forge issue uses `issue-read` and `issue-sub-issues-read`, an external issue uses
+   the connection's own equivalents, and neither target's operations are ever invoked against the
+   other: one fresh read of the issue for its state, body and classifications, and one fresh read of
+   its direct children wherever the resolved target supports a native sub-issue relation at all.
+   Step 3 reads the pull request once for its whole run and this step deliberately does not: that
+   whole-run bound is earned by a pass that only reads, while this loop **writes between its
+   issues**, so a title and body read before the first issue's mutation is an older instant than the
+   last issue's by every transition in between. The pull-request text is where each criterion's
+   covering statement is located, so a covering statement edited away mid-loop would otherwise still
+   close every issue behind it. Re-derive the verdict from that fresh basis by step 3's existing
+   rules — the rules are not restated here, they are re-applied. These bounds are step 4's own,
+   distinct from step 3's identically shaped ones and never read as one shared budget, and they are
+   fixed literals carrying no configuration key: at most one `pr-read`, one issue read and one
+   sub-issue read per confirmed issue.
 
    The three outcomes of that revalidation all **fail closed**. Where the issue is **now terminal**,
    skip it as an already-satisfied no-op — a `timed out` issue is by definition one whose auto-close

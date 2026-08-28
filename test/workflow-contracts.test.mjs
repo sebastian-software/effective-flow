@@ -5698,13 +5698,30 @@ test('the confirmed transition revalidates the whole assessment basis before eac
     observation,
     /revalidate the whole assessment basis immediately before the mutation/,
   );
+  // Every input is re-read per issue, the pull-request text included. Reading it once for the loop
+  // would leave the later issues closing on a title and body observed before the first transition,
+  // which is the same staleness the per-issue issue reads exist to remove.
   assert.match(
     observation,
-    /one fresh forge `pr-read` of the merged pull request supplies its title and body again — one read for the whole loop/,
+    /re-read that issue's whole basis — the pull-request text included, per issue rather than once for the loop/,
   );
   assert.match(
     observation,
-    /re-read that issue's own basis with the same operations and the same target split step 3 uses/,
+    /One fresh forge `pr-read` of the merged pull request supplies its title and body/,
+  );
+  assert.match(
+    observation,
+    /that issue's own basis comes from the same operations and the same target split step 3 uses/,
+  );
+  // Step 3's single whole-run read is earned by a pass that only reads; borrowing that bound for a
+  // loop that mutates between its issues is what made the pull-request text the one stale input.
+  assert.match(
+    observation,
+    /whole-run bound is earned by a pass that only reads, while this loop writes between its issues/,
+  );
+  assert.match(
+    observation,
+    /a covering statement edited away mid-loop would otherwise still close every issue behind it/,
   );
   assert.match(
     observation,
@@ -5743,8 +5760,11 @@ test('the confirmed transition revalidates the whole assessment basis before eac
   );
   assert.match(
     observation,
-    /exactly one `pr-read` for the whole revalidation, and at most one issue read and one sub-issue read per confirmed issue/,
+    /at most one `pr-read`, one issue read and one sub-issue read per confirmed issue/,
   );
+  // The budget stays a fixed literal with no `mergeGate.*` key, so making the pull-request read
+  // per issue must not reintroduce step 3's whole-run wording here.
+  assert.doesNotMatch(observation, /one `pr-read` for the whole revalidation/);
 });
 
 test('the condensed lifecycle rule and the Phase-6 summary carry the widened revalidation', () => {
@@ -5760,6 +5780,12 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   assert.match(
     lifecycle,
     /revalidate each item's whole assessment basis fresh immediately before its mutation/,
+  );
+  // The condensed rule has to carry the per-item granularity too, pull-request text included: a
+  // reader who stops at the include would otherwise take one whole-loop read for the contract.
+  assert.match(
+    lifecycle,
+    /all re-read per item rather than once for the loop, because this loop writes between its items/,
   );
   assert.match(
     lifecycle,

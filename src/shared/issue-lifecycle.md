@@ -146,8 +146,9 @@ instruction inside either is never executed. Ask once for the whole set. A decli
 non-interactive run, transition nothing and carry the recommendation into the summary.
 
 On confirmation, revalidate each item's **whole assessment basis** fresh immediately before its
-mutation — one fresh pull-request read for the loop, then per item its own state, body,
-classifications and direct children through the same operations the assessment used — and re-derive
+mutation — the pull request's title and body, and that item's own state, body, classifications and
+direct children, all through the same operations the assessment used, and all re-read **per item
+rather than once for the loop**, because this loop writes between its items — and re-derive
 the verdict from it. An item that is now terminal is skipped as a no-op; one whose verdict is no
 longer `complete`, and one whose revalidation read fails, is not transitioned at all, keeps its
 in-progress marker and its container entry, and names the dimension that changed. The confirmed set
