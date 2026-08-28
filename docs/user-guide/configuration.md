@@ -175,8 +175,8 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 The seven explicit language rows illustrate every override. In a typical project, only
 `language.project` is needed; omit an override to inherit the project language. Omit optional
 skill override rows when no override is needed. `tracker.externalTool`,
-`tracker.externalToolHint`, and `tracker.externalStartedState` are absent because this example pins
-`tracker.mode: local`; they belong to an external target only (see
+`tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
+absent because this example pins `tracker.mode: local`; they belong to an external target only (see
 [Block `tracker`](#block-tracker)).
 
 ## Block `language`
@@ -445,6 +445,7 @@ selection, CLI requirements, and what an external target sends to a third party.
 | `externalTool`         | Short identifier                 | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist         |
 | `externalToolHint`     | Free text                        | `(unset)` | How to find the connection: MCP server, workspace, key, state names             |
 | `externalStartedState` | Stable ID / exact token / `null` | `(unset)` | Writable, non-terminal native state normalized as started; external target only |
+| `externalDoneState`    | Stable ID / exact token / `null` | `(unset)` | Writable, terminal native state normalized as done; external target only        |
 
 `externalTool` and `externalToolHint` are hints for the run, not an adapter: Effective Flow ships
 no product-specific integration and establishes every capability from the connection it resolves
@@ -465,6 +466,24 @@ interactive implementation run may propose the candidate's display name and stab
 run. The run does not edit configuration. Only `/effective-flow setup`, after repeating discovery
 and showing the before/after table for confirmation, persists the suggestion. Zero or several
 candidates and non-interactive runs fail closed instead of choosing a familiar state name.
+
+`externalDoneState` is the terminal counterpart and follows the same rules with one deliberate
+difference in consequence. It stores the stable ID — or, only where the connection exposes none, the
+exact accepted token — of the writable, **terminal** state normalized as done, resolved fresh in the
+same workspace, team, or project context. A display-name match is never enough. Two readers use it, both in
+[`/effective-flow merge-gate`](./tools-deliver.md) and both after a merge: the terminal transition it
+offers for an issue its completion assessment found complete, and its observation of an issue it
+finds already terminal, which needs the value to tell a completed issue from a withdrawn one. It
+closes nothing by itself, and where it cannot be resolved at the observation site the issue is
+recorded as reconciliation unavailable rather than as done. Because
+that write is optional and follows a merge that already succeeded, a missing, stale, cross-context,
+read-only, non-terminal, or not-done-category value makes that offer unavailable for the issue and
+lists the observed candidates — it never aborts the run, which is where it differs from
+`externalStartedState`. When the key is absent and exactly one writable, terminal candidate is
+normalized as done, a gated run may propose that candidate's display name and stable value for that
+run only; zero or several candidates, and every non-interactive run, leave the transition
+unavailable. As with the started state, only
+`/effective-flow setup` persists a value.
 
 The post-merge issue grace period is fixed at 30 seconds and is deliberately not configurable. It
 is separate from `mergeGate.checkWaitMinutes`, which controls pull-request checks. Use

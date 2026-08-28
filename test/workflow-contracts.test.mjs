@@ -5561,11 +5561,11 @@ test('container completion is deferred until a linked issue is observed terminal
   assert.match(applyReview, /Do not set a native sub-item to done or tick an epic checklist/);
   assert.match(
     mergeObservation,
-    /Only for an observed terminal issue, complete its optional receipted container/,
+    /Only for an issue observed terminal \(done\), complete its optional receipted container/,
   );
   assert.match(
     mergeObservation,
-    /An open, timed-out, or unobservable issue leaves its container entry open/,
+    /An open, timed-out, unobservable, `terminal \(cancelled\)`, or `terminal \(reconciliation unavailable\)` issue leaves its container entry open/,
   );
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
 
@@ -5609,9 +5609,12 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   assert.match(observation, /Never model-poll/);
   assert.match(
     observation,
-    /freshly observed terminal forge issue, remove `effective-flow-issue-in-progress` idempotently/,
+    /freshly observed terminal \(done\), remove `effective-flow-issue-in-progress` idempotently/,
   );
-  assert.match(observation, /Keep the marker for every other outcome/);
+  assert.match(
+    observation,
+    /Keep the marker\s*for every other outcome, `terminal \(cancelled\)` included/,
+  );
   assert.match(observation, /Never force-close an issue/);
 });
 
@@ -5641,6 +5644,791 @@ test('external started-state configuration is tracker-verified and only setup pe
   );
   assert.match(setup, /Persist the suggestion only in the confirmed Step 6 write/);
   assert.match(setup, /Never infer a state from the tool name or a familiar display name/);
+});
+
+// --- post-merge completion assessment and the offered terminal transition ---
+// After a confirmed merge the gate now assesses whether the merged pull request completes each
+// still-open linked issue, and offers exactly one operator-confirmed transition to the terminal
+// tracker state. Every guarantee here is prose, so each pin below matches a literal sentence: a
+// reworded guarantee has to be a deliberate edit in this file as well.
+
+test('the post-merge completion assessment states a closed verdict vocabulary and its gating', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+
+  assert.match(
+    observation,
+    /Record exactly one verdict per issue, from a closed vocabulary of three values/,
+  );
+  for (const verdict of ['complete', 'incomplete', 'undetermined']) {
+    assert.ok(
+      observation.includes(`\`${verdict}\``),
+      `the closed verdict vocabulary must name \`${verdict}\``,
+    );
+  }
+  // "We could not tell" is a first-class verdict rather than a silent pass, and it gates exactly
+  // as `incomplete` does. A vocabulary that reported only two values would have to route the
+  // unreadable issue into one of them.
+  assert.match(
+    observation,
+    /`incomplete` and `undetermined` are reported differently and treated identically — neither ever reaches the offer/,
+  );
+
+  // The assessment is ungated, the offer is gated, and collapsing the two is the failure this
+  // pins: an ungated offer transitions issues unattended, while a gated assessment would leave a
+  // non-interactive run with no recommendation to carry into its summary.
+  assert.match(observation, /This assessment is not gated: it runs without asking/);
+  assert.match(observation, /The offer is posed only in a gated run/);
+  assert.match(observation, /A non-interactive run poses nothing, transitions nothing/);
+
+  // Steps 5 and 6 are gated on a fresh terminal observation, so the post-transition re-read has to
+  // replace step 2's record rather than merely sit beside it — otherwise a transitioned issue is
+  // stranded with its in-progress label and an open container entry.
+  assert.match(observation, /replaces that issue's recorded observation outcome/);
+});
+
+test('the confirmed transition revalidates the whole assessment basis before each mutation', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+
+  // The offer is posed once for the whole run and the confirmed issues are then mutated in turn, so
+  // a state-only recheck closes an issue whose task list, classifications, children or covering
+  // pull-request text moved while the prompt stood open — and steps 5 and 6 then strip its label and
+  // tick its container entry with the newly raised work signalled nowhere.
+  assert.match(
+    observation,
+    /revalidate the whole assessment basis immediately before the mutation/,
+  );
+  // Every input is re-read per issue, the pull-request text included. Reading it once for the loop
+  // would leave the later issues closing on a title and body observed before the first transition,
+  // which is the same staleness the per-issue issue reads exist to remove.
+  assert.match(
+    observation,
+    /re-read that issue's whole basis — the pull-request text included, per issue rather than once for the loop/,
+  );
+  assert.match(
+    observation,
+    /One fresh forge `pr-read` of the merged pull request supplies its title and body/,
+  );
+  assert.match(
+    observation,
+    /that issue's own basis comes from the same operations and the same target split step 3 uses/,
+  );
+  // Step 3's single whole-run read is earned by a pass that only reads; borrowing that bound for a
+  // loop that mutates between its issues is what made the pull-request text the one stale input.
+  assert.match(
+    observation,
+    /whole-run bound is earned by a pass that only reads, while this loop writes between its issues/,
+  );
+  assert.match(
+    observation,
+    /a covering statement edited away mid-loop would otherwise still close every issue behind it/,
+  );
+  assert.match(
+    observation,
+    /one fresh read of the issue for its state, body and classifications, and one fresh read of its direct children/,
+  );
+  // The rules live in step 3 and are re-applied, never restated: a second copy is what drifts.
+  assert.match(
+    observation,
+    /Re-derive the verdict from that fresh basis by step 3's existing rules/,
+  );
+
+  // All three outcomes fail closed. Without the middle one a changed basis still closes the issue;
+  // without the last one an unreadable basis does, which step 3 already refuses to call satisfied.
+  assert.match(
+    observation,
+    /Where the fresh verdict is no longer `complete`, transition nothing for that issue/,
+  );
+  // The already-terminal branch skips the transition, and skipping the record with it is what
+  // leaves the label on a closed issue: steps 5, 6 and 7 read step 2's outcome, so this branch has
+  // to promote its fresh read exactly as the post-transition re-read does.
+  assert.match(
+    observation,
+    /Skipping the transition is not skipping the record: this fresh read replaces that issue's recorded observation outcome from step 2 exactly as the post-transition re-read below does/,
+  );
+  assert.match(
+    observation,
+    /Steps 5, 6 and 7 fire on the recorded outcome and never on how it became terminal/,
+  );
+  assert.match(
+    observation,
+    /Where a revalidation read fails or cannot be performed, treat it exactly as a verdict that is no longer `complete`/,
+  );
+
+  // A revalidation that could add an issue would write past the confirmation the operator gave, and
+  // asking again would break the one-question-per-run rule; the set may therefore only shrink.
+  assert.match(observation, /The confirmed set therefore only ever shrinks/);
+  assert.match(
+    observation,
+    /an issue whose verdict newly becomes `complete` here is not transitioned and the run poses no second question/,
+  );
+
+  // Step 4's budget is its own. Folding it into step 3's identically shaped one would make every
+  // revalidation read look already spent, which is how the widened re-read quietly becomes optional.
+  assert.match(
+    observation,
+    /These bounds are step 4's own, distinct from step 3's identically shaped ones and never read as one shared budget/,
+  );
+  assert.match(
+    observation,
+    /at most one `pr-read`, one issue read and one sub-issue read per confirmed issue/,
+  );
+  // The budget stays a fixed literal with no `mergeGate.*` key, so making the pull-request read
+  // per issue must not reintroduce step 3's whole-run wording here.
+  assert.doesNotMatch(observation, /one `pr-read` for the whole revalidation/);
+});
+
+test('the condensed lifecycle rule and the Phase-6 summary carry the widened revalidation', () => {
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const summary = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  );
+
+  // The shared contract is the condensed statement of the same rule, so leaving it on a state-only
+  // recheck would contradict the widened one wherever a reader stops at the include.
+  assert.match(
+    lifecycle,
+    /revalidate each item's whole assessment basis fresh immediately before its mutation/,
+  );
+  // The condensed rule has to carry the per-item granularity too, pull-request text included: a
+  // reader who stops at the include would otherwise take one whole-loop read for the contract.
+  assert.match(
+    lifecycle,
+    /all re-read per item rather than once for the loop, because this loop writes between its items/,
+  );
+  // The condensed rule carries the already-terminal branch's record promotion for the same reason
+  // the widened one does: a reader who stops at the include would otherwise take "skipped as a
+  // no-op" for skipping the record too, and leave the marker on an item that closed itself.
+  assert.match(
+    lifecycle,
+    /Skipping the transition for an already-terminal item is not skipping the record: that revalidation read replaces the item's recorded observation outcome exactly as the post-transition re-read below does/,
+  );
+  assert.match(
+    lifecycle,
+    /one whose verdict is no longer `complete`, and one whose revalidation read fails, is not transitioned at all/,
+  );
+  assert.match(lifecycle, /The confirmed set only ever shrinks, and nothing enters it late/);
+
+  // Without this the report spells a declined issue and a revalidation-blocked one identically, and
+  // the case where the operator said yes while the run still wrote nothing goes unreported.
+  assert.match(
+    summary,
+    /Where a confirmed issue was not transitioned because step 4's revalidation found its basis changed, name the dimension that changed/,
+  );
+});
+
+test('the terminal-transition offer quotes no text and its option discloses the whole cascade', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+
+  // The same threat model the set-aside confirmation already carries: the verdict derives from
+  // text a third party can write on any repository where they can file an issue, so an excerpt
+  // would carry attacker-influenceable text into the prompt that exists to resist it. The evidence
+  // is listed as locators in chat instead.
+  assert.match(observation, /the question's own text is fixed and carries no per-run data/);
+  assert.match(observation, /This run quotes no issue or pull-request text/);
+  assert.match(observation, /one locator per criterion/);
+
+  // The `ask` fence itself. One confirmation authorizes three classes of write — the transition,
+  // the label removal of step 5, and the container completion of step 6 — so the option text has
+  // to disclose all three rather than only the one it is named after.
+  const headerIndex = gate.indexOf('header: Issue done');
+  assert.notEqual(headerIndex, -1, 'missing the Issue done ask fence header');
+  const fenceStart = gate.lastIndexOf('```ask', headerIndex);
+  assert.notEqual(fenceStart, -1, 'the Issue done header must sit inside an ask fence');
+  const fence = gate.slice(fenceStart, gate.indexOf('\n```', fenceStart));
+  assert.match(
+    fence,
+    /question: The linked issues listed above are fully implemented by this merged pull request\. May this run set them to their terminal tracker state\?/,
+  );
+
+  const setToDone = fence.slice(
+    fence.indexOf('label: Set to done'),
+    fence.indexOf('label: Leave open'),
+  );
+  assert.ok(
+    setToDone.includes('label: Set to done'),
+    'the fence must carry a Set to done option ahead of Leave open',
+  );
+  assert.match(setToDone, /effective-flow-issue-in-progress/);
+  assert.match(setToDone, /container entry/);
+  assert.match(setToDone, /this run quotes no issue or pull-request text/);
+});
+
+test('a stated acceptance criterion comes from a closed heading set and its absence is undetermined', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+
+  for (const contract of [observation, lifecycle]) {
+    assert.match(
+      contract,
+      /The set is `Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively at any heading level/,
+    );
+    assert.match(contract, /the criteria are that section's top-level list items/);
+    // An issue with no criteria at all is the cheapest input in the system to construct, and the
+    // per-criterion evidence the offer rests on is vacuous exactly there.
+    assert.match(contract, /states no acceptance criteria is `undetermined`, never `complete`/);
+  }
+
+  // Pulling "must"/"shall" sentences out of prose is derivation, not observation, and the
+  // lifecycle contract already forbids inventing an acceptance criterion.
+  assert.match(
+    observation,
+    /Never pull a criterion out of prose by collecting "must" or "shall" sentences/,
+  );
+  assert.match(lifecycle, /a criterion is never derived from prose/);
+});
+
+test('the completion verdict recognizes the legacy planning-blocker spelling on the forge', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const gate = source('src/tools/merge-gate.md');
+
+  // The label convention in `issue-tracker.md` treats `firmo-needs-planning` as permanently
+  // equivalent on every forge read, and the gate does not load that fragment. Without the
+  // equivalence restated here, an issue classified under the old prefix verdicts `complete` and is
+  // closed with its planning unfinished — the blocker is present, the reader simply cannot see it.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /legacy `firmo-needs-planning` spelling/);
+    assert.match(contract, /neither queried nor written on an external target/);
+  }
+  assert.match(
+    lifecycle,
+    /`effective-flow-needs-planning`, on the forge in either spelling — complete the planning path/,
+  );
+
+  // The gate carries no include of the label convention, which is why the rule is stated inline
+  // rather than referenced. If that ever changes, this pin is what says the duplication may go.
+  assert.doesNotMatch(gate, /```include\nissue-tracker\n```/);
+
+  // The other half of the sweep: `effective-flow-issue-in-progress` is the only other Effective
+  // Flow label this phase touches, it is newer than the `firmo-` prefix, and it has no legacy
+  // spelling — so its removal deliberately looks for no second variant.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /has no legacy spelling/);
+  }
+});
+
+test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+
+  // Terminal and done are two facts. The in-progress removal and the container tick are the writes
+  // that record delivery, so an issue withdrawn as cancelled must not reach either of them.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /terminal is not the same as done/);
+    assert.match(
+      contract,
+      /terminal \(done\)[^.]*state reason of `completed`[^.]*resolved `tracker.externalDoneState`/,
+    );
+    assert.match(contract, /terminal \(cancelled\)/);
+    // Forgejo states no reason at all, so an absence is the provider's silence and never a
+    // withdrawal; reading it the other way would make every Forgejo issue unreconcilable forever.
+    assert.match(contract, /Only a stated contrary reason cancels/);
+  }
+
+  // The three sites the split has to reach: the pre-transition promotion of an already-terminal
+  // issue, the post-transition proof, and the two cleanup writes.
+  assert.match(
+    observation,
+    /it replaces it with the split outcome step 2 defines, never with a bare "terminal"/,
+  );
+  assert.match(
+    observation,
+    /a re-read that still shows a nonterminal state, one that shows `terminal \(cancelled\)`, or one that shows `terminal \(reconciliation unavailable\)` is a failed transition/,
+  );
+  assert.match(
+    observation,
+    /For every forge issue freshly observed terminal \(done\), remove `effective-flow-issue-in-progress`/,
+  );
+  assert.match(
+    observation,
+    /Only for an issue observed terminal \(done\), complete its optional receipted container reconciliation/,
+  );
+  assert.match(
+    lifecycle,
+    /Complete a checklist entry only after the linked issue is observed `terminal \(done\)`/,
+  );
+
+  // A cancelled issue is not open work either: no closure guidance is derived for it.
+  assert.match(observation, /derive no\s*closure guidance for it/);
+  assert.match(lifecycle, /derive no guidance\s*for it/);
+});
+
+test('the external done state is re-resolved before every transition, not once before the offer', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const target = prose(source('src/shared/tracker-target.md'));
+
+  // The offer is posed once and the issues are transitioned one after another, so a mapping
+  // resolved before the question is exactly as old as the verdict beside it. A state reclassified
+  // out of the done category while the prompt stood open would otherwise be written and then
+  // matched against itself by the post-transition re-read, reporting success against a target that
+  // no longer means done.
+  assert.match(observation, /re-resolve `tracker.externalDoneState`/);
+  assert.match(lifecycle, /re-resolve `tracker.externalDoneState`/);
+  assert.match(
+    target,
+    /Resolve it again immediately before every transition, not once before the offer/,
+  );
+  assert.match(
+    target,
+    /the post-transition re-read would then match the issue against that same stale value/,
+  );
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /treated exactly as a failed revalidation\s*read/);
+  }
+});
+
+test('an already-terminal external issue resolves its done state where the split is recorded', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const target = prose(source('src/shared/tracker-target.md'));
+
+  // The split's external half is the resolved `tracker.externalDoneState`, but the transition that
+  // re-resolves it is a path an already-terminal issue never takes: it is not assessed, so it never
+  // earns the `complete` verdict the transition loop consumes. The observation that records the
+  // split therefore has to resolve the value itself, or it is classifying against nothing.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /The external half needs a resolved done state/);
+    assert.match(contract, /resolve `tracker.externalDoneState` by the loaded `tracker-target`/);
+    // Observation needs the listing half only — a connection that cannot transition still tells a
+    // done issue from a withdrawn one.
+    assert.match(contract, /needs only the listing half/);
+    assert.match(contract, /never poses their unset-key proposal|observation never poses/);
+  }
+  assert.match(
+    target,
+    /before recording the terminal split for an issue post-merge observation finds already terminal/,
+  );
+  // The capability statement used to say observation needed only a state read, which is what left
+  // the split with no value to compare against.
+  assert.doesNotMatch(
+    target,
+    /Post-merge _observation_ still requires only a fresh native-state read/,
+  );
+
+  // Where it cannot be resolved the outcome is a third one: terminal, but not classifiable. Not
+  // done, so no delivery write follows; not cancelled either, since nobody observed a withdrawal.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /terminal \(reconciliation unavailable\)/);
+    assert.match(contract, /the split is undecidable/);
+  }
+  // It reaches every site the split reaches: the promotion of an issue that closed itself, the
+  // post-transition proof, the container write, and the closure guidance.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(
+      contract,
+      /records terminal \(reconciliation unavailable\) rather than a guessed `terminal \(done\)`/,
+    );
+    assert.match(
+      contract,
+      /`terminal \(reconciliation unavailable\)` (?:issue|one)[\s\S]{0,120}?(?:leaves its container|are all failed)/,
+    );
+    assert.match(contract, /what is missing is the mapping rather than the work/);
+  }
+
+  // And it reaches the report. The Phase 6 row per linked issue names the observed state from a
+  // closed list, so an outcome missing from that list has no valid row: a reconciliation-unavailable
+  // issue would have to be filed as done, cancelled, open, timed out or unobservable, and every one
+  // of those five says something about it that nobody established.
+  const summary = prose(section(source('src/tools/merge-gate.md'), '### Phase 6: Summary'));
+  assert.match(
+    summary,
+    /one row per linked issue with its observed terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
+  );
+  assert.match(
+    summary,
+    /a reconciliation-unavailable one naming the missing capability or configuration value that left `tracker.externalDoneState` unresolved/,
+  );
+});
+
+test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {
+  const phase0 = prose(
+    section(
+      source('src/tools/merge-gate.md'),
+      '### Phase 0: Resolve the pull request and the completion mode',
+    ),
+  );
+
+  assert.match(phase0, /`pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueClose`/);
+  // `viewerRead` is the model: the one capability whose absence ends nothing.
+  assert.match(phase0, /Without `issueClose` the run continues/);
+  assert.match(
+    phase0,
+    /the Phase-5\.5 completion offer is unavailable for every forge issue of this run/,
+  );
+  assert.match(
+    phase0,
+    /an unavailable offer is not the same result as an issue the assessment found incomplete/,
+  );
+
+  // The observer-only sentence is about forge *reads*. Extending its list in place would have
+  // produced a sentence that calls a close a read, so the required reads and the one optional
+  // mutation must stay stated apart.
+  const observerStart = phase0.indexOf('In observer-only mode require only the forge');
+  assert.notEqual(observerStart, -1, 'missing the observer-only capability sentence');
+  const observerOnly = phase0.slice(observerStart);
+  const requiredReads = observerOnly.slice(0, observerOnly.indexOf('Beyond those reads'));
+  assert.ok(
+    requiredReads.length > 0,
+    'the observer-only sentence must separate its required reads from what follows them',
+  );
+  assert.equal(
+    requiredReads.includes('issueClose'),
+    false,
+    'the observer-only required-read list must not name issueClose: a close is a mutation',
+  );
+  assert.match(observerOnly, /this path uses exactly one optional mutation — `issueClose`/);
+  assert.match(observerOnly, /It is a mutation and is never counted among the required reads/);
+  assert.match(observerOnly, /never degrades or rejects the run/);
+});
+
+test('the Phase-6 summary and the merged-PR re-entry allowlist name the completion assessment', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const summary = prose(section(gate, '### Phase 6: Summary', '\n## '));
+
+  assert.match(summary, /per linked issue, the completion verdict of Phase 5\.5 by its name/);
+  assert.match(summary, /together with the criterion locators that produced it/);
+  // The summary states three lines above that it reads "no body, deliberately"; an extension that
+  // quoted criterion or pull-request text would reverse its own discipline.
+  assert.match(
+    summary,
+    /Report the locators and never the criterion text or any pull-request text/,
+  );
+  assert.match(
+    summary,
+    /whether the terminal transition was offered, how the operator answered, and what the transition did/,
+  );
+
+  // The re-entry list is an allowlist, so an action absent from it is out of scope by
+  // construction — which is why the recovery path for an unposed offer has to be named in it.
+  assert.match(
+    prose(gate),
+    /A merged PR is re-entered: run only receipt validation, bounded tracker observation, the completion assessment and its offered terminal transition, terminal label cleanup, and eligible container reconciliation/,
+  );
+});
+
+test('both force-close prohibitions survive verbatim beside the operator-confirmed carve-out', () => {
+  // An operator-confirmed transition after an evidence-backed `complete` verdict is not a forced
+  // close, so neither prohibition is weakened; each gains the carve-out next to it instead.
+  const carveOut =
+    /An operator-confirmed transition after a `complete` assessment verdict is not a forced close and is the one authorized path\./;
+
+  const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
+  assert.match(lifecycle, /Do not force-close an issue\./);
+  assert.match(lifecycle, carveOut);
+  assert.match(
+    lifecycle,
+    near(
+      'Do not force-close an issue\\.',
+      'is not a forced close and is the one authorized path',
+      200,
+    ),
+    'the lifecycle carve-out must sit beside the prohibition it qualifies',
+  );
+
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  assert.match(
+    observation,
+    /Never force-close an issue and never write a fallback classification to a different target\./,
+  );
+  assert.match(observation, carveOut);
+  assert.match(
+    observation,
+    near('Never force-close an issue', 'is not a forced close and is the one authorized path', 200),
+    "the gate's carve-out must sit beside the prohibition it qualifies",
+  );
+});
+
+test('the merge-gate rules drop the observe-only closure claim for the confirmed-transition rule', () => {
+  const gate = prose(source('src/tools/merge-gate.md'));
+
+  // The retired sentence sat in `## Rules`, where it read as a scope statement — this gate
+  // observes, it does not close — and the offer makes that false. A reader who greps the Rules and
+  // stops there would draw the wrong conclusion, so it has to be gone rather than kept verbatim.
+  assert.equal(
+    gate.includes('Observe but never force issue closure'),
+    false,
+    'the retired Rules scope statement must not survive the offered transition',
+  );
+  assert.match(gate, /Never close an issue on this gate's own authority\./);
+  assert.match(
+    gate,
+    /A terminal transition happens only after a `complete` assessment verdict and an explicit operator confirmation in a gated run; every other path observes only\./,
+  );
+});
+
+test('the in-run reasoning enumeration names the completion assessment as its fifth member', () => {
+  // The carve-out from the delegation mandate is a closed enumeration, so a guard that authorizes
+  // a write is either named in it or delegated away. Reading an exception into the four is exactly
+  // what this pin prevents.
+  const gate = prose(source('src/tools/merge-gate.md'));
+
+  assert.match(
+    gate,
+    /evaluating the Phase-4 conditions, and forming the Phase-5\.5 completion assessment stay in this run/,
+  );
+  assert.match(
+    gate,
+    /The completion assessment is named here as a fifth member rather than read into the four before it/,
+  );
+  assert.match(gate, /it is a guard that authorizes a tracker write/);
+});
+
+test('external done-state configuration mirrors the started state and never aborts a merged run', () => {
+  const migration = prose(source('src/shared/config-migration.md'));
+  const tracker = prose(source('src/shared/tracker-target.md'));
+  const setup = prose(source('src/tools/setup.md'));
+  const guide = source('docs/user-guide/configuration.md');
+
+  assert.match(
+    migration,
+    /`tracker\.externalDoneState` → a nullable string containing the external connection's stable terminal state ID/,
+  );
+  assert.match(
+    migration,
+    /Missing or `null` means unset and never authorizes a guessed transition/,
+  );
+  assert.match(
+    migration,
+    /make that transition unavailable instead of guessing, and never abort a run whose merge already succeeded/,
+  );
+
+  assert.match(
+    tracker,
+    /Before the offered post-merge terminal transition, and before recording the terminal split for an issue post-merge observation finds already terminal, list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
+  );
+  assert.match(tracker, /it must be writable and terminal, and normalized as a done category/);
+  // Discovery has to carry the done category too, not only the terminal flag. A tracker that spells
+  // cancellation as a terminal state has two writable terminal candidates where exactly one
+  // qualifies: filtering on terminal alone loses the transition to ambiguity there, and proposes
+  // the canceled state wherever the completed one happens not to be writable.
+  assert.match(
+    tracker,
+    /When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done category/,
+  );
+  assert.match(tracker, /A display-name match is never enough/);
+  assert.match(
+    tracker,
+    /Exactly one candidate may be proposed with both its display name and stable value/,
+  );
+  // The one deliberate divergence from the started state: the write it authorizes is optional and
+  // follows a merge that already succeeded, so an unresolvable value never fails the run closed.
+  assert.match(
+    tracker,
+    /unlike the started state it never aborts the run, because the merge has already happened/,
+  );
+  assert.match(
+    tracker,
+    /Never infer a state from `tracker\.externalTool` or from a brand-specific name such as "Done"\./,
+  );
+
+  assert.match(
+    setup,
+    /`externalDoneState` \(nullable stable native terminal state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence/,
+  );
+  assert.match(setup, /`tracker\.externalDoneState` – the terminal counterpart/);
+  // The same rule in the wizard, on both halves: a configured value is validated against the done
+  // category, and an absent one is discovered by it. Without this, setup would happily persist a
+  // canceled state as the value the merge gate transitions completed issues into.
+  assert.match(
+    setup,
+    /Validate an existing value by stable value, context, normalized done category, terminal flag, and writability/,
+  );
+  assert.match(
+    setup,
+    /If it is absent and exactly one writable, terminal candidate is normalized as a done category/,
+  );
+  assert.match(
+    setup,
+    /report that the post-merge transition will be offered as unavailable until setup can verify one/,
+  );
+  assert.match(
+    setup,
+    /`externalTool`\/`externalToolHint`\/`externalStartedState`\/`externalDoneState` when the mode is `local` or `remote`/,
+  );
+  assert.match(
+    setup,
+    /the freshly verified nullable `tracker\.externalStartedState` and `tracker\.externalDoneState`/,
+  );
+  assert.match(
+    setup,
+    /the confirmed `tracker\.externalStartedState` and `tracker\.externalDoneState` stable values or `null`/,
+  );
+
+  // The key gained a second reader when post-merge observation started resolving it to split an
+  // already-terminal issue into done and withdrawn. Every surface that describes the key has to say
+  // so: an operator told the offered transition is its only reader concludes that leaving it unset
+  // costs nothing but that offer, when it also costs every already-closed issue its reconciliation.
+  for (const [name, text] of [
+    ['setup.md', setup],
+    ['config-migration.md', migration],
+    ['configuration.md', prose(guide)],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /only (?:by )?the (?:merge gate's )?offered post-merge (?:terminal )?transition/i,
+      `${name} must not describe the offered transition as the only reader of externalDoneState`,
+    );
+  }
+  assert.match(setup, /and by the post-merge observation that tells an already-terminal issue/);
+  assert.match(
+    setup,
+    /so does that gate's post-merge observation of an issue it finds already terminal/,
+  );
+  assert.match(
+    migration,
+    /That transition is not the only reader: the post-merge observation of an issue found already terminal resolves the same value by the same rules/,
+  );
+  assert.match(
+    prose(guide),
+    /Two readers use it, both in \[`\/effective-flow merge-gate`\]\(\.\/tools-deliver\.md\) and both after a merge/,
+  );
+
+  assert.equal(
+    rowCells(tableRow(section(guide, '## Block `tracker`', '\n## '), '`externalDoneState`'))[3],
+    'Writable, terminal native state normalized as done; external target only',
+  );
+  assert.match(
+    prose(guide),
+    /`externalDoneState` is the terminal counterpart and follows the same rules with one deliberate difference in consequence/,
+  );
+  // The page's own table row and prose already promise "normalized as done", so a discovery
+  // sentence that asked only for a terminal state would document a rule the contract does not have
+  // and contradict the row two paragraphs above it.
+  assert.match(
+    prose(guide),
+    /When the key is absent and exactly one writable, terminal candidate is normalized as done/,
+  );
+  // Nullable and unset by default, exactly as `externalStartedState`, so it earns no row in the
+  // safe-defaults table: a row there would assert a default the key does not have.
+  assert.equal(
+    section(guide, '## Safe defaults at a glance', '\n## ').includes('externalDoneState'),
+    false,
+    'a nullable, unset-by-default key must not appear in the safe-defaults table',
+  );
+});
+
+test('the completion offer adds no mergeGate.* key: all three key tables still carry nine rows', () => {
+  // The operator chose "report, transition nothing" for the non-interactive case, so there is no
+  // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
+  // tenth row would be a fourth place to keep in sync and a guarantee that quietly became
+  // configurable — which is why the row set is asserted rather than only its length.
+  const prefixed = [
+    '`mergeGate.completion`',
+    '`mergeGate.conflictResolution`',
+    '`mergeGate.requireAllChecks`',
+    '`mergeGate.checkWaitMinutes`',
+    '`mergeGate.maxRounds`',
+    '`mergeGate.botWaitMinutes`',
+    '`mergeGate.bots`',
+    '`mergeGate.bots.<login>.trigger`',
+    '`mergeGate.bots.<login>.check`',
+  ];
+  const bare = prefixed.map((key) => key.replace('mergeGate.', ''));
+
+  // The first `| Key` table of the given slice, minus its header and separator rows.
+  const keyRows = (text, label) => {
+    const start = text.indexOf('| Key');
+    assert.notEqual(start, -1, `missing the mergeGate key table in ${label}`);
+    const end = text.indexOf('\n\n', start);
+    return firstColumnCells(text.slice(start, end === -1 ? undefined : end)).slice(2);
+  };
+
+  assert.deepEqual(
+    keyRows(
+      section(
+        source('src/shared/config-migration.md'),
+        '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
+        '\n### ',
+      ),
+      'src/shared/config-migration.md',
+    ),
+    prefixed,
+  );
+
+  const setup = source('src/tools/setup.md');
+  assert.deepEqual(
+    keyRows(
+      setup.slice(setup.indexOf('| Key                              | Values')),
+      'src/tools/setup.md',
+    ),
+    prefixed,
+  );
+
+  assert.deepEqual(
+    keyRows(
+      section(source('docs/user-guide/configuration.md'), '## Block `mergeGate`', '\n## '),
+      'docs/user-guide/configuration.md',
+    ),
+    bare,
+  );
+});
+
+test('the merge-gate operation table gains issue-close and the tea note reports it unsupported', () => {
+  const gateOps = section(
+    source('docs/user-guide/remote-tracker.md'),
+    '## Merge gate operations',
+    '\n## ',
+  );
+
+  assert.deepEqual(firstColumnCells(gateOps).slice(2), [
+    '`pr-status-read`',
+    '`pr-reviews-read`',
+    '`pr-checks-wait`',
+    '`pr-merge`',
+    '`viewer-read`',
+    '`issue-state-wait`',
+    '`issue-close`',
+  ]);
+  assert.equal(rowCells(tableRow(gateOps, '`issue-close`'))[1], '`issueClose`');
+
+  // The lead-in counts the rows of the table it introduces, so it has to move with them.
+  const flatOps = prose(gateOps);
+  assert.match(
+    flatOps,
+    /through seven additional forge operations of the same remote-tracker helper/,
+  );
+  assert.equal(
+    flatOps.includes('six additional forge operations'),
+    false,
+    'the lead-in count must follow the table it introduces',
+  );
+
+  // Decision 9 adds no probe: `issue-close` rides the `tea api` transport the gate reads already
+  // use, so it simply joins the operations a `tea` without `--include` reports unsupported.
+  assert.match(
+    prose(source('docs/user-guide/troubleshooting.md')),
+    /a `tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read` and `issue-close` as `UNSUPPORTED_CAPABILITY`/,
+  );
 });
 
 test('linked-issue re-entry is mirrored by next steps and user documentation', () => {
