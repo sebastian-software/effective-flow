@@ -8362,6 +8362,111 @@ test('a Forgejo 5xx on a possibly-applied mutation is possibly applied, not retr
   assert.equal(Object.hasOwn(dependencies.error.details, 'mutationMayHaveSucceeded'), false);
 });
 
+// `teaApiResult` serialises its body as JSON, which is the one thing this case does not have.
+function teaApiRawResult(status, body, contentType = 'text/html') {
+  return {
+    status: 0,
+    stdout: body,
+    stderr: `HTTP/1.1 ${status} Refused\r\ncontent-type: ${contentType}\r\n\r\n`,
+  };
+}
+
+const PROXY_ERROR_PAGE =
+  '<html><head><title>502 Bad Gateway</title></head><body><h1>502 Bad Gateway</h1></body></html>\n';
+
+test('a Forgejo 5xx whose body is not JSON is still possibly applied', async () => {
+  // The status line is present and correct here — the transport probe asserts `--include` support,
+  // so that half is never in doubt. It is the **body** that cannot be parsed: a forge behind a
+  // reverse proxy answers a 502 with the proxy's HTML error page, and the proxy never learned to
+  // speak the forge's JSON. `readTeaApiResponse` used to parse that body eagerly, inside the object
+  // it returned, so the strict parse raised `INVALID_PAYLOAD` before `teaApiSuccess` had read the
+  // status at all — and an `issue-close` the forge may have applied came back as a payload
+  // complaint carrying no `mutationMayHaveSucceeded`. The gate then reads "nothing happened",
+  // skips the state re-read the operation documents, and leaves the in-progress label on a closed
+  // issue with its container entry still open. Only a 2xx body is data; a body the status has
+  // already condemned is a diagnostic and may not overrule it.
+  const closed = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    {
+      runner: fakeRunner([teaApiRawResult(502, PROXY_ERROR_PAGE)]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(closed.ok, false);
+  assert.equal(closed.error.code, 'COMMAND_FAILED');
+  assert.equal(closed.error.details.status, 502);
+  assert.equal(closed.error.details.mutationMayHaveSucceeded, true);
+  assert.equal(closed.error.retryable, false);
+  assert.doesNotMatch(closed.error.message, /refused/);
+  // No `message` is invented from a body that states none — the status is the whole verdict.
+  assert.equal(Object.hasOwn(closed.error.details, 'message'), false);
+
+  // The merge path reads the same helper and had the same gap, on the most irreversible mutation
+  // in the set: a merge the forge may have applied became an `INVALID_PAYLOAD` too.
+  const merged = await executeOperation(
+    'pr-merge',
+    {
+      repository: forgejoRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    {
+      runner: fakeRunner([...forgejoStatusResults(), teaApiRawResult(503, PROXY_ERROR_PAGE)]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(merged.ok, false);
+  assert.equal(merged.error.code, 'COMMAND_FAILED');
+  assert.equal(merged.error.details.status, 503);
+  assert.equal(merged.error.details.mutationMayHaveSucceeded, true);
+  assert.equal(merged.error.retryable, false);
+  assert.doesNotMatch(merged.error.message, /refused/);
+
+  // A 4xx with the same unreadable body stays the refusal it is: the forge chose that answer, it
+  // repeats identically, and no flag is added.
+  const refused = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    {
+      runner: fakeRunner([teaApiRawResult(403, '<html><body>Forbidden</body></html>')]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(refused.error.details.status, 403);
+  assert.equal(refused.error.retryable, false);
+  assert.equal(Object.hasOwn(refused.error.details, 'mutationMayHaveSucceeded'), false);
+
+  // A read over the same transport keeps its retryable 5xx and gains no flag, whatever its body.
+  const read = await executeOperation(
+    'viewer-read',
+    { repository: forgejoRepository },
+    { runner: fakeRunner([teaApiRawResult(502, PROXY_ERROR_PAGE)]), skipProbe: true },
+  );
+  assert.equal(read.error.code, 'COMMAND_FAILED');
+  assert.equal(read.error.details.status, 502);
+  assert.equal(read.error.retryable, true);
+  assert.equal(Object.hasOwn(read.error.details, 'mutationMayHaveSucceeded'), false);
+
+  // And the strictness the tolerant path replaced is intact where it belongs: on a 2xx the body is
+  // data, so an unreadable one is still an `INVALID_PAYLOAD` rather than a silently empty result.
+  const nonsense = await executeOperation(
+    'issue-close',
+    { repository: forgejoRepository, number: 7 },
+    {
+      runner: fakeRunner([teaApiRawResult(200, 'not json at all', 'application/json')]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(nonsense.ok, false);
+  assert.equal(nonsense.error.code, 'INVALID_PAYLOAD');
+});
+
 test('a close that fails in transport is reported as possibly applied and never as retryable', async () => {
   // The refusal above is the case the forge answered: `tea api` printed a status line, so nobody
   // has to wonder whether the PATCH landed. This is the other case — the CLI itself failed, so the

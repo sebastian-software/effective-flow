@@ -3600,6 +3600,14 @@ function parseCommandOutput(result, plan, label) {
 // the header block to **stderr** where `gh --include` writes them to stdout, so that branch would
 // find plain JSON on stdout, take the early return, and hand a 403 body on as data. The last status
 // line wins, so an intermediate redirect never masks the response that actually answered.
+//
+// The body is **not** parsed here, and that ordering is the contract rather than a refactoring
+// convenience: only a 2xx body is data, and only a caller that has read the status knows which it
+// holds. Parsing eagerly made the strict JSON parse decide the outcome before the status was ever
+// inspected, so a 5xx a reverse proxy answered with an HTML error page became a plain
+// `INVALID_PAYLOAD` — losing the `mutationMayHaveSucceeded` flag on exactly the mutations whose
+// documented recovery is a state re-read. A non-JSON body is a diagnostic on that path, never a
+// reason to discard a status the forge did state.
 function readTeaApiResponse(result, label) {
   const headerText = stripAnsiSequences(result?.stderr ?? '');
   const statusLines = [...headerText.matchAll(/^HTTP\/\S+\s+(\d{3})\b/gim)];
@@ -3616,8 +3624,25 @@ function readTeaApiResponse(result, label) {
   return {
     status: Number(statusLines.at(-1)[1]),
     headers,
-    body: parseJsonOutput(result, label),
+    // Strict: a 2xx body that is not JSON is a provider payload nobody can read, and that is an
+    // `INVALID_PAYLOAD` exactly as before. Callers invoke this only after the status admitted the
+    // body as data.
+    readBody: () => parseJsonOutput(result, label),
   };
+}
+
+// The tolerant counterpart, for a status that already decided the outcome. It reports whatever
+// object the body happens to be so `teaApiMessage` can quote the forge's own wording, and reports
+// nothing at all when the body is empty or is not JSON. It never fails: on this path the status is
+// the verdict, and an unparseable diagnostic must not be able to overrule it.
+function teaApiDiagnosticBody(result) {
+  const text = typeof result?.stdout === 'string' ? result.stdout.trim() : '';
+  if (text === '') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function isTeaApiIncludePlan(plan) {
@@ -3655,7 +3680,10 @@ function mutationMayHaveApplied(label) {
 function teaApiSuccess(result, label) {
   const response = readTeaApiResponse(result, label);
   if (response.status < 200 || response.status >= 300) {
-    const message = teaApiMessage(response.body);
+    // Read tolerantly, because the status has already decided this. A forge behind a reverse proxy
+    // answers a 502 with that proxy's HTML error page, and a strict parse of it would raise
+    // `INVALID_PAYLOAD` and take the flag below with it.
+    const message = teaApiMessage(teaApiDiagnosticBody(result));
     const mayHaveApplied = response.status >= 500 && mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',
@@ -3668,7 +3696,7 @@ function teaApiSuccess(result, label) {
       response.status >= 500 && !mayHaveApplied,
     );
   }
-  return response;
+  return { status: response.status, headers: response.headers, body: response.readBody() };
 }
 
 // `gh pr checks` reports "the checks are still pending" through exit code 8 rather than through its
@@ -5957,7 +5985,10 @@ export async function executeOperation(operation, input = {}, options = {}) {
     if (operation === 'pr-merge' && activeRepository.provider === 'forgejo') {
       const result = await runChecked(runner, plan, operation);
       const response = readTeaApiResponse(result, operation);
-      const message = teaApiMessage(response.body);
+      // Tolerant on every path the status decides, for the reason `teaApiSuccess` states: a proxy's
+      // HTML 502 page must not become an `INVALID_PAYLOAD` that hides a merge the forge may have
+      // applied. The 2xx body below is read strictly, because there it is data.
+      const message = teaApiMessage(teaApiDiagnosticBody(result));
       if (response.status === 409) {
         fail('STALE_WRITE', 'pull-request head moved before the forge accepted the merge', {
           number: prNumber(input),
@@ -5978,7 +6009,13 @@ export async function executeOperation(operation, input = {}, options = {}) {
       // already taken above, 405 for a merge style the repository does not allow, 403 for a
       // permission or branch-protection refusal — and a 2xx carrying a body is the forge stating a
       // rejection it spelled as success.
-      if (response.status < 200 || response.status >= 300 || response.body !== null) {
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        // Only reached for a 2xx, where the body is data and an unreadable one is genuinely an
+        // `INVALID_PAYLOAD`. Short-circuiting keeps it out of every non-2xx decision above.
+        response.readBody() !== null
+      ) {
         const mayHaveApplied = response.status >= 500;
         fail(
           'COMMAND_FAILED',
