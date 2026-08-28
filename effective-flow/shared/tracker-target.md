@@ -96,10 +96,21 @@ The connection must cover the provider-neutral operations the forge flows alread
 Issue-backed implementation adds two **phase-specific** native lifecycle capabilities: list the
 workflow states writable in the exact selected workspace/team/project context, including stable ID
 or exact accepted token, display name, normalized category, terminal flag, and writability; and
-transition one issue to a selected writable state. Require both only when an issue is about to enter
-implementation. Post-merge observation requires only a fresh native-state read (and an optional
-bounded monitor); review publication, planning, and other tracker reads do not inherit the started
-state write requirement.
+transition one issue to a selected writable state. Require both when an issue is about to enter
+implementation, and again for the **offered** post-merge terminal transition. Post-merge
+_observation_ requires a fresh native-state read (and an optional bounded monitor) — plus, for an
+issue that read finds **terminal**, the **listing** capability alone, because terminal is not the
+same as done and separating the two means resolving `tracker.externalDoneState` at that instant. The
+transition capability is not required to observe, so a connection that can list but not transition
+still tells a done issue from a withdrawn one. Review
+publication, planning, and other tracker reads do not inherit the started state write requirement.
+
+A connection that covers neither or only one of the two makes the post-merge transition
+**unavailable** for that issue without aborting — the one place this contract deviates from its own
+abort-before-the-first-write rule, and deliberately so: that write is optional and comes after a
+merge that already succeeded, so failing the run closed would turn a missing optional capability into
+a louder failure than the merge it follows. Name the missing capability, leave the issue nonterminal,
+and continue.
 
 Before the first implementation delegation, list those states fresh and resolve
 `tracker.externalStartedState`. A configured value must match the stable state ID, or only when the
@@ -114,6 +125,40 @@ run may use that value for this run only after confirmation; only `effective-flo
 non-interactive run, zero candidates, or multiple candidates aborts before code and lists the
 evidence without choosing a favorite. Never infer a state from `tracker.externalTool` or from a
 brand-specific name such as "In Progress".
+
+Before the offered post-merge terminal transition, **and before recording the terminal split for an
+issue post-merge observation finds already terminal**, list those states fresh in the same context and
+resolve `tracker.externalDoneState` by the same rules with `terminal` replacing `non-terminal` and
+`started`. A configured value must match the stable state ID, or only when the connection exposes no
+ID the exact accepted token, in this same tracker context; it must be writable and **terminal**, and
+normalized as a done category. A display-name match is never enough. A stale, cross-context,
+non-terminal, read-only, or missing value makes the transition unavailable for that issue and reports
+the current candidates; unlike the started state it never aborts the run, because the merge has
+already happened. **At the observation site the same failure makes that issue's reconciliation
+unavailable rather than its transition**: the issue is terminal and its state was read, but which
+terminal state means done is unestablished, so it is recorded as neither done nor cancelled and no
+delivery write follows. That site also never poses the unset-key proposal below. The proposal exists
+to enable a write an operator is about to authorize, and observation asks nothing and writes nothing;
+minting a mapping there in order to classify an issue nobody is about to transition would file a done
+record on a guess. An unset key therefore resolves nothing at that site, exactly as a stale one does.
+
+**Resolve it again immediately before every transition, not once before the offer.** The offer is
+posed once for a whole set of issues that are then transitioned one after another, so a resolution
+taken before the question is as old as the verdict beside it: a state reclassified out of the done
+category, closed to writes, or moved to another context while the prompt stood open would otherwise
+still be written, and the post-transition re-read would then match the issue against that same stale
+value and report success. One fresh listing per transition, by the rules above; a value that no
+longer resolves makes the transition unavailable for that issue exactly as a stale one does.
+
+When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done
+category. Terminal alone is not that filter: a tracker that spells cancellation as a terminal state
+offers a writable, terminal candidate that means the opposite of done, so a workspace carrying both
+presents two candidates where exactly one qualifies — and presents the canceled one alone wherever
+the completed state happens not to be writable. Exactly one candidate may be proposed with both its
+display name and stable value. A gated run may use that value for this run only after confirmation;
+only `effective-flow setup` persists it. A non-interactive run, zero candidates, or multiple candidates
+makes the transition unavailable and lists the candidates without choosing a favorite. Never infer a
+state from `tracker.externalTool` or from a brand-specific name such as "Done".
 
 A connection that cannot cover one of them makes the flows depending on it unavailable: abort
 before the first write and name the missing capability — the external equivalent of

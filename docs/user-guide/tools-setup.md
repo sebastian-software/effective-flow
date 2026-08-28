@@ -19,10 +19,48 @@ session-rename check or Claude Code butler described below.
 **Typical call:** `/effective-flow setup`
 
 **Input/output:** No input is required beyond the wizard answers. The output is the normalized
-`.gitignore`, the project-setup ADR (default
+`.gitignore`, the project-setup ADR (by default
 `docs/adr/effective-flow-project-setup.md`), and its convention-file marker. When configuration
 already exists, the wizard shows current values and changes them only after explicit
 confirmation. Unknown ADR rows are preserved.
+
+Setup follows an ADR file-naming convention your project has already decided on instead of
+imposing its own. Before writing, it looks for a naming rule stated in `AGENTS.md`, `CLAUDE.md`,
+or a decision register — `DECISIONS.md` at the repository root or at `docs/DECISIONS.md`, or a
+`README.md`/`index.md` directly inside your ADR directory. A rule stated there wins. If nothing
+states one, setup looks at how the ADR files directly inside that directory are already named and
+uses that only when they all agree; an empty directory says nothing either way. Only if neither
+answers does the Effective Flow slug default apply. A project that requires a numeric prefix
+therefore gets `docs/adr/0002-effective-flow-project-setup.md`, and the completion report names
+the applied convention and the file that established it.
+
+If two or more sources state conventions that do not all agree, setup asks which one to use and
+writes nothing until you answer. Answering "Inconclusive" sets all of those declarations aside and
+falls back to how your ADR directory is already named, and then to the Effective Flow default. If
+the question cannot be put to you at all — you skip it, or the run is not interactive — setup takes
+that same "Inconclusive" route rather than jumping to its own default, so a uniformly numbered
+directory does not receive a numberless file behind your back. It reports that it could not ask,
+naming every source that spoke and what each one said.
+
+Two sources can also agree that ADRs carry a number while stating different widths — `NNN-` in one,
+`NNNNN-` in the other. That is not a disagreement about the convention, so setup does not ask; it
+falls back to the width your existing files already use, then to four digits, and reports the
+divergence.
+
+If your project already has a project-setup ADR, setup updates that file where it lies. It is
+never renamed to match the convention and never copied to a second, convention-shaped path; a
+divergence between the existing path and the resolved convention is reported once. That also
+applies to an ADR setup only finds on its final check just before writing. A symlink at
+the intended target path stops the write instead: setup reports the path rather than writing
+through it, whether the target is an existing ADR or a new one.
+
+Setup never writes over a file that is already sitting at the name it resolved. If the convention
+carries numbers it takes the next one and tries again, and stops on a second clash; with a numberless
+convention there is no second name, so it stops and reports the path. This is what protects a
+project-setup ADR whose configuration table was deleted or never finished — setup cannot read it as
+configuration, but it will not overwrite it either. And if several files in your ADR directory could
+each be the project-setup ADR, setup treats that as a question for you rather than as an empty
+project: it lists them and asks which one to update, instead of adding one more.
 
 Express writes no `mergeGate.*` row and no `delivery.mergeMethod` row: a missing line means the
 merge gate's own default, so an unconfigured project gets `completion: ask`, every check required

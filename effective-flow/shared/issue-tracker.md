@@ -250,8 +250,8 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-native sub-issue read/create, comment read/create/update, label create/change, PR review-thread
-read/reply/resolve, PR submitted-review read,
+issue state transition, native sub-issue read/create, comment read/create/update, label
+create/change, PR review-thread read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.

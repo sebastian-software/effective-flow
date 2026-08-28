@@ -594,9 +594,25 @@ first matching step wins:
    marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
    there, but fall through in this order and report the stale marker
    (correction in effective-flow setup).
-2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
-   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
-   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
+   detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
+   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
+   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
+   its body carries one of the canonical configuration envelopes listed under "Table encoding"
+   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
+   what a new file is named. That tolerance widens the scan to a family of names, so **several**
+   files can match inside this one step; "the first matching step wins" ranks the four steps, not
+   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
+   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
+   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
+   stem over a prefixed one. Stated as two independent preferences,
+   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
+   neither would survive both. If more than one match still ties at the top of that ranking, report
+   every matching path and fall through to the next step instead of picking one. Falling through
+   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
+   on a reported several-match result, reporting every matching path so its user resolves the
+   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
+   ADR into that state adds a further one beside the matches already reported.
 3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
    verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
    a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
@@ -645,6 +661,17 @@ language; changing `language.documentation.technical` does not translate an exis
   run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
   code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
   observation grace period has no configuration key.
+- **`tracker.externalDoneState`** → a nullable string containing the external connection's stable
+  **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
+  or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
+  against a fresh list of writable states in the exact configured tracker context before the offered
+  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
+  and display-name-only matches make that transition unavailable instead of guessing, and never
+  abort a run whose merge already succeeded. That transition is not the only reader: the post-merge
+  observation of an issue found already terminal resolves the same value by the same rules, and a
+  value that fails there makes that issue's reconciliation unavailable rather than its transition.
+  Only `effective-flow setup` writes a confirmed
+  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -663,97 +690,6 @@ value cell). Example excerpt (interface sketch, not full content):
 If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
-
-### Merge-gate keys (`mergeGate.*`) and their legacy namespace
-
-effective-flow merge-gate reads the keys below; effective-flow iterate reads the `bots` entries for its
-review-in-flight guard. A missing line means the default, per the encoding rule above.
-
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-
-A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
-splits on `.` only.
-
-**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
-the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
-a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
-migrate, or report as shadowed. `auto` resolves a conflict with the base through
-effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
-once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
-once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
-behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
-commit and no push. That last claim is about the branch: the gate provisions its checkout before it
-reads this key, and cleans it up on the same stop path.
-
-**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
-general rule above says to use a safe default for the run; for every other key in this block the safe
-default and the documented default are the same value, and for this one they are not — an
-unparseable line must never authorize a commit and a push. Report the affected key as that rule
-requires and continue with `off`.
-
-**Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
-`mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
-that the legacy namespace was read and that effective-flow setup migrates it. Precedence is per key: a
-present `mergeGate.<key>` always wins over a present `prReview.<key>`, and the two namespaces are
-never merged at a finer grain than the individual key. Reading is all this fallback does — only
-effective-flow setup writes configuration, and it rewrites a legacy block in place (carry the values
-over, remove the old rows, report a shadowed key). Once every project has run effective-flow setup once,
-the fallback has no remaining reader and is removable rather than load-bearing.
-
-**`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
-publishes **its own review findings** onto a pull request it created (see the encoding rule above),
-while `mergeGate.*` configures the gate that takes an **existing** pull request from open to merged.
-
-### Language configuration and compatibility migration
-
-The supported language keys and their surface mapping live only in the shared "Language
-resolution" fragment. This configuration contract accepts `language.project`,
-`language.source`, `language.documentation.user`, `language.documentation.technical`,
-`language.workflow`, `language.forge`, and `language.git`; every value is `de` or `en`.
-Missing overrides inherit `language.project`, and a missing project language resolves to `en`.
-Invalid values are ignored with a diagnostic and never guessed.
-
-`plan.markerLanguage` is a legacy read/migration key, not part of the current schema. If
-`language.workflow` is absent, effective-flow setup may propose migrating a valid legacy `de`/`en`
-value to `language.workflow`; an existing `language.workflow` always wins. Show explicitly that
-the old marker-only setting becomes the language of the complete workflow artifact. Apply the
-addition and removal only in the confirmed before/after write step. Preserve the legacy key if
-the write is not confirmed, and never emit it in a new configuration.
-
-If neither language keys nor the legacy key exist, effective-flow setup may propose the read-only
-plan-corpus fallback defined by "Language resolution" as `language.workflow`, but only when
-prose, fields, and markers consistently identify one language. Mixed, contradictory, or empty
-plan sets are not migrated. This compatibility path must be reported and confirmed like every
-other config change.
-
-<!-- runtime-state-safety: setup-repair-only:start -->
-
-### One-time migration legacy `config.json` → project setup ADR
-
-The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
-into the project setup ADR is **Git-touching** and runs exclusively in the
-effective-flow setup path. It produces the ADR table from the current config content (encoding
-as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
-`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
-(`git rm --cached`, leave the file content on disk). The exact procedure including
-idempotency marking is in effective-flow setup.
-
-Outside effective-flow setup, **no** migration takes place: The deterministic
-read path creates nothing and touches no Git; on a missing ADR it reads instead a
-still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
-`<RUNTIME_STATE_ROOT>/.firmo/config.json`) and points to effective-flow setup.
-
-<!-- runtime-state-safety: setup-repair-only:end -->
 
 ## Issue-tracker integration (remote mode)
 
@@ -1007,8 +943,8 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-native sub-issue read/create, comment read/create/update, label create/change, PR review-thread
-read/reply/resolve, PR submitted-review read,
+issue state transition, native sub-issue read/create, comment read/create/update, label
+create/change, PR review-thread read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.

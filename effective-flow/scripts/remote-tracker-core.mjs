@@ -21,6 +21,7 @@ const MUTATIONS = new Set([
   'issue-create',
   'issue-sub-issue-create',
   'issue-update-body',
+  'issue-close',
   'issue-comment',
   'issue-comment-update',
   'issue-labels',
@@ -49,6 +50,7 @@ const REMOTE_OPERATIONS = new Set([
   'issue-sub-issues-read',
   'issue-sub-issue-create',
   'issue-update-body',
+  'issue-close',
   'issue-comment',
   'issue-comment-update',
   'issue-labels',
@@ -82,6 +84,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'issue-sub-issues-read': 'issueSubIssuesRead',
   'issue-sub-issue-create': 'issueSubIssueCreate',
   'issue-update-body': 'issueUpdate',
+  'issue-close': 'issueClose',
   'issue-comment': 'issueComment',
   'issue-comment-update': 'issueCommentUpdate',
   'issue-labels': 'issueLabelAdd',
@@ -1450,6 +1453,46 @@ function jsonStdin(payload) {
 
 function issueNumber(input) {
   return requireNumber(input.number ?? input.issue, 'issue number');
+}
+
+// `issue-close` takes an issue number and nothing else: the state, and on GitHub its reason, are
+// literals of the plan builders. A caller-supplied value is refused rather than dropped. `state`
+// is the field that makes this a guard rather than a nicety — it is the wire key on both providers
+// and the one a caller reaches for first, so accepting `state: 'open'` and sending `closed` would
+// not drop a nuance but silently invert the transition into its opposite. A caller-supplied reason
+// is refused for its own reason: this operation only ever transitions an issue that was assessed as
+// completed, and Forgejo states no state reason at all, so the field would carry one legal value on
+// one provider and none on the other.
+//
+// Both levels are inspected. The builders read `input.payload ?? input`, so a field set beside a
+// `payload` object would otherwise never be looked at — harmless for the plan that is built, but
+// this guard is the operation's stated contract and a contract that silently skips half its input
+// is not one.
+const ISSUE_CLOSE_REJECTED_FIELDS = Object.freeze([
+  'state',
+  'reason',
+  'stateReason',
+  'state_reason',
+]);
+
+function assertNoIssueCloseStateOverride(input) {
+  const sources =
+    input.payload === undefined
+      ? [[input, 'payload']]
+      : [
+          [input.payload, 'payload'],
+          [input, 'input'],
+        ];
+  for (const [source, label] of sources) {
+    if (source === null || typeof source !== 'object') continue;
+    for (const field of ISSUE_CLOSE_REJECTED_FIELDS) {
+      if (source[field] !== undefined) {
+        fail('INVALID_PAYLOAD', 'issue-close takes an issue number and no state or reason field', {
+          field: `${label}.${field}`,
+        });
+      }
+    }
+  }
 }
 
 const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
@@ -2822,6 +2865,26 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      // A close is a state change of the issue itself, so it is a `PATCH` of the issue resource
+      // exactly as `issue-update-body` is — not a `POST` to a sub-resource the way
+      // `issue-label-add` is. Both body values are literals rather than payload fields: the only
+      // transition this adapter offers is the one that records a completed issue, and `completed`
+      // is the only state reason that statement has.
+      case 'issue-close':
+        assertNoIssueCloseStateOverride(input);
+        return mutationPlan(
+          'gh',
+          [
+            'api',
+            ...hostArgs,
+            '-X',
+            'PATCH',
+            ghEndpoint(`issues/${issueNumber(input)}`),
+            '--input',
+            '-',
+          ],
+          jsonStdin({ state: 'closed', state_reason: 'completed' }),
+        );
       case 'issue-comment':
         return mutationPlan(
           'gh',
@@ -3213,6 +3276,37 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { expectsJson: false },
       );
+    // The close rides the `tea api` transport, which is what lets its capability derive from a
+    // probe that already runs — but it carries `--include`, and `issue-comment-update` does not.
+    // That divergence is deliberate and is the whole point of the case. `tea api` never inspects
+    // `resp.StatusCode` and exits 0 on every 4xx and 5xx alike (see `teaApiReadPlan` above), so
+    // without the status line a refusal arrives as an ordinary body and a close the forge rejected
+    // would be reported to the operator as a completed transition. The refusals are ordinary rather
+    // than exotic — a token without `write:issue`, a locked or archived issue, a rate limit, and
+    // Gitea's 412 for an issue with open blocking dependencies, which is exactly the population an
+    // issue assessed as complete belongs to. `pr-merge` is the precedent this follows, not
+    // `issue-comment-update`: both are state mutations, and it carries the flag for this reason.
+    //
+    // The body travels on stdin for the reason the merge body does: the dry-run preview publishes
+    // the argv, so an inline `--data '<json>'` would put the request body into that preview. It
+    // carries the state alone — Forgejo states no state reason on an issue, so GitHub's
+    // `completed` has nothing here to map onto.
+    case 'issue-close':
+      assertNoIssueCloseStateOverride(input);
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(`issues/${issueNumber(input)}`),
+          '--method',
+          'PATCH',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({ state: 'closed' }),
+      );
     case 'issue-comment':
       return mutationPlan('tea', [
         'comment',
@@ -3506,6 +3600,14 @@ function parseCommandOutput(result, plan, label) {
 // the header block to **stderr** where `gh --include` writes them to stdout, so that branch would
 // find plain JSON on stdout, take the early return, and hand a 403 body on as data. The last status
 // line wins, so an intermediate redirect never masks the response that actually answered.
+//
+// The body is **not** parsed here, and that ordering is the contract rather than a refactoring
+// convenience: only a 2xx body is data, and only a caller that has read the status knows which it
+// holds. Parsing eagerly made the strict JSON parse decide the outcome before the status was ever
+// inspected, so a 5xx a reverse proxy answered with an HTML error page became a plain
+// `INVALID_PAYLOAD` — losing the `mutationMayHaveSucceeded` flag on exactly the mutations whose
+// documented recovery is a state re-read. A non-JSON body is a diagnostic on that path, never a
+// reason to discard a status the forge did state.
 function readTeaApiResponse(result, label) {
   const headerText = stripAnsiSequences(result?.stderr ?? '');
   const statusLines = [...headerText.matchAll(/^HTTP\/\S+\s+(\d{3})\b/gim)];
@@ -3522,8 +3624,25 @@ function readTeaApiResponse(result, label) {
   return {
     status: Number(statusLines.at(-1)[1]),
     headers,
-    body: parseJsonOutput(result, label),
+    // Strict: a 2xx body that is not JSON is a provider payload nobody can read, and that is an
+    // `INVALID_PAYLOAD` exactly as before. Callers invoke this only after the status admitted the
+    // body as data.
+    readBody: () => parseJsonOutput(result, label),
   };
+}
+
+// The tolerant counterpart, for a status that already decided the outcome. It reports whatever
+// object the body happens to be so `teaApiMessage` can quote the forge's own wording, and reports
+// nothing at all when the body is empty or is not JSON. It never fails: on this path the status is
+// the verdict, and an unparseable diagnostic must not be able to overrule it.
+function teaApiDiagnosticBody(result) {
+  const text = typeof result?.stdout === 'string' ? result.stdout.trim() : '';
+  if (text === '') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function isTeaApiIncludePlan(plan) {
@@ -3536,20 +3655,48 @@ function teaApiMessage(body) {
     : undefined;
 }
 
-// A non-2xx status becomes a structured error rather than data. A 5xx is reported as retryable, a
-// 4xx is not: an auth, path or permission failure repeats identically.
+// The three operations whose documented recovery is "never re-run after
+// `mutationMayHaveSucceeded: true`; re-read the state instead". Every failure path that can end one
+// of them has to agree about which three they are, so the membership lives here rather than in each
+// path: `runChecked` reads it when the CLI itself failed, and `teaApiSuccess` reads it when
+// `tea api` exited 0 and the forge answered 5xx, which on that transport is the same ambiguity
+// wearing a status line. Two copies of the rule are what let a Forgejo `issue-close` take the one
+// path neither of them covered.
+const POSSIBLY_APPLIED_MUTATIONS = new Set(['pr-merge', 'issue-sub-issue-create', 'issue-close']);
+
+function mutationMayHaveApplied(label) {
+  return POSSIBLY_APPLIED_MUTATIONS.has(label);
+}
+
+// A non-2xx status becomes a structured error rather than data. A 4xx is never retryable: an auth,
+// path or permission failure repeats identically. A 5xx is retryable for a read, which observes
+// nothing and changes nothing by being repeated — but for one of the mutations above it is the
+// ambiguous outcome this transport would otherwise hide. `tea api` exits 0 whatever the status, so
+// such a 5xx never reaches `runChecked`'s exit-code tolerance and would be reported as a plain
+// retryable refusal: the forge may have applied the request before it failed to answer, and a
+// caller that reads that as "the forge did not act" retries a write that already landed and skips
+// the re-read the operation documents. It is reported as possibly applied and non-retryable
+// instead, and its message stops claiming a refusal nobody stated.
 function teaApiSuccess(result, label) {
   const response = readTeaApiResponse(result, label);
   if (response.status < 200 || response.status >= 300) {
-    const message = teaApiMessage(response.body);
+    // Read tolerantly, because the status has already decided this. A forge behind a reverse proxy
+    // answers a 502 with that proxy's HTML error page, and a strict parse of it would raise
+    // `INVALID_PAYLOAD` and take the flag below with it.
+    const message = teaApiMessage(teaApiDiagnosticBody(result));
+    const mayHaveApplied = response.status >= 500 && mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',
-      `${label} was refused by the forge`,
-      { status: response.status, ...(message === undefined ? {} : { message }) },
-      response.status >= 500,
+      mayHaveApplied ? `${label} left its outcome unstated` : `${label} was refused by the forge`,
+      {
+        status: response.status,
+        ...(message === undefined ? {} : { message }),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
+      },
+      response.status >= 500 && !mayHaveApplied,
     );
   }
-  return response;
+  return { status: response.status, headers: response.headers, body: response.readBody() };
 }
 
 // `gh pr checks` reports "the checks are still pending" through exit code 8 rather than through its
@@ -3679,11 +3826,20 @@ async function runChecked(runner, plan, label) {
     if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
       return { ...result, status: 0, stdout: '', alreadyExists: true };
     }
-    // A failed merge or parent-aware issue create is not safely retryable: the forge may have
-    // accepted it before the connection dropped, so a second attempt could act on state nobody
-    // verified. The caller has to re-read instead — the same discipline the human-output create
-    // normalizers require when a successful command yields no usable result URL.
-    const irreversible = label === 'pr-merge' || label === 'issue-sub-issue-create';
+    // A failed merge, a failed parent-aware issue create, or a failed issue close is not safely
+    // retryable: the forge may have accepted it before the connection dropped, so a second attempt
+    // could act on state nobody verified. The caller has to re-read instead — the same discipline
+    // the human-output create normalizers require when a successful command yields no usable result
+    // URL. `issue-close` earns its place for the re-read half rather than the retry half: repeating
+    // the PATCH would be harmless, but the flag is the only thing that tells a caller the forge may
+    // already have acted, and a caller that reads its absence as "nothing happened" leaves the
+    // in-progress label on a closed issue and its container entry open. Membership is therefore
+    // decided by the operation's documented recovery — each of these three is documented as "never
+    // re-run after `mutationMayHaveSucceeded: true`; re-read the state instead" — and not by whether
+    // a repeat would duplicate anything. The membership itself lives beside `teaApiSuccess`, which
+    // applies the same three to a 5xx the forge did state: on the `tea api` transport that failure
+    // exits 0 and never reaches this exit-code path at all.
+    const mayHaveApplied = mutationMayHaveApplied(label);
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -3692,9 +3848,9 @@ async function runChecked(runner, plan, label) {
         args: redact(plan.args),
         status: result?.status,
         stderr: redact(result?.stderr ?? ''),
-        ...(irreversible ? { mutationMayHaveSucceeded: true } : {}),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
       },
-      !irreversible,
+      !mayHaveApplied,
     );
   }
   return result;
@@ -3815,6 +3971,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         issueSubIssuesRead: true,
         ...(issueSubIssueCreate === undefined ? {} : { issueSubIssueCreate }),
         issueUpdate: true,
+        issueClose: true,
         issueComment: true,
         issueCommentUpdate: true,
         issueLabelAdd: true,
@@ -3936,6 +4093,13 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       issueSubIssuesRead: false,
       issueSubIssueCreate: false,
       issueUpdate,
+      // The close is a raw-API write on the `tea api` transport the gate reads and the merge
+      // already ride, so it derives from that one probe and adds no `probeTeaHelp` spawn of its
+      // own — the same reasoning `prReviewsRead` and `reviewThreads` below carry. The fit is
+      // exact rather than merely safe: `teaApiTransport` attests `--method`, `--data` and
+      // `--include`, and the close plan uses all three, so the capability and the plan state one
+      // requirement rather than the capability over-gating a plan that needs less.
+      issueClose: teaApiTransport,
       issueComment: comment,
       issueCommentUpdate: commentUpdate,
       issueLabelAdd,
@@ -4071,6 +4235,18 @@ function normalizeIssue(item, repository, metadata = {}) {
     title: item.title ?? '',
     body: item.body ?? item.description ?? '',
     state: String(item.state ?? '').toLowerCase(),
+    // Terminal and done are two facts, and only this field separates them. GitHub states why a
+    // closed issue is closed — `completed` for delivered work, `not_planned` for withdrawn work —
+    // while Forgejo states nothing of the kind, so the field is emitted only where the provider
+    // actually spells one and is **absent** rather than guessed otherwise. A consumer therefore
+    // reads an absence as "this provider states no reason" and never as a cancellation: inferring
+    // one would make every Forgejo issue, and every GitHub issue closed before the field existed,
+    // permanently unreconcilable. The merge gate's post-merge observation phase is the consumer, and it
+    // is what keeps a cancelled issue from having its in-progress label stripped and its container
+    // entry ticked as if the work had shipped.
+    ...(typeof item.state_reason === 'string' && item.state_reason.length > 0
+      ? { stateReason: item.state_reason.toLowerCase() }
+      : {}),
     labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
@@ -4722,8 +4898,14 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
   switch (operation) {
     case 'viewer-read':
       return normalizeViewer(flattened);
+    // Both providers answer this endpoint with the full updated issue, and `issue-close` is the
+    // same resource under a different field, so it shares the branch its sibling mutation already
+    // uses. A consumer confirming the transition then reads one normalized lowercase `state`
+    // instead of knowing that GitHub says `number`/`html_url` where Forgejo says `index`/`url`.
+    // It also fails loudly on a body that is not an issue: `normalizeIssue` requires a number.
     case 'issue-read':
     case 'issue-update-body':
+    case 'issue-close':
       return flattened?.output !== undefined
         ? { ...flattened, repository: repository.slug }
         : normalizeIssue(flattened, repository, metadata);
@@ -5803,7 +5985,10 @@ export async function executeOperation(operation, input = {}, options = {}) {
     if (operation === 'pr-merge' && activeRepository.provider === 'forgejo') {
       const result = await runChecked(runner, plan, operation);
       const response = readTeaApiResponse(result, operation);
-      const message = teaApiMessage(response.body);
+      // Tolerant on every path the status decides, for the reason `teaApiSuccess` states: a proxy's
+      // HTML 502 page must not become an `INVALID_PAYLOAD` that hides a merge the forge may have
+      // applied. The 2xx body below is read strictly, because there it is data.
+      const message = teaApiMessage(teaApiDiagnosticBody(result));
       if (response.status === 409) {
         fail('STALE_WRITE', 'pull-request head moved before the forge accepted the merge', {
           number: prNumber(input),
@@ -5816,14 +6001,29 @@ export async function executeOperation(operation, input = {}, options = {}) {
       // The second, cheaper assertion beside the status: Forgejo answers an accepted merge with 200
       // and an **empty** body, which `parseJsonOutput` turns into `null`, so any returned object is
       // a rejection carrying `{"message":…}` however the status was spelled.
-      if (response.status < 200 || response.status >= 300 || response.body !== null) {
+      //
+      // A 5xx is the one rejection here the server did not choose, and it is exactly as
+      // unobservable as a dropped connection: Forgejo may have merged before it failed to answer.
+      // It therefore carries the possibly-applied flag rather than denying it, and the message
+      // stops calling it a refusal. Every status below 500 stays a deliberate answer — 409 was
+      // already taken above, 405 for a merge style the repository does not allow, 403 for a
+      // permission or branch-protection refusal — and a 2xx carrying a body is the forge stating a
+      // rejection it spelled as success.
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        // Only reached for a 2xx, where the body is data and an unreadable one is genuinely an
+        // `INVALID_PAYLOAD`. Short-circuiting keeps it out of every non-2xx decision above.
+        response.readBody() !== null
+      ) {
+        const mayHaveApplied = response.status >= 500;
         fail(
           'COMMAND_FAILED',
-          'forgejo refused the merge',
+          mayHaveApplied ? 'forgejo left the merge outcome unstated' : 'forgejo refused the merge',
           {
             number: prNumber(input),
             status: response.status,
-            mutationMayHaveSucceeded: false,
+            mutationMayHaveSucceeded: mayHaveApplied,
             ...(message === undefined ? {} : { message }),
           },
           false,

@@ -61,8 +61,19 @@ Diese ADR enthält die versionierte Effective-Flow-Konfiguration dieses Projekts
 | skills.exclude   | (empty) |
 ```
 
-The file name is a kebab-case slug without a number. Effective Flow updates the ADR in place when
-the configuration changes; it does not create a superseding record for each edit.
+By default the file name is a kebab-case slug without a number. Where your project declares its
+own ADR file-naming rule — in `AGENTS.md`, `CLAUDE.md`, or a decision register such as
+`DECISIONS.md` at the repository root or at `docs/DECISIONS.md`, or a `README.md`/`index.md`
+directly inside the ADR directory — setup follows that rule instead, so the file may well be
+`docs/adr/0002-effective-flow-project-setup.md`. Effective Flow updates the ADR in place when the
+configuration changes; it does not create a superseding record for each edit. An ADR that already
+exists is never renamed to match the convention and never duplicated at a second,
+convention-shaped path: it keeps its own path on that naming axis, and the divergence is reported
+once. One path change is not on that axis and still happens: an ADR found under the former
+`firmo-project-setup` slug is written under the current `effective-flow-project-setup` slug, so
+`docs/adr/firmo-project-setup.md` does become `docs/adr/effective-flow-project-setup.md`. Setup also never
+writes over a file already sitting at the name it resolved, and a symlink at that path stops the
+write outright.
 
 The canonical locator line is:
 
@@ -84,7 +95,15 @@ Every config-reading tool uses the following order and stops at the first valid 
    A marker whose target no longer exists is reported and does not block the later fallbacks.
 2. **Default path and ADR scan.** Try `docs/adr/effective-flow-project-setup.md`, then scan the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, or `adr/`) for the project-setup ADR.
-   The former `firmo-project-setup` slug remains readable during this scan.
+   The scan also matches the ADR under a leading numeric prefix, so a project that names its ADRs
+   that way stays resolvable. The former `firmo-project-setup` slug remains readable during this
+   scan. Because that tolerance matches a family of names, several files can match here. They are
+   ranked in one order rather than by two separate preferences: the current slug wins over the
+   former one first, and only between files carrying the same slug does an unprefixed name win over
+   a prefixed one. If more than one match still ties at the top, every matching path is reported and
+   the lookup moves on to the next step rather than guessing. For a tool that only reads, that means
+   built-in defaults for the run; `/effective-flow setup` instead stops and asks which of those ADRs
+   to update, rather than treating the project as having none and writing another.
 3. **Transitional legacy input.** If no ADR exists, read a still-present legacy JSON config
    without writing anything, and direct the user to `/effective-flow setup`. See
    [Migrating a legacy JSON configuration](#migrating-a-legacy-json-configuration).
@@ -175,8 +194,8 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 The seven explicit language rows illustrate every override. In a typical project, only
 `language.project` is needed; omit an override to inherit the project language. Omit optional
 skill override rows when no override is needed. `tracker.externalTool`,
-`tracker.externalToolHint`, and `tracker.externalStartedState` are absent because this example pins
-`tracker.mode: local`; they belong to an external target only (see
+`tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
+absent because this example pins `tracker.mode: local`; they belong to an external target only (see
 [Block `tracker`](#block-tracker)).
 
 ## Block `language`
@@ -445,6 +464,7 @@ selection, CLI requirements, and what an external target sends to a third party.
 | `externalTool`         | Short identifier                 | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist         |
 | `externalToolHint`     | Free text                        | `(unset)` | How to find the connection: MCP server, workspace, key, state names             |
 | `externalStartedState` | Stable ID / exact token / `null` | `(unset)` | Writable, non-terminal native state normalized as started; external target only |
+| `externalDoneState`    | Stable ID / exact token / `null` | `(unset)` | Writable, terminal native state normalized as done; external target only        |
 
 `externalTool` and `externalToolHint` are hints for the run, not an adapter: Effective Flow ships
 no product-specific integration and establishes every capability from the connection it resolves
@@ -465,6 +485,24 @@ interactive implementation run may propose the candidate's display name and stab
 run. The run does not edit configuration. Only `/effective-flow setup`, after repeating discovery
 and showing the before/after table for confirmation, persists the suggestion. Zero or several
 candidates and non-interactive runs fail closed instead of choosing a familiar state name.
+
+`externalDoneState` is the terminal counterpart and follows the same rules with one deliberate
+difference in consequence. It stores the stable ID — or, only where the connection exposes none, the
+exact accepted token — of the writable, **terminal** state normalized as done, resolved fresh in the
+same workspace, team, or project context. A display-name match is never enough. Two readers use it, both in
+[`/effective-flow merge-gate`](./tools-deliver.md) and both after a merge: the terminal transition it
+offers for an issue its completion assessment found complete, and its observation of an issue it
+finds already terminal, which needs the value to tell a completed issue from a withdrawn one. It
+closes nothing by itself, and where it cannot be resolved at the observation site the issue is
+recorded as reconciliation unavailable rather than as done. Because
+that write is optional and follows a merge that already succeeded, a missing, stale, cross-context,
+read-only, non-terminal, or not-done-category value makes that offer unavailable for the issue and
+lists the observed candidates — it never aborts the run, which is where it differs from
+`externalStartedState`. When the key is absent and exactly one writable, terminal candidate is
+normalized as done, a gated run may propose that candidate's display name and stable value for that
+run only; zero or several candidates, and every non-interactive run, leave the transition
+unavailable. As with the started state, only
+`/effective-flow setup` persists a value.
 
 The post-merge issue grace period is fixed at 30 seconds and is deliberately not configurable. It
 is separate from `mergeGate.checkWaitMinutes`, which controls pull-request checks. Use

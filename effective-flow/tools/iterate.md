@@ -164,9 +164,25 @@ first matching step wins:
    marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
    there, but fall through in this order and report the stale marker
    (correction in effective-flow setup).
-2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
-   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
-   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
+   detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
+   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
+   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
+   its body carries one of the canonical configuration envelopes listed under "Table encoding"
+   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
+   what a new file is named. That tolerance widens the scan to a family of names, so **several**
+   files can match inside this one step; "the first matching step wins" ranks the four steps, not
+   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
+   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
+   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
+   stem over a prefixed one. Stated as two independent preferences,
+   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
+   neither would survive both. If more than one match still ties at the top of that ranking, report
+   every matching path and fall through to the next step instead of picking one. Falling through
+   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
+   on a reported several-match result, reporting every matching path so its user resolves the
+   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
+   ADR into that state adds a further one beside the matches already reported.
 3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
    verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
    a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
@@ -215,6 +231,17 @@ language; changing `language.documentation.technical` does not translate an exis
   run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
   code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
   observation grace period has no configuration key.
+- **`tracker.externalDoneState`** → a nullable string containing the external connection's stable
+  **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
+  or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
+  against a fresh list of writable states in the exact configured tracker context before the offered
+  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
+  and display-name-only matches make that transition unavailable instead of guessing, and never
+  abort a run whose merge already succeeded. That transition is not the only reader: the post-merge
+  observation of an issue found already terminal resolves the same value by the same rules, and a
+  value that fails there makes that issue's reconciliation unavailable rather than its transition.
+  Only `effective-flow setup` writes a confirmed
+  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -233,6 +260,15 @@ value cell). Example excerpt (interface sketch, not full content):
 If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
+
+## Merge-gate configuration keys
+
+This fragment carries only the `mergeGate.*` block of the Effective Flow configuration: the keys,
+their values and defaults, and the per-key read fallback to the legacy `prReview.*` namespace. It
+is loaded by the sources that resolve those keys without documenting them themselves. The config
+locator (where the project setup ADR is found) and the table encoding (how a value is written and
+read) are not repeated here; they live in the "Effective Flow configuration (project setup ADR)"
+fragment `config-migration`, which every consumer of this block also loads.
 
 ### Merge-gate keys (`mergeGate.*`) and their legacy namespace
 
@@ -283,47 +319,6 @@ the fallback has no remaining reader and is removable rather than load-bearing.
 **`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
 publishes **its own review findings** onto a pull request it created (see the encoding rule above),
 while `mergeGate.*` configures the gate that takes an **existing** pull request from open to merged.
-
-### Language configuration and compatibility migration
-
-The supported language keys and their surface mapping live only in the shared "Language
-resolution" fragment. This configuration contract accepts `language.project`,
-`language.source`, `language.documentation.user`, `language.documentation.technical`,
-`language.workflow`, `language.forge`, and `language.git`; every value is `de` or `en`.
-Missing overrides inherit `language.project`, and a missing project language resolves to `en`.
-Invalid values are ignored with a diagnostic and never guessed.
-
-`plan.markerLanguage` is a legacy read/migration key, not part of the current schema. If
-`language.workflow` is absent, effective-flow setup may propose migrating a valid legacy `de`/`en`
-value to `language.workflow`; an existing `language.workflow` always wins. Show explicitly that
-the old marker-only setting becomes the language of the complete workflow artifact. Apply the
-addition and removal only in the confirmed before/after write step. Preserve the legacy key if
-the write is not confirmed, and never emit it in a new configuration.
-
-If neither language keys nor the legacy key exist, effective-flow setup may propose the read-only
-plan-corpus fallback defined by "Language resolution" as `language.workflow`, but only when
-prose, fields, and markers consistently identify one language. Mixed, contradictory, or empty
-plan sets are not migrated. This compatibility path must be reported and confirmed like every
-other config change.
-
-<!-- runtime-state-safety: setup-repair-only:start -->
-
-### One-time migration legacy `config.json` → project setup ADR
-
-The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
-into the project setup ADR is **Git-touching** and runs exclusively in the
-effective-flow setup path. It produces the ADR table from the current config content (encoding
-as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
-`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
-(`git rm --cached`, leave the file content on disk). The exact procedure including
-idempotency marking is in effective-flow setup.
-
-Outside effective-flow setup, **no** migration takes place: The deterministic
-read path creates nothing and touches no Git; on a missing ADR it reads instead a
-still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
-`<RUNTIME_STATE_ROOT>/.firmo/config.json`) and points to effective-flow setup.
-
-<!-- runtime-state-safety: setup-repair-only:end -->
 
 ## Recommended skills
 
@@ -1304,9 +1299,16 @@ archiving.
 This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, reading the submitted reviews themselves, replying to a thread, resolving a
-thread, submitting a review with inline comments, posting a PR summary comment, reading the
-pull-request status, waiting for pending checks, and merging the pull request.
+reading review threads, reading the submitted reviews themselves, posting a PR summary comment,
+reading the pull-request status, and waiting for pending checks.
+
+Two sibling building blocks carry write operations this one does not hold. **PR review thread
+writes** (`pr-review-thread-writes`) owns replying to a thread, resolving a thread, and submitting a
+review with inline comments; `effective-flow iterate` and "PR review publication" load it beside this
+one, while `effective-flow merge-gate` performs none of those operations and does not load it. **PR merge
+completion** (`pr-merge-completion`) owns merging the pull request and closing an issue as
+completed; `effective-flow merge-gate` is its only consumer and defers it until its merge phase. The read
+surface, the marker contract, and the history rule stay here.
 
 It serves both directions plus the merge gate. **Inbound**, `effective-flow iterate` reads and answers
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
@@ -1438,42 +1440,6 @@ consumer compares the login and nothing else. Where the capability is absent, or
 consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
 its own as someone else's.
 
-### Reply to a thread
-
-Use the helper's review-thread reply operation. It stamps the marker
-`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
-never write that marker by hand (see idempotency). This matters beyond tidiness: the marker is what a
-later `effective-flow iterate` run reads to recognize a thread it has already answered, so an unstamped
-reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
-second time.
-
-### Resolve a thread
-
-Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
-leave the thread unresolved, and note that manual resolution is needed; do not improvise.
-
-### Submit a review with inline comments
-
-The outbound direction. Use the helper's review-create operation (`review-create`, capability key
-`reviewCreate`): **one** review submission per run, carrying a review body plus an optional array of
-inline comments anchored to `file:line`. The body is mandatory, the comment array is not, so a
-body-only submission is valid. Never approve and never request changes – the submission carries
-comments only.
-
-The helper stamps the marker `<!-- effective-flow-pr-review -->` onto the review body and every
-comment body from its own marker table, idempotently. Never write that marker by hand: idempotency
-and the `effective-flow iterate` separation are exact string matches, so a hand-written variant silently
-defeats both.
-
-On `UNSUPPORTED_CAPABILITY` – Forgejo supports none of review submission (`review-create`), a reply
-into a review thread (`review-thread-reply`), or thread resolution (`review-thread-resolve`); the
-last because the forge serves no resolve route, not because `tea` lacks the subcommand – fall
-back to exactly one structured PR comment carrying the `file:line`
-references in its text, and report the reduced fidelity; do not improvise a provider request. Build
-that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
-`pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
-`effective-flow iterate` reads as its own already-processed work.
-
 ### Post summary comment
 
 Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **at most one**
@@ -1555,28 +1521,16 @@ Never rebuild this wait as a prompt-driven poll loop around the status read: tha
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
 report the still-pending checks and ask the user once instead.
 
-### Merge a pull request
-
-Use the helper's `pr-merge` operation (capability key `pullRequestMerge`). It is a **mutation**, so a
-run without `apply` produces a dry-run plan and merges nothing. It takes the pull-request number,
-the merge method (`delivery.mergeMethod`), and the **expected head SHA**: the merge must apply to
-exactly the commit that was verified, so a head that moved in the meantime fails closed instead of
-merging a state nobody checked. Never re-run the mutation after a structured error carrying
-`mutationMayHaveSucceeded: true` — re-read the pull-request state and report what it shows.
-
-Merging is the most irreversible mutation in this tool set and belongs to `effective-flow merge-gate`. It
-is never used to work around a blocked merge state, and this building block still never approves a
-pull request and never requests changes — not even to unblock a merge.
-
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
-this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
-`review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
-provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
+but they belong to the sibling fragment `pr-review-thread-writes`, which states its own
+degradation; the gate still fails closed on anything it cannot read, improvising no provider
+request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
 and its page count is reported, since a truncated review list would report a verdict that is missing
@@ -1649,6 +1603,53 @@ conflicts resolved inside it: that is the **second** sanctioned repair, likewise
 It changes nothing about the rule above: the result is still one ordinary merge commit pushed
 normally, and a resolution that would need a rebase, a squash, an amend, or a force-push to succeed
 is reported instead of performed.
+
+## PR review thread writes
+
+This shared building block holds the three **write** operations on a pull request's review threads:
+replying to a thread, resolving a thread, and submitting a review with inline comments. The shared
+read surface they are performed against — PR resolution, the fresh thread and comment reads, the
+authenticated identity, the summary comment, the marker contract, the `language.forge` and
+"No AI attribution" rules, and through them the "Remote helper" reference to the helper contract in
+`issue-tracker.md` — stays in the "PR review comment integration" building block, which every
+consumer of this fragment loads as well. `effective-flow merge-gate` loads that read surface too, but
+not this fragment: it writes no reply, resolves no thread, and submits no review.
+
+### Reply to a thread
+
+Use the helper's review-thread reply operation. It stamps the marker
+`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
+never write that marker by hand (see idempotency). This matters beyond tidiness: the marker is what a
+later `effective-flow iterate` run reads to recognize a thread it has already answered, so an unstamped
+reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
+second time.
+
+### Resolve a thread
+
+Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
+leave the thread unresolved, and note that manual resolution is needed; do not improvise.
+
+### Submit a review with inline comments
+
+The outbound direction. Use the helper's review-create operation (`review-create`, capability key
+`reviewCreate`): **one** review submission per run, carrying a review body plus an optional array of
+inline comments anchored to `file:line`. The body is mandatory, the comment array is not, so a
+body-only submission is valid. Never approve and never request changes – the submission carries
+comments only.
+
+The helper stamps the marker `<!-- effective-flow-pr-review -->` onto the review body and every
+comment body from its own marker table, idempotently. Never write that marker by hand: idempotency
+and the `effective-flow iterate` separation are exact string matches, so a hand-written variant silently
+defeats both.
+
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports none of review submission (`review-create`), a reply
+into a review thread (`review-thread-reply`), or thread resolution (`review-thread-resolve`); the
+last because the forge serves no resolve route, not because `tea` lacks the subcommand – fall
+back to exactly one structured PR comment carrying the `file:line`
+references in its text, and report the reduced fidelity; do not improvise a provider request. Build
+that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
+`pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
+`effective-flow iterate` reads as its own already-processed work.
 
 ## Automatic reviewer state
 

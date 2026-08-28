@@ -479,9 +479,10 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 ## Goal
 
 - derive the candidate files and selected states from changes made in the current session
-- require confirmation of the exact ordered selection and an exact ordered commit partition
+- require confirmation of the exact ordered selection as the sole routine approval
+- derive and display an exact ordered commit partition, then continue automatically
 - transfer only those states to a fresh branch/worktree based on the refreshed configured base
-- stage and commit one confirmed coherent group at a time through `effective-flow commit`
+- stage and commit one derived coherent group at a time through `effective-flow commit`
 - call commit-only `effective-flow pr` only after every group is a verified commit
 - preserve the source checkout byte-for-byte and index-for-index
 
@@ -576,7 +577,7 @@ mutation when exact agreement cannot be reached.
 Always show the complete ordered manifest immediately before asking:
 
 Ask the user: **Should exactly this ordered file/state manifest be delivered?**
-- Confirm -- Bind this exact selection and continue to commit grouping
+- Confirm -- Bind this exact selection and continue automatically through grouping and delivery
 - Refine -- Correct the files or selected states before any mutation
 
 Confirmation binds the helper's internal ordered `selection: [{path, state}]` array, where `state`
@@ -586,6 +587,10 @@ behavior, directories, globs, aliases, and untracked symlinks. Preserve a tracke
 blob and mode without dereferencing it. Bind each selected state to source `HEAD`, source blob/mode or
 absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
 file contents.
+
+This manifest confirmation is the sole routine approval. An affirmative answer authorizes automatic
+derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
+subject to every drift check, invariant, verification step, and abort boundary below.
 
 ## Approach
 
@@ -605,19 +610,18 @@ file contents.
    still match the captured evidence through `verify-source {manifest, sourceRoot}`. Drift requires
    a newly displayed and confirmed manifest.
 
-### 2. Confirm coherent commit groups
+### 2. Derive and display coherent commit groups
 
 Derive candidate groups from the current session's task boundaries and substantive diff
-relationships. Present each group in order with its exact selected paths and tentative Conventional
-Commit type/effect. Require explicit confirmation of a complete, non-overlapping partition whose
-ordered union equals the confirmed manifest exactly.
+relationships. Present a non-blocking progress update that lists each group in order with its exact
+selected paths and tentative Conventional Commit type/effect, then continue automatically without a
+commit-group approval or refinement round. Before creating the delivery worktree, validate that the
+groups form a complete, non-overlapping ordered partition: every confirmed path belongs to exactly
+one group and the ordered union equals the confirmed manifest exactly.
 
-Ask the user: **Should the confirmed selection be committed in exactly these groups and this order?**
-- Confirm -- Create the displayed coherent commits in order
-- Refine -- Correct group boundaries, order, or commit effect before staging
-
-Interact when a path's topic, group, order, or effect is unclear. Abort before staging when an exact
-partition cannot be confirmed. Never create a mixed catch-all commit merely to finish the run.
+If a path's topic, group, order, or effect cannot be resolved unambiguously, report the exact
+unresolved path or decision and abort before staging. Never guess, create a mixed catch-all commit,
+silently broaden the manifest, or restore a commit-group question as a fallback.
 
 ### 3. Create the isolated delivery branch
 
@@ -660,9 +664,9 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
 5. Revalidate that the source receipt, source `HEAD`, complete source index, and non-selected source
    paths are unchanged. A mismatch retains the delivery artifacts and blocks commit and PR.
 
-### 5. Commit each confirmed group
+### 5. Commit each derived group
 
-Process groups sequentially in their confirmed order:
+Process groups sequentially in their displayed order:
 
 1. Stage only the current group's literal paths in the verified delivery `EXECUTION_ROOT`. Never use
    a repository-wide staging sweep. Reconcile the complete staged path set with exactly that group.

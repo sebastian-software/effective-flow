@@ -259,8 +259,8 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-native sub-issue read/create, comment read/create/update, label create/change, PR review-thread
-read/reply/resolve, PR submitted-review read,
+issue state transition, native sub-issue read/create, comment read/create/update, label
+create/change, PR review-thread read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
@@ -504,53 +504,6 @@ PR creation may add the PR-link comment and `effective-flow-issue-done`, whose e
 "implementation secured in a PR". It must **not** complete a native sub-item or tick a container
 checklist. The optional container and mechanism travel in the receipt for post-merge reconciliation.
 
-### Post-merge observation
-
-Only after `effective-flow merge-gate` confirms the merge — including an observer-only re-entry for a PR
-that was already merged — resolve the receipt's tracker target and observe every item. PR mechanics
-remain forge-bound; an external receipt selects only the configured external connection and never a
-connection by itself.
-
-Give tracker automation one fixed **30-second** grace period, which is deliberately not configurable:
-
-- forge observation uses the helper's bounded `issue-state-wait` operation;
-- external observation uses a connection-native monitor bounded to 30 seconds when available;
-  otherwise wait once for 30 seconds and perform one fresh read.
-
-Never create a model-driven polling loop. A timeout is an observed open outcome, not a merge error.
-Slower automation is checked by re-entering `effective-flow merge-gate <PR>`.
-
-Do not force-close an issue. For each item report `terminal`, `open`, `timed out`, or `unobservable`
-with the fresh evidence. When it remains open, derive the closure guidance in this order and stop at
-the first observable match:
-
-1. `relationship: refs` — the relationship is intentionally non-closing and needs an explicit
-   terminal tracker transition after acceptance;
-2. open native sub-items or exact unchecked container entries — list the observed remaining items;
-3. `effective-flow-needs-planning` — complete the planning path;
-4. an external issue still in the configured started state — move it to the appropriate terminal
-   state when the tracker acceptance is satisfied;
-5. otherwise state that no remaining implementation work is visible and only the tracker transition
-   to a terminal state remains.
-
-Never invent product work, acceptance criteria, or an unobserved blocker. A post-merge connection
-failure is non-transactional: preserve and report the successful merge, perform no fallback forge
-write, name the connection remediation, and give the observer-only re-entry command.
-
-After a forge issue is freshly observed terminal, remove
-`effective-flow-issue-in-progress` idempotently. Keep it for open, timed-out, and unobservable
-outcomes. For a forge-native container, do not issue a second completion mutation: GitHub derives
-parent progress from the child's own terminal state. Instead, re-read the recorded parent through
-`issue-sub-issues-read`, verify that the receipted child still belongs to it, and report the
-remaining open native children; this read is the idempotent reconciliation. A per-child
-`decompositionKeyError` remains visible as a planning-integrity diagnostic but does not erase the
-provider-verified native relation: lifecycle observation continues by the receipted normalized
-issue identity. For an external native
-container, use only the connection's previously proven completion operation. Complete a checklist
-entry only after the linked issue is observed terminal. An open, timed-out, unobservable, missing,
-or mismatched child leaves the container unchanged and is reported. Repeated observation, native
-parent reads, and eligible completion writes are idempotent.
-
 **Load on demand:** Read `shared/tracker-target.md`, when the resolved tracker target is `external`.
 
 ## Recommended skills
@@ -614,7 +567,7 @@ Findings with the same target PR run sequentially so that new commits are create
 
 ### Phase 3 remote: Rejected finding → decision candidate
 
-For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `effective-product` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. **No** numbered ADR is created. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
+For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `effective-product` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. The ADR file name follows the convention resolved by `project-adr-convention`, not a form this workflow assumes. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
 
 ### Phase 4 remote: Implementation, PR and deferred epic completion
 

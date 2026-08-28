@@ -32,11 +32,16 @@ run, so you find out before implementation instead of at the delivery point.
 
 The Forgejo merge-gate operations do **not** raise that floor. They ride on `tea api`, which landed
 in v0.12.0, and the flag they need on top of it (`--include`) is probed rather than versioned: a
-`tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge` and `viewer-read` as
+`tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read` and
+`issue-close` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
-every run. Without `pr-reviews-read` the merge gate cannot establish a reviewer's changes-requested
+every run. `issue-close` joined that list without adding a probe of its own – it rides the same
+transport – so nothing about the check changed except its length. Without `pr-reviews-read` the merge
+gate cannot establish a reviewer's changes-requested
 verdict, so it reports that and asks once instead of merging – and never merges at all in a
-non-interactive run.
+non-interactive run. Without `issue-close` nothing about the merge changes: only the gate's offered
+post-merge terminal transition becomes unavailable for forge issues, which it reports by name and
+then continues.
 
 ## The external tracker connection could not be resolved
 
@@ -89,10 +94,29 @@ intentional non-closing `Refs` relationship, open sub-items or checklist entries
 `effective-flow-needs-planning` path, a still-started external state, or only the terminal tracker
 transition when no remaining implementation work is visible.
 
+That last case is the one the gate offers to perform for you, so the row says why it did not. Expect
+one of four reasons. The completion verdict was `incomplete` – the report names which criterion by
+its position in the criteria section, and which sub-item, checklist entry, or
+`effective-flow-needs-planning` classification is still unmet. It quotes no criterion text; you read
+the wording at the issue URL.
+The verdict was `undetermined` – most often because the issue states no acceptance criteria under an
+`Acceptance criteria`, `Akzeptanzkriterien`, or `Done criteria` heading, which is never enough for a
+`complete` verdict; add such a section to the issue before the next run, or transition it yourself.
+The offer was posed and you declined, or the run was non-interactive and therefore posed nothing. Or
+the offer was **unavailable**, which is not the same as an incomplete issue: on the forge the
+`issueClose` capability was missing (see the `tea --include` note above), and on an external tracker
+either a native lifecycle capability or `tracker.externalDoneState` could not be resolved. For that
+last one the report lists the observed terminal candidates; check the displayed name and stable value
+and persist it with `/effective-flow setup`, exactly as for the started state. An unresolvable
+`externalDoneState` never fails a run – the merge already succeeded – it only leaves the issue open.
+
 If automation simply needs longer, run `/effective-flow merge-gate <PR>` again. For an already
-merged pull request, this is observer-only: it repeats receipt validation, tracker observation,
-terminal forge-label cleanup, and eligible container completion, but not checks, review work,
-branch writes, or merge.
+merged pull request, this is observer-only: it repeats receipt validation, tracker observation, the
+completion assessment with its offered terminal transition, terminal forge-label cleanup, and
+eligible container completion, but not checks, review work,
+branch writes, or merge. That makes it the way to pose an offer a non-interactive run could only
+recommend. An issue that is already terminal by then is skipped entirely, so the re-entry retries
+only the reconciliation the previous run left open.
 
 If the report says the issue is unobservable, fix the named external connection or read capability
 and use the same re-entry command. If it says the lifecycle receipt is missing, duplicated,
