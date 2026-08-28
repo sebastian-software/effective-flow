@@ -1050,6 +1050,83 @@ test('every lazy-include fragment referenced by a tool has a source in src/share
   }
 });
 
+// A deferred fragment is only correctly deferred while its pointer still says *when* to load it.
+// `LAZY_INCLUDE_RE` in build-lib.mjs makes the `when:` line optional and `assertNoEagerLazyOverlap`
+// is the build's only lazy-side guard, so a pointer that loses its condition still renders (as a
+// bare "Load on demand: Read `shared/<name>.md`"), still builds, and still ships - while the agent
+// is left with no documented moment to reach for it. On the merge gate that is worse than not
+// deferring at all: the rule stops running instead of failing loudly. Slimming merge-gate's
+// always-loaded core from 4744 to ~3150 lines is what created that surface, so the gate's own
+// pointers are pinned here.
+//
+// Each fragment is pinned by the *trigger token* of its decision point, never by the whole
+// sentence, so rewording the clause stays free while dropping the decision point fails.
+test('every merge-gate lazy pointer names the decision point that loads it', () => {
+  const triggers = new Map(
+    [...source('src/tools/merge-gate.md').matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+
+  const pinned = [
+    // Deferred by the context-slimming work:
+    {
+      fragment: 'worktree-integration',
+      trigger: /behind|dirty/i,
+      decision: 'the head branch reading BEHIND or DIRTY',
+    },
+    {
+      fragment: 'language-rules',
+      trigger: /(?=.*language)(?=.*resolv)/i,
+      decision: 'a language having to be resolved',
+    },
+    {
+      fragment: 'issue-post-merge-observation',
+      trigger: /Phase 5\.5|merge/i,
+      decision: 'Phase 5.5 / the confirmed merge',
+    },
+    {
+      fragment: 'pr-merge-completion',
+      trigger: /Phase 5\b|closure/i,
+      decision: 'Phase 5 / the issue-closure offer',
+    },
+    // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
+    // strip a condition that predates it:
+    { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
+    {
+      fragment: 'runtime-state-safety',
+      trigger: /`\.effective-flow\/`/,
+      decision: 'a mutation below `.effective-flow/`',
+    },
+    {
+      fragment: 'effective-flow-dir-migration',
+      trigger: /`\.effective-flow\/`/,
+      decision: 'a mutation below `.effective-flow/`',
+    },
+    { fragment: 'tracker-target', trigger: /`external`/, decision: 'the external tracker target' },
+  ];
+
+  for (const { fragment, trigger, decision } of pinned) {
+    const when = triggers.get(fragment);
+    assert.ok(
+      when !== undefined,
+      `src/tools/merge-gate.md must keep its lazy-include pointer for ${fragment}`,
+    );
+    assert.notEqual(
+      when,
+      '',
+      `the ${fragment} pointer in src/tools/merge-gate.md must carry a non-empty when: clause - ` +
+        `without it the fragment ships with no documented moment to load it`,
+    );
+    assert.match(
+      when,
+      trigger,
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    );
+  }
+});
+
 test('plan-issue runs the full quality baseline before its per-issue deep-review gate', () => {
   const planIssue = source('src/tools/plan-issue.md');
 
