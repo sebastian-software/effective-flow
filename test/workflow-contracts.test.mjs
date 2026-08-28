@@ -5888,6 +5888,40 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
   assert.match(lifecycle, /a criterion is never derived from prose/);
 });
 
+test('the completion verdict recognizes the legacy planning-blocker spelling on the forge', () => {
+  const observation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  const gate = source('src/tools/merge-gate.md');
+
+  // The label convention in `issue-tracker.md` treats `firmo-needs-planning` as permanently
+  // equivalent on every forge read, and the gate does not load that fragment. Without the
+  // equivalence restated here, an issue classified under the old prefix verdicts `complete` and is
+  // closed with its planning unfinished — the blocker is present, the reader simply cannot see it.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /legacy `firmo-needs-planning` spelling/);
+    assert.match(contract, /neither queried nor written on an external target/);
+  }
+  assert.match(
+    lifecycle,
+    /`effective-flow-needs-planning`, on the forge in either spelling — complete the planning path/,
+  );
+
+  // The gate carries no include of the label convention, which is why the rule is stated inline
+  // rather than referenced. If that ever changes, this pin is what says the duplication may go.
+  assert.doesNotMatch(gate, /```include\nissue-tracker\n```/);
+
+  // The other half of the sweep: `effective-flow-issue-in-progress` is the only other Effective
+  // Flow label this phase touches, it is newer than the `firmo-` prefix, and it has no legacy
+  // spelling — so its removal deliberately looks for no second variant.
+  for (const contract of [observation, lifecycle]) {
+    assert.match(contract, /has no legacy spelling/);
+  }
+});
+
 test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
   const observation = prose(
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),

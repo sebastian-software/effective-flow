@@ -1884,7 +1884,15 @@ ends this phase without heuristic tracker access.
    - `complete` requires **all** of: at least one stated acceptance criterion; every stated criterion
      recorded as covered, with the locator of the covering statement in the merged pull request's
      title or body; no open native sub-issue; no unchecked entry in the issue's **own** task list;
-     and no `effective-flow-needs-planning` classification.
+     and no `effective-flow-needs-planning` classification — on the forge including its legacy
+     `firmo-needs-planning` spelling, which the label convention treats as permanently equivalent on
+     every read. This gate does not load that convention, so the equivalence is stated here: an issue
+     classified under the old prefix still carries the planning blocker, and a verdict that reads
+     only the new spelling would call it `complete` and close it with its planning unfinished. That
+     legacy prefix is forge history and is neither queried nor written on an external target, whose
+     classification primitive has never held one. `effective-flow-issue-in-progress`, the only other
+     Effective Flow label this phase reads or writes, is newer than that prefix and has no legacy
+     spelling at all, so step 5's removal needs no second variant.
    - `incomplete` — at least one of those is observably unmet. Name which.
    - `undetermined` — the issue states no acceptance criteria at all, a read failed, one of the
      bounds above was hit, or a stated criterion could not be matched to evidence either way. Name
@@ -2014,7 +2022,8 @@ ends this phase without heuristic tracker access.
    retried blindly, and no fallback write goes to a different target.
 
 5. For every forge issue freshly observed **terminal (done)**, remove
-   `effective-flow-issue-in-progress` idempotently. Keep the marker
+   `effective-flow-issue-in-progress` idempotently. That label is newer than the legacy `firmo-`
+   prefix and has no legacy spelling, so there is no second variant to remove here. Keep the marker
    for every other outcome, `terminal (cancelled)` included: the marker states that an Effective Flow
    run is implementing this issue, and a withdrawal this run neither caused nor assessed is exactly
    the state an operator should still be able to see. Never
@@ -2038,8 +2047,9 @@ ends this phase without heuristic tracker access.
    perform no write.
 7. For every result that is not `terminal (done)` derive the exact closure guidance in the contract's
    evidence order:
-   non-closing `refs`, observed open sub-items/checklist entries, needs-planning classification,
-   still-started external state, or otherwise only the terminal tracker transition. Where an issue is
+   non-closing `refs`, observed open sub-items/checklist entries, a needs-planning classification in
+   either spelling on the forge, still-started external state, or otherwise only the terminal tracker
+   transition. Where an issue is
    still nonterminal because the step-4 offer was declined, could not be posed, was unavailable for
    it, or was confirmed and attempted but did not take effect — the post-transition re-read showed a
    nonterminal state, or a `terminal (cancelled)` one — name that reason instead of re-deriving the

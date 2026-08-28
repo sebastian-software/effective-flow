@@ -143,7 +143,11 @@ Record one verdict per item from a closed vocabulary of three values:
 - `complete` requires **all** of: at least one stated acceptance criterion; every stated criterion
   recorded as covered, with the locator of the covering statement in the merged pull request's title
   or body; no open native sub-item; no unchecked entry in the item's **own** task list; and no
-  `effective-flow-needs-planning` classification.
+  `effective-flow-needs-planning` classification — on the forge including the legacy
+  `firmo-needs-planning` spelling the label convention treats as permanently equivalent on every
+  read, since an item classified under the old prefix still carries the planning blocker and a
+  verdict that reads only the new spelling would call it `complete`. That legacy prefix is forge
+  history and is neither queried nor written on an external target.
 - `incomplete` — at least one of those is observably unmet; name which.
 - `undetermined` — the item states no acceptance criteria at all, a read failed, a bound was hit, or
   a stated criterion could not be matched to evidence either way; name which. An item that states no
@@ -201,7 +205,7 @@ for it, so nobody is sent to finish work somebody has withdrawn. The order is:
 1. `relationship: refs` — the relationship is intentionally non-closing and needs an explicit
    terminal tracker transition after acceptance;
 2. open native sub-items or exact unchecked container entries — list the observed remaining items;
-3. `effective-flow-needs-planning` — complete the planning path;
+3. `effective-flow-needs-planning`, on the forge in either spelling — complete the planning path;
 4. an external issue still in the configured started state — move it to the appropriate terminal
    state when the tracker acceptance is satisfied;
 5. otherwise no remaining implementation work is visible and only the tracker transition to a
@@ -215,7 +219,8 @@ failure is non-transactional: preserve and report the successful merge, perform 
 write, name the connection remediation, and give the observer-only re-entry command.
 
 After a forge issue is freshly observed **terminal (done)**, remove
-`effective-flow-issue-in-progress` idempotently. Keep it for open, timed-out,
+`effective-flow-issue-in-progress` idempotently; that label is newer than the legacy `firmo-` prefix
+and has no legacy spelling, so no second variant is removed here. Keep it for open, timed-out,
 unobservable, and `terminal (cancelled)` outcomes — the marker states that a run is implementing this
 item, and a withdrawal the run neither caused nor assessed is a state its operator should still
 see. For a forge-native container, do not issue a second completion mutation: GitHub derives

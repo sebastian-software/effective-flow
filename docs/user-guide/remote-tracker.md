@@ -676,8 +676,10 @@ asking – whether the merged pull request completes it, and records one of thre
 `incomplete`, or `undetermined`. `complete` requires an issue that states acceptance criteria under
 an `Acceptance criteria`, `Akzeptanzkriterien`, or `Done criteria` heading, every one of them covered
 by a statement in the merged pull request's title or body, no open sub-item, no unchecked entry in
-its own task list, and no `effective-flow-needs-planning` classification. An issue that states no
-criteria at all is `undetermined`, never `complete`. Only `complete` leads anywhere further.
+its own task list, and no `effective-flow-needs-planning` classification – on the forge including
+the legacy `firmo-needs-planning` spelling, which counts as the same blocker on every read. An issue
+that states no criteria at all is `undetermined`, never `complete`. Only `complete` leads anywhere
+further.
 
 Where a `complete` issue also has a proven transition path – a probed `issueClose` on the forge, or
 both native lifecycle capabilities plus a resolved `tracker.externalDoneState` on an external target
