@@ -9655,10 +9655,35 @@ test('the project ADR-naming fragment pins its containment predicate and its sym
     flatContainment,
     near(
       'Containment is then checked physically rather than lexically',
-      "require the resolved target's parent to equal the resolved directory",
+      "the resolved target's parent equals the resolved directory",
       400,
     ),
     'containment must be checked physically, with both paths resolved through their symlinks',
+  );
+  // Parent-equality alone proves only that the two resolve to the same place. A symlinked ADR
+  // directory makes both sides resolve to one external directory, so the equality holds and the
+  // write leaves the repository — and the symlink stop above does not see it, because it tests
+  // the target path rather than the directory it sits in.
+  assert.match(
+    flatContainment,
+    near(
+      "the resolved target's parent equals the resolved directory",
+      'both of them lie beneath the verified repository root',
+      200,
+    ),
+    'containment must additionally require both resolved paths to stay inside the repository root',
+  );
+  // The two failures may not share an outcome: rerouting to the default inside an ADR directory
+  // that itself resolves outside the repository would write the default name into that same
+  // external directory.
+  assert.match(
+    flatContainment,
+    near(
+      'A resolved directory lying outside the repository root',
+      'report the resolved path and write nothing',
+      300,
+    ),
+    'a resolved ADR directory outside the repository root must hard-stop, never reroute to the default',
   );
   assert.match(
     flatContainment,

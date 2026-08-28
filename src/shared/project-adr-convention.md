@@ -151,10 +151,23 @@ existence check reports as absent while a write through it lands outside the rep
 `^(?:\d+-)?[a-z0-9][a-z0-9-]*\.md$`. Containment is then checked **physically** rather than
 lexically, because the name pattern already forbids a separator and a lexical test would be
 trivially satisfied: resolve both the detected ADR directory and the target path through their
-symlinks, and require the resolved target's parent to equal the resolved directory. A name that
-fails either test is unrecognized: the Effective Flow default applies, and nothing outside the
-detected directory is ever written. That default-applies fallback is reachable only where the
-symlink hard stop did not already fire; the hard stop is never softened into a reroute.
+symlinks, then require **two** things of the result — the resolved target's parent equals the
+resolved directory, **and** both of them lie beneath the verified repository root.
+
+**The second requirement is not implied by the first.** Equality proves only that the two resolve to
+the same place, never that the place is inside the repository. Where the ADR **directory itself** is
+a symlink pointing outside it, both sides resolve to that one external directory, the equality holds,
+and the write lands outside the repository. The symlink hard stop above does not catch it either: it
+tests the target path, not the directory it sits in.
+
+**Those two failures have different outcomes, and the difference is what makes the second one safe.**
+A name failing the segment pattern, or a target whose resolved parent is some other directory, is
+unrecognized: the Effective Flow default applies, and nothing outside the detected directory is ever
+written. A resolved directory lying outside the repository root is instead a **hard stop** of the
+same kind as the symlink stop — report the resolved path and write nothing. Rerouting to the default
+would be no protection at all there, because the default name resolves inside that same external
+directory. Both fallbacks are reachable only where the symlink hard stop did not already fire; no
+hard stop is ever softened into a reroute.
 
 ### Collision at write time
 
