@@ -3773,11 +3773,19 @@ async function runChecked(runner, plan, label) {
     if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
       return { ...result, status: 0, stdout: '', alreadyExists: true };
     }
-    // A failed merge or parent-aware issue create is not safely retryable: the forge may have
-    // accepted it before the connection dropped, so a second attempt could act on state nobody
-    // verified. The caller has to re-read instead — the same discipline the human-output create
-    // normalizers require when a successful command yields no usable result URL.
-    const irreversible = label === 'pr-merge' || label === 'issue-sub-issue-create';
+    // A failed merge, a failed parent-aware issue create, or a failed issue close is not safely
+    // retryable: the forge may have accepted it before the connection dropped, so a second attempt
+    // could act on state nobody verified. The caller has to re-read instead — the same discipline
+    // the human-output create normalizers require when a successful command yields no usable result
+    // URL. `issue-close` earns its place for the re-read half rather than the retry half: repeating
+    // the PATCH would be harmless, but the flag is the only thing that tells a caller the forge may
+    // already have acted, and a caller that reads its absence as "nothing happened" leaves the
+    // in-progress label on a closed issue and its container entry open. Membership is therefore
+    // decided by the operation's documented recovery — each of these three is documented as "never
+    // re-run after `mutationMayHaveSucceeded: true`; re-read the state instead" — and not by whether
+    // a repeat would duplicate anything.
+    const mayHaveApplied =
+      label === 'pr-merge' || label === 'issue-sub-issue-create' || label === 'issue-close';
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -3786,9 +3794,9 @@ async function runChecked(runner, plan, label) {
         args: redact(plan.args),
         status: result?.status,
         stderr: redact(result?.stderr ?? ''),
-        ...(irreversible ? { mutationMayHaveSucceeded: true } : {}),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
       },
-      !irreversible,
+      !mayHaveApplied,
     );
   }
   return result;

@@ -419,6 +419,13 @@ leave the issue exactly as the merge left it. If the capability is missing, the 
 one and continues – a merge that already succeeded is never re-opened or rolled back over an
 unavailable optional write.
 
+A close that fails in **transport** – the CLI itself failed, so the request may have been applied and
+its response lost – reports `retryable: false` and `mutationMayHaveSucceeded: true`, exactly as a
+failed `pr-merge` does. Re-read the issue state and report what it shows; never blind-retry the
+close. A refusal the forge actually stated is the other case: the adapter reads the status line, so a
+403 for a missing scope or Gitea's 412 for open blocking dependencies is reported as the rejection it
+is.
+
 `pr-reviews-read` normalizes the two forges' different spellings of the same verdicts onto one
 token set, and folds Gitea's separate dismissal flag into the dismissed token, so a rule written
 against it behaves identically on both. A state the mapping does not know is reported as undecided

@@ -8207,6 +8207,49 @@ test('a Forgejo close the forge refuses is an error, not a reported transition',
   assert.equal(runner.calls.length, 1);
 });
 
+test('a close that fails in transport is reported as possibly applied and never as retryable', async () => {
+  // The refusal above is the case the forge answered: `tea api` printed a status line, so nobody
+  // has to wonder whether the PATCH landed. This is the other case — the CLI itself failed, so the
+  // request may have been applied and its response lost. The flag is the only thing that says so,
+  // and the merge gate's documented recovery reads it: never re-run the close, re-read the issue
+  // state instead. Without it the gate takes the failure for "the forge did not act", keeps
+  // `effective-flow-issue-in-progress` on an issue that is closed, leaves its container entry open,
+  // and derives closure guidance for work that is already done.
+  for (const repository of [githubRepository, forgejoRepository]) {
+    const envelope = await executeOperation(
+      'issue-close',
+      { repository, number: 7 },
+      {
+        runner: fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]),
+        skipProbe: true,
+        apply: true,
+      },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'COMMAND_FAILED');
+    assert.equal(
+      envelope.error.details.mutationMayHaveSucceeded,
+      true,
+      `${repository.provider} must report an ambiguous close as possibly applied`,
+    );
+    assert.equal(envelope.error.retryable, false);
+  }
+
+  // Not a blanket rule for mutations: an ordinary comment stays retryable and carries no flag, so
+  // the discriminator keeps meaning "the caller has to re-read" rather than "a command failed".
+  const comment = await executeOperation(
+    'issue-comment',
+    { repository: githubRepository, number: 7, payload: { body: 'note' } },
+    {
+      runner: fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(comment.error.retryable, true);
+  assert.equal(Object.hasOwn(comment.error.details, 'mutationMayHaveSucceeded'), false);
+});
+
 test('a probe reporting issueClose false refuses the close and performs zero runner calls', async () => {
   // This is also the only observable proof that `issue-close` has a named
   // `CAPABILITY_BY_OPERATION` entry: that map is module-private and not importable, and an
