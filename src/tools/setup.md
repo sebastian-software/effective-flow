@@ -643,7 +643,17 @@ options:
      `project-adr-convention` names under "No rename on the convention axis".
      A resolved `<adr-convention>` that
      its path contradicts is reported as a divergence only (`project-adr-convention`, "No rename
-     on the convention axis"), and the collision procedure does not apply to it. The no-rename rule
+     on the convention axis"), and the collision procedure does not apply to it. That exemption is
+     scoped to the write target, not to the ADR: it holds only where the target **is** the resolved
+     ADR's own path, and the slug switch is the one case in this bullet where it is not. A
+     legacy-slug ADR at `docs/adr/firmo-project-setup.md` is written at
+     `docs/adr/effective-flow-project-setup.md`, a path this run did not resolve and where a
+     different project setup ADR can already sit — one the locator passed over because its
+     configuration envelope is missing, or one it never looked for because a marker pointed
+     straight at the legacy path. Run `project-adr-convention`'s unconditional pre-write existence
+     check on the switched target before writing it, and where a file already sits there, stop and
+     report both paths — the resolved legacy-slug ADR and the occupied current-slug target —
+     rather than overwriting a different project setup ADR. The no-rename rule
      decides only which path is written, not whether writing it is safe: that existing path stays
      subject to `project-adr-convention`'s symlink hard stop and its physical containment check,
      evaluated in that order. A symlink at that path is never a write target — report the path and

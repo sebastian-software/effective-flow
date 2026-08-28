@@ -10190,6 +10190,37 @@ test('the existing-ADR write target scopes its own path to the naming axis', () 
     near('the one path change this bullet permits', 'No rename on the convention axis', 200),
     'the slug exception must be anchored to the fragment section that owns the no-rename rule',
   );
+  // The collision exemption rides on the target being the resolved ADR's own file. The slug switch
+  // is the one place in this bullet where it is not: `docs/adr/firmo-project-setup.md` is written
+  // at `docs/adr/effective-flow-project-setup.md`, and a file already there is a *different*
+  // project setup ADR — exempting it from the existence check overwrites that ADR.
+  assert.match(
+    existing,
+    near(
+      'That exemption is scoped to the write target, not to the ADR',
+      'the slug switch is the one case in this bullet where it is not',
+      240,
+    ),
+    "the collision exemption must be scoped to a target that is the resolved ADR's own path",
+  );
+  assert.match(
+    existing,
+    near(
+      'unconditional pre-write existence check on the switched target',
+      'stop and report both paths',
+      280,
+    ),
+    'a slug-switched target must be checked for an existing file before it is written',
+  );
+  assert.match(
+    existing,
+    near(
+      'the resolved legacy-slug ADR and the occupied current-slug target',
+      'rather than overwriting a different project setup ADR',
+      160,
+    ),
+    'the stop must report both paths instead of overwriting the ADR already at the new target',
+  );
 });
 
 // The no-rename rule decides *which* path is written. Read as deciding *whether* writing is safe,
