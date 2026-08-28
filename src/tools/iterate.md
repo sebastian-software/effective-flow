@@ -105,6 +105,10 @@ pr-review-comments
 ```
 
 ```include
+pr-review-thread-writes
+```
+
+```include
 review-bot-state
 ```
 

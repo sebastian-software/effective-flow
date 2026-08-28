@@ -186,6 +186,11 @@ when: Phase 2 step 1 must provision a checkout because the fresh read reports th
 pr-review-comments
 ```
 
+```lazy-include
+pr-merge-completion
+when: Phase 5 is about to merge the pull request, or Phase 5.5 is about to offer an issue closure
+```
+
 ```include
 review-bot-state
 ```

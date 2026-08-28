@@ -15,6 +15,10 @@ pr-review-comments
 ```
 
 ```include
+pr-review-thread-writes
+```
+
+```include
 security-disclosure-gate
 ```
 
