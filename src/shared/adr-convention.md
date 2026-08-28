@@ -5,7 +5,14 @@ Markdown files that always carry the currently valid state of a decision. There 
 no numbering and no supersede chain; the current file is the truth. This
 building block is the authoritative convention for all ADRs **produced by Effective Flow**.
 
+A convention the project itself declares outranks the Effective Flow default. Resolve the file
+name of every ADR through "Project-declared ADR naming convention" below, and use the form
+described here wherever that resolution finds nothing.
+
 ### Form and location
+
+This is the default form; it applies when the project declares no ADR naming convention of its
+own and the observed evidence is inconclusive.
 
 - **Location:** ADRs live in the project's detected ADR directory, default `docs/adr/`.
 - **File name:** numberless, kebab-case slug — `docs/adr/<slug>.md` (e.g.
@@ -31,7 +38,8 @@ References to ADRs use the **slug or title**, not a number, e.g.
 
 Existing numbered legacy ADRs (`NNNN-*.md`, H1 `# NNNN — Title`) remain **readable and
 resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are not
-touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
+touched. New ADRs are created in the resolved convention, which is the living slug format wherever
+the project declares nothing else and the observed evidence is inconclusive. This mirrors Effective Flow's
 established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
 ### Relationship to the `effective-product` skill (declared convention + fallback)
@@ -63,9 +71,11 @@ via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 ### Minimal fallback structure (only without `effective-product`)
 
 A short core structure so that a calling tool can record a rejected decision as a living
-slug ADR even without the skill — **not** a second full ADR handbook. Location
-and form as under "Form and location"; read the file fresh before writing and update a
-thematically fitting existing ADR in place instead of duplicating:
+slug ADR even without the skill — **not** a second full ADR handbook. Location, title, status,
+and mutability as under "Form and location"; the file name follows the convention resolved by
+"Project-declared ADR naming convention" below rather than the default form being re-imposed
+here; read the file fresh before writing and update a thematically fitting existing ADR in place
+at the path where it was found instead of duplicating:
 
 ```markdown
 # [Title of the decision]
@@ -94,3 +104,7 @@ Not implemented
 Only **durable** decisions are recorded this way; a pure delivery rejection without a
 durable architectural effect stays in the review report or tracker artifact and is not forced into
 an ADR.
+
+```include
+project-adr-convention
+```

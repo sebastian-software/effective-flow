@@ -430,7 +430,7 @@ Determine the active design-decision sources from `review.designDecisionSources`
 
 Start a dedicated sub-agent for each active source **in parallel**. Each sub-agent searches only its own source:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs may exist in the living, slug-named format (`# <title>`, `## Status`) **or** in the numbered old format (`# NNNN — title`); both forms are read, and the search globs stay unchanged. **Exception:** the Effective Flow project-setup ADR (config, known slug `effective-flow-project-setup`, old `firmo-project-setup`, e.g. `docs/adr/effective-flow-project-setup.md`) is configuration, not an architecture rationale, and is **not** collected as a design-decision source.
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs may exist in the living, slug-named format (`# <title>`, `## Status`) **or** in the numbered old format (`# NNNN — title`); both forms are read, and the search globs stay unchanged. **Exception:** the Effective Flow project-setup ADR (config, known slug `effective-flow-project-setup`, old `firmo-project-setup`, each matched after stripping an optional leading `^\d+[-_]` numeric prefix, e.g. `docs/adr/effective-flow-project-setup.md` or `docs/adr/0002-effective-flow-project-setup.md`) is configuration, not an architecture rationale, and is **not** collected as a design-decision source.
 - Plan files — `<plan.dir>/`, `plans/`
 - Convention files — `CLAUDE.md`, `AGENTS.md`, comparable convention files
 - Code comments — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`

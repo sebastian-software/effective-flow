@@ -3102,6 +3102,18 @@ test('findStaleAdrContractClaims ignores numbered legacy compatibility without a
   assert.deepEqual(findStaleAdrContractClaims(markdown), []);
 });
 
+// The guard runs over this file in `node build.mjs`, and the reframing added prose about the
+// living slug model being a default rather than the convention. `STALE_ADR_DESCRIPTOR_RE` is a
+// bare word match, so a sentence phrased around "numbered" or "immutable" near the skill name
+// would break the build rather than the suite.
+test('findStaleAdrContractClaims reports no hit for the reframed adr-convention fragment', () => {
+  const convention = readFileSync(
+    new URL('../src/shared/adr-convention.md', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(findStaleAdrContractClaims(convention), []);
+});
+
 // --- Delivery-branch documentation transforms ---
 
 test('rewriteDeveloperGuideLinks rewrites the root-README form to an absolute URL', () => {
