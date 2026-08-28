@@ -383,9 +383,24 @@ Containment follows. The resolved file name must be a single path segment matchi
 `^(?:\d+-)?[a-z0-9][a-z0-9-]*\.md$`. Containment is then checked **physically** rather than
 lexically, because the name pattern already forbids a separator and a lexical test would be
 trivially satisfied: both the detected ADR directory and the target path are resolved through
-their symlinks, and the resolved target's parent must equal the resolved directory. A name failing
-either test counts as unrecognized, the default applies, and nothing outside the detected directory
-is written — a fallback reachable only where the symlink hard stop did not already fire.
+their symlinks, and the result must then satisfy **two** requirements — the resolved target's
+parent equals the resolved directory, **and** both of them lie beneath the verified repository
+root.
+
+The second requirement is not implied by the first. Equality proves only that the two resolve to
+the same place, never that the place is inside the repository: where the ADR **directory itself**
+is a symlink pointing outside it, both sides resolve to that one external directory, the equality
+holds, and the write lands outside the repository. The symlink hard stop above does not catch that
+either, because it tests the target path and not the directory it sits in.
+
+The two failures therefore have different outcomes, and that difference is what makes the second one
+safe. A name failing the segment pattern, or a target whose resolved parent is some other directory,
+counts as unrecognized: the default applies and nothing outside the detected directory is written. A
+resolved directory lying outside the repository root is instead a **hard stop** of the same kind as
+the symlink stop — the resolved path is reported and nothing is written, because rerouting to the
+default would be no protection at all there: the default name resolves inside that same external
+directory. Both fallbacks are reachable only where the symlink hard stop did not already fire, and
+no hard stop is ever softened into a reroute.
 
 The collision procedure applies to every **new** ADR — one that does not already exist — under
 either resolved convention. An ADR resolved for update is written at its own path and is never a
