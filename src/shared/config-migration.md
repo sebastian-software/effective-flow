@@ -75,10 +75,10 @@ language; changing `language.documentation.technical` does not translate an exis
   **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
   or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
   against a fresh list of writable states in the exact configured tracker context before the offered
-  post-merge terminal transition; stale, non-terminal, read-only, cross-context, and
-  display-name-only matches make that transition unavailable instead of guessing, and never abort a
-  run whose merge already succeeded. Only `{{SKILL:setup}}` writes a confirmed tracker-verified
-  suggestion. The completion assessment behind the offer has no configuration key of its own.
+  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
+  and display-name-only matches make that transition unavailable instead of guessing, and never
+  abort a run whose merge already succeeded. Only `{{SKILL:setup}}` writes a confirmed
+  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):

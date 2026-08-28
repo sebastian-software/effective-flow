@@ -474,11 +474,12 @@ same workspace, team, or project context. A display-name match is never enough. 
 uses it: the terminal transition that [`/effective-flow merge-gate`](./tools-deliver.md) offers after
 a merge, for an issue its completion assessment found complete. It closes nothing by itself. Because
 that write is optional and follows a merge that already succeeded, a missing, stale, cross-context,
-read-only, or non-terminal value makes that offer unavailable for the issue and lists the observed
-candidates — it never aborts the run, which is where it differs from `externalStartedState`. When the
-key is absent and exactly one writable candidate is terminal, a gated run may propose that
-candidate's display name and stable value for that run only; zero or several candidates, and every
-non-interactive run, leave the transition unavailable. As with the started state, only
+read-only, non-terminal, or not-done-category value makes that offer unavailable for the issue and
+lists the observed candidates — it never aborts the run, which is where it differs from
+`externalStartedState`. When the key is absent and exactly one writable, terminal candidate is
+normalized as done, a gated run may propose that candidate's display name and stable value for that
+run only; zero or several candidates, and every non-interactive run, leave the transition
+unavailable. As with the started state, only
 `/effective-flow setup` persists a value.
 
 The post-merge issue grace period is fixed at 30 seconds and is deliberately not configurable. It

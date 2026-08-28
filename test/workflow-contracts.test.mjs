@@ -5910,6 +5910,14 @@ test('external done-state configuration mirrors the started state and never abor
     /Before the offered post-merge terminal transition, list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
   );
   assert.match(tracker, /it must be writable and terminal, and normalized as a done category/);
+  // Discovery has to carry the done category too, not only the terminal flag. A tracker that spells
+  // cancellation as a terminal state has two writable terminal candidates where exactly one
+  // qualifies: filtering on terminal alone loses the transition to ambiguity there, and proposes
+  // the canceled state wherever the completed one happens not to be writable.
+  assert.match(
+    tracker,
+    /When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done category/,
+  );
   assert.match(tracker, /A display-name match is never enough/);
   assert.match(
     tracker,
@@ -5931,6 +5939,17 @@ test('external done-state configuration mirrors the started state and never abor
     /`externalDoneState` \(nullable stable native terminal state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence/,
   );
   assert.match(setup, /`tracker\.externalDoneState` – the terminal counterpart/);
+  // The same rule in the wizard, on both halves: a configured value is validated against the done
+  // category, and an absent one is discovered by it. Without this, setup would happily persist a
+  // canceled state as the value the merge gate transitions completed issues into.
+  assert.match(
+    setup,
+    /Validate an existing value by stable value, context, normalized done category, terminal flag, and writability/,
+  );
+  assert.match(
+    setup,
+    /If it is absent and exactly one writable, terminal candidate is normalized as a done category/,
+  );
   assert.match(
     setup,
     /report that the post-merge transition will be offered as unavailable until setup can verify one/,
@@ -5955,6 +5974,13 @@ test('external done-state configuration mirrors the started state and never abor
   assert.match(
     prose(guide),
     /`externalDoneState` is the terminal counterpart and follows the same rules with one deliberate difference in consequence/,
+  );
+  // The page's own table row and prose already promise "normalized as done", so a discovery
+  // sentence that asked only for a terminal state would document a rule the contract does not have
+  // and contradict the row two paragraphs above it.
+  assert.match(
+    prose(guide),
+    /When the key is absent and exactly one writable, terminal candidate is normalized as done/,
   );
   // Nullable and unset by default, exactly as `externalStartedState`, so it earns no row in the
   // safe-defaults table: a row there would assert a default the key does not have.

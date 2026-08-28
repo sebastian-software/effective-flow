@@ -131,12 +131,15 @@ non-terminal, read-only, or missing value makes the transition unavailable for t
 the current candidates; unlike the started state it never aborts the run, because the merge has
 already happened.
 
-When the key is unset, filter the fresh states to writable, terminal candidates. Exactly one
-candidate may be proposed with both its display name and stable value. A gated run may use that value
-for this run only after confirmation; only `{{SKILL:setup}}` persists it. A non-interactive run, zero
-candidates, or multiple candidates makes the transition unavailable and lists the candidates without
-choosing a favorite. Never infer a state from `tracker.externalTool` or from a brand-specific name
-such as "Done".
+When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done
+category. Terminal alone is not that filter: a tracker that spells cancellation as a terminal state
+offers a writable, terminal candidate that means the opposite of done, so a workspace carrying both
+presents two candidates where exactly one qualifies — and presents the canceled one alone wherever
+the completed state happens not to be writable. Exactly one candidate may be proposed with both its
+display name and stable value. A gated run may use that value for this run only after confirmation;
+only `{{SKILL:setup}}` persists it. A non-interactive run, zero candidates, or multiple candidates
+makes the transition unavailable and lists the candidates without choosing a favorite. Never infer a
+state from `tracker.externalTool` or from a brand-specific name such as "Done".
 
 A connection that cannot cover one of them makes the flows depending on it unavailable: abort
 before the first write and name the missing capability — the external equivalent of

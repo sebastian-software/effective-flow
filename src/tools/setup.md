@@ -353,11 +353,14 @@ For "External tool", ask the connection follow-ups and explain each before askin
 4. `tracker.externalDoneState` – the terminal counterpart, resolved from the same fresh state list in
    the same context. Explain what it is for: only the merge gate's offered post-merge transition
    reads it, and it never closes anything by itself. Validate an existing value by stable value,
-   context, terminal flag, and writability. If it is valid, keep it. If it is absent and exactly one
-   writable candidate is terminal, propose that candidate's display name and stable value. With zero
-   or multiple candidates, an unavailable/ambiguous connection, or a
-   stale/read-only/non-terminal/cross-context configured value, propose no favorite and leave the
-   value `null`; report that the post-merge transition will be offered as unavailable until setup can
+   context, normalized done category, terminal flag, and writability. If it is valid, keep it. If it
+   is absent and exactly one writable, terminal candidate is normalized as a done category, propose
+   that candidate's display name and stable value. Terminal alone is not that filter: a tracker that
+   spells cancellation as a terminal state offers a writable, terminal candidate that means the
+   opposite of done. With zero or multiple candidates, an unavailable/ambiguous connection, or a
+   stale/read-only/non-terminal/cross-context configured value or one whose category is not done,
+   propose no favorite and leave the value
+   `null`; report that the post-merge transition will be offered as unavailable until setup can
    verify one, which leaves the issue open rather than failing a run. Persist the suggestion only in
    the confirmed Step 6 write. Never infer a state from the tool name or a familiar display name.
 
