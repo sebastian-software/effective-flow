@@ -5739,6 +5739,17 @@ test('the confirmed transition revalidates the whole assessment basis before eac
     observation,
     /Where the fresh verdict is no longer `complete`, transition nothing for that issue/,
   );
+  // The already-terminal branch skips the transition, and skipping the record with it is what
+  // leaves the label on a closed issue: steps 5, 6 and 7 read step 2's outcome, so this branch has
+  // to promote its fresh read exactly as the post-transition re-read does.
+  assert.match(
+    observation,
+    /Skipping the transition is not skipping the record: this fresh read replaces that issue's recorded observation outcome from step 2 exactly as the post-transition re-read below does/,
+  );
+  assert.match(
+    observation,
+    /Steps 5, 6 and 7 fire on the recorded outcome and never on how it became terminal/,
+  );
   assert.match(
     observation,
     /Where a revalidation read fails or cannot be performed, treat it exactly as a verdict that is no longer `complete`/,
@@ -5786,6 +5797,13 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   assert.match(
     lifecycle,
     /all re-read per item rather than once for the loop, because this loop writes between its items/,
+  );
+  // The condensed rule carries the already-terminal branch's record promotion for the same reason
+  // the widened one does: a reader who stops at the include would otherwise take "skipped as a
+  // no-op" for skipping the record too, and leave the marker on an item that closed itself.
+  assert.match(
+    lifecycle,
+    /Skipping the transition for an already-terminal item is not skipping the record: that revalidation read replaces the item's recorded observation outcome exactly as the post-transition re-read below does/,
   );
   assert.match(
     lifecycle,

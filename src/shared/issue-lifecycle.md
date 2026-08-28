@@ -151,7 +151,12 @@ direct children, all through the same operations the assessment used, and all re
 rather than once for the loop**, because this loop writes between its items — and re-derive
 the verdict from it. An item that is now terminal is skipped as a no-op; one whose verdict is no
 longer `complete`, and one whose revalidation read fails, is not transitioned at all, keeps its
-in-progress marker and its container entry, and names the dimension that changed. The confirmed set
+in-progress marker and its container entry, and names the dimension that changed. Skipping the
+**transition** for an already-terminal item is not skipping the **record**: that revalidation read
+replaces the item's recorded observation outcome exactly as the post-transition re-read below does,
+because everything after this point acts on the recorded outcome and never on how the item became
+terminal, so leaving the earlier `open` or `timed out` outcome standing would keep the in-progress
+marker on a closed item and leave its container entry open. The confirmed set
 only ever shrinks, and nothing enters it late. Otherwise transition the item and re-read it once.
 What that re-read shows **replaces that item's recorded observation outcome**, which is what lets the
 in-progress removal and the container reconciliation below act on the new state. A transition that

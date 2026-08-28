@@ -1931,9 +1931,16 @@ ends this phase without heuristic tracker access.
    sub-issue read per confirmed issue.
 
    The three outcomes of that revalidation all **fail closed**. Where the issue is **now terminal**,
-   skip it as an already-satisfied no-op — a `timed out` issue is by definition one whose auto-close
-   may still be in flight, and this read is what keeps the run from closing an issue that closed
-   itself. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
+   skip the **transition** as an already-satisfied no-op — a `timed out` issue is by definition one
+   whose auto-close may still be in flight, and this read is what keeps the run from closing an issue
+   that closed itself. Skipping the transition is not skipping the **record**: this fresh read
+   replaces that issue's recorded observation outcome from step 2 exactly as the post-transition
+   re-read below does. Steps 5, 6 and 7 fire on the recorded outcome and never on how it became
+   terminal, so leaving step 2's `open` or `timed out` outcome standing here would keep the
+   `effective-flow-issue-in-progress` label on a closed issue, leave its container entry open, and
+   send step 7 deriving closure guidance for work that is already done — the same stale cleanup this
+   phase exists to prevent, reached through the one branch that observes the terminal state without
+   having caused it. Where the fresh verdict is **no longer `complete`**, transition nothing for that issue,
    name the dimension that changed, keep its `effective-flow-issue-in-progress` label and its
    container entry open, and continue with the remaining confirmed issues. Where a revalidation read
    **fails or cannot be performed**, treat it exactly as a verdict that is no longer `complete`: an
