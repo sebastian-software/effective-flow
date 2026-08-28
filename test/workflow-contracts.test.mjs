@@ -5570,7 +5570,7 @@ test('container completion is deferred until a linked issue is observed terminal
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
 
   const nativeReconciliation = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   assert.match(
     nativeReconciliation,
@@ -5783,7 +5783,7 @@ test('the confirmed transition revalidates the whole assessment basis before eac
 
 test('the condensed lifecycle rule and the Phase-6 summary carry the widened revalidation', () => {
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const summary = prose(
     section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
@@ -5865,7 +5865,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
 
   for (const contract of [observation, lifecycle]) {
@@ -5893,7 +5893,7 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const gate = source('src/tools/merge-gate.md');
 
@@ -5927,7 +5927,7 @@ test('a terminal outcome is split into done and cancelled before anything is rec
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
 
   // Terminal and done are two facts. The in-progress removal and the container tick are the writes
@@ -5977,7 +5977,7 @@ test('the external done state is re-resolved before every transition, not once b
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const target = prose(source('src/shared/tracker-target.md'));
 
@@ -6006,7 +6006,7 @@ test('an already-terminal external issue resolves its done state where the split
     section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
   );
   const lifecycle = prose(
-    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
   const target = prose(source('src/shared/tracker-target.md'));
 
@@ -6140,7 +6140,7 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
   const carveOut =
     /An operator-confirmed transition after a `complete` assessment verdict is not a forced close and is the one authorized path\./;
 
-  const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
+  const lifecycle = prose(source('src/shared/issue-post-merge-observation.md'));
   assert.match(lifecycle, /Do not force-close an issue\./);
   assert.match(lifecycle, carveOut);
   assert.match(

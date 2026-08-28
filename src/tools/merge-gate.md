@@ -111,6 +111,11 @@ tracker-target
 when: a valid lifecycle receipt resolves the tracker target as `external`
 ```
 
+```lazy-include
+issue-post-merge-observation
+when: Phase 5.5 begins because a fresh read proves the merge or observer-only mode
+```
+
 ```include
 skill-discovery
 ```
@@ -1829,10 +1834,11 @@ ends this phase without heuristic tracker access.
    connection through `tracker.externalToolHint`. The receipt never selects a connection. A missing,
    ambiguous, mismatched, or under-capable external connection is an `unobservable` post-merge
    outcome, not a reason to roll back or hide the merge.
-2. Give auto-close automation the fixed 30-second grace period from "Issue implementation
-   lifecycle". Use the bounded `issue-state-wait` helper operation for forge issues. For an external issue use one
-   connection-native monitor with the same bound, or exactly one 30-second wait and one fresh read.
-   Never model-poll. Record each issue as terminal, open, timed out, or unobservable.
+2. Give auto-close automation the fixed 30-second grace period from "Post-merge observation" in the
+   loaded `issue-post-merge-observation` fragment. Use the bounded `issue-state-wait` helper
+   operation for forge issues. For an external issue use one connection-native monitor with the same
+   bound, or exactly one 30-second wait and one fresh read. Never model-poll. Record each issue as
+   terminal, open, timed out, or unobservable.
 
    **A terminal outcome additionally records _how_ the issue became terminal, because terminal is
    not the same as done.** Steps 5 and 6 are the writes that record delivery — they strip the
@@ -1906,7 +1912,7 @@ ends this phase without heuristic tracker access.
    case-insensitively at any heading level; the criteria are that section's top-level list items. An
    issue body with no such heading states no criteria at all. Never pull a criterion out of prose by
    collecting "must" or "shall" sentences: that is derivation rather than observation, and the loaded
-   "Issue implementation lifecycle" already forbids inventing an acceptance criterion.
+   "Post-merge observation" already forbids inventing an acceptance criterion.
 
    Record exactly one verdict per issue, from a closed vocabulary of three values:
 
