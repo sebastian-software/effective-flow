@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.63.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.62.0...effective-flow-v1.63.0) (2026-08-28)
+
+
+### Features
+
+* automate delivery after manifest confirmation ([12f8aa7](https://github.com/sebastian-software/effective-flow/commit/12f8aa7d5f42d728940ee21197923fc88bf53175))
+* follow a project's declared ADR naming convention ([#385](https://github.com/sebastian-software/effective-flow/issues/385)) ([848f3c0](https://github.com/sebastian-software/effective-flow/commit/848f3c0211dc0fd5ecdb3c179934daecdaf982dd))
+* offer a terminal issue transition after the merge gate ([#383](https://github.com/sebastian-software/effective-flow/issues/383)) ([61d8286](https://github.com/sebastian-software/effective-flow/commit/61d8286a0f4220f9c67e64c8cde5753a6c422c37))
+
 ## [1.62.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.61.0...effective-flow-v1.62.0) (2026-08-25)
 
 
