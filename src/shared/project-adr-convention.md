@@ -1,6 +1,10 @@
 ## Project-declared ADR naming convention
 
-The ADR file name is resolved once per run, before any ADR is written. The living slug model
+The naming **convention** — the resolved form, the tier that resolved it, and the zero-pad width
+where that form carries numbers — is resolved once per run, before any ADR is written. Each
+individual ADR **file name** is then resolved under that one convention, with its own number
+allocation, immediately before that ADR's own write, so a run that writes several ADRs allocates a
+separate name for each rather than reusing one. The living slug model
 above is the **default** that applies when this resolution finds nothing. Only the file name is
 resolved here: the ADR **directory** stays owned by the calling tool's own detection, and the H1
 title form always stays `# <Title>` as under "Form and location". That scoping states what _this_

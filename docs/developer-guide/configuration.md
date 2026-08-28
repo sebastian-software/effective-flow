@@ -257,8 +257,11 @@ procedure and idempotency contract remain in
 
 ## ADR naming convention
 
-The ADR **file name** is resolved once per run, before anything is written. The ADR **directory**
-stays owned by the calling tool's own detection, and the H1 title form is unaffected.
+The naming **convention** is resolved once per run, before anything is written. Each individual ADR
+**file name** is then resolved under that convention, with its own number allocation, immediately
+before that ADR's own write — a run that writes several ADRs allocates a separate name for each. The
+ADR **directory** stays owned by the calling tool's own detection, and the H1 title form is
+unaffected.
 
 ### Precedence tiers
 

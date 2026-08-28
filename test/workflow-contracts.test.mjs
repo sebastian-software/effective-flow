@@ -9607,6 +9607,29 @@ test('the project ADR-naming fragment states every required element', () => {
     fragment.includes('Only recognized, non-silent sources speak.'),
     'the fragment must state that only recognized, non-silent sources speak',
   );
+
+  // One run can author several ADRs — `apply-review` Phase 3 writes one fallback ADR per rejected
+  // finding through this fragment — so "resolved once per run" holds of the convention and not of
+  // the file name. Collapsed back into one sentence, the second rejected finding re-derives the
+  // first's number and the third collides twice, which stops the run.
+  assert.match(
+    fragment,
+    near(
+      'is resolved once per run, before any ADR is written',
+      "immediately before that ADR's own write",
+      200,
+    ),
+    'the once-per-run scope must be the convention, with each file name resolved before its own write',
+  );
+  assert.match(
+    fragment,
+    near(
+      'with its own number allocation',
+      'a run that writes several ADRs allocates a separate name for each',
+      200,
+    ),
+    'a run writing several ADRs must allocate a separate name, with its own number, for each',
+  );
 });
 
 // Containment is the security boundary of the whole resolution: every tier above it reads
