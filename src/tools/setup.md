@@ -642,7 +642,14 @@ options:
    - **An existing project setup ADR wins.** If an ADR was resolved either by Step 2 item 2 **or**
      by the fresh re-resolution in item 3 of this step — that fresh one being authoritative even
      where Step 2 found none — that ADR's own path is the write target and it is updated in place
-     — never duplicated at a second, convention-shaped path. A resolved `<adr-convention>` that
+     — never duplicated at a second, convention-shaped path. “Its own path” is the naming axis:
+     the directory and the file's numbering stay as found, while an ADR resolved under the legacy
+     slug `firmo-project-setup` is still written under the current `effective-flow-project-setup`
+     slug in that same directory, so `docs/adr/firmo-project-setup.md` is updated at
+     `docs/adr/effective-flow-project-setup.md` rather than retained at the deprecated name. That
+     slug switch is the one path change this bullet permits, and it is the same exception
+     `project-adr-convention` names under "No rename on the convention axis".
+     A resolved `<adr-convention>` that
      its path contradicts is reported as a divergence only (`project-adr-convention`, "No rename
      on the convention axis"), and the collision procedure does not apply to it. The no-rename rule
      decides only which path is written, not whether writing it is safe: that existing path stays

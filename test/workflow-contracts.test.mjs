@@ -10161,6 +10161,32 @@ test('the setup write step keys both write-target halves on the same two resolut
   );
 });
 
+// "Its own path" and the legacy-slug switch sit on two different axes, and the bullet named only
+// the first. For an ADR at `docs/adr/firmo-project-setup.md` the two resolve to different files, so
+// a branch stating only "its own path" either retains the deprecated name or contradicts the write
+// target the paragraph below it resolves.
+test('the existing-ADR write target scopes its own path to the naming axis', () => {
+  const { existing } = setupWriteTargetBullets(source('src/tools/setup.md'));
+
+  assert.match(
+    existing,
+    near('“Its own path” is the naming axis', 'still written under the current', 240),
+    'the existing-ADR bullet must scope "its own path" to the naming axis rather than to the slug',
+  );
+  assert.match(
+    existing,
+    near('`firmo-project-setup`', '`effective-flow-project-setup`', 160),
+    'the existing-ADR bullet must name the legacy slug and the current slug it is written under',
+  );
+  // The exception belongs to `project-adr-convention`'s no-rename section. Restated here without
+  // that anchor, the two copies are free to drift apart again — which is how they diverged.
+  assert.match(
+    existing,
+    near('the one path change this bullet permits', 'No rename on the convention axis', 200),
+    'the slug exception must be anchored to the fragment section that owns the no-rename rule',
+  );
+});
+
 // The no-rename rule decides *which* path is written. Read as deciding *whether* writing is safe,
 // it would exempt the one path in this step that is taken verbatim from repository content — the
 // existing ADR's own path — from the two guards that keep a write inside the repository.
