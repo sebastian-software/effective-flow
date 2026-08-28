@@ -9,7 +9,7 @@ reading the pull-request status, and waiting for pending checks.
 Two sibling building blocks carry write operations this one does not hold. **PR review thread
 writes** (`pr-review-thread-writes`) owns replying to a thread, resolving a thread, and submitting a
 review with inline comments; `{{SKILL:iterate}}` and "PR review publication" load it beside this
-one, while `{{SKILL:merge-gate}}` performs none of those operations and loads neither. **PR merge
+one, while `{{SKILL:merge-gate}}` performs none of those operations and does not load it. **PR merge
 completion** (`pr-merge-completion`) owns merging the pull request and closing an issue as
 completed; `{{SKILL:merge-gate}}` is its only consumer and defers it until its merge phase. The read
 surface, the marker contract, and the history rule stay here.
