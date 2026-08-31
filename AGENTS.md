@@ -52,6 +52,7 @@ The build resolves these — do not hand-write their expansions:
 | `{{SKILL:X}}`                               | → `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                          |
 | `{{AGENT:X}}`                               | → `` `effective-flow-X` `` in every target; native registered role or portable worker-contract identifier |
 | `{{VERSION}}`                               | release-please manifest version + git short hash                                                          |
+| `{{TOOL_LIST}}`                             | → the `EXPOSED_TOOLS` names in catalog order; router `description` only, exactly once                     |
 | ` ```include ` fence (name on its own line) | inlines `src/shared/<name>.md`                                                                            |
 | ` ```ask ` fence                            | conditional user question (Claude `AskUserQuestion` block / Codex free-text)                              |
 
