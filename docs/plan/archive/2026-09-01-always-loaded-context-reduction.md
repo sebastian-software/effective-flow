@@ -1,6 +1,6 @@
 # Always-loaded context reduction
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Refactoring (`effective-flow refactor`)
 
@@ -318,6 +318,24 @@ incorporated.
 - **Maintainability, Note.** Phase 1's ratchet numbers will read as arbitrary to a later
   contributor unless the comment states that they are measured backlog rather than targets. The
   phase makes that comment part of the work.
+
+## Implementation note
+
+Implemented on 2026-09-01. Two divergences from the plan as written, both found by the Phase 4
+review rather than anticipated here:
+
+- **Phase 2 needed a typography split the plan did not foresee.** The plan treated
+  `language-rules` as deferrable whole, on the grounds that agents receive resolved values from
+  their orchestrator. That holds for the resolver, but the fragment also carries the locale
+  typography rule, which no restatement covered — so an orchestrated agent on a German project
+  would have lost it. The typography block became its own fragment, eagerly included by every
+  agent and by the resolver.
+- **Phase 4 left cross-references dangling.** Eight sibling fragments named sections that moved
+  into `issue-tracker-forge`, and three of those were genuinely unreachable rather than merely
+  misnamed. The plan's affected-files table also missed `review` as a consumer.
+
+Measured result: 4713 always-loaded lines removed across the tools and the router, plus about
+1214 across the agents, with the test count unchanged at 830.
 
 ## Open points
 
