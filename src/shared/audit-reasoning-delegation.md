@@ -16,7 +16,7 @@ fallback.
 
 **This tool owns the orchestration and the output contract (the "what/when"):**
 
-- the `{{FIRMO}}` entry point, the scope gate, and the progress updates,
+- the `{{FLOW}}` entry point, the scope gate, and the progress updates,
 - the agent selection, parallelization, and – in review – the directory-split heuristic,
 - the finding schema (IDs `R-XXXXXXX`, severity, complexity, confidence gate), the
   report/tracker persistence, baselines/behavior invariance, resumability, and delivery.

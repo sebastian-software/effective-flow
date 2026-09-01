@@ -42,16 +42,18 @@ string) and use the Mustache syntax `{{…}}`:
 
 | Placeholder     | Meaning                          | Replacement                                                                          |
 | --------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| `{{FLOW}}`      | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)   |
 | `{{SKILL:X}}`   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
 | `{{AGENT:X}}`   | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
 | `{{VERSION}}`   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
 | `{{TOOL_LIST}}` | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                          |
 
 For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
-`ask` blocks, portable worker-delegation preparation when required, then `{{SKILL:X}}` and
-`{{AGENT:X}}` references. Eager includes, lazy-include pointers, and `{{VERSION}}` are resolved
-before that body enters `renderBody`. This ordering ensures the interaction syntax is
-target-specific before worker and tool references receive their final target syntax.
+`ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
+`{{SKILL:X}}` and `{{AGENT:X}}` references. Eager includes, lazy-include pointers, and
+`{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
+interaction syntax is target-specific before worker and tool references receive their final
+target syntax.
 
 `{{TOOL_LIST}}` is not a body placeholder: it appears only in the router's frontmatter
 `description` and is resolved once from `EXPOSED_TOOLS` before the per-harness description

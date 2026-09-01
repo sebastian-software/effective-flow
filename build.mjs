@@ -45,6 +45,7 @@ import {
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
   findStaleAdrContractClaims,
+  findStaleBrandReferences,
   findForeignHarnessToolParameters,
   findRemoteTrackerRecipeViolations,
   parseProjectRoutingTable,
@@ -91,13 +92,13 @@ const DIST_ROOT = join(ROOT_DIR, 'dist');
 const DIST_TMP = join(ROOT_DIR, 'dist.tmp');
 const DIST_BAK = join(ROOT_DIR, 'dist.bak');
 
-const FIRMO_SKILL_NAME = 'effective-flow';
+const SKILL_NAME = 'effective-flow';
 const DIST_CODEX = join(DIST_TMP, 'codex');
 const DIST_CLAUDE = join(DIST_TMP, 'claude');
 const DIST_PORTABLE = join(DIST_TMP, 'portable');
-const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
-const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
-const PORTABLE_SKILL_DIR = join(DIST_PORTABLE, FIRMO_SKILL_NAME);
+const CODEX_SKILL_DIR = join(DIST_CODEX, SKILL_NAME);
+const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, SKILL_NAME);
+const PORTABLE_SKILL_DIR = join(DIST_PORTABLE, SKILL_NAME);
 // Native agents ship separately from the skill and are registered into each
 // harness's discovery directory by the direct installer. The shared namespace
 // avoids collisions and is also used by portable worker-contract identifiers.
@@ -350,6 +351,46 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
   }
 }
 
+// --- Guard: the retired brand never returns to the sources ---
+// The `firmo` -> `effective-flow` rename left the capitalized brand behind in
+// prose, where nothing marked it as stale. Scan every hand-written source so a
+// capitalized leftover, in prose or in an all-caps build token, fails the build
+// instead of shipping; the lowercase `firmo-` label prefix and `.firmo/` legacy
+// paths are live read compatibility and stay untouched. The two build scripts
+// are in scope alongside `src/`: a guard blind to its own host file is how the
+// first leftover survived here, in a comment naming the product. They stay
+// clean on the marker exemption, not on being skipped. Like the neighbouring
+// literal scans this reports every offender and exits, rather than throwing on
+// the first one, so one build names the full list.
+{
+  const sourceFiles = [join(ROOT_DIR, 'build.mjs'), join(ROOT_DIR, 'build-lib.mjs')];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && /\.(?:md|mjs)$/.test(entry.name)) sourceFiles.push(path);
+    }
+  };
+  visit(SOURCE_DIR);
+
+  const violations = sourceFiles.flatMap((file) =>
+    findStaleBrandReferences(readFileSync(file, 'utf8')).map((hit) => ({
+      file: relative(ROOT_DIR, file),
+      ...hit,
+    })),
+  );
+  if (violations.length > 0) {
+    process.stderr.write(
+      'ERROR: stale brand guard: src/ and the build scripts name the product "Effective Flow"; the frozen backcompat marker "**Firmo project setup:**" is the only permitted occurrence:\n' +
+        violations
+          .map(({ file, line, reference }) => `  ${file}:${line}: ${reference}`)
+          .join('\n') +
+        '\n',
+    );
+    process.exit(1);
+  }
+}
+
 // --- Clean and (re)create the temporary output tree ---
 
 rmSync(DIST_TMP, { recursive: true, force: true });
@@ -476,7 +517,7 @@ try {
     // pure EXPOSED_TOOLS, which is what keeps the retired name unadvertised.
     exposedTools: [...EXPOSED_TOOLS, ...DEPRECATED_TOOL_ALIASES.map((entry) => entry.alias)],
     agentPrefix: AGENT_PREFIX,
-    skillName: FIRMO_SKILL_NAME,
+    skillName: SKILL_NAME,
     knownTools,
     knownAgents,
   };
@@ -827,9 +868,10 @@ try {
   // `effective-web` skill, never copied back into agent/tool sources (#104). A
   // versioned WCAG claim (e.g. "WCAG 2.1 AA") pins an evolving standard that the
   // delegate/route frontend agents must source from effective-web, so it must
-  // not reappear here — otherwise Firmo carries a second, drifting standards copy.
-  // Bare, unversioned mentions (e.g. "wende WCAG an") are allowed. Descriptions
-  // flow into both harness outputs, so scan frontmatter together with the body.
+  // not reappear here — otherwise Effective Flow carries a second, drifting
+  // standards copy. Bare, unversioned mentions (e.g. "wende WCAG an") are
+  // allowed. Descriptions flow into both harness outputs, so scan frontmatter
+  // together with the body.
   const VERSIONED_STANDARD = /\bWCAG\s*\d/i;
   const assertNoVersionedStandard = (text, context) => {
     if (VERSIONED_STANDARD.test(text)) {
@@ -877,7 +919,7 @@ try {
   }
   const routerRaw = normalizeLineEndings(readFileSync(ROUTER_SRC, 'utf8'));
   const routerFm = extractFrontmatter(routerRaw);
-  const routerName = getField(routerFm, 'name') || FIRMO_SKILL_NAME;
+  const routerName = getField(routerFm, 'name') || SKILL_NAME;
   const routerDescRaw = getField(routerFm, 'description');
 
   // Guard: the description's tool list is generated, never hand-written. The
@@ -914,15 +956,15 @@ try {
 
   const skillInvocation = (harness, name) =>
     harness === 'codex'
-      ? `$${FIRMO_SKILL_NAME} ${name}`
+      ? `$${SKILL_NAME} ${name}`
       : harness === 'portable'
-        ? `${FIRMO_SKILL_NAME} ${name}`
-        : `/${FIRMO_SKILL_NAME} ${name}`;
+        ? `${SKILL_NAME} ${name}`
+        : `/${SKILL_NAME} ${name}`;
   const routerDescForHarness = (harness) =>
     harness === 'codex'
-      ? routerDesc.replaceAll(`/${FIRMO_SKILL_NAME}`, `$${FIRMO_SKILL_NAME}`)
+      ? routerDesc.replaceAll(`/${SKILL_NAME}`, `$${SKILL_NAME}`)
       : harness === 'portable'
-        ? routerDesc.replaceAll(`/${FIRMO_SKILL_NAME}`, FIRMO_SKILL_NAME)
+        ? routerDesc.replaceAll(`/${SKILL_NAME}`, SKILL_NAME)
         : routerDesc;
   const workerResolutionForHarness = (harness) => {
     if (harness === 'claude') {
@@ -1247,7 +1289,7 @@ try {
         );
       }
       if (
-        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES|TOOL_LIST|TOOL_CATALOG)(?::[^}]*)?\}\}/.test(
+        /\{\{(?:AGENT|SKILL|FLOW|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES|TOOL_LIST|TOOL_CATALOG)(?::[^}]*)?\}\}/.test(
           content,
         )
       ) {
@@ -1403,15 +1445,15 @@ try {
 const exposedCount = tools.filter((t) => EXPOSED_TOOLS.includes(t.name)).length;
 const internalCount = tools.length - exposedCount;
 
-process.stdout.write(`Built ${FIRMO_SKILL_NAME} skill:\n`);
+process.stdout.write(`Built ${SKILL_NAME} skill:\n`);
 process.stdout.write(
-  `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
+  `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
 );
 process.stdout.write(
-  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
+  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${SKILL_NAME}/, ${agents.length} agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
 );
 process.stdout.write(
-  `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${FIRMO_SKILL_NAME}/\n`,
+  `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${SKILL_NAME}/\n`,
 );
 if (budgetReport.length > 0) {
   const sizes = budgetReport.map((r) => `${r.name} ${r.lines}/${r.limit}`).join(', ');

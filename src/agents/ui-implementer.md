@@ -1,5 +1,5 @@
 ---
-description: "Implements UI components and frontend code (HTML, CSS, JavaScript, TypeScript, React) under Firmo conventions for readability, file splitting, package manager and handoff; accessibility, responsive and design-system depth come from the central effective-web skill."
+description: "Implements UI components and frontend code (HTML, CSS, JavaScript, TypeScript, React) under Effective Flow conventions for readability, file splitting, package manager and handoff; accessibility, responsive and design-system depth come from the central effective-web skill."
 claude:
   model: opus
   effort: xhigh

@@ -142,7 +142,7 @@ central-reasoning-delegation
    Enter revision mode **without asking** only when both hold: the reference was **exact** — a full
    path or a date-slug file name — and the resolved plan carries the canonical open status.
    A legacy number or a title slug is a fuzzy match that can land far from the requirement at hand
-   (`{{FIRMO}} plan caching` resolves to an unrelated `2026-01-01-caching.md`), and a plan that is
+   (`{{FLOW}} plan caching` resolves to an unrelated `2026-01-01-caching.md`), and a plan that is
    not open is the case the fragment would otherwise ask about. In either case, report the resolved
    path with the plan's title and status first, then ask exactly once:
 

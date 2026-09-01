@@ -49,6 +49,7 @@ The build resolves these — do not hand-write their expansions:
 
 | Syntax                                      | Meaning                                                                                                   |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                                  | → the bare skill invocation per harness: `/effective-flow`, `$effective-flow`, or `effective-flow`        |
 | `{{SKILL:X}}`                               | → `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                          |
 | `{{AGENT:X}}`                               | → `` `effective-flow-X` `` in every target; native registered role or portable worker-contract identifier |
 | `{{VERSION}}`                               | release-please manifest version + git short hash                                                          |

@@ -10,7 +10,7 @@ English remain equally valid artifact languages.
 - Translate the recurring domain terms exactly as listed here. If a term is missing, pick the
   clearest idiomatic English equivalent, then add it to this table so later phases stay
   consistent.
-- Leave **placeholders and directives unchanged**: `{{SKILL:X}}`, `{{AGENT:X}}`, `{{FIRMO}}`,
+- Leave **placeholders and directives unchanged**: `{{SKILL:X}}`, `{{AGENT:X}}`, `{{FLOW}}`,
   ` ```include `, ` ```lazy-include `, ` ```ask ` fences and their `when:` keys keep their
   structure; only the human-readable text is translated.
 - Keep proper nouns as-is: **Effective Flow**, **Claude**, **Codex**, tool and agent names
