@@ -7175,6 +7175,35 @@ test('setup keys the `origin/main` proposal on a remote actually named origin', 
   );
 });
 
+test('the Express setup path inherits the repository-aware base-branch row', () => {
+  const setup = source('src/tools/setup.md');
+  const safeDefaults = prose(
+    boundedSlice(setup, '### Safe defaults (the single base)', 'There is deliberately'),
+  );
+
+  // Express builds from this base and jumps straight to Step 6, so it never reaches the Step 4
+  // base-branch question. While the condition was only derivable from that guided-path-only
+  // question, Express persisted `origin/main` in a repository that has no remote named `origin`,
+  // and the next delivery-enabled run aborted on a ref whose local branch part cannot resolve
+  // either. The row itself therefore has to bind every path that adopts the base.
+  assert.match(
+    safeDefaults,
+    near('Every path resolves this row', 'before writing it', 120),
+    'the conditional base-branch row must bind every path, not only the one that asks',
+  );
+  assert.match(
+    safeDefaults,
+    /Express/,
+    'the express path must be named as bound by the condition, since it skips Step 4',
+  );
+  // A bare cross-reference is what left Express out: Step 4 is declared guided-path only, so
+  // pointing at it does not carry the condition into a path that never runs it.
+  assert.doesNotMatch(safeDefaults, /\(see the base-branch question in Step 4\)/);
+
+  // And Express must keep taking this base, or binding the row reaches nothing.
+  assert.match(prose(boundedSlice(setup, '- **Express:**', '- **Guided:**')), /safe-defaults base/);
+});
+
 test('the four plan-carrying tools keep their in-place-without-delivery instruction', () => {
   // After the fence relocation this sentence is the only executing archival
   // trigger in the mode the relocation was decided for. Nothing else pins it.

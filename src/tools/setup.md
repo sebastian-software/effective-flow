@@ -102,7 +102,9 @@ ADR's table-encoding form):
 
 `delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
 holds where a remote named `origin` is configured, while every other repository takes its current
-local branch instead (see the base-branch question in Step 4).
+local branch instead. Every path resolves this row against `git remote` before writing it —
+Express, which never reaches Step 4, as much as the guided path, whose base-branch question
+(Step 4) states the rule in full and presents the resolved value as its proposal.
 
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
