@@ -466,7 +466,15 @@ options:
      line, because `{{SKILL:pr}}` returns its result here and the implementing workflow is the one
      that closes this run. Hand the base over typed rather than as one bare value: pass **both**
      recorded results, the resolved base ref and the resolved local base branch, each named as
-     such, so the delegated run recomputes neither and needs no second fetch.
+     such, so the delegated run recomputes neither and needs no arm name beside them —
+     "Base-branch resolution" states how a pair identifies the arm that produced it. Freshness is
+     the one thing that pair cannot carry: the resolved base ref is a mutable remote-tracking
+     name, and this handoff can reach `{{SKILL:pr}}` long after the resolution that recorded it,
+     so an `origin` that moved in between would leave the delegated empty-range check and the
+     derived title and description reading a base the pull request no longer has. The delegated
+     run therefore brings that ref up to date through "Base-branch resolution" itself, immediately
+     before it inspects the range; that refresh is not a second resolution and recomputes neither
+     result.
      Once `{{SKILL:pr}}` returned the pull request, run "PR review publication" with that pull
      request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified

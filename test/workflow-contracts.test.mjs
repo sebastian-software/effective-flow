@@ -7291,6 +7291,27 @@ test('every delivery site names a recorded base-branch result instead of re-deri
   assert.match(handback, /resolved base ref/);
   assert.match(handback, /resolved local base branch/);
   assert.doesNotMatch(handback, /branch part/);
+  // The pair carries its own arm, so the handoff needs no third field naming it. Stated here
+  // because this is the site that would otherwise grow one.
+  assert.match(handback, /needs no arm name beside them/);
+  // What the pair cannot carry is freshness. The resolved base ref is a mutable remote-tracking
+  // name and this handoff can arrive long after the fetch that produced it, so "recomputes
+  // neither" must not be read as "reads no stale state": the delegated run refreshes the ref
+  // through the one rule that owns the fetch before it inspects the range.
+  assert.match(
+    handback,
+    near(
+      'mutable remote-tracking',
+      'brings that ref up to date through "Base-branch resolution"',
+      500,
+    ),
+    'the delegated run must refresh the recorded base ref before inspecting the range',
+  );
+  assert.match(
+    handback,
+    near('immediately before it inspects the range', 'recomputes neither result', 200),
+    'the refresh must be stated as compatible with recomputing neither result',
+  );
 });
 
 test('pr consumes the recorded base results and derives a diff base on both arms', () => {
@@ -7418,6 +7439,24 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     flow,
     /equal results are the remote-not-configured arm and differing results the remote-configured one/,
     'the derivation must be stated in the direction step 4 applies it',
+  );
+  // The handoff's recorded ref was fetched by the caller, possibly long ago. Used as the diff base
+  // unrefreshed, the empty-range decision and the derived title and description read a base the
+  // pull request no longer has — so this arm owes the same rule-owned refresh the other one does.
+  assert.match(
+    prose(configuredArm),
+    near('complete handoff resolved nothing here', 'back through "Base-branch resolution"', 500),
+    'a handoff-supplied base ref must be refreshed through the one rule that owns the fetch',
+  );
+  assert.match(
+    prose(configuredArm),
+    near('arbitrarily far behind', 'before the range below is inspected', 500),
+    'the refresh must be pinned to the moment before the range is read',
+  );
+  assert.match(
+    prose(configuredArm),
+    near('Refreshing a recorded ref', 'recomputes neither result', 100),
+    'the refresh must be reconciled with the handoff promise it appears to contradict',
   );
   assert.match(flow, /Remote not configured/);
   assert.match(

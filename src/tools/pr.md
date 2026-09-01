@@ -159,7 +159,17 @@ base-branch-resolution
      the same reason. A configured `upstream/main` resolves here while this tool pushes the head
      to `origin` and opens the pull request there with base `main`, so the commit range, the
      empty-range decision and the derived title and description would all describe a repository
-     the pull request is not opened on. The accepted ref is the diff base directly.
+     the pull request is not opened on. The accepted ref is the diff base directly, once it is
+     current in this run. A call that resolved the value here already brought it up to date and
+     owes nothing further. A complete handoff resolved nothing here, and the ref it recorded is a
+     mutable remote-tracking name that can be arbitrarily far behind by the time this step runs:
+     the handoff may arrive long after the resolution that produced it, and `origin` moves in
+     between, so the empty-range decision and the derived title and description would read a base
+     the pull request no longer has. Put that ref back through "Base-branch resolution", which
+     performs the one refresh this arm then owes — exactly as the other arm does with its
+     discovered upstream — before the range below is inspected; a failure there stops the run as
+     that rule requires. Refreshing a recorded ref recomputes neither result: both stay exactly as
+     the handoff stated them.
    - **Remote not configured:** the resolved base ref is local and cannot serve as a diff base
      here. Discover the resolved local base branch's upstream with
      `git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/<branch>` and read
