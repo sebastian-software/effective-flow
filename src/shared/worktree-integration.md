@@ -140,9 +140,19 @@ When delivery or worktree is active:
 
 1. `git` and, for worktree execution, `git worktree` must be available. The current execution
    receipt must pass the fail-closed preflight before continuing.
-2. `delivery.baseBranch` must be resolvable. If it is a remote ref (e.g.
-   `origin/main`), first run `git fetch REMOTE BRANCH`, so the delivery branch
-   starts from the current remote state.
+2. **Resolve `delivery.baseBranch`.** This is the one resolution rule; every later step refers
+   back to it instead of restating it. The value is a remote ref only when the part before its
+   first `/` is a remote that `git remote` lists for this repository; local branch names carry
+   slashes too, so `feature/foo` is that branch unless `feature` is a configured remote.
+   - Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
+     branch starts from the current remote state. If the fetch or the resolution fails (offline,
+     credentials, deleted branch), report and stop — never fall back here: a stale local branch
+     can be far behind and would start delivery from the wrong commit.
+   - Remote not configured: no such ref can exist in this repository. Resolve the value as a
+     local ref instead: as it stands first, and only if that fails the local branch part after
+     the first `/` (`main` for `origin/main`); report that substitution once.
+   - Neither the remote ref nor any local candidate for the value resolves: abort, naming both
+     facts. Never invent or create a base branch.
 3. If the current HEAD has relevant uncommitted changes or local commits that
    are not contained in `delivery.baseBranch`, point that out. A delivery branch freshly
    created from the base branch does not contain this work. Only continue
@@ -265,15 +275,15 @@ a separate worktree is the preferred safe path, provided these
 preconditions are met:
 
 1. `git worktree` is available.
-2. `delivery.baseBranch` is resolvable and, for remote refs, updatable.
+2. `delivery.baseBranch` resolves under the "Shared preconditions" resolution rule.
 3. The workflow knows the exact repository-relative files and final states that belong to its own
    output. A standalone local-change selection uses `{{SKILL:deliver}}`; implementation handback
    uses only the workflow's recorded output set plus any explicitly confirmed additions.
 
 The procedure:
 
-1. Refresh and resolve `delivery.baseBranch`. Create a fresh worktree branch from that exact OID,
-   then immediately issue and verify
+1. Resolve `delivery.baseBranch` by that same rule. Create a fresh worktree branch from that
+   exact OID, then immediately issue and verify
    a separate `effective-flow-created` receipt whose purpose is `partial-diff`. Before setup or
    file transfer, initialize its lifecycle record as `active` with branch policy `retain`; a
    record-creation failure retains both worktree and branch and aborts the partial-diff flow.

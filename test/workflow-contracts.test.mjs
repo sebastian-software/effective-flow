@@ -7009,6 +7009,201 @@ test('the handback delegates archival instead of instructing a git mv', () => {
   }
 });
 
+test('the base-branch resolution rule distinguishes a missing remote from a failed fetch', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+  const preconditions = boundedSlice(delivery, '### Shared preconditions', '### Run-owned');
+  const step = boundedSlice(preconditions, '2. **Resolve `delivery.baseBranch`', '\n3. ');
+
+  // The `git remote` check is what separates "this ref can never exist here" from "this ref
+  // exists but I could not reach it". Without it the two collapse into one failure, and a
+  // zero-config local project — the deployment line with no forge at all — cannot pass its
+  // first delivery preflight even though the local branch resolves perfectly.
+  assert.match(step, /`git remote`/, 'the rule must probe whether the remote is configured');
+
+  // Each case is its own bullet, taken with its continuation lines so a wrapped sentence is not
+  // read as belonging to the next case. Asserting only on the whole step would stay green if a
+  // later edit merged the fallback into the failure branch, which is the dangerous regression:
+  // a stale local branch silently becoming the base after an unreachable remote.
+  const cases = step
+    .split(/(?=\n\s*- )/)
+    .slice(1)
+    .map(prose);
+  assert.equal(cases.length, 3, 'the rule must carry exactly its three outcome bullets');
+  const [configured, missing, unresolvable] = cases;
+
+  assert.match(configured, /Remote configured/);
+  assert.match(configured, /git fetch REMOTE BRANCH/);
+  assert.match(
+    configured,
+    near('fetch or the resolution fails', 'never fall back', 200),
+    'a reachable remote whose fetch or resolution fails must stop instead of falling back',
+  );
+  assert.doesNotMatch(
+    configured,
+    /local branch part/,
+    'the failure branch must not offer the local-branch substitution',
+  );
+
+  assert.match(missing, /Remote not configured/);
+  assert.match(
+    missing,
+    near('no such ref can exist', 'local branch part', 200),
+    'an unconfigured remote must fall back to the local branch part of the value',
+  );
+  assert.match(missing, /report that substitution/, 'the substitution must be visible, not silent');
+  assert.doesNotMatch(missing, /git fetch/, 'there is nothing to fetch from an absent remote');
+
+  assert.match(
+    unresolvable,
+    /Neither the remote ref nor any local candidate for the value resolves/,
+  );
+  assert.match(unresolvable, /abort, naming both facts/);
+  assert.match(unresolvable, /Never\s+invent or create a base branch/);
+});
+
+test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+  const preconditions = boundedSlice(delivery, '### Shared preconditions', '### Run-owned');
+  const step = boundedSlice(preconditions, '2. **Resolve `delivery.baseBranch`', '\n3. ');
+  const [classification, , missing] = step.split(/(?=\n\s*- )/).map(prose);
+
+  // Splitting the value at the first `/` is only correct when the leading part actually names a
+  // remote. Local branch names carry slashes all the time, and `setup` now proposes the current
+  // local branch — so `feature/foo` in a repository without remotes would probe a remote
+  // `feature`, take the fallback `foo` and abort, while the ref it was handed resolves.
+  assert.match(
+    classification,
+    near('part before its first `/`', '`git remote`', 200),
+    'only a leading part that names a configured remote may make the value a remote ref',
+  );
+  assert.match(
+    classification,
+    /`feature\/foo`/,
+    'the slash-containing local branch is the case the split gets wrong',
+  );
+
+  // Order matters here, not just presence: the full value has to be tried before anything is cut
+  // off it, or `feature/foo` resolves to `foo` in every repository that has both branches.
+  ordered(missing, 'as a local ref', 'as it stands first', 'local branch part');
+
+  // The user guide restates the rule for readers who never open the fragment; a mirror that still
+  // describes the unconditional split contradicts the contract it is documenting.
+  assert.match(
+    prose(source('docs/user-guide/worktree-and-delivery.md')),
+    near('part before its first `/`', '`feature/foo`', 200),
+    'the user guide still describes the value as split at the first slash unconditionally',
+  );
+});
+
+test('the partial-diff path defers to the single base-branch resolution rule', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+  const partial = boundedSlice(delivery, '### Partial-diff PR via worktree', '\n### ');
+
+  // The rule is defined once. Both partial-diff sites used to restate the assumption
+  // ("resolvable and, for remote refs, updatable" / "Refresh and resolve"), which is how a
+  // second, quietly diverging copy of the fetch contract came to exist in one fragment.
+  assert.match(partial, /resolves under the "Shared preconditions" resolution rule/);
+  assert.match(partial, /Resolve `delivery\.baseBranch` by that same rule/);
+  assert.doesNotMatch(partial, /updatable/);
+  assert.doesNotMatch(partial, /git fetch/, 'only the shared rule instructs the fetch');
+  assert.equal(
+    (delivery.match(/git fetch/g) ?? []).length,
+    1,
+    'the fetch instruction must appear exactly once in the fragment',
+  );
+});
+
+test('setup proposes a base branch that can actually resolve in a remoteless repository', () => {
+  const setup = source('src/tools/setup.md');
+  const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
+
+  assert.match(question, /Derive the proposal from `git remote` before asking/);
+  assert.match(
+    question,
+    near('no remote at all', 'current local branch', 300),
+    'a repository without a remote must be proposed its own local branch',
+  );
+  // Detection changes the proposal, never the write: the existing interaction stays.
+  assert.match(question, near('stays a proposal', 'free text overrides it', 200));
+  assert.match(question, /confirmed Step 6 write persists it/);
+
+  // The safe-defaults table still documents `origin/main`, so the qualifier has to sit with it
+  // or the table reads as the whole truth for a project that has no remote.
+  const safeDefaults = boundedSlice(
+    setup,
+    '### Safe defaults (the single base)',
+    'There is deliberately',
+  );
+  assert.equal(rowCells(tableRow(safeDefaults, 'delivery.baseBranch'))[1], 'origin/main');
+  assert.match(
+    prose(safeDefaults),
+    near('one row whose safe value depends on the repository', 'current local branch', 300),
+  );
+});
+
+test('setup keys the `origin/main` proposal on a remote actually named origin', () => {
+  const setup = source('src/tools/setup.md');
+  const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
+
+  // "At least one configured remote" is not what makes `origin/main` resolvable. A repository
+  // whose only remote is `upstream` was proposed a ref that can never resolve there, and
+  // confirming the proposal persists a base that every later delivery run stops on.
+  assert.match(
+    question,
+    near('a remote named `origin`', 'propose `origin/main`', 120),
+    'the `origin/main` proposal must key on a remote actually named origin',
+  );
+  assert.match(
+    question,
+    near('without one', 'current local branch', 300),
+    'every other repository must be proposed a base that resolves as it stands',
+  );
+
+  // And the repair must not be to pick some other remote's name: with several remotes none of
+  // them is the obvious base, and a guessed `upstream/main` is as unresolvable as the guess it
+  // replaces. The free text is where a differently named remote ref belongs.
+  assert.match(question, /Never guess a remote ref from a differently named remote/);
+
+  // The safe-defaults note carries the same condition. Left at "a remote is configured" it keeps
+  // documenting exactly the behavior this rule drops.
+  const safeDefaults = prose(
+    boundedSlice(setup, '### Safe defaults (the single base)', 'There is deliberately'),
+  );
+  assert.match(
+    safeDefaults,
+    near('a remote named `origin` is configured', 'current local branch', 300),
+  );
+});
+
+test('the Express setup path inherits the repository-aware base-branch row', () => {
+  const setup = source('src/tools/setup.md');
+  const safeDefaults = prose(
+    boundedSlice(setup, '### Safe defaults (the single base)', 'There is deliberately'),
+  );
+
+  // Express builds from this base and jumps straight to Step 6, so it never reaches the Step 4
+  // base-branch question. While the condition was only derivable from that guided-path-only
+  // question, Express persisted `origin/main` in a repository that has no remote named `origin`,
+  // and the next delivery-enabled run aborted on a ref whose local branch part cannot resolve
+  // either. The row itself therefore has to bind every path that adopts the base.
+  assert.match(
+    safeDefaults,
+    near('Every path resolves this row', 'before writing it', 120),
+    'the conditional base-branch row must bind every path, not only the one that asks',
+  );
+  assert.match(
+    safeDefaults,
+    /Express/,
+    'the express path must be named as bound by the condition, since it skips Step 4',
+  );
+  // A bare cross-reference is what left Express out: Step 4 is declared guided-path only, so
+  // pointing at it does not carry the condition into a path that never runs it.
+  assert.doesNotMatch(safeDefaults, /\(see the base-branch question in Step 4\)/);
+
+  // And Express must keep taking this base, or binding the row reaches nothing.
+  assert.match(prose(boundedSlice(setup, '- **Express:**', '- **Guided:**')), /safe-defaults base/);
+});
+
 test('the four plan-carrying tools keep their in-place-without-delivery instruction', () => {
   // After the fence relocation this sentence is the only executing archival
   // trigger in the mode the relocation was decided for. Nothing else pins it.
