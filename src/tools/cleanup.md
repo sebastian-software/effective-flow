@@ -33,8 +33,9 @@ remove a worktree through a verified Effective Flow lifecycle record.
 - be idempotent; a true no-op has neither a migration action nor a removable worktree, but still
   prints the mandatory worktree report
 
-```include
+```lazy-include
 language-rules
+when: the conversation language is not recognizable and this run's interactive output language must be resolved from the configuration
 ```
 
 ```include
@@ -65,6 +66,11 @@ config-migration
 
 ```include
 issue-tracker
+```
+
+```lazy-include
+issue-tracker-forge
+when: the resolved tracker target is the forge and the Phase 1 inventory is about to list issues carrying `firmo-` labels
 ```
 
 This tool deliberately carries **no** deferred `tracker-target` pointer, unlike every other source
@@ -106,7 +112,7 @@ The skill knows exactly these four classes of migration remnants, each with its 
 | Legacy `.gitignore` entries | outdated ignore lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern `.effective-flow/*` + `!.effective-flow/config.json`             | the single line `.effective-flow/`              |
 | `firmo-` labels             | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` on the issue | the `effective-flow-` variant on the same issue |
 
-`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker.md`). This skill only clears up remaining `firmo-` labels.
+`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker-forge.md`). This skill only clears up remaining `firmo-` labels.
 
 Linked worktrees are a separate cleanup class, not a fifth migration remnant. Existing
 worktrees are never treated as legacy merely because they predate lifecycle recording.
@@ -142,7 +148,7 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
-   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
+   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker-forge.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
 5. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
    `runtimeMigration.directory.version`. When the valid version `1` marker is missing, treat the

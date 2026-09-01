@@ -122,7 +122,7 @@ test('every existing migration marker delegates its owned subtree to the protoco
     /memory-state[\s\S]*runtimeMigration\.directory/,
   );
   assert.match(
-    readSource('shared', 'issue-tracker.md'),
+    readSource('shared', 'issue-tracker-forge.md'),
     /labelMigration\.sf[\s\S]*memory mutation contract/,
   );
   assert.match(

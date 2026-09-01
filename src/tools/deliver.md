@@ -46,6 +46,11 @@ worktree-lifecycle
 ```
 
 ```lazy-include
+session-title
+when: the confirmed delivery subject is known and whether a session title is due must be decided
+```
+
+```lazy-include
 session-rename
 when: the confirmed delivery subject is known and a session title is about to be applied or emitted
 ```

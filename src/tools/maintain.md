@@ -19,8 +19,9 @@ Sharp scope boundary – `maintain` is deliberately lean:
 - **Not in scope:** general refactoring or dead code (→ `{{SKILL:refactor}}`), bugfixes unrelated to dependencies (→ `{{SKILL:fix}}`), pure formatting/config upkeep (→ `{{AGENT:code-validator}}`), new functionality (→ `{{SKILL:build}}`).
 - **Not a scheduler:** automatic, time-triggered bumping is handled by tools like Renovate or Dependabot. `maintain` is the interactive "clean up now" run.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -39,6 +40,11 @@ when: any wisdom, report, memory, runtime migration, or worktree mutation is imm
 ```lazy-include
 effective-flow-dir-migration
 when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include
@@ -93,8 +99,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: the delivery/worktree mode is determined (Phase 1, step 2)
 ```
 
 This workflow keeps no plan file — its basis is the dependency and security surface, not a plan —

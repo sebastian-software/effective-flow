@@ -11,8 +11,9 @@ You are the orchestrator for the refactoring workflow.
 
 Code is restructured without changing existing behavior, with before/after validation as a safety net.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -36,6 +37,11 @@ when: any wisdom, report, memory, backlink, runtime migration, or worktree mutat
 ```lazy-include
 effective-flow-dir-migration
 when: any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include
@@ -86,8 +92,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: the delivery/worktree mode is determined (Phase 2, first step)
 ```
 
 ## Wisdom Accumulation

@@ -14,8 +14,9 @@ by one, deepens the existing sections, marks durable decisions as ADR candidates
 first planning steps as ordered work packages with a ready-to-paste handoff. Everything happens in
 that one file.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -36,6 +37,11 @@ when: an internal sub-agent's result is returned
 ```lazy-include
 concept-contract
 when: a concept artifact's directory, file name, status, or sections are resolved or written
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include

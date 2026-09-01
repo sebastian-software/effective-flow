@@ -15,8 +15,13 @@ codex:
 
 You implement documentation in code or CLI help without changing product behavior.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include

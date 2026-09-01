@@ -361,7 +361,7 @@ test('the completion action and the pr tool root their forge work in the runtime
 });
 
 test('the remote helper contract documents the working directory it runs in', () => {
-  const issueTracker = readShared('issue-tracker');
+  const issueTracker = readShared('issue-tracker-forge');
   assert.match(
     issueTracker,
     /Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`/,

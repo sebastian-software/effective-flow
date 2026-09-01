@@ -284,15 +284,21 @@ The build aborts with an error message if any of these guards is violated:
   side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
-- **Context-budget guard (#99):** The always-loaded core of the largest tools – the built tool
-  file without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
-  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**. The build prints each
+- **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
+  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
+  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**; every other
+  `src/tools/*.md` carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
-  own** limit, naming the tool, its size and that limit. `merge-gate` differs because it is an
+  own** limit, naming the tool, its size and that limit. That printed size is the number to
+  measure a new entry against — the guard counts `split('\n').length`, one line more than
+  `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
   orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Its 3250 is a ratchet against renewed growth rather than
-  a target – it sits just above the measured size, so the number falls as the gate is trimmed
-  and never becomes room to fill.
+  the size of an implementation tool. Every number other than the six above is a measured
+  backlog rather than a target – it records what a tool costs today with its mode-gated
+  fragments still inlined, so each later deferral lowers the entries it touches and a large
+  number reads as work outstanding, never as room to fill. The map and the built tool set are
+  reconciled two-sidedly: a tool with no entry fails the build, and so does an entry naming no
+  tool, so a newly added tool cannot ship unmeasured.
 - **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
   one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
   The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
@@ -337,8 +343,13 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
 2. To expose a tool via `/effective-flow`, add the name to exactly one group of `TOOL_GROUPS` in
    `build.mjs` (the array/group order determines the catalog order in the router) and add a
    strictly quoted `catalogHint` frontmatter field.
-3. Run `node build.mjs`. The guards described above cover missing sources, missing include
-   targets, unsupported Codex sandbox modes, and missing or duplicate `TOOL_GROUPS` entries.
+3. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs` — its built line count plus up to
+   ten lines of headroom, with the line count read off the `Always-loaded core (lines/budget)`
+   report `node build.mjs` prints rather than from `wc -l`. Every `src/tools/*.md` is measured,
+   internal ones included.
+4. Run `node build.mjs`. The guards described above cover missing sources, missing include
+   targets, unsupported Codex sandbox modes, missing or duplicate `TOOL_GROUPS` entries, and a
+   tool with no budget entry.
 
 ## Runtime scripts
 
@@ -384,22 +395,31 @@ and directive syntax").
   default this fragment corrects skip the pointer's own trigger, so the mandate must be present
   before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
   narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
-  decision point at which a pointer could sit.
+  decision point at which a pointer could sit. `typography-rules` is eager in all sixteen agents
+  for a third reason: it states how a resolved `de`/`en` value is rendered, not how it is resolved,
+  so deferring it behind `language-rules` would hide it from exactly the orchestrated agents that
+  are handed a value and never resolve one. The fragment is split out of `language-rules` — which
+  still embeds it, so every consumer of the resolver keeps the rule — precisely so the locale rule
+  travels with the writer rather than with the resolver.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
-  `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
+  `worktree-integration`, `issue-tracker`, `issue-tracker-forge`, `review-report-backlinks`,
   `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
   trigger (`when:`) sits at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
-  fragment. The last two names are deferred **halves** of a split: `issue-post-merge-observation`
-  was separated from `issue-lifecycle` and `pr-merge-completion` from `pr-review-comments`, and
-  both remaining halves stay eager because the gate reads them on every run. Cutting a fragment
+  fragment. Three of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`, and
+  `issue-tracker-forge` from `issue-tracker`; the remaining halves stay eager because their
+  consumers read them on every run. Cutting a fragment
   along the seam between an always-read part and a one-decision-point part is what lets the second
-  half qualify for deferral at all.
+  half qualify for deferral at all. `issue-tracker-forge` is also the live proof that a fragment
+  may be eager in one file and lazy in another: `apply-issues`, `plan-issue` and
+  `apply-review-remote` inline it, because they resolve a tracker target on every run, while
+  `apply` and `cleanup` defer it behind their own first forge read.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
@@ -446,15 +466,31 @@ Portable tool references use the harness-neutral notation `effective-flow <tool>
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
 so both managers install the same bytes instead of selecting by traversal order.
 
-**Context budget.** The always-loaded core of the largest tools is measured and enforced during
-the build (see "Guards"), each against its own budget; the build prints the sizes as a report.
-The five implementation tools share **700 lines** and currently measure `build` 536, `fix` 432,
-`docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the tightest
-since the eager `delegation-mandate` include was added, to `fix`'s 268 lines. `merge-gate` is
-budgeted separately at **3250** and measures 3160: an orchestration gate whose phases, delegation
-contracts and provider rules do not compress to the size of an implementation tool, so it is held
-to a number that ratchets its own history down rather than to the shared 700. The rest is loaded
-only when the mode is reached.
+**Context budget.** The always-loaded core of every tool is measured and enforced during the
+build (see "Guards"), each against its own budget; the build prints the sizes as a report, in map
+order, which runs largest **measured** size first — not largest limit, so `plan`'s 700 sitting
+between two 6xx limits is the order working rather than a sort violation. The order is a reading
+aid and is deliberately unenforced: asserting it would turn a successful deferral, which is the
+work the map exists to track, into a build failure until the map is re-sorted.
+The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
+434, `docs` 570, `review` 692, and `plan` 624 — headroom ranges from `review`'s 8 lines, the
+tightest since the eager `delegation-mandate` include was added, to `fix`'s 266 lines.
+`merge-gate` is budgeted separately at **3250** and measures 3176: an orchestration gate whose
+phases, delegation contracts and provider rules do not compress to the size of an implementation
+tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
+The rest is loaded only when the mode is reached.
+
+Every remaining tool carries its **measured size plus at most ten lines**, which is a backlog
+rather than a target: those tools still inline the mode-gated fragments that the five
+implementation tools already defer, and each conversion of an eager include to a `lazy-include`
+lowers the entries it touches. The headroom is a flat line count rather than a percentage on
+purpose — a percentage would give the largest tools the most room, which is where unwatched growth
+costs the most — and ten lines are wide enough for the short pointer a deferral leaves behind. Ten
+is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
+tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
+so `apply-issues` at 1513/1516 has three lines of room and not ten. Read a specific entry's
+headroom off the build report. `iterate` at 1656 and `apply-issues` at 1513 are the two largest
+entries of that kind today.
 
 ## Optional upstream ownership audit
 

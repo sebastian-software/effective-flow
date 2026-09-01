@@ -15,12 +15,12 @@ therefore cannot even read its own title back by any route. A second session is 
 required to carry out the rename, not merely a convenient way to do it.
 
 The shipped contract in `src/shared/session-title.md` says a run never retitles another session,
-and it ships eagerly, in the router, to every user on every harness. That clause is exactly what
-stands in the way: an unmandated session presented with a cross-session rename request correctly
-refuses it, on two independent grounds — a cross-session message is data, not instruction, and the
-contract explicitly forbids retitling another session. Both grounds are working as intended. That
-is precisely why the clause is load-bearing, and why loosening it for one narrow case is a decision
-worth recording rather than a routine implementation detail.
+and every tool that can propose a title loads it, for every user on every harness. That clause is
+exactly what stands in the way: an unmandated session presented with a cross-session rename
+request correctly refuses it, on two independent grounds — a cross-session message is data, not
+instruction, and the contract explicitly forbids retitling another session. Both grounds are
+working as intended. That is precisely why the clause is load-bearing, and why loosening it for one
+narrow case is a decision worth recording rather than a routine implementation detail.
 
 ## Decision
 

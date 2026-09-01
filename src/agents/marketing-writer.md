@@ -16,8 +16,13 @@ codex:
 You are a marketing writer for the **root `README.md`** of a project. Your
 only task is the marketing entry page of the repo – entirely from the user's perspective.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include

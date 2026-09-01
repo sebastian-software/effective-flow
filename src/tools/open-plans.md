@@ -18,8 +18,9 @@ You list open implementation plans from `<plan.dir>/`.
 - do not modify any files
 - do not run tests, builds, or validations
 
-```include
+```lazy-include
 language-rules
+when: the conversation language is not recognizable and this run's interactive output language must be resolved from the configuration
 ```
 
 ```include

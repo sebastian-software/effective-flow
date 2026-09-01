@@ -7,7 +7,7 @@ fragment instead of carrying it in its always-loaded core and why no other workf
 The shared read surface these mutations are decided from — PR resolution, the pull-request status
 and submitted-reviews reads, the check wait together with the Forgejo capability matrix that states
 which of these operations a provider serves, and the "Remote helper" reference to the helper
-contract in `issue-tracker.md` — stays in the "PR review comment integration" building block, which
+contract in `issue-tracker-forge.md` — stays in the "PR review comment integration" building block, which
 `{{SKILL:merge-gate}}` loads eagerly and reads long before it reaches either mutation here.
 
 ### Merge a pull request
@@ -34,9 +34,11 @@ after a structured error carrying `mutationMayHaveSucceeded: true` — re-read t
 report what it shows.
 
 This is an **issue** operation documented in the pull-request building block deliberately. It is
-reached only from `{{SKILL:merge-gate}}`'s post-merge phase, and that tool does not load
-`issue-tracker`: it reaches the helper contract solely through the "Remote helper" reference above,
-so this fragment is its one reachable path to per-operation documentation.
+reached only from `{{SKILL:merge-gate}}`'s post-merge phase, and that tool loads neither
+`issue-tracker` nor `issue-tracker-forge`: it reaches the helper contract solely through the
+"Remote helper" reference above, which names `issue-tracker-forge.md` — shipped beside this
+fragment for every target — so this fragment stays its one reachable path to per-operation
+documentation.
 
 The transition this operation performs is offered only after an evidence-backed completion assessment
 and an explicit operator confirmation in a gated run. It is never a force-close, never runs

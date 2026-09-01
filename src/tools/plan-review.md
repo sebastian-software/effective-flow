@@ -19,8 +19,9 @@ artifact adapters.
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

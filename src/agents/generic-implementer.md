@@ -15,8 +15,13 @@ codex:
 
 You are a tooling-only generalist. Implement cross-project infrastructure and repository-support changes precisely and adhere strictly to the existing project conventions. You are not the fallback for product code in an unsupported language.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include
@@ -74,6 +79,10 @@ An unknown extension or missing specialized language match does **not** establis
 - do not change runtime or CI versions blindly; check compatibility and document constraints
 - prefer the project's existing scripts and tools over introducing new tooling layers
 - keep stdout/stderr and exit codes clean for script- or CLI-related changes
+- use `language.source` as supplied by the orchestrator for comments, test descriptions, and
+  in-code documentation, and `language.git` for a commit description; keep identifiers, public API
+  names, config keys, schemas, and paths language-stable whatever the resolved language is, and
+  only a direct invocation resolves the shared language rule itself
 
 ## File length and readability
 

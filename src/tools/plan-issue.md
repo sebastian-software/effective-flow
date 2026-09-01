@@ -33,8 +33,9 @@ Hard scope boundary:
   a checklist for a missing native relation. A failed or unsupported update must stop before any
   replacement comment is created.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -85,9 +86,18 @@ This skill is **inherently tracker-bound**: it always works against the resolved
 issue-tracker
 ```
 
+```include
+issue-tracker-forge
+```
+
 ```lazy-include
 tracker-target
 when: the resolved tracker target is `external`
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include

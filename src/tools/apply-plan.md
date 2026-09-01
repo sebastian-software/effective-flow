@@ -17,8 +17,9 @@ This skill takes a plan file from `<plan.dir>/`, validates its canonical status 
 
 The skill implements nothing itself. It is a routing layer over the existing workflow skills.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -43,6 +44,11 @@ apply-clarity-gate
 
 ```include
 goal-completion
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include

@@ -17,8 +17,9 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 - for an existing config, show and pre-select the currently recorded value at every choice
 - do not run project validation such as linting, tests, or build checks
 
-```include
+```lazy-include
 language-rules
+when: the language configuration keys are offered or the ADR output language must be resolved
 ```
 
 ```include

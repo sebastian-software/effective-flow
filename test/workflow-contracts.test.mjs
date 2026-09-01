@@ -271,7 +271,7 @@ test('plan gateway preserves local-input and legacy-plan precedence', () => {
   );
 });
 
-test('the session-title contract ships in the router and stays out of the budgeted tools', () => {
+test('the session-title contract ships per emitting tool and stays out of the router', () => {
   const router = source('src/SKILL.md');
   const fragment = source('src/shared/session-title.md');
   const renderedRouter = resolveEagerIncludes(router, {
@@ -279,12 +279,21 @@ test('the session-title contract ships in the router and stays out of the budget
     readFragment: (name) => source(`src/shared/${name}.md`),
   });
 
-  // The router is the only carrier: `build` and `plan` sit at the 700-line context
-  // budget, so even a lazy-include pointer per tool would fail the build.
-  assert.match(router, /```include\nsession-title\n```/);
-  assert.equal(router.match(/```include\nsession-title\n```/g).length, 1);
+  // The router carried this contract eagerly because, at the time, `build` and `plan`
+  // sat at the 700-line context budget and a pointer per tool would have failed the
+  // build. That is no longer true - the budget refactor returned headroom, and the
+  // pointer costs a single rendered line - so the fragment now loads from the tools
+  // that emit and from nowhere else. The router keeps no copy in any form: it resolves
+  // eager includes only, so a lazy fence here would ship a dangling pointer, and an
+  // eager one would put the contract back into every catalog-only session.
+  assert.doesNotMatch(router, /session-title/);
   assert.doesNotMatch(renderedRouter, /```include/);
-  assert.match(renderedRouter, /\*\*Suggested session title:\*\* <title>/);
+  assert.doesNotMatch(
+    prose(renderedRouter),
+    /session title/i,
+    'the rendered router must carry no session-title prose at all',
+  );
+  assert.match(fragment, /\*\*Suggested session title:\*\* <title>/);
   for (const directory of ['src/tools', 'src/agents']) {
     const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
       entry.endsWith('.md'),
@@ -295,7 +304,7 @@ test('the session-title contract ships in the router and stays out of the budget
       assert.doesNotMatch(
         content,
         /```include\nsession-title\n```|^## Session title$/m,
-        `${directory}/${file} must not duplicate the eagerly loaded session-title contract`,
+        `${directory}/${file} must not inline or duplicate the session-title contract`,
       );
     }
   }
@@ -434,14 +443,60 @@ test('the session-title contract ships in the router and stays out of the budget
   // unmandated session declines a cross-session rename request on two grounds,
   // one of them this very contract - so without this clause every butler on
   // every harness declines too, while the ADR, the mechanism fragment and each
-  // assertion above survive untouched. Pinned on the rendered router because
-  // that is the copy which actually ships to every user, which also proves the
-  // clause survives eager-include rendering.
-  assert.match(
-    prose(renderedRouter),
-    near('own user.s standing rename mandate', 'rename request for the session that asked', 400),
+  // assertion above survive untouched. It used to be pinned on the rendered
+  // router, as the copy that shipped to every user. The fragment now ships as its
+  // own file under `shared/` — but not as raw source: the build runs every shared
+  // fragment through `renderGeneratedBody` once per harness. That it comes out
+  // byte-identical today holds only because this fragment carries no
+  // `{{SKILL:…}}`/`{{AGENT:…}}` reference and no ask block, which is a property of
+  // the current content rather than of the pipeline, and nothing pins it. So the
+  // clause is pinned on the rendered form for each of the three harnesses, the way
+  // the `shared/pr-review-integration.md` test in this file already does for its
+  // fragment.
+  const knownTools = new Set(
+    readdirSync(new URL('src/tools/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
   );
-  for (const silent of ['version', 'open-plans', 'setup', 'cleanup', 'commit', 'pr']) {
+  const knownAgents = new Set(
+    readdirSync(new URL('src/agents/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const context = `shared/session-title.md (${harness})`;
+    const rendered = renderBody(
+      resolveEagerIncludes(fragment, {
+        context,
+        readFragment: (name) => source(`src/shared/${name}.md`),
+      }),
+      harness,
+      {
+        exposedTools: [...knownTools],
+        agentPrefix: 'effective-flow-',
+        skillName: 'effective-flow',
+        knownTools,
+        knownAgents,
+        context,
+      },
+    );
+    assertNoUnresolvedEagerIncludes(rendered, { context });
+    assert.match(
+      prose(rendered),
+      near('own user.s standing rename mandate', 'rename request for the session that asked', 400),
+      harness,
+    );
+    assert.match(rendered, /\*\*Suggested session title:\*\* <title>/, harness);
+  }
+  for (const silent of [
+    'version',
+    'open-plans',
+    'setup',
+    'cleanup',
+    'commit',
+    'pr',
+    'merge-gate',
+  ]) {
     assert.match(
       fragment,
       new RegExp(`\`${silent}\``),
@@ -459,29 +514,42 @@ test('the session-title contract ships in the router and stays out of the budget
   );
 });
 
-// The fragment is eagerly inlined into every session on all three build targets, so every
-// line it gains is paid once per session everywhere - which is why the plan turned the
-// former advisory maintainability note into a measurable cap. Base is `1dbf453` at 44
-// lines and the cap is +12 net, so 56 is the ceiling. Counted off the file rather than
-// shelled out to `git diff --numstat`, so the guard also holds in an exported tree that
-// carries no history, and so future growth fails loudly instead of accruing silently.
-test('the eagerly inlined session-title fragment stays inside its line budget', () => {
+// The fragment is no longer inlined into the router, so it is no longer paid by a
+// catalog-only session - but it is still read in nearly every work-subject run, which is
+// why the measurable cap stays rather than reverting to the advisory note it replaced.
+// Base is `1dbf453` at 44 lines; the cap was +12 net (56) while the fragment was eager,
+// the classification of `deliver` and `merge-gate` raised it deliberately by one to 57, and
+// qualifying the delegating-parent rule — a parent whose delegates are all silent keeps the
+// emission, which is what `deliver` over `commit`/`pr` needs — raised it by one more to 58.
+// Counted off the file rather than shelled out to `git diff --numstat`, so the guard
+// also holds in an exported tree that carries no history, and so future growth fails
+// loudly instead of accruing silently.
+test('the session-title fragment stays inside its line budget', () => {
   const lines = source('src/shared/session-title.md').trimEnd().split('\n').length;
   assert.ok(
-    lines <= 56,
-    `src/shared/session-title.md is ${lines} lines, over its 56-line cap (44 at 1dbf453 plus 12 ` +
-      `net). This fragment is eagerly inlined into every session on all three build targets, so ` +
-      `every line is paid once per session everywhere - trim the fragment rather than raise the ` +
-      `cap. If the cap is being raised deliberately, restate the new baseline in this test.`,
+    lines <= 58,
+    `src/shared/session-title.md is ${lines} lines, over its 58-line cap (44 at 1dbf453, +12 ` +
+      `net while it was eagerly inlined, +1 for the two newly classified tools, +1 for the ` +
+      `qualified delegating-parent rule). This fragment ` +
+      `is read in nearly every work-subject run on all three build targets - trim the fragment ` +
+      `rather than raise the cap. If the cap is being raised deliberately, restate the new ` +
+      `baseline in this test.`,
   );
 });
 
-// R1: the router resolves eager includes only, so a lazy `session-rename` pointer must sit in
-// each work-subject tool itself rather than in the router - a router-side pointer would ship
-// nothing. The sixteen tool names are read from the contract's own "Only from work-subject
-// tools" list rather than duplicated here, so a future tool added to that list without its own
-// pointer fails this test instead of silently missing it - the regression the plan calls out.
-test('every work-subject tool carries the session-rename lazy pointer and silent tools carry none', () => {
+// R1: the router resolves eager includes only, so both the `session-title` decision contract
+// and the `session-rename` mechanism must be pointed at from each emitting tool itself - a
+// router-side lazy pointer would register no fragment and ship a dangling reference. The tool
+// names are read from the contract's own two lists rather than duplicated here, so a tool added
+// to a list without its own pointers fails this test instead of silently missing them.
+//
+// The lists are reconciled against the built tool set, not counted. A hard-coded `length === 16`
+// plus a hand-copied silent list is exactly how `deliver` and `merge-gate` shipped in *neither*
+// list with the suite green: both halves agreed with themselves, and nothing compared their union
+// to the tool set they are supposed to partition. A built tool in neither list and outside the
+// declared exemption set has undefined emission behaviour, and one in both contradicts itself, so
+// both cases fail here.
+test('the two session-title lists partition the built tools and match their pointers', () => {
   const fragment = source('src/shared/session-title.md');
 
   const workSubjectSection = fragment.match(
@@ -492,31 +560,142 @@ test('every work-subject tool carries the session-rename lazy pointer and silent
     'could not locate the "Only from work-subject tools" list in src/shared/session-title.md',
   );
   const workSubjectTools = [...workSubjectSection[1].matchAll(/`([a-z-]+)`/g)].map((m) => m[1]);
-  assert.equal(
-    workSubjectTools.length,
-    16,
-    `expected sixteen work-subject tools, found ${workSubjectTools.length}: ${workSubjectTools.join(', ')}`,
-  );
+  assert.ok(workSubjectTools.length > 0, 'the work-subject list must name tools');
 
   const silentSection = fragment.match(/`version`([\s\S]*?)stay silent/);
   assert.ok(silentSection, 'could not locate the silent-tool list in src/shared/session-title.md');
-  const silentTools = [
-    'version',
-    ...[...silentSection[1].matchAll(/`([a-z-]+)`/g)].map((m) => m[1]),
-  ];
+  const silentMatches = [...silentSection[1].matchAll(/`([a-z-]+)`/g)].map((m) => m[1]);
+  // Asserted before `version` is prepended, not after. `version` opens the list and is consumed
+  // by the cut's opening delimiter, so it has to be added back — but once it is, the length can
+  // never be zero and a guard placed below it reads as a check while being dead.
+  assert.ok(silentMatches.length > 0, 'the silent list must name tools');
+  const silentTools = ['version', ...silentMatches];
+
+  // Both lists name real tools; a typo would otherwise reconcile as a missing exposed tool
+  // somewhere else and report the wrong name.
+  for (const tool of [...workSubjectTools, ...silentTools]) {
+    assert.ok(
+      existsSync(new URL(`src/tools/${tool}.md`, repositoryRoot)),
+      `src/shared/session-title.md names ${tool}, but there is no src/tools/${tool}.md`,
+    );
+  }
+
+  // TOOL_GROUPS cannot be imported: build.mjs runs the entire build on load, so the group
+  // definition is sliced out of the source text instead - the same technique the router
+  // description and merge-gate exposure tests use. `boundedSlice` rather than `section`,
+  // because `section` widens silently to end-of-file when its stop marker disappears, which
+  // this file's own comment on `boundedSlice` documents as the failure class to avoid.
+  const groups = boundedSlice(
+    source('build.mjs'),
+    'const TOOL_GROUPS = [',
+    '\nconst EXPOSED_TOOLS',
+  );
+  const groupArrays = [...groups.matchAll(/tools: \[([^\]]*)\]/g)];
+  const exposed = groupArrays.flatMap((match) =>
+    [...match[1].matchAll(/'([^']+)'/g)].map((tool) => tool[1]),
+  );
+  // Under-extraction has to be loud. The scrape reads bracketed array literals only, so any
+  // edit that keeps a group's names out of one - factoring the array into a named constant,
+  // a spread, different quoting - drops those tools from `exposed` while the build still
+  // passes, and every check below then goes vacuous for exactly them. Demonstrated: moving
+  // the "Implement a change" group to `tools: IMPLEMENT_TOOLS,` let `iterate` be dropped from
+  // the emitting list together with both of its pointers, suite green. Counting the `tools:`
+  // keys and the `title:` keys off the same slice makes an unparsed group fail here instead.
+  const declaredToolKeys = groups.match(/\btools:/g) ?? [];
+  const declaredTitleKeys = groups.match(/^\s*title: /gm) ?? [];
+  assert.ok(declaredTitleKeys.length > 0, 'TOOL_GROUPS must declare groups');
+  assert.equal(
+    groupArrays.length,
+    declaredToolKeys.length,
+    'every TOOL_GROUPS entry must present its tools as a bracketed array literal; a group whose ' +
+      'names are not scraped here drops out of the reconciliation below without failing',
+  );
+  assert.equal(
+    groupArrays.length,
+    declaredTitleKeys.length,
+    'every TOOL_GROUPS entry must carry exactly one title and one parsed tools array',
+  );
+  assert.ok(exposed.length > 0, 'TOOL_GROUPS must declare exposed tools');
+
+  // The partition is reconciled against every built tool - the same `src/tools/*.md` scan
+  // build.mjs budgets - and not against the exposed twenty. Eight tools are internal, and four
+  // of them (`apply-plan`, `apply-review`, `apply-issues`, `concept-review`) sit in the emitting
+  // list, so reconciling against `exposed` left all eight constrained by nothing: removing
+  // `apply-plan` from the list and deleting both of its pointers kept the suite green. The
+  // fragment's own rule that "internal sub-agents and workers never emit" is a different
+  // statement and does not cover this, since those four internal *tools* do emit.
+  //
+  // The non-emitting internal tools are named here with a reason each, following the
+  // `NEXT_STEPS_EXEMPT_TOOLS` shape in build.mjs: a new internal tool has to be listed or
+  // exempted deliberately rather than inheriting "undefined behaviour" by being unreachable.
+  const SESSION_TITLE_EXEMPT_TOOLS = new Map([
+    ['pr-review', 'deprecated forwarder; it follows merge-gate, which is silent'],
+    ['plan-review', 'internal review sub-file; its parent `review` has decided the title already'],
+    ['apply-review-remote', 'internal sub-file of apply-review, which decides for it'],
+    ['apply-review-commit-mechanics', 'internal sub-file of apply-review, which decides for it'],
+  ]);
+  const builtTools = readdirSync(new URL('src/tools/', repositoryRoot))
+    .filter((entry) => entry.endsWith('.md'))
+    .map((entry) => entry.replace(/\.md$/, ''));
+  assert.ok(builtTools.length > 0, 'src/tools must contain sources to reconcile');
+
+  const emitting = new Set(workSubjectTools);
+  const silent = new Set(silentTools);
   assert.deepEqual(
-    silentTools,
-    ['version', 'open-plans', 'setup', 'cleanup', 'commit', 'pr'],
-    'the silent-tool list drifted from the six documented silent tools',
+    [...emitting].filter((tool) => silent.has(tool)),
+    [],
+    'a tool listed as both emitting and silent contradicts itself in src/shared/session-title.md',
+  );
+  // The exemptions are reconciled two-sidedly as well: one naming no tool is stale, and one
+  // whose tool does appear in a list is a contradiction rather than an exemption.
+  for (const [tool, reason] of SESSION_TITLE_EXEMPT_TOOLS) {
+    assert.ok(
+      builtTools.includes(tool),
+      `stale session-title exemption: ${tool} (${reason}), but there is no src/tools/${tool}.md`,
+    );
+    assert.ok(
+      !emitting.has(tool) && !silent.has(tool),
+      `${tool} is exempt from the session-title partition, so it must not be listed in ` +
+        'src/shared/session-title.md',
+    );
+  }
+  assert.deepEqual(
+    builtTools.filter(
+      (tool) => !emitting.has(tool) && !silent.has(tool) && !SESSION_TITLE_EXEMPT_TOOLS.has(tool),
+    ),
+    [],
+    'every built tool must be listed as emitting or as silent in src/shared/session-title.md, ' +
+      'or be named in SESSION_TITLE_EXEMPT_TOOLS above with a reason; a tool in none of the ' +
+      'three has undefined session-title behaviour',
+  );
+  // The internal tools may sit in the emitting list, so only the silent side is restricted to
+  // exposed names; a silent name that is not exposed would be a contract about an uninvocable
+  // tool, which is what the exemption set records instead.
+  assert.deepEqual(
+    silentTools.filter((tool) => !exposed.includes(tool)),
+    [],
+    'the silent list must name exposed tools only',
   );
 
-  const lazyPointer = /```lazy-include\nsession-rename\n/;
+  const titlePointer = /```lazy-include\nsession-title\n/;
+  const renamePointer = /```lazy-include\nsession-rename\n/;
   for (const tool of workSubjectTools) {
     const toolSource = source(`src/tools/${tool}.md`);
     assert.match(
       toolSource,
-      lazyPointer,
+      titlePointer,
+      `src/tools/${tool}.md must carry the session-title lazy-include pointer`,
+    );
+    assert.match(
+      toolSource,
+      renamePointer,
       `src/tools/${tool}.md must carry the session-rename lazy-include pointer`,
+    );
+    // The decision precedes the mechanism: session-rename.md is loaded only once this
+    // contract has decided a title is due, so its pointer must not fire first.
+    assert.ok(
+      toolSource.search(titlePointer) < toolSource.search(renamePointer),
+      `src/tools/${tool}.md must point at session-title before session-rename`,
     );
     for (const match of toolSource.matchAll(
       /```lazy-include\n(?:runtime-state-safety|effective-flow-dir-migration)\nwhen:[\s\S]*?\n```/g,
@@ -529,21 +708,23 @@ test('every work-subject tool carries the session-rename lazy pointer and silent
     }
   }
   for (const tool of silentTools) {
+    const toolSource = source(`src/tools/${tool}.md`);
     assert.doesNotMatch(
-      source(`src/tools/${tool}.md`),
-      lazyPointer,
+      toolSource,
+      titlePointer,
+      `src/tools/${tool}.md must not carry the session-title lazy-include pointer`,
+    );
+    assert.doesNotMatch(
+      toolSource,
+      renamePointer,
       `src/tools/${tool}.md must not carry the session-rename lazy-include pointer`,
     );
   }
 
-  assert.ok(
-    existsSync(new URL('src/shared/session-rename.md', repositoryRoot)),
-    'src/shared/session-rename.md must exist',
-  );
-  assert.ok(
-    source('src/shared/session-rename.md').trim().length > 0,
-    'src/shared/session-rename.md must not be empty',
-  );
+  for (const path of ['src/shared/session-title.md', 'src/shared/session-rename.md']) {
+    assert.ok(existsSync(new URL(path, repositoryRoot)), `${path} must exist`);
+    assert.ok(source(path).trim().length > 0, `${path} must not be empty`);
+  }
 });
 
 // The old architecture routed the umbrella host name "Codex" into the hook
@@ -1342,7 +1523,7 @@ test('plan-review exposes file and issue adapters while issue mode stays comment
 });
 
 test('issue planning updates one comment fail-closed and apply rejects blocking open points', () => {
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
   const applyIssues = source('src/tools/apply-issues.md');
 
   assert.match(tracker, /targeted issue-comment update operation is `issue-comment-update`/);
@@ -1369,7 +1550,7 @@ test('issue planning updates one comment fail-closed and apply rejects blocking 
 test('security findings stay local until the review publication gate is confirmed', () => {
   const review = source('src/tools/review.md');
   const gate = source('src/shared/security-disclosure-gate.md');
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
 
   // review.md orchestrates: it loads the gate and classifies before it publishes anything.
   assert.match(review, /```lazy-include\nsecurity-disclosure-gate\n/);
@@ -2101,7 +2282,7 @@ test('plan files stay committed and pull requests stay on the forge in every tra
 });
 
 test('the security disclosure gate binds every publisher on every tracker target', () => {
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
   const gate = flat(section(tracker, '### Security disclosure gate'));
 
   assert.match(

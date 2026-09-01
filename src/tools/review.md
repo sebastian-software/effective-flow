@@ -40,6 +40,11 @@ when: Phase 1 classifies scoped files into routing buckets
 ```
 
 ```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
+```
+
+```lazy-include
 session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
@@ -247,6 +252,11 @@ when: the Effective Flow configuration is read for the first time or an old conf
 
 ```lazy-include
 issue-tracker
+when: the resolved tracker target is the forge (`remote`) or an external tool
+```
+
+```lazy-include
+issue-tracker-forge
 when: the resolved tracker target is the forge (`remote`) or an external tool
 ```
 
@@ -546,7 +556,7 @@ Phase 4 branches according to the tracker target resolved in Phase 1. On the `lo
 
 #### Publishing target (forge or external tool)
 
-Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". The steps below are written for the forge target and apply to an external target with the resolved connection taking the place of the helper, every mutation following the write discipline, classification mapping, and container mechanism of the loaded "Tracker target" contract — and with one exception: the legacy-compatibility mechanics (`firmo-` label unions, the legacy `Signatur` field, the one-time `sf-` migration) are forge history and are neither queried nor written on an external target. A local report is written only for the `local-only` findings of the security classification.
+Use the formats, labels, and operations from "Issue-tracker forge mechanics". The steps below are written for the forge target and apply to an external target with the resolved connection taking the place of the helper, every mutation following the write discipline, classification mapping, and container mechanism of the loaded "Tracker target" contract — and with one exception: the legacy-compatibility mechanics (`firmo-` label unions, the legacy `Signatur` field, the one-time `sf-` migration) are forge history and are neither queried nor written on an external target. A local report is written only for the `local-only` findings of the security classification.
 
 Reuse the Phase-1 `language.forge` value for finding issues, the container, and tracker comments. It may differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay stable. The local security report keeps `language.workflow`, so one run may legitimately write in both languages — each artifact stays complete in its own language.
 

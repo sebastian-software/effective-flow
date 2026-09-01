@@ -28,8 +28,9 @@ validation, and delivering back as new commits on the same PR branch.
 {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}. It never rewrites
 existing PR history.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -48,6 +49,11 @@ when: any wisdom, runtime migration, or worktree mutation below `.effective-flow
 ```lazy-include
 effective-flow-dir-migration
 when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include
@@ -92,8 +98,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: Phase 1 must provision the PR head checkout, or must read `delivery.baseBranch` for the local-mode diff
 ```
 
 This workflow keeps no plan file — it feeds review notes back into an existing pull request — so

@@ -56,31 +56,34 @@ under `src/` and generates two harness-native artifacts plus one portable manage
 
 ## Thin router with lazy loading
 
-`src/SKILL.md` is the router: a tool catalog, a dispatch rule, and exactly one behavioral
-contract. It never loads all tools up front but references, on the call `/effective-flow <tool>`
-(Claude) or `$effective-flow <tool>` (Codex), exactly the one matching `tools/<tool>.md`. This lazy
-loading keeps the session lean and avoids token exhaustion from unnecessarily preloaded tool
-instructions.
+`src/SKILL.md` is the router: a tool catalog and a dispatch rule, and nothing else. It never loads
+all tools up front but references, on the call `/effective-flow <tool>` (Claude) or
+`$effective-flow <tool>` (Codex), exactly the one matching `tools/<tool>.md`. This lazy loading
+keeps the session lean and avoids token exhaustion from unnecessarily preloaded tool instructions.
 
 With no `<tool>` or an unknown one, the router only prints the tool list and does nothing else.
 
-**The one documented exception to router thinness** is the eagerly included `session-title`
-fragment: a session-level concern that no single tool owns, since a run's title outlives the tool
-that produced it. Two things put it in the router. It is read once per session and its trigger
-fires in nearly every work-subject run, so a deferred read would cost more than inlining. And at
-the time of the decision the context-budget guard left no room anywhere else — `build` and `plan`
-sat at exactly the 700-line limit, where even a four-line `lazy-include` pointer per tool would
-have failed the build.
+**The router carries no behavioral contract of its own.** It used to hold one exception, the
+eagerly included `session-title` fragment, on two grounds: the fragment's trigger fires in nearly
+every work-subject run, and the context-budget guard left no room anywhere else — `build` and
+`plan` sat at exactly the 700-line limit, where a `lazy-include` pointer per tool was assumed to
+fail the build. Both grounds are gone. The budget refactor returned headroom, a rendered pointer
+costs one line rather than four, and "nearly every work-subject run" was never every session: a
+catalog-only invocation and the contractually silent tools paid for a contract they can never act
+on.
 
-That second reason has since expired: the budget refactor returned enough headroom that a per-tool
-pointer would now fit. The placement stands on the first reason alone, which is the durable one.
-Treat this as a bounded exception, not a precedent: further cross-tool behavior belongs in a tool
-or a mode-gated fragment unless it, too, is read once and needed almost always.
+`session-title` therefore now loads from the tools that emit a title and from nowhere else, beside
+the `session-rename` mechanism each of them already points at. The two lists inside the fragment —
+the emitting tools and the silent ones — partition the exposed tool set, and a test in
+`test/workflow-contracts.test.mjs` fails when a tool appears in neither or in both. `setup` is
+silent, and its capability probe keeps its own authorization: the probe title and its call shape
+are stated in `src/tools/setup.md` and in `src/shared/session-rename.md`, which `setup` reads by
+explicit path.
 
-The related `session-rename` fragment follows that default rather than the exception: it is
-lazily loaded and pointed to from each work-subject tool, not from the router. The router resolves
-only eager includes, so a lazy pointer placed in `src/SKILL.md` would register no fragment and
-ship a dangling reference.
+The router resolves only **eager** includes, so nothing lazy can live there: a `lazy-include` fence
+in `src/SKILL.md` registers no fragment and fails the build on the unresolved pointer. That is the
+mechanical reason the router is now free of cross-tool behavior rather than merely light on it —
+anything the router would carry, it would carry in every session.
 
 The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
 worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on
@@ -155,10 +158,11 @@ src/
   Each Claude block requires `model` and `effort`, while each Codex block defines `model` and
   `model_reasoning_effort`. These source fields are the canonical worker-profile assignments.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
-  and agents (e.g. `language-rules`, `task-tracking`, `skill-discovery`, `goal-completion`,
-  `worktree-integration`). `execution-location` is the canonical nested fragment for
-  repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup; both
-  delivery and `apply-review` component worktrees include it instead of duplicating the
+  and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
+  or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
+  its seven consumers now loads on demand). `execution-location` is the canonical nested fragment
+  for repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup;
+  both delivery and `apply-review` component worktrees include it instead of duplicating the
   contract.
 
 ## Cross-harness execution locations

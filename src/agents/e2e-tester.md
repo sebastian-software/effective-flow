@@ -17,8 +17,13 @@ codex:
 You implement or execute an assigned end-to-end test without taking over orchestration or
 delivery.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include

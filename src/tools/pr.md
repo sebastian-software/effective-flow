@@ -16,8 +16,9 @@ You create a pull request on the detected Git host from a prepared committed bra
 - derive title and description from the branch's commits
 - do not run project validation such as linting, tests, or build checks
 
-```include
+```lazy-include
 language-rules
+when: the PR title and body output languages must be resolved
 ```
 
 ```include

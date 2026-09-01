@@ -21,8 +21,9 @@ Scope boundary:
 - `{{SKILL:fix}}` is committed to a subsequent fix.
 - `investigate` only produces a diagnosis and, at the end, routes into the appropriate follow-up workflow.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -50,6 +51,11 @@ when: the run reaches its completion report
 
 ```include
 effective-flow-dir-migration
+```
+
+```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
 ```
 
 ```lazy-include
