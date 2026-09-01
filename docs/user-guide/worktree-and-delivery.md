@@ -132,8 +132,12 @@ the plan title, task description, issue, or finding; on a name collision Effecti
 a numeric suffix and reports the chosen name.
 
 `delivery.baseBranch` (default `origin/main`) serves as the starting point. If it is a remote
-ref, Effective Flow first fetches the current state via `git fetch`, so the delivery branch does
-not start out stale.
+ref whose remote is configured, Effective Flow first fetches the current state via `git fetch`,
+so the delivery branch does not start out stale; a failed fetch or resolution stops the run
+rather than quietly starting from a possibly stale local branch. If the remote is not configured
+at all – a purely local project – no such ref can exist, so Effective Flow falls back to the
+local branch part of the value (`main` for `origin/main`) and reports that substitution. If
+neither resolves, the run aborts instead of creating a base branch.
 
 ### Delivering local changes from the current session
 
