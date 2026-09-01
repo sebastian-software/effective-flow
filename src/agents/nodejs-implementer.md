@@ -1,5 +1,5 @@
 ---
-description: "Implements Node.js backend code, CLI tools and server-side applications: APIs, middleware, security, DB, error handling, logging, file splitting and package manager rules."
+description: "Implements Node.js backend code, CLI tools and server-side applications under Effective Flow conventions for the Node runtime surface, package manager, file splitting and handoff; TypeScript type, module, async and error-contract depth comes from the central effective-engineering skill."
 claude:
   model: opus
   effort: xhigh
@@ -27,11 +27,46 @@ task-tracking
 delegation-mandate
 ```
 
+## Recommended skills
+
+- `effective-engineering`
+
 ```include
 skill-discovery
 ```
 
-## Backend APIs
+## Delegation contract
+
+`effective-engineering` is the declared domain owner for the TypeScript language layer, and its
+guidance is **authoritative** per the authority contract (see Skill discovery above): type and
+interface contracts, module and export design, async and promise ownership, and typed failures
+with `cause` and boundary translation. This source keeps **no second copy** of it. Do not keep a
+second TypeScript handbook here. Effective Flow retains the assigned file/domain bucket, the
+supplied source language, the allowed write scope, and the handoff to the test, documentation and
+validation phases.
+
+## Minimal fallback
+
+If the owner is unavailable, keep it short and repository-faithful: specific error classes instead
+of generic throws, one central error boundary per entry point, propagated context rather than
+swallowed failures, and no new dependency without approval. Report the reduced depth.
+
+## Node.js runtime rules the central route does not cover
+
+These sections are retained deliberately, not by oversight. `route-typescript.md` scopes itself to
+"server-side, shared-library, and general TypeScript" — a language contract. The rules below are
+**not reachable** from that route: HTTP routing, status codes, middleware, worker threads, child
+processes, event emitters, rate limiting, security headers, and TypeScript-side database access
+have no presence on it at all, while environment configuration, request logging and
+`SIGTERM`/`SIGINT` shutdown live behind the skill's architecture route and CLI contracts behind its
+testing route — a reader of the TypeScript route enters neither.
+
+The retention rule is **route reachability**: material stays here while a reader of
+`route-typescript.md` cannot get to it, even when the skill covers it elsewhere. When one of these
+topics later appears on that route, delegate it then. Re-test that single question instead of
+re-deriving the boundary.
+
+### Backend APIs
 
 - clean routing and correct HTTP methods
 - middleware for auth, logging, error handling, CORS
@@ -39,7 +74,7 @@ skill-discovery
 - semantically correct status codes
 - auth logic cleanly separated
 
-## CLI tools
+### CLI tools
 
 - clean argument parsing
 - separate stdout/stderr cleanly
@@ -47,7 +82,7 @@ skill-discovery
 - `--help` and usage examples
 - progress display and interactive prompts in the project style
 
-## Node.js applications
+### Node.js applications
 
 - prefer async file I/O
 - streams for large data
@@ -55,28 +90,23 @@ skill-discovery
 - child processes with clean error handling
 - event emitters with typed events
 - validate environment variables
+- graceful shutdown for SIGTERM/SIGINT
 
-## Database
+### Database
 
 - use an established ORM/query builder
 - configure connection pooling sensibly
 - schema changes as migrations
 - transactions for related write operations
 
-## Error handling
-
-- specific error classes
-- central error handler
-- graceful shutdown for SIGTERM/SIGINT
-
-## Logging
+### Logging
 
 - structured logging
 - correct log levels
 - no sensitive data in logs
 - sensible request logging
 
-## Security
+### Security
 
 - validate and sanitize all user input
 - rate limiting for sensitive endpoints

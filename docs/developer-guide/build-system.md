@@ -151,6 +151,32 @@ The build aborts with an error message if any of these guards is violated:
   The Markdown guard reconciles exact skill-row membership. Its grouped consumer,
   classification, and coverage prose remains a human explanation; the JSON manifest is the
   authoritative structured relationship contract.
+- **Agent skill-recommendation roster guard (#168):** `assertAgentSkillRecommendationRoster`
+  closes the hole that the recommendation-driven checks above leave open: a source without a
+  `## Recommended skills` heading produces no chain and therefore no obligation. Every
+  `src/agents/*.md` must carry that section or appear in `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in
+  `build.mjs` with a one-line reason, so the obligated set is
+  `count(src/agents/*.md) − |exemptions|`. The set is two-sided like the next-steps exemptions: an
+  exempt agent must carry **no** section, a non-exempt one must, and an exemption naming an agent
+  that does not exist fails as stale. An empty roster is rejected rather than passed vacuously.
+  The guard deliberately covers agents only — `src/shared/skill-discovery.md` states that a
+  missing section is legitimate for a tool, and tools such as `version` or `cleanup` have no
+  domain owner to name. `merge-conflict-resolver` is the only current exemption.
+- **Unrecommended-relationship guard (#168):** The reverse direction of the ownership check,
+  enforced inside `assertSkillOwnershipContract` itself. A declared relationship must be reachable
+  from a recommendation; otherwise it is declared, documented, and dead, because skill discovery
+  honours only `## Recommended skills` sections. The strictness follows the classification. A
+  **`delegate`** consumer is checked **per consumer**: that pair is the whole layered contract, so
+  a delegating source that swaps its owner has lost its domain guidance even while a sibling
+  consumer keeps the relationship alive — the exact drift a per-relationship check cannot see. A
+  **`route-when-relevant`** consumer is checked **per relationship**, because a relevance-gate
+  consumer such as `plan` reaches its owner through the structured marker in
+  `central-reasoning-delegation.md` instead of a section of its own. Shared-fragment consumers
+  (`language-rules`, `dependency-version-policy`, `documentation-sync-contract`,
+  `worktree-integration`) are exempt **by kind** in both cases: a fragment expresses its ownership
+  as prose inside the tool that embeds it and can never produce a chain. The
+  `recommendationCapableConsumers` argument that carries that filter is required, so dropping it
+  fails the build instead of silently disabling the check.
 - **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
   worker contract is scanned after transformation. Native references must resolve to exact
   namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to

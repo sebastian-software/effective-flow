@@ -527,23 +527,56 @@ export function parseSkillOwnershipTable(markdown, { context } = {}) {
   });
 }
 
+// The chain collector and the section-presence collector must recognise exactly
+// the same heading: a source whose section produces no bullet still *declares*
+// one, and the roster guard has to tell that apart from having no section at
+// all. A fresh instance per use keeps the global flag's `lastIndex` private.
+const RECOMMENDED_SKILLS_HEADING = String.raw`^## (?:Recommended skills|Empfohlene Skills)\s*$`;
+
+function recommendedSkillsHeadingRe() {
+  return new RegExp(RECOMMENDED_SKILLS_HEADING, 'gm');
+}
+
+function assertRecommendedSkillSource(source, context) {
+  assertPlainObject(source, 'Recommended-skill source', context);
+  if (typeof source.consumer !== 'string' || source.consumer.trim() === '') {
+    throw new Error(`Recommended-skill source requires a consumer${contextSuffix(context)}`);
+  }
+  if (typeof source.text !== 'string') {
+    throw new Error(
+      `Recommended-skill source "${source.consumer}" requires text${contextSuffix(context)}`,
+    );
+  }
+}
+
+// Every consumer whose source carries at least one `## Recommended skills`
+// heading, regardless of what the section contains. The roster guard needs this
+// separately from the chains: a heading with no parseable bullet declares a
+// section that names no skill, which is neither "no section" nor a fulfilled
+// obligation.
+export function collectRecommendedSkillSections(sources, { context } = {}) {
+  if (!Array.isArray(sources)) {
+    throw new Error(`Recommended-skill sources must be an array${contextSuffix(context)}`);
+  }
+  const declared = new Set();
+  for (const source of sources) {
+    assertRecommendedSkillSource(source, context);
+    if (recommendedSkillsHeadingRe().test(normalizeLineEndings(source.text))) {
+      declared.add(source.consumer);
+    }
+  }
+  return declared;
+}
+
 export function collectRecommendedSkillChains(sources, { context } = {}) {
   if (!Array.isArray(sources)) {
     throw new Error(`Recommended-skill sources must be an array${contextSuffix(context)}`);
   }
   const chains = [];
   for (const source of sources) {
-    assertPlainObject(source, 'Recommended-skill source', context);
-    if (typeof source.consumer !== 'string' || source.consumer.trim() === '') {
-      throw new Error(`Recommended-skill source requires a consumer${contextSuffix(context)}`);
-    }
-    if (typeof source.text !== 'string') {
-      throw new Error(
-        `Recommended-skill source "${source.consumer}" requires text${contextSuffix(context)}`,
-      );
-    }
+    assertRecommendedSkillSource(source, context);
     const normalized = normalizeLineEndings(source.text);
-    const headingRe = /^## (?:Recommended skills|Empfohlene Skills)\s*$/gm;
+    const headingRe = recommendedSkillsHeadingRe();
     for (const heading of normalized.matchAll(headingRe)) {
       const sectionStart = heading.index + heading[0].length;
       const followingHeading = normalized.slice(sectionStart).search(/^##\s+/m);
@@ -605,7 +638,14 @@ function setDifference(left, right) {
 }
 
 export function assertSkillOwnershipContract(
-  { manifest, inventoryRows, recommendationChains, relevanceGateOwners, knownConsumers },
+  {
+    manifest,
+    inventoryRows,
+    recommendationChains,
+    relevanceGateOwners,
+    knownConsumers,
+    recommendationCapableConsumers,
+  },
   { context } = {},
 ) {
   const relationshipBySkill = new Map(
@@ -684,6 +724,133 @@ export function assertSkillOwnershipContract(
           `${label} "${skill}" for consumer "${chain.consumer}"${contextSuffix(chain.context ?? context)}`,
         );
       }
+    }
+  }
+
+  // Reverse check: a declared relationship has to be reachable at runtime. The
+  // four checks above all start from something that exists — a row, an owner
+  // marker, a recommendation bullet — so a relationship that no source ever
+  // recommends is declared, documented, and dead. Skill discovery honours only
+  // `## Recommended skills` sections, so such a relationship promises an
+  // authority transfer that never happens.
+  //
+  // `recommendationCapableConsumers` names the consumers that can produce a
+  // recommendation at all, which is exactly the tool and agent sources build.mjs
+  // scans. The manifest also lists shared-fragment consumers (`language-rules`,
+  // `dependency-version-policy`, `documentation-sync-contract`,
+  // `worktree-integration`); a fragment expresses its ownership as prose inside
+  // the tool that embeds it and can never carry a section of its own, so it is
+  // exempt by kind rather than left as a silent hole.
+  //
+  // The strictness differs by classification, and deliberately so:
+  //
+  // - `delegate` is checked **per consumer**. That pair is the whole layered
+  //   contract — the source carries no second copy of the playbook — so a
+  //   delegating consumer that stops recommending its owner has silently lost
+  //   its domain guidance. A per-relationship check would miss exactly that:
+  //   a sibling consumer keeps the relationship alive while the drifted one
+  //   passes both guards.
+  // - `route-when-relevant` is checked **per relationship**, because a
+  //   relevance-gate consumer (`plan`, `plan-review`, `concept`,
+  //   `concept-review`) reaches its owner through the structured marker in
+  //   `central-reasoning-delegation.md` rather than through a section of its
+  //   own. Requiring a bullet there would fail ten legitimate pairs.
+  if (!(recommendationCapableConsumers instanceof Set)) {
+    throw new Error(
+      `Skill-ownership recommendationCapableConsumers must be a Set${contextSuffix(context)}`,
+    );
+  }
+  const recommendedPairs = new Set();
+  for (const chain of recommendationChains) {
+    for (const skill of chain.skills) {
+      recommendedPairs.add(`${skill} ${chain.consumer}`);
+    }
+  }
+  for (const relationship of manifest.relationships) {
+    const checkable = relationship.consumers.filter((entry) =>
+      recommendationCapableConsumers.has(entry.consumer),
+    );
+    if (checkable.length === 0) continue;
+    for (const entry of checkable) {
+      if (entry.classification !== 'delegate') continue;
+      if (recommendedPairs.has(`${relationship.skill} ${entry.consumer}`)) continue;
+      throw new Error(
+        `Unrecommended delegate consumer "${entry.consumer}" for skill "${relationship.skill}": a delegating consumer must name its owner in a "## Recommended skills" section${contextSuffix(context)}`,
+      );
+    }
+    if (
+      checkable.some((entry) => recommendedPairs.has(`${relationship.skill} ${entry.consumer}`))
+    ) {
+      continue;
+    }
+    throw new Error(
+      `Unrecommended relationship for skill "${relationship.skill}": none of its tool or agent consumers (${checkable.map((entry) => entry.consumer).join(', ')}) names it in a "## Recommended skills" section${contextSuffix(context)}`,
+    );
+  }
+}
+
+// --- Agent skill-recommendation roster guard (#168) ---
+//
+// `collectRecommendedSkillChains` is recommendation-driven: a source without a
+// `## Recommended skills` heading yields an empty iterator, pushes no chain, and
+// creates no obligation, so absence of a recommendation is absence of a check.
+// This roster check closes that hole for `src/agents/*.md`, where every consumer
+// that carries a domain playbook actually lives. It is deliberately not extended
+// to tools: `src/shared/skill-discovery.md` states that a missing section is
+// legitimate "(e.g. for tools)", and a tool such as `version` or `cleanup` has no
+// domain owner to recommend.
+//
+// The check is two-sided, like the next-steps exemption set it mirrors: a
+// non-exempt agent must carry a section that names a skill, an exempt one must
+// carry no section at all, and an exemption for an agent that does not exist is
+// stale. Section presence (`sectionAgents`) and fulfilled obligation
+// (`recommendationChains`) are separate inputs on purpose: a heading with no
+// parseable bullet satisfies neither side and gets its own diagnosis instead of
+// being reported as a missing section or passed as an honoured exemption.
+export function assertAgentSkillRecommendationRoster(
+  { agents, sectionAgents, recommendationChains, exemptAgents },
+  { context } = {},
+) {
+  if (!Array.isArray(agents) || agents.length === 0) {
+    // A roster check that iterates an empty list passes for the wrong reason.
+    throw new Error(
+      `Agent skill-recommendation roster must be a non-empty array${contextSuffix(context)}`,
+    );
+  }
+  if (!(sectionAgents instanceof Set)) {
+    throw new Error(`Agent skill-recommendation sections must be a Set${contextSuffix(context)}`);
+  }
+  if (!(exemptAgents instanceof Set)) {
+    throw new Error(`Agent skill-recommendation exemptions must be a Set${contextSuffix(context)}`);
+  }
+  const roster = new Set(agents);
+  for (const name of exemptAgents) {
+    if (!roster.has(name)) {
+      throw new Error(
+        `stale skill-recommendation exemption: SKILL_RECOMMENDATION_EXEMPT_AGENTS lists "${name}", but src/agents/${name}.md does not exist${contextSuffix(context)}`,
+      );
+    }
+  }
+  const recommending = new Set(recommendationChains.map((chain) => chain.consumer));
+  for (const name of agents) {
+    const hasSection = sectionAgents.has(name);
+    if (exemptAgents.has(name)) {
+      if (hasSection) {
+        throw new Error(
+          `src/agents/${name}.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS; remove the exemption or the section${contextSuffix(context)}`,
+        );
+      }
+      continue;
+    }
+    if (!hasSection) {
+      throw new Error(
+        `src/agents/${name}.md carries no "## Recommended skills" section; add the central skill it delegates to, or add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
+    }
+    if (!recommending.has(name)) {
+      throw new Error(
+        `src/agents/${name}.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet, or drop the section and add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
     }
   }
 }

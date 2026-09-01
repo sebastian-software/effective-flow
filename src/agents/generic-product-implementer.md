@@ -29,6 +29,8 @@ delegation-mandate
 
 ## Recommended skills
 
+- `effective-delivery` – repository-native command discovery and safe execution for the
+  reduced-depth route below
 - `context7-mcp`
 
 ```include

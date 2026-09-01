@@ -1,5 +1,5 @@
 ---
-description: "Implements Rust code, CLI tools and server-side applications: Cargo, ownership/borrowing, error handling, async, traits, unsafe discipline, file splitting and toolchain rules."
+description: "Implements Rust code, CLI tools and server-side applications under Effective Flow conventions for file splitting, dependency policy and handoff; Cargo, ownership, trait, concurrency and unsafe depth comes from the central effective-engineering skill."
 claude:
   model: opus
   effort: xhigh
@@ -27,77 +27,67 @@ task-tracking
 delegation-mandate
 ```
 
+## Recommended skills
+
+- `effective-engineering`
+
 ```include
 skill-discovery
 ```
 
-## Project structure and Cargo
+## Delegation contract
 
-- respect `Cargo.toml`/`Cargo.lock` and workspaces
-- clear module boundaries (`mod`, `pub`, `pub(crate)`), visibility as narrow as possible
-- cut crates and feature flags sensibly
-- keep the project's existing edition and MSRV
+`effective-engineering` is the declared domain owner for Rust implementation depth, and its
+guidance is **authoritative** per the authority contract (see Skill discovery above): Cargo,
+workspaces and MSRV discovery, module visibility and crate structure, ownership, borrowing and
+lifetimes including when a clone is justified, trait and conversion design, `unsafe` discipline
+with its safety proof and FFI boundaries, error and `Result` contracts, async and concurrency, and
+the semver surface of a public API. This source keeps **no second copy** of it. Do not keep a
+second Rust handbook here. Effective Flow retains the assigned file/domain bucket, the supplied
+source language, the allowed write scope, and the handoff to the test, documentation and
+validation phases.
 
-## Error handling
+Crate selection follows the repository's established choice, which the skill discovers rather than
+prescribes; the named defaults below apply only when there is nothing to discover.
 
-- `Result`/`Option` instead of panics in library and production paths
-- `?` operator for error propagation
-- specific error types; depending on the project `thiserror` (libraries) or `anyhow` (applications)
-- no `unwrap`/`expect` outside of tests, prototypes or provably impossible cases; where needed, with a meaningful justification
+## Minimal fallback
 
-## Ownership, types and traits
+If the owner is unavailable, keep it short and repository-faithful:
 
-- use ownership, borrowing and lifetimes idiomatically, avoid unnecessary clones
-- sensible trait abstractions, `From`/`Into` for conversions
-- generics and trait bounds instead of duplication
-- keep the public API small and stable, mind the semver impact
+- `Result`/`Option` and the `?` operator instead of panics in library and production paths; no
+  `unwrap`/`expect` outside tests or a provably impossible case, and then with a justification
+- specific error types — `thiserror` for a library, `anyhow` for an application
+- one async runtime per project (`tokio` or `async-std`), never mixed, and no blocking call on the
+  executor
+- `unsafe` only encapsulated as narrowly as possible, with its safety invariants documented at the
+  block
+- an established crate for the surrounding concerns: `clap` for argument parsing, `sqlx` or
+  `diesel` for database access with schema changes as migrations, `tracing` or `log` for structured
+  logging without sensitive data
+- validate external input, make integer-overflow assumptions explicit (`checked_*`/`saturating_*`),
+  keep secrets out of the code
+- `cargo fmt`, `cargo clippy`, `cargo test` and `cargo build`/`cargo check` as the repository
+  already runs them
 
-## Concurrency
+Report the reduced depth.
 
-- async runtime depends on the project (`tokio`/`async-std`), do not mix
-- do not block the async executor with blocking calls
-- `Send`/`Sync` correct; avoid data races through ownership rather than locks where possible
-- structure channels and tasks cleanly, account for cancellation
+## Rust rules the central route does not cover
 
-## unsafe
+This section is retained deliberately, not by oversight. `route-rust.md` cross-links the skill's
+testing route only for test placement, public-API coverage, doctests and smoke evidence, so
+`cli-contracts.md` — the one place the skill treats exit codes, stream separation and `--help` — is
+**not reachable** from the Rust route. The retention rule is **route reachability**: material stays
+here while a reader of the Rust route cannot get to it, even when the skill covers it elsewhere.
+When CLI contracts later appear on that route, delegate this then. Re-test that single question
+instead of re-deriving the boundary.
 
-- `unsafe` only with justification and encapsulated as narrowly as possible
-- document safety invariants as a comment right at the `unsafe` block
-- put safe abstractions over `unsafe`
+### CLI tools
 
-## CLI tools
-
-- argument parsing with an established crate (e.g. `clap`)
+- clean argument parsing; the parser crate follows the repository's established choice
 - separate stdout/stderr cleanly
 - correct exit codes
 - `--help` and usage examples
 - progress display and interactive prompts in the project style
-
-## Database
-
-- use the project's established query builder/ORM (e.g. `sqlx`, `diesel`)
-- configure connection pooling sensibly
-- schema changes as migrations
-- transactions for related write operations
-
-## Logging
-
-- structured logging (e.g. `tracing`/`log`)
-- correct log levels
-- no sensitive data in logs
-
-## Security
-
-- validate all external input
-- make integer-overflow assumptions explicit (`checked_*`/`saturating_*` where needed)
-- no secrets in the code
-
-## Toolchain
-
-- formatting via `cargo fmt`
-- linting via `cargo clippy`, take warnings seriously
-- tests via `cargo test`
-- build check via `cargo build`/`cargo check`
 
 ```include
 dependency-version-policy

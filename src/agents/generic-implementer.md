@@ -27,6 +27,11 @@ task-tracking
 delegation-mandate
 ```
 
+## Recommended skills
+
+- `effective-delivery` – repository-native command discovery, CI and build tooling, and dependency
+  research for the tooling-only surface below
+
 ```include
 skill-discovery
 ```

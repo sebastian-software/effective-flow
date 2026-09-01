@@ -56,8 +56,10 @@ import {
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
   collectRecommendedSkillChains,
+  collectRecommendedSkillSections,
   parseSkillOwnershipRelevanceGateOwners,
   assertSkillOwnershipContract,
+  assertAgentSkillRecommendationRoster,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -203,6 +205,20 @@ const NEXT_STEPS_EXEMPT_TOOLS = new Set([
   'concept-review', // not user-invocable; its end states live on `review` and `concept`
   'apply-review-remote', // internal sub-file of apply-review with no completion phase
   'apply-review-commit-mechanics', // internal sub-file of apply-review with no completion phase
+]);
+
+// Agents outside the central-skill recommendation contract. Every other
+// `src/agents/*.md` must carry a `## Recommended skills` section, so the
+// obligated set is `count(src/agents/*.md) - |exemptions|` and a newly added
+// agent has to name its domain owner or opt out deliberately instead of
+// silently shipping a second copy of a centrally owned playbook. The set covers
+// agents only: `src/shared/skill-discovery.md` states that a missing section is
+// legitimate for a tool, and tools such as `version` or `cleanup` have no domain
+// owner to name. Each entry names the reason no central skill owns its work.
+const SKILL_RECOMMENDATION_EXEMPT_AGENTS = new Set([
+  // resolving a merge conflict has no declared central domain owner; the role
+  // carries that rationale in its own source prose
+  'merge-conflict-resolver',
 ]);
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
@@ -547,19 +563,30 @@ try {
   const ownershipRows = parseSkillOwnershipTable(readFileSync(SKILL_OWNERSHIP_GUIDE, 'utf8'), {
     context: relative(ROOT_DIR, SKILL_OWNERSHIP_GUIDE),
   });
-  const recommendationSources = [
-    ...toolFiles.map((file) => ({
-      consumer: basename(file, '.md'),
-      context: `tools/${file}`,
-      text: readFileSync(join(TOOLS_DIR, file), 'utf8'),
-    })),
-    ...agentFiles.map((file) => ({
-      consumer: basename(file, '.md'),
-      context: `agents/${file}`,
-      text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
-    })),
-  ];
+  const toolRecommendationSources = toolFiles.map((file) => ({
+    consumer: basename(file, '.md'),
+    context: `tools/${file}`,
+    text: readFileSync(join(TOOLS_DIR, file), 'utf8'),
+  }));
+  const agentRecommendationSources = agentFiles.map((file) => ({
+    consumer: basename(file, '.md'),
+    context: `agents/${file}`,
+    text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
+  }));
+  const recommendationSources = [...toolRecommendationSources, ...agentRecommendationSources];
   const recommendationChains = collectRecommendedSkillChains(recommendationSources);
+  // Roster guard: every agent either names its domain owner or is exempt. The
+  // chains are collected from the agent sources alone so a same-named tool can
+  // never satisfy an agent's obligation.
+  assertAgentSkillRecommendationRoster(
+    {
+      agents: agentFiles.map((file) => basename(file, '.md')),
+      sectionAgents: collectRecommendedSkillSections(agentRecommendationSources),
+      recommendationChains: collectRecommendedSkillChains(agentRecommendationSources),
+      exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS,
+    },
+    { context: 'agent skill-recommendation roster' },
+  );
   const knownOwnershipConsumers = new Set([
     ...toolFiles.map((file) => basename(file, '.md')),
     ...agentFiles.map((file) => basename(file, '.md')),
@@ -578,6 +605,12 @@ try {
       recommendationChains,
       relevanceGateOwners,
       knownConsumers: knownOwnershipConsumers,
+      // Only tools and agents can carry a `## Recommended skills` section, so
+      // the reverse check is limited to them; shared fragments are exempt by
+      // kind. `knownOwnershipConsumers` above deliberately stays wider.
+      recommendationCapableConsumers: new Set(
+        recommendationSources.map((source) => source.consumer),
+      ),
     },
     { context: 'central-skill ownership guard' },
   );
