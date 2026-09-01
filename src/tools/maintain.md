@@ -94,8 +94,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: the delivery/worktree mode is determined (Phase 1, step 2)
 ```
 
 This workflow keeps no plan file — its basis is the dependency and security surface, not a plan —

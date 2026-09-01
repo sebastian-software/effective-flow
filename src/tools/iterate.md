@@ -93,8 +93,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: Phase 1 must provision the PR head checkout, or must read `delivery.baseBranch` for the local-mode diff
 ```
 
 This workflow keeps no plan file — it feeds review notes back into an existing pull request — so

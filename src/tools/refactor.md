@@ -87,8 +87,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: the delivery/worktree mode is determined (Phase 2, first step)
 ```
 
 ## Wisdom Accumulation

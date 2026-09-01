@@ -155,10 +155,11 @@ src/
   Each Claude block requires `model` and `effort`, while each Codex block defines `model` and
   `model_reasoning_effort`. These source fields are the canonical worker-profile assignments.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
-  and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`,
-  `worktree-integration`). `execution-location` is the canonical nested fragment for
-  repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup; both
-  delivery and `apply-review` component worktrees include it instead of duplicating the
+  and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
+  or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
+  its seven consumers now loads on demand). `execution-location` is the canonical nested fragment
+  for repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup;
+  both delivery and `apply-review` component worktrees include it instead of duplicating the
   contract.
 
 ## Cross-harness execution locations
