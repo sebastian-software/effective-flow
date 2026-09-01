@@ -42,6 +42,10 @@ execution-location
 worktree-lifecycle
 ```
 
+```include
+base-branch-resolution
+```
+
 ### Configuration
 
 If the Effective Flow configuration (project setup ADR) pins corresponding values, they override these defaults (schema shown here for illustration):
@@ -68,7 +72,7 @@ Missing values have these defaults:
 - `delivery.baseBranch`: `"origin/main"`
 - `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
-- `delivery.returnBranch`: `"auto"` (local branch part from `delivery.baseBranch`)
+- `delivery.returnBranch`: `"auto"` (the resolved local base branch)
 - `delivery.prReview`: `"ask"` (a gated run asks once per created pull request)
 - `worktree.enabled`: `true` (implementation runs in its own worktree)
 - `worktree.setup`: `"auto"`
@@ -140,21 +144,13 @@ When delivery or worktree is active:
 
 1. `git` and, for worktree execution, `git worktree` must be available. The current execution
    receipt must pass the fail-closed preflight before continuing.
-2. **Resolve `delivery.baseBranch`.** This is the one resolution rule; every later step refers
-   back to it instead of restating it. The value is a remote ref only when the part before its
-   first `/` is a remote that `git remote` lists for this repository; local branch names carry
-   slashes too, so `feature/foo` is that branch unless `feature` is a configured remote.
-   - Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
-     branch starts from the current remote state. If the fetch or the resolution fails (offline,
-     credentials, deleted branch), report and stop — never fall back here: a stale local branch
-     can be far behind and would start delivery from the wrong commit.
-   - Remote not configured: no such ref can exist in this repository. Resolve the value as a
-     local ref instead: as it stands first, and only if that fails the local branch part after
-     the first `/` (`main` for `origin/main`); report that substitution once.
-   - Neither the remote ref nor any local candidate for the value resolves: abort, naming both
-     facts. Never invent or create a base branch.
+2. **Resolve `delivery.baseBranch` under "Base-branch resolution".** That rule is the single
+   place the value is classified and resolved. Record its two results — the resolved base ref and
+   the resolved local base branch — into the run state below. Every later step of this fragment
+   names one of those two results; none of them re-derives either from the configured value, and
+   none of them repeats the rule's remote probe or its refresh.
 3. If the current HEAD has relevant uncommitted changes or local commits that
-   are not contained in `delivery.baseBranch`, point that out. A delivery branch freshly
+   are not contained in the resolved base ref, point that out. A delivery branch freshly
    created from the base branch does not contain this work. Only continue
    if the user confirms the chosen mode or the workflow creates a safe
    partial-diff PR by the procedure described below.
@@ -176,6 +172,7 @@ never proves current-run ownership.
 Carry this state through baseline validation and every later phase:
 
 - original checkout receipt and checkout identity,
+- the resolved base ref and the resolved local base branch from "Base-branch resolution",
 - delivery branch name and exact creation OID,
 - whether this run created the delivery branch,
 - whether this run created the delivery worktree,
@@ -207,9 +204,9 @@ When worktree execution is active:
    eventual worktree path does not authorize creating its parents. Apply the contract again to
    the exact `WORKTREE_PATH` immediately before `git worktree add`.
    Create the worktree and delivery branch with
-   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
-   verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
-   purpose. Record both artifacts as current-run-owned and capture the branch's exact creation
+   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, where `<BASE_REF>` is the
+   recorded resolved base ref, then immediately issue and verify an `effective-flow-created`
+   receipt for the exact path, branch, workflow and delivery purpose. Record both artifacts as current-run-owned and capture the branch's exact creation
    OID. Immediately after that receipt succeeds, initialize its version 1 worktree-lifecycle
    record as `active`, with branch policy `retain`, under the verified runtime root. Do this
    before setup or delegation. If receipt or lifecycle-record creation fails, retain the
@@ -261,7 +258,7 @@ When delivery is active and worktree execution stays off:
    should not become part of the delivery branch. If such changes exist,
    do not silently stage, stash or overwrite them; either obtain a user decision
    or use the partial-diff PR via worktree.
-3. Create and check out the delivery branch from `delivery.baseBranch`.
+3. Create and check out the delivery branch from the recorded resolved base ref.
 4. Issue a new receipt for the delivery branch after switching. Record the branch as
    current-run-owned and capture its exact creation OID before setup or implementation. Run
    implementation, tests, validation and final formatting through explicitly rooted operations
@@ -275,15 +272,15 @@ a separate worktree is the preferred safe path, provided these
 preconditions are met:
 
 1. `git worktree` is available.
-2. `delivery.baseBranch` resolves under the "Shared preconditions" resolution rule.
+2. `delivery.baseBranch` resolves under the "Base-branch resolution" rule.
 3. The workflow knows the exact repository-relative files and final states that belong to its own
    output. A standalone local-change selection uses `{{SKILL:deliver}}`; implementation handback
    uses only the workflow's recorded output set plus any explicitly confirmed additions.
 
 The procedure:
 
-1. Resolve `delivery.baseBranch` by that same rule. Create a fresh worktree branch from that
-   exact OID, then immediately issue and verify
+1. Resolve `delivery.baseBranch` by that same rule. Create a fresh worktree branch from the
+   recorded resolved base ref at that exact OID, then immediately issue and verify
    a separate `effective-flow-created` receipt whose purpose is `partial-diff`. Before setup or
    file transfer, initialize its lifecycle record as `active` with branch policy `retain`; a
    record-creation failure retains both worktree and branch and aborts the partial-diff flow.
@@ -452,14 +449,14 @@ options:
    `EXECUTION_ROOT` for this step.
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
-   - `merge`: the target is the local branch part of `delivery.baseBranch` or the
+   - `merge`: the target is the recorded resolved local base branch or the
      explicit `delivery.returnBranch`. Ensure that the target working tree
      is clean; otherwise inform instead of merging. If the local target branch is
      behind its remote-tracking ref, point that out. Merge the delivery branch –
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
    - `pr`: resolve and record the final delivery-branch head OID after every intended commit and
-     require a non-empty verified commit range against the refreshed base. Delegate to
+     require a non-empty verified commit range against the recorded resolved base ref. Delegate to
      `{{SKILL:pr}}` and pass the exact delivery branch, base branch, verified final head OID,
      successful commit-only handoff evidence, the verified `RUNTIME_STATE_ROOT` as its execution
      root, and the workflow/change type
@@ -467,7 +464,9 @@ options:
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal — and the literal line `Next steps: suppressed` on its own
      line, because `{{SKILL:pr}}` returns its result here and the implementing workflow is the one
-     that closes this run.
+     that closes this run. Hand the base over typed rather than as one bare value: pass **both**
+     recorded results, the resolved base ref and the resolved local base branch, each named as
+     such, so the delegated run recomputes neither and needs no second fetch.
      Once `{{SKILL:pr}}` returned the pull request, run "PR review publication" with that pull
      request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified
@@ -482,6 +481,6 @@ when: the completion action created or reused a pull request and the automatic P
 
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
-   `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.
+   `auto`, to the recorded resolved local base branch, provided the working tree is clean.
    Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
    explicitly report the actual branch as a side effect.

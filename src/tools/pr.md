@@ -73,6 +73,10 @@ when: the run reaches its completion report
 
 If the project has an `AGENTS.md`, read it before creating the PR and follow its guidance on branch names, PR titles, PR descriptions, and project-wide conventions.
 
+```include
+base-branch-resolution
+```
+
 ## Inputs
 
 - **Execution root:** the verified absolute `RUNTIME_STATE_ROOT` from a delivery handback. If it is
@@ -80,9 +84,13 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 - **Head branch:** the prepared delivery branch. A direct invocation uses the named branch checked
   out in its invocation checkout. A delivery handback always passes the branch explicitly.
 - **Committed handoff:** an optional returning-caller receipt containing the exact head branch,
-  resolved base branch, verified head OID, and confirmation that every intended group was committed
-  and verified. Missing or contradictory handoff evidence fails closed.
-- **Base branch:** the PR target. Default: the branch part of
+  both base results named as such — the resolved base ref and the resolved local base branch —
+  the verified head OID, and confirmation that every intended group was committed
+  and verified. A caller that hands over a single untyped base value is read as having supplied
+  the resolved local base branch. A handoff that supplies both results is complete: this tool then
+  runs no resolution of its own. Missing or contradictory handoff evidence fails closed.
+- **Base branch:** the PR target — always the resolved local base branch, never the resolved base
+  ref. On a direct invocation it comes from applying "Base-branch resolution" to
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);
   legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
 - **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
@@ -95,14 +103,17 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     falling back to the old `worktree.baseBranch` value and then the documented default.
+     falling back to the old `worktree.baseBranch` value and then the documented default. On a
+     direct invocation, resolve that value once under "Base-branch resolution" and carry both of
+     its results; a returning committed handoff supplies them instead.
    - Classify the call as either a direct invocation from its current checkout or a returning
      committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
      `{{SKILL:deliver}}` for that lifecycle.
 2. **Check preconditions:**
    - A Git repository with an `origin` remote is present. If `origin` is missing, no PR can be created: report clearly and abort.
    - The head exists as an exact local branch, is not detached, and differs from both the resolved
-     base ref and its local branch part. A detached invocation or base branch as head aborts.
+     base ref and the resolved local base branch.
+     A detached invocation or base branch as head aborts.
    - For a direct invocation, require the complete working tree and index to be clean, including
      untracked paths. If it is dirty, abort before fetch or push and direct the user to
      `{{SKILL:deliver}}`; never omit local content silently.
@@ -114,11 +125,26 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
    squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
    handoff must already have supplied the same OID.
-4. **Resolve the base and inspect the head before any push:** Refresh the configured base ref if
-   needed, resolve its remote-tracking ref, and determine the commits in
-   `<remote-tracking-base>..<head-branch>`. Preserve this discovered commit range for the later
-   title and description derivation. If the base cannot be refreshed or resolved, abort before
-   any push and preserve the head branch.
+4. **Inspect the head against the resolved base before any push:** The two base results already
+   exist — "Base-branch resolution" produced them in step 1, or the handoff supplied them. This
+   step adds no refresh of its own and never repeats the one that rule owns. Derive the
+   remote-tracking diff base from the arm that resolved the value; both arms below yield a
+   remote-tracking ref or abort. Then determine the commits in
+   `<remote-tracking-base>..<head-branch>` and preserve this discovered commit range for the later
+   title and description derivation. If no diff base can be derived, abort before any push and
+   preserve the head branch.
+   - **Remote configured:** the resolved base ref is already a remote-tracking ref, so it is the
+     diff base directly and no upstream lookup runs.
+   - **Remote not configured:** the resolved base ref is local and cannot serve as a diff base
+     here. Discover the resolved local base branch's upstream with
+     `git for-each-ref --format='%(upstream:short)' refs/heads/<branch>`, which separates "the
+     branch does not exist" (an empty result set) from "the branch exists but has no upstream" (an
+     empty field) in one observation. With no upstream, abort as **base branch has no upstream**
+     and name which of the two the observation showed; a branch absent from the forge cannot be a
+     PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
+     tracked on a non-`origin` remote** when it is not: this tool pushes the head to `origin`, so
+     a base tracked on another remote would compute the commit range against a repository the pull
+     request is not opened on. The accepted upstream is the diff base.
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
    - **No commits found:** Preserve the prepared branch, report that it has no commits against the
      resolved base, and stop without any remote mutation.
@@ -136,7 +162,8 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
    abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
-   normalized details using both `head === <head-branch>` and `base === <base-branch>`, and require
+   normalized details using both `head === <head-branch>` and `base === <base-branch>`, where
+   `<base-branch>` is the resolved local base branch and never the resolved base ref, and require
    state `open` and a parseable URL. The helper owns the provider-specific GitHub and
    Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
    pagination; do not bypass it with guessed `gh` or `tea` flags.
@@ -161,7 +188,7 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-10. **Create the PR:** Build the provider-neutral PR payload, set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
       mutation would create a duplicate for the same head. Resolve it by repeating the step 8

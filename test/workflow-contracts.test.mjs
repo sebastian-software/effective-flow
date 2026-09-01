@@ -7009,10 +7009,30 @@ test('the handback delegates archival instead of instructing a git mv', () => {
   }
 });
 
+// The rule's own arms, one entry per outcome bullet, with the lead-in classification prose kept as
+// entry 0. `oxfmt` puts a blank line between a paragraph and the list that follows it, and the
+// `\s*` in the split lookahead matches at both of that gap's newlines, so the raw split yields a
+// whitespace-only element between the prose and the first bullet. Dropping empties keeps the
+// positional reads below anchored to the arms themselves instead of to the formatter's line breaks
+// - without it `missing` silently binds a blank string and every assertion on it goes vacuous.
+function baseBranchRuleParts() {
+  const rule = boundedSlice(
+    source('src/shared/base-branch-resolution.md'),
+    '## Base-branch resolution',
+    '\n### Recorded results',
+  );
+  return rule
+    .split(/(?=\n\s*- )/)
+    .map(prose)
+    .filter((part) => part.trim() !== '');
+}
+
 test('the base-branch resolution rule distinguishes a missing remote from a failed fetch', () => {
-  const delivery = source('src/shared/worktree-integration.md');
-  const preconditions = boundedSlice(delivery, '### Shared preconditions', '### Run-owned');
-  const step = boundedSlice(preconditions, '2. **Resolve `delivery.baseBranch`', '\n3. ');
+  const step = boundedSlice(
+    source('src/shared/base-branch-resolution.md'),
+    '## Base-branch resolution',
+    '\n### Recorded results',
+  );
 
   // The `git remote` check is what separates "this ref can never exist here" from "this ref
   // exists but I could not reach it". Without it the two collapse into one failure, and a
@@ -7024,10 +7044,7 @@ test('the base-branch resolution rule distinguishes a missing remote from a fail
   // read as belonging to the next case. Asserting only on the whole step would stay green if a
   // later edit merged the fallback into the failure branch, which is the dangerous regression:
   // a stale local branch silently becoming the base after an unreachable remote.
-  const cases = step
-    .split(/(?=\n\s*- )/)
-    .slice(1)
-    .map(prose);
+  const cases = baseBranchRuleParts().slice(1);
   assert.equal(cases.length, 3, 'the rule must carry exactly its three outcome bullets');
   const [configured, missing, unresolvable] = cases;
 
@@ -7062,10 +7079,7 @@ test('the base-branch resolution rule distinguishes a missing remote from a fail
 });
 
 test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
-  const delivery = source('src/shared/worktree-integration.md');
-  const preconditions = boundedSlice(delivery, '### Shared preconditions', '### Run-owned');
-  const step = boundedSlice(preconditions, '2. **Resolve `delivery.baseBranch`', '\n3. ');
-  const [classification, , missing] = step.split(/(?=\n\s*- )/).map(prose);
+  const [classification, , missing] = baseBranchRuleParts();
 
   // Splitting the value at the first `/` is only correct when the leading part actually names a
   // remote. Local branch names carry slashes all the time, and `setup` now proposes the current
@@ -7080,6 +7094,15 @@ test('the base-branch resolution rule keeps a slash-containing local base branch
     classification,
     /`feature\/foo`/,
     'the slash-containing local branch is the case the split gets wrong',
+  );
+
+  // `setup` proposes a bare local branch where no `origin` exists, so the slashless value is a
+  // real input to this rule and not a degenerate one. Left unstated, a reader has to infer the
+  // classification from a `/` that is not there.
+  assert.match(
+    classification,
+    /no `\/` at all/,
+    'a value without a slash has no leading part and can never be a remote ref',
   );
 
   // Order matters here, not just presence: the full value has to be tried before anything is cut
@@ -7102,14 +7125,221 @@ test('the partial-diff path defers to the single base-branch resolution rule', (
   // The rule is defined once. Both partial-diff sites used to restate the assumption
   // ("resolvable and, for remote refs, updatable" / "Refresh and resolve"), which is how a
   // second, quietly diverging copy of the fetch contract came to exist in one fragment.
-  assert.match(partial, /resolves under the "Shared preconditions" resolution rule/);
+  assert.match(partial, /resolves under the "Base-branch resolution" rule/);
   assert.match(partial, /Resolve `delivery\.baseBranch` by that same rule/);
   assert.doesNotMatch(partial, /updatable/);
   assert.doesNotMatch(partial, /git fetch/, 'only the shared rule instructs the fetch');
-  assert.equal(
-    (delivery.match(/git fetch/g) ?? []).length,
-    1,
-    'the fetch instruction must appear exactly once in the fragment',
+
+  // The branch is created from the recorded result, not from the configured value: on the
+  // substitution arm those differ, and creating from the raw value would abort or start the
+  // partial-diff worktree from the wrong commit.
+  assert.match(prose(partial), /recorded resolved base ref/);
+});
+
+// One rule, one fetch, in both hosts. The count runs over the eagerly resolved composition rather
+// than over the fragment alone: a host that grows a second refresh sentence of its own is exactly
+// the defect the extraction removes, and a fragment-local count would never see it. The raw
+// zero-count is the other half - it is what fails when a host restates the fetch inline.
+test('base-branch resolution reaches both hosts eagerly, with exactly one fetch each', () => {
+  for (const path of ['src/shared/worktree-integration.md', 'src/tools/pr.md']) {
+    const raw = source(path);
+    const { eager } = collectIncludeNames(raw);
+    assert.ok(
+      eager.has('base-branch-resolution'),
+      `${path} must include the rule eagerly; a lazy pointer would leave the rule unrendered ` +
+        'in a host that resolves a base on every run',
+    );
+    assert.equal(
+      (raw.match(/git fetch/g) ?? []).length,
+      0,
+      `${path} must not restate the fetch the rule owns`,
+    );
+
+    const resolved = resolveEagerIncludes(raw, {
+      context: path,
+      readFragment: (name) => source(`src/shared/${name}.md`),
+    });
+    assert.equal(
+      (resolved.match(/git fetch/g) ?? []).length,
+      1,
+      `${path} must carry the fetch instruction exactly once once its includes are resolved`,
+    );
+  }
+});
+
+// The rule records two results and every consuming site names one of them. Each site gets its own
+// bounded slice, so reverting exactly one of them to a split fails both that site's positive
+// deferral assertion and its slice-local forbidden-phrase assertion, rather than being masked by
+// a neighbouring site that still reads correctly.
+test('every delivery site names a recorded base-branch result instead of re-deriving one', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+
+  // Zero, not "fewer". One surviving split is enough to make resolution and completion disagree
+  // about which branch `delivery.baseBranch` names, which is the whole defect.
+  assert.doesNotMatch(
+    delivery,
+    /branch part/,
+    'no site in the fragment may re-derive a branch by splitting the configured value',
+  );
+
+  const step2 = boundedSlice(
+    boundedSlice(delivery, '### Shared preconditions', '### Run-owned'),
+    '2. **Resolve `delivery.baseBranch`',
+    '\n3. ',
+  );
+  const pointer = prose(step2);
+  assert.match(pointer, /Base-branch resolution/, 'step 2 must point at the rule by its title');
+  assert.match(pointer, /resolved base ref/);
+  assert.match(pointer, /resolved local base branch/);
+  assert.doesNotMatch(step2, /git remote/, 'the pointer must not re-probe the remotes');
+  assert.doesNotMatch(step2, /git fetch/, 'the pointer must not restate the fetch');
+
+  // Carried run state is the repository's existing mechanism for a value that must not be
+  // recomputed later; without it "the recorded result" names nothing a later phase still holds.
+  const runState = prose(boundedSlice(delivery, '### Run-owned delivery state', '\n### '));
+  assert.match(runState, /resolved base ref/);
+  assert.match(runState, /resolved local base branch/);
+
+  const sites = [
+    [
+      'the returnBranch default',
+      'Missing values have these defaults',
+      'Valid values',
+      /resolved local base branch/,
+    ],
+    [
+      'the containment check',
+      '3. If the current HEAD has relevant uncommitted',
+      '\n4. ',
+      /resolved base ref/,
+    ],
+    [
+      'worktree creation',
+      'Create the worktree and delivery branch with',
+      'Only for that newly',
+      /resolved base ref/,
+    ],
+    [
+      'in-place delivery-branch creation',
+      '### In-place delivery without worktree',
+      '\n### ',
+      /resolved base ref/,
+    ],
+    [
+      'the partial-diff creation step',
+      '1. Resolve `delivery.baseBranch` by that same rule',
+      '\n2. ',
+      /resolved base ref/,
+    ],
+    [
+      'the merge target',
+      '- `merge`: the target is',
+      '- `pr`: resolve and record',
+      /resolved local base branch/,
+    ],
+    [
+      'the switch-back target',
+      '6. **Restore checkout:**',
+      'Do not switch a reused',
+      /resolved local base branch/,
+    ],
+  ];
+  for (const [name, start, stop, expected] of sites) {
+    const site = boundedSlice(delivery, start, stop);
+    assert.match(prose(site), expected, `${name} must name the recorded result it consumes`);
+    assert.doesNotMatch(site, /branch part/, `${name} must not re-derive a branch by splitting`);
+  }
+
+  // The delegation handoff is typed: `pr` must not have to guess which of the two a bare "base
+  // branch" meant, and must not need a second fetch to recover the other one.
+  const handback = prose(
+    boundedSlice(delivery, '- `pr`: resolve and record', 'Once `{{SKILL:pr}}` returned'),
+  );
+  assert.match(handback, /resolved base ref/);
+  assert.match(handback, /resolved local base branch/);
+  assert.doesNotMatch(handback, /branch part/);
+});
+
+test('pr consumes the recorded base results and derives a diff base on both arms', () => {
+  const pr = source('src/tools/pr.md');
+
+  // File-level forbidden-phrase assertions cannot be used here: step 9 keeps `local branch part`
+  // deliberately, as the argument *against* recomputing the range on it. Pinning that keeps a
+  // later cleanup from "fixing" the one occurrence that is supposed to stay.
+  assert.match(
+    pr,
+    /do not recompute them against the local branch part, which may lag behind the remote/,
+    'step 9 must keep its argument against recomputing the range on the local branch',
+  );
+
+  const handoff = boundedSlice(pr, '- **Committed handoff:**', '- **Base branch:**');
+  assert.match(prose(handoff), /resolved base ref/);
+  assert.match(prose(handoff), /resolved local base branch/);
+  assert.match(
+    prose(handoff),
+    near('single untyped base value', 'resolved local base branch', 200),
+    'an untyped handoff value must be typed by the receiver, not guessed per call',
+  );
+
+  const baseInput = boundedSlice(pr, '- **Base branch:**', '- **Title/description:**');
+  assert.match(prose(baseInput), /resolved local base branch/);
+  assert.doesNotMatch(baseInput, /branch part/);
+
+  const precondition = boundedSlice(
+    pr,
+    '   - The head exists as an exact local branch',
+    '   - For a direct invocation',
+  );
+  assert.match(prose(precondition), /resolved local base branch/);
+  assert.doesNotMatch(precondition, /branch part/);
+  // Pinned as one line: the sentence is a contract elsewhere in this suite too.
+  assert.match(precondition, /A detached invocation or base branch as head aborts\./);
+
+  const step4 = boundedSlice(pr, '4. **Inspect the head against the resolved base', '\n5. ');
+  const flow = prose(step4);
+  // Two refresh sentences of differing strength in one file is the defect shape the extraction
+  // removes; a host that keeps its own "refresh if needed" clause reintroduces it.
+  assert.doesNotMatch(
+    step4,
+    /Refresh the configured base ref/i,
+    'step 4 must not carry back its own refresh clause',
+  );
+  assert.match(
+    flow,
+    near('adds no refresh of its own', 'never repeats', 200),
+    'the deferral has to be stated, not merely implied by the clause being gone',
+  );
+  assert.match(flow, /Remote configured/);
+  assert.match(
+    flow,
+    near('Remote configured', 'no upstream lookup runs', 300),
+    'a remote-tracking base ref is the diff base directly',
+  );
+  assert.match(flow, /Remote not configured/);
+  assert.match(
+    flow,
+    /git for-each-ref --format='%\(upstream:short\)' refs\/heads\/<branch>/,
+    'one observation must separate "branch missing" from "branch has no upstream"',
+  );
+  // Two distinct aborts, not one catch-all: a base on `upstream/…` computes the commit range
+  // against a repository the pull request is not opened on, which is silently wrong rather than
+  // simply absent.
+  assert.match(flow, /base branch has no upstream/);
+  assert.match(flow, near('non-`origin` remote', 'abort', 300));
+  assert.match(flow, near('both arms', 'remote-tracking ref or abort', 200));
+
+  const lookup = boundedSlice(pr, '8. **Look up an existing open PR:**', '\n9. ');
+  assert.match(
+    prose(lookup),
+    near('`base === <base-branch>`', 'resolved local base branch', 300),
+    'the exact-match filter compares a branch name, which is what the forge reports',
+  );
+
+  const create = boundedSlice(pr, '10. **Create the PR:**', '\n11. ');
+  assert.match(
+    prose(create),
+    near('`base`', 'resolved local base branch', 200),
+    'the pr-create payload base reaches GitHub POST /pulls verbatim, so it is a branch name',
   );
 });
 
