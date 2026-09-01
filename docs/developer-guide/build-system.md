@@ -108,11 +108,16 @@ when: the delivery/worktree mode is determined
 delivery/worktree mode is determined." A routine run that never reaches the mode never loads the
 fragment.
 
-Shared fragments may contain eager includes. In particular, both the lazy
-`worktree-integration` fragment and the internal `apply-review-commit-mechanics` tool include
-`execution-location`, the single source for execution receipts, rooted operations and
-ownership-safe cleanup. Rendering each of those direct eager includes places the same contract
-in all native and portable targets.
+Shared fragments may contain eager includes. The lazy `worktree-integration` fragment carries
+three of them: `execution-location`, the single source for execution receipts, rooted operations
+and ownership-safe cleanup; `worktree-lifecycle`, the ownership evidence an Effective Flow-created
+worktree is removed against; and `base-branch-resolution`, the single rule that turns
+`delivery.baseBranch` into a resolved base ref and a resolved local base branch. The internal
+`apply-review-commit-mechanics` tool includes `execution-location` as well, and the `pr` tool
+includes `base-branch-resolution`, which is why that rule is a fragment rather than prose in one
+host: `pr` does not include `worktree-integration`, so a bare cross-reference would point at text
+absent from its built output. Rendering each of those direct eager includes places the same
+contract in all native and portable targets.
 
 A shared fragment may equally contain a `lazy-include` fence, and a deferred fragment is not a
 leaf: `worktree-integration` defers `pr-review-integration` at its own decision point. Nested
@@ -351,7 +356,9 @@ and directive syntax").
   nobody notices. Neither is deferred, however tempting their size. `delegation-mandate` is eager
   for the same reason: a lazy pointer at the delegation decision point would let the very host
   default this fragment corrects skip the pointer's own trigger, so the mandate must be present
-  before the model plans the run.
+  before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
+  narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
+  decision point at which a pointer could sit.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
