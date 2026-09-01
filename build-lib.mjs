@@ -820,8 +820,15 @@ export function assertSkillOwnershipContract(
 // (`recommendationChains`) are separate inputs on purpose: a heading with no
 // parseable bullet satisfies neither side and gets its own diagnosis instead of
 // being reported as a missing section or passed as an honoured exemption.
+//
+// What fulfils the obligation is manifest-driven, which is why `ownedSkills`
+// (the manifest's declared relationship skills) is a required input. A bullet
+// may legitimately name an allowlisted external skill — `context7-mcp`,
+// `humanizer`, `impeccable` — but such a skill owns no Effective Flow domain, so
+// a section naming only external tokens names no owner at all and would pass the
+// guard while leaving exactly the hole it exists to close.
 export function assertAgentSkillRecommendationRoster(
-  { agents, sectionAgents, recommendationChains, exemptAgents },
+  { agents, sectionAgents, recommendationChains, exemptAgents, ownedSkills },
   { context } = {},
 ) {
   if (!Array.isArray(agents) || agents.length === 0) {
@@ -836,6 +843,13 @@ export function assertAgentSkillRecommendationRoster(
   if (!(exemptAgents instanceof Set)) {
     throw new Error(`Agent skill-recommendation exemptions must be a Set${contextSuffix(context)}`);
   }
+  if (!(ownedSkills instanceof Set) || ownedSkills.size === 0) {
+    // An empty owned set would fail every agent for the wrong reason, so it is
+    // a misconfiguration of the guard rather than a finding about a source.
+    throw new Error(
+      `Agent skill-recommendation ownedSkills must be a non-empty Set${contextSuffix(context)}`,
+    );
+  }
   const roster = new Set(agents);
   for (const name of exemptAgents) {
     if (!roster.has(name)) {
@@ -845,6 +859,11 @@ export function assertAgentSkillRecommendationRoster(
     }
   }
   const recommending = new Set(recommendationChains.map((chain) => chain.consumer));
+  const recommendingOwner = new Set(
+    recommendationChains
+      .filter((chain) => chain.skills.some((skill) => ownedSkills.has(skill)))
+      .map((chain) => chain.consumer),
+  );
   for (const name of agents) {
     const hasSection = sectionAgents.has(name);
     if (exemptAgents.has(name)) {
@@ -863,6 +882,14 @@ export function assertAgentSkillRecommendationRoster(
     if (!recommending.has(name)) {
       throw new Error(
         `src/agents/${name}.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet, or drop the section and add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
+    }
+    if (!recommendingOwner.has(name)) {
+      // A parsed bullet naming only allowlisted external skills gets its own
+      // diagnosis: the section exists and names something, but nothing it names
+      // owns a domain the agent could have delegated.
+      throw new Error(
+        `src/agents/${name}.md recommends no skill declared in the ownership manifest; an allowlisted external skill alone does not satisfy the roster, so name the central skill that owns its domain, or add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
       );
     }
   }

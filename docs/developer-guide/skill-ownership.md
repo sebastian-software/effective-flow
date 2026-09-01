@@ -254,9 +254,12 @@ table. If the source recommends a non-relationship skill as an external alternat
 token deliberately to the external recommendation allowlist.
 
 Two build guards now enforce what used to be convention, so neither half of the check can be
-forgotten. Every `src/agents/*.md` must carry a `## Recommended skills` section or appear in
-`SKILL_RECOMMENDATION_EXEMPT_AGENTS` in `build.mjs` with a one-line reason — the set is two-sided,
-so an exempt agent must carry no section and an exemption for a deleted agent is stale. In the
+forgotten. Every `src/agents/*.md` must carry a `## Recommended skills` section that names a skill
+declared in the manifest, or appear in `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in `build.mjs` with a
+one-line reason — the set is two-sided, so an exempt agent must carry no section and an exemption
+for a deleted agent is stale. An allowlisted external skill is a legitimate bullet but owns no
+domain, so a section naming only external tokens names no owner and does not satisfy the
+roster. In the
 other direction, a declared relationship must be reachable from a recommendation. That check is
 strict where the contract is strict: a **`delegate`** consumer must name its owner itself, and as
 the **first** member of its fallback chain, because that pair is the whole layered contract, a

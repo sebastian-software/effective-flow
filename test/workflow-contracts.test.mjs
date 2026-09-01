@@ -2332,6 +2332,14 @@ test('both central-skill ownership guards stay wired into build.mjs', () => {
   ]) {
     assert.ok(roster.includes(argument), `the roster guard call must pass ${argument}`);
   }
+  // `ownedSkills` is what keeps the roster manifest-driven: without it an agent
+  // recommending only an allowlisted external skill would satisfy the guard
+  // while naming no central owner at all.
+  assert.match(
+    roster,
+    /ownedSkills: new Set\(\s*ownershipManifest\.relationships\.map\(\(relationship\) => relationship\.skill\),\s*\)/,
+    'the roster guard call must derive ownedSkills from the ownership manifest',
+  );
 
   // Guard (b): the reverse check runs only when the ownership call supplies the
   // consumers that can carry a recommendation at all.

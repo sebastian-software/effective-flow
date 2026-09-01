@@ -783,6 +783,12 @@ const checkedInAgentRecommendationChains = checkedInRecommendationChains.filter(
 const checkedInAgentSections = collectRecommendedSkillSections(
   checkedInRecommendationSources.filter((source) => source.context.startsWith('agents/')),
 );
+// The manifest's declared relationship skills — the only ones that satisfy the
+// roster. An allowlisted external skill (`context7-mcp`, `humanizer`, …) owns no
+// Effective Flow domain and cannot stand in for a central owner.
+const checkedInOwnedSkills = new Set(
+  checkedInSkillOwnershipManifest.relationships.map((relationship) => relationship.skill),
+);
 // The expected membership of build.mjs's exemption set. A separate test pins
 // this against the set build.mjs actually declares, so a one-sided edit fails.
 const SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED = new Set(['merge-conflict-resolver']);
@@ -793,6 +799,11 @@ function assertSyntheticAgentRoster({
   // synthetic case can carry a heading that names no skill.
   sections = ['test-writer'],
   recommending = ['test-writer'],
+  // What the synthetic recommendation names. Only a manifest-declared skill
+  // satisfies the roster, so an external-only case sets this to an allowlisted
+  // token instead.
+  recommendedSkills = ['effective-engineering'],
+  ownedSkills = new Set(['effective-engineering']),
   exemptAgents = new Set(['merge-conflict-resolver']),
 } = {}) {
   assertAgentSkillRecommendationRoster(
@@ -801,10 +812,11 @@ function assertSyntheticAgentRoster({
       sectionAgents: new Set(sections),
       recommendationChains: recommending.map((consumer) => ({
         consumer,
-        skills: ['effective-engineering'],
+        skills: recommendedSkills,
         context: `agents/${consumer}.md`,
       })),
       exemptAgents,
+      ownedSkills,
     },
     { context: 'synthetic agent roster' },
   );
@@ -847,6 +859,36 @@ test('the agent roster rejects a section that names no skill', () => {
     () => assertSyntheticAgentRoster({ sections: ['test-writer'], recommending: [] }),
     /src\/agents\/test-writer\.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet/,
   );
+});
+
+test('the agent roster rejects a section that names only an external skill', () => {
+  // `context7-mcp` is allowlisted and legitimate, but it owns no Effective Flow
+  // domain. Counting any parsed bullet let a new agent ship a second copy of a
+  // centrally owned playbook while naming no owner at all — exactly the hole
+  // this roster guard exists to close.
+  assert.throws(
+    () => assertSyntheticAgentRoster({ recommendedSkills: ['context7-mcp'] }),
+    /src\/agents\/test-writer\.md recommends no skill declared in the ownership manifest; an allowlisted external skill alone does not satisfy the roster/,
+  );
+});
+
+test('the agent roster accepts a chain that names a declared owner beside external skills', () => {
+  // The shape the checked-in agents ship: a declared owner with allowlisted
+  // alternatives behind it stays a fulfilled obligation.
+  assert.doesNotThrow(() =>
+    assertSyntheticAgentRoster({ recommendedSkills: ['effective-engineering', 'context7-mcp'] }),
+  );
+});
+
+test('the agent roster requires a non-empty set of manifest-declared skills', () => {
+  // An empty owned set would fail every agent for the wrong reason, so it is a
+  // misconfiguration of the guard rather than a finding about a source.
+  for (const ownedSkills of [['effective-engineering'], new Set()]) {
+    assert.throws(
+      () => assertSyntheticAgentRoster({ ownedSkills }),
+      /Agent skill-recommendation ownedSkills must be a non-empty Set/,
+    );
+  }
 });
 
 test('an exempt agent with a bulletless section still fails the two-sided check', () => {
@@ -905,10 +947,23 @@ test('every checked-in agent recommends a central skill or is the one exemption'
         sectionAgents: checkedInAgentSections,
         recommendationChains: checkedInAgentRecommendationChains,
         exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED,
+        ownedSkills: checkedInOwnedSkills,
       },
       { context: 'checked-in agent roster' },
     ),
   );
+
+  // Stated independently of the guard: every non-exempt agent names a skill the
+  // ownership manifest declares, not merely an allowlisted external one.
+  const externalOnly = checkedInAgentNames.filter(
+    (name) =>
+      !SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED.has(name) &&
+      !checkedInAgentRecommendationChains.some(
+        (chain) =>
+          chain.consumer === name && chain.skills.some((skill) => checkedInOwnedSkills.has(skill)),
+      ),
+  );
+  assert.deepEqual(externalOnly, [], 'every non-exempt agent must name a declared central owner');
 
   // `merge-conflict-resolver` is the only expected exemption, and it carries its
   // reason in prose rather than only in build.mjs.

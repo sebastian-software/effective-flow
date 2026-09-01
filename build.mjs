@@ -584,6 +584,12 @@ try {
       sectionAgents: collectRecommendedSkillSections(agentRecommendationSources),
       recommendationChains: collectRecommendedSkillChains(agentRecommendationSources),
       exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS,
+      // What satisfies the roster is the manifest, not any parsed bullet: an
+      // allowlisted external skill is a legitimate fallback but owns no domain,
+      // so it must not stand in for the central owner.
+      ownedSkills: new Set(
+        ownershipManifest.relationships.map((relationship) => relationship.skill),
+      ),
     },
     { context: 'agent skill-recommendation roster' },
   );
