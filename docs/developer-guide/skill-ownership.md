@@ -258,9 +258,11 @@ forgotten. Every `src/agents/*.md` must carry a `## Recommended skills` section 
 `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in `build.mjs` with a one-line reason — the set is two-sided,
 so an exempt agent must carry no section and an exemption for a deleted agent is stale. In the
 other direction, a declared relationship must be reachable from a recommendation. That check is
-strict where the contract is strict: a **`delegate`** consumer must name its owner itself, because
-that pair is the whole layered contract and a sibling consumer must not be able to keep a dead
-relationship looking alive. A `route-when-relevant` consumer is checked per relationship, since a
+strict where the contract is strict: a **`delegate`** consumer must name its owner itself, and as
+the **first** member of its fallback chain, because that pair is the whole layered contract, a
+sibling consumer must not be able to keep a dead relationship looking alive, and ordered selection
+applies only the first available member — an owner written behind an available alternative is
+never the guidance that runs. A `route-when-relevant` consumer is checked per relationship, since a
 relevance-gate consumer reaches its owner through the structured marker rather than a section.
 Shared-fragment consumers are exempt by kind, because a fragment expresses its ownership as prose
 inside the tool that embeds it and can never carry a section of its own. The

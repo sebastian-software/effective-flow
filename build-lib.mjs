@@ -744,12 +744,16 @@ export function assertSkillOwnershipContract(
   //
   // The strictness differs by classification, and deliberately so:
   //
-  // - `delegate` is checked **per consumer**. That pair is the whole layered
-  //   contract — the source carries no second copy of the playbook — so a
-  //   delegating consumer that stops recommending its owner has silently lost
-  //   its domain guidance. A per-relationship check would miss exactly that:
-  //   a sibling consumer keeps the relationship alive while the drifted one
-  //   passes both guards.
+  // - `delegate` is checked **per consumer**, and only against the **leading**
+  //   member of a chain. That pair is the whole layered contract — the source
+  //   carries no second copy of the playbook — so a delegating consumer that
+  //   stops recommending its owner has silently lost its domain guidance. A
+  //   per-relationship check would miss exactly that: a sibling consumer keeps
+  //   the relationship alive while the drifted one passes both guards. Position
+  //   matters for the same reason: `src/shared/skill-discovery.md` selects the
+  //   first available, non-excluded member of `A › B`, never both, so an owner
+  //   written behind an available non-owner is not the guidance that gets
+  //   applied.
   // - `route-when-relevant` is checked **per relationship**, because a
   //   relevance-gate consumer (`plan`, `plan-review`, `concept`,
   //   `concept-review`) reaches its owner through the structured marker in
@@ -760,11 +764,20 @@ export function assertSkillOwnershipContract(
       `Skill-ownership recommendationCapableConsumers must be a Set${contextSuffix(context)}`,
     );
   }
+  // Two sets, because the two branches ask different questions. Authority for
+  // one consumer requires the owner to be the member ordered selection actually
+  // takes, so the delegate branch reads `leadingRecommendedPairs`. Reachability
+  // of a relationship by *some* consumer is the weaker claim the
+  // per-relationship branch makes, and a fallback member is legitimately
+  // reached whenever the members ahead of it are unavailable, so that branch
+  // keeps the full set.
   const recommendedPairs = new Set();
+  const leadingRecommendedPairs = new Set();
   for (const chain of recommendationChains) {
     for (const skill of chain.skills) {
       recommendedPairs.add(`${skill} ${chain.consumer}`);
     }
+    leadingRecommendedPairs.add(`${chain.skills[0]} ${chain.consumer}`);
   }
   for (const relationship of manifest.relationships) {
     const checkable = relationship.consumers.filter((entry) =>
@@ -773,9 +786,9 @@ export function assertSkillOwnershipContract(
     if (checkable.length === 0) continue;
     for (const entry of checkable) {
       if (entry.classification !== 'delegate') continue;
-      if (recommendedPairs.has(`${relationship.skill} ${entry.consumer}`)) continue;
+      if (leadingRecommendedPairs.has(`${relationship.skill} ${entry.consumer}`)) continue;
       throw new Error(
-        `Unrecommended delegate consumer "${entry.consumer}" for skill "${relationship.skill}": a delegating consumer must name its owner in a "## Recommended skills" section${contextSuffix(context)}`,
+        `Unrecommended delegate consumer "${entry.consumer}" for skill "${relationship.skill}": a delegating consumer must name its owner in a "## Recommended skills" section, as the first member of its fallback chain${contextSuffix(context)}`,
       );
     }
     if (

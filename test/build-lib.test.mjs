@@ -641,6 +641,66 @@ test('the ownership reverse check rejects a delegate consumer that stopped recom
   );
 });
 
+test('the ownership reverse check rejects a delegate owner behind an available fallback member', () => {
+  // Ordered selection takes the first available, non-excluded member of a
+  // chain and never both, so `impeccable › effective-web` applies `impeccable`
+  // whenever it is installed. Crediting the trailing owner would let a
+  // delegating consumer keep the declaration while the runtime applies
+  // something else — the layered contract dead, the build green.
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+            },
+          ],
+        }),
+        recommendation: '- `impeccable › effective-web`',
+      }),
+    /Unrecommended delegate consumer "test-writer" for skill "effective-web": a delegating consumer must name its owner in a "## Recommended skills" section, as the first member of its fallback chain/,
+  );
+});
+
+test('the ownership reverse check accepts a delegate owner ahead of its fallback members', () => {
+  // The same pair in the order every checked-in source writes it: the owner
+  // leads and the alternatives stay reachable behind it.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+          },
+        ],
+      }),
+      recommendation: '- `effective-web › impeccable`',
+    }),
+  );
+});
+
+test('the ownership reverse check keeps a trailing fallback member reachable per relationship', () => {
+  // Position decides authority, not reachability: a `route-when-relevant`
+  // relationship named only behind another member is still reached whenever
+  // that member is unavailable, so the weaker branch keeps the full set.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+          },
+        ],
+      }),
+      recommendation: '- `impeccable › effective-web`',
+    }),
+  );
+});
+
 test('the ownership reverse check keeps route-when-relevant consumers per relationship', () => {
   // `plan` and its relevance-gate siblings reach their owner through the
   // structured marker, not through a section, so a sibling recommendation is
