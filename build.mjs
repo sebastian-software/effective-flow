@@ -500,7 +500,7 @@ function resolveIncludes(body, context) {
 
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
-let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of the largest tools (#99)
+let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of every tool (#99)
 
 try {
   const toolFiles = readdirSync(TOOLS_DIR)
@@ -1377,28 +1377,86 @@ try {
   }
 
   // --- Context budget report + guard (#99) ---
-  // The largest tools keep their always-loaded core — the built tool file, which
-  // no longer inlines the mode-gated fragments — under a documented line budget.
+  // Every tool keeps its always-loaded core — the built tool file, which no longer
+  // inlines the mode-gated fragments — under a documented line budget.
   // A routine invocation that never reaches a deferred mode loads only this core.
   // See docs/developer-guide/build-system.md ("Progressive Disclosure").
   //
-  // Only the six tools named below are measured, out of the 28 files in src/tools;
-  // the rest carry no budget at all. Each measured tool gets its own limit rather
-  // than a share of one number: the five implementation tools happen to agree on
-  // 700 lines, while `merge-gate` carries 3250, because it is an orchestration gate
-  // whose phases, delegation contracts and provider rules do not compress to the
-  // size of an implementation tool, and it is measured here so it can never grow
-  // unwatched again. Its 3250 is a ratchet a little above the measured 3160, not a
-  // target — the small headroom keeps the next justified rule from failing the
-  // build, while any renewed drift trips the guard.
+  // Every file in src/tools is measured, and the reconciliation below keeps this
+  // map and the built tool set in exact correspondence, so a newly added tool
+  // cannot ship unmeasured. Each tool gets its own limit rather than a share of
+  // one number. Only six of these numbers are a judgement: the five
+  // implementation tools agree on 700 lines, and `merge-gate` carries 3250,
+  // because it is an orchestration gate whose phases, delegation contracts and
+  // provider rules do not compress to the size of an implementation tool.
+  //
+  // Every other number here is a **measured backlog, not a target**. It records
+  // what a tool costs today, with its mode-gated fragments still inlined eagerly;
+  // it is not a size anyone argued for. Each later conversion of an eager include
+  // to a `lazy-include` lowers the entries it touches, so a large number reads as
+  // work outstanding and never as room to fill. `merge-gate`'s 3250 is the same
+  // kind of ratchet, a little above its measured size.
+  //
+  // The allowance above the measured size is a fixed ten lines rather than a
+  // percentage, deliberately: a percentage hands the largest tools the most room,
+  // which is exactly where unwatched growth is most expensive. Ten lines absorb
+  // the next justified rule, or the short pointer a deferral leaves behind,
+  // without hiding a regression.
+  //
+  // Entries run largest first, so the map itself reads as the backlog.
   const CONTEXT_BUDGET_LINES = {
-    build: 700,
-    fix: 700,
-    docs: 700,
-    review: 700,
-    plan: 700,
     'merge-gate': 3250,
+    iterate: 2672,
+    refactor: 1867,
+    maintain: 1663,
+    'apply-issues': 1594,
+    setup: 1588,
+    cleanup: 1438,
+    'apply-review': 1412,
+    'plan-issue': 1148,
+    apply: 985,
+    deliver: 747,
+    review: 700,
+    'apply-plan': 648,
+    'apply-review-remote': 642,
+    plan: 700,
+    'apply-review-commit-mechanics': 630,
+    investigate: 579,
+    docs: 700,
+    build: 700,
+    'plan-review': 498,
+    pr: 483,
+    fix: 700,
+    'concept-review': 394,
+    commit: 320,
+    concept: 304,
+    'open-plans': 199,
+    'pr-review': 38,
+    version: 38,
   };
+
+  // Guard: the budget map and the built tool set cover each other exactly. A tool
+  // with no entry would ship unmeasured, and an entry naming no tool would make
+  // the report read as coverage it no longer has — the same two-sided
+  // reconciliation the next-steps exemptions and the deprecated aliases use.
+  {
+    const budgeted = new Set(Object.keys(CONTEXT_BUDGET_LINES));
+    const unbudgeted = [...builtToolNames].filter((name) => !budgeted.has(name)).sort();
+    const stale = [...budgeted].filter((name) => !builtToolNames.has(name)).sort();
+    if (unbudgeted.length > 0) {
+      throw new Error(
+        `context budget (#99): CONTEXT_BUDGET_LINES has no entry for ${unbudgeted.join(', ')} — ` +
+          'every src/tools/*.md is measured; add the built size plus ten lines of headroom',
+      );
+    }
+    if (stale.length > 0) {
+      throw new Error(
+        `context budget (#99): CONTEXT_BUDGET_LINES names ${stale.join(', ')}, but there is no ` +
+          'matching src/tools/<name>.md',
+      );
+    }
+  }
+
   budgetReport = Object.entries(CONTEXT_BUDGET_LINES).map(([name, limit]) => {
     const lines = [CLAUDE_SKILL_DIR, CODEX_SKILL_DIR, PORTABLE_SKILL_DIR].map(
       (skillDir) => readFileSync(join(skillDir, 'tools', `${name}.md`), 'utf8').split('\n').length,

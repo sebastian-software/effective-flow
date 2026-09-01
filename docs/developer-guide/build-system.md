@@ -284,15 +284,19 @@ The build aborts with an error message if any of these guards is violated:
   side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
-- **Context-budget guard (#99):** The always-loaded core of the largest tools – the built tool
-  file without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
-  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**. The build prints each
-  measured size next to the budget it was measured against and aborts if a tool exceeds **its
-  own** limit, naming the tool, its size and that limit. `merge-gate` differs because it is an
+- **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
+  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
+  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**; every other
+  `src/tools/*.md` carries its measured size plus ten lines. The build prints each measured size
+  next to the budget it was measured against and aborts if a tool exceeds **its own** limit,
+  naming the tool, its size and that limit. `merge-gate` differs from the 700 because it is an
   orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Its 3250 is a ratchet against renewed growth rather than
-  a target – it sits just above the measured size, so the number falls as the gate is trimmed
-  and never becomes room to fill.
+  the size of an implementation tool. Every number other than the six above is a measured
+  backlog rather than a target – it records what a tool costs today with its mode-gated
+  fragments still inlined, so each later deferral lowers the entries it touches and a large
+  number reads as work outstanding, never as room to fill. The map and the built tool set are
+  reconciled two-sidedly: a tool with no entry fails the build, and so does an entry naming no
+  tool, so a newly added tool cannot ship unmeasured.
 - **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
   one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
   The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
@@ -446,15 +450,23 @@ Portable tool references use the harness-neutral notation `effective-flow <tool>
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
 so both managers install the same bytes instead of selecting by traversal order.
 
-**Context budget.** The always-loaded core of the largest tools is measured and enforced during
-the build (see "Guards"), each against its own budget; the build prints the sizes as a report.
-The five implementation tools share **700 lines** and currently measure `build` 536, `fix` 432,
-`docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the tightest
-since the eager `delegation-mandate` include was added, to `fix`'s 268 lines. `merge-gate` is
-budgeted separately at **3250** and measures 3160: an orchestration gate whose phases, delegation
-contracts and provider rules do not compress to the size of an implementation tool, so it is held
-to a number that ratchets its own history down rather than to the shared 700. The rest is loaded
-only when the mode is reached.
+**Context budget.** The always-loaded core of every tool is measured and enforced during the
+build (see "Guards"), each against its own budget; the build prints the sizes as a report, largest
+first. The five implementation tools share **700 lines** and currently measure `build` 536, `fix`
+432, `docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the
+tightest since the eager `delegation-mandate` include was added, to `fix`'s 268 lines.
+`merge-gate` is budgeted separately at **3250** and measures 3176: an orchestration gate whose
+phases, delegation contracts and provider rules do not compress to the size of an implementation
+tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
+The rest is loaded only when the mode is reached.
+
+Every remaining tool carries its **measured size plus ten lines**, which is a backlog rather than
+a target: those tools still inline the mode-gated fragments that the five implementation tools
+already defer, and each conversion of an eager include to a `lazy-include` lowers the entries it
+touches. The headroom is a fixed ten lines rather than a percentage on purpose — a percentage
+would give the largest tools the most room, which is where unwatched growth costs the most — and
+it is wide enough for the short pointer a deferral leaves behind. `iterate` at 2662 and `refactor`
+at 1857 are the two largest entries of that kind today.
 
 ## Optional upstream ownership audit
 
