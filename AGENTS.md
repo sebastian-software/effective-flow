@@ -143,11 +143,18 @@ the human-readable explanation in
 [`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md). **When
 adding or expanding a tool, agent, or shared include, run the ownership check:** does it carry a
 second copy of a centrally owned playbook? If so, delegate to the skill, keep only a minimal
-fallback, and update the concrete consumer relationship in both files. Normal builds reconcile
-only Effective Flow’s own relationship declarations, recommendations, and relevance-gate owners;
-they neither synchronize the complete upstream catalog nor enforce the manifest’s informational
-review revision. Use `pnpm audit:skill-ownership -- <local-skills-directory>` as an optional,
-non-blocking maintainer aid and review its candidates manually.
+fallback, and update the concrete consumer relationship in both files. Two halves of that check
+are **build-enforced** rather than left to review: every `src/agents/*.md` must name its domain
+owner in a `## Recommended skills` section or sit in `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in
+`build.mjs` with a one-line reason (two-sided — an exempt agent must carry no section, and an
+exemption for a deleted agent fails as stale), and every declared relationship must be named by at
+least one of its tool or agent consumers, with shared fragments exempt by kind because they can
+never carry a section. The roster half covers agents only; a tool without a domain owner stays
+legitimate. Normal builds reconcile only Effective Flow’s own relationship declarations,
+recommendations, and relevance-gate owners; they neither synchronize the complete upstream
+catalog nor enforce the manifest’s informational review revision. Use
+`pnpm audit:skill-ownership -- <local-skills-directory>` as an optional, non-blocking maintainer
+aid and review its candidates manually.
 
 ## Versioning
 

@@ -30,15 +30,29 @@ delegation-mandate
 
 ## Recommended skills
 
-- `copywriting`
-- `copy-editing`
-- `marketing-psychology`
+- `effective-marketing › copywriting › copy-editing › marketing-psychology` (fallback)
 - `effective-writing` – locale typography of the produced copy; voice and structure stay with the
-  copy skills above
+  copy skill above
 
 ```include
 skill-discovery
 ```
+
+Positioning, messaging, claims and proof follow the central `effective-marketing` skill – the
+declared domain owner, whose guidance is **authoritative** per the authority contract (see Skill
+discovery above). This source keeps **no second copy** of it. The chain is ordered: take the first
+available member, never several.
+
+**The root README is split, and the split is declared, not assumed.** `effective-marketing` treats
+no README as an artifact of its own and its routing boundaries are silent on them; the split comes
+from `effective-delivery`, which declares that a root README may contain technical onboarding
+owned there and product positioning owned by `effective-marketing`. Write the positioning half
+here and leave the technical-onboarding half to the documentation workers rather than assuming a
+single owner for the page.
+
+If no copy skill is available, the minimal fallback applies: a concrete benefit before any feature
+list, the user's own vocabulary, one clear next step, and no claim the product does not support –
+not a complete marketing handbook.
 
 ```include
 doc-categories
@@ -89,7 +103,7 @@ and do not count toward the invariant.
    `package.json`, and – if present – the project's user and technical documentation wherever the
    effective structure places it, to reliably capture the benefit and the audience
 2. derive the central value proposition from verified facts, not from assumptions
-3. write the root README from the user's perspective using the recommended marketing skills
+3. write the root README from the user's perspective using the recommended copy skill
 4. at the end of the run, resolve both follow-up targets from the effective structure, inspect
    them and conclude with only the valid links in user-facing then technical order; report every
    missing path as an open point in the agent result

@@ -2308,6 +2308,89 @@ test('every emitting tool defers next-steps exactly once and every exemption sta
   );
 });
 
+test('both central-skill ownership guards stay wired into build.mjs', () => {
+  // Neither guard has an observable output on a healthy tree, so deleting its
+  // call site leaves the build green and every unit test passing: the pure
+  // functions keep proving themselves against synthetic input nobody runs.
+  // Reading build.mjs as source text is the same defence the next-steps
+  // exemption set gets above.
+  const build = source('build.mjs');
+
+  // Guard (a): the roster call, with all four inputs it needs. `sectionAgents`
+  // is what separates "no section" from "a section naming no skill", so a
+  // dropped argument is a silently weaker guard rather than a crash.
+  const roster = boundedSlice(
+    build,
+    'assertAgentSkillRecommendationRoster(',
+    "{ context: 'agent skill-recommendation roster' },",
+  );
+  for (const argument of [
+    "agents: agentFiles.map((file) => basename(file, '.md'))",
+    'sectionAgents: collectRecommendedSkillSections(agentRecommendationSources)',
+    'recommendationChains: collectRecommendedSkillChains(agentRecommendationSources)',
+    'exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS',
+  ]) {
+    assert.ok(roster.includes(argument), `the roster guard call must pass ${argument}`);
+  }
+  // `ownedSkills` is what keeps the roster manifest-driven: without it an agent
+  // recommending only an allowlisted external skill would satisfy the guard
+  // while naming no central owner at all.
+  assert.match(
+    roster,
+    /ownedSkills: new Set\(\s*ownershipManifest\.relationships\.map\(\(relationship\) => relationship\.skill\),\s*\)/,
+    'the roster guard call must derive ownedSkills from the ownership manifest',
+  );
+
+  // Guard (b): the reverse check runs only when the ownership call supplies the
+  // consumers that can carry a recommendation at all.
+  const ownership = boundedSlice(
+    build,
+    'assertSkillOwnershipContract(',
+    "{ context: 'central-skill ownership guard' },",
+  );
+  assert.match(
+    ownership,
+    /recommendationCapableConsumers: new Set\(\s*recommendationSources\.map\(\(source\) => source\.consumer\),\s*\)/,
+    'the ownership guard call must supply recommendationCapableConsumers',
+  );
+
+  // The exemption set is derived, not asserted: build.mjs and this contract must
+  // share one membership, exactly as the next-steps exemptions do.
+  const declared = section(build, 'const SKILL_RECOMMENDATION_EXEMPT_AGENTS = new Set([', '\n]);');
+  const parsed = [...declared.matchAll(/^\s*'([^']+)',/gm)].map((match) => match[1]).sort();
+  assert.deepEqual(
+    parsed,
+    ['merge-conflict-resolver'],
+    'build.mjs and this contract must share one agent exemption set',
+  );
+  for (const name of parsed) {
+    assert.ok(
+      existsSync(new URL(`src/agents/${name}.md`, repositoryRoot)),
+      `stale exemption: src/agents/${name}.md no longer exists`,
+    );
+    assert.doesNotMatch(
+      source(`src/agents/${name}.md`),
+      /^## (?:Recommended skills|Empfohlene Skills)\s*$/m,
+      `${name} is exempt and must carry no recommended-skills section`,
+    );
+  }
+  // Every other agent must carry one, which is the guard's obligated set stated
+  // independently of the guard itself.
+  const agentFiles = readdirSync(new URL('src/agents/', repositoryRoot)).filter((file) =>
+    file.endsWith('.md'),
+  );
+  assert.ok(agentFiles.length > 0, 'no agent sources found — the roster check is vacuous');
+  const obligated = agentFiles.filter((file) => !parsed.includes(file.slice(0, -'.md'.length)));
+  assert.equal(obligated.length, agentFiles.length - parsed.length);
+  for (const file of obligated) {
+    assert.match(
+      source(`src/agents/${file}`),
+      /^## (?:Recommended skills|Empfohlene Skills)\s*$/m,
+      `src/agents/${file} must name its domain owner or be exempt`,
+    );
+  }
+});
+
 test('the next-steps fragment ships standalone and states the emission rule', () => {
   const fragment = source('src/shared/next-steps.md');
 

@@ -67,8 +67,10 @@ import {
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
   collectRecommendedSkillChains,
+  collectRecommendedSkillSections,
   parseSkillOwnershipRelevanceGateOwners,
   assertSkillOwnershipContract,
+  assertAgentSkillRecommendationRoster,
 } from '../build-lib.mjs';
 import { auditSkillOwnership } from '../scripts/audit-skill-ownership.mjs';
 
@@ -309,6 +311,7 @@ function assertSyntheticSkillOwnershipContract({
   recommendation = '- `effective-web › impeccable › frontend-design`',
   relevanceGateOwners = [],
   knownConsumers = new Set(['test-writer', 'ui-implementer']),
+  recommendationCapableConsumers = new Set(['test-writer', 'ui-implementer']),
 } = {}) {
   const recommendationChains = collectRecommendedSkillChains([
     {
@@ -318,7 +321,14 @@ function assertSyntheticSkillOwnershipContract({
     },
   ]);
   assertSkillOwnershipContract(
-    { manifest, inventoryRows, recommendationChains, relevanceGateOwners, knownConsumers },
+    {
+      manifest,
+      inventoryRows,
+      recommendationChains,
+      relevanceGateOwners,
+      knownConsumers,
+      recommendationCapableConsumers,
+    },
     { context: 'synthetic ownership contract' },
   );
   return recommendationChains;
@@ -505,6 +515,9 @@ const checkedInKnownOwnershipConsumers = new Set(
       .map((file) => file.slice(0, -'.md'.length));
   }),
 );
+const checkedInRecommendationCapableConsumers = new Set(
+  checkedInRecommendationSources.map((source) => source.consumer),
+);
 const checkedInRelevanceGateOwners = parseSkillOwnershipRelevanceGateOwners(
   readFileSync(new URL('../src/shared/central-reasoning-delegation.md', import.meta.url), 'utf8'),
   { context: 'src/shared/central-reasoning-delegation.md' },
@@ -519,6 +532,7 @@ test('checked-in skill-ownership manifest, table, recommendations, and marker st
         recommendationChains: checkedInRecommendationChains,
         relevanceGateOwners: checkedInRelevanceGateOwners,
         knownConsumers: checkedInKnownOwnershipConsumers,
+        recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
       },
       { context: 'checked-in skill-ownership contract' },
     ),
@@ -547,6 +561,7 @@ test('checked-in skill-ownership diagnostics name a deliberately removed skill',
             (skill) => skill !== 'effective-web',
           ),
           knownConsumers: checkedInKnownOwnershipConsumers,
+          recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
         },
         { context: 'checked-in skill-ownership contract' },
       ),
@@ -568,11 +583,436 @@ test('checked-in skill-ownership diagnostics name a deliberately removed Markdow
           recommendationChains: checkedInRecommendationChains,
           relevanceGateOwners: checkedInRelevanceGateOwners,
           knownConsumers: checkedInKnownOwnershipConsumers,
+          recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
         },
         { context: 'checked-in skill-ownership contract' },
       ),
     /missing Markdown row\(s\): effective-web.*checked-in skill-ownership contract/,
   );
+});
+
+// --- Reverse check: a declared relationship nobody recommends (guard b) ---
+
+test('the ownership contract rejects a relationship no tool or agent consumer recommends', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        // `ui-implementer` is the relationship's only checkable consumer and
+        // never names the skill; the one recommendation in the synthetic tree
+        // comes from `test-writer`. Classified route-when-relevant, so the
+        // per-relationship branch is what has to catch it.
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [{ consumer: 'ui-implementer', classification: 'route-when-relevant' }],
+            },
+          ],
+        }),
+        recommendation: '- `impeccable`',
+        recommendationCapableConsumers: new Set(['test-writer', 'ui-implementer']),
+      }),
+    /Unrecommended relationship for skill "effective-web": none of its tool or agent consumers \(ui-implementer\) names it/,
+  );
+});
+
+test('the ownership reverse check rejects a delegate consumer that stopped recommending', () => {
+  // The drift this guard exists for: one delegating consumer swaps its owner
+  // while a sibling keeps the relationship alive. A per-relationship check would
+  // pass — `test-writer` still recommends `effective-web` — and the layered
+  // contract for `ui-implementer` would be dead with a green build.
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [
+                { consumer: 'test-writer', classification: 'delegate' },
+                { consumer: 'ui-implementer', classification: 'delegate' },
+              ],
+            },
+          ],
+        }),
+        recommendation: '- `effective-web`',
+      }),
+    /Unrecommended delegate consumer "ui-implementer" for skill "effective-web": a delegating consumer must name its owner/,
+  );
+});
+
+test('the ownership reverse check rejects a delegate owner behind an available fallback member', () => {
+  // Ordered selection takes the first available, non-excluded member of a
+  // chain and never both, so `impeccable › effective-web` applies `impeccable`
+  // whenever it is installed. Crediting the trailing owner would let a
+  // delegating consumer keep the declaration while the runtime applies
+  // something else — the layered contract dead, the build green.
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+            },
+          ],
+        }),
+        recommendation: '- `impeccable › effective-web`',
+      }),
+    /Unrecommended delegate consumer "test-writer" for skill "effective-web": a delegating consumer must name its owner in a "## Recommended skills" section, as the first member of its fallback chain/,
+  );
+});
+
+test('the ownership reverse check accepts a delegate owner ahead of its fallback members', () => {
+  // The same pair in the order every checked-in source writes it: the owner
+  // leads and the alternatives stay reachable behind it.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+          },
+        ],
+      }),
+      recommendation: '- `effective-web › impeccable`',
+    }),
+  );
+});
+
+test('the ownership reverse check keeps a trailing fallback member reachable per relationship', () => {
+  // Position decides authority, not reachability: a `route-when-relevant`
+  // relationship named only behind another member is still reached whenever
+  // that member is unavailable, so the weaker branch keeps the full set.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+          },
+        ],
+      }),
+      recommendation: '- `impeccable › effective-web`',
+    }),
+  );
+});
+
+test('the ownership reverse check keeps route-when-relevant consumers per relationship', () => {
+  // `plan` and its relevance-gate siblings reach their owner through the
+  // structured marker, not through a section, so a sibling recommendation is
+  // enough for them.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [
+              { consumer: 'test-writer', classification: 'delegate' },
+              { consumer: 'ui-implementer', classification: 'route-when-relevant' },
+            ],
+          },
+        ],
+      }),
+      recommendation: '- `effective-web`',
+    }),
+  );
+});
+
+test('the ownership reverse check exempts shared-fragment consumers by kind', () => {
+  // `language-rules` and its three siblings are shared fragments: they express
+  // ownership as prose inside the tool that embeds them and can never carry a
+  // `## Recommended skills` section, so a relationship reachable only through
+  // them has nothing to check.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'language-rules', classification: 'delegate' }],
+          },
+        ],
+      }),
+      recommendation: '- `impeccable`',
+      knownConsumers: new Set(['test-writer', 'language-rules']),
+      recommendationCapableConsumers: new Set(['test-writer', 'ui-implementer']),
+    }),
+  );
+});
+
+test('the ownership reverse check requires a Set of recommendation-capable consumers', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        recommendationCapableConsumers: ['test-writer'],
+      }),
+    /recommendationCapableConsumers must be a Set/,
+  );
+});
+
+test('checked-in relationships are all reachable from a recommendation', () => {
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest: checkedInSkillOwnershipManifest,
+        inventoryRows: checkedInSkillOwnershipRows,
+        recommendationChains: checkedInRecommendationChains,
+        relevanceGateOwners: checkedInRelevanceGateOwners,
+        knownConsumers: checkedInKnownOwnershipConsumers,
+        recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
+      },
+      { context: 'checked-in skill-ownership contract' },
+    ),
+  );
+});
+
+// --- Agent skill-recommendation roster (guard a) ---
+
+const checkedInAgentNames = readdirSync(new URL('../src/agents/', import.meta.url))
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -'.md'.length))
+  .sort();
+const checkedInAgentRecommendationChains = checkedInRecommendationChains.filter((chain) =>
+  chain.context.startsWith('agents/'),
+);
+const checkedInAgentSections = collectRecommendedSkillSections(
+  checkedInRecommendationSources.filter((source) => source.context.startsWith('agents/')),
+);
+// The manifest's declared relationship skills — the only ones that satisfy the
+// roster. An allowlisted external skill (`context7-mcp`, `humanizer`, …) owns no
+// Effective Flow domain and cannot stand in for a central owner.
+const checkedInOwnedSkills = new Set(
+  checkedInSkillOwnershipManifest.relationships.map((relationship) => relationship.skill),
+);
+// The expected membership of build.mjs's exemption set. A separate test pins
+// this against the set build.mjs actually declares, so a one-sided edit fails.
+const SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED = new Set(['merge-conflict-resolver']);
+
+function assertSyntheticAgentRoster({
+  agents = ['test-writer', 'merge-conflict-resolver'],
+  // Section presence and a parseable recommendation are separate inputs, so a
+  // synthetic case can carry a heading that names no skill.
+  sections = ['test-writer'],
+  recommending = ['test-writer'],
+  // What the synthetic recommendation names. Only a manifest-declared skill
+  // satisfies the roster, so an external-only case sets this to an allowlisted
+  // token instead.
+  recommendedSkills = ['effective-engineering'],
+  ownedSkills = new Set(['effective-engineering']),
+  exemptAgents = new Set(['merge-conflict-resolver']),
+} = {}) {
+  assertAgentSkillRecommendationRoster(
+    {
+      agents,
+      sectionAgents: new Set(sections),
+      recommendationChains: recommending.map((consumer) => ({
+        consumer,
+        skills: recommendedSkills,
+        context: `agents/${consumer}.md`,
+      })),
+      exemptAgents,
+      ownedSkills,
+    },
+    { context: 'synthetic agent roster' },
+  );
+}
+
+test('the agent roster accepts a recommending agent beside an exempt one', () => {
+  assert.doesNotThrow(() => assertSyntheticAgentRoster());
+});
+
+test('the agent roster rejects an agent without a recommended-skills section', () => {
+  assert.throws(
+    () => assertSyntheticAgentRoster({ sections: [], recommending: [] }),
+    /src\/agents\/test-writer\.md carries no "## Recommended skills" section; add the central skill it delegates to, or add "test-writer" to SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('the agent roster rejects a stale exemption for a missing agent', () => {
+  assert.throws(
+    () => assertSyntheticAgentRoster({ exemptAgents: new Set(['ghost-worker']) }),
+    /stale skill-recommendation exemption: SKILL_RECOMMENDATION_EXEMPT_AGENTS lists "ghost-worker", but src\/agents\/ghost-worker\.md does not exist/,
+  );
+});
+
+test('the agent roster is two-sided: an exempt agent must carry no section', () => {
+  assert.throws(
+    () =>
+      assertSyntheticAgentRoster({
+        sections: ['test-writer', 'merge-conflict-resolver'],
+        recommending: ['test-writer', 'merge-conflict-resolver'],
+      }),
+    /src\/agents\/merge-conflict-resolver\.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('the agent roster rejects a section that names no skill', () => {
+  // A heading with no parseable bullet is neither a missing section nor a
+  // fulfilled obligation, so it gets its own diagnosis instead of the
+  // misleading "carries no section".
+  assert.throws(
+    () => assertSyntheticAgentRoster({ sections: ['test-writer'], recommending: [] }),
+    /src\/agents\/test-writer\.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet/,
+  );
+});
+
+test('the agent roster rejects a section that names only an external skill', () => {
+  // `context7-mcp` is allowlisted and legitimate, but it owns no Effective Flow
+  // domain. Counting any parsed bullet let a new agent ship a second copy of a
+  // centrally owned playbook while naming no owner at all — exactly the hole
+  // this roster guard exists to close.
+  assert.throws(
+    () => assertSyntheticAgentRoster({ recommendedSkills: ['context7-mcp'] }),
+    /src\/agents\/test-writer\.md recommends no skill declared in the ownership manifest; an allowlisted external skill alone does not satisfy the roster/,
+  );
+});
+
+test('the agent roster accepts a chain that names a declared owner beside external skills', () => {
+  // The shape the checked-in agents ship: a declared owner with allowlisted
+  // alternatives behind it stays a fulfilled obligation.
+  assert.doesNotThrow(() =>
+    assertSyntheticAgentRoster({ recommendedSkills: ['effective-engineering', 'context7-mcp'] }),
+  );
+});
+
+test('the agent roster requires a non-empty set of manifest-declared skills', () => {
+  // An empty owned set would fail every agent for the wrong reason, so it is a
+  // misconfiguration of the guard rather than a finding about a source.
+  for (const ownedSkills of [['effective-engineering'], new Set()]) {
+    assert.throws(
+      () => assertSyntheticAgentRoster({ ownedSkills }),
+      /Agent skill-recommendation ownedSkills must be a non-empty Set/,
+    );
+  }
+});
+
+test('an exempt agent with a bulletless section still fails the two-sided check', () => {
+  // Keying on chains alone let this pass: the empty section produced no chain,
+  // so the exemption looked honoured while the source declared one anyway.
+  assert.throws(
+    () =>
+      assertSyntheticAgentRoster({
+        sections: ['test-writer', 'merge-conflict-resolver'],
+      }),
+    /src\/agents\/merge-conflict-resolver\.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('collectRecommendedSkillSections sees a heading the chain collector cannot use', () => {
+  const sources = [
+    { consumer: 'bulletless', context: 'agents/bulletless.md', text: '## Recommended skills\n\n' },
+    { consumer: 'none', context: 'agents/none.md', text: '# Agent\n\nNo section here.\n' },
+  ];
+  assert.deepEqual([...collectRecommendedSkillSections(sources)], ['bulletless']);
+  assert.deepEqual(collectRecommendedSkillChains(sources), []);
+});
+
+test('the agent roster refuses to pass vacuously on an empty roster', () => {
+  // A roster check that iterates nothing would report success for the wrong
+  // reason, exactly as the neighbouring source guards guard against.
+  assert.throws(
+    () => assertSyntheticAgentRoster({ agents: [] }),
+    /Agent skill-recommendation roster must be a non-empty array/,
+  );
+  assert.throws(
+    () => assertSyntheticAgentRoster({ exemptAgents: ['merge-conflict-resolver'] }),
+    /Agent skill-recommendation exemptions must be a Set/,
+  );
+  assert.throws(
+    () =>
+      assertAgentSkillRecommendationRoster(
+        {
+          agents: ['test-writer'],
+          sectionAgents: ['test-writer'],
+          recommendationChains: [],
+          exemptAgents: new Set(),
+        },
+        { context: 'synthetic agent roster' },
+      ),
+    /Agent skill-recommendation sections must be a Set/,
+  );
+});
+
+test('every checked-in agent recommends a central skill or is the one exemption', () => {
+  assert.ok(checkedInAgentNames.length > 0, 'expected at least one src/agents/*.md source');
+  assert.doesNotThrow(() =>
+    assertAgentSkillRecommendationRoster(
+      {
+        agents: checkedInAgentNames,
+        sectionAgents: checkedInAgentSections,
+        recommendationChains: checkedInAgentRecommendationChains,
+        exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED,
+        ownedSkills: checkedInOwnedSkills,
+      },
+      { context: 'checked-in agent roster' },
+    ),
+  );
+
+  // Stated independently of the guard: every non-exempt agent names a skill the
+  // ownership manifest declares, not merely an allowlisted external one.
+  const externalOnly = checkedInAgentNames.filter(
+    (name) =>
+      !SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED.has(name) &&
+      !checkedInAgentRecommendationChains.some(
+        (chain) =>
+          chain.consumer === name && chain.skills.some((skill) => checkedInOwnedSkills.has(skill)),
+      ),
+  );
+  assert.deepEqual(externalOnly, [], 'every non-exempt agent must name a declared central owner');
+
+  // `merge-conflict-resolver` is the only expected exemption, and it carries its
+  // reason in prose rather than only in build.mjs.
+  const resolver = readFileSync(
+    new URL('../src/agents/merge-conflict-resolver.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(resolver, /declares \*\*no\*\* recommended central skill/);
+  const recommending = new Set(checkedInAgentRecommendationChains.map((chain) => chain.consumer));
+  assert.deepEqual(
+    checkedInAgentNames.filter((name) => !recommending.has(name)),
+    ['merge-conflict-resolver'],
+  );
+});
+
+test('effective-marketing is declared, tabled, and preferred by the marketing writer', () => {
+  const relationship = checkedInSkillOwnershipManifest.relationships.find(
+    ({ skill }) => skill === 'effective-marketing',
+  );
+  assert.ok(
+    relationship,
+    'skill-ownership.json must declare an "effective-marketing" relationship',
+  );
+  assert.deepEqual(relationship.consumers, [
+    { consumer: 'marketing-writer', classification: 'delegate' },
+  ]);
+  assert.ok(
+    checkedInSkillOwnershipRows.some(({ skill }) => skill === 'effective-marketing'),
+    'skill-ownership.md must carry an "effective-marketing" row',
+  );
+  assert.ok(
+    !checkedInSkillOwnershipManifest.externalRecommendationAllowlist.includes(
+      'effective-marketing',
+    ),
+    'effective-marketing must not be both a relationship and an external recommendation',
+  );
+
+  const marketingWriter = readFileSync(
+    new URL('../src/agents/marketing-writer.md', import.meta.url),
+    'utf8',
+  );
+  // One ordered chain, not four independent bullets: the first available member
+  // wins, so the central skill takes precedence and the copy skills stay
+  // reachable behind it.
+  assert.match(
+    marketingWriter,
+    /- `effective-marketing › copywriting › copy-editing › marketing-psychology`/,
+  );
+  assert.match(marketingWriter, /The root README is split, and the split is declared/);
 });
 
 test('advisory ownership audit accepts checkout, skills directory, and listing inputs', (t) => {
@@ -1846,6 +2286,8 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
     'agents/test-writer.md': 'effective-engineering',
     'agents/e2e-tester.md': 'effective-web',
     'agents/code-validator.md': 'effective-delivery',
+    'agents/rust-implementer.md': 'effective-engineering',
+    'agents/nodejs-implementer.md': 'effective-engineering',
   };
 
   for (const [path, owner] of Object.entries(adapters)) {
@@ -1854,6 +2296,66 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
     assert.match(source, /## Minimal fallback/, path);
     assert.match(source, /Effective Flow (?:retains|constraints)/i, path);
   }
+
+  // The Rust implementer delegates its whole domain playbook. Anchor the removals
+  // beside the positive delegation assertion so a rewritten source cannot pass
+  // the negative greps vacuously.
+  const rustImplementer = readSource('agents/rust-implementer.md');
+  assert.match(rustImplementer, /`effective-engineering` is the declared domain owner/);
+  assert.match(rustImplementer, /Do not keep a\s+second Rust handbook here/);
+  for (const heading of [
+    '## Project structure and Cargo',
+    '## Error handling',
+    '## Ownership, types and traits',
+    '## Concurrency',
+    '## unsafe',
+    '## Database',
+    '## Logging',
+    '## Security',
+    '## Toolchain',
+  ]) {
+    assert.doesNotMatch(rustImplementer, new RegExp(`^${escapeRegex(heading)}$`, 'm'), heading);
+  }
+  // CLI contracts are *not* delegated: the skill treats exit codes, stream
+  // separation and `--help` only in `cli-contracts.md`, which hangs off the
+  // testing route that `route-rust.md` cross-links solely for test placement,
+  // public-API coverage, doctests and smoke evidence. Under the same
+  // route-reachability rule that keeps `### CLI tools` in the Node source, this
+  // stays — with the reason in the source, not only here.
+  assert.match(rustImplementer, /^### CLI tools$/m);
+  assert.match(rustImplementer, /The retention rule is \*\*route reachability\*\*/);
+  assert.match(rustImplementer, /cli-contracts\.md/);
+  // The named crate defaults survive only as the minimal fallback for a
+  // greenfield module; everywhere else the skill's discovery-first policy wins.
+  const fallbackStart = rustImplementer.indexOf('## Minimal fallback');
+  assert.ok(fallbackStart > 0, 'rust-implementer must carry a minimal fallback');
+  const afterFallback = rustImplementer.slice(fallbackStart + '## Minimal fallback'.length);
+  const fallbackEnd = afterFallback.search(/^## /m);
+  const outsideFallback =
+    rustImplementer.slice(0, fallbackStart) + afterFallback.slice(fallbackEnd);
+  assert.doesNotMatch(outsideFallback, /anyhow|thiserror|tokio|async-std|clap|sqlx|diesel|tracing/);
+
+  // The Node implementer delegates only the language layer. Everything a reader
+  // of `route-typescript.md` cannot reach stays, with the rule that decides it.
+  const nodejsImplementer = readSource('agents/nodejs-implementer.md');
+  assert.match(nodejsImplementer, /`effective-engineering` is the declared domain owner/);
+  assert.match(nodejsImplementer, /Do not keep a\s+second TypeScript handbook here/);
+  assert.doesNotMatch(nodejsImplementer, /^#+ Error handling$/m);
+  assert.match(nodejsImplementer, /The retention rule is \*\*route reachability\*\*/);
+  assert.match(nodejsImplementer, /route-typescript\.md/);
+  for (const retained of [
+    '### Backend APIs',
+    '### CLI tools',
+    '### Node.js applications',
+    '### Database',
+    '### Logging',
+    '### Security',
+  ]) {
+    assert.match(nodejsImplementer, new RegExp(`^${escapeRegex(retained)}$`, 'm'), retained);
+  }
+  // The house package-manager rule contradicts the skill and is retained
+  // deliberately, so delegation must not quietly take it along.
+  assert.match(nodejsImplementer, /`pnpm exec <tool>`, not `npx`/);
 
   const iterate = readSource('tools/iterate.md');
   assert.match(iterate, /pr-review-handoff\/v1/);

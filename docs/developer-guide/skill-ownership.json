@@ -36,7 +36,12 @@
         { "consumer": "fix", "classification": "delegate" },
         { "consumer": "code-validator", "classification": "delegate" },
         { "consumer": "test-writer", "classification": "route-when-relevant" },
-        { "consumer": "e2e-tester", "classification": "route-when-relevant" }
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "generic-implementer", "classification": "route-when-relevant" },
+        {
+          "consumer": "generic-product-implementer",
+          "classification": "route-when-relevant"
+        }
       ]
     },
     {
@@ -57,6 +62,8 @@
       "consumers": [
         { "consumer": "test-writer", "classification": "delegate" },
         { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "rust-implementer", "classification": "delegate" },
+        { "consumer": "nodejs-implementer", "classification": "delegate" },
         { "consumer": "nodejs-reviewer", "classification": "route-when-relevant" },
         { "consumer": "rust-reviewer", "classification": "route-when-relevant" },
         { "consumer": "plan", "classification": "route-when-relevant" },
@@ -85,6 +92,10 @@
         { "consumer": "plan-review", "classification": "route-when-relevant" },
         { "consumer": "concept", "classification": "delegate" }
       ]
+    },
+    {
+      "skill": "effective-marketing",
+      "consumers": [{ "consumer": "marketing-writer", "classification": "delegate" }]
     }
   ],
   "relevanceGateOwners": ["effective-product", "effective-web", "effective-engineering"],
