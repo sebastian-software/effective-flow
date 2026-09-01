@@ -7053,9 +7053,46 @@ test('the base-branch resolution rule distinguishes a missing remote from a fail
   assert.match(missing, /report that substitution/, 'the substitution must be visible, not silent');
   assert.doesNotMatch(missing, /git fetch/, 'there is nothing to fetch from an absent remote');
 
-  assert.match(unresolvable, /Neither the remote ref nor that local branch part resolves/);
+  assert.match(
+    unresolvable,
+    /Neither the remote ref nor any local candidate for the value resolves/,
+  );
   assert.match(unresolvable, /abort, naming both facts/);
   assert.match(unresolvable, /Never\s+invent or create a base branch/);
+});
+
+test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+  const preconditions = boundedSlice(delivery, '### Shared preconditions', '### Run-owned');
+  const step = boundedSlice(preconditions, '2. **Resolve `delivery.baseBranch`', '\n3. ');
+  const [classification, , missing] = step.split(/(?=\n\s*- )/).map(prose);
+
+  // Splitting the value at the first `/` is only correct when the leading part actually names a
+  // remote. Local branch names carry slashes all the time, and `setup` now proposes the current
+  // local branch — so `feature/foo` in a repository without remotes would probe a remote
+  // `feature`, take the fallback `foo` and abort, while the ref it was handed resolves.
+  assert.match(
+    classification,
+    near('part before its first `/`', '`git remote`', 200),
+    'only a leading part that names a configured remote may make the value a remote ref',
+  );
+  assert.match(
+    classification,
+    /`feature\/foo`/,
+    'the slash-containing local branch is the case the split gets wrong',
+  );
+
+  // Order matters here, not just presence: the full value has to be tried before anything is cut
+  // off it, or `feature/foo` resolves to `foo` in every repository that has both branches.
+  ordered(missing, 'as a local ref', 'as it stands first', 'local branch part');
+
+  // The user guide restates the rule for readers who never open the fragment; a mirror that still
+  // describes the unconditional split contradicts the contract it is documenting.
+  assert.match(
+    prose(source('docs/user-guide/worktree-and-delivery.md')),
+    near('part before its first `/`', '`feature/foo`', 200),
+    'the user guide still describes the value as split at the first slash unconditionally',
+  );
 });
 
 test('the partial-diff path defers to the single base-branch resolution rule', () => {
