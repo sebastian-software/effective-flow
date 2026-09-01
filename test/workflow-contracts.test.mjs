@@ -7403,6 +7403,21 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // simply absent.
   assert.match(flow, /base branch has no upstream/);
   assert.match(flow, near('non-`origin` remote', 'abort', 300));
+  // This arm runs precisely because the configured value named no remote, so the resolution
+  // fetched nothing and the discovered upstream is whatever the last unrelated fetch left behind.
+  // The refresh has to go back through the rule rather than be restated, which is what keeps the
+  // resolved composition at exactly one `git fetch`.
+  const localArm = boundedSlice(step4, '- **Remote not configured:**', '- **Commits found:**');
+  assert.match(
+    prose(localArm),
+    near('not current yet', 'resolution fetched nothing', 200),
+    'the accepted upstream must be stated as stale before it is used as a diff base',
+  );
+  assert.match(
+    prose(localArm),
+    near('back through "Base-branch resolution"', 'the one refresh this arm owes', 200),
+    'the refresh must be delegated to the single rule, never restated here',
+  );
   assert.match(flow, near('both arms', 'remote-tracking ref on `origin` or abort', 200));
 
   const lookup = boundedSlice(pr, '8. **Look up an existing open PR:**', '\n9. ');

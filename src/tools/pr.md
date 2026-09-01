@@ -173,7 +173,13 @@ base-branch-resolution
      of the two the observation showed; a branch absent from the forge cannot be a PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
      tracked on a non-`origin` remote** when it is not: this tool pushes the head to `origin`, so
      a base tracked on another remote would compute the commit range against a repository the pull
-     request is not opened on. The accepted upstream is the diff base.
+     request is not opened on. The accepted upstream is not current yet: this arm ran because the
+     configured value named no remote, so the resolution fetched nothing and the remote-tracking
+     ref can be arbitrarily far behind the branch the pull request will actually target. Put that
+     upstream back through "Base-branch resolution", which classifies it as a remote ref and
+     performs the one refresh this arm owes; a failure there stops the run as that rule requires.
+     Its resolved base ref is the diff base, and the resolved local base branch stays the one this
+     arm already recorded.
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
    - **No commits found:** Preserve the prepared branch, report that it has no commits against the
      resolved base, and stop without any remote mutation.
