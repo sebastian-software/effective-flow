@@ -7315,10 +7315,23 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   );
   assert.match(prose(precondition), /resolved local base branch/);
   assert.doesNotMatch(precondition, /branch part/);
-  // Pinned as one line: the sentence is a contract elsewhere in this suite too.
-  assert.match(precondition, /A detached invocation or base branch as head aborts\./);
+  // The two aborts stay named together, but only the detached one can fire here: the base results
+  // do not exist until step 4, which is what keeps the fetch behind the dirty-checkout gate below.
+  assert.match(
+    prose(precondition),
+    near('A detached invocation aborts here', 'a base branch as head aborts in step 4', 100),
+  );
 
-  const step4 = boundedSlice(pr, '4. **Inspect the head against the resolved base', '\n5. ');
+  // The resolution owns the run's only fetch, so where it runs decides whether a dirty direct
+  // invocation gets its own diagnosis or a network error from a base it was never going to reach.
+  const step1 = boundedSlice(pr, '   - Read the Effective Flow configuration', '   - Classify the');
+  assert.match(
+    prose(step1),
+    near('resolve nothing from it here', 'step 4', 200),
+    'step 1 must record the configured value without resolving it',
+  );
+
+  const step4 = boundedSlice(pr, '4. **Resolve the base and inspect the head against it', '\n5. ');
   const flow = prose(step4);
   // Two refresh sentences of differing strength in one file is the defect shape the extraction
   // removes; a host that keeps its own "refresh if needed" clause reintroduces it.
@@ -7331,6 +7344,18 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     flow,
     near('adds no refresh of its own', 'never repeats', 200),
     'the deferral has to be stated, not merely implied by the clause being gone',
+  );
+  // Ordering, not merely presence: the resolution carries the fetch, so it has to sit behind the
+  // step 2 dirty gate or that gate's "abort before fetch or push" promise is unsatisfiable.
+  assert.match(
+    flow,
+    near('first step that may touch the network', 'behind step 2', 200),
+    'step 4 must state why the resolution moved out of step 1',
+  );
+  assert.match(
+    flow,
+    near('Require the head branch to differ from both results', 'base branch as head aborts', 100),
+    'the head/base identity abort moved here with the results it compares against',
   );
   assert.match(flow, /Remote configured/);
   assert.match(
@@ -7349,7 +7374,7 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // simply absent.
   assert.match(flow, /base branch has no upstream/);
   assert.match(flow, near('non-`origin` remote', 'abort', 300));
-  assert.match(flow, near('both arms', 'remote-tracking ref or abort', 200));
+  assert.match(flow, near('both arms', 'remote-tracking ref on `origin` or abort', 200));
 
   const lookup = boundedSlice(pr, '8. **Look up an existing open PR:**', '\n9. ');
   assert.match(
@@ -9879,7 +9904,7 @@ test('commit and pr preserve the staged-only and committed-only boundaries', () 
 
   assert.match(pr, /publish only the verified commit range/);
   assert.match(pr, /There is no fresh-branch or local-change-transfer mode/);
-  assert.match(pr, /detached invocation or base branch as head aborts/);
+  assert.match(pr, /A detached invocation aborts\s+here; a base branch as head aborts in step 4/);
   assert.match(pr, /complete working tree and index to be clean, including\s+untracked paths/);
   assert.match(pr, /successful commit-only evidence/);
   assert.match(pr, /branch and require it still equals the\s+supplied OID/);

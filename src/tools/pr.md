@@ -113,17 +113,18 @@ base-branch-resolution
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     falling back to the old `worktree.baseBranch` value and then the documented default. On a
-     direct invocation, resolve that value once under "Base-branch resolution" and carry both of
-     its results; a returning committed handoff supplies them instead.
+     falling back to the old `worktree.baseBranch` value and then the documented default. Record
+     that configured value and resolve nothing from it here: step 4 applies "Base-branch
+     resolution" to it, deliberately behind the step 2 preconditions, so a direct invocation
+     reaches the network only once its checkout has been accepted.
    - Classify the call as either a direct invocation from its current checkout or a returning
      committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
      `{{SKILL:deliver}}` for that lifecycle.
 2. **Check preconditions:**
    - A Git repository with an `origin` remote is present. If `origin` is missing, no PR can be created: report clearly and abort.
-   - The head exists as an exact local branch, is not detached, and differs from both the resolved
-     base ref and the resolved local base branch.
-     A detached invocation or base branch as head aborts.
+   - The head exists as an exact local branch and is not detached. A detached invocation aborts
+     here; a base branch as head aborts in step 4, which is where the resolved base ref and the
+     resolved local base branch first exist to compare it against.
    - For a direct invocation, require the complete working tree and index to be clean, including
      untracked paths. If it is dirty, abort before fetch or push and direct the user to
      `{{SKILL:deliver}}`; never omit local content silently.
@@ -135,11 +136,17 @@ base-branch-resolution
    Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
    squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
    handoff must already have supplied the same OID.
-4. **Inspect the head against the resolved base before any push:** The two base results already
-   exist — "Base-branch resolution" produced them in step 1, or the handoff supplied them. This
-   step adds no refresh of its own and never repeats the one that rule owns. Derive the
+4. **Resolve the base and inspect the head against it before any push:** The two base results are
+   produced here. A handoff that supplied both is used unchanged; every other call applies
+   "Base-branch resolution" to the value step 1 recorded. This is the first step that may touch
+   the network, and that is why it sits behind step 2 rather than in step 1: a dirty direct
+   invocation is turned away with the diagnosis it deserves instead of with a fetch or credential
+   error from a base it was never going to reach. The step adds no refresh of its own and never
+   repeats the one that rule owns; where an arm below needs a ref brought up to date, it goes back
+   through that same rule. Require the head branch to differ from both results; a base branch as
+   head aborts. Derive the
    remote-tracking diff base from the arm that resolved the value; both arms below yield a
-   remote-tracking ref or abort. Then determine the commits in
+   remote-tracking ref on `origin` or abort. Then determine the commits in
    `<remote-tracking-base>..<head-branch>` and preserve this discovered commit range for the later
    title and description derivation. If no diff base can be derived, abort before any push and
    preserve the head branch.
