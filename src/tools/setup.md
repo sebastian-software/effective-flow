@@ -70,7 +70,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`; proposed as the current local branch in a repository with no configured remote), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
+- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
@@ -101,8 +101,8 @@ ADR's table-encoding form):
 | language.project                  | en                         |
 
 `delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
-holds where a remote is configured, while a repository without one takes its current local branch
-instead (see the base-branch question in Step 4).
+holds where a remote named `origin` is configured, while every other repository takes its current
+local branch instead (see the base-branch question in Step 4).
 
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
@@ -294,11 +294,13 @@ options:
 
 **Base branch.** Briefly explain the base branch (the branch that is delivered into) and ask for
 it as free text (`delivery.baseBranch`). Derive the proposal from `git remote` before asking
-instead of offering `origin/main` unconditionally: with at least one configured remote, propose
-`origin/main`; with no configured remote at all, no remote ref can ever resolve in this
-repository, so propose its current local branch and say that the project is local-only. Either
-way it stays a proposal — free text overrides it, and only the confirmed Step 6 write persists
-it. Ask for the switch-back target (`delivery.returnBranch`, default `auto`) only optionally.
+instead of offering `origin/main` unconditionally: with a remote named `origin`, propose
+`origin/main`; without one, no `origin/…` ref can ever resolve in this repository, so propose its
+current local branch, which does resolve, and name the reason (no remote at all, or none named
+`origin`). Never guess a remote ref from a differently named remote — with several remotes none
+of them is the obvious one, and free text carries `upstream/main` just as well. Either way it
+stays a proposal — free text overrides it, and only the confirmed Step 6 write persists it. Ask
+for the switch-back target (`delivery.returnBranch`, default `auto`) only optionally.
 
 **PR review.** Explain: when a run creates a pull request, Effective Flow can post that run's
 review findings on it as comments. "Ask each time" decides per run, "Always" posts without asking,

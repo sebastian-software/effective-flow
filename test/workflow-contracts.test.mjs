@@ -7118,10 +7118,9 @@ test('setup proposes a base branch that can actually resolve in a remoteless rep
   const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
 
   assert.match(question, /Derive the proposal from `git remote` before asking/);
-  assert.match(question, /at least one configured remote, propose `origin\/main`/);
   assert.match(
     question,
-    near('no configured remote at all', 'current local branch', 260),
+    near('no remote at all', 'current local branch', 300),
     'a repository without a remote must be proposed its own local branch',
   );
   // Detection changes the proposal, never the write: the existing interaction stays.
@@ -7139,6 +7138,40 @@ test('setup proposes a base branch that can actually resolve in a remoteless rep
   assert.match(
     prose(safeDefaults),
     near('one row whose safe value depends on the repository', 'current local branch', 300),
+  );
+});
+
+test('setup keys the `origin/main` proposal on a remote actually named origin', () => {
+  const setup = source('src/tools/setup.md');
+  const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
+
+  // "At least one configured remote" is not what makes `origin/main` resolvable. A repository
+  // whose only remote is `upstream` was proposed a ref that can never resolve there, and
+  // confirming the proposal persists a base that every later delivery run stops on.
+  assert.match(
+    question,
+    near('a remote named `origin`', 'propose `origin/main`', 120),
+    'the `origin/main` proposal must key on a remote actually named origin',
+  );
+  assert.match(
+    question,
+    near('without one', 'current local branch', 300),
+    'every other repository must be proposed a base that resolves as it stands',
+  );
+
+  // And the repair must not be to pick some other remote's name: with several remotes none of
+  // them is the obvious base, and a guessed `upstream/main` is as unresolvable as the guess it
+  // replaces. The free text is where a differently named remote ref belongs.
+  assert.match(question, /Never guess a remote ref from a differently named remote/);
+
+  // The safe-defaults note carries the same condition. Left at "a remote is configured" it keeps
+  // documenting exactly the behavior this rule drops.
+  const safeDefaults = prose(
+    boundedSlice(setup, '### Safe defaults (the single base)', 'There is deliberately'),
+  );
+  assert.match(
+    safeDefaults,
+    near('a remote named `origin` is configured', 'current local branch', 300),
   );
 });
 
