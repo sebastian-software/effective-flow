@@ -40,17 +40,24 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder   | Meaning                          | Replacement                                                                          |
-| ------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
-| `{{SKILL:X}}` | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
-| `{{AGENT:X}}` | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
-| `{{VERSION}}` | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
+| Placeholder     | Meaning                          | Replacement                                                                          |
+| --------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| `{{SKILL:X}}`   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
+| `{{AGENT:X}}`   | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
+| `{{VERSION}}`   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
+| `{{TOOL_LIST}}` | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                          |
 
 For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
 `ask` blocks, portable worker-delegation preparation when required, then `{{SKILL:X}}` and
 `{{AGENT:X}}` references. Eager includes, lazy-include pointers, and `{{VERSION}}` are resolved
 before that body enters `renderBody`. This ordering ensures the interaction syntax is
 target-specific before worker and tool references receive their final target syntax.
+
+`{{TOOL_LIST}}` is not a body placeholder: it appears only in the router's frontmatter
+`description` and is resolved once from `EXPOSED_TOOLS` before the per-harness description
+transform rewrites the invocation prefix. The frontmatter description is the only catalog a
+harness sees before it loads anything, so a hand-written list there silently drifts from the
+exposed set and a missing name becomes a tool nobody can discover.
 
 **No legacy aliases.** Names from before the rename – that is, `{{SKILL:sf-…}}` or
 `{{AGENT:sf-…}}` with the old `sf-` prefix – are **not** mapped onto their current names. The
@@ -253,6 +260,11 @@ The build aborts with an error message if any of these guards is violated:
   the size of an implementation tool. Its 3250 is a ratchet against renewed growth rather than
   a target – it sits just above the measured size, so the number falls as the gate is trimmed
   and never becomes room to fill.
+- **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
+  one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
+  The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
+  without it the placeholder can be deleted and the names written out by hand again, which is how
+  the description had already drifted to advertise 19 of the 20 exposed tools.
 - **`catalogHint` guard:** Every tool listed in `TOOL_GROUPS` (exposed) needs a non-empty,
   strictly quoted `catalogHint` field – the line the router catalog shows per tool.
 - **`TOOL_GROUPS` completeness guard:** Every exposed tool is in exactly one group; duplicates

@@ -5178,19 +5178,52 @@ test('the shared configuration fragment documents every merge-gate key and the l
   );
 });
 
-test("the router's description names both iterate and the merge gate", () => {
+test("the router's description names exactly the exposed tool set", () => {
   // The frontmatter description is the only catalog a harness sees before it loads anything, so a
-  // tool missing from it is a tool nobody discovers by name.
+  // tool missing from it is a tool nobody discovers by name. A sample of two names cannot see that:
+  // the list drifted from EXPOSED_TOOLS while every spot-checked name was still there. It is
+  // reconciled in full instead, against the same TOOL_GROUPS the build derives EXPOSED_TOOLS from.
   const [, description] = source('src/SKILL.md').match(/^description:\s*(.+)$/m) ?? [];
   assert.ok(description, 'SKILL.md must carry a frontmatter description');
-  for (const tool of ['iterate', 'merge-gate']) {
-    assert.match(
-      description,
-      new RegExp(`\\b${tool}\\b`),
-      `the router description must name the ${tool} tool`,
-    );
-  }
-  assert.doesNotMatch(description, /\bpr-review\b/, 'the renamed tool must not linger in the list');
+
+  // The list is generated, not written out: the placeholder is what keeps it from drifting again.
+  assert.match(
+    description,
+    /\{\{TOOL_LIST\}\}/,
+    'the router description must render its tool list from the {{TOOL_LIST}} placeholder',
+  );
+  const toolListLine = source('build.mjs')
+    .split('\n')
+    .find((line) => line.includes('TOOL_LIST') && line.includes('EXPOSED_TOOLS'));
+  assert.ok(
+    toolListLine,
+    'build.mjs must resolve the {{TOOL_LIST}} placeholder from EXPOSED_TOOLS, so a deprecated ' +
+      'alias — which is deliberately absent from TOOL_GROUPS — can never be advertised there',
+  );
+  assert.match(toolListLine, /EXPOSED_TOOLS\.join/);
+
+  // TOOL_GROUPS cannot be imported: build.mjs runs the entire build on load, so the group
+  // definition is sliced out of the source text instead, the same technique the neighboring
+  // test "the merge gate is exposed in the Deliver changes group" uses.
+  const groups = section(source('build.mjs'), 'const TOOL_GROUPS = [', '\nconst EXPOSED_TOOLS');
+  const exposed = [...groups.matchAll(/tools: \[([^\]]*)\]/g)].flatMap((match) =>
+    [...match[1].matchAll(/'([^']+)'/g)].map((tool) => tool[1]),
+  );
+  assert.ok(exposed.length > 0, 'TOOL_GROUPS must declare exposed tools');
+
+  // Reconcile the rendered description, not the template: every exposed tool present, and no
+  // extra tool-shaped name written in beside the placeholder.
+  const rendered = description.replace(/\{\{TOOL_LIST\}\}/g, exposed.join(', '));
+  const listed = (rendered.match(/Tools: ([^"]+)\./)?.[1] ?? '')
+    .split(',')
+    .map((tool) => tool.trim())
+    .filter(Boolean);
+  assert.deepEqual(
+    [...listed].sort(),
+    [...exposed].sort(),
+    'the router description must name exactly the exposed tool set',
+  );
+  assert.doesNotMatch(rendered, /\bpr-review\b/, 'the renamed tool must not linger in the list');
 });
 
 test('iterate documents an optional item filter that never falls back to all items', () => {

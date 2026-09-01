@@ -878,7 +878,29 @@ try {
   const routerRaw = normalizeLineEndings(readFileSync(ROUTER_SRC, 'utf8'));
   const routerFm = extractFrontmatter(routerRaw);
   const routerName = getField(routerFm, 'name') || FIRMO_SKILL_NAME;
-  const routerDesc = getField(routerFm, 'description');
+  const routerDescRaw = getField(routerFm, 'description');
+
+  // Guard: the description's tool list is generated, never hand-written. The
+  // frontmatter description is the only catalog a harness sees before it loads
+  // anything, so a tool missing from it is a tool nobody discovers by name --
+  // and a hand-maintained list drifts silently from EXPOSED_TOOLS. Without this
+  // guard someone can delete the placeholder, write the names out again, and
+  // reintroduce exactly that drift.
+  {
+    const placeholders = routerDescRaw.match(/\{\{TOOL_LIST\}\}/g) ?? [];
+    if (placeholders.length !== 1) {
+      process.stderr.write(
+        `ERROR: src/SKILL.md description must contain exactly one {{TOOL_LIST}} placeholder ` +
+          `(found ${placeholders.length}); the tool list is generated from EXPOSED_TOOLS\n`,
+      );
+      process.exit(1);
+    }
+  }
+
+  // The catalog a harness reads before loading anything, in EXPOSED_TOOLS order.
+  // Deprecated aliases are excluded structurally: they are deliberately not part
+  // of TOOL_GROUPS, so a retired name can never be advertised here.
+  const routerDesc = routerDescRaw.replace(/\{\{TOOL_LIST\}\}/g, EXPOSED_TOOLS.join(', '));
   const routerBodyRaw = resolveIncludes(extractBody(routerRaw), 'SKILL.md').replace(
     /\{\{VERSION\}\}/g,
     VERSION_STRING,
@@ -1225,7 +1247,7 @@ try {
         );
       }
       if (
-        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES)(?::[^}]*)?\}\}/.test(
+        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES|TOOL_LIST|TOOL_CATALOG)(?::[^}]*)?\}\}/.test(
           content,
         )
       ) {
