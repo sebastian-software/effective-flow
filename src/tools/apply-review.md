@@ -321,7 +321,7 @@ The detailed mechanics of the committing strategies — **Individually** (git co
 
 ### Phase 3: Rejected findings → decision candidate (delegation to `effective-product`)
 
-The ADR authoring is owned by the host skill `effective-product` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index — one branch of the broader product-decision scope that skill carries). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Firmo keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
+The ADR authoring is owned by the host skill `effective-product` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index — one branch of the broader product-decision scope that skill carries). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Effective Flow keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
 
 First survey the available skills:
 
@@ -415,7 +415,7 @@ Example (across actions) with five findings over multiple actions:
      - action docs: `Use the skill {{SKILL:docs}} for this finding.`
    - the prompt suggestion from the report as the task description
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
-   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FIRMO}} apply-review` and therefore opens no approval gate of its own. `{{FIRMO}} apply-review` steers the run at its own gate.
+   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FLOW}} apply-review` and therefore opens no approval gate of its own. `{{FLOW}} apply-review` steers the run at its own gate.
    - the literal line `Next steps: suppressed` on its own line. Each delegated skill is
      user-invocable and would otherwise close a per-finding recommendation into the chat, although
      it returns its result here and this run is an intermediate result of `{{SKILL:apply}}`.

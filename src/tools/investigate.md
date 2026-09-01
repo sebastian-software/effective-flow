@@ -181,9 +181,9 @@ references, and machine tokens remain stable. Do not mix template languages.
 
 ## Recommendation
 
-**Follow-up workflow:** {{FIRMO}} fix | {{FIRMO}} refactor | {{FIRMO}} build | {{FIRMO}} docs | further investigation needed | No action
+**Follow-up workflow:** {{FLOW}} fix | {{FLOW}} refactor | {{FLOW}} build | {{FLOW}} docs | further investigation needed | No action
 **Rationale:** [brief]
-**Invocation suggestion:** [e.g. `{{FIRMO}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`]
+**Invocation suggestion:** [e.g. `{{FLOW}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`]
 
 ## Open points / needed decisions
 

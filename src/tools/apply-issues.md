@@ -118,8 +118,8 @@ existing thread language. Use the English templates below or their complete Germ
 every comment with the stable marker `<!-- effective-flow-apply-issues -->` so later runs
 recognize their own comments and avoid duplicates:
 
-- **Implemented:** `🤖 Implemented via {{FIRMO}} apply — PR #<nr>` (no internal IDs, no `Co-Authored-By`).
-- **Skipped:** `⏭️ Skipped: some details are still missing for an autonomous implementation: <list of what is missing>. Complete with {{FIRMO}} plan-issue.`
+- **Implemented:** `🤖 Implemented via {{FLOW}} apply — PR #<nr>` (no internal IDs, no `Co-Authored-By`).
+- **Skipped:** `⏭️ Skipped: some details are still missing for an autonomous implementation: <list of what is missing>. Complete with {{FLOW}} plan-issue.`
 - **Failed:** `⚠️ Implementation failed: <short reason>. Issue remains open.`
 
 Do not expose internal tracking IDs or session details in comments.
@@ -303,7 +303,7 @@ Issues with the same target PR run sequentially so that new commits are created 
    - Bugfix: `Use the skill {{SKILL:fix}} for this issue.`
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
    - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
-     The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FIRMO}} apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
+     The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FLOW}} apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
      Pass the absolute root and execution-location receipt established by that delegated workflow;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one. Pass the literal line `Next steps: suppressed` on its own line as well:

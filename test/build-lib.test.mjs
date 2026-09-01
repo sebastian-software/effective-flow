@@ -54,6 +54,7 @@ import {
   findRemoteTrackerRecipeViolations,
   findRetiredConfigDocViolations,
   findStaleAdrContractClaims,
+  findStaleBrandReferences,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
   classifyProjectRoutingScope,
@@ -1218,11 +1219,11 @@ test('transformRefs maps exposed vs internal tools and agents per harness', () =
   assert.equal(transformRefs('{{SKILL:fix}}', 'claude', refConfig), '/effective-flow fix');
   assert.equal(transformRefs('{{SKILL:fix}}', 'codex', refConfig), '$effective-flow fix');
   assert.equal(
-    transformRefs('{{FIRMO}} plan #118', 'claude', refConfig),
+    transformRefs('{{FLOW}} plan #118', 'claude', refConfig),
     '/effective-flow plan #118',
   );
   assert.equal(
-    transformRefs('{{FIRMO}} plan #118', 'codex', refConfig),
+    transformRefs('{{FLOW}} plan #118', 'codex', refConfig),
     '$effective-flow plan #118',
   );
   assert.equal(transformRefs('{{SKILL:apply-plan}}', 'claude', refConfig), '`tools/apply-plan.md`');
@@ -1242,7 +1243,7 @@ test('transformRefs maps exposed vs internal tools and agents per harness', () =
 });
 
 test('portable refs use harness-neutral tool notation', () => {
-  assert.equal(transformRefs('{{FIRMO}} fix', 'portable', refConfig), 'effective-flow fix');
+  assert.equal(transformRefs('{{FLOW}} fix', 'portable', refConfig), 'effective-flow fix');
   assert.equal(transformRefs('{{SKILL:fix}}', 'portable', refConfig), 'effective-flow fix');
 });
 
@@ -2842,6 +2843,97 @@ test('findRetiredConfigDocViolations always rejects the retired negation with ac
       reference: '!.effective-flow/config.json',
     },
   ]);
+});
+
+// --- Retired brand references ---
+
+test('findStaleBrandReferences rejects every capitalized leftover of the retired brand', () => {
+  const markdown = [
+    '# Title',
+    '',
+    'Firmo keeps the mapping.',
+    'The placeholder {{FIRMO}} renders the bare invocation.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(markdown), [
+    { line: 3, reference: 'Firmo' },
+    { line: 4, reference: 'FIRMO' },
+  ]);
+});
+
+test('findStaleBrandReferences allows the frozen setup marker and the lowercase surfaces', () => {
+  const markdown = [
+    'An old marker `**Firmo project setup:** <path>` is recognized as equivalent on read.',
+    'Labels keep the `firmo-` prefix and `.firmo/` paths stay readable.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(markdown), []);
+});
+
+test('findStaleBrandReferences still reports a stale mention beside the frozen marker', () => {
+  const markdown = 'Firmo writes `**Firmo project setup:**` into AGENTS.md.';
+
+  assert.deepEqual(findStaleBrandReferences(markdown), [{ line: 1, reference: 'Firmo' }]);
+});
+
+test('findStaleBrandReferences reads build-script comments and string literals alike', () => {
+  const script = [
+    "const FROZEN = '**Firmo project setup:**';",
+    '// otherwise Firmo carries a second, drifting standards copy.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(script), [{ line: 2, reference: 'Firmo' }]);
+});
+
+test('the stale brand guard scans the source tree and both build scripts', () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  assert.match(buildSource, /findStaleBrandReferences\(readFileSync\(file, 'utf8'\)\)/);
+  assert.match(buildSource, /visit\(SOURCE_DIR\);/);
+  assert.match(
+    buildSource,
+    /const sourceFiles = \[join\(ROOT_DIR, 'build\.mjs'\), join\(ROOT_DIR, 'build-lib\.mjs'\)\];/,
+  );
+  assert.match(buildSource, /frozen backcompat marker "\*\*Firmo project setup:\*\*"/);
+});
+
+test('no scanned source outside the frozen marker carries the retired brand', () => {
+  const scanned = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+      if (entry.isDirectory()) visit(child);
+      else if (/\.(?:md|mjs)$/.test(entry.name)) scanned.push([entry.name, child]);
+    }
+  };
+  visit(new URL('../src/', import.meta.url));
+  for (const name of ['build.mjs', 'build-lib.mjs']) {
+    scanned.push([name, new URL(`../${name}`, import.meta.url)]);
+  }
+
+  const violations = [];
+  for (const [name, url] of scanned) {
+    for (const hit of findStaleBrandReferences(readFileSync(url, 'utf8'))) {
+      violations.push(`${name}:${hit.line}: ${hit.reference}`);
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});
+
+test('the build scripts stay clean on the marker exemption, not on being skipped', () => {
+  // A guard blind to its own host file is how the first leftover survived in
+  // build.mjs. Both scripts do carry a capitalized occurrence -- the frozen
+  // marker literal -- so a clean scan here proves the exemption ran rather than
+  // the file being passed over.
+  for (const name of ['build.mjs', 'build-lib.mjs']) {
+    const source = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+    const capitalized = [...source.matchAll(/firmo/gi)]
+      .map((match) => match[0])
+      .filter((reference) => reference !== 'firmo');
+
+    assert.deepEqual(capitalized, ['Firmo'], `${name} must carry only the frozen marker`);
+    assert.deepEqual(findStaleBrandReferences(source), [], `${name} must report no violation`);
+  }
 });
 
 // --- Target-project language contract ---

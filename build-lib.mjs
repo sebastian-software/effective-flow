@@ -1441,7 +1441,7 @@ export function transformRefs(
     harness === 'codex' ? `$${skillName}` : harness === 'portable' ? skillName : `/${skillName}`;
   const skillInvocation = (raw) => `${command} ${raw}`;
   return body
-    .replace(/\{\{FIRMO\}\}/g, command)
+    .replace(/\{\{FLOW\}\}/g, command)
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )
@@ -2433,6 +2433,45 @@ export function findRetiredConfigDocViolations(file, markdown) {
     }
   }
 
+  return hits;
+}
+
+// --- Stale brand guard ---
+//
+// The `firmo` -> `effective-flow` rename migrated identifiers but left the
+// capitalized brand behind in prose, and nothing separated a deliberately
+// frozen legacy literal from an accidental leftover. Case is what separates
+// them: the lowercase spellings are live read-compatibility surfaces -- the
+// `firmo-` issue-label prefix and the legacy `.firmo/` directory -- and stay
+// legal everywhere, while every capitalized spelling, whether in prose or in
+// an all-caps build token, is a leftover. The one exception is the frozen
+// backcompat marker below, which target projects still carry in their
+// `AGENTS.md` and which `setup` reads for one compatibility generation. Keep
+// the detector pure so the build-time source scan can be covered by focused
+// unit tests.
+
+export const FROZEN_LEGACY_SETUP_MARKER = '**Firmo project setup:**';
+const FROZEN_LEGACY_SETUP_MARKER_RE = new RegExp(escapeRegex(FROZEN_LEGACY_SETUP_MARKER), 'g');
+
+// Return every stale capitalized brand occurrence as { line, reference }.
+// An occurrence inside the frozen marker literal is permitted, an all-lowercase
+// `firmo` is never a hit, and lines are reported 1-based.
+export function findStaleBrandReferences(markdown) {
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    const frozenSpans = [...line.matchAll(FROZEN_LEGACY_SETUP_MARKER_RE)].map((match) => [
+      match.index,
+      match.index + match[0].length,
+    ]);
+    for (const match of line.matchAll(/firmo/gi)) {
+      if (match[0] === 'firmo') continue;
+      const inFrozenMarker = frozenSpans.some(
+        ([start, end]) => match.index >= start && match.index < end,
+      );
+      if (inFrozenMarker) continue;
+      hits.push({ line: index + 1, reference: match[0] });
+    }
+  }
   return hits;
 }
 

@@ -600,7 +600,7 @@ unavailable.
 Show the classified items (actionable, skipped, deferred questions) and obtain an
 approval. Without approval **no** externally visible action takes place (no push, no
 comment). The approval is omitted if `iterate` was delegated non-interactively
-(e.g. by {{FIRMO}} apply-review).
+(e.g. by {{FLOW}} apply-review).
 
 ```ask
 header: Approval
