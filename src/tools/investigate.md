@@ -21,8 +21,9 @@ Scope boundary:
 - `{{SKILL:fix}}` is committed to a subsequent fix.
 - `investigate` only produces a diagnosis and, at the end, routes into the appropriate follow-up workflow.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

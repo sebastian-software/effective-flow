@@ -28,8 +28,9 @@ validation, and delivering back as new commits on the same PR branch.
 {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}. It never rewrites
 existing PR history.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

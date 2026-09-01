@@ -33,8 +33,9 @@ Hard scope boundary:
   a checklist for a missing native relation. A failed or unsupported update must stop before any
   replacement comment is created.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

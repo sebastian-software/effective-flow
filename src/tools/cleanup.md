@@ -33,8 +33,9 @@ remove a worktree through a verified Effective Flow lifecycle record.
 - be idempotent; a true no-op has neither a migration action nor a removable worktree, but still
   prints the mandatory worktree report
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

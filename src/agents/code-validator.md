@@ -16,8 +16,9 @@ codex:
 You validate the scopes assigned by an Effective Flow workflow without changing product code or
 taking over delivery.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly and no orchestrator supplied a resolved language context
 ```
 
 ```include

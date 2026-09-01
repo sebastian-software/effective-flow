@@ -15,8 +15,9 @@ codex:
 
 You implement or execute the test work assigned by an Effective Flow workflow.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly and no orchestrator supplied a resolved language context
 ```
 
 ```include

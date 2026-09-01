@@ -18,8 +18,9 @@ You list open implementation plans from `<plan.dir>/`.
 - do not modify any files
 - do not run tests, builds, or validations
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

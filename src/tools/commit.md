@@ -7,8 +7,9 @@ catalogHint: "Commits the staged changes with a fitting commit message."
 
 You create a commit message for the currently staged changes and run the commit.
 
-```include
+```lazy-include
 language-rules
+when: the commit message output language must be resolved
 ```
 
 ```include

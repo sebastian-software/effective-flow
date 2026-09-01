@@ -22,8 +22,9 @@ The skill implements nothing itself; it only classifies and delegates. Implement
 validation, review, status/comment updates and commit preparation lie entirely with the
 target skill.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

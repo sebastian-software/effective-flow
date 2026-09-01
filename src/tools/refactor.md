@@ -11,8 +11,9 @@ You are the orchestrator for the refactoring workflow.
 
 Code is restructured without changing existing behavior, with before/after validation as a safety net.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

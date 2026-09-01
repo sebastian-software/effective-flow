@@ -12,8 +12,9 @@ This workflow reads an existing review report file from `.effective-flow/review/
 
 If the resolved tracker target is the forge or an external tool, the workflow reads the findings from that issue tracker instead: it is passed an epic/container issue or a list of concrete finding issues, one PR is created per finding, and the container entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

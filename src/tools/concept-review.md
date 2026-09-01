@@ -14,8 +14,9 @@ by one, deepens the existing sections, marks durable decisions as ADR candidates
 first planning steps as ordered work packages with a ready-to-paste handoff. Everything happens in
 that one file.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

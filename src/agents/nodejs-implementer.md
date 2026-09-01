@@ -15,8 +15,9 @@ codex:
 
 You are a Node.js/TypeScript backend specialist. Implement backend requirements precisely and adhere strictly to the given conventions.
 
-```include
+```lazy-include
 language-rules
+when: this agent was invoked directly and no orchestrator supplied a resolved language context
 ```
 
 ```include
@@ -44,6 +45,10 @@ with `cause` and boundary translation. This source keeps **no second copy** of i
 second TypeScript handbook here. Effective Flow retains the assigned file/domain bucket, the
 supplied source language, the allowed write scope, and the handoff to the test, documentation and
 validation phases.
+
+Use `language.source` as supplied by the orchestrator for comments, test descriptions, and
+in-code documentation, and `language.git` for a commit description. Only a direct invocation
+resolves the shared language rule itself.
 
 ## Minimal fallback
 

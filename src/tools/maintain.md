@@ -19,8 +19,9 @@ Sharp scope boundary – `maintain` is deliberately lean:
 - **Not in scope:** general refactoring or dead code (→ `{{SKILL:refactor}}`), bugfixes unrelated to dependencies (→ `{{SKILL:fix}}`), pure formatting/config upkeep (→ `{{AGENT:code-validator}}`), new functionality (→ `{{SKILL:build}}`).
 - **Not a scheduler:** automatic, time-triggered bumping is handled by tools like Renovate or Dependabot. `maintain` is the interactive "clean up now" run.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
