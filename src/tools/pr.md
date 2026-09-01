@@ -145,7 +145,10 @@ base-branch-resolution
    repeats the one that rule owns; where an arm below needs a ref brought up to date, it goes back
    through that same rule. Require the head branch to differ from both results; a base branch as
    head aborts. Derive the
-   remote-tracking diff base from the arm that resolved the value; both arms below yield a
+   remote-tracking diff base from the arm the two results identify, reading that arm off the pair
+   per "Recorded results" rather than off which arm ran here — a complete handoff ran none, so
+   equal results are the remote-not-configured arm and differing results the remote-configured
+   one, and no handoff has to carry an arm name. Both arms below yield a
    remote-tracking ref on `origin` or abort. Then determine the commits in
    `<remote-tracking-base>..<head-branch>` and preserve this discovered commit range for the later
    title and description derivation. If no diff base can be derived, abort before any push and

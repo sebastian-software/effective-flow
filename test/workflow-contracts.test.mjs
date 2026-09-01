@@ -7118,6 +7118,39 @@ test('the base-branch resolution rule keeps a slash-containing local base branch
   );
 });
 
+// `pr` step 4 picks its diff-base arm from the recorded pair, and a complete handoff supplies that
+// pair while running no arm at all. Unless the arm is recoverable from the two values themselves,
+// that selection is undefined on precisely the path that cannot observe which arm ran — so the
+// derivation is a property of the rule, pinned where the rule records its results.
+test('the recorded base-branch results identify the arm that produced them', () => {
+  const recorded = prose(
+    section(source('src/shared/base-branch-resolution.md'), '### Recorded results'),
+  );
+
+  assert.match(
+    recorded,
+    near('always differ', 'remote name in front of the branch', 300),
+    'the remote-configured arm must be stated as the one whose two results differ',
+  );
+  assert.match(
+    recorded,
+    near('always equal', 'records one candidate as both', 300),
+    'the remote-not-configured arm must be stated as the one whose two results are equal',
+  );
+  // The reading itself, not only its two halves: a consumer needs the direction spelled out.
+  assert.match(
+    recorded,
+    /equal results are the remote-not-configured arm and differing results are the remote-configured one/,
+  );
+  // Carrying the arm as a third named result is the alternative this derivation replaces. Left
+  // unstated, a later handoff would grow that field back and the pair would stop being sufficient.
+  assert.match(
+    recorded,
+    near('no arm name', 'alongside the pair', 200),
+    'the derivation must state that no caller passes an arm name',
+  );
+});
+
 test('the partial-diff path defers to the single base-branch resolution rule', () => {
   const delivery = source('src/shared/worktree-integration.md');
   const partial = boundedSlice(delivery, '### Partial-diff PR via worktree', '\n### ');
@@ -7373,6 +7406,19 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     'the remote-configured arm must raise the same non-origin abort as the other arm',
   );
   assert.match(prose(configuredArm), /`upstream\/main`/);
+  // A complete handoff runs no arm here, so the arm has to be read off the two results. Without
+  // this the step selects between its arms by "the arm that resolved the value" and the handoff
+  // path — the one `worktree-integration` hands over — has no such arm.
+  assert.match(
+    flow,
+    near('reading that arm off the pair', 'a complete handoff ran none', 300),
+    'step 4 must derive the arm from the results pair, not from which arm ran here',
+  );
+  assert.match(
+    flow,
+    /equal results are the remote-not-configured arm and differing results the remote-configured one/,
+    'the derivation must be stated in the direction step 4 applies it',
+  );
   assert.match(flow, /Remote not configured/);
   assert.match(
     flow,

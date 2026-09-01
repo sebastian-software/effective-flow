@@ -33,3 +33,13 @@ the branch name after the remote name as the resolved local base branch. The
 remote-not-configured arm records the candidate that actually resolved as **both** results: the
 value as it stands, or — only where the last-resort substitution above fired and was reported —
 the substituted local candidate. The aborting arm records nothing, and no consuming step runs.
+
+The pair therefore identifies its own arm, and a consuming step reads that arm off the two
+results rather than off which arm it watched run. This matters exactly where nothing ran: a
+delegated run handed both results resolved nothing itself and has no arm to remember. The
+remote-configured arm's two results always **differ**, because its resolved base ref carries the
+remote name in front of the branch while its resolved local base branch is that branch name
+alone. The remote-not-configured arm's two results are always **equal**, because it records one
+candidate as both — the value as it stands, or the substituted one. So equal results are the
+remote-not-configured arm and differing results are the remote-configured one. There is no third
+reading, and therefore no arm name any caller has to pass alongside the pair.
