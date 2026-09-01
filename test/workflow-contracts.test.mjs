@@ -7418,6 +7418,29 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     near('back through "Base-branch resolution"', 'the one refresh this arm owes', 200),
     'the refresh must be delegated to the single rule, never restated here',
   );
+  // Git lets a local branch track a remote branch of any name. Without this check a `release`
+  // tracking `origin/main` diffs against `origin/main` while `release` stays the pull-request
+  // target: creation fails where `origin/release` is absent, and hits an unrelated branch where it
+  // exists. The abort is the repair, and the alternative has to be named as rejected — adopting the
+  // upstream's branch component would open the pull request against a branch nobody configured and
+  // would contradict the resolved local base branch the shared rule records, which steps 8 and 10
+  // both read.
+  assert.match(flow, /base branch tracked under a different name/);
+  assert.match(
+    prose(localArm),
+    near("upstream's branch component", 'equal the resolved local base branch', 200),
+    'a differently named upstream must abort instead of targeting a branch it never diffed against',
+  );
+  assert.match(
+    prose(localArm),
+    near('`release` that tracks `origin/main`', 'stays the pull-request target', 300),
+    'the concrete divergence must be named, not left as an abstract mismatch',
+  );
+  assert.match(
+    prose(localArm),
+    near('wrong repair', 'the configuration never named', 300),
+    'retargeting to the upstream branch must be stated as rejected, not merely omitted',
+  );
   assert.match(flow, near('both arms', 'remote-tracking ref on `origin` or abort', 200));
 
   const lookup = boundedSlice(pr, '8. **Look up an existing open PR:**', '\n9. ');

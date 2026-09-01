@@ -173,9 +173,21 @@ base-branch-resolution
      of the two the observation showed; a branch absent from the forge cannot be a PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
      tracked on a non-`origin` remote** when it is not: this tool pushes the head to `origin`, so
      a base tracked on another remote would compute the commit range against a repository the pull
-     request is not opened on. The accepted upstream is not current yet: this arm ran because the
-     configured value named no remote, so the resolution fetched nothing and the remote-tracking
-     ref can be arbitrarily far behind the branch the pull request will actually target. Put that
+     request is not opened on. Then require the upstream's branch component — the part after the
+     remote name — to equal the resolved local base branch, and abort as **base branch tracked
+     under a different name** when it does not. Git lets a local branch track a remote branch of
+     any name, so a `release` that tracks `origin/main` computes the range against `origin/main`
+     while `release` stays the pull-request target: creation fails outright where `origin/release`
+     is absent, and opens against an unrelated branch where one exists. Adopting the upstream's
+     branch component as the target instead is the wrong repair, because it would open the pull
+     request against a branch the configuration never named — `main` for a configured `release` —
+     and "Base-branch resolution" already recorded the resolved local base branch, so redefining
+     it here would leave step 8's lookup filter and step 10's payload disagreeing with the rule
+     that produced them. The comparison reads refs already in hand, so it runs before the refresh
+     below and turns that configuration away without reaching the network. The accepted upstream is
+     not current yet: this arm ran because the configured value named no remote, so the resolution
+     fetched nothing and the remote-tracking ref can be arbitrarily far behind the branch the pull
+     request will actually target. Put that
      upstream back through "Base-branch resolution", which classifies it as a remote ref and
      performs the one refresh this arm owes; a failure there stops the run as that rule requires.
      Its resolved base ref is the diff base, and the resolved local base branch stays the one this
