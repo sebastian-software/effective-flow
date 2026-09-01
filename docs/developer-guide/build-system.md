@@ -392,18 +392,22 @@ and directive syntax").
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
-  `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
+  `worktree-integration`, `issue-tracker`, `issue-tracker-forge`, `review-report-backlinks`,
   `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
   trigger (`when:`) sits at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
-  fragment. The last two names are deferred **halves** of a split: `issue-post-merge-observation`
-  was separated from `issue-lifecycle` and `pr-merge-completion` from `pr-review-comments`, and
-  both remaining halves stay eager because the gate reads them on every run. Cutting a fragment
+  fragment. Three of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`, and
+  `issue-tracker-forge` from `issue-tracker`; the remaining halves stay eager because their
+  consumers read them on every run. Cutting a fragment
   along the seam between an always-read part and a one-decision-point part is what lets the second
-  half qualify for deferral at all.
+  half qualify for deferral at all. `issue-tracker-forge` is also the live proof that a fragment
+  may be eager in one file and lazy in another: `apply-issues`, `plan-issue` and
+  `apply-review-remote` inline it, because they resolve a tracker target on every run, while
+  `apply` and `cleanup` defer it behind their own first forge read.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's

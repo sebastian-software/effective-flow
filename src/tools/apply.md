@@ -68,6 +68,11 @@ issue-tracker
 ```
 
 ```lazy-include
+issue-tracker-forge
+when: the resolved tracker target is the forge and stage B classification or the review-epic listing is about to make its first forge read
+```
+
+```lazy-include
 tracker-target
 when: the resolved tracker target is `external`
 ```
@@ -85,7 +90,7 @@ when: the run's subject is fixed and a session title is about to be applied or e
 2. Apply the "apply-source detection": stage A (syntactic) and — for an
    issue reference — stage B (tracker). Stage B needs the resolved tracker target from
    "Tracker target": on the forge target the host/CLI detection and availability check from
-   "Remote helper contract" in "Issue-tracker integration (remote mode)" apply, and on an external
+   "Remote helper contract" in the loaded "Issue-tracker forge mechanics" apply, and on an external
    target the connection discovery of the loaded `tracker-target` contract. If the CLI, the
    authentication, or a usable external connection is missing, abort with a clear message (no
    silent fallback).

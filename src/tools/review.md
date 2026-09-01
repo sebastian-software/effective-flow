@@ -251,6 +251,11 @@ when: the resolved tracker target is the forge (`remote`) or an external tool
 ```
 
 ```lazy-include
+issue-tracker-forge
+when: the resolved tracker target is the forge (`remote`) or an external tool
+```
+
+```lazy-include
 tracker-target
 when: the resolved tracker target is `external`
 ```

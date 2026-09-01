@@ -86,6 +86,10 @@ This skill is **inherently tracker-bound**: it always works against the resolved
 issue-tracker
 ```
 
+```include
+issue-tracker-forge
+```
+
 ```lazy-include
 tracker-target
 when: the resolved tracker target is `external`

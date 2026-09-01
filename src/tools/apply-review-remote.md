@@ -21,6 +21,10 @@ issue-tracker
 ```
 
 ```include
+issue-tracker-forge
+```
+
+```include
 issue-lifecycle
 ```
 

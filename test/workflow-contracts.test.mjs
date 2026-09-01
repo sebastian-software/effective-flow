@@ -1342,7 +1342,7 @@ test('plan-review exposes file and issue adapters while issue mode stays comment
 });
 
 test('issue planning updates one comment fail-closed and apply rejects blocking open points', () => {
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
   const applyIssues = source('src/tools/apply-issues.md');
 
   assert.match(tracker, /targeted issue-comment update operation is `issue-comment-update`/);
@@ -1369,7 +1369,7 @@ test('issue planning updates one comment fail-closed and apply rejects blocking 
 test('security findings stay local until the review publication gate is confirmed', () => {
   const review = source('src/tools/review.md');
   const gate = source('src/shared/security-disclosure-gate.md');
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
 
   // review.md orchestrates: it loads the gate and classifies before it publishes anything.
   assert.match(review, /```lazy-include\nsecurity-disclosure-gate\n/);
@@ -2101,7 +2101,7 @@ test('plan files stay committed and pull requests stay on the forge in every tra
 });
 
 test('the security disclosure gate binds every publisher on every tracker target', () => {
-  const tracker = source('src/shared/issue-tracker.md');
+  const tracker = source('src/shared/issue-tracker-forge.md');
   const gate = flat(section(tracker, '### Security disclosure gate'));
 
   assert.match(
