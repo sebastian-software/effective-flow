@@ -86,9 +86,15 @@ base-branch-resolution
 - **Committed handoff:** an optional returning-caller receipt containing the exact head branch,
   both base results named as such — the resolved base ref and the resolved local base branch —
   the verified head OID, and confirmation that every intended group was committed
-  and verified. A caller that hands over a single untyped base value is read as having supplied
-  the resolved local base branch. A handoff that supplies both results is complete: this tool then
-  runs no resolution of its own. Missing or contradictory handoff evidence fails closed.
+  and verified. A handoff that supplies both results is complete: this tool then runs no
+  resolution of its own. A caller that hands over a single untyped base value is read as having
+  supplied the resolved local base branch, which leaves that handoff **incomplete** rather than
+  broken: step 4 applies "Base-branch resolution" to that one value exactly as a direct invocation
+  does and takes both results from there, which also corrects the reading where the value the
+  caller meant was a remote ref after all. `{{SKILL:deliver}}` is the caller that hands over one
+  value today, so this is the routine path and not a degenerate one. Missing or contradictory
+  evidence about the head branch, the verified OID or the commit-only guarantee fails closed; a
+  single base value does not.
 - **Base branch:** the PR target — always the resolved local base branch, never the resolved base
   ref. On a direct invocation it comes from applying "Base-branch resolution" to
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);

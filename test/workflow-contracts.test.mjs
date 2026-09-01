@@ -7280,6 +7280,20 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     near('single untyped base value', 'resolved local base branch', 200),
     'an untyped handoff value must be typed by the receiver, not guessed per call',
   );
+  // Typing the one value fills exactly one of the two results, and step 4 needs both to pick its
+  // arm. Left there, the `deliver` handoff — the routine caller that passes one value — would
+  // fail closed on every run, so the receiver has to derive the missing result rather than reject
+  // the handoff.
+  assert.match(
+    prose(handoff),
+    near('incomplete', 'rather than broken', 100),
+    'a single untyped value must be incomplete evidence, not contradictory evidence',
+  );
+  assert.match(
+    prose(handoff),
+    near('step 4 applies "Base-branch resolution"', 'takes both results', 300),
+    'the missing result must be derived through the one rule, not guessed',
+  );
 
   const baseInput = boundedSlice(pr, '- **Base branch:**', '- **Title/description:**');
   assert.match(prose(baseInput), /resolved local base branch/);
