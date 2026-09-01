@@ -46,6 +46,11 @@ when: the Effective Flow configuration is first read or a legacy config is migra
 ```
 
 ```lazy-include
+session-title
+when: the run's subject is fixed and whether a session title is due must be decided
+```
+
+```lazy-include
 session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```

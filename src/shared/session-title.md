@@ -21,10 +21,11 @@ subject, propose a better title — once.
   and nothing here loosens the requester side.
 - **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
   `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
-  `review`, `iterate`, and `investigate`. `version`, `open-plans`, `setup`, `cleanup`, `commit`, and `pr` stay silent, and
-  internal sub-agents and workers never emit. One carve-out: `setup`'s capability probe renames the
-  session once with its own fixed probe title, as the observable proof that the path works. That is
-  a capability check, not a work title — `setup` still derives, emits and applies none.
+  `review`, `iterate`, `investigate`, and `deliver`. `version`, `open-plans`, `setup`, `cleanup`,
+  `commit`, `pr`, and `merge-gate` stay silent. Every exposed tool sits in exactly one of those two
+  lists, and internal sub-agents and workers never emit. One carve-out: `setup`'s capability probe
+  renames the session once with its own fixed probe title, as the observable proof that the path
+  works. That is a capability check, not a work title — `setup` still derives, emits and applies none.
 - **Once, as soon as the subject exists:** the issue or pull-request title has been read, the plan
   H1 has been read, the review or maintenance scope is fixed, or the requirement is clarified —
   whichever comes first for the running tool. A delegating parent leaves the emission to its

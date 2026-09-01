@@ -7,7 +7,7 @@ description: "Effective Flow — software engineering workflows as tools, invoke
 
 Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `{{FLOW}} <tool>` (version {{VERSION}}).
 
-This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
+This router skill is deliberately **thin**. Beyond the tool catalog and the dispatch rule it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
@@ -21,10 +21,6 @@ This router skill is deliberately **thin**. Beyond the tool catalog, the dispatc
 For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `{{FLOW}}`.
 
 {{DEPRECATED_ALIASES}}
-
-```include
-session-title
-```
 
 ## Tools
 
