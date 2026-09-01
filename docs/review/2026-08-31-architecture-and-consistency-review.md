@@ -48,7 +48,7 @@ bar you normally see in an agent workflow repo.
 The problems are not conceptual. They are **uneven application of the repository's own good ideas**:
 
 - **Progressive disclosure was proven on five tools and never rolled out.** `build`, `fix`, `docs`,
-  `review` and `plan` expand by 89–116 lines from eager includes. `refactor`, `maintain`, `iterate`,
+  `review` and `plan` expand by 89–244 lines from eager includes. `refactor`, `maintain`, `iterate`,
   `cleanup` and `apply-issues` expand by 1 036–1 826 lines. Same mechanism, opposite discipline.
 - **The ownership check is not enforced anywhere.** Two specialist implementers carry a full second
   copy of a centrally owned playbook and declare no relationship at all, because nothing in the build
@@ -263,7 +263,9 @@ Groblinien a first-class, testable concept rather than an emergent one.
 
 ### 4.1 Measured always-loaded cost
 
-Resolved (post-eager-include) size of every built tool, and how much of it is include expansion:
+Resolved (post-eager-include) size and eager-include expansion for 16 of the 28 tools in
+`src/tools/`: the six the context budget guards, plus the ten largest of the rest. The table shows
+the spread between the two disciplines, not the full inventory:
 
 | Tool           | Own source |  Resolved | Eager expansion | Budgeted?   |
 | -------------- | ---------: | --------: | --------------: | ----------- |

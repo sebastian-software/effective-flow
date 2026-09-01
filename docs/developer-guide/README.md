@@ -33,3 +33,6 @@ is no runtime application – you edit `src/`, never `dist/`.
   binding language, commit, and versioning rules.
 - [User Guide](../user-guide/README.md) – using Effective Flow (installation, tool reference,
   configuration, troubleshooting).
+- [Architecture and consistency review](../review/2026-08-31-architecture-and-consistency-review.md)
+  – point-in-time audit of the repository at `3b44300` against the central skills; it is kept as
+  the record it was, and its implementation-status table tracks which findings have since landed.
