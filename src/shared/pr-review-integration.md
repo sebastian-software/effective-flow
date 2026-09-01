@@ -26,7 +26,7 @@ The loaded "PR review comment integration" owns PR resolution, the fresh thread 
 the review submission with its marker and its provider fallbacks, the summary comment, the
 `language.forge` rule, and the "No AI attribution" rule — and through it the host detection, CLI
 probing, envelope, dry-run, redaction, and error contract of the "Remote helper contract" in
-`issue-tracker.md`. The loaded "Security disclosure gate" owns the security classification, the
+`issue-tracker-forge.md`. The loaded "Security disclosure gate" owns the security classification, the
 local-first persistence, and the per-run publication offer. None of that is restated here. Pull
 requests stay on the forge behind `origin` regardless of `tracker.mode`.
 
@@ -152,6 +152,15 @@ withheld finding.
 The loaded "Submit a review with inline comments" performs the submission; this fragment decides its
 content. The helper's payload builder stamps the marker — never hand-write it.
 
+The idempotency key below is the canonical finding-issue `Signature` form, which lives in
+`issue-tracker-forge.md`. Pull-request work never evaluates the tracker target, so that fragment is
+not reached through a target-gated include here and is loaded through this pointer instead:
+
+```lazy-include
+issue-tracker-forge
+when: a finding is about to be published onto a pull request and its `Signature` idempotency key must be built or parsed
+```
+
 - Each inline comment is anchored to the finding's `file:line` **inside the diff**.
 - A finding on a line **outside the diff** cannot be anchored onto a wrong line. It does not go into
   the review body either: the idempotency check below reads the review threads and the pull-request
@@ -164,7 +173,7 @@ content. The helper's payload builder stamps the marker — never hand-write it.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
   marker, its body holds the finding's stable ID, its severity, its problem and recommendation
   prose, and — as its last line — the idempotency key in the canonical finding-issue form of
-  `issue-tracker.md`:
+  `issue-tracker-forge.md`:
   `- **Signature**: <path:line> · <Area> · <short summary of the problem>`. A finding published
   without that line cannot be recognized next run and is posted a second time.
 - **Empty result:** on the explicit `{{SKILL:review}} <PR>` entry point, publish one short summary

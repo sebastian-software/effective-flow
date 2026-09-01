@@ -20,7 +20,7 @@ You list open implementation plans from `<plan.dir>/`.
 
 ```lazy-include
 language-rules
-when: an artifact output language or delegated language context must be resolved
+when: the conversation language is not recognizable and this run's interactive output language must be resolved from the configuration
 ```
 
 ```include

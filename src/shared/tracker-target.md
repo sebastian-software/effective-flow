@@ -19,7 +19,7 @@ from the tool's name.
 | `forge`    | `tracker.mode: remote`   | the issue tracker of the `origin` remote (GitHub via `gh`, Forgejo via `tea`) |
 | `external` | `tracker.mode: external` | the tool named by `tracker.externalTool`                                      |
 
-The `forge` target keeps every mechanism described in `issue-tracker.md`: the shipped helper and
+The `forge` target keeps every mechanism described in `issue-tracker-forge.md`: the shipped helper and
 its dry-run envelope, the label convention including `firmo-` read compatibility and the one-time
 `sf-` migration, the helper operations, and the canonical finding and epic body formats. The
 `external` target reuses the same **artifacts and identity keys** but reaches them through a
@@ -207,9 +207,15 @@ values stay identical.
 
 ### Classification mapping
 
-Effective Flow's label vocabulary is owned by the "Label convention" table in `issue-tracker.md`
+Effective Flow's label vocabulary is owned by the "Label convention" table in `issue-tracker-forge.md`
 and is canonical on every target: its strings do not change and no target-specific variant is
-invented.
+invented. A run on the `external` target reaches that table through the pointer below rather than
+through a forge-gated include, because the exact strings are needed here and nowhere else.
+
+```lazy-include
+issue-tracker-forge
+when: the canonical Effective Flow label strings must be read for the classification mapping below
+```
 
 Keep those exact strings and store them in whichever classification primitive the resolved
 connection exposes — labels, tags, workflow states, or a custom field. Report the chosen primitive

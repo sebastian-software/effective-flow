@@ -29,7 +29,7 @@ target. PR review threads are a different API object. A workflow working on a pu
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
 `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
-availability check** are taken from the "Remote helper contract" in `issue-tracker.md` (not
+availability check** are taken from the "Remote helper contract" in `issue-tracker-forge.md` (not
 reinvented); this building block only adds the PR operations.
 
 Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge
@@ -52,7 +52,7 @@ translated.
 ### Remote helper
 
 Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, and error contract from `issue-tracker.md`. PR mode requires a successful provider
+redaction, and error contract from `issue-tracker-forge.md`. PR mode requires a successful provider
 probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit provider choice;
 `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider requests or
 discover flags in the prompt.

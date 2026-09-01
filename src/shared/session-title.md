@@ -28,15 +28,16 @@ subject, propose a better title — once.
   works. That is a capability check, not a work title — `setup` still derives, emits and applies none.
 - **Once, as soon as the subject exists:** the issue or pull-request title has been read, the plan
   H1 has been read, the review or maintenance scope is fixed, or the requirement is clarified —
-  whichever comes first for the running tool. A delegating parent leaves the emission to its
-  delegate, and a delegate never repeats a subject its parent already proposed. Restate the title
-  in the completion report only if the final scope diverged from it. Deciding the title and applying
-  it are separate moments: decide it here, while the mechanism fragment owns when its host-specific
-  operation is sent. The subject is fixed here while the reference is resolved when the title is
-  applied or emitted, so every late-applying path needs nothing further. An early-applying path —
-  the ChatGPT Desktop native call and the Claude Code butler request — re-derives the title when
-  its inputs change, as when the first carried no reference, one now exists, and the resulting
-  title differs. Its mechanism applies it again, as often as that fragment allows.
+  whichever comes first for the running tool. A delegating parent leaves the emission to a delegate
+  that emits, keeps it when every delegate is silent, and a delegate never repeats a subject its
+  parent already proposed. Restate the title in the completion report only if the final scope
+  diverged from it. Deciding the title and applying it are separate moments: decide it here, while
+  the mechanism fragment owns when its host-specific operation is sent. The subject is fixed here
+  while the reference is resolved when the title is applied or emitted, so every late-applying path
+  needs nothing further. An early-applying path — the ChatGPT Desktop native call and the Claude
+  Code butler request — re-derives the title when its inputs change, as when the first carried no
+  reference, one now exists, and the resulting title differs. Its mechanism applies it again, as
+  often as that fragment allows.
 - **Reference first:** `<Reference> · <Subject> · <tool>` with the same `·` separator, and
   at most 60 characters, cut at a word boundary; no reference leaves `<Subject> · <tool>`. Reuse an
   existing artifact title verbatim — plan H1 without a legacy number, issue title without its

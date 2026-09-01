@@ -17,7 +17,11 @@ You are a Node.js/TypeScript backend specialist. Implement backend requirements 
 
 ```lazy-include
 language-rules
-when: this agent was invoked directly and no orchestrator supplied a resolved language context
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include
@@ -47,8 +51,9 @@ supplied source language, the allowed write scope, and the handoff to the test, 
 validation phases.
 
 Use `language.source` as supplied by the orchestrator for comments, test descriptions, and
-in-code documentation, and `language.git` for a commit description. Only a direct invocation
-resolves the shared language rule itself.
+in-code documentation, and `language.git` for a commit description. Keep identifiers, public API
+names, config keys, schemas, and paths language-stable whatever the resolved language is. Only a
+direct invocation resolves the shared language rule itself.
 
 ## Minimal fallback
 

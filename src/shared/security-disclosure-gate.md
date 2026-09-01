@@ -6,7 +6,7 @@ visible to everyone with read access, and is propagated through notifications, m
 mirrors — deleting it later does not undo the disclosure.
 
 This fragment owns the classification, the local-first persistence, and the publication offer. The
-cross-publisher contract lives in "Issue-tracker integration (remote mode)"; the artifact
+cross-publisher contract lives in "Issue-tracker forge mechanics"; the artifact
 lifecycle stays with the calling workflow.
 
 ### Classification

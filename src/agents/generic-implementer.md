@@ -17,7 +17,11 @@ You are a tooling-only generalist. Implement cross-project infrastructure and re
 
 ```lazy-include
 language-rules
-when: this agent was invoked directly and no orchestrator supplied a resolved language context
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include
@@ -76,8 +80,9 @@ An unknown extension or missing specialized language match does **not** establis
 - prefer the project's existing scripts and tools over introducing new tooling layers
 - keep stdout/stderr and exit codes clean for script- or CLI-related changes
 - use `language.source` as supplied by the orchestrator for comments, test descriptions, and
-  in-code documentation, and `language.git` for a commit description; only a direct invocation
-  resolves the shared language rule itself
+  in-code documentation, and `language.git` for a commit description; keep identifiers, public API
+  names, config keys, schemas, and paths language-stable whatever the resolved language is, and
+  only a direct invocation resolves the shared language rule itself
 
 ## File length and readability
 

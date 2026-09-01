@@ -1397,13 +1397,29 @@ try {
   // work outstanding and never as room to fill. `merge-gate`'s 3250 is the same
   // kind of ratchet, a little above its measured size.
   //
-  // The allowance above the measured size is a fixed ten lines rather than a
+  // The allowance above the measured size is a flat line count rather than a
   // percentage, deliberately: a percentage hands the largest tools the most room,
   // which is exactly where unwatched growth is most expensive. Ten lines absorb
   // the next justified rule, or the short pointer a deferral leaves behind,
-  // without hiding a regression.
+  // without hiding a regression. Ten is the **ceiling**, not a fixed offset —
+  // most entries carry less, because a deferral that shrank a tool was recorded
+  // by lowering its entry to the new measurement rather than by re-adding the
+  // full ten. Read an entry's actual headroom off the report below, never as
+  // "ten"; only the six judgement entries and `merge-gate` sit further above
+  // their measured size, and they do so on purpose.
   //
-  // Entries run largest first, so the map itself reads as the backlog.
+  // Measure with `node build.mjs` and read the `Always-loaded core (lines/budget)`
+  // line it prints — that is the exact number this guard compares. It counts
+  // `split('\n').length`, one more than `wc -l` reports for a newline-terminated
+  // file, so a limit derived from `wc -l` is a line short of what it looks like.
+  //
+  // Entries run largest first by **measured** size, not by the limit written down,
+  // so `plan: 700` sitting between 642 and 630 is the ordering working rather than
+  // a sort violation to be "fixed" by limit. The order is a reading aid that makes
+  // the map itself the backlog, and it is deliberately not asserted: enforcing it
+  // would turn a successful deferral — a tool shrinking, which is the whole point
+  // of this map — into a build failure until someone re-sorts. Re-sort when
+  // convenient instead.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 3250,
     iterate: 1664,
@@ -1446,7 +1462,9 @@ try {
     if (unbudgeted.length > 0) {
       throw new Error(
         `context budget (#99): CONTEXT_BUDGET_LINES has no entry for ${unbudgeted.join(', ')} — ` +
-          'every src/tools/*.md is measured; add the built size plus ten lines of headroom',
+          'every src/tools/*.md is measured; take the built size from the "Always-loaded core ' +
+          '(lines/budget)" line this build prints (it counts one more line than wc -l) and add ' +
+          'up to ten lines of headroom',
       );
     }
     if (stale.length > 0) {

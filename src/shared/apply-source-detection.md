@@ -78,9 +78,10 @@ Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
 
 Stage B refines an `issue-reference` from stage A into the concrete subtype. It requires the
 resolved tracker target from "Tracker target" in `issue-tracker.md` together with its established
-access — the host/CLI detection and availability check of the "Remote helper contract" on the forge
-target, or the single established connection of the `tracker-target` contract on an external
-target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
+access — the host/CLI detection and availability check of the "Remote helper contract" in
+`issue-tracker-forge.md` on the forge target, or the single established connection of the
+`tracker-target` contract on an external target; a skill that uses stage B therefore also embeds
+`issue-tracker.md` and reaches `issue-tracker-forge.md` on the forge target.
 `{{SKILL:apply-plan}}` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
@@ -128,7 +129,7 @@ read) is treated like `review-finding`. If the subtype remains unclear afterward
 Why label before body: a `review-epic` carries — like a generic
 `container-issue` — a `- [ ] <reference>` checklist. The label `effective-flow-review-epic` or
 `effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
-`issue-tracker.md`) is the reliable discriminator and takes precedence over the
+`issue-tracker-forge.md`) is the reliable discriminator and takes precedence over the
 body structure.
 
 ### Ownership and target
@@ -171,7 +172,7 @@ argument type; report which target the argument selected.
   the call by tracker target.
 - **Issue reference, but the target is unreachable** (forge CLI missing or not authenticated, or
   no usable external connection): stage B cannot run → clear error message with a remediation hint
-  per "Errors and edge cases" in `issue-tracker.md`; no silent fallback to a local type and none to
+  per "Error and edge cases" in `issue-tracker-forge.md`; no silent fallback to a local type and none to
   another target.
 - **Unresolvable path:** `ambiguous` → ask or error message; note that
   `{{SKILL:open-plans}}` can list open plans.

@@ -68,12 +68,11 @@ changes the complete artifact, not only one marker or heading.
 
 ### Typography
 
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
-locale guidance is authoritative; Effective Flow keeps no second typography checklist.
+Typography does not live here. It follows the resolved value rather than the resolution, so it is
+its own fragment (`typography-rules.md`) that every agent carries eagerly — an orchestrated agent
+is handed resolved values and never loads this one. It is embedded below so that everything
+reaching this fragment still reaches the rule as well.
 
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+```include
+typography-rules
+```

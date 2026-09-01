@@ -17,7 +17,11 @@ You are a Rust specialist. Implement requirements precisely and idiomatically an
 
 ```lazy-include
 language-rules
-when: this agent was invoked directly and no orchestrator supplied a resolved language context
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include
@@ -52,8 +56,9 @@ Crate selection follows the repository's established choice, which the skill dis
 prescribes; the named defaults below apply only when there is nothing to discover.
 
 Use `language.source` as supplied by the orchestrator for comments, test descriptions, and
-in-code documentation, and `language.git` for a commit description. Only a direct invocation
-resolves the shared language rule itself.
+in-code documentation, and `language.git` for a commit description. Keep identifiers, public API
+names, config keys, schemas, and paths language-stable whatever the resolved language is. Only a
+direct invocation resolves the shared language rule itself.
 
 ## Minimal fallback
 

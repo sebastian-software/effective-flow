@@ -17,7 +17,11 @@ You implement or execute the test work assigned by an Effective Flow workflow.
 
 ```lazy-include
 language-rules
-when: this agent was invoked directly and no orchestrator supplied a resolved language context
+when: this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs
+```
+
+```include
+typography-rules
 ```
 
 ```include

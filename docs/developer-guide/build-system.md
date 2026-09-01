@@ -287,9 +287,11 @@ The build aborts with an error message if any of these guards is violated:
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
   `review` and `plan` share **700 lines**; `merge-gate` carries **3250**; every other
-  `src/tools/*.md` carries its measured size plus ten lines. The build prints each measured size
-  next to the budget it was measured against and aborts if a tool exceeds **its own** limit,
-  naming the tool, its size and that limit. `merge-gate` differs from the 700 because it is an
+  `src/tools/*.md` carries its measured size plus **up to** ten lines. The build prints each
+  measured size next to the budget it was measured against and aborts if a tool exceeds **its
+  own** limit, naming the tool, its size and that limit. That printed size is the number to
+  measure a new entry against — the guard counts `split('\n').length`, one line more than
+  `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
   orchestration gate: its phases, delegation contracts and provider rules do not compress to
   the size of an implementation tool. Every number other than the six above is a measured
   backlog rather than a target – it records what a tool costs today with its mode-gated
@@ -341,8 +343,10 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
 2. To expose a tool via `/effective-flow`, add the name to exactly one group of `TOOL_GROUPS` in
    `build.mjs` (the array/group order determines the catalog order in the router) and add a
    strictly quoted `catalogHint` frontmatter field.
-3. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs` — its built line count plus ten
-   lines of headroom. Every `src/tools/*.md` is measured, internal ones included.
+3. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs` — its built line count plus up to
+   ten lines of headroom, with the line count read off the `Always-loaded core (lines/budget)`
+   report `node build.mjs` prints rather than from `wc -l`. Every `src/tools/*.md` is measured,
+   internal ones included.
 4. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, unsupported Codex sandbox modes, missing or duplicate `TOOL_GROUPS` entries, and a
    tool with no budget entry.
@@ -391,7 +395,12 @@ and directive syntax").
   default this fragment corrects skip the pointer's own trigger, so the mandate must be present
   before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
   narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
-  decision point at which a pointer could sit.
+  decision point at which a pointer could sit. `typography-rules` is eager in all sixteen agents
+  for a third reason: it states how a resolved `de`/`en` value is rendered, not how it is resolved,
+  so deferring it behind `language-rules` would hide it from exactly the orchestrated agents that
+  are handed a value and never resolve one. The fragment is split out of `language-rules` — which
+  still embeds it, so every consumer of the resolver keeps the rule — precisely so the locale rule
+  travels with the writer rather than with the resolver.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
@@ -458,8 +467,12 @@ also states the executable `/effective-flow` (Claude Code) and `$effective-flow`
 so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
-build (see "Guards"), each against its own budget; the build prints the sizes as a report, largest
-first. The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
+build (see "Guards"), each against its own budget; the build prints the sizes as a report, in map
+order, which runs largest **measured** size first — not largest limit, so `plan`'s 700 sitting
+between two 6xx limits is the order working rather than a sort violation. The order is a reading
+aid and is deliberately unenforced: asserting it would turn a successful deferral, which is the
+work the map exists to track, into a build failure until the map is re-sorted.
+The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
 434, `docs` 570, `review` 692, and `plan` 624 — headroom ranges from `review`'s 8 lines, the
 tightest since the eager `delegation-mandate` include was added, to `fix`'s 266 lines.
 `merge-gate` is budgeted separately at **3250** and measures 3176: an orchestration gate whose
@@ -467,13 +480,17 @@ phases, delegation contracts and provider rules do not compress to the size of a
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
 The rest is loaded only when the mode is reached.
 
-Every remaining tool carries its **measured size plus ten lines**, which is a backlog rather than
-a target: those tools still inline the mode-gated fragments that the five implementation tools
-already defer, and each conversion of an eager include to a `lazy-include` lowers the entries it
-touches. The headroom is a fixed ten lines rather than a percentage on purpose — a percentage
-would give the largest tools the most room, which is where unwatched growth costs the most — and
-it is wide enough for the short pointer a deferral leaves behind. `iterate` at 1656 and
-`apply-issues` at 1512 are the two largest entries of that kind today.
+Every remaining tool carries its **measured size plus at most ten lines**, which is a backlog
+rather than a target: those tools still inline the mode-gated fragments that the five
+implementation tools already defer, and each conversion of an eager include to a `lazy-include`
+lowers the entries it touches. The headroom is a flat line count rather than a percentage on
+purpose — a percentage would give the largest tools the most room, which is where unwatched growth
+costs the most — and ten lines are wide enough for the short pointer a deferral leaves behind. Ten
+is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
+tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
+so `apply-issues` at 1513/1516 has three lines of room and not ten. Read a specific entry's
+headroom off the build report. `iterate` at 1656 and `apply-issues` at 1513 are the two largest
+entries of that kind today.
 
 ## Optional upstream ownership audit
 
