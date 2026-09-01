@@ -7376,8 +7376,27 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   assert.match(flow, /Remote not configured/);
   assert.match(
     flow,
-    /git for-each-ref --format='%\(upstream:short\)' refs\/heads\/<branch>/,
+    /git for-each-ref --format='%\(refname:short\) %\(upstream:short\)' refs\/heads\/<branch>/,
     'one observation must separate "branch missing" from "branch has no upstream"',
+  );
+  // The refname is load-bearing twice over, and both reasons are verifiable in a scratch repo.
+  // `refs/heads/release` also matches `refs/heads/release/1.0`, and the bare upstream format
+  // prints nothing for a missing branch against a lone newline for a branch without an upstream —
+  // a byte command substitution strips, which collapses the two states the abort must tell apart.
+  assert.match(
+    flow,
+    near('any ref below `refs/heads/<branch>/`', '`release/1.0`', 300),
+    'the pattern prefix-matches siblings, so the refname must be compared',
+  );
+  assert.match(
+    flow,
+    near('lone newline', 'command substitution', 200),
+    'the two absences are indistinguishable without the refname column',
+  );
+  assert.match(
+    flow,
+    near('No row whose refname equals the branch', 'upstream field is empty', 200),
+    'each absence must be named by the observation that establishes it',
   );
   // Two distinct aborts, not one catch-all: a base on `upstream/…` computes the commit range
   // against a repository the pull request is not opened on, which is silently wrong rather than

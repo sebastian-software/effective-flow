@@ -159,11 +159,18 @@ base-branch-resolution
      the pull request is not opened on. The accepted ref is the diff base directly.
    - **Remote not configured:** the resolved base ref is local and cannot serve as a diff base
      here. Discover the resolved local base branch's upstream with
-     `git for-each-ref --format='%(upstream:short)' refs/heads/<branch>`, which separates "the
-     branch does not exist" (an empty result set) from "the branch exists but has no upstream" (an
-     empty field) in one observation. With no upstream, abort as **base branch has no upstream**
-     and name which of the two the observation showed; a branch absent from the forge cannot be a
-     PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
+     `git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/<branch>` and read
+     the refname back rather than trusting the pattern to have matched only that branch. Two
+     properties of this command decide the format, and dropping the refname loses both. A
+     `refs/heads/<branch>` pattern matches that ref **or** any ref below `refs/heads/<branch>/`, so
+     a base `release` that does not exist locally reports `release/1.0`'s upstream and the range,
+     title and description are all derived against a sibling branch with no abort firing. And the
+     two absences are not distinguishable from a bare `%(upstream:short)`: a missing branch prints
+     nothing and a branch without an upstream prints a lone newline, which command substitution
+     strips, so both arrive as the empty string. **No row whose refname equals the branch** is
+     therefore the branch missing, and **a row whose upstream field is empty** is the branch
+     without an upstream. Abort as **base branch has no upstream** in either case and name which
+     of the two the observation showed; a branch absent from the forge cannot be a PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
      tracked on a non-`origin` remote** when it is not: this tool pushes the head to `origin`, so
      a base tracked on another remote would compute the commit range against a repository the pull
      request is not opened on. The accepted upstream is the diff base.
