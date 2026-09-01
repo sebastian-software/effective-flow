@@ -7363,6 +7363,16 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     near('Remote configured', 'no upstream lookup runs', 300),
     'a remote-tracking base ref is the diff base directly',
   );
+  // The guard belongs to both arms, not only to the one that discovers an upstream: a configured
+  // `upstream/main` reaches the diff base without any lookup at all, and the pull request is still
+  // opened on `origin`.
+  const configuredArm = boundedSlice(step4, '- **Remote configured:**', '- **Remote not');
+  assert.match(
+    prose(configuredArm),
+    near('remote to be `origin`', 'non-`origin` remote', 200),
+    'the remote-configured arm must raise the same non-origin abort as the other arm',
+  );
+  assert.match(prose(configuredArm), /`upstream\/main`/);
   assert.match(flow, /Remote not configured/);
   assert.match(
     flow,

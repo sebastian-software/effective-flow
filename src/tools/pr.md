@@ -150,8 +150,13 @@ base-branch-resolution
    `<remote-tracking-base>..<head-branch>` and preserve this discovered commit range for the later
    title and description derivation. If no diff base can be derived, abort before any push and
    preserve the head branch.
-   - **Remote configured:** the resolved base ref is already a remote-tracking ref, so it is the
-     diff base directly and no upstream lookup runs.
+   - **Remote configured:** the resolved base ref is already a remote-tracking ref, so no upstream
+     lookup runs. Require its remote to be `origin` all the same, and abort as **base branch
+     tracked on a non-`origin` remote** when it is not — the same abort the other arm raises, for
+     the same reason. A configured `upstream/main` resolves here while this tool pushes the head
+     to `origin` and opens the pull request there with base `main`, so the commit range, the
+     empty-range decision and the derived title and description would all describe a repository
+     the pull request is not opened on. The accepted ref is the diff base directly.
    - **Remote not configured:** the resolved base ref is local and cannot serve as a diff base
      here. Discover the resolved local base branch's upstream with
      `git for-each-ref --format='%(upstream:short)' refs/heads/<branch>`, which separates "the
