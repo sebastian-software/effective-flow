@@ -341,8 +341,11 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
 2. To expose a tool via `/effective-flow`, add the name to exactly one group of `TOOL_GROUPS` in
    `build.mjs` (the array/group order determines the catalog order in the router) and add a
    strictly quoted `catalogHint` frontmatter field.
-3. Run `node build.mjs`. The guards described above cover missing sources, missing include
-   targets, unsupported Codex sandbox modes, and missing or duplicate `TOOL_GROUPS` entries.
+3. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs` — its built line count plus ten
+   lines of headroom. Every `src/tools/*.md` is measured, internal ones included.
+4. Run `node build.mjs`. The guards described above cover missing sources, missing include
+   targets, unsupported Codex sandbox modes, missing or duplicate `TOOL_GROUPS` entries, and a
+   tool with no budget entry.
 
 ## Runtime scripts
 
@@ -456,9 +459,9 @@ so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
 build (see "Guards"), each against its own budget; the build prints the sizes as a report, largest
-first. The five implementation tools share **700 lines** and currently measure `build` 536, `fix`
-432, `docs` 568, `review` 688, and `plan` 622 — headroom ranges from `review`'s 12 lines, the
-tightest since the eager `delegation-mandate` include was added, to `fix`'s 268 lines.
+first. The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
+434, `docs` 570, `review` 692, and `plan` 624 — headroom ranges from `review`'s 8 lines, the
+tightest since the eager `delegation-mandate` include was added, to `fix`'s 266 lines.
 `merge-gate` is budgeted separately at **3250** and measures 3176: an orchestration gate whose
 phases, delegation contracts and provider rules do not compress to the size of an implementation
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
@@ -469,8 +472,8 @@ a target: those tools still inline the mode-gated fragments that the five implem
 already defer, and each conversion of an eager include to a `lazy-include` lowers the entries it
 touches. The headroom is a fixed ten lines rather than a percentage on purpose — a percentage
 would give the largest tools the most room, which is where unwatched growth costs the most — and
-it is wide enough for the short pointer a deferral leaves behind. `iterate` at 2662 and `refactor`
-at 1857 are the two largest entries of that kind today.
+it is wide enough for the short pointer a deferral leaves behind. `iterate` at 1656 and
+`apply-issues` at 1512 are the two largest entries of that kind today.
 
 ## Optional upstream ownership audit
 

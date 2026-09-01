@@ -74,10 +74,11 @@ on.
 
 `session-title` therefore now loads from the tools that emit a title and from nowhere else, beside
 the `session-rename` mechanism each of them already points at. The two lists inside the fragment —
-the emitting tools and the silent ones — partition the exposed tool set, and a test fails the
-build when a tool appears in neither or in both. `setup` is silent, and its capability probe keeps
-its own authorization: the probe title and its call shape are stated in `src/tools/setup.md` and
-in `src/shared/session-rename.md`, which `setup` reads by explicit path.
+the emitting tools and the silent ones — partition the exposed tool set, and a test in
+`test/workflow-contracts.test.mjs` fails when a tool appears in neither or in both. `setup` is
+silent, and its capability probe keeps its own authorization: the probe title and its call shape
+are stated in `src/tools/setup.md` and in `src/shared/session-rename.md`, which `setup` reads by
+explicit path.
 
 The router resolves only **eager** includes, so nothing lazy can live there: a `lazy-include` fence
 in `src/SKILL.md` registers no fragment and fails the build on the unresolved pointer. That is the

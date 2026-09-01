@@ -88,6 +88,11 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
    inherits "no recommendation". Any delegation site whose result returns to its caller (rather
    than handing the rest of the run to the receiving tool) carries the literal payload line
    `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
+6. Every `src/tools/*.md` — internal ones included — needs an entry in `CONTEXT_BUDGET_LINES` in
+   `build.mjs`, its built line count plus ten lines of headroom. The map and the built tool set are
+   reconciled two-sidedly, so a tool with no entry and an entry naming no tool both fail the build.
+   The number is a measured backlog, not a target: deferring an eager include to a
+   ` ```lazy-include ` pointer lowers the entries it touches, and the entry is lowered with it.
 
 ## Delegation
 
