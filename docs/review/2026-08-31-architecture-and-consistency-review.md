@@ -58,7 +58,7 @@ The problems are not conceptual. They are **uneven application of the repository
 - **The "fully local" line is the least finished of the three.** It works for planning, review and
   apply, but the delivery preflight defaults to a remote ref and documents no fallback.
 - **Over-specification is concentrated, not general.** `merge-gate` alone is 2 341 source lines,
-  more than the next four tools combined, and ~880 of them run before Phase 0 begins.
+  more than the next two tools combined, and ~880 of them run before Phase 0 begins.
 
 Everything below is concrete and measured. Section 6 turns it into a priority order.
 
@@ -288,7 +288,7 @@ the spread between the two disciplines, not the full inventory:
 
 The pattern is unmistakable. Where the eager/lazy discipline was applied — `build` (9 eager / 17
 lazy), `review` (5/14), `plan` (5/11) — expansion is 89–116 lines. Where it was not — `refactor`
-(18 eager / 7 lazy), `iterate` (14/4), `maintain` (14/5) — expansion is 1 300–1 800 lines.
+(18 eager / 7 lazy), `iterate` (14/4), `maintain` (14/5) — expansion is 1 319–1 826 lines.
 
 ### F-12 — The context budget guard covers 6 of 28 tools and misses the second-largest
 
