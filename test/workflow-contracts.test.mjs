@@ -7284,6 +7284,15 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   const baseInput = boundedSlice(pr, '- **Base branch:**', '- **Title/description:**');
   assert.match(prose(baseInput), /resolved local base branch/);
   assert.doesNotMatch(baseInput, /branch part/);
+  // The config-missing default feeds the shared rule, under which a slashless value is never a
+  // remote ref. Documented as `main`, an unconfigured checkout that has `origin/main` and no
+  // local `main` resolved no base at all and aborted where it used to open a pull request.
+  assert.match(prose(baseInput), /if the config is missing, `origin\/main`/);
+  assert.match(
+    prose(baseInput),
+    near('never a remote ref', 'no local `main`', 300),
+    'the default must say why a slashless value cannot stand in for the remote ref',
+  );
 
   const precondition = boundedSlice(
     pr,

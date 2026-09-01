@@ -92,7 +92,11 @@ base-branch-resolution
 - **Base branch:** the PR target — always the resolved local base branch, never the resolved base
   ref. On a direct invocation it comes from applying "Base-branch resolution" to
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);
-  legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
+  legacy fallback: `worktree.baseBranch`; if the config is missing, `origin/main` — the same
+  default the delivery configuration documents, and a remote ref deliberately. A slashless `main`
+  is never a remote ref under that rule and `git rev-parse` does not widen it into one, so an
+  unconfigured checkout that has `origin/main` but no local `main` — a `--single-branch` clone, a
+  branch deleted after its merge — would resolve no base at all.
 - **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
 - **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 9.
 
