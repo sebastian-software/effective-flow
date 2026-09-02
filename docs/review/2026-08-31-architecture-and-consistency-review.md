@@ -104,12 +104,12 @@ should read "Effective Flow".
 
 Same 477-line fragment, same role (delivery/worktree setup), opposite discipline. There is no stated
 reason why `refactor` needs it before it knows whether the run will deliver, when `build` does not.
-Cost: 1 431 lines of always-loaded context across the three tools.
+Cost: 477 lines in any single run of one of the three, 1 431 in aggregate across them.
 
 ### F-04 — `issue-tracker` (419 lines) is eagerly loaded in five tools, two of them unconditionally
 
 Eager sites: `apply-issues`, `apply-review-remote`, `apply`, `cleanup`, `plan-issue` — 419 × 5 =
-2 095 lines of eager footprint across the tool set.
+2 095 lines of eager footprint in aggregate across the tool set, 419 in any single run.
 
 Three of those five have a reason to hold the contract. `apply-review-remote` is loaded by
 `apply-review` only once the resolved tracker target is the forge or an external tool, and
@@ -117,10 +117,11 @@ Three of those five have a reason to hold the contract. `apply-review-remote` is
 and both resolve the tracker target as their first act. `apply` and `cleanup` are the two that pay
 regardless of tracker mode.
 
-`tracker.mode` defaults to `local`. A local-only project therefore pays 838 lines of GitHub/Forgejo
-helper contract, label vocabulary, `firmo-` read compatibility and `sf-` migration mechanics in two
-tools that will never touch a forge. The mode is resolved _inside_ the fragment, so the gate exists —
-it is just evaluated after the context has already been spent.
+`tracker.mode` defaults to `local`. A local-only project therefore pays 419 lines of GitHub/Forgejo
+helper contract, label vocabulary, `firmo-` read compatibility and `sf-` migration mechanics in each
+of two tools that will never touch a forge — 838 in aggregate, but never both in one run, since
+`apply` and `cleanup` are separate entry points. The mode is resolved _inside_ the fragment, so the
+gate exists — it is just evaluated after the context has already been spent.
 
 Note the asymmetry: `tracker-target.md` (the `external` contract, 332 lines) **is** correctly
 described as "Loaded only once a run has resolved the tracker target `external`". The forge contract
@@ -314,30 +315,48 @@ conversion backlog into something the build reports on every run.
 
 ### F-13 — Highest-leverage eager fragments
 
-Cost = fragment lines × eager use sites:
+Aggregate cost = fragment lines × eager use sites. No single run pays a whole row: it loads the
+router plus one tool, so it pays that tool's own sites only.
 
-| Fragment               | Lines | Eager sites | Total lines | Assessment                                                                                                                                                                                          |
-| ---------------------- | ----: | ----------: | ----------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `language-rules`       |    79 |          32 |   **2 528** | Over-loaded. Most runs need "which language surface applies to my one output", not the full seven-key matrix. Split into a ~10-line resolution core (eager) + the full contract (lazy).             |
-| `issue-tracker`        |   419 |           5 |   **2 095** | See F-04. Should be lazy behind the resolved tracker mode, exactly as `tracker-target` already is.                                                                                                  |
-| `skill-discovery`      |    55 |          33 |       1 815 | Justified — this is the core mechanism and must run before work starts. Could still shed ~15 lines of rationale prose.                                                                              |
-| `worktree-integration` |   477 |           3 |   **1 431** | See F-03. Already lazy in four tools; make it lazy in the other three.                                                                                                                              |
-| `config-migration`     |   118 |          12 |   **1 416** | Over-loaded. The locator's four-step resolution order plus table encoding is ~40 lines; the ambiguity/tie-break/legacy-slug prose is the rest and is needed by `setup` and by ambiguous cases only. |
-| `task-tracking`        |    16 |          41 |         656 | Fine.                                                                                                                                                                                               |
-| `delegation-mandate`   |     9 |          32 |         288 | Fine — this is what a 9-line eager contract should look like.                                                                                                                                       |
+| Fragment               | Lines | Eager sites | Aggregate lines | Assessment                                                                                                                                                                                          |
+| ---------------------- | ----: | ----------: | --------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language-rules`       |    79 |          32 |       **2 528** | Over-loaded. Most runs need "which language surface applies to my one output", not the full seven-key matrix. Split into a ~10-line resolution core (eager) + the full contract (lazy).             |
+| `issue-tracker`        |   419 |           5 |       **2 095** | See F-04. Should be lazy behind the resolved tracker mode, exactly as `tracker-target` already is.                                                                                                  |
+| `skill-discovery`      |    55 |          33 |           1 815 | Justified — this is the core mechanism and must run before work starts. Could still shed ~15 lines of rationale prose.                                                                              |
+| `worktree-integration` |   477 |           3 |       **1 431** | See F-03. Already lazy in four tools; make it lazy in the other three.                                                                                                                              |
+| `config-migration`     |   118 |          12 |       **1 416** | Over-loaded. The locator's four-step resolution order plus table encoding is ~40 lines; the ambiguity/tie-break/legacy-slug prose is the rest and is needed by `setup` and by ambiguous cases only. |
+| `task-tracking`        |    16 |          41 |             656 | Fine.                                                                                                                                                                                               |
+| `delegation-mandate`   |     9 |          32 |             288 | Fine — this is what a 9-line eager contract should look like.                                                                                                                                       |
 
-Converting F-03, F-04, F-13's `language-rules` and `config-migration` alone removes on the order of
-**6 600 lines** of eager footprint across the tool set, with no behaviour change: every one of these
-fragments already resolves a mode or a key _inside itself_, so the gate exists and only the load
-point moves. The arithmetic is 1 431 from `worktree-integration`, 2 095 from `issue-tracker` and
-roughly 3 100 from the two splits — a ~10-line `language-rules` core across 32 sites saves 2 208, a
-~40-line `config-migration` core across 12 sites saves 936.
+Two quantities matter here and they are not the same size. The first is an **aggregate** over the
+whole tool set; the second is what one invocation actually stops loading.
 
-What a single run stops loading is smaller than that footprint for `issue-tracker`: per F-04,
-`apply-issues` and `plan-issue` are tracker-bound and `apply-review-remote` is only reached on a
-forge or external target, so all three pull the fragment as soon as they defer to it. The 838 lines
-in `apply` and `cleanup` are the part a run actually saves, which puts the realised figure near
-5 400.
+**Aggregate eager footprint.** Converting F-03, F-04, F-13's `language-rules` and `config-migration`
+removes on the order of **6 600 lines** across the tool set, with no behaviour change: every one of
+these fragments already resolves a mode or a key _inside itself_, so the gate exists and only the
+load point moves. The arithmetic is 1 431 from `worktree-integration`, 2 095 from `issue-tracker`
+and roughly 3 100 from the two splits — a ~10-line `language-rules` core across 32 sites saves
+2 208, a ~40-line `config-migration` core across 12 sites saves 936. This is a maintenance-scale
+number: it sums the 52 eager include sites these four fragments occupy, and no single workflow loads
+more than a handful of them.
+
+**What one run stops loading.** A run loads the router plus the one tool it invoked, so its saving
+is only that tool's own eager sites — a smaller and far more variable number. Two ends of the
+spread, read from those tools' eager fences at `3b44300`:
+
+| Run        | Eager sites this conversion set removes                                             | Lines that run stops loading |
+| ---------- | ----------------------------------------------------------------------------------- | ---------------------------: |
+| `refactor` | `worktree-integration` 477, `language-rules` 79 → ~10, `config-migration` 118 → ~40 |                      **624** |
+| `build`    | none — all three are already ` ```lazy-include ` in `src/tools/build.md`            |                        **0** |
+
+`refactor` sits near the ceiling: it is one of the three tools that hold `worktree-integration`
+eagerly, and it pays both split fragments as well. `build` is the floor, because it already defers
+all three. `issue-tracker` adds nothing to either figure: per F-04, `apply-issues` and `plan-issue`
+are tracker-bound and `apply-review-remote` is only reached on a forge or external target, so all
+three pull the fragment as soon as they defer to it — and the remaining 838 lines are two separate
+419-line entry points, `apply` and `cleanup`, that no single run enters together. Delegated agents
+run in their own contexts and carry their own eager share; the per-run figures above count the
+orchestrating tool only.
 
 ### F-14 — The always-on router spends 39% of itself on session titles
 
@@ -517,15 +536,19 @@ correctly owned here.
 ### P1 — efficiency, high leverage, mechanical
 
 - **F-12** extend `CONTEXT_BUDGET_LINES` to all 28 tools; ratchet the unconverted ones.
-- **F-03** make `worktree-integration` lazy in `refactor`, `maintain`, `iterate` (−1 431 lines).
-- **F-04** make `issue-tracker` lazy behind the resolved tracker mode (−2 095 lines of footprint;
-  the 838 in `apply` and `cleanup` are what a run stops loading).
+- **F-03** make `worktree-integration` lazy in `refactor`, `maintain`, `iterate` (−1 431 aggregate;
+  −477 in each of those three runs).
+- **F-04** make `issue-tracker` lazy behind the resolved tracker mode (−2 095 aggregate; −419 in a
+  run of `apply` or of `cleanup`, and nothing in the other three, which defer to the fragment
+  immediately).
 - **F-13** split `language-rules` and `config-migration` into eager core + lazy contract
-  (−~3 100 lines combined).
-- **F-14** move or compress `session-title` out of the always-on router.
+  (−~3 100 aggregate; −69 and −78 per context that held them eagerly).
+- **F-14** move or compress `session-title` out of the always-on router (−56, in every session).
 
-Combined, P1 removes roughly 6 700 lines of eager footprint with no behaviour change, of which about
-5 400 is what a single run stops loading.
+Combined, P1 removes roughly 6 700 lines of **aggregate** eager footprint with no behaviour change.
+The **per-run** saving is a different and much smaller quantity that varies by invoked tool: a
+`refactor` run stops loading 624 of those lines (§4) and a `build` run none of them, because
+`build` already defers all three fragments — plus F-14's 56 in either case.
 
 ### P2 — ownership, medium effort, high conceptual value
 
