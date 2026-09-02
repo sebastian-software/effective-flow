@@ -4,7 +4,8 @@
 // `evals/merge-gate/prepare.mjs`, which an operator runs deliberately before handing a scenario's
 // prompt to a fresh agent. Nothing runs it automatically, and it is not on the `pnpm test` path.
 //
-// Four things are provisioned:
+// It builds `dist/` first, so the skill root it copies is the one the current sources produce
+// rather than whatever an earlier build left behind, and then provisions four things:
 //
 //   <sandbox>/skill/    a copy of the built portable skill root, with the shipped
 //                       `scripts/remote-tracker.mjs` replaced by the canned-envelope stub
@@ -42,12 +43,24 @@ const fixturePath = resolve(SUITE_ROOT, 'fixtures', `${caseName}.json`);
 if (!existsSync(fixturePath)) fail(`no fixture for case "${caseName}" at ${fixturePath}`);
 
 // A stale build would scaffold a skill root that does not match the source under test, which is the
-// one way this suite could report a green result about code nobody is running. Refuse rather than
-// build silently: the build is the operator's step, and its output is gitignored.
-if (!existsSync(BUILT_SKILL_ROOT)) {
+// one way this suite could report a green result about code nobody is running. So the scaffold
+// builds rather than checks: an existence check cannot tell a current `dist/` from a stale one —
+// `dist/` is gitignored, so its presence says only that somebody built at some point, on some
+// revision — and a staleness check would have to model every input `build.mjs` reads and would be
+// wrong the moment one moved. Building removes the failure mode instead of detecting it, and costs
+// the operator a step they were performing by hand anyway.
+try {
+  execFileSync(process.execPath, ['build.mjs'], {
+    cwd: REPOSITORY_ROOT,
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
+} catch {
   fail(
-    `no built skill root at ${BUILT_SKILL_ROOT}\nRun \`node build.mjs\` in ${REPOSITORY_ROOT} first, so the scaffold copies the current sources.`,
+    `\`node build.mjs\` failed in ${REPOSITORY_ROOT}; nothing was scaffolded.\nFix the build first — a sandbox provisioned from the previous build would validate instructions the current sources do not contain.`,
   );
+}
+if (!existsSync(BUILT_SKILL_ROOT)) {
+  fail(`\`node build.mjs\` succeeded but produced no skill root at ${BUILT_SKILL_ROOT}`);
 }
 
 const {
@@ -124,6 +137,12 @@ the human-comment guard the single deciding condition of the run.
 mkdirSync(resolve(projectRoot, 'docs', 'adr'), { recursive: true });
 writeFileSync(resolve(projectRoot, 'AGENTS.md'), agentsMarkdown);
 writeFileSync(resolve(projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md'), setupAdr);
+
+// `.effective-flow/` must be ignored, or the runtime-state write guard fails closed and the gate
+// takes a documented fallback instead of writing its wisdom file. That fallback is correct
+// behaviour, but a scenario should exercise the normal path: a run that reports a deviation every
+// time trains its reader to skip the deviation section, which is where a real one would appear.
+writeFileSync(resolve(projectRoot, '.gitignore'), '.effective-flow/\n');
 writeFileSync(
   resolve(projectRoot, 'README.md'),
   `# ${fixture.repository.owner}/${fixture.repository.repository}\n\nEval sandbox checkout.\n`,

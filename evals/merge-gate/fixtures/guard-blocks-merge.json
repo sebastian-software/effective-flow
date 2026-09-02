@@ -26,6 +26,23 @@
     }
   },
   "operations": {
+    "repository-resolve": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "repository-resolve",
+        "provider": "github",
+        "data": {
+          "host": "github.com",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "github"
+        },
+        "dryRun": false
+      }
+    },
     "reference-parse": {
       "input": {
         "reference": "42",
@@ -241,6 +258,76 @@
             "args": ["api", "graphql", "--input", "-"],
             "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
           },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-checks-wait": {
+      "input": {
+        "number": 42,
+        "payload": {
+          "timeoutMinutes": 20
+        }
+      },
+      "provider": [
+        {
+          "bucket": "pass",
+          "link": "https://github.com/example/flow/actions/runs/1",
+          "name": "ci",
+          "state": "SUCCESS"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-checks-wait",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "complete": true,
+            "timedOut": false,
+            "checksReported": true,
+            "checkCount": 1,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1"
+              }
+            ]
+          },
+          "commands": [
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--watch",
+                "--interval",
+                "10"
+              ],
+              "timeoutMs": 1200000
+            },
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--json",
+                "bucket,link,name,state"
+              ],
+              "timeoutMs": 60000
+            }
+          ],
           "conditionalWriteAvailable": false
         },
         "dryRun": false

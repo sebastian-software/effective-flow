@@ -92,14 +92,25 @@ test('every fixture envelope is one the real normalizer emits', async () => {
 // so its fixture entry states a null provider payload the fake runner never delivers. `probe` is
 // piped through `executeOperation` with `skipProbe`, so what the fidelity assertion proves for it is
 // the envelope the operation wraps around a probe result rather than the capability detection
-// itself; the capabilities are the set this fixture declares at its top level.
+// itself; the capabilities are the set this fixture declares at its top level. `repository-resolve`
+// is remote by classification but answers from the stated repository without reaching the runner
+// either, so it likewise carries a null provider payload.
+//
+// `pr-checks-wait` and `repository-resolve` were added because runs performed against the earlier
+// corpus asked for them and got `UNSUPPORTED_CAPABILITY` back: three of five archived runs took a
+// fallback path instead of the normal one, which is precisely the "passed for the wrong reason"
+// failure this list exists to prevent. Neither is optional for a scenario whose subject is a merge
+// precondition — the gate resolves the repository before it can read anything, and Phase 4 waits on
+// the checks before it evaluates them.
 test('every fixture covers the operations a gate run performs', () => {
   const required = [
+    'repository-resolve',
     'reference-parse',
     'probe',
     'pr-read',
     'viewer-read',
     'pr-status-read',
+    'pr-checks-wait',
     'pr-comments-read',
     'pr-reviews-read',
     'review-threads-read',

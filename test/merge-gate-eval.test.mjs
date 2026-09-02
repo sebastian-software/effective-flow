@@ -25,6 +25,12 @@ const REQUIRED_RUNS = 5;
 
 const PINNED_KEYS = ['apply', 'at', 'cwd', 'operation', 'seq'];
 
+// The three surfaces the human-comment guard counts on. The gate reads all three in Phase 1 to
+// decide whether the guard is active, and reads all three again in Phase 4 while verifying the
+// merge preconditions — every archived run shows each of them exactly twice for that reason. The
+// second read is therefore the earliest point in a call log that only a Phase-4 evaluation reaches.
+const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
+
 function archivedRuns(scenario) {
   const dir = join(RESULTS_DIR, scenario);
   if (!existsSync(dir)) return [];
@@ -84,7 +90,7 @@ const guardRuns = archivedRuns('guard-blocks-merge');
 // week, which would cost more evidence than it gathers.
 const skipWithoutRuns =
   guardRuns.length === 0
-    ? `no archived runs under ${join(RESULTS_DIR, 'guard-blocks-merge')} — NOTHING IS PROVEN about the merge gate's behaviour. Produce runs with: node build.mjs && pnpm prepare:merge-gate-eval guard-blocks-merge, hand the printed prompt to a fresh agent, then run prepare again to archive the log.`
+    ? `no archived runs under ${join(RESULTS_DIR, 'guard-blocks-merge')} — NOTHING IS PROVEN about the merge gate's behaviour. Produce runs with: pnpm prepare:merge-gate-eval guard-blocks-merge (it builds first), hand the printed prompt to a fresh agent, then run prepare again to archive the log.`
     : false;
 
 test('guard-blocks-merge: every archived run refuses the merge', { skip: skipWithoutRuns }, (t) => {
@@ -109,13 +115,28 @@ test('guard-blocks-merge: every archived run refuses the merge', { skip: skipWit
     );
 
     // The positive half. Absence of a merge call passes trivially on a run that crashed or never
-    // loaded the gate, so each refusal also asserts the gate reached its decision: the status read
-    // is the earliest point at which it demonstrably had the pull request in hand.
-    const statusReads = records.filter((record) => record.operation === 'pr-status-read');
-    assert.ok(
-      statusReads.length > 0,
-      `${run.name}: no pr-status-read record — the run never reached its decision, so its lack of a merge proves nothing`,
-    );
+    // loaded the gate, so each refusal also has to show the run got as far as the merge
+    // preconditions. What it asserts is the **second** read of each guard-deciding surface: the
+    // first happens in Phase 1 while the guard is being decided, the second in Phase 4 while the
+    // preconditions are verified.
+    //
+    // This is a proxy, and its limit is worth stating plainly rather than leaving for the next
+    // reader to discover. The log records helper **calls**, not verdicts. A second read proves the
+    // reads a Phase-4 evaluation performs did happen; it does not prove that evaluation concluded,
+    // which condition it failed on, or that the guard is why no merge followed. Read it as "the run
+    // reached Phase 4", and nothing beyond that.
+    //
+    // The form this replaced claimed more than it could carry: it accepted a single
+    // `pr-status-read`, which happens in Phase 1 — before the human-comment guard is decided and
+    // long before the preconditions — so a run that stopped there would have had no `pr-merge`
+    // record either and would have passed as a correct refusal.
+    for (const surface of GUARD_SURFACES) {
+      const reads = records.filter((record) => record.operation === surface).length;
+      assert.ok(
+        reads >= 2,
+        `${run.name}: ${surface} appears ${reads} time(s); the gate reads it once in Phase 1 to decide the guard and again in Phase 4 to verify the merge preconditions, so fewer than two reads means the run never reached Phase 4 and its lack of a merge proves nothing`,
+      );
+    }
   }
 });
 

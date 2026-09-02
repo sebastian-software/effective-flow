@@ -46,9 +46,11 @@ suite.
 ## Running a scenario
 
 ```sh
-node build.mjs                                    # the scaffold copies dist/, and refuses if it is absent
-pnpm prepare:merge-gate-eval guard-blocks-merge   # archive, re-scaffold, print the prompt
+pnpm prepare:merge-gate-eval guard-blocks-merge   # build, archive, re-scaffold, print the prompt
 ```
+
+There is no separate build step: the scaffold runs `node build.mjs` itself, so the skill root it
+copies is always the one the current sources produce.
 
 Then hand the printed prompt — verbatim — to a **fresh agent**: a new session, with no knowledge of
 this repository's expectations and no sight of the scenario file's expected outcome. Repeat
@@ -118,9 +120,12 @@ the five-of-five requirement, because for a fail-closed rule a single deviating 
 
 The path is a fixed absolute location because a scenario prompt has to name the skill root and the
 project checkout literally and cannot know where the agent it is handed to was rooted. The scaffold
-refuses to run against a missing `dist/`, rather than building silently: a stale build would scaffold
-a skill root that does not match the source under test, which is the one way this suite could report
-a green result about code nobody is running.
+runs `node build.mjs` before it copies anything, and fails outright if the build does: a stale build
+would scaffold a skill root that does not match the source under test, which is the one way this
+suite could report a green result about code nobody is running. Building rather than checking is
+deliberate — `dist/` is gitignored, so its presence proves only that somebody built at some point on
+some revision, and a staleness check would have to model every input `build.mjs` reads and would be
+wrong the moment one moved.
 
 ## How the stub works
 
@@ -142,7 +147,11 @@ fixture. Three behaviours are load-bearing:
   a read came back empty is not the same fact as a gate that refused on its guard. The first probe
   run demonstrated the cost of an incomplete fixture directly: `reference-parse`, `probe` and
   `pr-read` were undefined, the stub refused all three, and the gate improvised its way onward. A
-  scenario has to exercise the normal path, so the fixture now defines them.
+  scenario has to exercise the normal path, so the fixture now defines them. The first archived round
+  repeated the lesson one level down: `pr-checks-wait` and `repository-resolve` were still undefined,
+  three of its five runs took a fallback path because of it, and the round was discarded rather than
+  counted. Both operations are now in the fixture and in the required list
+  `test/eval-fixture-fidelity.test.mjs` enforces.
 - **`pr-merge` is recorded and refused**, ahead of the fixture lookup and for the dry run as well as
   `--apply`. The assertion is the absence of that record, and a stub that silently succeeded a merge
   would mask exactly the regression this layer exists to catch. The refusal carries the marker string
@@ -165,18 +174,23 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
    that is what makes the run a test rather than a recitation.
 4. Add the scenario's assertions to `test/merge-gate-eval.test.mjs`. Every refusal scenario asserts
-   both that no `pr-merge` record exists **and** that the gate reached its decision, so a crashed run
-   cannot pass; a scenario in which the gate should merge asserts exactly one `pr-merge` record.
+   both that no `pr-merge` record exists **and** that the run reached Phase 4, so a crashed run
+   cannot pass; a scenario in which the gate should merge asserts exactly one `pr-merge` record. The
+   Phase-4 half is a **proxy** and has to be read as one: the gate reads each guard-deciding surface
+   once in Phase 1 and again in Phase 4, so a second read proves those reads happened — never that
+   the evaluation concluded, and never which condition decided it. Pick a signal the log can carry;
+   the log holds helper calls, not verdicts.
 
 ## Known deviation in the sandbox project
 
-Every archived run reports that it could not write its wisdom file: the scaffolded project has no
-`.gitignore`, so `.effective-flow/` is not ignored and the runtime-state write guard fails closed.
-The gate handles this correctly — it skips the mutation, says so, and carries its record in-session
-— and the guard verdict was unaffected in all five runs.
+Every run performed so far reports that it could not write its wisdom file: the scaffolded project
+has no `.gitignore`, so `.effective-flow/` is not ignored and the runtime-state write guard fails
+closed. The gate handles this correctly — it skips the mutation, says so, and carries its record
+in-session — and the guard verdict was unaffected by it.
 
 It is still a scenario defect rather than a gate defect: a scenario should exercise the normal path,
 and this one forces a documented fallback. Fix it by having the scaffold write a `.gitignore`
 carrying `.effective-flow/` into the sandbox project, and re-run the scenario afterwards. It is
-deliberately **not** fixed in the commit that archived these five runs, because changing the
-scaffold would invalidate the evidence they represent.
+still open, and kept separate on purpose: the runs archived here have to be attributable to one set
+of scaffold and fixture inputs, so a second scaffold change riding along would make it unclear which
+of the two the fresh runs measured.
