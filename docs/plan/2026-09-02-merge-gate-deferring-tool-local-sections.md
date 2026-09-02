@@ -100,15 +100,15 @@ that here keeps the implementing run from chasing it:
 
 ## Affected files
 
-| File                                           | Description                                                                                                                                   |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/tools/merge-gate.md`                      | Sections extracted to fragments and rationale compressed; every entry gate retained inline                                                    |
-| `src/shared/merge-gate-issue-observation.md`   | New. Phase 5.5 steps 1–7 and its `ask` fence (WP1)                                                                                            |
-| `src/shared/merge-gate-conflict-resolution.md` | New. Conflict-resolution delegation contract and its resolution step (WP2)                                                                    |
-| `src/shared/merge-gate-checkout-boundary.md`   | New. Checkout inapplicability list, reached through the existing `worktree-integration` trigger (WP3)                                         |
-| `test/workflow-contracts.test.mjs`             | 15 known repointings — 11 Phase 5.5 slices (WP1), 3 conflict slices (WP2), 1 literal (WP3) — plus two new entries in the lazy-trigger battery |
-| `build.mjs`                                    | `CONTEXT_BUDGET_LINES` entry for `merge-gate` lowered to the achieved size plus its existing headroom                                         |
-| `docs/developer-guide/build-system.md`         | The three new single-consumer fragments recorded beside the existing ones                                                                     |
+| File                                           | Description                                                                                                                                                                                                    |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/merge-gate.md`                      | Sections extracted to fragments and rationale compressed; every entry gate retained inline                                                                                                                     |
+| `src/shared/merge-gate-issue-observation.md`   | New. Phase 5.5 steps 1–7 and its `ask` fence (WP1)                                                                                                                                                             |
+| `src/shared/merge-gate-conflict-resolution.md` | New. Conflict-resolution delegation contract and its resolution step (WP2)                                                                                                                                     |
+| `src/shared/merge-gate-checkout-boundary.md`   | New. Checkout inapplicability list, reached through the existing `worktree-integration` trigger (WP3)                                                                                                          |
+| `test/workflow-contracts.test.mjs`             | 15 known repointings — 11 Phase 5.5 slices (WP1), 3 conflict slices (WP2), 1 literal (WP3) — plus three new entries in the lazy-trigger battery, one per new fragment, so WP3's is pinned like WP1's and WP2's |
+| `build.mjs`                                    | `CONTEXT_BUDGET_LINES` entry for `merge-gate` lowered to the achieved size plus its existing headroom                                                                                                          |
+| `docs/developer-guide/build-system.md`         | The three new single-consumer fragments recorded beside the existing ones                                                                                                                                      |
 
 ## Implementation details
 
