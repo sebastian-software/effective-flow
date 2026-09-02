@@ -98,8 +98,9 @@ config-migration
 issue-tracker
 ```
 
-```include
+```lazy-include
 issue-tracker-forge
+when: the resolved tracker target is the forge and Phase 1 is about to probe the helper for host, CLI and authentication before the first issue read
 ```
 
 ```include

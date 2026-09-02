@@ -1386,7 +1386,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own limit rather than a share of
   // one number. Only six of these numbers are a judgement: the five
-  // implementation tools agree on 700 lines, and `merge-gate` carries 3250,
+  // implementation tools agree on 700 lines, and `merge-gate` carries 3219,
   // because it is an orchestration gate whose phases, delegation contracts and
   // provider rules do not compress to the size of an implementation tool.
   //
@@ -1394,7 +1394,7 @@ try {
   // what a tool costs today, with its mode-gated fragments still inlined eagerly;
   // it is not a size anyone argued for. Each later conversion of an eager include
   // to a `lazy-include` lowers the entries it touches, so a large number reads as
-  // work outstanding and never as room to fill. `merge-gate`'s 3250 is the same
+  // work outstanding and never as room to fill. `merge-gate`'s 3219 is the same
   // kind of ratchet, a little above its measured size.
   //
   // The allowance above the measured size is a flat line count rather than a
@@ -1414,38 +1414,38 @@ try {
   // file, so a limit derived from `wc -l` is a line short of what it looks like.
   //
   // Entries run largest first by **measured** size, not by the limit written down,
-  // so `plan: 700` sitting between 642 and 630 is the ordering working rather than
+  // so `fix: 700` sitting between 501 and 420 is the ordering working rather than
   // a sort violation to be "fixed" by limit. The order is a reading aid that makes
   // the map itself the backlog, and it is deliberately not asserted: enforcing it
   // would turn a successful deferral — a tool shrinking, which is the whole point
   // of this map — into a build failure until someone re-sorts. Re-sort when
   // convenient instead.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 3250,
-    iterate: 1664,
-    'apply-issues': 1516,
-    setup: 1510,
-    'apply-review': 1334,
-    'plan-issue': 1070,
-    cleanup: 1025,
-    refactor: 859,
+    'merge-gate': 3219,
+    iterate: 1633,
+    setup: 1479,
+    'apply-review': 1303,
+    'apply-issues': 1146,
+    cleanup: 994,
+    refactor: 828,
     deliver: 747,
+    'plan-issue': 700, // measured 696 + 4, not the shared judgement 700
     review: 700,
-    maintain: 655,
-    'apply-review-remote': 642,
     plan: 700,
     'apply-review-commit-mechanics': 630,
+    maintain: 624,
     docs: 700,
-    apply: 572,
-    'apply-plan': 570,
     build: 700,
+    apply: 541,
+    'apply-plan': 539,
     investigate: 501,
     fix: 700,
     'plan-review': 420,
     pr: 405,
     'concept-review': 316,
+    'apply-review-remote': 303,
     concept: 304,
-    commit: 242,
+    commit: 211,
     'open-plans': 121,
     'pr-review': 38,
     version: 38,

@@ -1238,22 +1238,107 @@ test('the session-rename-butler ADR exists and is marked Active', () => {
 // has no dist/ to read. What this owns is the build's own precondition, for
 // every fragment rather than for one: a lazy name a tool references must have a
 // source for the build to ship and for the guard to then cover.
-test('every lazy-include fragment referenced by a tool has a source in src/shared', () => {
-  const toolFiles = readdirSync(new URL('src/tools/', repositoryRoot)).filter((entry) =>
-    entry.endsWith('.md'),
+//
+// The walk covers `src/shared` as well as `src/tools`, because the build's own closure does: a
+// shared fragment's `lazy-include` is resolved when its host is inlined, so it ships a fragment
+// exactly like a tool's pointer does. A tool-only walk left every fragment reached solely through
+// another fragment — `config-migration-edge-cases` from `config-migration`,
+// `documentation-sync-contract` from `documentation-sync` — outside the only source-side check
+// there is.
+test('every lazy-include fragment referenced by a tool or shared fragment has a source', () => {
+  const collect = (dir) =>
+    readdirSync(new URL(`${dir}/`, repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .flatMap((file) => [...collectIncludeNames(source(`${dir}/${file}`)).lazy]);
+
+  const lazyNames = new Set([...collect('src/tools'), ...collect('src/shared')]);
+  assert.ok(
+    lazyNames.size > 0,
+    'no lazy-include names were collected from src/tools or src/shared',
   );
-  const lazyNames = new Set();
-  for (const file of toolFiles) {
-    const { lazy } = collectIncludeNames(source(`src/tools/${file}`));
-    for (const name of lazy) lazyNames.add(name);
-  }
-  assert.ok(lazyNames.size > 0, 'no lazy-include names were collected from src/tools');
   for (const name of lazyNames) {
     assert.ok(
       existsSync(new URL(`src/shared/${name}.md`, repositoryRoot)),
-      `src/tools references the lazy include ${name}, but src/shared/${name}.md does not exist`,
+      `a lazy include references ${name}, but src/shared/${name}.md does not exist`,
     );
   }
+});
+
+// The check above is satisfied vacuously by a *deleted* pointer: a name nobody references is a
+// name nobody can dangle. That is harmless for a fragment several tools point at, and fatal for
+// one whose only route into the build's closure is a single pointer inside another fragment —
+// delete it and the fragment stops shipping to every target, with the build and the suite green.
+// Both such fragments are pinned here, by the trigger token of their decision point rather than by
+// the whole clause, so rewording stays free while losing the pointer or its condition fails.
+test('every fragment reachable only through a shared-fragment pointer keeps that pointer', () => {
+  const pinned = [
+    {
+      host: 'src/shared/config-migration.md',
+      fragment: 'config-migration-edge-cases',
+      // Both halves of the split's own seam: the locator's rare branches and the external tracker
+      // keys. A clause naming only one of them leaves the other half of the fragment with no
+      // documented moment to load it.
+      trigger: /(?=[\s\S]*locator)(?=[\s\S]*`tracker\.mode: external`)/i,
+      decision: 'the config locator and the `tracker.mode: external` run',
+    },
+    {
+      host: 'src/shared/documentation-sync.md',
+      fragment: 'documentation-sync-contract',
+      trigger: /documentation sync/i,
+      decision: 'the documentation sync phase',
+    },
+  ];
+
+  for (const { host, fragment, trigger, decision } of pinned) {
+    const triggers = new Map(
+      [...source(host).matchAll(LAZY_INCLUDE_RE)].map((match) => [
+        match[1].trim(),
+        (match[2] ?? '').trim(),
+      ]),
+    );
+    const when = triggers.get(fragment);
+    assert.ok(
+      when !== undefined,
+      `${host} must keep its lazy-include pointer for ${fragment} - it is the only reference ` +
+        `that puts the fragment into the build's closure, so without it the fragment ships nowhere`,
+    );
+    assert.notEqual(
+      when,
+      '',
+      `the ${fragment} pointer in ${host} must carry a non-empty when: clause`,
+    );
+    assert.match(
+      when,
+      trigger,
+      `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
+    );
+  }
+});
+
+// A pointer's own condition must be decidable from the half that stays loaded. Deferring the
+// legacy marker's literal spelling broke that: step 1 was left saying only that "a legacy marker
+// spelling is recognized", while the spelling lived behind a pointer whose `when:` fires on that
+// same marker being present. A reader could not detect the marker without the fragment and could
+// not reach the fragment without detecting the marker, so the locator fell through to step 2,
+// matched a lower-priority ADR, and read the wrong project configuration in silence. Content
+// preservation cannot catch this - nothing was lost, it was moved out of reach of its own trigger.
+test('the config locator keeps every predicate its own lazy trigger depends on', () => {
+  const core = source('src/shared/config-migration.md');
+  const step1 = section(core, '1. **AGENTS.md marker.**', '\n2. **Default path/scan.**');
+
+  assert.match(
+    step1,
+    /\*\*Firmo project setup:\*\*/,
+    'locator step 1 must spell the legacy marker it recognizes: that spelling is the detection ' +
+      'predicate of the edge-cases pointer, so deferring it makes the trigger undecidable and the ' +
+      'locator silently selects a lower-priority ADR',
+  );
+
+  // The remaining trigger clauses stay decidable from the core, which is why only this one moved
+  // back: the exact-slug match (clause 1), both transitional handle paths (clause 4) and the
+  // tracker mode (clause 5) are all stated in the always-loaded half.
+  assert.match(core, /stem equals `effective-flow-project-setup`/);
+  assert.match(core, /\.effective-flow\/config\.json[\s\S]*\.firmo\/config\.json/);
 });
 
 // A deferred fragment is only correctly deferred while its pointer still says *when* to load it.
@@ -6041,7 +6126,7 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
 });
 
 test('external started-state configuration is tracker-verified and only setup persists suggestions', () => {
-  const migration = prose(source('src/shared/config-migration.md'));
+  const migration = prose(source('src/shared/config-migration-edge-cases.md'));
   const tracker = prose(source('src/shared/tracker-target.md'));
   const setup = prose(source('src/tools/setup.md'));
 
@@ -6626,7 +6711,7 @@ test('the in-run reasoning enumeration names the completion assessment as its fi
 });
 
 test('external done-state configuration mirrors the started state and never aborts a merged run', () => {
-  const migration = prose(source('src/shared/config-migration.md'));
+  const migration = prose(source('src/shared/config-migration-edge-cases.md'));
   const tracker = prose(source('src/shared/tracker-target.md'));
   const setup = prose(source('src/tools/setup.md'));
   const guide = source('docs/user-guide/configuration.md');
@@ -6712,7 +6797,7 @@ test('external done-state configuration mirrors the started state and never abor
   // costs nothing but that offer, when it also costs every already-closed issue its reconciliation.
   for (const [name, text] of [
     ['setup.md', setup],
-    ['config-migration.md', migration],
+    ['config-migration-edge-cases.md', migration],
     ['configuration.md', prose(guide)],
   ]) {
     assert.doesNotMatch(
@@ -11571,12 +11656,13 @@ test('setup carries the resolved ADR convention forward and reports it from the 
 // `docs/adr/0002-effective-flow-project-setup.md`. Every read path that matches the slug exactly
 // would then stop finding the configuration it wrote itself.
 test('the config locator and the review exclusion tolerate a numeric ADR prefix', () => {
-  const migration = source('src/shared/config-migration.md');
-  const locator = boundedSlice(migration, '### Config locator (resolution order)', '\n### ');
+  // The tolerance and its ranking are the deferred half of the configuration contract, reached
+  // from the locator step that carries them; the eager half keeps only the exact-slug match.
+  const edgeCases = source('src/shared/config-migration-edge-cases.md');
   const step2 = boundedSlice(
-    locator,
-    '2. **Default path/scan.**',
-    '3. **Transitional compatibility.**',
+    edgeCases,
+    '### Read tolerance and several-match ranking (locator step 2)',
+    '\n### ',
   );
   const flatStep2 = prose(step2);
 

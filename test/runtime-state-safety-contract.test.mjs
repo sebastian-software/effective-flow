@@ -162,18 +162,20 @@ test('review requires ignored untracked runtime state and keeps read-only lookup
 
 test('configuration fallback lookup remains read-only and is not a runtime writer', () => {
   const configMigration = readShared('config-migration');
+  const configEdgeCases = readShared('config-migration-edge-cases');
   const { eager, lazy } = collectIncludeNames(configMigration);
+  const edgeIncludes = collectIncludeNames(configEdgeCases);
 
   assert.match(
-    configMigration,
+    configEdgeCases,
     /Transitional compatibility[\s\S]*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json`/,
   );
   assert.match(
-    configMigration,
+    configEdgeCases,
     /Never inspect a\s+same-named fallback below a linked `EXECUTION_ROOT`/,
   );
   assert.match(
-    configMigration,
+    configEdgeCases,
     /This read path creates \*\*nothing\*\*\s+and touches \*\*no\*\* Git/,
   );
   assert.match(
@@ -182,6 +184,8 @@ test('configuration fallback lookup remains read-only and is not a runtime write
   );
   assert.equal(eager.has('runtime-state-safety'), false);
   assert.equal(lazy.has('runtime-state-safety'), false);
+  assert.equal(edgeIncludes.eager.has('runtime-state-safety'), false);
+  assert.equal(edgeIncludes.lazy.has('runtime-state-safety'), false);
 });
 
 test('setup repairs first, validates the target state, then guards and writes its marker', () => {
