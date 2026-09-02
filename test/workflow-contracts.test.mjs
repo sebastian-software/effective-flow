@@ -982,6 +982,11 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
   );
   assert.match(
     contract,
+    near('Report a half-completed conversion as half-completed', 'name both files', 300),
+    'the partial state must be its own reported outcome, not folded into a success',
+  );
+  assert.match(
+    contract,
     near('name both files', 'never report the import as written', 300),
     'a half-completed conversion must be reported as half-completed',
   );
