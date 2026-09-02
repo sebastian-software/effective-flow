@@ -126,7 +126,9 @@ mechanics and is out of scope for this mandate — which is why `merge-gate` car
 its worker-role delegations (`merge-conflict-resolver`, `code-validator`) while that one handoff
 stays exempt. Delegation mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
-ownership contract in [`AGENTS.md`](../../AGENTS.md#skill-discovery).
+ownership contract — canonical for the classification and the ownership-check mechanics in
+[`skill-ownership.md`](skill-ownership.md), summarized in
+[`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
 ## Source directories
 
@@ -343,5 +345,8 @@ effective-flow/                        (Repo)
 - [`build-system.md`](build-system.md) – build flow, placeholder syntax, guards.
 - [`plan-conventions.md`](plan-conventions.md) – naming scheme and lifecycle of the plan files.
 - [`release-and-installation.md`](release-and-installation.md) – versioning and installation.
-- [`AGENTS.md`](../../AGENTS.md) – canonical agent behavior rules, skill discovery, commit and
-  no-AI-attribution rules.
+- [`AGENTS.md`](../../AGENTS.md) – canonical agent behavior **rules**: language, delegation,
+  commit and no-AI-attribution rules, plan and concept files. Its skill-discovery, build,
+  versioning and ownership sections are short forms; the **mechanics** are canonical in
+  [`skill-ownership.md`](skill-ownership.md), [`build-system.md`](build-system.md) and
+  [`release-and-installation.md`](release-and-installation.md).

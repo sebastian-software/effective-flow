@@ -2,8 +2,11 @@
 
 `build.mjs` transforms the Markdown sources under `src/` into native Claude and Codex targets
 plus one portable manager target under `dist/`. This document describes invocation,
-placeholder syntax, and build guards. Conventions for adding tools and agents are described
-canonically in [`AGENTS.md`](../../AGENTS.md); only a short summary follows here.
+placeholder syntax, and build guards, and it is canonical for the **mechanics** of two things
+[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, and the
+step-by-step procedure for adding a tool or agent. `AGENTS.md` stays canonical for the two
+**rules** it owns — renaming an exposed tool ships a deprecated forwarding alias, and every
+`src/tools/*.md` needs a `CONTEXT_BUDGET_LINES` entry measured from the build report.
 
 ## Invocation
 
@@ -337,19 +340,48 @@ The build aborts with an error message if any of these guards is violated:
 
 ## Adding a tool or agent
 
-Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a tool or agent"):
+This is the canonical procedure. [`AGENTS.md`](../../AGENTS.md), section "Adding a tool or agent",
+keeps a short form of it and stays canonical for the two rules named there — the deprecated
+forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool needs.
 
-1. Create a new source file under `src/tools/<name>.md` or `src/agents/<name>.md`.
-2. To expose a tool via `/effective-flow`, add the name to exactly one group of `TOOL_GROUPS` in
-   `build.mjs` (the array/group order determines the catalog order in the router) and add a
-   strictly quoted `catalogHint` frontmatter field.
-3. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs` — its built line count plus up to
-   ten lines of headroom, with the line count read off the `Always-loaded core (lines/budget)`
-   report `node build.mjs` prints rather than from `wc -l`. Every `src/tools/*.md` is measured,
-   internal ones included.
-4. Run `node build.mjs`. The guards described above cover missing sources, missing include
-   targets, unsupported Codex sandbox modes, missing or duplicate `TOOL_GROUPS` entries, and a
-   tool with no budget entry.
+1. Create a new source file under `src/tools/<name>.md` or `src/agents/<name>.md`. For an agent,
+   select one of the repository's role profiles in its native frontmatter: implementers and
+   reviewers use the quality tier (Claude `opus`/`xhigh`, Codex `gpt-5.6-sol`/`high`), support
+   roles the economical tier (Claude `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). The agent
+   source is the canonical assignment — do not duplicate an exhaustive per-agent matrix in
+   documentation.
+2. To expose a tool via `/effective-flow`, add the name to exactly one intent group of
+   `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from it, and the array/group order
+   determines the catalog order in the router. An exposed tool also needs a `catalogHint`
+   frontmatter field — strictly double-quoted, a single usage-oriented line.
+3. Renaming an exposed tool is not a rename but a deprecated forwarding alias; that rule is
+   canonical in [`AGENTS.md`](../../AGENTS.md). Mechanically it means an entry in
+   `DEPRECATED_TOOL_ALIASES` in `build.mjs` (old name → new name) plus a matching
+   `src/tools/<old-name>.md` source. The alias stays out of `TOOL_GROUPS`, and the generated
+   `{{DEPRECATED_ALIASES}}` router clause is what still routes the retired name instead of
+   printing the catalog. The deprecated-alias guards above enforce all three halves.
+4. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs`. How that number is arrived at —
+   the built line count plus up to ten lines of headroom, read off the
+   `Always-loaded core (lines/budget)` report rather than from `wc -l` — is canonical in
+   [`AGENTS.md`](../../AGENTS.md); the guard itself and its two-sided reconciliation are described
+   under "Guards" above. Every `src/tools/*.md` is measured, internal ones included.
+5. A new user-invocable tool opts into the next-steps contract deliberately, either way: add a
+   ` ```lazy-include ` fence for `next-steps` plus at least one row for the tool's name in
+   `src/shared/next-steps.md`'s edge table, or add the tool to the exemption set in `build.mjs`
+   with a one-line reason. The build derives the emitting set as
+   `count(src/tools/*.md) − |exemptions|` and fails on a non-exempt tool with no fence, a fence
+   with no row, or a row for a tool without a fence — there is no silent third option that
+   inherits "no recommendation". Any delegation site whose result returns to its caller, rather
+   than handing the rest of the run to the receiving tool, carries the literal payload line
+   `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
+6. If the new tool delegates to a worker or performs its own analysis or exploration, embed the
+   eager `delegation-mandate` include. The delegation rules themselves — including which agents
+   may carry `Agent, Task` and why the parenthesised form is banned — are canonical in
+   [`AGENTS.md`](../../AGENTS.md), section "Delegation".
+7. Run `node build.mjs`. The guards described above cover missing sources, missing include
+   targets, a Claude agent without `effort`, unsupported Codex sandbox modes, a missing or
+   unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with no budget
+   entry.
 
 ## Runtime scripts
 
@@ -492,7 +524,7 @@ costs the most — and ten lines are wide enough for the short pointer a deferra
 is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
 tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
 so `apply-issues` at 1143/1146 has three lines of room and not ten. Read a specific entry's
-headroom off the build report. `iterate` at 1625 and `setup` at 1469 are the two largest
+headroom off the build report. `iterate` at 1625 and `setup` at 1645 are the two largest
 entries of that kind today.
 
 ## Optional upstream ownership audit
@@ -517,4 +549,6 @@ actually occurs.
 - [`architecture.md`](architecture.md) – source-to-dist model and repo structure.
 - [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
 - [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
-- [`AGENTS.md`](../../AGENTS.md) – canonical build and behavior rules.
+- [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (language, delegation,
+  commits, the tool-rename alias, the context-budget entry); the build **mechanics** those rules
+  refer to are canonical here.

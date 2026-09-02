@@ -89,6 +89,28 @@ confirmation; an existing new key always wins. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
 `skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 
+As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
+is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
+`AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
+reliably present. The offer is a question on both paths, Express included, and a run that cannot
+ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
+file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
+pointer to `AGENTS.md` and, where an earlier run left one there, setup's own marker line — and, when
+that marker line is present, only once `AGENTS.md` carries the marker too. That last condition is
+what keeps the replacement safe: while `CLAUDE.md` holds the only copy of the marker, setup leaves
+the file alone. A `CLAUDE.md` with content of its own, or
+one that already imports `AGENTS.md`, is reported and left alone, and a symlink at that path stops
+the step rather than being written through — checked both against what setup saw before it asked
+and again on disk immediately before it writes, so a path that changed while the question was open
+is never written through. A symlink at that path also disqualifies the file as a host for the
+project-setup marker itself: setup then writes that marker into a newly created `AGENTS.md` instead
+of through the link. Where the marker had to go into `CLAUDE.md` because no `AGENTS.md` existed,
+setup first creates the minimal `AGENTS.md` that carries it, and creates it exclusively so a file
+that appeared in the meantime is never overwritten. Should that pair of writes only half-succeed,
+setup says so, and because the marker then already lives in `AGENTS.md` a later run finishes the
+import rather than treating the leftover file as content of its own. Like the session-rename step
+below, this step adds no configuration key.
+
 After the configuration write, setup offers an optional session-rename capability step. In the
 **Codex tab embedded in the ChatGPT Desktop app**, the native current-task capability needs no
 installation or configuration. After the user consents to the visible check, setup calls it once

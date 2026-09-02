@@ -139,9 +139,10 @@ question, which asks which of the reported ADRs is authoritative rather than off
 another one.
 
 This deterministic read path creates nothing and touches no Git. `/effective-flow setup` is the
-only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, or migrates a
-legacy config. Readers with no ADR may consume legacy values for the current run and direct the
-user to setup; they do not perform migration themselves.
+only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, offers the
+one-line `CLAUDE.md` that imports `AGENTS.md`, or migrates a legacy config. Readers with no ADR
+may consume legacy values for the current run and direct the user to setup; they do not perform
+migration themselves.
 
 ## Bilingual envelope and canonical table encoding
 

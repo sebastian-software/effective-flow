@@ -791,6 +791,803 @@ test('the Desktop section requires one title-only current-task call and visible 
   }
 });
 
+// Step 6 item 7 offers a one-line `CLAUDE.md` that imports `AGENTS.md`. It is a numbered list
+// item, not a heading, so `section()` cannot cut it; `boundedSlice` stops at the `####` subsection
+// that follows, which means a renumbered or deleted item aborts loudly instead of letting Step 7's
+// own capability fence quietly satisfy every assertion below.
+function setupClaudeMdImportItem(setup) {
+  return boundedSlice(
+    setup,
+    '7. **Offer a `CLAUDE.md` that imports `AGENTS.md`.**',
+    '\n#### Rewriting a legacy',
+  );
+}
+
+// Step 6 item 5 sets the marker. Cut like item 7's above, by its own literal opener and item 6's,
+// so a renumbered or deleted item aborts loudly instead of letting a neighbouring item satisfy the
+// assertions below. The consolidated write rule lives here, so several tests need this exact cut.
+function setupMarkerItem(setup) {
+  return boundedSlice(setup, '5. **Set the AGENTS.md marker.**', '\n6. **Migration and untracking');
+}
+
+function setupClaudeMdImportAsk(item) {
+  const fences = [...item.matchAll(/```ask\n([\s\S]*?)\n```/g)];
+  assert.equal(fences.length, 1, 'Step 6 item 7 must carry exactly one ask fence');
+  return parseAskBlock(fences[0][1], { context: 'tools/setup.md Step 6 item 7' });
+}
+
+test('setup offers the CLAUDE.md import behind one ask fence that writes only @AGENTS.md', () => {
+  const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
+  const contract = prose(item);
+  const ask = setupClaudeMdImportAsk(item);
+
+  assert.equal(ask.header, 'CLAUDE.md');
+  assert.deepEqual(
+    ask.options.map((option) => option.label),
+    ['Yes', 'No'],
+    'the offer is a plain yes/no; a third option would need its own written outcome',
+  );
+
+  // The written content is the whole contract of this step. Anything beyond the single import
+  // line turns a non-destructive offer into a second convention file the project has to maintain,
+  // and the reason `AGENTS.md` stays canonical disappears with it.
+  assert.match(
+    contract,
+    near('whole content is the single line', '`@AGENTS.md`', 80),
+    'item 7 must state that the written file is exactly the one line `@AGENTS.md`',
+  );
+  assert.match(
+    ask.options[0].description,
+    near('single line', '`@AGENTS.md`', 80),
+    'the affirmative option must name the single line it writes',
+  );
+  assert.match(
+    ask.options[1].description,
+    /Write nothing/,
+    'declining must write nothing rather than fall back to some smaller edit',
+  );
+
+  // Mirrors the Step 7 assertion of the same shape. Without it a later editor folds this item
+  // into the Step 5 blocks and the ADR grows a setting nothing reads.
+  assert.match(contract, near('not part of the configuration', 'declares no key', 200));
+});
+
+test('the CLAUDE.md import fence is posed on both paths and an unposable run writes nothing', () => {
+  const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
+  const contract = prose(item);
+  const ask = setupClaudeMdImportAsk(item);
+
+  // The gate is the recorded file state, not the presentation path. A `when:` that named the
+  // wizard would let the Express path write a file into the project root unasked.
+  assert.match(
+    ask.when,
+    /state recorded by item 5/,
+    'the fence must trigger on the `CLAUDE.md` state item 5 recorded',
+  );
+  assert.match(
+    ask.when,
+    /absent or a pure prose pointer/,
+    'the fence must name the two writable states',
+  );
+  assert.doesNotMatch(
+    ask.when,
+    /guided|express|wizard/i,
+    'the fence condition must not gate on which path is running',
+  );
+
+  assert.match(contract, near('deliberately unconditional', 'rather than guided-path only', 160));
+  assert.match(
+    contract,
+    near('Express path poses it', 'exactly as the guided path does', 160),
+    'the Express path must pose the fence too',
+  );
+  assert.doesNotMatch(
+    contract,
+    /Express path (?:skips|omits|never poses|does not pose)/i,
+    'nothing may restrict the fence to the guided path',
+  );
+
+  // The half that makes it a gate rather than a prompt: no answer is not a quiet yes, and it is
+  // not a quiet no that goes unreported either.
+  assert.match(
+    contract,
+    near(
+      'unanswered, skipped, or non-interactive',
+      'writes nothing and reports that the fence could not be posed',
+      200,
+    ),
+    'a run that cannot pose the fence must write nothing and say so',
+  );
+  assert.match(contract, /There is no silent default on either path/);
+});
+
+test('setup names every CLAUDE.md state the import offer can meet', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    /Absent → pose the fence below and create the file only on an affirmative answer/,
+    'the absent state must reach the fence and write only on a yes',
+  );
+  assert.match(
+    contract,
+    near(
+      'A pure prose pointer → pose the fence below',
+      'naming the exact line that would be replaced',
+      120,
+    ),
+    'a pure prose pointer must reach the fence and show the line it replaces',
+  );
+  assert.match(
+    contract,
+    near(
+      'Content-bearing, or already importing → write nothing',
+      'do not pose the fence at all',
+      160,
+    ),
+    'a content-bearing or already-importing file must write nothing and skip the fence',
+  );
+  assert.match(
+    contract,
+    /already imports `AGENTS.md` is the finished state/,
+    'an existing import must be named as the finished state, not as a failure',
+  );
+
+  // The predicate is what separates the writable pointer state from the content-bearing one. Its
+  // marker exclusions guard a live configuration locator, so they are pinned individually.
+  assert.match(contract, /no `Effective Flow project setup:` marker/);
+  assert.match(contract, /no legacy `Firmo project setup:` marker/);
+  assert.match(contract, /no `@AGENTS.md` import already present/);
+  assert.match(
+    contract,
+    near(
+      'only non-blank, non-heading content is a single line referring to `AGENTS.md`',
+      'Anything else is content-bearing',
+      120,
+    ),
+    'the pointer predicate must close with content-bearing as the default',
+  );
+});
+
+// The two writes item 7 performs are ordered and not atomic, so a failure between them is a state
+// this workflow itself produces: `AGENTS.md` created, `CLAUDE.md` still carrying the marker. Read
+// as content-bearing that state is terminal, and every later run declines the conversion. The
+// fifth state recognises it, and its `AGENTS.md` conjunct is what keeps the marker exclusions in
+// the pointer predicate above doing their job — so the conjunct is pinned, not just the state.
+test('a half-completed CLAUDE.md conversion is resumable and reported as partial', () => {
+  const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
+  const contract = prose(item);
+  const ask = setupClaudeMdImportAsk(item);
+
+  assert.match(
+    contract,
+    /A pointer whose marker already lives in `AGENTS.md` → pose the fence below/,
+    'the resumable state must reach the fence like the other two writable states',
+  );
+  assert.match(
+    contract,
+    near(
+      "item 5 wrote this run's marker into `AGENTS.md` rather than into this file",
+      'whole safety of the state and is never optional',
+      200,
+    ),
+    'the predicate must require that the marker already has a home elsewhere',
+  );
+  assert.match(
+    contract,
+    near('proves the marker survives the replacement', 'may otherwise hold the last copy', 200),
+    'the conjunct must be tied to the reason the pointer predicate excludes markers at all',
+  );
+  assert.match(
+    contract,
+    near(
+      'created `AGENTS.md` and then failed to replace `CLAUDE.md`',
+      'retryable rather than permanently half-done',
+      600,
+    ),
+    'the state must be named as the one a failed conversion leaves behind',
+  );
+
+  // The half-completed file carries two lines, not one: item 5 sets the marker non-destructively
+  // and leaves the pointer in place. A predicate admitting only a bare marker line would miss the
+  // exact state this one exists for, which is how the resumption silently stops resuming.
+  assert.match(
+    contract,
+    /nothing but one `Effective Flow project setup:` or legacy `Firmo project setup:` marker line and at most one line referring to `AGENTS.md`/,
+    'the predicate must admit the pointer line the marker was written beside',
+  );
+  assert.match(
+    contract,
+    near(
+      'The optional pointer line is not a courtesy either',
+      'the file it left behind carries both lines',
+      400,
+    ),
+    'the second line of the predicate must be stated as load-bearing',
+  );
+  assert.match(
+    contract,
+    near(
+      'the file it left behind carries both lines',
+      'not a bare marker, is what a conversion',
+      200,
+    ),
+    'the two-line shape must be named as the one left on disk',
+  );
+  assert.match(
+    contract,
+    near(
+      'A predicate admitting only the marker line would miss the very state this one exists for',
+      'every later run would decline',
+      250,
+    ),
+    'the narrower predicate must be named as the defect it would reintroduce',
+  );
+  assert.match(
+    contract,
+    near('Report a half-completed conversion as half-completed', 'name both files', 300),
+    'the partial state must be its own reported outcome, not folded into a success',
+  );
+  assert.match(
+    contract,
+    near('name both files', 'never report the import as written', 300),
+    'a half-completed conversion must be reported as half-completed',
+  );
+  assert.match(
+    ask.when,
+    /marker-bearing pointer a half-completed conversion leaves behind/,
+    'the fence must trigger on the resumable state too',
+  );
+});
+
+test('the CLAUDE.md symlink hard stop is evaluated before the state classification', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    near(
+      'A symlink at the `CLAUDE.md` path is a hard stop',
+      'evaluated before the state classification below',
+      120,
+    ),
+    'the symlink stop must state that it runs before the state classification',
+  );
+  assert.match(contract, /never softened into a reroute/);
+  assert.match(
+    contract,
+    near(
+      'never a write target',
+      'report the path and write nothing rather than writing through it',
+      160,
+    ),
+    'a symlink must stop the run rather than be written through',
+  );
+  // The broken link is the dangerous half: an existence check reports it as absent, and absent is
+  // the one state that creates a file — at whatever path the link names, outside the repository.
+  assert.match(contract, near('broken symlink', 'would otherwise read as absent', 160));
+  assert.match(contract, /outside the repository/);
+
+  // The record-side stop alone is a check separated from its use: the ask fence stands between
+  // item 5's observation and item 7's write, so the path can become a symlink in between. The
+  // second evaluation is on the filesystem, immediately before the write, and it deliberately
+  // feeds nothing back into the classification the assertions above pin to item 5's record.
+  assert.match(
+    contract,
+    near(
+      'Revalidate the `CLAUDE.md` path immediately before writing it',
+      'never reclassify on that read',
+      120,
+    ),
+    'the symlink stop must run again on the filesystem immediately before the write',
+  );
+  assert.match(contract, /evaluated twice, once on the record and once on the filesystem/);
+  assert.match(
+    contract,
+    near('never re-derives the state', "stays keyed to item 5's record", 250),
+    'the pre-write read must not feed the classification it sits beside',
+  );
+  assert.match(
+    contract,
+    near('only two outcomes', 'performing that write and stopping with a report', 120),
+    'the revalidation must have no third outcome that writes something else',
+  );
+
+  // Position, not only prose. A reader who stops at the first matching classification must have
+  // passed the record-side stop already, so its ordering is pinned where it is executed; the
+  // filesystem-side one is pinned by wording above, because it runs at the write rather than here.
+  ordered(
+    contract,
+    'A symlink at the `CLAUDE.md` path is a hard stop',
+    'Decide on the state item 5 observed',
+    'Absent → pose the fence below',
+    'Content-bearing, or already importing → write nothing',
+  );
+});
+
+// Round four closed the last unhardened write of this class — item 5's own marker update — and the
+// property is now stated once, in item 5, with two named instruments both items pick from. Pin it
+// where it lives: the property, each instrument with the reason it holds, the residue neither
+// closes, and the branch-to-instrument mapping that makes item 5's own three writes no-follow.
+test('Step 6 states the unraceable-write property once, with both named instruments', () => {
+  const rule = prose(setupMarkerItem(source('src/tools/setup.md')));
+
+  assert.match(
+    rule,
+    near(
+      'Every write this item and item 7 perform goes through a primitive that cannot be raced',
+      'validation and write do not re-resolve the path between them',
+      300,
+    ),
+    'the property must be stated for both items at once, not per write site',
+  );
+  assert.match(
+    rule,
+    /destination entry is replaced rather than traversed/,
+    'the second half of the property must name replacement rather than traversal',
+  );
+  assert.match(
+    rule,
+    /a path-based write never hold it — the same race one step smaller/,
+    'a test-then-write must be named as the race it still is',
+  );
+  // The old wording earned its adjacency from the absence of a question. That is exactly what the
+  // fourth review round refuted, so the rule must cover both cases rather than exempt item 5's.
+  assert.match(
+    rule,
+    /whether a confirmation fence separates the two or nothing does/,
+    'the race must be stated as independent of whether a question stands between test and write',
+  );
+
+  assert.match(
+    rule,
+    near('Exclusive create', 'fails when anything is already there', 300),
+    'the create instrument must fail on an occupied path instead of overwriting it',
+  );
+  assert.match(
+    rule,
+    near('a live symlink, or a dangling one', 'refuses without resolving', 160),
+    'the exclusive create must be stated to cover both symlink shapes',
+  );
+  assert.match(
+    rule,
+    near('temporary file in the same directory', 'created exclusively', 250),
+    'the staging file must be a same-directory exclusive create',
+  );
+  assert.match(
+    rule,
+    near(
+      'A rename removes the destination entry rather than resolving it',
+      'replaces a symlink there instead of following it',
+      200,
+    ),
+    'the rename must be justified by the property that makes it no-follow',
+  );
+  assert.match(
+    rule,
+    /rename across filesystems is not that operation/,
+    'the same-directory requirement must carry its reason',
+  );
+  assert.match(
+    rule,
+    /Never truncate and rewrite the live path/,
+    'a truncate-and-rewrite must be excluded as the non-atomic alternative it is',
+  );
+
+  // Both instruments leave the same residue, so it is stated once beside them: a link either read
+  // saw is reported, a link planted after the last read is destroyed rather than followed, a
+  // concurrent edit to the destination is replaced, and a directory swap is closed by none of it. A
+  // contract claiming a report for the later link would be claiming a report no run emits.
+  assert.match(
+    rule,
+    near(
+      'planted after the last read is destroyed by the replacement rather than followed',
+      'rather than claiming the later link is reported too',
+      200,
+    ),
+    'the residual window must be reported as replaced, not as reported',
+  );
+  // Round five made the replacement conditional on the destination the read saw; round six withdrew
+  // that, because POSIX `rename()` is unconditional and neither `renameat2` nor `renamex_np` offers
+  // a compare-and-swap on a destination's content — `NOREPLACE` is create-only. An instruction
+  // nobody can carry out is worse than the lost update it was meant to close, so the residue admits
+  // the lost update instead. Pinning the admission together with the reason is what keeps a later
+  // round from quietly promising the conditional again.
+  assert.match(
+    rule,
+    near(
+      'The replacement is unconditional',
+      'no portable primitive makes a rename conditional on what the destination holds',
+      300,
+    ),
+    'the lost update must be admitted as residue, with the reason no conditional swap is available',
+  );
+  assert.match(
+    rule,
+    near(
+      'destination changed between the read this write was decided on and the swap',
+      'is replaced and its content lost',
+      120,
+    ),
+    'the residue must name the concrete loss rather than describe the window abstractly',
+  );
+  assert.match(
+    rule,
+    near('swap of the containing directory', 'does not need', 200),
+    'the one gap no path-based write closes must be named rather than implied covered',
+  );
+
+  // The finding of round four was item 5's own marker update, so its three branches must each name
+  // an instrument. Without this the rule would sit in item 5 and govern only item 7's writes.
+  assert.match(
+    rule,
+    near('marker update into an existing `AGENTS.md` or `CLAUDE.md`', 'takes the rename', 200),
+    "item 5's own marker update must be performed with the rename, not by path",
+  );
+  assert.match(
+    rule,
+    near("third branch's minimal `AGENTS.md`", 'takes the exclusive create', 160),
+    "item 5's creating branch must be performed with the exclusive create",
+  );
+});
+
+// Item 7 creates the minimal `AGENTS.md` on the strength of item 5's record that the path was
+// absent, and the ask fence sits in between. Without an exclusive create that record authorises
+// overwriting a file somebody else put there since — or writing through a symlink planted at it —
+// which is the one destructive outcome this step's own "as non-destructively as" framing rules out.
+test('item 7 creates the minimal AGENTS.md exclusively rather than on the record alone', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    /Create that minimal `AGENTS.md` with item 5's exclusive create/,
+    'the create must name the instrument item 5 defines rather than a second one of its own',
+  );
+  assert.match(
+    contract,
+    near('stop, report the path', 'replace no `CLAUDE.md`', 160),
+    'a failed exclusive create must also stop the second write of the ordered pair',
+  );
+  assert.match(
+    contract,
+    near('write guard rather than a fresh classification', 'rule above intact', 160),
+    'the guard must be stated as compatible with deciding on the recorded state',
+  );
+});
+
+// The revalidation above is a check, and a check is separated from the write it guards by however
+// long the write takes to start. Both reviewers of round three said the same thing: the `CLAUDE.md`
+// write itself has to be the no-follow operation, or the pre-write read is the same test-then-write
+// race the `AGENTS.md` create three bullets up already refuses. The instrument differs by branch,
+// so both halves are pinned — an exclusive create cannot express a replacement, and a rename cannot
+// express the report-on-occupied outcome the absent branch owes the hard stop. Since round four the
+// property and both instruments are stated once in item 5; what is pinned here is that item 7 picks
+// one per branch and restates neither.
+test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    near(
+      "Write through item 5's instruments",
+      'not through the path the revalidation just checked',
+      160,
+    ),
+    'the write must take the shared instrument rather than the path the revalidation checked',
+  );
+  assert.match(
+    contract,
+    near('revalidation cannot close the gap it opens', 'the instrument does', 120),
+    'the write must be stated as a property, not left to the revalidation to guarantee',
+  );
+  assert.match(
+    contract,
+    near(
+      'Where item 5 recorded the path as absent',
+      'same exclusive create the minimal `AGENTS.md` above uses',
+      200,
+    ),
+    'the absent branch must create the file exclusively rather than write to the checked path',
+  );
+  assert.match(
+    contract,
+    near(
+      'Where item 5 recorded a pointer to replace',
+      'exclusive create cannot express that write at all',
+      200,
+    ),
+    'the replacement branch must say why the absent branch instrument does not apply to it',
+  );
+  assert.match(
+    contract,
+    near(
+      'write the single line through the same-directory temporary file and rename',
+      'pointer to replace',
+      300,
+    ),
+    'the replacement branch must name the rename instrument it takes',
+  );
+
+  // Post-fix the two stops are honest about different things, and the difference has to be said:
+  // the record-side and pre-write reads still report a symlink and write nothing, while a link
+  // planted after the last read is destroyed by the replacement. Item 5's residue rule states that;
+  // item 7 names which of its two stops keeps the report.
+  assert.match(
+    contract,
+    near(
+      'The two stops therefore promise different things, and both are honest',
+      'the revalidation keeps the report',
+      200,
+    ),
+    'the two stops must be distinguished where the second one is performed',
+  );
+
+  // Four rounds of review produced four separately worded guards around one property; the fix was
+  // to state it once. Pin that it stays stated once: a copy re-grown here is the regression.
+  for (const restated of [
+    /validation and write do not re-resolve the path between them/,
+    /The replacement is unconditional/,
+    /A rename removes the destination entry rather than resolving it/,
+    /Never truncate and rewrite the live path/,
+    /swap of the containing directory/,
+  ]) {
+    assert.doesNotMatch(
+      contract,
+      restated,
+      "item 7 must reference item 5's write rule rather than restate it",
+    );
+  }
+});
+
+// "Decide on the state item 5 observed" is sound only while nothing between item 5 and item 7
+// changes the file, and item 6's rollback branches are exactly that: they restore the ADR and the
+// convention-marker file and then let the run continue. Ungated, item 7 rebuilds the state the
+// rollback undid — a minimal `AGENTS.md` naming a rolled-back ADR, and the restored `CLAUDE.md`
+// replaced. Item 6 therefore carries an outcome and item 7 declines on an incomplete one; both
+// halves are pinned together, because either alone is inert.
+test('item 6 carries its outcome and item 7 declines to run on an incomplete migration', () => {
+  const setup = source('src/tools/setup.md');
+  const item6 = prose(
+    boundedSlice(
+      setup,
+      '6. **Migration and untracking (migration case only).**',
+      '\n7. **Offer a `CLAUDE.md`',
+    ),
+  );
+  const item7 = prose(setupClaudeMdImportItem(setup));
+
+  assert.match(
+    item6,
+    near("Record this item's outcome and carry it forward", 'the way item 5 carries', 120),
+    'item 6 must carry its outcome forward on the same mechanism item 5 uses',
+  );
+  for (const outcome of ['not applicable', 'complete', 'incomplete']) {
+    assert.ok(
+      item6.includes(`\`${outcome}\``),
+      `item 6's carried outcome must name the ${outcome} case`,
+    );
+  }
+  assert.match(
+    item6,
+    near('Item 7 reads that outcome', 'declines to run on an incomplete one', 120),
+    'item 6 must name item 7 as the consumer of the outcome it records',
+  );
+
+  assert.match(
+    item7,
+    near('An incomplete migration skips this item', 'checked before anything else here', 120),
+    'item 7 must gate on the migration outcome before its own checks',
+  );
+  assert.match(
+    item7,
+    near(
+      "run this item only where item 6's carried outcome is `not applicable` or `complete`",
+      'On `incomplete`, skip it entirely',
+      200,
+    ),
+    'the precondition must state both the admitted outcomes and the skip',
+  );
+  assert.match(
+    item7,
+    near('pose no fence, create no `AGENTS.md`, replace no `CLAUDE.md`', 'report the skip', 160),
+    'the skip must suppress both writes and the fence, and still be reported',
+  );
+  assert.match(
+    item7,
+    near('Skip rather than stop the run', 'Step 8 still has to report', 120),
+    'the shape must be a skip, not a run abort, so the reporting step still runs',
+  );
+
+  // The tempting alternative is to have item 6 rewind item 5's record instead. It is worse: item 7
+  // would classify the restored file as a pure prose pointer and write an import pointing at an
+  // `AGENTS.md` that does not exist, which this item forbids by name two bullets down.
+  assert.match(
+    item7,
+    near(
+      "Do not instead reset item 5's record to the snapshot state",
+      'write `@AGENTS.md` into a project that has no `AGENTS.md`',
+      300,
+    ),
+    'the rejected alternative must be named with the rule that rejects it',
+  );
+
+  // The gate has to reach the fence condition too, or a skipped item still reports itself as a run
+  // whose fence could not be posed — a different outcome with a different next step.
+  const ask = setupClaudeMdImportAsk(setupClaudeMdImportItem(setup));
+  assert.match(
+    ask.when,
+    /item 6 did not report an incomplete migration/,
+    'the fence condition must exclude the incomplete-migration case',
+  );
+
+  // And Step 8 owes the skip its own outcome, beside the ones the item can otherwise reach.
+  const summary = prose(section(setup, '### Step 8: Summary', '\n## '));
+  assert.match(
+    summary,
+    /because item 6 reported an incomplete migration and the item was skipped/,
+    'Step 8 must report the skip as its own item-7 outcome',
+  );
+});
+
+// Item 5 observes the `CLAUDE.md` state and may then write the marker into that very file; item 7
+// decides on what item 5 recorded. The two halves are only correct together, so they are pinned
+// together — the same carry-forward shape `<adr-convention>` uses from Step 2.
+test('Step 8 reports the CLAUDE.md import outcome and never contradicts the marker location', () => {
+  const setup = source('src/tools/setup.md');
+  const summary = prose(section(setup, '### Step 8: Summary', '\n## '));
+
+  assert.match(
+    summary,
+    /for Step 6 item 7/,
+    'Step 8 must report the outcome of the CLAUDE.md import offer',
+  );
+  for (const [pattern, outcome] of [
+    [/created with the single line `@AGENTS\.md`/, 'the file created'],
+    [/pure prose pointer replaced by it with the replaced\s+line named/, 'a pointer replaced'],
+    [/content-bearing or already imports `AGENTS\.md`/, 'nothing written, file has content'],
+    [/a symlink at that path was a hard stop/, 'nothing written, symlink stop'],
+    [/the revalidation immediately before the write/, 'nothing written, pre-write revalidation'],
+    [
+      /minimal `AGENTS\.md` could not be\s+created exclusively/,
+      'nothing written, occupied AGENTS.md',
+    ],
+    [
+      /pointer left by an earlier half-completed conversion replaced by it with the\s+marker line named/,
+      'a resumed conversion',
+    ],
+    [
+      /report the conversion as\s+half-completed rather than as written/,
+      'a half-completed conversion',
+    ],
+    [/the fence could not be\s+posed/, 'nothing written, fence unposable'],
+    [/because the user declined/, 'nothing written, user declined'],
+    [/added no configuration key/, 'the no-key statement'],
+  ]) {
+    assert.match(summary, pattern, `Step 8 must report ${outcome}`);
+  }
+
+  // The marker can land in CLAUDE.md, which item 7 may then replace. Step 8 reports both the
+  // marker location and the import outcome, so the two bullets must be reconciled explicitly
+  // or a run emits two contradictory statements about the same file.
+  assert.match(
+    summary,
+    near(
+      'created the minimal `AGENTS.md` first',
+      'never contradicts the marker location reported',
+      400,
+    ),
+    'Step 8 must reconcile the import outcome with the marker location it also reports',
+  );
+});
+
+test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not a fresh read', () => {
+  const setup = source('src/tools/setup.md');
+  const item5 = prose(setupMarkerItem(setup));
+  const item7 = prose(setupClaudeMdImportItem(setup));
+
+  assert.match(
+    item5,
+    near(
+      'record the `CLAUDE.md` state this step observed',
+      'carry that record forward to item 7',
+      300,
+    ),
+    'item 5 must record the observed state and hand it to item 7',
+  );
+  for (const [pattern, component] of [
+    [/absent, a symlink, or present with its content/, 'the three observed shapes'],
+    [/already carried a marker or an `@AGENTS.md` import/, 'the marker and import flags'],
+    [
+      /the way `<adr-convention>` is carried from Step 2/,
+      'the carry-forward convention it follows',
+    ],
+  ]) {
+    assert.match(item5, pattern, `the recorded CLAUDE.md state must include ${component}`);
+  }
+  assert.match(
+    item5,
+    near(
+      'item 7 decides on that record',
+      'rather than on the file this step may just have changed',
+      200,
+    ),
+  );
+
+  assert.match(
+    item7,
+    near('Decide on the state item 5 observed', 'not the state item 5 left', 80),
+    'item 7 must decide on the observed state, not the resulting one',
+  );
+  assert.match(
+    item7,
+    /do not re-read the file to classify it/,
+    'item 7 must not re-read `CLAUDE.md` to classify it',
+  );
+  assert.match(
+    item7,
+    near(
+      'a fresh read here would see the marker this run just wrote',
+      'silently decline the very case this step exists for',
+      200,
+    ),
+    'the reason for the carry-forward must stay next to the rule',
+  );
+});
+
+// Item 5 selects the marker host before item 7 runs at all, so item 7's symlink hard stop cannot
+// protect that write. The two stops are separate applications of one rule, and this pins the earlier
+// one — without it a symlinked `CLAUDE.md` receives the marker and item 7 only reports it afterwards.
+test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
+  const item5 = prose(setupMarkerItem(source('src/tools/setup.md')));
+
+  assert.match(
+    item5,
+    near(
+      'A symlink at the `CLAUDE.md` path is never the marker target',
+      "item 7's own hard stop cannot cover that write",
+      200,
+    ),
+    'item 5 must refuse a symlinked marker host and say why item 7 is too late for it',
+  );
+  assert.match(
+    item5,
+    /does not follow the link so a dangling one is seen rather than reported absent/,
+    'the test must not follow the link, so a dangling symlink is not read as absent',
+  );
+  assert.match(
+    item5,
+    near('live or dangling', 'create the minimal `AGENTS.md` instead', 200),
+    'both symlink shapes must send the marker to the minimal AGENTS.md branch',
+  );
+  assert.match(item5, /no softened hard stop but a different write/);
+  // This test used to earn its safety from adjacency — item 5 poses no fence, so nothing separates
+  // its test from its write. Round four refuted that: the gap is at the filesystem, not at the
+  // question. So the bullet must now say what the test decides (which file hosts the marker) and
+  // disclaim the adjacency it once relied on; the write itself is held by the rule above instead.
+  assert.match(
+    item5,
+    near(
+      'That test decides host selection, not write safety',
+      'the rename above keeps the write',
+      200,
+    ),
+    'the no-follow test must be scoped to host selection rather than to write safety',
+  );
+  assert.match(
+    item5,
+    near(
+      'needs no revalidation of its own the way item 7 does',
+      'claims no guarantee from adjacency',
+      160,
+    ),
+    'item 5 must say why it needs no revalidation without claiming adjacency as the guarantee',
+  );
+  assert.doesNotMatch(
+    item5,
+    /its test and its write are one step/,
+    'the refuted adjacency claim must not survive anywhere in item 5',
+  );
+});
+
 test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');

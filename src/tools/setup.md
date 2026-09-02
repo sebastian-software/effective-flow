@@ -10,7 +10,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 ## Goal
 
 - enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
-- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`)
+- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
@@ -736,7 +736,42 @@ options:
    convention file that will carry the marker. Keep those snapshots only for the failure recovery
    in Step 6.
 
-5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
+5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process. Before writing anything here, record the `CLAUDE.md` state this step **observed** — absent, a symlink, or present with its content, and whether that content already carried a marker or an `@AGENTS.md` import — and carry that record forward to item 7 and Step 8 the way `<adr-convention>` is carried from Step 2, together with which file this step then wrote the marker into; item 7 decides on that record rather than on the file this step may just have changed.
+   - **Every write this item and item 7 perform goes through a primitive that cannot be raced.**
+     The property: validation and write do not re-resolve the path between them, and the destination
+     entry is replaced rather than traversed. A separate test and a path-based write never hold it —
+     the same race one step smaller, whether a confirmation fence separates the two or nothing does.
+     - **Exclusive create**, where the path must not already exist. It fails when anything is already
+       there — a file, a live symlink, or a dangling one, which it refuses without resolving — so a
+       path occupied inside the window stops that write and is reported.
+     - **Same-directory temporary file plus rename**, where the file is meant to be there and an
+       exclusive create cannot express that write at all. Write the new content to a temporary file
+       in the same directory — because a rename across filesystems is not that operation — created
+       exclusively so the staging file is nobody else's, and move it onto the target path with a
+       rename. A rename removes the destination entry rather than resolving it, so it replaces a
+       symlink there instead of following it, and it is one step, so no reader sees a partial file.
+       Never truncate and rewrite the live path, and remove the temporary file on any failure.
+     - **Both leave the same residue.** A symlink either read saw stops the run and is named, while
+       one planted after the last read is destroyed by the replacement rather than followed. Say that
+       plainly rather than claiming the later link is reported too. The replacement is unconditional
+       for the same reason: a destination changed between the read this write was decided on and the
+       swap is replaced and its content lost, because no portable primitive makes a rename
+       conditional on what the destination holds. What no path-based write closes is a swap of the
+       containing directory, which an actor able to perform it does not need.
+     - **This item's own branches.** The marker update into an existing `AGENTS.md` or `CLAUDE.md`
+       modifies a file meant to be there and takes the rename; the third branch's minimal
+       `AGENTS.md` takes the exclusive create. Item 7 picks per branch below.
+   - **A symlink at the `CLAUDE.md` path is never the marker target.** Where the project has no
+     `AGENTS.md` this step would otherwise select that file, and item 7's own hard stop cannot cover
+     that write: it fires after the marker has already gone through the link. Test the `CLAUDE.md`
+     path itself before selecting it, with a test that does not follow the link so a dangling one is
+     seen rather than reported absent. That test decides **host selection**, not write safety — the
+     rename above keeps the write itself off a link planted after it, so this step needs no
+     revalidation of its own the way item 7 does and claims no guarantee from adjacency. A symlink
+     there — live or dangling — disqualifies the file as a marker host: record the observed symlink,
+     take the third branch and create the minimal `AGENTS.md` instead, and report the path. That is
+     no softened hard stop but a different write: nothing is written through the link, and the
+     marker lands on a path this step created itself.
 6. **Migration and untracking (migration case only).** If a transitional
    `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
    - In a Git repository, determine whether that exact source is tracked with
@@ -786,6 +821,130 @@ options:
      or update the marker after invalid JSON, failed required untracking, or failed target-state
      validation; the pre-write marker check above owns idempotency for an already-complete
      migration.
+   - **Record this item's outcome and carry it forward**, the way item 5 carries its `CLAUDE.md`
+     observation: `not applicable` where the locator selected no transitional source, `complete`
+     only where every step above succeeded and `configMigration.adr` was written, and `incomplete`
+     for every branch above that reported a failure and rolled back. Item 7 reads that outcome and
+     declines to run on an incomplete one, because its own decision rests on item 5's record and a
+     rollback here has withdrawn that record's basis.
+7. **Offer a `CLAUDE.md` that imports `AGENTS.md`.** Claude Code loads `CLAUDE.md` into every
+   session and reads `AGENTS.md` only when something asks it to, so a project whose guidance lives
+   in `AGENTS.md` reaches Claude Code reliably only through a `CLAUDE.md` that imports it. Offer
+   that file as non-destructively as the marker step above: its whole content is the single line
+   `@AGENTS.md`, it is created only where nothing is there, and an existing `CLAUDE.md` is replaced
+   only where it carries nothing but a pointer.
+   - **An incomplete migration skips this item, checked before anything else here.** Item 6's
+     failure branches restore the ADR and the convention-marker file but leave the run going, and
+     this item decides on item 5's record — which those branches have just invalidated. The rule
+     below, decide on the observed state rather than the resulting one, holds only while nothing
+     between item 5 and here changed the file, and item 6's rollback is the one thing in this
+     workflow that does. Left ungated in the no-`AGENTS.md` case, this item would read a record
+     saying the marker went into `CLAUDE.md`, mint a minimal `AGENTS.md` naming the ADR item 6 just
+     rolled back, and replace the `CLAUDE.md` item 6 just restored — rebuilding the state the
+     rollback undid and destroying a file on the way, which defeats the rollback's own purpose of
+     letting a later run's locator select the same source again. So run this item only where item
+     6's carried outcome is `not applicable` or `complete`. On `incomplete`, skip it entirely: pose
+     no fence, create no `AGENTS.md`, replace no `CLAUDE.md`, and report the skip and its reason in
+     Step 8. Skip rather than stop the run, because Step 8 still has to report. Do not instead reset
+     item 5's record to the snapshot state: this item would then take the pure prose pointer branch
+     and write `@AGENTS.md` into a project that has no `AGENTS.md`, which the homeless-marker rule
+     below forbids by name.
+   - **A symlink at the `CLAUDE.md` path is a hard stop**, evaluated **before** the state
+     classification below and never softened into a reroute. A symlink at that path is never a
+     write target — report the path and write nothing rather than writing through it, outside the
+     repository. That covers both a live `ln -s AGENTS.md CLAUDE.md` and a broken symlink, which
+     would otherwise read as absent and be written through to an arbitrary path.
+   - **Decide on the state item 5 observed, not the state item 5 left.** Item 5 writes the marker
+     into an existing `CLAUDE.md` where the project has no `AGENTS.md`, so a fresh read here would
+     see the marker this run just wrote and silently decline the very case this step exists for.
+     Classify the `CLAUDE.md` state item 5 recorded, and do not re-read the file to classify it.
+   - **Never leave the marker homeless, and never write an import that resolves to nothing.** Item 5
+     writes the marker into an existing `CLAUDE.md` exactly when the project has no `AGENTS.md`, so
+     in that case replacing this file would delete the marker this run just wrote — the locator
+     fallback in `config-migration` reads it from `CLAUDE.md` — and would leave `@AGENTS.md`
+     pointing at a file that does not exist, which loads no guidance at all and is strictly worse
+     than the pointer it replaced. Where item 5's record shows that it wrote the marker into
+     `CLAUDE.md`, first create the minimal `AGENTS.md` carrying that marker, exactly as item 5's
+     third branch would have, and only then replace `CLAUDE.md`. Report both writes in Step 8.
+   - **Create that minimal `AGENTS.md` with item 5's exclusive create.** Item 5 reached its
+     `CLAUDE.md` branch only because `AGENTS.md` was absent at that earlier moment, and the fence
+     has stood between that observation and this write, so the path may now hold a file or a symlink
+     another process planted. Where the create fails because the path is occupied,
+     stop, report the path, and replace no `CLAUDE.md` — the marker must not be handed to a file
+     this run did not write. This is a write guard rather than a fresh classification, so it leaves
+     the decide-on-the recorded-state rule above intact.
+   - **Revalidate the `CLAUDE.md` path immediately before writing it, and never reclassify on that
+     read.** The fence stands between item 5's observation and this write, so the path can have
+     become a symlink while the answer was pending, and the hard stop above cannot see that: it
+     consumed the recorded state. Test that exact path once more, with the same test that does not
+     follow the link, and a symlink found there stops this write — report the path and write
+     nothing. The stop is therefore evaluated twice, once on the record and once on the filesystem.
+     This second read decides only **whether the write the record already chose may still be
+     performed**. It never re-derives the state, never turns a decline into a write, never poses a
+     second question, and never feeds the classification below, which stays keyed to item 5's record
+     for the reason given above. Its only two outcomes are performing that write and stopping with a
+     report.
+   - **Write through item 5's instruments, not through the path the revalidation just checked.**
+     The revalidation cannot close the gap it opens; the instrument does. **Where item 5 recorded
+     the path as absent**, create the file with the same exclusive create the minimal `AGENTS.md`
+     above uses, so a path occupied inside the window stops this write and is reported, exactly as
+     the hard stop promises. **Where item 5 recorded a pointer to replace**, the file is meant to be
+     there and an exclusive create cannot express that write at all: write the single line through
+     the same-directory temporary file and rename. **The two stops therefore promise different
+     things, and both are honest:** the escape is closed by the write primitive, the revalidation
+     keeps the **report**, and item 5's residue rule states what a link planted after it costs.
+   - **Absent** → pose the fence below and create the file only on an affirmative answer.
+   - **A pure prose pointer** → pose the fence below, naming the exact line that would be replaced.
+     The predicate, applied to the state item 5 observed: no `**Effective Flow project setup:**`
+     marker and no legacy `**Firmo project setup:**` marker, no `@AGENTS.md` import already
+     present, and the file's only non-blank, non-heading content is a single line referring to
+     `AGENTS.md`. Anything else is content-bearing.
+   - **A pointer whose marker already lives in `AGENTS.md`** → pose the fence below, naming the
+     lines that would be replaced. The predicate, applied to the state item 5 observed: the file's
+     non-blank, non-heading content is nothing but one `**Effective Flow project setup:**` or legacy
+     `**Firmo project setup:**` marker line and at most one line referring to `AGENTS.md`, no
+     `@AGENTS.md` import is already present, **and** item 5 wrote this run's marker into `AGENTS.md`
+     rather than into this file. That last conjunct is the whole safety of the state and is never
+     optional: it is what proves the marker survives the replacement, and the marker exclusions in
+     the pointer predicate above exist only because a marker-bearing `CLAUDE.md` may otherwise hold
+     the last copy. **The optional pointer line is not a courtesy either.** Item 5 sets the marker
+     non-destructively and leaves the remaining content untouched, so where it wrote the marker into
+     a pure prose pointer the file it left behind carries **both** lines — and that two-line file,
+     not a bare marker, is what a conversion that created `AGENTS.md` and then failed to replace
+     `CLAUDE.md` leaves on disk. A predicate admitting only the marker line would miss the very
+     state this one exists for, the leftover would read as content-bearing, and every later run
+     would decline the conversion this workflow itself left unfinished. Recognizing both shapes is
+     what makes the ordered pair of writes retryable rather than permanently half-done.
+   - **Content-bearing, or already importing** → write nothing, report that state, and do not pose
+     the fence at all. A `CLAUDE.md` that already imports `AGENTS.md` is the finished state.
+   - **Report a half-completed conversion as half-completed.** The two writes are ordered and not
+     atomic, so a failure or an interruption between them leaves a real state on disk. Where
+     `AGENTS.md` was created and `CLAUDE.md` was not replaced, name both files, give the marker's
+     home as that new `AGENTS.md`, say that a later run finishes the import through the
+     marker-already-in-`AGENTS.md` state above — not the content-bearing one this rule now sits
+     under — and never report the import as written.
+
+This fence is deliberately **unconditional** rather than guided-path only, for the reason
+`project-adr-convention` gives for its own: it decides whether a file is written to the project
+root rather than a presentation detail. The Express path poses it exactly as the guided path does,
+and a run that cannot pose it — unanswered, skipped, or non-interactive — writes nothing and
+reports that the fence could not be posed. There is no silent default on either path. Item 5's
+express behavior does not extend here: setup cannot work without a marker host, while nothing
+requires a `CLAUDE.md` import.
+
+```ask
+when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration
+header: CLAUDE.md
+question: Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?
+options:
+  - label: Yes
+    description: Write CLAUDE.md with the single line `@AGENTS.md`, replacing a pure prose pointer, or the pointer a half-completed conversion left behind, where one exists
+  - label: No
+    description: Write nothing; AGENTS.md stays the only convention file and Claude Code reads it only when asked
+```
+
+Item 7 is **not** part of the configuration. It declares no key, belongs to none of the Step 5
+blocks, and adds nothing to the ADR written in item 4.
 
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
@@ -958,6 +1117,21 @@ Report to the user:
   and — on Claude Code — what the following turn added, whether exactly one butler was found and
   which title its reply reported. State that no file above the repository root and no configuration
   key was changed by the step
+- for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
+  created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
+  line named, the pointer left by an earlier half-completed conversion replaced by it with the
+  marker line named alongside it, nothing written because the file is content-bearing or already imports `AGENTS.md`,
+  or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
+  the revalidation immediately before the write — because the minimal `AGENTS.md` could not be
+  created exclusively, because item 6 reported an incomplete migration and the item was skipped
+  before its own checks, because the fence could not be
+  posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
+  the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
+  therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
+  location as that new `AGENTS.md`, so this bullet never contradicts the marker location reported
+  above. Where that first write succeeded and the replacement did not, report the conversion as
+  half-completed rather than as written: name both files and say that a later run finishes it.
+  State that this step added no configuration key
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -973,7 +1147,8 @@ with nothing staged matches no row and emits nothing.
 ## Rules
 
 - Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
-  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
+  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
+  Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
