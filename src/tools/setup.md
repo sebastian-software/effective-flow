@@ -741,7 +741,10 @@ options:
      `AGENTS.md` this step would otherwise select that file, and item 7's own hard stop cannot cover
      that write: it fires after the marker has already gone through the link. Test the `CLAUDE.md`
      path itself before selecting it, with a test that does not follow the link so a dangling one is
-     seen rather than reported absent. A symlink there — live or dangling — disqualifies the file as
+     seen rather than reported absent, and read that result at the moment of the write rather than
+     carrying it across a question: this step poses none, so its test and its write are one step,
+     unlike item 7's, which the confirmation fence separates and which therefore revalidates. A
+     symlink there — live or dangling — disqualifies the file as
      a marker host: record the observed symlink, take the third branch and create the minimal
      `AGENTS.md` instead, and report the path. That is no softened hard stop but a different write:
      nothing is written through the link, and the marker lands on a path this step created itself.
@@ -843,18 +846,22 @@ options:
      marker and no legacy `**Firmo project setup:**` marker, no `@AGENTS.md` import already
      present, and the file's only non-blank, non-heading content is a single line referring to
      `AGENTS.md`. Anything else is content-bearing.
-   - **A marker-only pointer whose marker already lives in `AGENTS.md`** → pose the fence below,
-     naming the marker line that would be replaced. The predicate, applied to the state item 5
-     observed: the file's only non-blank, non-heading content is one `**Effective Flow project
-setup:**` or legacy `**Firmo project setup:**` marker line, no `@AGENTS.md` import is already
-     present, **and** item 5 wrote this run's marker into `AGENTS.md` rather than into this file.
-     That last conjunct is the whole safety of the state and is never optional: it is what proves
-     the marker survives the replacement, and the marker exclusions in the pointer predicate above
-     exist only because a marker-bearing `CLAUDE.md` may otherwise hold the last copy. This is
-     exactly the state a conversion that created `AGENTS.md` and then failed to replace `CLAUDE.md`
-     leaves behind, so recognizing it is what makes the ordered pair of writes retryable rather than
-     permanently half-done. Without it the leftover file reads as content-bearing and every later
-     run declines the conversion this workflow itself left unfinished.
+   - **A pointer whose marker already lives in `AGENTS.md`** → pose the fence below, naming the
+     lines that would be replaced. The predicate, applied to the state item 5 observed: the file's
+     non-blank, non-heading content is nothing but one `**Effective Flow project setup:**` or legacy
+     `**Firmo project setup:**` marker line and at most one line referring to `AGENTS.md`, no
+     `@AGENTS.md` import is already present, **and** item 5 wrote this run's marker into `AGENTS.md`
+     rather than into this file. That last conjunct is the whole safety of the state and is never
+     optional: it is what proves the marker survives the replacement, and the marker exclusions in
+     the pointer predicate above exist only because a marker-bearing `CLAUDE.md` may otherwise hold
+     the last copy. **The optional pointer line is not a courtesy either.** Item 5 sets the marker
+     non-destructively and leaves the remaining content untouched, so where it wrote the marker into
+     a pure prose pointer the file it left behind carries **both** lines — and that two-line file,
+     not a bare marker, is what a conversion that created `AGENTS.md` and then failed to replace
+     `CLAUDE.md` leaves on disk. A predicate admitting only the marker line would miss the very
+     state this one exists for, the leftover would read as content-bearing, and every later run
+     would decline the conversion this workflow itself left unfinished. Recognizing both shapes is
+     what makes the ordered pair of writes retryable rather than permanently half-done.
    - **Report a half-completed conversion as half-completed.** The two writes are ordered and not
      atomic, so a failure or an interruption between them leaves a real state on disk. Where
      `AGENTS.md` was created and `CLAUDE.md` was not replaced, name both files, give the marker's
@@ -872,12 +879,12 @@ express behavior does not extend here: setup cannot work without a marker host, 
 requires a `CLAUDE.md` import.
 
 ```ask
-when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-only pointer a half-completed conversion leaves behind
+when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind
 header: CLAUDE.md
 question: Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?
 options:
   - label: Yes
-    description: Write CLAUDE.md with the single line `@AGENTS.md`, replacing a pure prose pointer where one exists
+    description: Write CLAUDE.md with the single line `@AGENTS.md`, replacing a pure prose pointer, or the pointer a half-completed conversion left behind, where one exists
   - label: No
     description: Write nothing; AGENTS.md stays the only convention file and Claude Code reads it only when asked
 ```
@@ -1058,8 +1065,8 @@ Report to the user:
   key was changed by the step
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
-  line named, a marker-only pointer left by an earlier half-completed conversion replaced by it with
-  that marker line named, nothing written because the file is content-bearing or already imports `AGENTS.md`,
+  line named, the pointer left by an earlier half-completed conversion replaced by it with the
+  marker line named alongside it, nothing written because the file is content-bearing or already imports `AGENTS.md`,
   or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
   the revalidation immediately before the write — because the minimal `AGENTS.md` could not be
   created exclusively, because the fence could not be

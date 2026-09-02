@@ -94,17 +94,20 @@ is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every sessio
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
 reliably present. The offer is a question on both paths, Express included, and a run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
-file only where none exists, and replaces an existing `CLAUDE.md` only where it is a pure prose
-pointer to `AGENTS.md`: no setup marker, no import already, and a single line of content. A
-`CLAUDE.md` with content of its own, or one that already imports `AGENTS.md`, is reported and left
-alone, and a symlink at that path stops the step rather than being written through — checked both
-against what setup saw before it asked and again on disk immediately before it writes, so a path
-that changed while the question was open is never written through. Where the marker itself had to
-go into `CLAUDE.md`, setup first creates the minimal `AGENTS.md` that carries it, and creates it
-exclusively so a file that appeared in the meantime is never overwritten. Should that pair of
-writes only half-succeed, setup says so and a later run finishes it rather than treating the
-leftover file as content of its own. Like the session-rename step below, this step adds no
-configuration key.
+file only where none exists, and replaces an existing `CLAUDE.md` only where it is a pointer to
+`AGENTS.md` and nothing else: no import already, and no content beyond that pointer line and, where
+an earlier run left one there, setup's own marker line. A `CLAUDE.md` with content of its own, or
+one that already imports `AGENTS.md`, is reported and left alone, and a symlink at that path stops
+the step rather than being written through — checked both against what setup saw before it asked
+and again on disk immediately before it writes, so a path that changed while the question was open
+is never written through. A symlink at that path also disqualifies the file as a host for the
+project-setup marker itself: setup then writes that marker into a newly created `AGENTS.md` instead
+of through the link. Where the marker had to go into `CLAUDE.md` because no `AGENTS.md` existed,
+setup first creates the minimal `AGENTS.md` that carries it, and creates it exclusively so a file
+that appeared in the meantime is never overwritten. Should that pair of writes only half-succeed,
+setup says so, and because the marker then already lives in `AGENTS.md` a later run finishes the
+import rather than treating the leftover file as content of its own. Like the session-rename step
+below, this step adds no configuration key.
 
 After the configuration write, setup offers an optional session-rename capability step. In the
 **Codex tab embedded in the ChatGPT Desktop app**, the native current-task capability needs no

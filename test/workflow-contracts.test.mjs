@@ -954,7 +954,7 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
 
   assert.match(
     contract,
-    /A marker-only pointer whose marker already lives in `AGENTS.md` → pose the fence below/,
+    /A pointer whose marker already lives in `AGENTS.md` → pose the fence below/,
     'the resumable state must reach the fence like the other two writable states',
   );
   assert.match(
@@ -976,9 +976,45 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
     near(
       'created `AGENTS.md` and then failed to replace `CLAUDE.md`',
       'retryable rather than permanently half-done',
-      250,
+      600,
     ),
     'the state must be named as the one a failed conversion leaves behind',
+  );
+
+  // The half-completed file carries two lines, not one: item 5 sets the marker non-destructively
+  // and leaves the pointer in place. A predicate admitting only a bare marker line would miss the
+  // exact state this one exists for, which is how the resumption silently stops resuming.
+  assert.match(
+    contract,
+    /nothing but one `Effective Flow project setup:` or legacy `Firmo project setup:` marker line and at most one line referring to `AGENTS.md`/,
+    'the predicate must admit the pointer line the marker was written beside',
+  );
+  assert.match(
+    contract,
+    near(
+      'The optional pointer line is not a courtesy either',
+      'the file it left behind carries both lines',
+      400,
+    ),
+    'the second line of the predicate must be stated as load-bearing',
+  );
+  assert.match(
+    contract,
+    near(
+      'the file it left behind carries both lines',
+      'not a bare marker, is what a conversion',
+      200,
+    ),
+    'the two-line shape must be named as the one left on disk',
+  );
+  assert.match(
+    contract,
+    near(
+      'A predicate admitting only the marker line would miss the very state this one exists for',
+      'every later run would decline',
+      250,
+    ),
+    'the narrower predicate must be named as the defect it would reintroduce',
   );
   assert.match(
     contract,
@@ -992,7 +1028,7 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
   );
   assert.match(
     ask.when,
-    /marker-only pointer a half-completed conversion leaves behind/,
+    /marker-bearing pointer a half-completed conversion leaves behind/,
     'the fence must trigger on the resumable state too',
   );
 });
@@ -1117,7 +1153,7 @@ test('Step 8 reports the CLAUDE.md import outcome and never contradicts the mark
       'nothing written, occupied AGENTS.md',
     ],
     [
-      /marker-only pointer left by an earlier half-completed conversion replaced/,
+      /pointer left by an earlier half-completed conversion replaced by it with the\s+marker line named/,
       'a resumed conversion',
     ],
     [
@@ -1233,6 +1269,18 @@ test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
     'both symlink shapes must send the marker to the minimal AGENTS.md branch',
   );
   assert.match(item5, /no softened hard stop but a different write/);
+  // Item 7 calls a separate test and write "the same race one step smaller", and item 5 does exactly
+  // that. The difference is the fence: item 5 poses none, so nothing separates its test from its
+  // write. Pin the reason, or the two bullets read as one rule applied inconsistently.
+  assert.match(
+    item5,
+    near(
+      'its test and its write are one step',
+      "unlike item 7's, which the confirmation fence separates",
+      200,
+    ),
+    'item 5 must say why it needs no revalidation of its own',
+  );
 });
 
 test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
