@@ -894,7 +894,7 @@ test('the CLAUDE.md import fence is posed on both paths and an unposable run wri
   assert.match(contract, /There is no silent default on either path/);
 });
 
-test('setup names all four CLAUDE.md states the import offer can meet', () => {
+test('setup names every CLAUDE.md state the import offer can meet', () => {
   const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
 
   assert.match(
@@ -939,6 +939,56 @@ test('setup names all four CLAUDE.md states the import offer can meet', () => {
       120,
     ),
     'the pointer predicate must close with content-bearing as the default',
+  );
+});
+
+// The two writes item 7 performs are ordered and not atomic, so a failure between them is a state
+// this workflow itself produces: `AGENTS.md` created, `CLAUDE.md` still carrying the marker. Read
+// as content-bearing that state is terminal, and every later run declines the conversion. The
+// fifth state recognises it, and its `AGENTS.md` conjunct is what keeps the marker exclusions in
+// the pointer predicate above doing their job — so the conjunct is pinned, not just the state.
+test('a half-completed CLAUDE.md conversion is resumable and reported as partial', () => {
+  const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
+  const contract = prose(item);
+  const ask = setupClaudeMdImportAsk(item);
+
+  assert.match(
+    contract,
+    /A marker-only pointer whose marker already lives in `AGENTS.md` → pose the fence below/,
+    'the resumable state must reach the fence like the other two writable states',
+  );
+  assert.match(
+    contract,
+    near(
+      "item 5 wrote this run's marker into `AGENTS.md` rather than into this file",
+      'whole safety of the state and is never optional',
+      200,
+    ),
+    'the predicate must require that the marker already has a home elsewhere',
+  );
+  assert.match(
+    contract,
+    near('proves the marker survives the replacement', 'may otherwise hold the last copy', 200),
+    'the conjunct must be tied to the reason the pointer predicate excludes markers at all',
+  );
+  assert.match(
+    contract,
+    near(
+      'created `AGENTS.md` and then failed to replace `CLAUDE.md`',
+      'retryable rather than permanently half-done',
+      250,
+    ),
+    'the state must be named as the one a failed conversion leaves behind',
+  );
+  assert.match(
+    contract,
+    near('name both files', 'never report the import as written', 300),
+    'a half-completed conversion must be reported as half-completed',
+  );
+  assert.match(
+    ask.when,
+    /marker-only pointer a half-completed conversion leaves behind/,
+    'the fence must trigger on the resumable state too',
   );
 });
 
@@ -1056,6 +1106,19 @@ test('Step 8 reports the CLAUDE.md import outcome and never contradicts the mark
     [/pure prose pointer replaced by it with the replaced\s+line named/, 'a pointer replaced'],
     [/content-bearing or already imports `AGENTS\.md`/, 'nothing written, file has content'],
     [/a symlink at that path was a hard stop/, 'nothing written, symlink stop'],
+    [/the revalidation immediately before the write/, 'nothing written, pre-write revalidation'],
+    [
+      /minimal `AGENTS\.md` could not be\s+created exclusively/,
+      'nothing written, occupied AGENTS.md',
+    ],
+    [
+      /marker-only pointer left by an earlier half-completed conversion replaced/,
+      'a resumed conversion',
+    ],
+    [
+      /report the conversion as\s+half-completed rather than as written/,
+      'a half-completed conversion',
+    ],
     [/the fence could not be\s+posed/, 'nothing written, fence unposable'],
     [/because the user declined/, 'nothing written, user declined'],
     [/added no configuration key/, 'the no-key statement'],
