@@ -1074,6 +1074,40 @@ test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not
   );
 });
 
+// Item 5 selects the marker host before item 7 runs at all, so item 7's symlink hard stop cannot
+// protect that write. The two stops are separate applications of one rule, and this pins the earlier
+// one — without it a symlinked `CLAUDE.md` receives the marker and item 7 only reports it afterwards.
+test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
+  const item5 = prose(
+    boundedSlice(
+      source('src/tools/setup.md'),
+      '5. **Set the AGENTS.md marker.**',
+      '\n6. **Migration and untracking',
+    ),
+  );
+
+  assert.match(
+    item5,
+    near(
+      'A symlink at the `CLAUDE.md` path is never the marker target',
+      "item 7's own hard stop cannot cover that write",
+      200,
+    ),
+    'item 5 must refuse a symlinked marker host and say why item 7 is too late for it',
+  );
+  assert.match(
+    item5,
+    /does not follow the link so a dangling one is seen rather than reported absent/,
+    'the test must not follow the link, so a dangling symlink is not read as absent',
+  );
+  assert.match(
+    item5,
+    near('live or dangling', 'create the minimal `AGENTS.md` instead', 200),
+    'both symlink shapes must send the marker to the minimal AGENTS.md branch',
+  );
+  assert.match(item5, /no softened hard stop but a different write/);
+});
+
 test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');

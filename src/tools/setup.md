@@ -737,6 +737,14 @@ options:
    in Step 6.
 
 5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process. Before writing anything here, record the `CLAUDE.md` state this step **observed** — absent, a symlink, or present with its content, and whether that content already carried a marker or an `@AGENTS.md` import — and carry that record forward to item 7 and Step 8 the way `<adr-convention>` is carried from Step 2, together with which file this step then wrote the marker into; item 7 decides on that record rather than on the file this step may just have changed.
+   - **A symlink at the `CLAUDE.md` path is never the marker target.** Where the project has no
+     `AGENTS.md` this step would otherwise select that file, and item 7's own hard stop cannot cover
+     that write: it fires after the marker has already gone through the link. Test the `CLAUDE.md`
+     path itself before selecting it, with a test that does not follow the link so a dangling one is
+     seen rather than reported absent. A symlink there — live or dangling — disqualifies the file as
+     a marker host: record the observed symlink, take the third branch and create the minimal
+     `AGENTS.md` instead, and report the path. That is no softened hard stop but a different write:
+     nothing is written through the link, and the marker lands on a path this step created itself.
 6. **Migration and untracking (migration case only).** If a transitional
    `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
    - In a Git repository, determine whether that exact source is tracked with
@@ -1015,7 +1023,8 @@ Report to the user:
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, nothing written because the file is content-bearing or already imports `AGENTS.md`,
   or nothing written because a symlink at that path was a hard stop, because the fence could not be
-  posed, or because the user declined. Where the marker had gone into `CLAUDE.md` and item 7
+  posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
+  the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
   therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
   location as that new `AGENTS.md`, so this bullet never contradicts the marker location reported
   above. State that this step added no configuration key
