@@ -60,7 +60,7 @@ The problems are not conceptual. They are **uneven application of the repository
 - **Over-specification is concentrated, not general.** `merge-gate` alone is 2 341 source lines,
   more than the next two tools combined, and ~880 of them run before Phase 0 begins.
 
-Everything below is concrete and measured. Section 6 turns it into a priority order.
+Everything below is concrete and measured. Section 7 turns it into a priority order.
 
 ---
 
@@ -106,12 +106,19 @@ Same 477-line fragment, same role (delivery/worktree setup), opposite discipline
 reason why `refactor` needs it before it knows whether the run will deliver, when `build` does not.
 Cost: 1 431 lines of always-loaded context across the three tools.
 
-### F-04 — `issue-tracker` (419 lines) is eagerly loaded in five tools regardless of tracker mode
+### F-04 — `issue-tracker` (419 lines) is eagerly loaded in five tools, two of them unconditionally
 
-Eager sites: `apply-issues`, `apply-review-remote`, `apply`, `cleanup`, `plan-issue`.
+Eager sites: `apply-issues`, `apply-review-remote`, `apply`, `cleanup`, `plan-issue` — 419 × 5 =
+2 095 lines of eager footprint across the tool set.
 
-`tracker.mode` defaults to `local`. A local-only project therefore pays 419 lines of GitHub/Forgejo
-helper contract, label vocabulary, `firmo-` read compatibility and `sf-` migration mechanics in five
+Three of those five have a reason to hold the contract. `apply-review-remote` is loaded by
+`apply-review` only once the resolved tracker target is the forge or an external tool, and
+`apply-issues` and `plan-issue` are **inherently tracker-bound** — both say so in their own source
+and both resolve the tracker target as their first act. `apply` and `cleanup` are the two that pay
+regardless of tracker mode.
+
+`tracker.mode` defaults to `local`. A local-only project therefore pays 838 lines of GitHub/Forgejo
+helper contract, label vocabulary, `firmo-` read compatibility and `sf-` migration mechanics in two
 tools that will never touch a forge. The mode is resolved _inside_ the fragment, so the gate exists —
 it is just evaluated after the context has already been spent.
 
@@ -145,8 +152,8 @@ enforcement**. That is why this drifted silently.
 ### F-06 — `effective-marketing` has no declared relationship, while `marketing-writer` does its job
 
 `skill-ownership.json` declares relationships for five central skills. The sixth,
-`effective-marketing`, appears nowhere in `src/` and only once in `docs/` (in the ownership prose,
-as an exclusion).
+`effective-marketing`, appears nowhere in `src/` and only once in the developer guide (in the
+ownership prose, as an exclusion).
 
 Meanwhile `src/agents/marketing-writer.md` (111 lines) writes the root `README.md` as a marketing
 entry page, and recommends `copywriting`, `copy-editing`, `marketing-psychology` — three
@@ -160,10 +167,13 @@ while the house-owned domain owner sits unused is the clearest ownership inversi
 
 ### F-07 — Two config namespaces with overlapping semantics, mid-migration
 
-`worktree.*` and `delivery.*` both carry `baseBranch`, `branchPrefix`, `completion`, `baseDir`,
-`enabled`, `setup`. The intended split is documented in `worktree-integration.md` ("`delivery`
-describes the delivery branch and its completion; `worktree` describes exclusively the execution
-location") and the legacy fallback is real and correct.
+Three keys are carried by both namespaces: `worktree.baseBranch`, `worktree.branchPrefix` and
+`worktree.completion` are the legacy spellings of keys that now live under `delivery.*`. The other
+three `worktree.*` keys — `baseDir`, `enabled`, `setup` — belong to `worktree.*` alone and have no
+`delivery` counterpart; a `delivery.enabled` was retired outright and is ignored on read. The
+intended split is documented in `worktree-integration.md` ("`delivery` describes the delivery branch
+and its completion; `worktree` describes exclusively the execution location") and the legacy
+fallback is real and correct.
 
 But the migration is not finished, and readers must know it:
 
@@ -317,9 +327,17 @@ Cost = fragment lines × eager use sites:
 | `delegation-mandate`   |     9 |          32 |         288 | Fine — this is what a 9-line eager contract should look like.                                                                                                                                       |
 
 Converting F-03, F-04, F-13's `language-rules` and `config-migration` alone removes on the order of
-**4 000–5 000 lines** of always-loaded context across the tool set, with no behaviour change: every
-one of these fragments already resolves a mode or a key _inside itself_, so the gate exists and only
-the load point moves.
+**6 600 lines** of eager footprint across the tool set, with no behaviour change: every one of these
+fragments already resolves a mode or a key _inside itself_, so the gate exists and only the load
+point moves. The arithmetic is 1 431 from `worktree-integration`, 2 095 from `issue-tracker` and
+roughly 3 100 from the two splits — a ~10-line `language-rules` core across 32 sites saves 2 208, a
+~40-line `config-migration` core across 12 sites saves 936.
+
+What a single run stops loading is smaller than that footprint for `issue-tracker`: per F-04,
+`apply-issues` and `plan-issue` are tracker-bound and `apply-review-remote` is only reached on a
+forge or external target, so all three pull the fragment as soon as they defer to it. The 838 lines
+in `apply` and `cleanup` are the part a run actually saves, which puts the realised figure near
+5 400.
 
 ### F-14 — The always-on router spends 39% of itself on session titles
 
@@ -352,12 +370,14 @@ Structure of `src/tools/merge-gate.md` (2 341 lines):
 Two observations. First, 89 always-loaded lines are spent explaining why a skill is _not_ loaded —
 the reasoning is sound (§ "Deliberate boundaries" in `skill-ownership.md`) and belongs in the
 developer guide, not in a runtime prompt; three lines of directive would do the job at run time.
-Second, Phase 5.5 (post-merge issue observation) is 300 lines for a step that follows an
+Second, Phase 5.5 (post-merge issue observation) is 302 lines for a step that follows an
 already-successful merge and is explicitly allowed to degrade. It is the strongest candidate in the
 repo for a lazy fragment.
 
-A realistic target is ~1 200 always-loaded lines with the boundary rationale, Phase 5.5, and the
-conflict-resolution contract lazily loaded — roughly a 60% cut with no capability loss.
+Deferring the three named sections — the boundary rationale (89 lines), the conflict-resolution
+delegation contract (96) and Phase 5.5 (302) — takes the file to ~1 850 always-loaded lines, a 21%
+cut with no capability loss. That is the cheap first step, not the destination: the ~1 200 target in
+§7 needs the phase-fragment split of §5 on top of it.
 
 ### F-16 — Over-specification risks fighting harness evolution
 
@@ -372,7 +392,7 @@ Three places do encode mechanism rather than intent, and will need edits when th
 2. **`merge-gate` Phase 2/3** encode polling, wait minutes and bot-acknowledgement behaviour
    (including "a bot acknowledges with an emoji reaction instead of a comment"). Reasonable today;
    brittle against forge and bot changes.
-3. **`goal-completion.md`** — a single 4 416-character paragraph prescribing native task-tool state
+3. **`goal-completion.md`** — a single 2 896-character paragraph prescribing native task-tool state
    transitions in detail ("if only one entry may be active…", "submit result-dependent status changes
    only after the determining tool result is known"). This is the most harness-coupled paragraph in
    the repo, it is eagerly loaded in 10 tools, and it is genuinely hard to read. It should state the
@@ -402,9 +422,9 @@ Everything else reads as durable.
 
 ### Where the architecture diverges from the central skills' own pattern
 
-The five central skills converged on a consistent shape: a ~100-line `SKILL.md` with Workflow /
-**Route by Intent** / Operating Rules / Routing Boundaries, and 30–60 `references/*.md` loaded one at
-a time by the route table. `effective-delivery` is 53 files and its `SKILL.md` loads none of them
+The six central skills converged on a consistent shape: a 111–136-line `SKILL.md` with Workflow /
+**Route by Intent** / Operating Rules / Routing Boundaries, and 31–132 `references/*.md` loaded one
+at a time by the route table. `effective-delivery` is 53 files and its `SKILL.md` loads none of them
 until a route is chosen.
 
 Effective Flow's tools are structurally the opposite: a small number of very large documents
@@ -498,12 +518,14 @@ correctly owned here.
 
 - **F-12** extend `CONTEXT_BUDGET_LINES` to all 28 tools; ratchet the unconverted ones.
 - **F-03** make `worktree-integration` lazy in `refactor`, `maintain`, `iterate` (−1 431 lines).
-- **F-04** make `issue-tracker` lazy behind the resolved tracker mode (−2 095 lines).
+- **F-04** make `issue-tracker` lazy behind the resolved tracker mode (−2 095 lines of footprint;
+  the 838 in `apply` and `cleanup` are what a run stops loading).
 - **F-13** split `language-rules` and `config-migration` into eager core + lazy contract
-  (−~3 000 lines combined).
+  (−~3 100 lines combined).
 - **F-14** move or compress `session-title` out of the always-on router.
 
-Combined, P1 removes roughly 4 000–5 000 lines of always-loaded context with no behaviour change.
+Combined, P1 removes roughly 6 700 lines of eager footprint with no behaviour change, of which about
+5 400 is what a single run stops loading.
 
 ### P2 — ownership, medium effort, high conceptual value
 
