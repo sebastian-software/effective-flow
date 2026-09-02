@@ -267,8 +267,11 @@ Recorded so a later pass does not re-derive them:
 - [ ] `## Edge cases` is not recreated.
 - [ ] Every deleted or moved source line is mapped, in the commit message or the pull-request body,
       to the surviving statement of the same rule.
-- [ ] Every fail-closed rule listed under "What must not move" in the analysis is still in the
-      always-loaded core, verified by an explicit grep listed in the pull-request body.
+- [ ] Every fail-closed rule WP2 lists under "Three things must not travel with it" is still in the
+      always-loaded core, verified by an explicit grep listed in the pull-request body: the
+      `mergeGate.conflictResolution` unreadable-value-resolves-to-`off` rule in `## Configuration`,
+      the `pre-commit-gate` stand-in in `## Git write boundary`, and the untrusted-head-branch threat
+      model. Those three are the enumeration; there is no separate list elsewhere.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass after
       **every** commit, not only at the end.
 - [ ] Each adapted assertion is listed with the reason it pins wording rather than behavior.
