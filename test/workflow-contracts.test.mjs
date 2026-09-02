@@ -1138,6 +1138,35 @@ test('Step 6 states the unraceable-write property once, with both named instrume
     'the race must be stated as independent of whether a question stands between test and write',
   );
 
+  // Round five: closing the symlink escape with an unconditional rename left a lost update behind
+  // it. A rename replaces whatever the destination has become since the read the write was decided
+  // on — a concurrent edit to a regular file included — so the property carries a third clause and
+  // the rename carries the instrument for it. Both write sites inherit it without restating it.
+  assert.match(
+    rule,
+    /a replacement lands only while that entry is still the one the read saw/,
+    'the property must make the replacement conditional on the destination it was decided on',
+  );
+  assert.match(
+    rule,
+    near('bare rename is unconditional', 'hold the destination open from that read', 200),
+    'the condition must be carried by a held handle rather than left to the bare rename',
+  );
+  assert.match(
+    rule,
+    near(
+      "still the path's entry by identity and by content",
+      'as part of the swap, not as a `stat` before it, which is the separate test again',
+      200,
+    ),
+    'the condition must ride on the swap rather than become a fresh test before it',
+  );
+  assert.match(
+    rule,
+    near('destination that changed aborts this write', 'keeps its own content', 120),
+    'a changed destination must abort rather than be overwritten with the composed content',
+  );
+
   assert.match(
     rule,
     near('Exclusive create', 'fails when anything is already there', 300),
@@ -1185,6 +1214,11 @@ test('Step 6 states the unraceable-write property once, with both named instrume
       200,
     ),
     'the residual window must be reported as replaced, not as reported',
+  );
+  assert.match(
+    rule,
+    /narrows that window to the swap's own instant rather than abolishing it/,
+    'the condition must be stated as narrowing the residual window, never as closing it',
   );
   assert.match(
     rule,
@@ -1301,6 +1335,7 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   // to state it once. Pin that it stays stated once: a copy re-grown here is the regression.
   for (const restated of [
     /validation and write do not re-resolve the path between them/,
+    /a replacement lands only while that entry is still the one the read saw/,
     /A rename removes the destination entry rather than resolving it/,
     /Never truncate and rewrite the live path/,
     /swap of the containing directory/,

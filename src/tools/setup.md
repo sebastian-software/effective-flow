@@ -738,10 +738,10 @@ options:
 
 5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process. Before writing anything here, record the `CLAUDE.md` state this step **observed** — absent, a symlink, or present with its content, and whether that content already carried a marker or an `@AGENTS.md` import — and carry that record forward to item 7 and Step 8 the way `<adr-convention>` is carried from Step 2, together with which file this step then wrote the marker into; item 7 decides on that record rather than on the file this step may just have changed.
    - **Every write this item and item 7 perform goes through a primitive that cannot be raced.**
-     The property: validation and write do not re-resolve the path between them, and the destination
-     entry is replaced rather than traversed. A separate test and a path-based write never hold it —
-     the same race one step smaller, whether a confirmation fence separates the two or nothing does.
-     The instrument follows from whether the target is meant to exist.
+     The property: validation and write do not re-resolve the path between them, the destination
+     entry is replaced rather than traversed, and a replacement lands only while that entry is still
+     the one the read saw. A separate test and a path-based write never hold it — the same race one
+     step smaller, whether a confirmation fence separates the two or nothing does.
      - **Exclusive create**, where the path must not already exist. It fails when anything is already
        there — a file, a live symlink, or a dangling one, which it refuses without resolving — so a
        path occupied inside the window stops that write and is reported.
@@ -751,9 +751,15 @@ options:
        exclusively so the staging file is nobody else's, and move it onto the target path with a
        rename. A rename removes the destination entry rather than resolving it, so it replaces a
        symlink there instead of following it, and it is one step, so no reader sees a partial file.
-       Never truncate and rewrite the live path, and remove the temporary file on any failure.
+       Never truncate and rewrite the live path, and remove the temporary file on any failure. A
+       bare rename is unconditional, so bind the swap to the read this write was decided on: hold
+       the destination open from that read and let the replacement land only against that
+       descriptor, still the path's entry by identity and by content — as part of the swap, not as a
+       `stat` before it, which is the separate test again. A destination that changed aborts this
+       write, keeps its own content, and is reported.
      - **Both leave the same residue.** A symlink either read saw stops the run and is named, while
-       one planted after the last read is destroyed by the replacement rather than followed. Say that
+       one planted after the last read is destroyed by the replacement rather than followed — the
+       condition narrows that window to the swap's own instant rather than abolishing it. Say that
        plainly rather than claiming the later link is reported too. What no path-based write closes
        is a swap of the containing directory, which an actor able to perform it does not need.
      - **This item's own branches.** The marker update into an existing `AGENTS.md` or `CLAUDE.md`
