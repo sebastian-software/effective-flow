@@ -86,8 +86,9 @@ This skill is **inherently tracker-bound**: it always works against the resolved
 issue-tracker
 ```
 
-```include
+```lazy-include
 issue-tracker-forge
+when: the resolved tracker target is the forge and Phase 1 is about to check helper availability before listing the `effective-flow-needs-planning` issues
 ```
 
 ```lazy-include

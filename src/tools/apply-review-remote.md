@@ -20,8 +20,9 @@ when: a remote tracker access is about to perform its first runtime-state mutati
 issue-tracker
 ```
 
-```include
+```lazy-include
 issue-tracker-forge
+when: the resolved tracker target is the forge and argument detection is about to detect host and CLI before the first epic or finding-issue read
 ```
 
 ```include

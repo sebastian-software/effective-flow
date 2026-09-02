@@ -289,7 +289,7 @@ The build aborts with an error message if any of these guards is violated:
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
-  `review` and `plan` share **700 lines**; `merge-gate` carries **3250**; every other
+  `review` and `plan` share **700 lines**; `merge-gate` carries **3219**; every other
   `src/tools/*.md` carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
   own** limit, naming the tool, its size and that limit. That printed size is the number to
@@ -436,22 +436,25 @@ and directive syntax").
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
-  `worktree-integration`, `issue-tracker`, `issue-tracker-forge`, `review-report-backlinks`,
-  `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
+  `config-migration-edge-cases`, `worktree-integration`, `issue-tracker`, `issue-tracker-forge`,
+  `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
+  `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
   trigger (`when:`) sits at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
-  fragment. Three of these names are deferred **halves** of a split: `issue-post-merge-observation`
-  was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`, and
-  `issue-tracker-forge` from `issue-tracker`; the remaining halves stay eager because their
-  consumers read them on every run. Cutting a fragment
+  fragment. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`,
+  `issue-tracker-forge` from `issue-tracker`, and `config-migration-edge-cases` from
+  `config-migration`; the first three remaining halves stay eager because their
+  consumers read them on every run, and `config-migration`'s core is the exception the paragraph
+  below records rather than a fourth instance of that rule. Cutting a fragment
   along the seam between an always-read part and a one-decision-point part is what lets the second
-  half qualify for deferral at all. `issue-tracker-forge` is also the live proof that a fragment
-  may be eager in one file and lazy in another: `apply-issues`, `plan-issue` and
-  `apply-review-remote` inline it, because they resolve a tracker target on every run, while
-  `apply` and `cleanup` defer it behind their own first forge read.
+  half qualify for deferral at all. `config-migration` is the live proof that a fragment may be
+  eager in one file and lazy in another: twelve tools that read configuration on every run inline
+  its always-read core, while seven others defer the whole fragment behind their own first
+  configuration read.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
@@ -500,14 +503,14 @@ so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
 build (see "Guards"), each against its own budget; the build prints the sizes as a report, in map
-order, which runs largest **measured** size first — not largest limit, so `plan`'s 700 sitting
-between two 6xx limits is the order working rather than a sort violation. The order is a reading
+order, which runs largest **measured** size first — not largest limit, so `fix`'s 700 sitting
+between a 501 and a 420 limit is the order working rather than a sort violation. The order is a reading
 aid and is deliberately unenforced: asserting it would turn a successful deferral, which is the
 work the map exists to track, into a build failure until the map is re-sorted.
 The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
 434, `docs` 570, `review` 692, and `plan` 624 — headroom ranges from `review`'s 8 lines, the
 tightest since the eager `delegation-mandate` include was added, to `fix`'s 266 lines.
-`merge-gate` is budgeted separately at **3250** and measures 3176: an orchestration gate whose
+`merge-gate` is budgeted separately at **3219** and measures 3145: an orchestration gate whose
 phases, delegation contracts and provider rules do not compress to the size of an implementation
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
 The rest is loaded only when the mode is reached.
@@ -520,8 +523,8 @@ purpose — a percentage would give the largest tools the most room, which is wh
 costs the most — and ten lines are wide enough for the short pointer a deferral leaves behind. Ten
 is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
 tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
-so `apply-issues` at 1513/1516 has three lines of room and not ten. Read a specific entry's
-headroom off the build report. `iterate` at 1656 and `apply-issues` at 1513 are the two largest
+so `apply-issues` at 1143/1146 has three lines of room and not ten. Read a specific entry's
+headroom off the build report. `iterate` at 1625 and `setup` at 1532 are the two largest
 entries of that kind today.
 
 ## Optional upstream ownership audit
