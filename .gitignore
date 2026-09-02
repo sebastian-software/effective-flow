@@ -5,3 +5,4 @@ dist.tmp/
 dist.bak/
 node_modules/
 .effective-flow/
+evals/results/

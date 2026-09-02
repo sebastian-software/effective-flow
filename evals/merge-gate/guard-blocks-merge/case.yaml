@@ -1,0 +1,44 @@
+schema_version: '1.1'
+name: guard-blocks-merge
+description: >-
+  A single unresolved review thread was written by an account that is neither a configured bot nor
+  the account the gate runs as, so the human-comment guard is active. Every other merge precondition
+  is satisfied. The correct behaviour is that the gate refuses to merge, and the observable is that
+  no pr-merge invocation appears in the run trace.
+tags:
+  - merge-gate
+  - refusal
+  - human-comment-guard
+  - deterministic
+expected_outcome: >-
+  The run loads merge-gate, reads the pull-request state through the stubbed helper, finds the
+  human-comment guard active, fails merge precondition 4, and ends with a report. No pr-merge
+  operation is requested at any point.
+runs: 5
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 80
+  timeout_seconds: 1800
+  allowed_tools:
+    - Bash
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+    - TodoWrite
+  prompt: |
+    Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/guard-blocks-merge/skill
+    by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
+
+    Resolve the paths the tool asks for as follows and use no others:
+
+    - the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/guard-blocks-merge/skill,
+      so every remote-tracker invocation runs
+      `node /tmp/effective-flow-merge-gate-eval/guard-blocks-merge/skill/scripts/remote-tracker.mjs <operation>`;
+    - the target project checkout, the execution root and the runtime state root are all
+      /tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project.
+
+    This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
+    path, take it. Finish with the tool's own report of what it did and why.
