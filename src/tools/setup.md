@@ -840,6 +840,31 @@ options:
      second question, and never feeds the classification below, which stays keyed to item 5's record
      for the reason given above. Its only two outcomes are performing that write and stopping with a
      report.
+   - **Write through a primitive that cannot be raced, not through the path the revalidation just
+     checked.** A test followed by a path-based write is the same race one step smaller that the
+     exclusive create above already names, and the revalidation cannot close it: a symlink planted
+     between the two carries the write to the link's target, outside the repository, whatever that
+     read saw. The property to hold is that validation and write do not re-resolve the path between
+     them and that the destination entry is replaced rather than traversed; which primitive supplies
+     it follows from whether the target is meant to exist.
+     - **Where item 5 recorded the path as absent**, create the file with the same exclusive create
+       the minimal `AGENTS.md` above uses. It fails when anything already holds the path — a file, a
+       live symlink, or a dangling one, which it refuses without resolving — so a path occupied
+       inside the window stops this write and is reported, exactly as the hard stop promises.
+     - **Where item 5 recorded a pointer to replace**, the file is meant to be there and an
+       exclusive create cannot express that write at all. Write the single line to a temporary file
+       **in the same directory**, created exclusively so the staging file is nobody else's, and move
+       it onto the `CLAUDE.md` path with a rename. A rename removes the destination entry rather
+       than resolving it, so it replaces a symlink there instead of following it, and it is one
+       step, so no reader sees a partial file. Same directory, because a rename across filesystems
+       is not that operation. Never truncate and rewrite the live path, and remove the temporary
+       file on any failure.
+   - **The two stops now promise different things, and both are honest.** The escape is closed by
+     the write primitive above; the revalidation keeps the **report**. A symlink either read sees
+     stops the run and is named, while one planted after the last read is destroyed by the
+     replacement rather than followed. Say that plainly rather than claiming the later link is
+     reported too. What no path-based write closes is a swap of the containing directory, which an
+     actor able to perform it does not need.
    - **Absent** → pose the fence below and create the file only on an affirmative answer.
    - **A pure prose pointer** → pose the fence below, naming the exact line that would be replaced.
      The predicate, applied to the state item 5 observed: no `**Effective Flow project setup:**`

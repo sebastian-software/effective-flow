@@ -1130,6 +1130,87 @@ test('item 7 creates the minimal AGENTS.md exclusively rather than on the record
   );
 });
 
+// The revalidation above is a check, and a check is separated from the write it guards by however
+// long the write takes to start. Both reviewers of round three said the same thing: the `CLAUDE.md`
+// write itself has to be the no-follow operation, or the pre-write read is the same test-then-write
+// race the `AGENTS.md` create three bullets up already refuses. The instrument differs by branch,
+// so both halves are pinned — an exclusive create cannot express a replacement, and a rename cannot
+// express the report-on-occupied outcome the absent branch owes the hard stop.
+test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    near(
+      'validation and write do not re-resolve the path between them',
+      'destination entry is replaced rather than traversed',
+      200,
+    ),
+    'the write must be stated as a property, not left to the revalidation to guarantee',
+  );
+  assert.match(
+    contract,
+    near(
+      'Where item 5 recorded the path as absent',
+      'same exclusive create the minimal `AGENTS.md` above uses',
+      200,
+    ),
+    'the absent branch must create the file exclusively rather than write to the checked path',
+  );
+  assert.match(
+    contract,
+    near('a live symlink, or a dangling one', 'refuses without resolving', 120),
+    'the exclusive create must be stated to cover both symlink shapes',
+  );
+  assert.match(
+    contract,
+    near(
+      'Where item 5 recorded a pointer to replace',
+      'exclusive create cannot express that write at all',
+      200,
+    ),
+    'the replacement branch must say why the absent branch instrument does not apply to it',
+  );
+  assert.match(
+    contract,
+    near('temporary file in the same directory', 'created exclusively', 200),
+    'the staging file must be a same-directory exclusive create',
+  );
+  assert.match(
+    contract,
+    near(
+      'A rename removes the destination entry rather than resolving it',
+      'replaces a symlink there instead of following it',
+      200,
+    ),
+    'the rename must be justified by the property that makes it no-follow',
+  );
+  assert.match(
+    contract,
+    /Never truncate and rewrite the live path/,
+    'a truncate-and-rewrite must be excluded as the non-atomic alternative it is',
+  );
+
+  // Post-fix the two stops are honest about different things, and the difference has to be said:
+  // the record-side and pre-write reads still report a symlink and write nothing, while a link
+  // planted after the last read is destroyed by the replacement. A contract that kept claiming
+  // "reported" for that case would be claiming a report no run emits.
+  assert.match(
+    contract,
+    near(
+      'planted after the last read is destroyed by the replacement rather than followed',
+      'rather than claiming the later link is reported too',
+      200,
+    ),
+    'the residual window must be reported as replaced, not as reported',
+  );
+  assert.match(
+    contract,
+    near('swap of the containing directory', 'does not need', 200),
+    'the one gap no path-based write closes must be named rather than implied covered',
+  );
+});
+
 // Item 5 observes the `CLAUDE.md` state and may then write the marker into that very file; item 7
 // decides on what item 5 recorded. The two halves are only correct together, so they are pinned
 // together — the same carry-forward shape `<adr-convention>` uses from Step 2.
