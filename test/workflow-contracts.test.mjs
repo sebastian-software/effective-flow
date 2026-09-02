@@ -1315,6 +1315,32 @@ test('every fragment reachable only through a shared-fragment pointer keeps that
   }
 });
 
+// A pointer's own condition must be decidable from the half that stays loaded. Deferring the
+// legacy marker's literal spelling broke that: step 1 was left saying only that "a legacy marker
+// spelling is recognized", while the spelling lived behind a pointer whose `when:` fires on that
+// same marker being present. A reader could not detect the marker without the fragment and could
+// not reach the fragment without detecting the marker, so the locator fell through to step 2,
+// matched a lower-priority ADR, and read the wrong project configuration in silence. Content
+// preservation cannot catch this - nothing was lost, it was moved out of reach of its own trigger.
+test('the config locator keeps every predicate its own lazy trigger depends on', () => {
+  const core = source('src/shared/config-migration.md');
+  const step1 = section(core, '1. **AGENTS.md marker.**', '\n2. **Default path/scan.**');
+
+  assert.match(
+    step1,
+    /\*\*Firmo project setup:\*\*/,
+    'locator step 1 must spell the legacy marker it recognizes: that spelling is the detection ' +
+      'predicate of the edge-cases pointer, so deferring it makes the trigger undecidable and the ' +
+      'locator silently selects a lower-priority ADR',
+  );
+
+  // The remaining trigger clauses stay decidable from the core, which is why only this one moved
+  // back: the exact-slug match (clause 1), both transitional handle paths (clause 4) and the
+  // tracker mode (clause 5) are all stated in the always-loaded half.
+  assert.match(core, /stem equals `effective-flow-project-setup`/);
+  assert.match(core, /\.effective-flow\/config\.json[\s\S]*\.firmo\/config\.json/);
+});
+
 // A deferred fragment is only correctly deferred while its pointer still says *when* to load it.
 // `LAZY_INCLUDE_RE` in build-lib.mjs makes the `when:` line optional and `assertNoEagerLazyOverlap`
 // is the build's only lazy-side guard, so a pointer that loses its condition still renders (as a

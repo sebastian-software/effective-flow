@@ -14,8 +14,10 @@ first matching step wins:
 
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
    `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. A legacy marker spelling is recognized as equivalent on read (see the
-   deferred building block below). If the marker points to a path under which **no** ADR lives
+   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
+   equivalent on read; the spelling stays here because it is the **detection** predicate, while
+   what that recognition then triggers belongs to the deferred building block below. If the
+   marker points to a path under which **no** ADR lives
    (dead/stale marker), do not stay there, but fall through in this order and report the stale
    marker (correction in {{SKILL:setup}}).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the

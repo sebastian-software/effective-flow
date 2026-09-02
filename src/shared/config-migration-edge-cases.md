@@ -9,9 +9,15 @@ that loads this one carries.
 
 ### Legacy setup marker (locator step 1)
 
-**Backcompat (one generation):** a still-present legacy marker
-`**Firmo project setup:** <path>` is recognized as equivalent on read; {{SKILL:setup}}
-converts it non-destructively to the new spelling on the next run.
+**Backcompat (one generation):** locator step 1 recognizes the legacy marker spelling as
+equivalent to the current one on read, and {{SKILL:setup}} converts it non-destructively to the
+new spelling on the next run.
+
+The spelling itself is **not** repeated here. It states the condition under which this fragment is
+loaded at all, so a reader that had to reach this fragment to learn it could never establish that
+the condition holds — the locator would fall through to step 2, match a lower-priority ADR, and
+read the wrong project configuration without saying so. Recognition therefore stays in the
+always-loaded step and only its consequence lives here.
 
 ### Read tolerance and several-match ranking (locator step 2)
 
