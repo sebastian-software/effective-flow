@@ -1138,35 +1138,6 @@ test('Step 6 states the unraceable-write property once, with both named instrume
     'the race must be stated as independent of whether a question stands between test and write',
   );
 
-  // Round five: closing the symlink escape with an unconditional rename left a lost update behind
-  // it. A rename replaces whatever the destination has become since the read the write was decided
-  // on — a concurrent edit to a regular file included — so the property carries a third clause and
-  // the rename carries the instrument for it. Both write sites inherit it without restating it.
-  assert.match(
-    rule,
-    /a replacement lands only while that entry is still the one the read saw/,
-    'the property must make the replacement conditional on the destination it was decided on',
-  );
-  assert.match(
-    rule,
-    near('bare rename is unconditional', 'hold the destination open from that read', 200),
-    'the condition must be carried by a held handle rather than left to the bare rename',
-  );
-  assert.match(
-    rule,
-    near(
-      "still the path's entry by identity and by content",
-      'as part of the swap, not as a `stat` before it, which is the separate test again',
-      200,
-    ),
-    'the condition must ride on the swap rather than become a fresh test before it',
-  );
-  assert.match(
-    rule,
-    near('destination that changed aborts this write', 'keeps its own content', 120),
-    'a changed destination must abort rather than be overwritten with the composed content',
-  );
-
   assert.match(
     rule,
     near('Exclusive create', 'fails when anything is already there', 300),
@@ -1203,9 +1174,9 @@ test('Step 6 states the unraceable-write property once, with both named instrume
   );
 
   // Both instruments leave the same residue, so it is stated once beside them: a link either read
-  // saw is reported, a link planted after the last read is destroyed rather than followed, and a
-  // directory swap is closed by neither. A contract claiming a report for the later link would be
-  // claiming a report no run emits.
+  // saw is reported, a link planted after the last read is destroyed rather than followed, a
+  // concurrent edit to the destination is replaced, and a directory swap is closed by none of it. A
+  // contract claiming a report for the later link would be claiming a report no run emits.
   assert.match(
     rule,
     near(
@@ -1215,10 +1186,29 @@ test('Step 6 states the unraceable-write property once, with both named instrume
     ),
     'the residual window must be reported as replaced, not as reported',
   );
+  // Round five made the replacement conditional on the destination the read saw; round six withdrew
+  // that, because POSIX `rename()` is unconditional and neither `renameat2` nor `renamex_np` offers
+  // a compare-and-swap on a destination's content — `NOREPLACE` is create-only. An instruction
+  // nobody can carry out is worse than the lost update it was meant to close, so the residue admits
+  // the lost update instead. Pinning the admission together with the reason is what keeps a later
+  // round from quietly promising the conditional again.
   assert.match(
     rule,
-    /narrows that window to the swap's own instant rather than abolishing it/,
-    'the condition must be stated as narrowing the residual window, never as closing it',
+    near(
+      'The replacement is unconditional',
+      'no portable primitive makes a rename conditional on what the destination holds',
+      300,
+    ),
+    'the lost update must be admitted as residue, with the reason no conditional swap is available',
+  );
+  assert.match(
+    rule,
+    near(
+      'destination changed between the read this write was decided on and the swap',
+      'is replaced and its content lost',
+      120,
+    ),
+    'the residue must name the concrete loss rather than describe the window abstractly',
   );
   assert.match(
     rule,
@@ -1335,7 +1325,7 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   // to state it once. Pin that it stays stated once: a copy re-grown here is the regression.
   for (const restated of [
     /validation and write do not re-resolve the path between them/,
-    /a replacement lands only while that entry is still the one the read saw/,
+    /The replacement is unconditional/,
     /A rename removes the destination entry rather than resolving it/,
     /Never truncate and rewrite the live path/,
     /swap of the containing directory/,

@@ -524,7 +524,7 @@ costs the most — and ten lines are wide enough for the short pointer a deferra
 is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
 tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
 so `apply-issues` at 1143/1146 has three lines of room and not ten. Read a specific entry's
-headroom off the build report. `iterate` at 1625 and `setup` at 1532 are the two largest
+headroom off the build report. `iterate` at 1625 and `setup` at 1645 are the two largest
 entries of that kind today.
 
 ## Optional upstream ownership audit
