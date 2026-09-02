@@ -105,9 +105,10 @@ that here keeps the implementing run from chasing it:
 | `src/tools/merge-gate.md`                      | Sections extracted to fragments and rationale compressed; every entry gate retained inline                                                    |
 | `src/shared/merge-gate-issue-observation.md`   | New. Phase 5.5 steps 1–7 and its `ask` fence (WP1)                                                                                            |
 | `src/shared/merge-gate-conflict-resolution.md` | New. Conflict-resolution delegation contract and its resolution step (WP2)                                                                    |
+| `src/shared/merge-gate-checkout-boundary.md`   | New. Checkout inapplicability list, reached through the existing `worktree-integration` trigger (WP3)                                         |
 | `test/workflow-contracts.test.mjs`             | 15 known repointings — 11 Phase 5.5 slices (WP1), 3 conflict slices (WP2), 1 literal (WP3) — plus two new entries in the lazy-trigger battery |
 | `build.mjs`                                    | `CONTEXT_BUDGET_LINES` entry for `merge-gate` lowered to the achieved size plus its existing headroom                                         |
-| `docs/developer-guide/build-system.md`         | The two new single-consumer fragments recorded beside the existing ones                                                                       |
+| `docs/developer-guide/build-system.md`         | The three new single-consumer fragments recorded beside the existing ones                                                                     |
 
 ## Implementation details
 
@@ -185,7 +186,15 @@ provisioned — the same trigger the existing `worktree-integration` pointer alr
 new trigger is needed. Retain the pointer preamble and round one's "do not re-add
 `execution-location`" reasoning.
 
-One test literal (`/no deferred pointer to `plan-archival`/`) sits in this range and moves with it.
+**Destination:** a new single-consumer fragment `src/shared/merge-gate-checkout-boundary.md`,
+following WP1 and WP2. Deliberately **not** `src/shared/worktree-integration.md`: that fragment has
+several consumers, and this text is merge-gate-local, so moving it there would carry one tool's
+inapplicability list to every other consumer. Reusing the existing trigger decides **when** the
+pointer fires, never **where** the text lives. `src/tools/merge-gate.md` is the fragment's only
+consumer; record it in `docs/developer-guide/build-system.md` beside the other two.
+
+One test literal (`/no deferred pointer to `plan-archival`/`) sits in this range and moves with it,
+repointed to the new fragment like the 14 other repointings in `test/workflow-contracts.test.mjs`.
 
 ### WP4 — Compress `## Delegation contract` rationale in place (≈ 45 lines, optional)
 
