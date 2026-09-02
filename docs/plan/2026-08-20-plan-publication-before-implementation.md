@@ -222,13 +222,29 @@ the prerequisite change.
 6. Commit the single file using the commit logic of `effective-flow commit` and the message rules of
    `src/shared/commit-message-rules.md`. Type `docs`; no `Co-Authored-By`; no AI attribution.
 7. Push. In direct-commit mode the push is
-   `git push <remote> <branch>:<resolved-local-base-branch>` — the remote and the local branch name
-   both taken from step 4's recorded results, never from the configured value — and deliberately not
-   `pr`'s `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote
-   branch instead of advancing the base. On success, fast-forward the **resolved local base branch**
-   onto the pushed commit and delete the now-redundant local publication branch. On any refusal —
+   `git push <remote> <branch>:<resolved-local-base-branch>` — the local branch name taken from step
+   4's recorded results, never from the configured value — and deliberately not `pr`'s
+   `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote branch
+   instead of advancing the base. On success, fast-forward the **resolved local base branch** onto
+   the pushed commit and delete the now-redundant local publication branch. On any refusal —
    protection, non-fast-forward, missing remote, auth — the local base stays put and the run
    continues at step 8, reporting the switch and its reason.
+
+   **Which remote, per base shape.** Canonical resolution records a remote only for a base that
+   names one, so this path defines all three shapes rather than assuming `origin`:
+
+   - **Base names `origin`** (`origin/develop`, this repository): push to `origin`. Both this step
+     and the step-8 fallback are available.
+   - **Base names another remote** (`upstream/main`): push to that remote. The pull-request fallback
+     is **not** available — `effective-flow pr` requires the base to be tracked on `origin` and
+     aborts as **base branch tracked on a non-`origin` remote** (`src/tools/pr.md:158`) — so a
+     refusal here ends publication with a report naming that remote, and never silently retargets
+     the pull request at `origin`.
+   - **Slashless base** (`develop`, no remote recorded): resolution names no remote at all. Use
+     `origin` when it is configured; when it is not, publication is unavailable in both modes —
+     report that and publish nothing. Never guess a remote from the branch's upstream or from the
+     single configured remote.
+
 8. In pull-request mode (chosen or fallen back into): push the branch and delegate to
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
    `effective-flow pr` restores the checkout itself (steps 11–12); this fragment does not repeat that.
