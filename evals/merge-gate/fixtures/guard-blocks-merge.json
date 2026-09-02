@@ -26,6 +26,115 @@
     }
   },
   "operations": {
+    "reference-parse": {
+      "input": {
+        "reference": "42",
+        "expectedKind": "pull-request"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "reference-parse",
+        "provider": null,
+        "data": [
+          {
+            "kind": "pull-request",
+            "number": 42,
+            "repository": {
+              "host": "github.com",
+              "owner": "example",
+              "repository": "flow",
+              "provider": "github"
+            }
+          }
+        ],
+        "dryRun": false
+      }
+    },
+    "probe": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "probe",
+        "provider": "github",
+        "data": {
+          "repository": {
+            "host": "github.com",
+            "owner": "example",
+            "repository": "flow",
+            "slug": "example/flow",
+            "provider": "github"
+          },
+          "executable": "gh",
+          "capabilities": {
+            "viewerRead": true,
+            "pullRequestStatus": true,
+            "pullRequestChecksWait": true,
+            "pullRequestMerge": true,
+            "prCommentsRead": true,
+            "prReviewsRead": true,
+            "reviewThreads": true,
+            "issueClose": true,
+            "conditionalWrites": false
+          }
+        },
+        "dryRun": false
+      }
+    },
+    "pr-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "number": 42,
+        "title": "feat: add the merge-gate behavioural eval skeleton",
+        "state": "open",
+        "draft": false,
+        "body": "Adds the eval skeleton.",
+        "html_url": "https://github.com/example/flow/pull/42",
+        "labels": [],
+        "head": {
+          "ref": "effective-flow/build/merge-gate-behavioural-evals",
+          "sha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+        },
+        "base": {
+          "ref": "develop"
+        },
+        "user": {
+          "login": "flow-gate",
+          "type": "User"
+        },
+        "created_at": "2026-09-01T08:00:00Z",
+        "updated_at": "2026-09-01T09:00:00Z"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "title": "feat: add the merge-gate behavioural eval skeleton",
+            "body": "Adds the eval skeleton.",
+            "state": "open",
+            "labels": [],
+            "url": "https://github.com/example/flow/pull/42",
+            "repository": "example/flow",
+            "head": "effective-flow/build/merge-gate-behavioural-evals",
+            "base": "develop",
+            "draft": false
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--include", "repos/example/flow/pulls/42"],
+            "includesHeaders": true
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
     "viewer-read": {
       "input": {},
       "provider": {

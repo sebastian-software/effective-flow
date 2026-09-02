@@ -9,140 +9,118 @@ blocked is observed to be blocked.
 The plan behind it is
 [`docs/plan/2026-09-02-merge-gate-behavioural-evals.md`](../../docs/plan/2026-09-02-merge-gate-behavioural-evals.md).
 
-## What is here today
+## The design in one paragraph
 
-Work packages 1 and 2 of that plan: the mechanism, proven on one scenario, plus the fidelity test
-that keeps the fixtures honest.
+**The stub's call log is the evidence.** A gate run's whole forge input surface passes through one
+subprocess, so a fake `remote-tracker.mjs` on a scaffolded skill root sees everything the gate asks
+for and writes one JSON line per call. What that run _did_ is therefore already on disk, and the
+assertions are ordinary `node:test` cases over that file. There is no harness, no grader, no scoring
+and no trace parsing — three of those exist only because a trace is the evidence, and here it is not.
+**A run is started by handing a scenario's prompt to a fresh agent**, not by a script: the isolation
+requirement is epistemic rather than technical, since a run started from a session that already knows
+the expected outcome tests that session's memory instead of the instruction.
 
-| Path                               | What it is                                                                              |
-| ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `guard-blocks-merge/case.yaml`     | The one scenario: an active human-comment guard must produce no merge                   |
-| `guard-blocks-merge/graders/*.md`  | Four deterministic graders — `tool_used` and `regex` only                               |
-| `guard-blocks-merge/scaffold.sh`   | What `context.scaffold_script` names; hands off to `_scaffold/scaffold.mjs`             |
-| `_scaffold/scaffold.mjs`           | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository |
-| `_scaffold/remote-tracker.mjs`     | The canned-envelope stub standing in for the shipped helper                             |
-| `fixtures/guard-blocks-merge.json` | The scenario's envelope set, with the provider payload each envelope came from          |
+## What is here
 
-The fidelity test that proves those envelopes real lives in the ordinary unit suite, at
-[`test/eval-fixture-fidelity.test.mjs`](../../test/eval-fixture-fidelity.test.mjs), and runs under
-`pnpm test`. The default `test` script does not invoke the eval harness and must not start to.
+| Path                           | What it is                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `scenarios/<name>.md`          | One scenario: the prompt handed to a fresh agent, plus its expected outcome as prose        |
+| `prepare.mjs`                  | Archives the previous run's log, re-scaffolds, prints the prompt. Starts nothing            |
+| `_scaffold/scaffold.mjs`       | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository     |
+| `_scaffold/remote-tracker.mjs` | The canned-envelope stub standing in for the shipped helper, and the writer of the call log |
+| `_scaffold/sandbox.mjs`        | The sandbox layout, shared by the scaffold and the preparation step                         |
+| `fixtures/<name>.json`         | The scenario's envelope set, with the provider payload each envelope came from              |
+| `results/<name>/run-<n>.jsonl` | Archived call logs — the evidence the assertions read. Created by `prepare.mjs`             |
 
-## The scenario
+Two test files in the ordinary `pnpm test` suite belong to this layer:
 
-One unresolved review thread was written by `casey-reviewer`, a plain user account that is neither a
-configured bot nor the account the gate runs as. Under the gate's own guard rules that item counts
-as human, so the human-comment guard is active, Phase 4 fails on condition 4, and the run ends with a
-report.
+- [`test/eval-fixture-fidelity.test.mjs`](../../test/eval-fixture-fidelity.test.mjs) proves every
+  canned envelope is one the real `executeOperation` normalizer emits for the same provider payload,
+  and pins the call log's record schema.
+- [`test/merge-gate-eval.test.mjs`](../../test/merge-gate-eval.test.mjs) holds the scenario
+  assertions over the archived logs.
 
-Everything else is composed to be satisfied, so the assertion isolates the guard rather than making a
-statement about the gate as a whole: checks green and reported, mergeable, not a draft, a
-Conventional-Commit pull-request title, `mergeGate.completion: merge`, and an empty `mergeGate.bots`
-list — which satisfies merge preconditions 5 and 7 by construction. The top-level comment in the
-fixture is authored by the viewer login, so guard rule 2 excludes it and the thread is the only thing
-holding the guard.
+Neither runs a model, and neither starts a gate run. `pnpm test` stays a pure file-and-transform
+suite.
 
-The observable is the **absence** of a `pr-merge` invocation in the run trace. Because that alone
-would pass on a run that crashed or never started the gate, two further graders assert positive
-evidence that the gate ran and reached its decision: the status read happened, and the gate's own
-source was loaded out of the scaffolded skill root.
+## Running a scenario
+
+```sh
+node build.mjs                                    # the scaffold copies dist/, and refuses if it is absent
+pnpm prepare:merge-gate-eval guard-blocks-merge   # archive, re-scaffold, print the prompt
+```
+
+Then hand the printed prompt — verbatim — to a **fresh agent**: a new session, with no knowledge of
+this repository's expectations and no sight of the scenario file's expected outcome. Repeat
+`prepare` and the run for as many runs as the scenario needs. Each `prepare` archives the log the
+previous run left behind, so **run `prepare` once more after the last run** before asserting; that
+final call also re-scaffolds and reprints the prompt, which costs nothing.
+
+```sh
+node --test test/merge-gate-eval.test.mjs         # or just pnpm test
+```
+
+The archived logs are the layer's evidence and are committed with it. They are what makes a claim
+about the gate's behaviour checkable by someone who did not perform the runs.
+
+### Cost is quota and wall-clock time
+
+There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
+subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
+runs of one scenario is therefore about half an hour of wall clock, which is a scheduling question
+rather than a budget one. Where the suite has to be shortened, the scenario count gives way — never
+the five-of-five requirement, because for a fail-closed rule a single deviating run is a finding.
+
+### Two failure modes the assertions handle by name
+
+- **A missing or empty log fails loudly and never counts as a refusal.** A run that never started
+  produces no `pr-merge` record, which is indistinguishable from a correct refusal unless the
+  emptiness is itself an error. It is.
+- **With no archived runs at all, the assertions skip with a loud reason rather than passing.** They
+  never report success for a scenario nobody ran. Skipping rather than failing is deliberate: a
+  permanently red `pnpm test` in every checkout that has not spent quota on a run — CI included,
+  which this layer deliberately stays out of — is ignored within a week, and would cost more evidence
+  than it gathers. `node --test` prints the skip reason beside the test, and the pass count does not
+  include it.
 
 ## What this deliberately does not cover
 
-- **WP3 to WP6 of the plan are not built.** The guard's three ordered rules across its three counting
-  surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, the round bound, and
-  Phase 5.5 entry reachability are all still to come. One scenario is a proven mechanism, not a net.
+- **One scenario exists.** A green suite therefore proves that one refusal path holds, and nothing
+  about the breadth of the gate. WP3 to WP6 of the plan — the guard's three ordered rules across its
+  three counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, the
+  round bound, and Phase 5.5 entry reachability — are all still to come. Read a green result as a
+  proven mechanism, not as a net.
 - **There is no scenario yet in which the gate merges.** The plan requires one, so a blanket-refusal
   regression cannot show as a green suite. Until it exists, a green result here is weaker than it
   looks.
 - **Conditions 6, 7 and 10 are out of scope end to end**, per the plan: they are evaluated against
   identifiers the gate mints at run time, which a fixture cannot carry. Their fail-closed halves
   belong to WP5.
-- **Codex execution is unexercised.** Codex has no `eval` subcommand and no comparable harness. Both
-  targets are built from one source and carry identical rules, so what stays untested is the Codex
-  **execution**, not the rule. This is a named residual, not a gap to be closed by weakening anything
-  here.
-- **The suite is not in CI**, which has neither the credentials nor a cost budget for it. What makes
-  it binding is evidence instead: every pull request of the deferral round carries the suite's
-  output — date, commit, per-case pass rate — in its body.
+- **Codex execution is unexercised.** Both targets are built from one source and carry identical
+  rules, so what stays untested is the Codex **execution**, not the rule. With the log as the
+  evidence, a later Codex driver would reuse the stub, the fixtures and every assertion unchanged.
+  This is a named residual, not a gap to be closed by weakening anything here.
+- **The suite is not in CI**, which has neither the credentials nor the quota for it. What makes it
+  binding is evidence instead: every pull request of the deferral round carries the suite's output —
+  date, commit, per-scenario run count and result — in its body.
 
-## Running it
+## The sandbox
 
-`claude plugin eval` is in **early access**. On an installation where it is not enabled, every
-subcommand answers `` `plugin eval` is currently in early access `` and writes nothing, so the suite
-cannot run at all until that is turned on for the account.
+`prepare.mjs` calls `_scaffold/scaffold.mjs`, which wipes and re-provisions
+`/tmp/effective-flow-merge-gate-eval/<scenario>/`:
 
-The suite needs a current build, because the scaffold copies `dist/portable/effective-flow/` into the
-sandbox and refuses rather than building silently:
+| Under the sandbox | What it holds                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `skill/`          | A copy of `dist/portable/effective-flow/`, with `scripts/remote-tracker.mjs` replaced |
+| `project/`        | A temp Git repository with the AGENTS.md marker and the project-setup ADR             |
+| `fixture.json`    | The scenario's envelope set, where the stub looks for it                              |
+| `trace/`          | Where the stub appends `tracker-calls.jsonl`                                          |
 
-```sh
-node build.mjs
-pnpm eval:merge-gate
-```
-
-`pnpm eval:merge-gate` expands to the invocation below. Run it by hand when you want to change the
-budget or the case filter.
-
-```sh
-claude plugin eval . \
-  --case guard-blocks-merge \
-  --runs 5 \
-  --threshold 1.0 \
-  --scaffold \
-  --allow-tools Bash Write Edit \
-  --max-cost-usd 20 \
-  --report ./evals/results/guard-blocks-merge.html
-```
-
-The target is the repository root, not `./evals`: the harness walks the topmost `evals/` directory
-**under** the path it is given. `--allow-tools` names only the gated tools — `Bash`, `Write`, `Edit`
-— while the case's own `execution.allowed_tools` carries the full list. Ablation defaults to `none`
-for a path target, which is what this suite wants: there is no baseline arm to pay for, and no
-`baseline` grader to feed.
-
-`--threshold 1.0` is the harness default and is stated anyway, because it is a decision rather than
-an inherited value: for a fail-closed rule anything below a 5-of-5 pass rate is a finding, not
-variance. A rate below 1.0 is investigated; it is never accommodated by lowering the threshold, and
-where the suite's cost has to come down the **scenario count** gives way instead of the runs per
-case.
-
-### Measure the cost before you commit to five runs
-
-A gate run loads a 3125-line tool — about 250 KB, roughly 62k tokens — before it does anything, and
-then carries that context across every turn. **Nothing here has been executed yet**, so the numbers
-below are an estimate from that payload and not a measurement:
-
-|                    | Sonnet-class model | Opus-class model |
-| ------------------ | ------------------ | ---------------- |
-| one run            | ~$1 to $3          | ~$5 to $15       |
-| the case at 5 runs | ~$5 to $15         | ~$25 to $75      |
-
-The spread is wide because it turns on how much of the loaded gate is served from the prompt cache
-and on how many turns the run takes, and neither is known until a run happens. So make the **first**
-paid execution a single run with a tight ceiling, read the reported cost, and only then decide about
-five:
-
-```sh
-node build.mjs
-claude plugin eval . --case guard-blocks-merge --runs 1 --scaffold \
-  --allow-tools Bash Write Edit --max-cost-usd 5 --verbose \
-  --json ./evals/results/probe.json
-```
-
-That probe is also WP1's evidence: `--verbose` streams the trace, so it answers the questions the
-plan could not settle by reading — whether the scaffolded skill root resolves, whether the run
-reaches the stub instead of the shipped helper, and whether the trace distinguishes a merge call
-from its absence. If the stub is not reached, or the trace cannot make that distinction, the plan
-says to stop and report rather than continue.
-
-### `--scaffold` runs author-supplied bash as you
-
-The flag is off by default, and the harness's own help says it "runs author-supplied bash as you" —
-outside the sandbox, with your environment and your credentials. The suite cannot provision its
-sandbox without it, so it is in the invocation above deliberately. Do not enable it casually on eval
-case files you did not write and have not read: for any suite, `context.scaffold_script` is arbitrary
-code executed with your privileges. The script it runs here is
-[`_scaffold/scaffold.mjs`](_scaffold/scaffold.mjs), and it writes only under
-`/tmp/effective-flow-merge-gate-eval/`.
+The path is a fixed absolute location because a scenario prompt has to name the skill root and the
+project checkout literally and cannot know where the agent it is handed to was rooted. The scaffold
+refuses to run against a missing `dist/`, rather than building silently: a stale build would scaffold
+a skill root that does not match the source under test, which is the one way this suite could report
+a green result about code nobody is running.
 
 ## How the stub works
 
@@ -152,31 +130,40 @@ fake `scripts/remote-tracker.mjs` on the scaffolded skill root is a **complete**
 network, no `gh`, no `tea`, no recorded cassettes.
 
 It dispatches on the operation name in `argv` and returns that operation's canned envelope from the
-fixture. Two behaviours are load-bearing:
+fixture. Three behaviours are load-bearing:
 
+- **Every call is recorded**, as one JSON object per line: `seq`, `operation`, `apply`, `at`, `cwd`.
+  `seq` starts at 1 and rises by one per call, derived from the lines already in the file because the
+  stub is a fresh process per call; `at` is a millisecond timestamp and can collide, so it cannot
+  carry ordering on its own. That record shape is a contract, pinned by
+  `test/eval-fixture-fidelity.test.mjs`, because it is what every scenario assertion reads.
 - **An undefined operation fails loudly**, naming the operation and the set the fixture does define.
   A silent default would let a scenario pass for the wrong reason — a gate that never merged because
-  a read came back empty is not the same fact as a gate that refused on its guard.
+  a read came back empty is not the same fact as a gate that refused on its guard. The first probe
+  run demonstrated the cost of an incomplete fixture directly: `reference-parse`, `probe` and
+  `pr-read` were undefined, the stub refused all three, and the gate improvised its way onward. A
+  scenario has to exercise the normal path, so the fixture now defines them.
 - **`pr-merge` is recorded and refused**, ahead of the fixture lookup and for the dry run as well as
-  `--apply`. The eval asserts the absence of that call, and a stub that silently succeeded a merge
+  `--apply`. The assertion is the absence of that record, and a stub that silently succeeded a merge
   would mask exactly the regression this layer exists to catch. The refusal carries the marker string
-  `EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED`, which `graders/no-merge-refused-marker.md` matches over
-  the trace.
+  `EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED` so the gate's own report names why the merge did not
+  happen; no assertion reads that string.
 
-The sandbox lives at `/tmp/effective-flow-merge-gate-eval/<case>/` — a fixed absolute path, because
-the case prompt has to name the skill root and the project checkout literally and cannot know where
-the harness rooted the run. The stub finds its fixture and its call log relative to its own location,
-so it needs no environment of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both
-and exist for the unit test.
+The stub finds its fixture and its call log relative to its own location, so it needs no environment
+of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exist for the unit tests.
 
 ## Adding a scenario
 
-1. Write `fixtures/<case>.json`: `repository`, `probe`, and an `operations` map whose entries carry
+1. Write `fixtures/<name>.json`: `repository`, `probe`, and an `operations` map whose entries carry
    the `input`, the raw `provider` payload, and the `envelope`.
 2. Derive the envelope from the real normalizer rather than writing it by hand — pipe the provider
    payload through `executeOperation` with a fake runner, exactly as the fidelity test does, and paste
-   what comes out. `pnpm test` then proves it stayed real.
-3. Add `<case>/case.yaml`, `<case>/scaffold.sh` (one line, naming the case), and `<case>/graders/*.md`.
-4. Keep every grader deterministic. `llm` and `baseline` graders decide nothing about whether a merge
-   was correctly refused — a safety gate's verdict must not itself be decided by a model judging
-   prose.
+   what comes out. `pnpm test` then proves it stayed real. A local operation the normalizer resolves
+   without touching the provider states a null `provider`; the fake runner is never reached for it.
+3. Write `scenarios/<name>.md`: the prompt between the `<!-- prompt:start -->` and
+   `<!-- prompt:end -->` markers as a single fenced block, and the expected outcome below it, marked
+   plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
+   that is what makes the run a test rather than a recitation.
+4. Add the scenario's assertions to `test/merge-gate-eval.test.mjs`. Every refusal scenario asserts
+   both that no `pr-merge` record exists **and** that the gate reached its decision, so a crashed run
+   cannot pass; a scenario in which the gate should merge asserts exactly one `pr-merge` record.

@@ -81,10 +81,23 @@ test('every fixture envelope is one the real normalizer emits', async () => {
   }
 });
 
-// The corpus has to cover the reads a gate run actually performs, or a scenario could pass because
-// the run never got far enough to need one. These five are the operations WP2 names.
-test('every fixture covers the read operations a gate run performs', () => {
+// The corpus has to cover the operations a gate run actually performs, or a scenario could pass
+// because the run never got far enough to need one — and, worse, because the stub's loud failure on
+// an undefined operation pushed the run onto an improvised path. The first probe run showed exactly
+// that: the gate opened with `reference-parse`, `probe` and `pr-read`, none of which the fixture
+// defined, and worked around all three. A scenario has to exercise the **normal** path, so those
+// three are required alongside the five reads WP2 names.
+//
+// `reference-parse` is a local operation — the normalizer resolves it without touching the provider,
+// so its fixture entry states a null provider payload the fake runner never delivers. `probe` is
+// piped through `executeOperation` with `skipProbe`, so what the fidelity assertion proves for it is
+// the envelope the operation wraps around a probe result rather than the capability detection
+// itself; the capabilities are the set this fixture declares at its top level.
+test('every fixture covers the operations a gate run performs', () => {
   const required = [
+    'reference-parse',
+    'probe',
+    'pr-read',
     'viewer-read',
     'pr-status-read',
     'pr-comments-read',
@@ -120,8 +133,8 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
           `${file}: the stub altered the "${operation}" envelope`,
         );
       }
-      // The call log is evidence for a human reading the sandbox afterwards, so it has to record
-      // every operation the run asked for, in order.
+      // The call log is the evidence every scenario assertion reads, so it has to record every
+      // operation the run asked for, in order.
       const log = readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8')
         .trim()
         .split('\n')
@@ -149,10 +162,12 @@ test('the stub records a pr-merge request and refuses to perform it', () => {
       assert.equal(status, 1, 'a refused merge must exit non-zero, as a failed envelope does');
       assert.equal(envelope.ok, false);
       assert.equal(envelope.operation, 'pr-merge');
-      // The marker a `regex` grader matches over the run trace. Its exact spelling is part of the
-      // contract between this stub and `graders/no-merge-refused-marker.md`.
+      // The refusal names itself in the envelope the gate reads back, so the run's own report can
+      // say why the merge did not happen. The assertion that no merge was requested is made against
+      // the call log below, never against this string.
       assert.match(envelope.error.message, /EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED/);
       const log = JSON.parse(readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8').trim());
+      assert.equal(log.seq, 1);
       assert.equal(log.operation, 'pr-merge');
       assert.equal(log.apply, argv.includes('--apply'));
     } finally {
@@ -202,6 +217,75 @@ test("the stub's error envelope has the shape the real helper produces", () => {
     assert.deepEqual(Object.keys(envelope).sort(), Object.keys(reference).sort());
     assert.deepEqual(Object.keys(envelope.error).sort(), Object.keys(reference.error).sort());
     assert.deepEqual(envelope, reference);
+  } finally {
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+// The pinned call-log schema. Everything `test/merge-gate-eval.test.mjs` asserts about a gate run
+// it reads out of this file, which makes the record shape a contract rather than a convenience: a
+// stub change that dropped a key, renamed one, or broke the ordering would not fail any assertion
+// about the gate — it would quietly make every one of them mean something else.
+//
+// `seq` is the addition the inversion demanded. `at` is a millisecond timestamp and two calls can
+// share one, so ordering cannot rest on it; and the stub is a fresh process per call, so the
+// counter cannot live in memory either. It is derived from the lines already in the log, which is
+// what the multi-call assertion below actually exercises.
+test('the call log records the pinned schema, numbered from one without gaps', () => {
+  const fixturePath = join(FIXTURE_DIR, fixtureFiles()[0]);
+  const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+  const logPath = join(logDir, 'tracker-calls.jsonl');
+  try {
+    // Three ordinary reads and one refused merge, so the schema is pinned across both branches the
+    // stub has — the fixture lookup and the refusal that sits ahead of it.
+    const asked = [
+      ['viewer-read', []],
+      ['pr-status-read', []],
+      ['pr-merge', ['--apply']],
+      ['review-threads-read', []],
+    ];
+    for (const [operation, argv] of asked) {
+      runStub(operation, argv, { EVAL_TRACKER_FIXTURE: fixturePath, EVAL_TRACKER_LOG: logPath });
+    }
+
+    const records = readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line));
+    assert.equal(records.length, asked.length, 'the stub recorded one line per call');
+
+    records.forEach((record, index) => {
+      const [operation, argv] = asked[index];
+      // The exact key set, not a subset: an added key is as much a schema change as a removed one,
+      // and a reader that silently ignored it would drift from what the stub writes.
+      assert.deepEqual(
+        Object.keys(record).sort(),
+        ['apply', 'at', 'cwd', 'operation', 'seq'],
+        `record ${index} does not carry exactly the pinned keys`,
+      );
+      assert.equal(record.seq, index + 1, `record ${index} is not numbered ${index + 1}`);
+      assert.equal(typeof record.operation, 'string');
+      assert.equal(record.operation, operation);
+      assert.equal(typeof record.apply, 'boolean');
+      assert.equal(record.apply, argv.includes('--apply'));
+      // An unparseable instant is a broken record rather than a stylistic difference.
+      assert.equal(typeof record.at, 'string');
+      assert.ok(
+        !Number.isNaN(Date.parse(record.at)),
+        `record ${index} states an unparseable timestamp`,
+      );
+      // `cwd` is what the caller stated, and null when it stated none. Both are legitimate; a third
+      // shape is not.
+      assert.ok(record.cwd === null || typeof record.cwd === 'string');
+    });
+
+    // The whole point of deriving the counter from the file: these were four separate processes,
+    // none of which could see the previous one's memory.
+    assert.deepEqual(
+      records.map((record) => record.seq),
+      [1, 2, 3, 4],
+      'the sequence is not monotonic across separate stub processes',
+    );
   } finally {
     rmSync(logDir, { recursive: true, force: true });
   }

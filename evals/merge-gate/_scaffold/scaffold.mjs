@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
-// Provisions the sandbox one `merge-gate` eval case runs against. It is invoked from the case
-// directory's `scaffold.sh`, which `case.yaml` names as `context.scaffold_script` — and which the
-// harness runs only when the operator passes `--scaffold`. That flag is off by default and its help
-// text says it "runs author-supplied bash as you", so read `evals/merge-gate/README.md` before
-// enabling it on a case file you did not write.
+// Provisions the sandbox one `merge-gate` eval scenario runs against. It is invoked by
+// `evals/merge-gate/prepare.mjs`, which an operator runs deliberately before handing a scenario's
+// prompt to a fresh agent. Nothing runs it automatically, and it is not on the `pnpm test` path.
 //
 // Four things are provisioned:
 //
@@ -15,32 +13,29 @@
 //   <sandbox>/fixture.json  the scenario's envelope set, where the stub looks for it
 //   <sandbox>/trace/    where the stub appends its call log
 //
-// The sandbox path is a fixed absolute location rather than something derived from the run's
-// working directory, because the case prompt has to name both the skill root and the project
-// checkout literally and cannot know where the harness rooted the run.
+// The layout itself, and why its base is a fixed absolute path, is `sandbox.mjs`.
 
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sandboxPaths } from './sandbox.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
 const BUILT_SKILL_ROOT = resolve(REPOSITORY_ROOT, 'dist', 'portable', 'effective-flow');
-
-export const SANDBOX_BASE = '/tmp/effective-flow-merge-gate-eval';
 
 function fail(message) {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
 
-// The scenario's identity is the case directory name, passed through by `scaffold.sh`. It selects
-// both the fixture and the sandbox, so one suite can hold several scenarios without their sandboxes
+// The scenario's identity is its name, passed through by `prepare.mjs`. It selects the fixture, the
+// scenario file and the sandbox, so one suite can hold several scenarios without their sandboxes
 // colliding.
 const caseName = process.argv[2];
 if (!caseName || !/^[a-z0-9][a-z0-9-]*$/.test(caseName)) {
-  fail('usage: scaffold.mjs <case-name>   (lowercase, digits and hyphens)');
+  fail('usage: scaffold.mjs <scenario-name>   (lowercase, digits and hyphens)');
 }
 
 const fixturePath = resolve(SUITE_ROOT, 'fixtures', `${caseName}.json`);
@@ -55,12 +50,17 @@ if (!existsSync(BUILT_SKILL_ROOT)) {
   );
 }
 
-const sandbox = resolve(SANDBOX_BASE, caseName);
-const skillRoot = resolve(sandbox, 'skill');
-const projectRoot = resolve(sandbox, 'project');
+const {
+  sandbox,
+  skillRoot,
+  projectRoot,
+  fixture: sandboxFixture,
+  traceDir,
+  callLog,
+} = sandboxPaths(caseName);
 
 rmSync(sandbox, { recursive: true, force: true });
-mkdirSync(resolve(sandbox, 'trace'), { recursive: true });
+mkdirSync(traceDir, { recursive: true });
 
 cpSync(BUILT_SKILL_ROOT, skillRoot, { recursive: true });
 // The whole point of the sandbox: the gate resolves `<skill-root>/scripts/remote-tracker.mjs` from
@@ -71,7 +71,7 @@ cpSync(
   resolve(import.meta.dirname, 'remote-tracker.mjs'),
   resolve(skillRoot, 'scripts', 'remote-tracker.mjs'),
 );
-cpSync(fixturePath, resolve(sandbox, 'fixture.json'));
+cpSync(fixturePath, sandboxFixture);
 
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
 
@@ -97,7 +97,7 @@ Active
 
 ## Context
 
-Scenario configuration for the \`${caseName}\` behavioural eval case. Every value here exists to make
+Scenario configuration for the \`${caseName}\` behavioural eval scenario. Every value here exists to make
 the human-comment guard the single deciding condition of the run.
 
 ## Configuration
@@ -153,8 +153,8 @@ process.stdout.write(
     `scaffolded ${caseName}`,
     `  skill root: ${skillRoot}`,
     `  project:    ${projectRoot}`,
-    `  fixture:    ${resolve(sandbox, 'fixture.json')}`,
-    `  call log:   ${resolve(sandbox, 'trace', 'tracker-calls.jsonl')}`,
+    `  fixture:    ${sandboxFixture}`,
+    `  call log:   ${callLog}`,
     '',
   ].join('\n'),
 );

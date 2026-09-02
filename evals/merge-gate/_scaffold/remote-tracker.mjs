@@ -25,14 +25,15 @@ const FIXTURE_PATH = process.env.EVAL_TRACKER_FIXTURE ?? resolve(SANDBOX_ROOT, '
 const CALL_LOG_PATH =
   process.env.EVAL_TRACKER_LOG ?? resolve(SANDBOX_ROOT, 'trace', 'tracker-calls.jsonl');
 
-// The one string a grader matches to prove a merge was attempted. It is deliberately unlike
-// anything the gate's own prose contains, so a `regex` grader over the run trace cannot match it by
-// accident.
+// The string a refused merge carries back to the gate, so the run's own report names why the merge
+// did not happen instead of reporting an unexplained command failure. It is deliberately unlike
+// anything the gate's own prose contains, so it cannot be confused with the gate's own wording. The
+// assertion that no merge was requested is made against the call log, never against this string.
 export const MERGE_REFUSAL_MARKER = 'EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED';
 
 // Every operation whose execution would be a side effect the sandbox must never perform. `pr-merge`
-// is the one this suite is built around: the assertion is that no `pr-merge` invocation appears in
-// the trace, and a stub that silently succeeded a merge would mask exactly the regression the layer
+// is the one this suite is built around: the assertion is that no `pr-merge` record appears in the
+// call log, and a stub that silently succeeded a merge would mask exactly the regression the layer
 // exists to catch. The refusal sits **ahead** of the fixture lookup on purpose, so a future fixture
 // that defines `pr-merge` cannot re-enable it, and it covers the dry run as well as `--apply`: a
 // merge the gate merely previewed is still a merge it decided to reach for.
@@ -49,14 +50,42 @@ function errorEnvelope(operation, code, message, details = {}, dryRun = false) {
   };
 }
 
-// Best effort by design: the log is evidence for a human reading the sandbox afterwards, never the
-// grader's source of truth. A sandbox whose log directory is unwritable must still produce the
+// The log is the **evidence** every assertion in `test/merge-gate-eval.test.mjs` reads: a gate run
+// is judged by what it asked this stub to do, not by anything it said. Its record shape is
+// therefore a contract, pinned by `test/eval-fixture-fidelity.test.mjs` so a change here cannot
+// silently reshape what those assertions consume.
+//
+// One JSON object per line, in this key set:
+//
+//   seq        1 for the first call in a log file, then one higher per recorded call
+//   operation  the operation name as it arrived in argv
+//   apply      whether `--apply` was passed, so a dry run and a write stay distinguishable
+//   at         an ISO-8601 instant, for a human reading the sandbox; millisecond collisions make it
+//              unusable for ordering, which is exactly why `seq` exists beside it
+//   cwd        the working directory the caller stated, or null when it stated none
+//
+// The stub is a fresh process per call, so the counter cannot live in memory. It is derived from
+// the lines already in the log instead: every recorded call appends exactly one line, so the count
+// of lines already present is the number of the previous call, and one more is this call's. A log
+// file that does not exist yet is the first call's normal case, not an error.
+function nextSequenceNumber() {
+  let existing;
+  try {
+    existing = readFileSync(CALL_LOG_PATH, 'utf8');
+  } catch {
+    return 1;
+  }
+  return existing.split('\n').filter((line) => line.trim() !== '').length + 1;
+}
+
+// Best effort by design: a sandbox whose log directory is unwritable must still produce the
 // envelope the gate is waiting for, so a failure here is swallowed rather than turned into a
-// protocol violation.
+// protocol violation. That is not a licence to read a missing log as "nothing was called" — the
+// assertions treat an absent or empty log as a run that never started, and fail on it.
 function recordCall(record) {
   try {
     mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
-    appendFileSync(CALL_LOG_PATH, `${JSON.stringify(record)}\n`);
+    appendFileSync(CALL_LOG_PATH, `${JSON.stringify({ seq: nextSequenceNumber(), ...record })}\n`);
   } catch {
     // deliberately ignored — see above
   }
