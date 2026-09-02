@@ -495,13 +495,13 @@ The change is complete when every criterion below holds simultaneously.
 
 ## Open points
 
-- **Blocking — the prerequisite archive-handshake change is planned but not delivered.**
-  `docs/plan/2026-08-20-archive-handshake-state-model.md` is its delivery (a): the archive states,
-  index-first detection, the never-rename-in-the-main-checkout constraint and the no-two-copies rule.
-  Implementing publication before it ships would produce a feature whose normal outcome in this
-  repository is a mis-archived plan. **Re-entry:** deliver (a) via
-  `effective-flow apply docs/plan/2026-08-20-archive-handshake-state-model.md`, then return here; the
-  first acceptance criterion above is the gate.
+- **Resolved — the prerequisite archive-handshake change has been delivered.**
+  `docs/plan/archive/2026-08-20-archive-handshake-state-model.md` carries `Plan status: Implemented`
+  and is its delivery (a): the archive states, index-first detection, the
+  never-rename-in-the-main-checkout constraint and the no-two-copies rule. Implementing publication
+  before it shipped would have produced a feature whose normal outcome in this repository is a
+  mis-archived plan; that exposure is gone. The first acceptance criterion above stays the gate and is
+  verified against the archived plan — there is nothing left to deliver here, and no re-entry step.
 - **Non-blocking — the untracked twin is never removed automatically.** The receipt's content hash
   detects divergence, but nothing deletes the leftover working-tree copy, so the checkout collision
   after a merged plan pull request remains a manual remediation. The prerequisite change's own
