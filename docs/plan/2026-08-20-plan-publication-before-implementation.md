@@ -516,7 +516,7 @@ The change is complete when every criterion below holds simultaneously.
 
 ## Plan review
 
-**Result:** Revision required
+**Result:** Approved
 
 ### Summary
 
