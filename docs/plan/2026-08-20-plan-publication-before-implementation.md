@@ -495,13 +495,6 @@ The change is complete when every criterion below holds simultaneously.
 
 ## Open points
 
-- **Resolved — the prerequisite archive-handshake change has been delivered.**
-  `docs/plan/archive/2026-08-20-archive-handshake-state-model.md` carries `Plan status: Implemented`
-  and is its delivery (a): the archive states, index-first detection, the
-  never-rename-in-the-main-checkout constraint and the no-two-copies rule. Implementing publication
-  before it shipped would have produced a feature whose normal outcome in this repository is a
-  mis-archived plan; that exposure is gone. The first acceptance criterion above stays the gate and is
-  verified against the archived plan — there is nothing left to deliver here, and no re-entry step.
 - **Non-blocking — the untracked twin is never removed automatically.** The receipt's content hash
   detects divergence, but nothing deletes the leftover working-tree copy, so the checkout collision
   after a merged plan pull request remains a manual remediation. The prerequisite change's own
@@ -528,9 +521,12 @@ The change is complete when every criterion below holds simultaneously.
 | Scope           |        0 |         1 |    1 |
 | Maintainability |        0 |         0 |    3 |
 
-The result is `Revision required` solely because one implementation-blocking open point remains: the
-prerequisite archive-handshake change is planned but not yet delivered. Every finding of the two
+That result was `Revision required` solely because one implementation-blocking open point remained:
+the prerequisite archive-handshake change was planned but not yet delivered. It has since shipped —
+`docs/plan/archive/2026-08-20-archive-handshake-state-model.md` carries `Plan status: Implemented` —
+so that blocker is gone and no implementation-blocking open point remains. Every finding of the two
 review passes plus the rebase pass below has been incorporated; no critical finding is outstanding.
+The first acceptance criterion stays the gate and is verified against the archived plan.
 
 ### Findings
 
