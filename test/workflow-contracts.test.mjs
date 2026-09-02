@@ -969,8 +969,34 @@ test('the CLAUDE.md symlink hard stop is evaluated before the state classificati
   assert.match(contract, near('broken symlink', 'would otherwise read as absent', 160));
   assert.match(contract, /outside the repository/);
 
+  // The record-side stop alone is a check separated from its use: the ask fence stands between
+  // item 5's observation and item 7's write, so the path can become a symlink in between. The
+  // second evaluation is on the filesystem, immediately before the write, and it deliberately
+  // feeds nothing back into the classification the assertions above pin to item 5's record.
+  assert.match(
+    contract,
+    near(
+      'Revalidate the `CLAUDE.md` path immediately before writing it',
+      'never reclassify on that read',
+      120,
+    ),
+    'the symlink stop must run again on the filesystem immediately before the write',
+  );
+  assert.match(contract, /evaluated twice, once on the record and once on the filesystem/);
+  assert.match(
+    contract,
+    near('never re-derives the state', "stays keyed to item 5's record", 250),
+    'the pre-write read must not feed the classification it sits beside',
+  );
+  assert.match(
+    contract,
+    near('only two outcomes', 'performing that write and stopping with a report', 120),
+    'the revalidation must have no third outcome that writes something else',
+  );
+
   // Position, not only prose. A reader who stops at the first matching classification must have
-  // passed the stop already, so the ordering is pinned where it is executed.
+  // passed the record-side stop already, so its ordering is pinned where it is executed; the
+  // filesystem-side one is pinned by wording above, because it runs at the write rather than here.
   ordered(
     contract,
     'A symlink at the `CLAUDE.md` path is a hard stop',

@@ -817,6 +817,17 @@ options:
      than the pointer it replaced. Where item 5's record shows that it wrote the marker into
      `CLAUDE.md`, first create the minimal `AGENTS.md` carrying that marker, exactly as item 5's
      third branch would have, and only then replace `CLAUDE.md`. Report both writes in Step 8.
+   - **Revalidate the `CLAUDE.md` path immediately before writing it, and never reclassify on that
+     read.** The fence stands between item 5's observation and this write, so the path can have
+     become a symlink while the answer was pending, and the hard stop above cannot see that: it
+     consumed the recorded state. Test that exact path once more, with the same test that does not
+     follow the link, and a symlink found there stops this write — report the path and write
+     nothing. The stop is therefore evaluated twice, once on the record and once on the filesystem.
+     This second read decides only **whether the write the record already chose may still be
+     performed**. It never re-derives the state, never turns a decline into a write, never poses a
+     second question, and never feeds the classification below, which stays keyed to item 5's record
+     for the reason given above. Its only two outcomes are performing that write and stopping with a
+     report.
    - **Absent** → pose the fence below and create the file only on an affirmative answer.
    - **A pure prose pointer** → pose the fence below, naming the exact line that would be replaced.
      The predicate, applied to the state item 5 observed: no `**Effective Flow project setup:**`
@@ -1022,7 +1033,8 @@ Report to the user:
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, nothing written because the file is content-bearing or already imports `AGENTS.md`,
-  or nothing written because a symlink at that path was a hard stop, because the fence could not be
+  or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
+  the revalidation immediately before the write — because the fence could not be
   posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
   the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
   therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
