@@ -744,9 +744,8 @@ options:
      seen rather than reported absent, and read that result at the moment of the write rather than
      carrying it across a question: this step poses none, so its test and its write are one step,
      unlike item 7's, which the confirmation fence separates and which therefore revalidates. A
-     symlink there — live or dangling — disqualifies the file as
-     a marker host: record the observed symlink, take the third branch and create the minimal
-     `AGENTS.md` instead, and report the path. That is no softened hard stop but a different write:
+     symlink there — live or dangling — disqualifies the file as a marker host: record the observed
+     symlink, take the third branch and create the minimal `AGENTS.md` instead, and report the path. That is no softened hard stop but a different write:
      nothing is written through the link, and the marker lands on a path this step created itself.
 6. **Migration and untracking (migration case only).** If a transitional
    `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
@@ -862,13 +861,13 @@ options:
      state this one exists for, the leftover would read as content-bearing, and every later run
      would decline the conversion this workflow itself left unfinished. Recognizing both shapes is
      what makes the ordered pair of writes retryable rather than permanently half-done.
+   - **Content-bearing, or already importing** → write nothing, report that state, and do not pose
+     the fence at all. A `CLAUDE.md` that already imports `AGENTS.md` is the finished state.
    - **Report a half-completed conversion as half-completed.** The two writes are ordered and not
      atomic, so a failure or an interruption between them leaves a real state on disk. Where
      `AGENTS.md` was created and `CLAUDE.md` was not replaced, name both files, give the marker's
      home as that new `AGENTS.md`, say that a later run finishes the import from the state above,
      and never report the import as written.
-   - **Content-bearing, or already importing** → write nothing, report that state, and do not pose
-     the fence at all. A `CLAUDE.md` that already imports `AGENTS.md` is the finished state.
 
 This fence is deliberately **unconditional** rather than guided-path only, for the reason
 `project-adr-convention` gives for its own: it decides whether a file is written to the project
