@@ -351,4 +351,11 @@ Three findings were incorporated directly; two were put to the user as decisions
 
 ## Open points
 
-- No open points.
+- **Blocking — the behavioural eval layer does not exist yet.** No work package below starts until a
+  behavioural eval layer for `merge-gate` exercises a gate run against its refusal conditions, so that
+  a merge which should be blocked is observed to be blocked. See "Prerequisite: the behavioural eval
+  layer" and the first acceptance criterion, which is the gate. All 671 assertions that guard this
+  file check its **text**; not one exercises a gate run, so a restructure can move a fail-closed rule
+  into a place the run never reaches while every test still passes — the gap the 2026-09-02
+  circularity defect passed through. This plan is therefore complete but **not yet actionable**.
+  **Re-entry:** deliver the eval layer, then return here.
