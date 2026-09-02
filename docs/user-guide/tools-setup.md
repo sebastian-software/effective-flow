@@ -94,9 +94,11 @@ is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every sessio
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
 reliably present. The offer is a question on both paths, Express included, and a run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
-file only where none exists, and replaces an existing `CLAUDE.md` only where it is a pointer to
-`AGENTS.md` and nothing else: no import already, and no content beyond that pointer line and, where
-an earlier run left one there, setup's own marker line. A `CLAUDE.md` with content of its own, or
+file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
+pointer to `AGENTS.md` and, where an earlier run left one there, setup's own marker line — and, when
+that marker line is present, only once `AGENTS.md` carries the marker too. That last condition is
+what keeps the replacement safe: while `CLAUDE.md` holds the only copy of the marker, setup leaves
+the file alone. A `CLAUDE.md` with content of its own, or
 one that already imports `AGENTS.md`, is reported and left alone, and a symlink at that path stops
 the step rather than being written through — checked both against what setup saw before it asked
 and again on disk immediately before it writes, so a path that changed while the question was open
