@@ -1211,6 +1211,96 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   );
 });
 
+// "Decide on the state item 5 observed" is sound only while nothing between item 5 and item 7
+// changes the file, and item 6's rollback branches are exactly that: they restore the ADR and the
+// convention-marker file and then let the run continue. Ungated, item 7 rebuilds the state the
+// rollback undid — a minimal `AGENTS.md` naming a rolled-back ADR, and the restored `CLAUDE.md`
+// replaced. Item 6 therefore carries an outcome and item 7 declines on an incomplete one; both
+// halves are pinned together, because either alone is inert.
+test('item 6 carries its outcome and item 7 declines to run on an incomplete migration', () => {
+  const setup = source('src/tools/setup.md');
+  const item6 = prose(
+    boundedSlice(
+      setup,
+      '6. **Migration and untracking (migration case only).**',
+      '\n7. **Offer a `CLAUDE.md`',
+    ),
+  );
+  const item7 = prose(setupClaudeMdImportItem(setup));
+
+  assert.match(
+    item6,
+    near("Record this item's outcome and carry it forward", 'the way item 5 carries', 120),
+    'item 6 must carry its outcome forward on the same mechanism item 5 uses',
+  );
+  for (const outcome of ['not applicable', 'complete', 'incomplete']) {
+    assert.ok(
+      item6.includes(`\`${outcome}\``),
+      `item 6's carried outcome must name the ${outcome} case`,
+    );
+  }
+  assert.match(
+    item6,
+    near('Item 7 reads that outcome', 'declines to run on an incomplete one', 120),
+    'item 6 must name item 7 as the consumer of the outcome it records',
+  );
+
+  assert.match(
+    item7,
+    near('An incomplete migration skips this item', 'checked before anything else here', 120),
+    'item 7 must gate on the migration outcome before its own checks',
+  );
+  assert.match(
+    item7,
+    near(
+      "run this item only where item 6's carried outcome is `not applicable` or `complete`",
+      'On `incomplete`, skip it entirely',
+      200,
+    ),
+    'the precondition must state both the admitted outcomes and the skip',
+  );
+  assert.match(
+    item7,
+    near('pose no fence, create no `AGENTS.md`, replace no `CLAUDE.md`', 'report the skip', 160),
+    'the skip must suppress both writes and the fence, and still be reported',
+  );
+  assert.match(
+    item7,
+    near('Skip rather than stop the run', 'Step 8 still has to report', 120),
+    'the shape must be a skip, not a run abort, so the reporting step still runs',
+  );
+
+  // The tempting alternative is to have item 6 rewind item 5's record instead. It is worse: item 7
+  // would classify the restored file as a pure prose pointer and write an import pointing at an
+  // `AGENTS.md` that does not exist, which this item forbids by name two bullets down.
+  assert.match(
+    item7,
+    near(
+      "Do not instead reset item 5's record to the snapshot state",
+      'write `@AGENTS.md` into a project that has no `AGENTS.md`',
+      300,
+    ),
+    'the rejected alternative must be named with the rule that rejects it',
+  );
+
+  // The gate has to reach the fence condition too, or a skipped item still reports itself as a run
+  // whose fence could not be posed — a different outcome with a different next step.
+  const ask = setupClaudeMdImportAsk(setupClaudeMdImportItem(setup));
+  assert.match(
+    ask.when,
+    /item 6 did not report an incomplete migration/,
+    'the fence condition must exclude the incomplete-migration case',
+  );
+
+  // And Step 8 owes the skip its own outcome, beside the ones the item can otherwise reach.
+  const summary = prose(section(setup, '### Step 8: Summary', '\n## '));
+  assert.match(
+    summary,
+    /because item 6 reported an incomplete migration and the item was skipped/,
+    'Step 8 must report the skip as its own item-7 outcome',
+  );
+});
+
 // Item 5 observes the `CLAUDE.md` state and may then write the marker into that very file; item 7
 // decides on what item 5 recorded. The two halves are only correct together, so they are pinned
 // together — the same carry-forward shape `<adr-convention>` uses from Step 2.

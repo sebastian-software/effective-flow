@@ -797,12 +797,34 @@ options:
      or update the marker after invalid JSON, failed required untracking, or failed target-state
      validation; the pre-write marker check above owns idempotency for an already-complete
      migration.
+   - **Record this item's outcome and carry it forward**, the way item 5 carries its `CLAUDE.md`
+     observation: `not applicable` where the locator selected no transitional source, `complete`
+     only where every step above succeeded and `configMigration.adr` was written, and `incomplete`
+     for every branch above that reported a failure and rolled back. Item 7 reads that outcome and
+     declines to run on an incomplete one, because its own decision rests on item 5's record and a
+     rollback here has withdrawn that record's basis.
 7. **Offer a `CLAUDE.md` that imports `AGENTS.md`.** Claude Code loads `CLAUDE.md` into every
    session and reads `AGENTS.md` only when something asks it to, so a project whose guidance lives
    in `AGENTS.md` reaches Claude Code reliably only through a `CLAUDE.md` that imports it. Offer
    that file as non-destructively as the marker step above: its whole content is the single line
    `@AGENTS.md`, it is created only where nothing is there, and an existing `CLAUDE.md` is replaced
    only where it carries nothing but a pointer.
+   - **An incomplete migration skips this item, checked before anything else here.** Item 6's
+     failure branches restore the ADR and the convention-marker file but leave the run going, and
+     this item decides on item 5's record — which those branches have just invalidated. The rule
+     below, decide on the observed state rather than the resulting one, holds only while nothing
+     between item 5 and here changed the file, and item 6's rollback is the one thing in this
+     workflow that does. Left ungated in the no-`AGENTS.md` case, this item would read a record
+     saying the marker went into `CLAUDE.md`, mint a minimal `AGENTS.md` naming the ADR item 6 just
+     rolled back, and replace the `CLAUDE.md` item 6 just restored — rebuilding the state the
+     rollback undid and destroying a file on the way, which defeats the rollback's own purpose of
+     letting a later run's locator select the same source again. So run this item only where item
+     6's carried outcome is `not applicable` or `complete`. On `incomplete`, skip it entirely: pose
+     no fence, create no `AGENTS.md`, replace no `CLAUDE.md`, and report the skip and its reason in
+     Step 8. Skip rather than stop the run, because Step 8 still has to report. Do not instead reset
+     item 5's record to the snapshot state: this item would then take the pure prose pointer branch
+     and write `@AGENTS.md` into a project that has no `AGENTS.md`, which the homeless-marker rule
+     below forbids by name.
    - **A symlink at the `CLAUDE.md` path is a hard stop**, evaluated **before** the state
      classification below and never softened into a reroute. A symlink at that path is never a
      write target — report the path and write nothing rather than writing through it, outside the
@@ -905,7 +927,7 @@ express behavior does not extend here: setup cannot work without a marker host, 
 requires a `CLAUDE.md` import.
 
 ```ask
-when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind
+when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration
 header: CLAUDE.md
 question: Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?
 options:
@@ -1095,7 +1117,8 @@ Report to the user:
   marker line named alongside it, nothing written because the file is content-bearing or already imports `AGENTS.md`,
   or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
   the revalidation immediately before the write — because the minimal `AGENTS.md` could not be
-  created exclusively, because the fence could not be
+  created exclusively, because item 6 reported an incomplete migration and the item was skipped
+  before its own checks, because the fence could not be
   posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
   the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
   therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final

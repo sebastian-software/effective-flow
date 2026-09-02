@@ -1423,7 +1423,7 @@ try {
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 3219,
     iterate: 1633,
-    setup: 1620,
+    setup: 1644,
     'apply-review': 1303,
     'apply-issues': 1146,
     cleanup: 994,
