@@ -167,3 +167,16 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
 4. Add the scenario's assertions to `test/merge-gate-eval.test.mjs`. Every refusal scenario asserts
    both that no `pr-merge` record exists **and** that the gate reached its decision, so a crashed run
    cannot pass; a scenario in which the gate should merge asserts exactly one `pr-merge` record.
+
+## Known deviation in the sandbox project
+
+Every archived run reports that it could not write its wisdom file: the scaffolded project has no
+`.gitignore`, so `.effective-flow/` is not ignored and the runtime-state write guard fails closed.
+The gate handles this correctly — it skips the mutation, says so, and carries its record in-session
+— and the guard verdict was unaffected in all five runs.
+
+It is still a scenario defect rather than a gate defect: a scenario should exercise the normal path,
+and this one forces a documented fallback. Fix it by having the scaffold write a `.gitignore`
+carrying `.effective-flow/` into the sandbox project, and re-run the scenario afterwards. It is
+deliberately **not** fixed in the commit that archived these five runs, because changing the
+scaffold would invalidate the evidence they represent.
