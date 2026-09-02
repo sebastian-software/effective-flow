@@ -1424,7 +1424,7 @@ try {
     'merge-gate': 3250,
     iterate: 1664,
     'apply-issues': 1516,
-    setup: 1510,
+    setup: 1566,
     'apply-review': 1334,
     'plan-issue': 1070,
     cleanup: 1025,

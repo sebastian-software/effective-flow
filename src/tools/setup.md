@@ -10,7 +10,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 ## Goal
 
 - enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
-- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`)
+- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
@@ -736,7 +736,7 @@ options:
    convention file that will carry the marker. Keep those snapshots only for the failure recovery
    in Step 6.
 
-5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
+5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process. Before writing anything here, record the `CLAUDE.md` state this step **observed** — absent, a symlink, or present with its content, and whether that content already carried a marker or an `@AGENTS.md` import — and carry that record forward to item 7 and Step 8 the way `<adr-convention>` is carried from Step 2, together with which file this step then wrote the marker into; item 7 decides on that record rather than on the file this step may just have changed.
 6. **Migration and untracking (migration case only).** If a transitional
    `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
    - In a Git repository, determine whether that exact source is tracked with
@@ -786,6 +786,59 @@ options:
      or update the marker after invalid JSON, failed required untracking, or failed target-state
      validation; the pre-write marker check above owns idempotency for an already-complete
      migration.
+7. **Offer a `CLAUDE.md` that imports `AGENTS.md`.** Claude Code loads `CLAUDE.md` into every
+   session and reads `AGENTS.md` only when something asks it to, so a project whose guidance lives
+   in `AGENTS.md` reaches Claude Code reliably only through a `CLAUDE.md` that imports it. Offer
+   that file as non-destructively as the marker step above: its whole content is the single line
+   `@AGENTS.md`, it is created only where nothing is there, and an existing `CLAUDE.md` is replaced
+   only where it carries nothing but a pointer.
+   - **A symlink at the `CLAUDE.md` path is a hard stop**, evaluated **before** the state
+     classification below and never softened into a reroute. A symlink at that path is never a
+     write target — report the path and write nothing rather than writing through it, outside the
+     repository. That covers both a live `ln -s AGENTS.md CLAUDE.md` and a broken symlink, which
+     would otherwise read as absent and be written through to an arbitrary path.
+   - **Decide on the state item 5 observed, not the state item 5 left.** Item 5 writes the marker
+     into an existing `CLAUDE.md` where the project has no `AGENTS.md`, so a fresh read here would
+     see the marker this run just wrote and silently decline the very case this step exists for.
+     Classify the `CLAUDE.md` state item 5 recorded, and do not re-read the file to classify it.
+   - **Never leave the marker homeless, and never write an import that resolves to nothing.** Item 5
+     writes the marker into an existing `CLAUDE.md` exactly when the project has no `AGENTS.md`, so
+     in that case replacing this file would delete the marker this run just wrote — the locator
+     fallback in `config-migration` reads it from `CLAUDE.md` — and would leave `@AGENTS.md`
+     pointing at a file that does not exist, which loads no guidance at all and is strictly worse
+     than the pointer it replaced. Where item 5's record shows that it wrote the marker into
+     `CLAUDE.md`, first create the minimal `AGENTS.md` carrying that marker, exactly as item 5's
+     third branch would have, and only then replace `CLAUDE.md`. Report both writes in Step 8.
+   - **Absent** → pose the fence below and create the file only on an affirmative answer.
+   - **A pure prose pointer** → pose the fence below, naming the exact line that would be replaced.
+     The predicate, applied to the state item 5 observed: no `**Effective Flow project setup:**`
+     marker and no legacy `**Firmo project setup:**` marker, no `@AGENTS.md` import already
+     present, and the file's only non-blank, non-heading content is a single line referring to
+     `AGENTS.md`. Anything else is content-bearing.
+   - **Content-bearing, or already importing** → write nothing, report that state, and do not pose
+     the fence at all. A `CLAUDE.md` that already imports `AGENTS.md` is the finished state.
+
+This fence is deliberately **unconditional** rather than guided-path only, for the reason
+`project-adr-convention` gives for its own: it decides whether a file is written to the project
+root rather than a presentation detail. The Express path poses it exactly as the guided path does,
+and a run that cannot pose it — unanswered, skipped, or non-interactive — writes nothing and
+reports that the fence could not be posed. There is no silent default on either path. Item 5's
+express behavior does not extend here: setup cannot work without a marker host, while nothing
+requires a `CLAUDE.md` import.
+
+```ask
+when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer
+header: CLAUDE.md
+question: Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?
+options:
+  - label: Yes
+    description: Write CLAUDE.md with the single line `@AGENTS.md`, replacing a pure prose pointer where one exists
+  - label: No
+    description: Write nothing; AGENTS.md stays the only convention file and Claude Code reads it only when asked
+```
+
+Item 7 is **not** part of the configuration. It declares no key, belongs to none of the Step 5
+blocks, and adds nothing to the ADR written in item 4.
 
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
@@ -958,6 +1011,14 @@ Report to the user:
   and — on Claude Code — what the following turn added, whether exactly one butler was found and
   which title its reply reported. State that no file above the repository root and no configuration
   key was changed by the step
+- for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
+  created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
+  line named, nothing written because the file is content-bearing or already imports `AGENTS.md`,
+  or nothing written because a symlink at that path was a hard stop, because the fence could not be
+  posed, or because the user declined. Where the marker had gone into `CLAUDE.md` and item 7
+  therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
+  location as that new `AGENTS.md`, so this bullet never contradicts the marker location reported
+  above. State that this step added no configuration key
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -973,7 +1034,8 @@ with nothing staged matches no row and emits nothing.
 ## Rules
 
 - Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
-  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
+  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
+  Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no

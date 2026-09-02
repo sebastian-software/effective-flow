@@ -28,6 +28,12 @@ Update the manifest and this table together only when an actual relationship cha
 
 ## The layered contract
 
+This document is canonical for the **mechanics** of ownership: the classification, the per-skill
+inventory, the two build-enforced halves of the ownership check, and the optional upstream audit.
+[`AGENTS.md`](../../AGENTS.md), section "Skill discovery", keeps the short form of the contract
+plus the **rule** it owns — run the ownership check whenever a tool, agent, or shared include is
+added or expanded.
+
 The earlier contract read “a skill informs the how, Effective Flow’s rules always win.” It is
 replaced by a **layered** model (the operative rule lives in `src/shared/skill-discovery.md`):
 
@@ -281,4 +287,5 @@ local upstream checkout.
 
 - `src/shared/skill-discovery.md` – the operative skill-discovery and authority contract.
 - [Architecture](architecture.md) – the overall structure of Effective Flow.
-- [`AGENTS.md`](../../AGENTS.md) – skill-discovery mechanics and contributor conventions.
+- [`AGENTS.md`](../../AGENTS.md) – the skill-discovery contract and contributor conventions;
+  the ownership mechanics are here.

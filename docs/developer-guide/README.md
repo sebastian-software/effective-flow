@@ -29,8 +29,14 @@ is no runtime application – you edit `src/`, never `dist/`.
 
 ## See also
 
-- [`AGENTS.md`](../../AGENTS.md) – canonical conventions for adding tools and agents, plus the
-  binding language, commit, and versioning rules.
+- [`AGENTS.md`](../../AGENTS.md) – the always-loaded contract, canonical for the **rules**:
+  language, delegation, commit and no-AI-attribution rules, the deprecated forwarding alias a tool
+  rename ships, the `CONTEXT_BUDGET_LINES` entry every tool needs, and no hand-bumped versions.
+  The **mechanics** those rules point at are canonical here — [`build-system.md`](build-system.md)
+  for placeholder syntax and for adding a tool or agent,
+  [`release-and-installation.md`](release-and-installation.md) for release-please, and
+  [`skill-ownership.md`](skill-ownership.md) for the ownership-check **mechanics** and the
+  per-skill classification.
 - [User Guide](../user-guide/README.md) – using Effective Flow (installation, tool reference,
   configuration, troubleshooting).
 - [Architecture and consistency review](../review/2026-08-31-architecture-and-consistency-review.md)

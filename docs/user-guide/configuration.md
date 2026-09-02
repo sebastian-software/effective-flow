@@ -602,8 +602,11 @@ change. In both paths, existing values and unknown rows are preserved unless a c
 explicitly confirmed.
 
 On write, setup creates or updates the living ADR and writes or corrects the convention-file
-marker. A new ADR uses `language.documentation.technical`; an existing ADR retains its envelope
-and prose language. Ordinary config readers do none of these operations.
+marker. As the last part of that write it also offers a one-line `CLAUDE.md` importing
+`AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer;
+that step adds no configuration key. A new ADR uses `language.documentation.technical`; an
+existing ADR retains its envelope and prose language. Ordinary config readers do none of these
+operations.
 
 ### Migrating `plan.markerLanguage`
 

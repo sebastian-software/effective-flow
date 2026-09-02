@@ -1,8 +1,11 @@
 # Release and installation
 
-This document describes how Effective Flow is versioned, published, and distributed. Canonical
-versioning rules are in [`AGENTS.md`](../../AGENTS.md), section "Versioning"; the concrete
-mechanisms (release-please, manager delivery, maintainer scripts, version stamp) follow here.
+This document describes how Effective Flow is versioned, published, and distributed. It is
+canonical for the **mechanics** — release-please wiring, manager delivery, maintainer scripts, the
+version stamp, and how a `Release-As:` footer is resolved. [`AGENTS.md`](../../AGENTS.md), section
+"Versioning", keeps the short form and stays canonical for the **rules**: never bump a version by
+hand, a deprecated alias carries no `!` and no `BREAKING CHANGE:`, and a mistakenly breaking
+published commit is pinned forward with `Release-As:` rather than rewritten.
 
 ## Versioning with release-please
 
@@ -58,6 +61,21 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    entry in the team catalog repository through Dalo. **This job is currently disabled** — see
    below. While it is enabled, a failure in this downstream job marks the release workflow as
    failed, but does not roll back the already published release, archive, or delivery commit.
+
+### A mistakenly breaking commit is pinned forward
+
+A tool rename that ships as a deprecated forwarding alias is additive, not a break, so its commit
+carries no `!` and no `BREAKING CHANGE:` footer. When an already-published commit on the release
+branch was nevertheless marked breaking for a change that is not one, the correction pins the
+version forward rather than rewriting that commit: the correcting change carries a
+`Release-As: <version>` footer in its commit body. release-please resolves that footer **before**
+it counts breaking commits, so the footer decides the next version outright, and it cleans itself
+up once that release is cut — it is a one-shot override bound to a single commit.
+
+The `release-as` key in the release-please configuration is the wrong instrument for the same job.
+It is not one-shot: it stays in effect until someone removes it, so it would silently freeze every
+later version at the pinned number instead of correcting one. Use the commit footer, never the
+configuration key, and never both.
 
 ### Automatic team-catalog update
 
@@ -487,4 +505,5 @@ node build.mjs
 
 - [`build-system.md`](build-system.md) – build flow and guards, including the version stamp.
 - [`architecture.md`](architecture.md) – repo structure and two-harness split.
-- [`AGENTS.md`](../../AGENTS.md) – canonical versioning rules.
+- [`AGENTS.md`](../../AGENTS.md) – the versioning **rules** (no hand bumps, no breaking marker on
+  an alias rename, `Release-As:` to pin forward); the release **mechanics** are canonical here.
