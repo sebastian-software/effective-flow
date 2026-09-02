@@ -1006,6 +1006,39 @@ test('the CLAUDE.md symlink hard stop is evaluated before the state classificati
   );
 });
 
+// Item 7 creates the minimal `AGENTS.md` on the strength of item 5's record that the path was
+// absent, and the ask fence sits in between. Without an exclusive create that record authorises
+// overwriting a file somebody else put there since — or writing through a symlink planted at it —
+// which is the one destructive outcome this step's own "as non-destructively as" framing rules out.
+test('item 7 creates the minimal AGENTS.md exclusively rather than on the record alone', () => {
+  const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
+
+  assert.match(
+    contract,
+    near(
+      'Create that minimal `AGENTS.md` exclusively',
+      'fails when anything is already there',
+      300,
+    ),
+    'the create must fail on an occupied path instead of overwriting it',
+  );
+  assert.match(
+    contract,
+    /a separate test and write is the same race one step smaller/,
+    'a test-then-write must be named as the race it still is',
+  );
+  assert.match(
+    contract,
+    near('stop, report the path', 'replace no `CLAUDE.md`', 160),
+    'a failed exclusive create must also stop the second write of the ordered pair',
+  );
+  assert.match(
+    contract,
+    near('write guard rather than a fresh classification', 'rule above intact', 160),
+    'the guard must be stated as compatible with deciding on the recorded state',
+  );
+});
+
 // Item 5 observes the `CLAUDE.md` state and may then write the marker into that very file; item 7
 // decides on what item 5 recorded. The two halves are only correct together, so they are pinned
 // together — the same carry-forward shape `<adr-convention>` uses from Step 2.

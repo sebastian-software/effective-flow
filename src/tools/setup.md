@@ -817,6 +817,15 @@ options:
      than the pointer it replaced. Where item 5's record shows that it wrote the marker into
      `CLAUDE.md`, first create the minimal `AGENTS.md` carrying that marker, exactly as item 5's
      third branch would have, and only then replace `CLAUDE.md`. Report both writes in Step 8.
+   - **Create that minimal `AGENTS.md` exclusively.** Item 5 reached its `CLAUDE.md` branch only
+     because `AGENTS.md` was absent at that earlier moment, and the fence has stood between that
+     observation and this write, so the path may now hold a file another process created or a
+     symlink it planted. Create it with an exclusive create that fails when anything is already
+     there, rather than testing the path and writing after: a separate test and write is the same
+     race one step smaller. Where the create fails because the path is occupied, stop, report the
+     path, and replace no `CLAUDE.md` — the marker must not be handed to a file this run did not
+     write. This is a write guard rather than a fresh classification, so it leaves the decide-on-the
+     recorded-state rule above intact.
    - **Revalidate the `CLAUDE.md` path immediately before writing it, and never reclassify on that
      read.** The fence stands between item 5's observation and this write, so the path can have
      become a symlink while the answer was pending, and the hard stop above cannot see that: it
@@ -1034,7 +1043,8 @@ Report to the user:
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, nothing written because the file is content-bearing or already imports `AGENTS.md`,
   or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
-  the revalidation immediately before the write — because the fence could not be
+  the revalidation immediately before the write — because the minimal `AGENTS.md` could not be
+  created exclusively, because the fence could not be
   posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
   the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
   therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
