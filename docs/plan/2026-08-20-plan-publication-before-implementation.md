@@ -208,18 +208,27 @@ the prerequisite change.
    non-interactive delegated run, skip the ask, publish nothing, and report that the question could
    not be posed.
 4. Verify the preconditions: the plan file exists at its final path; no staged changes are present;
-   no unrelated tracked modification blocks a branch switch; the resolved base branch exists. Stage
-   the plan file explicitly by path — never `git add -A` or `git add .`.
+   no unrelated tracked modification blocks a branch switch. Resolve `delivery.baseBranch` **once**
+   through `src/shared/base-branch-resolution.md` and carry **both** of its recorded results through
+   every step below — the **resolved base ref**, which a branch is created from, and the **resolved
+   local base branch**, which every push and checkout target uses. Verify that the resolved base ref
+   exists. Never reuse the configured value for both: with this repository's
+   `delivery.baseBranch: origin/develop` the ref is `origin/develop` while the local base branch is
+   `develop`, and passing the configured value where the local name belongs creates a remote branch
+   literally named `origin/develop`. Stage the plan file explicitly by path — never `git add -A` or
+   `git add .`.
 5. Determine first-publication versus republication from the receipt. Create the branch fresh from
-   the resolved base, or check out and update the existing one; abort on divergence.
+   the **resolved base ref**, or check out and update the existing one; abort on divergence.
 6. Commit the single file using the commit logic of `effective-flow commit` and the message rules of
    `src/shared/commit-message-rules.md`. Type `docs`; no `Co-Authored-By`; no AI attribution.
-7. Push. In direct-commit mode the push is `git push origin <branch>:<base-branch>` — deliberately
-   not `pr`'s `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote
-   branch instead of advancing the base. On success, fast-forward the local base onto the pushed
-   commit and delete the now-redundant local publication branch. On any refusal — protection,
-   non-fast-forward, missing remote, auth — the local base stays put and the run continues at step 8,
-   reporting the switch and its reason.
+7. Push. In direct-commit mode the push is
+   `git push <remote> <branch>:<resolved-local-base-branch>` — the remote and the local branch name
+   both taken from step 4's recorded results, never from the configured value — and deliberately not
+   `pr`'s `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote
+   branch instead of advancing the base. On success, fast-forward the **resolved local base branch**
+   onto the pushed commit and delete the now-redundant local publication branch. On any refusal —
+   protection, non-fast-forward, missing remote, auth — the local base stays put and the run
+   continues at step 8, reporting the switch and its reason.
 8. In pull-request mode (chosen or fallen back into): push the branch and delegate to
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
    `effective-flow pr` restores the checkout itself (steps 11–12); this fragment does not repeat that.
