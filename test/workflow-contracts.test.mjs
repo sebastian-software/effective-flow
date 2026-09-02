@@ -803,6 +803,13 @@ function setupClaudeMdImportItem(setup) {
   );
 }
 
+// Step 6 item 5 sets the marker. Cut like item 7's above, by its own literal opener and item 6's,
+// so a renumbered or deleted item aborts loudly instead of letting a neighbouring item satisfy the
+// assertions below. The consolidated write rule lives here, so several tests need this exact cut.
+function setupMarkerItem(setup) {
+  return boundedSlice(setup, '5. **Set the AGENTS.md marker.**', '\n6. **Migration and untracking');
+}
+
 function setupClaudeMdImportAsk(item) {
   const fences = [...item.matchAll(/```ask\n([\s\S]*?)\n```/g)];
   assert.equal(fences.length, 1, 'Step 6 item 7 must carry exactly one ask fence');
@@ -1097,6 +1104,108 @@ test('the CLAUDE.md symlink hard stop is evaluated before the state classificati
   );
 });
 
+// Round four closed the last unhardened write of this class — item 5's own marker update — and the
+// property is now stated once, in item 5, with two named instruments both items pick from. Pin it
+// where it lives: the property, each instrument with the reason it holds, the residue neither
+// closes, and the branch-to-instrument mapping that makes item 5's own three writes no-follow.
+test('Step 6 states the unraceable-write property once, with both named instruments', () => {
+  const rule = prose(setupMarkerItem(source('src/tools/setup.md')));
+
+  assert.match(
+    rule,
+    near(
+      'Every write this item and item 7 perform goes through a primitive that cannot be raced',
+      'validation and write do not re-resolve the path between them',
+      300,
+    ),
+    'the property must be stated for both items at once, not per write site',
+  );
+  assert.match(
+    rule,
+    /destination entry is replaced rather than traversed/,
+    'the second half of the property must name replacement rather than traversal',
+  );
+  assert.match(
+    rule,
+    /a path-based write never hold it — the same race one step smaller/,
+    'a test-then-write must be named as the race it still is',
+  );
+  // The old wording earned its adjacency from the absence of a question. That is exactly what the
+  // fourth review round refuted, so the rule must cover both cases rather than exempt item 5's.
+  assert.match(
+    rule,
+    /whether a confirmation fence separates the two or nothing does/,
+    'the race must be stated as independent of whether a question stands between test and write',
+  );
+
+  assert.match(
+    rule,
+    near('Exclusive create', 'fails when anything is already there', 300),
+    'the create instrument must fail on an occupied path instead of overwriting it',
+  );
+  assert.match(
+    rule,
+    near('a live symlink, or a dangling one', 'refuses without resolving', 160),
+    'the exclusive create must be stated to cover both symlink shapes',
+  );
+  assert.match(
+    rule,
+    near('temporary file in the same directory', 'created exclusively', 250),
+    'the staging file must be a same-directory exclusive create',
+  );
+  assert.match(
+    rule,
+    near(
+      'A rename removes the destination entry rather than resolving it',
+      'replaces a symlink there instead of following it',
+      200,
+    ),
+    'the rename must be justified by the property that makes it no-follow',
+  );
+  assert.match(
+    rule,
+    /rename across filesystems is not that operation/,
+    'the same-directory requirement must carry its reason',
+  );
+  assert.match(
+    rule,
+    /Never truncate and rewrite the live path/,
+    'a truncate-and-rewrite must be excluded as the non-atomic alternative it is',
+  );
+
+  // Both instruments leave the same residue, so it is stated once beside them: a link either read
+  // saw is reported, a link planted after the last read is destroyed rather than followed, and a
+  // directory swap is closed by neither. A contract claiming a report for the later link would be
+  // claiming a report no run emits.
+  assert.match(
+    rule,
+    near(
+      'planted after the last read is destroyed by the replacement rather than followed',
+      'rather than claiming the later link is reported too',
+      200,
+    ),
+    'the residual window must be reported as replaced, not as reported',
+  );
+  assert.match(
+    rule,
+    near('swap of the containing directory', 'does not need', 200),
+    'the one gap no path-based write closes must be named rather than implied covered',
+  );
+
+  // The finding of round four was item 5's own marker update, so its three branches must each name
+  // an instrument. Without this the rule would sit in item 5 and govern only item 7's writes.
+  assert.match(
+    rule,
+    near('marker update into an existing `AGENTS.md` or `CLAUDE.md`', 'takes the rename', 200),
+    "item 5's own marker update must be performed with the rename, not by path",
+  );
+  assert.match(
+    rule,
+    near("third branch's minimal `AGENTS.md`", 'takes the exclusive create', 160),
+    "item 5's creating branch must be performed with the exclusive create",
+  );
+});
+
 // Item 7 creates the minimal `AGENTS.md` on the strength of item 5's record that the path was
 // absent, and the ask fence sits in between. Without an exclusive create that record authorises
 // overwriting a file somebody else put there since — or writing through a symlink planted at it —
@@ -1106,17 +1215,8 @@ test('item 7 creates the minimal AGENTS.md exclusively rather than on the record
 
   assert.match(
     contract,
-    near(
-      'Create that minimal `AGENTS.md` exclusively',
-      'fails when anything is already there',
-      300,
-    ),
-    'the create must fail on an occupied path instead of overwriting it',
-  );
-  assert.match(
-    contract,
-    /a separate test and write is the same race one step smaller/,
-    'a test-then-write must be named as the race it still is',
+    /Create that minimal `AGENTS.md` with item 5's exclusive create/,
+    'the create must name the instrument item 5 defines rather than a second one of its own',
   );
   assert.match(
     contract,
@@ -1135,17 +1235,24 @@ test('item 7 creates the minimal AGENTS.md exclusively rather than on the record
 // write itself has to be the no-follow operation, or the pre-write read is the same test-then-write
 // race the `AGENTS.md` create three bullets up already refuses. The instrument differs by branch,
 // so both halves are pinned — an exclusive create cannot express a replacement, and a rename cannot
-// express the report-on-occupied outcome the absent branch owes the hard stop.
+// express the report-on-occupied outcome the absent branch owes the hard stop. Since round four the
+// property and both instruments are stated once in item 5; what is pinned here is that item 7 picks
+// one per branch and restates neither.
 test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
 
   assert.match(
     contract,
     near(
-      'validation and write do not re-resolve the path between them',
-      'destination entry is replaced rather than traversed',
-      200,
+      "Write through item 5's instruments",
+      'not through the path the revalidation just checked',
+      160,
     ),
+    'the write must take the shared instrument rather than the path the revalidation checked',
+  );
+  assert.match(
+    contract,
+    near('revalidation cannot close the gap it opens', 'the instrument does', 120),
     'the write must be stated as a property, not left to the revalidation to guarantee',
   );
   assert.match(
@@ -1159,11 +1266,6 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   );
   assert.match(
     contract,
-    near('a live symlink, or a dangling one', 'refuses without resolving', 120),
-    'the exclusive create must be stated to cover both symlink shapes',
-  );
-  assert.match(
-    contract,
     near(
       'Where item 5 recorded a pointer to replace',
       'exclusive create cannot express that write at all',
@@ -1173,42 +1275,42 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   );
   assert.match(
     contract,
-    near('temporary file in the same directory', 'created exclusively', 200),
-    'the staging file must be a same-directory exclusive create',
-  );
-  assert.match(
-    contract,
     near(
-      'A rename removes the destination entry rather than resolving it',
-      'replaces a symlink there instead of following it',
-      200,
+      'write the single line through the same-directory temporary file and rename',
+      'pointer to replace',
+      300,
     ),
-    'the rename must be justified by the property that makes it no-follow',
-  );
-  assert.match(
-    contract,
-    /Never truncate and rewrite the live path/,
-    'a truncate-and-rewrite must be excluded as the non-atomic alternative it is',
+    'the replacement branch must name the rename instrument it takes',
   );
 
   // Post-fix the two stops are honest about different things, and the difference has to be said:
   // the record-side and pre-write reads still report a symlink and write nothing, while a link
-  // planted after the last read is destroyed by the replacement. A contract that kept claiming
-  // "reported" for that case would be claiming a report no run emits.
+  // planted after the last read is destroyed by the replacement. Item 5's residue rule states that;
+  // item 7 names which of its two stops keeps the report.
   assert.match(
     contract,
     near(
-      'planted after the last read is destroyed by the replacement rather than followed',
-      'rather than claiming the later link is reported too',
+      'The two stops therefore promise different things, and both are honest',
+      'the revalidation keeps the report',
       200,
     ),
-    'the residual window must be reported as replaced, not as reported',
+    'the two stops must be distinguished where the second one is performed',
   );
-  assert.match(
-    contract,
-    near('swap of the containing directory', 'does not need', 200),
-    'the one gap no path-based write closes must be named rather than implied covered',
-  );
+
+  // Four rounds of review produced four separately worded guards around one property; the fix was
+  // to state it once. Pin that it stays stated once: a copy re-grown here is the regression.
+  for (const restated of [
+    /validation and write do not re-resolve the path between them/,
+    /A rename removes the destination entry rather than resolving it/,
+    /Never truncate and rewrite the live path/,
+    /swap of the containing directory/,
+  ]) {
+    assert.doesNotMatch(
+      contract,
+      restated,
+      "item 7 must reference item 5's write rule rather than restate it",
+    );
+  }
 });
 
 // "Decide on the state item 5 observed" is sound only while nothing between item 5 and item 7
@@ -1354,9 +1456,7 @@ test('Step 8 reports the CLAUDE.md import outcome and never contradicts the mark
 
 test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not a fresh read', () => {
   const setup = source('src/tools/setup.md');
-  const item5 = prose(
-    boundedSlice(setup, '5. **Set the AGENTS.md marker.**', '\n6. **Migration and untracking'),
-  );
+  const item5 = prose(setupMarkerItem(setup));
   const item7 = prose(setupClaudeMdImportItem(setup));
 
   assert.match(
@@ -1412,13 +1512,7 @@ test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not
 // protect that write. The two stops are separate applications of one rule, and this pins the earlier
 // one — without it a symlinked `CLAUDE.md` receives the marker and item 7 only reports it afterwards.
 test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
-  const item5 = prose(
-    boundedSlice(
-      source('src/tools/setup.md'),
-      '5. **Set the AGENTS.md marker.**',
-      '\n6. **Migration and untracking',
-    ),
-  );
+  const item5 = prose(setupMarkerItem(source('src/tools/setup.md')));
 
   assert.match(
     item5,
@@ -1440,17 +1534,32 @@ test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
     'both symlink shapes must send the marker to the minimal AGENTS.md branch',
   );
   assert.match(item5, /no softened hard stop but a different write/);
-  // Item 7 calls a separate test and write "the same race one step smaller", and item 5 does exactly
-  // that. The difference is the fence: item 5 poses none, so nothing separates its test from its
-  // write. Pin the reason, or the two bullets read as one rule applied inconsistently.
+  // This test used to earn its safety from adjacency — item 5 poses no fence, so nothing separates
+  // its test from its write. Round four refuted that: the gap is at the filesystem, not at the
+  // question. So the bullet must now say what the test decides (which file hosts the marker) and
+  // disclaim the adjacency it once relied on; the write itself is held by the rule above instead.
   assert.match(
     item5,
     near(
-      'its test and its write are one step',
-      "unlike item 7's, which the confirmation fence separates",
+      'That test decides host selection, not write safety',
+      'the rename above keeps the write',
       200,
     ),
-    'item 5 must say why it needs no revalidation of its own',
+    'the no-follow test must be scoped to host selection rather than to write safety',
+  );
+  assert.match(
+    item5,
+    near(
+      'needs no revalidation of its own the way item 7 does',
+      'claims no guarantee from adjacency',
+      160,
+    ),
+    'item 5 must say why it needs no revalidation without claiming adjacency as the guarantee',
+  );
+  assert.doesNotMatch(
+    item5,
+    /its test and its write are one step/,
+    'the refuted adjacency claim must not survive anywhere in item 5',
   );
 });
 
