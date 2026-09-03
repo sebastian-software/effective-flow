@@ -145,7 +145,7 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   | `committed`           | The plan is on the base branch, and the local base points at it.            | Direct-commit mode, after the push succeeded **and** the local base was fast-forwarded onto it |
   | `pushed-not-merged`   | The commit is on the remote base, but the local base was not moved onto it. | Direct-commit mode, after a successful push whose local fast-forward then failed               |
   | `pull-request-open`   | The plan is on a publication branch with an open pull request.              | Pull-request mode, after `effective-flow pr` returned a URL, **before** the return switch      |
-  | `branch-pushed`       | The publication branch is on the remote, but no pull request exists for it. | Pull-request mode, after a push whose `pr` delegation returned no URL and preserved the branch |
+  | `branch-pushed`       | The publication branch is on the remote; no pull request is **confirmed**.  | Pull-request mode, after a push whose `pr` delegation returned no URL and preserved the branch |
   | `pull-request-merged` | That pull request has since merged, so the plan is on the base.             | A later republication run that reads `pull-request-open` and observes the pull request merged  |
   | `pull-request-closed` | That pull request was closed without merging; the branch may still exist.   | A later republication run that reads `pull-request-open` and observes it closed unmerged       |
 
@@ -154,9 +154,23 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   run treating either as unpublished would create a second branch for one plan, or push onto an
   existing one it never verified. A republication run reading either looks the branch up first: where
   it still exists and carries this plan, it reuses it and opens — or reopens — the pull request; where
-  it does not, it publishes afresh and says so. `pushed-not-merged` is the direct-commit counterpart:
-  the plan is published and only the operator's local base lags, so a later run fast-forwards it
-  rather than republishing, and reports if it still cannot.
+  it does not, it publishes afresh and says so.
+
+  **`branch-pushed` records an unconfirmed pull request, never a proven absent one.**
+  `effective-flow pr` returns no URL both when creation genuinely failed and when creation may have
+  succeeded while its confirmation lookup did not run, and it forbids retrying creation in that state
+  (`src/tools/pr.md:258-260`). So a run resuming from `branch-pushed` **searches the forge for an
+  existing pull request on that branch before creating one**, and creates one only when the search
+  ran and found none. Where the search cannot run, it reports the unconfirmed state and creates
+  nothing — the one outcome this state exists to prevent is a second pull request for one plan.
+
+  `pushed-not-merged` is the direct-commit counterpart: the plan is published and only the operator's
+  local base lags, so a later run fast-forwards it rather than republishing, and reports if it still
+  cannot. **The publication branch survives that state**, which is the exception to step 7's deletion
+  rule: deletion is what makes the branch redundant, and it is redundant only once the local base
+  actually carries the pushed commit. The final checkout is the resolved return branch in both cases,
+  reached by the same switch step 8 performs, and the run reports which branch it is standing on and
+  that the local base still lags.
 
   Two consequences are stated rather than left to be derived. A **refused** push writes no receipt at
   all in direct-commit mode — the run falls back to pull-request mode and the receipt it eventually
@@ -239,11 +253,21 @@ the prerequisite change.
    so the base resolution and the publishability checks of step 4 run **first**. Split step 4 at the
    mutation boundary rather than moving it wholesale: every read in it — resolving
    `delivery.baseBranch`, deriving the remote per base shape, confirming the resolved base ref
-   exists, and the working-tree preconditions — happens here, and **no Git mutation does**. Where
+   exists, and the working-tree preconditions — happens here.
+
+   **The one Git operation before consent is the base fetch, and it is named rather than denied.**
+   Canonical resolution runs `git fetch REMOTE BRANCH` for a remote base
+   (`src/shared/base-branch-resolution.md`), so this step is not literally read-only. What it must
+   not do is touch anything the user would have to undo: it writes **no** commit, moves **no** local
+   branch, changes **no** checked-out file and stages nothing. Updating a remote-tracking ref and the
+   object store is what lets the question name a target that actually exists, and a failed fetch is
+   exactly the unavailability the ask must suppress itself on — deferring it past consent would put
+   the question first and the fact second. Where
    that resolution finds publication unavailable, pose no question at all, publish nothing, and
    report which case applied. Then run the content check and ask once, with the findings rendered
    inside that one question. On a non-interactive delegated run, skip the ask, publish nothing, and
    report that the question could not be posed.
+
 4. Carry step 3's already-resolved results forward and perform the first Git mutation only here, so
    nothing below re-resolves a value the question was posed against. The preconditions it verified:
    the plan file exists at its final path; no staged changes are present;
@@ -265,7 +289,9 @@ the prerequisite change.
    4's recorded results, never from the configured value — and deliberately not `pr`'s
    `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote branch
    instead of advancing the base. On success, fast-forward the **resolved local base branch** onto
-   the pushed commit and delete the now-redundant local publication branch. On any refusal —
+   the pushed commit and delete the now-redundant local publication branch — **redundant only once
+   the local base actually carries that commit**, so a failed fast-forward keeps the branch and
+   records `pushed-not-merged`. On any refusal —
    protection, non-fast-forward, missing remote, auth — the local base stays put and the run
    continues at step 8, reporting the switch and its reason.
 
@@ -514,6 +540,9 @@ The change is complete when every criterion below holds simultaneously.
       publication: `branch-pushed` and `pull-request-closed` look the branch up and reuse it when it
       carries this plan, and `pushed-not-merged` fast-forwards the local base instead of
       republishing.
+- [ ] A test asserts that `branch-pushed` searches for an existing pull request before creating one
+      and creates none when that search cannot run, and that `pushed-not-merged` keeps the
+      publication branch — the stated exception to the deletion rule — and names the final checkout.
 - [ ] A test asserts the content-check class list by literal: private key, token, `password`,
       `secret`, `api_key`, `/Users/`, `/home/`; and that `src/shared/` and `docs/plan/` are named as
       explicit non-findings.
