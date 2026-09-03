@@ -136,22 +136,35 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   it can read rather than one it has to migrate. That is a deliberate cost: some fields have no reader
   until (c) ships.
 
-  **`state` has exactly three allowed values, and each has one write point.** The set is closed: a
+  **`state` has exactly six allowed values, and each has one write point.** The set is closed: a
   reader that meets any other value treats the receipt as unreadable and falls back to its no-receipt
   path rather than guessing, which is what lets delivery (c) interpret it offline.
 
-  | Value                 | Meaning                                                         | Written                                                                                                  |
-  | --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-  | `committed`           | The plan is on the base branch as a direct commit.              | Step 9 of direct-commit mode, after the push succeeded **and** the local base was fast-forwarded onto it |
-  | `pull-request-open`   | The plan is on a publication branch with an open pull request.  | Step 9 of pull-request mode, after `effective-flow pr` returned a URL                                    |
-  | `pull-request-merged` | That pull request has since merged, so the plan is on the base. | A later republication run that reads a `pull-request-open` receipt and observes the pull request merged  |
+  | Value                 | Meaning                                                                     | Written                                                                                        |
+  | --------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+  | `committed`           | The plan is on the base branch, and the local base points at it.            | Direct-commit mode, after the push succeeded **and** the local base was fast-forwarded onto it |
+  | `pushed-not-merged`   | The commit is on the remote base, but the local base was not moved onto it. | Direct-commit mode, after a successful push whose local fast-forward then failed               |
+  | `pull-request-open`   | The plan is on a publication branch with an open pull request.              | Pull-request mode, after `effective-flow pr` returned a URL, **before** the return switch      |
+  | `branch-pushed`       | The publication branch is on the remote, but no pull request exists for it. | Pull-request mode, after a push whose `pr` delegation returned no URL and preserved the branch |
+  | `pull-request-merged` | That pull request has since merged, so the plan is on the base.             | A later republication run that reads `pull-request-open` and observes the pull request merged  |
+  | `pull-request-closed` | That pull request was closed without merging; the branch may still exist.   | A later republication run that reads `pull-request-open` and observes it closed unmerged       |
 
-  Two consequences are stated rather than left to be derived. A refused push writes **no** receipt at
-  all in direct-commit mode — the run falls back to step 8 and the receipt it eventually writes is
-  `pull-request-open` — so no state ever describes an attempted publication. And `pull-request-merged`
-  is the only value a run other than the publishing one writes, which is why it is observed rather
-  than assumed: a republication run that cannot reach the forge keeps the receipt at
-  `pull-request-open` and reports that it could not confirm the merge.
+  **The three recovery states exist because a later run must not mistake them for a fresh
+  publication.** `branch-pushed` and `pull-request-closed` both leave a real branch on the remote, so a
+  run treating either as unpublished would create a second branch for one plan, or push onto an
+  existing one it never verified. A republication run reading either looks the branch up first: where
+  it still exists and carries this plan, it reuses it and opens — or reopens — the pull request; where
+  it does not, it publishes afresh and says so. `pushed-not-merged` is the direct-commit counterpart:
+  the plan is published and only the operator's local base lags, so a later run fast-forwards it
+  rather than republishing, and reports if it still cannot.
+
+  Two consequences are stated rather than left to be derived. A **refused** push writes no receipt at
+  all in direct-commit mode — the run falls back to pull-request mode and the receipt it eventually
+  writes is `pull-request-open` or `branch-pushed` — so no state ever describes a publication that
+  never reached the remote. And the last two values are the only ones a run other than the publishing
+  one writes, which is why both are observed rather than assumed: a republication run that cannot
+  reach the forge leaves the receipt at `pull-request-open` and reports that it could not confirm
+  either outcome.
 
   The receipt is runtime state under `.effective-flow/`, so the new fragment carries the canonical
   runtime-state guard. `findRuntimeStateSafetyViolations` scans a shared fragment only when it is
@@ -492,10 +505,15 @@ The change is complete when every criterion below holds simultaneously.
       the remote, the pull-request URL, the commit hash, and the content hash as receipt fields, and
       locates the receipt under `.effective-flow/`. The prerequisite plan's delivery (c) requires the
       `state` field; this plan writes it and defines its values.
-- [ ] A test asserts the closed `state` vocabulary by literal — `committed`, `pull-request-open`,
-      `pull-request-merged` and no fourth value — and that the fragment names one write point per
-      value, including that a refused push writes no receipt in direct-commit mode and that an
-      unreachable forge leaves a `pull-request-open` receipt unchanged.
+- [ ] A test asserts the closed `state` vocabulary by literal — `committed`, `pushed-not-merged`,
+      `pull-request-open`, `branch-pushed`, `pull-request-merged`, `pull-request-closed` and no
+      seventh value — and that the fragment names one write point per value, including that a refused
+      push writes no receipt in direct-commit mode and that an unreachable forge leaves a
+      `pull-request-open` receipt unchanged.
+- [ ] A test asserts the three recovery states resolve to branch reuse rather than a fresh
+      publication: `branch-pushed` and `pull-request-closed` look the branch up and reuse it when it
+      carries this plan, and `pushed-not-merged` fast-forwards the local base instead of
+      republishing.
 - [ ] A test asserts the content-check class list by literal: private key, token, `password`,
       `secret`, `api_key`, `/Users/`, `/home/`; and that `src/shared/` and `docs/plan/` are named as
       explicit non-findings.
