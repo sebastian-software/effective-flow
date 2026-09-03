@@ -104,7 +104,7 @@ This plan consequently **writes** receipts and does not change `worktree-integra
 
 - **The branch is fresh on first publication and reused on republication.** These are the two halves
   of one rule, not a contradiction: the first publication of a plan creates
-  `<delivery.branchPrefix>/plan/<plan-slug>` from the resolved base; a later publication of the same
+  `<delivery.branchPrefix>/plan/<plan-file-stem>` from the resolved base; a later publication of the same
   plan commits on top of the existing branch so that one plan keeps one pull request, consistent with
   `src/shared/worktree-integration.md:348-353`. Divergence between the local and the remote branch
   aborts and reports; it is never reconciled by rewriting history.
@@ -221,10 +221,19 @@ the prerequisite change.
    `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.returnBranch`, `plan.dir`,
    `language.git`, `language.forge`, the run state, and the absolute path of the finished plan file.
 2. Resolve the publication mode per the table below.
-3. Run the content check, then ask once, with the findings rendered inside that one question. On a
-   non-interactive delegated run, skip the ask, publish nothing, and report that the question could
-   not be posed.
-4. Verify the preconditions: the plan file exists at its final path; no staged changes are present;
+3. **Resolve everything the question must name, before asking — read-only.** The ask names the
+   concrete remote and target branch, and it must suppress itself where publication is unavailable,
+   so the base resolution and the publishability checks of step 4 run **first**. Split step 4 at the
+   mutation boundary rather than moving it wholesale: every read in it — resolving
+   `delivery.baseBranch`, deriving the remote per base shape, confirming the resolved base ref
+   exists, and the working-tree preconditions — happens here, and **no Git mutation does**. Where
+   that resolution finds publication unavailable, pose no question at all, publish nothing, and
+   report which case applied. Then run the content check and ask once, with the findings rendered
+   inside that one question. On a non-interactive delegated run, skip the ask, publish nothing, and
+   report that the question could not be posed.
+4. Carry step 3's already-resolved results forward and perform the first Git mutation only here, so
+   nothing below re-resolves a value the question was posed against. The preconditions it verified:
+   the plan file exists at its final path; no staged changes are present;
    no unrelated tracked modification blocks a branch switch. Resolve `delivery.baseBranch` **once**
    through `src/shared/base-branch-resolution.md` and carry **both** of its recorded results through
    every step below — the **resolved base ref**, which a branch is created from, and the **resolved
@@ -329,9 +338,13 @@ that cannot publish; two options when the mode is resolved, three when it must a
 
 ### Branch and commit shape
 
-- Branch: `<delivery.branchPrefix>/plan/<plan-slug>`, where `<plan-slug>` is the slug part of the
-  plan file name without the date prefix. Here that is
-  `effective-flow/plan/plan-publication-before-implementation`.
+- Branch: `<delivery.branchPrefix>/plan/<plan-file-stem>`, where `<plan-file-stem>` is the plan file
+  name without its `.md` extension — **including the date**. Here that is
+  `effective-flow/plan/2026-08-20-plan-publication-before-implementation`. The date is what makes the
+  name unique: plan file names are unique by date plus slug, so a format that discarded the date
+  would send a later plan with the same title onto an unrelated existing branch, local or remote.
+  Before reusing an existing branch, verify it is this plan's own — its tip must carry exactly this
+  plan file at this path — and stop with a report rather than committing onto a branch that is not.
 - Exactly one plan is staged: `<plan.dir>/<file>.md`, plus `<plan.dir>/archive/<file>.md` when a
   revision run left an unstaged move back from the archive. A publication commit containing anything
   else is a defect.
