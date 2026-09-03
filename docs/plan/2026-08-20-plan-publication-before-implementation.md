@@ -247,9 +247,17 @@ the prerequisite change.
 
 8. In pull-request mode (chosen or fallen back into): push the branch and delegate to
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
-   `effective-flow pr` restores the checkout itself (steps 11–12); this fragment does not repeat that.
-9. Write the receipt, then — after `pr` has restored the checkout — re-materialize the plan file as
-   an untracked copy in the working tree.
+   **`effective-flow pr` restores no checkout** — `src/tools/pr.md:261-263` states that it never
+   switches or otherwise restores one, because it did not create or change one — so this fragment
+   owns the return itself. After `pr` returns its URL, switch back to the resolved return branch
+   (`delivery.returnBranch`, `auto` meaning the branch the run started on) and leave the publication
+   branch in place locally and remotely. A refused or impossible switch — an unrelated tracked
+   modification, a missing return branch — is reported and stops before step 9 rather than being
+   forced; the pull request already exists and is not rolled back.
+9. Write the receipt, then — standing on the restored return branch — re-materialize the plan file as
+   an untracked copy in the working tree. That copy is what makes the published plan visible from the
+   base branch, so it is written only after step 8's switch is confirmed; on a reported failed switch
+   the receipt still records the publication and the copy is left to the operator.
 10. Wire the fragment into `plan.md`: the `lazy-include` fence, Phase 6c, the moved final write, the
     amended rules, the extended Phase 7 report, the `catalogHint`.
 11. Update `next-steps.md`, its line-52 prose, and the `tool-flow.md` mirror; then the three
@@ -448,8 +456,11 @@ The change is complete when every criterion below holds simultaneously.
       comparison for "already published".
 - [ ] A test asserts all seven report shapes are present in the report-vocabulary section.
 - [ ] A test asserts all eight edge cases are present as headed or bolded entries.
-- [ ] A test asserts the return-to-base behavior: `effective-flow pr` restores the checkout, and the
-      fragment re-materializes the untracked copy afterwards and prints its path.
+- [ ] A test asserts the return-to-base behavior: **the fragment itself** switches back to the
+      resolved return branch after `effective-flow pr` returns — `pr` restores no checkout
+      (`src/tools/pr.md:261-263`) — and re-materializes the untracked copy afterwards and prints its
+      path. A test also asserts the failed-switch path: the receipt is written, the copy is not, and
+      the run reports the branch it is standing on.
 - [ ] A test derives the `plan` rows through `parseNextStepsTable` and `edge.tool === 'plan'` — not by
       a `startsWith('| plan')` string match, which also matches `plan-issue` — and asserts exactly six
       rows whose conditions are the six literals specified above.
