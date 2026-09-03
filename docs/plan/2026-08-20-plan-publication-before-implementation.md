@@ -557,19 +557,26 @@ The change is complete when every criterion below holds simultaneously.
 
 ## Open points
 
-- **Non-blocking — the untracked twin is never removed automatically.** The receipt's content hash
-  detects divergence, but nothing deletes the leftover working-tree copy, so the checkout collision
-  after a merged plan pull request remains a manual remediation. The prerequisite change's own
-  main-checkout cleanup covers the copy left at the **archival** point, not this one, which is left at
-  the **publication** point. **Re-entry:** decide once the collision has been observed in practice
-  which run should remove a working-tree copy identical to a file it just published or merged.
-- **Non-blocking — `effective-flow concept` keeps writing an unpublished artifact,** which is now
-  visibly asymmetric to `plan`. Deliberately out of scope. **Re-entry:** revisit if concepts start
-  being used as a basis for parallel work.
+- No open points.
 
 ## Plan review
 
 **Result:** Approved
+
+### Follow-ups after delivery
+
+Neither blocks implementation, so neither is an open point; both are recorded here so the clarity
+gate reads this plan as actionable while the observations survive.
+
+- **The untracked twin is never removed automatically.** The receipt's content hash detects
+  divergence, but nothing deletes the leftover working-tree copy, so the checkout collision after a
+  merged plan pull request remains a manual remediation. The prerequisite change's own main-checkout
+  cleanup covers the copy left at the **archival** point, not this one, which is left at the
+  **publication** point. **Re-entry:** decide once the collision has been observed in practice which
+  run should remove a working-tree copy identical to a file it just published or merged.
+- **`effective-flow concept` keeps writing an unpublished artifact,** which is now visibly asymmetric
+  to `plan`. Deliberately out of scope. **Re-entry:** revisit if concepts start being used as a basis
+  for parallel work.
 
 ### Summary
 
