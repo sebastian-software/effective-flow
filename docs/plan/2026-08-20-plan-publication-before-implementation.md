@@ -169,8 +169,21 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   cannot. **The publication branch survives that state**, which is the exception to step 7's deletion
   rule: deletion is what makes the branch redundant, and it is redundant only once the local base
   actually carries the pushed commit. The final checkout is the resolved return branch in both cases,
-  reached by the same switch step 8 performs, and the run reports which branch it is standing on and
-  that the local base still lags.
+  reached by **direct-commit mode's own return switch in step 7** — step 8 is confined to
+  pull-request mode and cannot serve it — and the run reports which branch it is standing on and
+  whether the local base still lags.
+
+  **`pull-request-merged` needs a branch transition, because a squash merge leaves the old branch
+  unmergeable.** `delivery.mergeMethod` defaults to `squash` and is `squash` in this repository, so
+  the base gains a single new commit that the publication branch does not contain and is not
+  descended from. Committing a revision onto that retained branch would therefore reopen the plan
+  file as an add/add conflict against the squashed base rather than as an update. So a run reading
+  `pull-request-merged` **does not reuse that branch**: it deletes it locally and remotely once the
+  merge is observed, and republication starts a fresh branch from the refreshed base under the same
+  dated name, which now resolves to a new branch. That is a non-rewriting transition — nothing is
+  rebased, amended or force-pushed; one branch ends and another begins — and it is why the state
+  exists rather than collapsing into `committed`: the plan is on the base, but the path back to
+  editing it differs.
 
   Two consequences are stated rather than left to be derived. A **refused** push writes no receipt at
   all in direct-commit mode — the run falls back to pull-request mode and the receipt it eventually
@@ -289,9 +302,14 @@ the prerequisite change.
    4's recorded results, never from the configured value — and deliberately not `pr`'s
    `git push -u origin <head-branch>` (`src/tools/pr.md:147`), which would create a remote branch
    instead of advancing the base. On success, fast-forward the **resolved local base branch** onto
-   the pushed commit and delete the now-redundant local publication branch — **redundant only once
-   the local base actually carries that commit**, so a failed fast-forward keeps the branch and
-   records `pushed-not-merged`. On any refusal —
+   the pushed commit. **Switch to the resolved return branch before deleting anything**: the run is
+   standing on the publication branch, and Git refuses to delete the branch that is checked out. The
+   return switch is therefore direct-commit mode's own step, not a borrowing of step 8, which is
+   confined to pull-request mode — it clears the untracked twin the same way step 8 does, and a
+   refused switch is reported and leaves the run where it stands. Only then delete the
+   now-redundant local publication branch — **redundant only once the local base actually carries
+   that commit**, so a failed fast-forward keeps the branch, records `pushed-not-merged`, and still
+   returns to the return branch. On any refusal of the push itself —
    protection, non-fast-forward, missing remote, auth — the local base stays put and the run
    continues at step 8, reporting the switch and its reason.
 
@@ -314,6 +332,15 @@ the prerequisite change.
      than that base, publication is unavailable in both modes — report which of the two applied and
      publish nothing. Never fall back to `origin`, to the single configured remote, or to the
      current branch's upstream.
+
+     **Refresh that upstream and branch from its remote-tracking ref.** Canonical resolution fetches
+     nothing for a slashless value, so the local branch may simply be behind — the ordinary state of
+     a checkout nobody just pulled — and branching from it would build the publication commit on a
+     stale head and earn a non-fast-forward rejection even though the upstream is healthy. Fetch the
+     discovered upstream and create the branch from **that remote-tracking ref**, while the push and
+     checkout targets stay the local base branch name. This mirrors `pr`'s remote-not-configured
+     arm, and it is the same split the two-result rule already makes everywhere else: the ref is
+     what you branch from, the local name is what you push to.
 
 8. In pull-request mode (chosen or fallen back into): push the branch and delegate to
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
@@ -543,6 +570,12 @@ The change is complete when every criterion below holds simultaneously.
 - [ ] A test asserts that `branch-pushed` searches for an existing pull request before creating one
       and creates none when that search cannot run, and that `pushed-not-merged` keeps the
       publication branch — the stated exception to the deletion rule — and names the final checkout.
+- [ ] A test asserts the `pull-request-merged` transition: the retained branch is deleted rather than
+      reused, republication branches fresh from the refreshed base, and the fragment names the squash
+      merge as the reason without prescribing a rebase, amend or force-push.
+- [ ] A test asserts that direct-commit mode performs its **own** return switch before deleting the
+      publication branch, and that the slashless-base arm branches from the fetched remote-tracking
+      ref of the discovered upstream while pushing to the local base branch name.
 - [ ] A test asserts the content-check class list by literal: private key, token, `password`,
       `secret`, `api_key`, `/Users/`, `/home/`; and that `src/shared/` and `docs/plan/` are named as
       explicit non-findings.
