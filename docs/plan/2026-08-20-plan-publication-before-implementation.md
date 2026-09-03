@@ -109,6 +109,12 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   `src/shared/worktree-integration.md:348-353`. Divergence between the local and the remote branch
   aborts and reports; it is never reconciled by rewriting history.
 
+  **One exception, and it is a receipt state rather than a case of this rule:** a plan whose
+  publication pull request has already **merged** (`pull-request-merged`) starts a fresh branch
+  instead, because under the default squash merge the old branch does not contain the base's commit.
+  See the receipt-state model for why that is a non-rewriting transition. Reuse governs a publication
+  still in flight; it was never meant to reach one that already landed.
+
 - **The fallback direction is one-way: direct commit may become a pull request, never the reverse.**
   A refused push to a protected base is a repository policy statement, and a pull request is the
   mechanism that protection prescribes — so this is compliance, not a workaround. It is deliberately
