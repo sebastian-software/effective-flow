@@ -271,15 +271,28 @@ the prerequisite change.
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
    **`effective-flow pr` restores no checkout** — `src/tools/pr.md:261-263` states that it never
    switches or otherwise restores one, because it did not create or change one — so this fragment
-   owns the return itself. After `pr` returns its URL, switch back to the resolved return branch
-   (`delivery.returnBranch`, `auto` meaning the branch the run started on) and leave the publication
-   branch in place locally and remotely. A refused or impossible switch — an unrelated tracked
-   modification, a missing return branch — is reported and stops before step 9 rather than being
-   forced; the pull request already exists and is not rolled back.
-9. Write the receipt, then — standing on the restored return branch — re-materialize the plan file as
-   an untracked copy in the working tree. That copy is what makes the published plan visible from the
-   base branch, so it is written only after step 8's switch is confirmed; on a reported failed switch
-   the receipt still records the publication and the copy is left to the operator.
+   owns the return itself.
+
+   **Write the receipt first, then switch.** The receipt records that the pull request exists, which
+   is true the moment `pr` returns its URL and stays true however the switch then goes; ordering it
+   after the switch would lose that fact on exactly the failure the operator needs it for. The
+   untracked copy is the only part gated on the switch.
+
+   Then switch back to the resolved return branch (`delivery.returnBranch`, `auto` meaning the branch
+   the run started on) and leave the publication branch in place locally and remotely. **Clear the
+   deliberate untracked twin first:** after an earlier publication the return branch carries an
+   untracked copy at the same path the publication branch tracks, and Git refuses the switch even
+   when the contents match. Compare that copy against the committed content, remove it when they
+   match, and stop with a report when they differ — a divergent copy is unpublished work and is never
+   discarded to make a switch succeed. A refused or impossible switch for any other reason — an
+   unrelated tracked modification, a missing return branch — is reported and leaves the run on the
+   publication branch; the pull request already exists and is not rolled back.
+
+9. Standing on the restored return branch, re-materialize the plan file as an untracked copy in the
+   working tree. That copy is what makes the published plan visible from the base branch, so it is
+   written only after step 8's switch is confirmed. On a reported failed switch the receipt written in
+   step 8 already records the publication, no copy is written, and the report names the branch the run
+   is standing on.
 10. Wire the fragment into `plan.md`: the `lazy-include` fence, Phase 6c, the moved final write, the
     amended rules, the extended Phase 7 report, the `catalogHint`.
 11. Update `next-steps.md`, its line-52 prose, and the `tool-flow.md` mirror; then the three
@@ -485,8 +498,12 @@ The change is complete when every criterion below holds simultaneously.
 - [ ] A test asserts the return-to-base behavior: **the fragment itself** switches back to the
       resolved return branch after `effective-flow pr` returns — `pr` restores no checkout
       (`src/tools/pr.md:261-263`) — and re-materializes the untracked copy afterwards and prints its
-      path. A test also asserts the failed-switch path: the receipt is written, the copy is not, and
-      the run reports the branch it is standing on.
+      path. A test also asserts the single receipt write point: the receipt is written **before** the
+      switch, so the failed-switch path still records the opened pull request, writes no copy, and
+      reports the branch the run is standing on.
+- [ ] A test asserts the twin-clearing rule: the fragment compares the deliberate untracked copy
+      against the committed content before switching, removes it only on a match, and stops with a
+      report when the two differ.
 - [ ] A test derives the `plan` rows through `parseNextStepsTable` and `edge.tool === 'plan'` — not by
       a `startsWith('| plan')` string match, which also matches `plan-issue` — and asserts exactly six
       rows whose conditions are the six literals specified above.
