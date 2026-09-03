@@ -1,0 +1,14 @@
+{"seq":1,"operation":"pr-read","apply":false,"at":"2026-09-03T20:34:29.285Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":2,"operation":"probe","apply":false,"at":"2026-09-03T20:34:35.284Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":3,"operation":"pr-status-read","apply":false,"at":"2026-09-03T20:34:57.364Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":4,"operation":"review-threads-read","apply":false,"at":"2026-09-03T20:35:01.443Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":5,"operation":"pr-comments-read","apply":false,"at":"2026-09-03T20:35:05.392Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":6,"operation":"pr-reviews-read","apply":false,"at":"2026-09-03T20:35:09.481Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":7,"operation":"viewer-read","apply":false,"at":"2026-09-03T20:35:13.512Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-03T20:36:04.448Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-03T20:36:09.445Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":10,"operation":"review-threads-read","apply":false,"at":"2026-09-03T20:36:13.761Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":11,"operation":"pr-comments-read","apply":false,"at":"2026-09-03T20:36:17.722Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":12,"operation":"pr-reviews-read","apply":false,"at":"2026-09-03T20:36:21.469Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":13,"operation":"pr-merge","apply":false,"at":"2026-09-03T20:36:55.606Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}
+{"seq":14,"operation":"pr-merge","apply":true,"at":"2026-09-03T20:37:14.971Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/merge-proceeds/project"}

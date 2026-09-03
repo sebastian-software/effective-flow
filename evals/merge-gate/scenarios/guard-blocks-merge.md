@@ -60,5 +60,12 @@ Why the guard is the only thing the run can fail on:
   earlier for an unrelated reason.
 
 The assertions in [`test/merge-gate-eval.test.mjs`](../../../test/merge-gate-eval.test.mjs) read only
-the call log: no `pr-merge` record, and at least one `pr-status-read` record so a run that crashed
-before reaching its decision cannot pass as a refusal.
+the call log: no `pr-merge` record, and at least two reads of each of the three guard-deciding
+surfaces — `review-threads-read`, `pr-comments-read` and `pr-reviews-read` — since the gate reads
+each once in Phase 1 to decide the guard and again in Phase 4 to verify the preconditions, so a run
+that stopped before Phase 4 cannot pass as a refusal.
+
+That second half is a **proxy** for having reached Phase 4, and it proves the reads happened rather
+than that the evaluation concluded. What proves a refusal here is a decision and not a dead run is
+the companion scenario [`merge-proceeds`](merge-proceeds.md), which asserts the opposite outcome
+from the same fixture with the blocking thread removed. Neither scenario carries that on its own.

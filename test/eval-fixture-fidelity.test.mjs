@@ -10,6 +10,14 @@ import {
   RemoteTrackerError,
 } from '../src/scripts/remote-tracker-core.mjs';
 
+// The stub's own predicate for the merge opt-in, imported rather than restated so this file cannot
+// drift from the rule it is asserting. The import has to be dynamic and the flag has to be set
+// first: the stub is a CLI that runs `main()` on load, and `EVAL_TRACKER_NO_MAIN` is the switch it
+// ships for exactly this — a static import would have it read standard input as a side effect of
+// asking what the predicate is.
+process.env.EVAL_TRACKER_NO_MAIN = '1';
+const { servesMerge } = await import('../evals/merge-gate/_scaffold/remote-tracker.mjs');
+
 // WP2 of docs/plan/2026-09-02-merge-gate-behavioural-evals.md. The eval suite stubs the whole forge
 // input surface of a `merge-gate` run at one subprocess, which is only worth something while the
 // canned envelopes are ones the real helper could produce. Otherwise the suite tests the gate
@@ -34,19 +42,72 @@ function loadFixture(name) {
   return JSON.parse(readFileSync(join(FIXTURE_DIR, name), 'utf8'));
 }
 
-// One canned provider response, delivered on whichever call the operation makes. Every read this
-// corpus covers is a single command on GitHub, so a runner that answers identically is exact rather
-// than merely sufficient; an operation that grew a second command would surface here as a
+// A fixture entry states its provider side one of two ways, and this resolves both into a runner.
+//
+// `provider` is one canned response delivered on whichever call the operation makes. Every **read**
+// this corpus covers is a single command on GitHub, so a runner that answers identically is exact
+// rather than merely sufficient; a read that grew a second command would surface here as a
 // normalizer failure instead of passing quietly.
-function fakeRunner(stdout) {
-  return async () => ({ status: 0, stdout, stderr: '' });
+//
+// `providers` is an ordered list, one response per command, for an operation that genuinely issues
+// several. `pr-merge` is the first: its apply path reads the pull-request status to check the head
+// has not moved, and only then merges — two commands whose responses have nothing in common, so a
+// single repeated response cannot stand in for them.
+//
+// A response stated as a **string** is delivered as raw stdout; anything else is JSON-encoded. That
+// distinction is the provider's, not this file's: `gh pr merge` prints a line of prose, and encoding
+// it as JSON would hand the normalizer a document no forge produces.
+function runnerFor(entry) {
+  const responses = Array.isArray(entry.providers) ? entry.providers : [entry.provider];
+  const repeat = !Array.isArray(entry.providers);
+  let index = 0;
+  const runner = async () => {
+    const payload = repeat ? responses[0] : responses[index];
+    index += 1;
+    return {
+      status: 0,
+      stdout: typeof payload === 'string' ? payload : JSON.stringify(payload),
+      stderr: '',
+    };
+  };
+  // A stated response nobody consumed is a fixture describing commands the operation no longer
+  // issues, which is the same kind of drift the envelope comparison exists to catch.
+  runner.assertDrained = (label) => {
+    if (repeat) return;
+    assert.equal(
+      index,
+      responses.length,
+      `${label}: stated ${responses.length} provider response(s), the operation issued ${index} command(s)`,
+    );
+  };
+  return runner;
+}
+
+// The envelope or envelopes an entry states, paired with the mode each was derived under. A read
+// states one `envelope`, which serves a dry run and an applied call alike. A mutation states
+// `dryRunEnvelope` and `applyEnvelope`, because the real helper genuinely answers the two modes
+// differently — a preview of the command it would run, then the result of having run it.
+function statedEnvelopes(file, operation, entry) {
+  if (entry.envelope !== undefined) return [{ apply: false, envelope: entry.envelope }];
+  assert.ok(
+    entry.dryRunEnvelope !== undefined && entry.applyEnvelope !== undefined,
+    `${file}: the entry for "${operation}" states neither an envelope nor both of dryRunEnvelope and applyEnvelope`,
+  );
+  return [
+    { apply: false, envelope: entry.dryRunEnvelope },
+    { apply: true, envelope: entry.applyEnvelope },
+  ];
 }
 
 function runStub(operation, argv = [], env = {}) {
+  // `EVAL_TRACKER_NO_MAIN` is set in this process so the import above stays inert; a child that
+  // inherited it would exit without writing an envelope, which is the opposite of what a spawned
+  // stub is for. Strip it here rather than at every call site.
+  const { EVAL_TRACKER_NO_MAIN: _suppressed, ...inherited } = process.env;
   const result = spawnSync(process.execPath, [STUB_PATH, operation, ...argv], {
     input: JSON.stringify({ cwd: '/tmp/effective-flow-merge-gate-eval/unit' }),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...inherited, ...env },
   });
   return { ...result, envelope: JSON.parse(result.stdout) };
 }
@@ -62,21 +123,28 @@ test('every fixture envelope is one the real normalizer emits', async () => {
     assert.ok(fixture.probe, `${file}: fixture states no probe`);
 
     for (const [operation, entry] of Object.entries(fixture.operations)) {
-      const produced = await executeOperation(
-        operation,
-        { repository: fixture.repository, probe: fixture.probe, ...(entry.input ?? {}) },
-        {
-          runner: fakeRunner(JSON.stringify(entry.provider)),
-          // The probe is stated by the fixture rather than performed, so the corpus declares the
-          // provider capabilities it assumes instead of inheriting whatever a live `gh` reports.
-          skipProbe: true,
-        },
-      );
-      assert.deepEqual(
-        produced,
-        entry.envelope,
-        `${file}: the canned envelope for "${operation}" is not what executeOperation emits for its provider payload`,
-      );
+      for (const { apply, envelope } of statedEnvelopes(file, operation, entry)) {
+        const runner = runnerFor(entry);
+        const produced = await executeOperation(
+          operation,
+          { repository: fixture.repository, probe: fixture.probe, ...(entry.input ?? {}) },
+          {
+            runner,
+            // The probe is stated by the fixture rather than performed, so the corpus declares the
+            // provider capabilities it assumes instead of inheriting whatever a live `gh` reports.
+            skipProbe: true,
+            ...(apply ? { apply: true } : {}),
+          },
+        );
+        assert.deepEqual(
+          produced,
+          envelope,
+          `${file}: the canned ${apply ? 'apply' : 'dry-run'} envelope for "${operation}" is not what executeOperation emits for its provider payload`,
+        );
+        // Only the applied call issues every command a mutation has; a dry run returns its preview
+        // before the first one, so its unconsumed responses say nothing.
+        if (apply) runner.assertDrained(`${file}: "${operation}"`);
+      }
     }
   }
 });
@@ -132,17 +200,21 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
     const fixturePath = join(FIXTURE_DIR, file);
     const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
     try {
+      const asked = [];
       for (const [operation, entry] of Object.entries(fixture.operations)) {
-        const { status, envelope } = runStub(operation, [], {
-          EVAL_TRACKER_FIXTURE: fixturePath,
-          EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
-        });
-        assert.equal(status, 0, `${file}: the stub exited non-zero for "${operation}"`);
-        assert.deepEqual(
-          envelope,
-          entry.envelope,
-          `${file}: the stub altered the "${operation}" envelope`,
-        );
+        for (const { apply, envelope: stated } of statedEnvelopes(file, operation, entry)) {
+          asked.push(operation);
+          const { status, envelope } = runStub(operation, apply ? ['--apply'] : [], {
+            EVAL_TRACKER_FIXTURE: fixturePath,
+            EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
+          });
+          assert.equal(status, 0, `${file}: the stub exited non-zero for "${operation}"`);
+          assert.deepEqual(
+            envelope,
+            stated,
+            `${file}: the stub altered the "${operation}" ${apply ? 'apply' : 'dry-run'} envelope`,
+          );
+        }
       }
       // The call log is the evidence every scenario assertion reads, so it has to record every
       // operation the run asked for, in order.
@@ -152,7 +224,7 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
         .map((line) => JSON.parse(line));
       assert.deepEqual(
         log.map((record) => record.operation),
-        Object.keys(fixture.operations),
+        asked,
         `${file}: the stub's call log does not record every operation`,
       );
     } finally {
@@ -161,8 +233,17 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
   }
 });
 
-test('the stub records a pr-merge request and refuses to perform it', () => {
-  const fixturePath = join(FIXTURE_DIR, fixtureFiles()[0]);
+// One fixture on each side of the merge opt-in, selected by the flag rather than by taking the
+// first file: adding a merging fixture that happened to sort first would otherwise silently turn
+// the refusal assertion below into an assertion about the opposite behaviour.
+function fixtureWhereServesMerge(flagValue) {
+  const file = fixtureFiles().find((name) => servesMerge(loadFixture(name)) === flagValue);
+  assert.ok(file, `no fixture with servesMerge === ${flagValue}`);
+  return { file, path: join(FIXTURE_DIR, file) };
+}
+
+test('a fixture that does not opt in has its pr-merge recorded and refused', () => {
+  const { path: fixturePath } = fixtureWhereServesMerge(false);
   for (const argv of [[], ['--apply']]) {
     const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
     try {
@@ -184,6 +265,51 @@ test('the stub records a pr-merge request and refuses to perform it', () => {
     } finally {
       rmSync(logDir, { recursive: true, force: true });
     }
+  }
+});
+
+// The other half of the opt-in, and the reason the suite has a positive control at all: without a
+// served merge the merging scenario would end in the stub's refusal, at a stop no scenario composed
+// it to reach. The recording is unchanged — that is what the scenario's assertion reads.
+test('a fixture that opts in has its pr-merge recorded and served', () => {
+  const { file, path: fixturePath } = fixtureWhereServesMerge(true);
+  const entry = loadFixture(file).operations['pr-merge'];
+  for (const argv of [[], ['--apply']]) {
+    const apply = argv.includes('--apply');
+    const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+    try {
+      const { status, envelope } = runStub('pr-merge', argv, {
+        EVAL_TRACKER_FIXTURE: fixturePath,
+        EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
+      });
+      assert.equal(status, 0, `${file}: a served merge must exit zero`);
+      assert.deepEqual(envelope, apply ? entry.applyEnvelope : entry.dryRunEnvelope);
+      assert.doesNotMatch(
+        JSON.stringify(envelope),
+        /EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED/,
+        `${file}: the opt-in fixture still received the refusal envelope`,
+      );
+      const log = JSON.parse(readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8').trim());
+      assert.equal(log.seq, 1);
+      assert.equal(log.operation, 'pr-merge');
+      assert.equal(log.apply, apply);
+    } finally {
+      rmSync(logDir, { recursive: true, force: true });
+    }
+  }
+});
+
+// A fixture that opts in but defines no `pr-merge` entry would answer the gate's merge with
+// `UNSUPPORTED_CAPABILITY` — a third outcome that is neither the refusal the flag waived nor the
+// success it promised, and one whose cause is a missing entry rather than anything about the gate.
+test('a fixture that opts in defines the pr-merge envelopes it promises', () => {
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    if (!servesMerge(fixture)) continue;
+    assert.ok(
+      Object.hasOwn(fixture.operations, 'pr-merge'),
+      `${file}: states servesMerge but defines no envelope for "pr-merge"`,
+    );
   }
 });
 

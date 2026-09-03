@@ -32,12 +32,31 @@ const CALL_LOG_PATH =
 export const MERGE_REFUSAL_MARKER = 'EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED';
 
 // Every operation whose execution would be a side effect the sandbox must never perform. `pr-merge`
-// is the one this suite is built around: the assertion is that no `pr-merge` record appears in the
-// call log, and a stub that silently succeeded a merge would mask exactly the regression the layer
-// exists to catch. The refusal sits **ahead** of the fixture lookup on purpose, so a future fixture
-// that defines `pr-merge` cannot re-enable it, and it covers the dry run as well as `--apply`: a
-// merge the gate merely previewed is still a merge it decided to reach for.
-const REFUSED_OPERATIONS = new Set(['pr-merge']);
+// is the one this suite is built around, and it is the one operation this file decides for itself
+// rather than looking up: every call is recorded either way, and what the fixture chooses is only
+// whether the recorded call is answered with a refusal or with a canned success.
+const REFUSABLE_OPERATIONS = new Set(['pr-merge']);
+
+// The opt-in that turns a refusal into a served merge, read from the fixture's top level.
+//
+// Refusing was right while refusal was the only outcome any scenario expected. It stopped being
+// enough once the suite needed a **positive control**: a scenario in which every precondition holds
+// and the gate is supposed to merge, whose whole purpose is to fail if the gate — or this harness —
+// refuses everything. That scenario cannot end in a stub refusal, because a refused merge is an
+// error the gate then has to report, and the run would stop somewhere no scenario composed it to
+// stop.
+//
+// The opt-in is per fixture and defaults to **off**, which is what keeps the refusal scenarios'
+// protection intact: a fixture that does not set it gets the refusal whether or not it defines a
+// `pr-merge` envelope, so a `pr-merge` entry added to a refusal fixture by accident cannot quietly
+// re-enable the merge. A fixture that does set it must define the envelopes itself, and those are
+// proven against the real normalizer by `test/eval-fixture-fidelity.test.mjs` like every other one.
+//
+// Nothing is merged in either case. The sandbox has no forge, and the served envelope is a canned
+// document; what the flag changes is the answer the gate reads back, never a side effect.
+export function servesMerge(fixture) {
+  return fixture?.servesMerge === true;
+}
 
 function errorEnvelope(operation, code, message, details = {}, dryRun = false) {
   return {
@@ -167,7 +186,11 @@ export async function main(argv = process.argv.slice(2), io = {}) {
         at: new Date().toISOString(),
         cwd: typeof input.cwd === 'string' ? input.cwd : null,
       });
-      if (REFUSED_OPERATIONS.has(operation)) {
+      // The fixture is loaded before the refusal decision, because the refusal is now the
+      // fixture's to waive. A fixture that cannot be read throws out of here into the catch below,
+      // which produces an error envelope rather than a served merge — the fail-closed direction.
+      const fixture = loadFixture();
+      if (REFUSABLE_OPERATIONS.has(operation) && !servesMerge(fixture)) {
         envelope = errorEnvelope(
           operation,
           'COMMAND_FAILED',
@@ -176,7 +199,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
           !apply,
         );
       } else {
-        envelope = resolveEnvelope(loadFixture(), operation, apply);
+        envelope = resolveEnvelope(fixture, operation, apply);
       }
     }
   } catch (error) {

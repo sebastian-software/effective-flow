@@ -98,10 +98,15 @@ const agentsMarkdown = `# AGENTS.md
 This checkout exists only as the target of a \`merge-gate\` behavioural eval run.
 `;
 
-// `mergeGate.bots` is deliberately absent. An empty reviewer list satisfies merge preconditions 5
-// and 7 by construction, so the only condition this scenario can fail on is condition 4, the
-// human-comment guard — which is what makes the assertion an isolation of that guard rather than a
-// statement about the gate as a whole.
+// `mergeGate.bots` is deliberately absent. An empty reviewer list satisfies merge preconditions 5,
+// 7 and 10 by construction, so the human-comment guard is the only condition a scenario in this
+// suite can differ on — which is what lets one scenario isolate that guard and its counterpart
+// isolate the merge that follows when nothing holds it.
+//
+// This table is therefore identical for every scenario, and deliberately so: the scenarios differ
+// in their fixtures, in exactly one fact each, and never in their configuration. Only the Context
+// prose below names the scenario, because a reader of the sandbox needs to know which one they are
+// looking at.
 const setupAdr = `# Effective Flow project setup
 
 ## Status
@@ -110,8 +115,9 @@ Active
 
 ## Context
 
-Scenario configuration for the \`${caseName}\` behavioural eval scenario. Every value here exists to make
-the human-comment guard the single deciding condition of the run.
+Scenario configuration for the \`${caseName}\` behavioural eval scenario. Every value here exists to
+make the human-comment guard the run's single deciding condition; what the scenario's fixture then
+decides is whether that guard is active.
 
 ## Configuration
 
