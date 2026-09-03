@@ -240,10 +240,15 @@ the prerequisite change.
      aborts as **base branch tracked on a non-`origin` remote** (`src/tools/pr.md:158`) — so a
      refusal here ends publication with a report naming that remote, and never silently retargets
      the pull request at `origin`.
-   - **Slashless base** (`develop`, no remote recorded): resolution names no remote at all. Use
-     `origin` when it is configured; when it is not, publication is unavailable in both modes —
-     report that and publish nothing. Never guess a remote from the branch's upstream or from the
-     single configured remote.
+   - **Slashless base** (`develop`, no remote recorded): resolution names no remote at all, so the
+     remote comes from the **resolved local base branch's own upstream** — `@{upstream}` of that
+     branch, whose remote half is the one it actually tracks. That is the only value which states
+     where this base is published; `origin` merely being configured says nothing about it, and
+     picking it on that ground can push to the wrong repository or advance a branch nobody tracks.
+     Where the resolved local base branch has **no** upstream, or its upstream names a branch other
+     than that base, publication is unavailable in both modes — report which of the two applied and
+     publish nothing. Never fall back to `origin`, to the single configured remote, or to the
+     current branch's upstream.
 
 8. In pull-request mode (chosen or fallen back into): push the branch and delegate to
    `effective-flow pr` with the delivery payload plus the literal line `Next steps: suppressed`.
