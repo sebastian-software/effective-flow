@@ -136,6 +136,23 @@ This plan consequently **writes** receipts and does not change `worktree-integra
   it can read rather than one it has to migrate. That is a deliberate cost: some fields have no reader
   until (c) ships.
 
+  **`state` has exactly three allowed values, and each has one write point.** The set is closed: a
+  reader that meets any other value treats the receipt as unreadable and falls back to its no-receipt
+  path rather than guessing, which is what lets delivery (c) interpret it offline.
+
+  | Value                 | Meaning                                                         | Written                                                                                                  |
+  | --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+  | `committed`           | The plan is on the base branch as a direct commit.              | Step 9 of direct-commit mode, after the push succeeded **and** the local base was fast-forwarded onto it |
+  | `pull-request-open`   | The plan is on a publication branch with an open pull request.  | Step 9 of pull-request mode, after `effective-flow pr` returned a URL                                    |
+  | `pull-request-merged` | That pull request has since merged, so the plan is on the base. | A later republication run that reads a `pull-request-open` receipt and observes the pull request merged  |
+
+  Two consequences are stated rather than left to be derived. A refused push writes **no** receipt at
+  all in direct-commit mode — the run falls back to step 8 and the receipt it eventually writes is
+  `pull-request-open` — so no state ever describes an attempted publication. And `pull-request-merged`
+  is the only value a run other than the publishing one writes, which is why it is observed rather
+  than assumed: a republication run that cannot reach the forge keeps the receipt at
+  `pull-request-open` and reports that it could not confirm the merge.
+
   The receipt is runtime state under `.effective-flow/`, so the new fragment carries the canonical
   runtime-state guard. `findRuntimeStateSafetyViolations` scans a shared fragment only when it is
   reachable through an include chain from a tool or agent — `walkRuntimeStateMutations` roots at
@@ -449,6 +466,10 @@ The change is complete when every criterion below holds simultaneously.
       the remote, the pull-request URL, the commit hash, and the content hash as receipt fields, and
       locates the receipt under `.effective-flow/`. The prerequisite plan's delivery (c) requires the
       `state` field; this plan writes it and defines its values.
+- [ ] A test asserts the closed `state` vocabulary by literal — `committed`, `pull-request-open`,
+      `pull-request-merged` and no fourth value — and that the fragment names one write point per
+      value, including that a refused push writes no receipt in direct-commit mode and that an
+      unreachable forge leaves a `pull-request-open` receipt unchanged.
 - [ ] A test asserts the content-check class list by literal: private key, token, `password`,
       `secret`, `api_key`, `/Users/`, `/home/`; and that `src/shared/` and `docs/plan/` are named as
       explicit non-findings.
