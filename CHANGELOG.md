@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.64.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.63.0...effective-flow-v1.64.0) (2026-09-04)
+
+
+### Features
+
+* add behavioural evals for the merge gate ([#399](https://github.com/sebastian-software/effective-flow/issues/399)) ([364f4d0](https://github.com/sebastian-software/effective-flow/commit/364f4d0114263bc6167099f2fdf3bbb65176f8dd))
+* import AGENTS.md from CLAUDE.md and split the canonical guidance ([#397](https://github.com/sebastian-software/effective-flow/issues/397)) ([9adffe2](https://github.com/sebastian-software/effective-flow/commit/9adffe286a700f69c6bdfbe3b45f6fb5d70073ba))
+
+
+### Bug Fixes
+
+* generate the router's tool list instead of hand-writing it ([02e6696](https://github.com/sebastian-software/effective-flow/commit/02e669619ac4128701c9e4c81388866b81b77ed5))
+* resolve a local base branch when no remote is configured ([4740ca0](https://github.com/sebastian-software/effective-flow/commit/4740ca06be7697fb7734575786686d6e56f830e4))
+* resolve the base branch once and name both of its results ([#391](https://github.com/sebastian-software/effective-flow/issues/391)) ([8d559ec](https://github.com/sebastian-software/effective-flow/commit/8d559eca71bdd2df7d58d2ef75d89b8fb682fee3))
+* retire the stale Firmo branding from shipped descriptions ([ce23e7a](https://github.com/sebastian-software/effective-flow/commit/ce23e7ad8133b241943a4476f6622880f0787fb8))
+
 ## [1.63.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.62.0...effective-flow-v1.63.0) (2026-08-28)
 
 
