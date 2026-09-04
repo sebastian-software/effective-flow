@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { scenarioBuildIdentity } from '../evals/merge-gate/_scaffold/build-identity.mjs';
+import {
+  buildPortableSkill,
+  scenarioBuildIdentity,
+} from '../evals/merge-gate/_scaffold/build-identity.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 
 // The behavioural safety net of docs/plan/2026-09-02-merge-gate-behavioural-evals.md, asserted as
@@ -115,21 +120,29 @@ test('the operation-support probe still distinguishes the shipped helper from an
   );
 });
 
-// The build stamp is only worth its failures if the set it digests really covers what a run loads,
-// and that set is derived by walking include fences — so a walker that quietly stopped at the entry
-// file would still produce a stable digest, still match itself, and bind nothing. Asserted over the
-// two ends of the walk: the gate's own source, and a fragment reachable only through another
-// fragment.
-test('the build stamp covers the gate and the fragments it reaches transitively', () => {
-  const digested = Object.keys(scenarioBuildIdentity(SCENARIOS[0]).files);
-  for (const file of [
-    'src/tools/merge-gate.md',
-    'src/shared/worktree-integration.md',
-    'src/shared/base-branch-resolution.md',
-  ]) {
+// The stamp is only worth its failures if it really covers the tree a run loads. A hash of an empty
+// or half-copied directory is still a stable hash: it would match itself run after run and bind
+// nothing at all. Asserted over the three things every run reads — the router it enters through, the
+// gate it runs, and the helper it calls — plus a floor on the tree's size, because the failure this
+// catches is a walk that returned almost nothing rather than one that returned the wrong thing.
+test('the build stamp covers the built tree a run actually loads', () => {
+  const identity = currentIdentity(SCENARIOS[0]);
+  const hashed = Object.keys(identity.skill.files);
+  for (const file of ['SKILL.md', 'tools/merge-gate.md', 'scripts/remote-tracker.mjs']) {
     assert.ok(
-      digested.includes(file),
-      `the build stamp does not digest ${file}; a run's identity has to cover the gate and every fragment it pulls in, or a change there leaves the archived rounds looking current`,
+      hashed.includes(file),
+      `the build stamp does not hash ${file}; a run's identity has to cover the tree it loads, or a change there leaves the archived rounds looking current`,
+    );
+  }
+  assert.ok(
+    hashed.length > 50,
+    `the build stamp hashes only ${hashed.length} file(s) of the portable skill; that is too few to be the built tree, so the walk is returning a fraction of it and the digest binds almost nothing`,
+  );
+  for (const part of ['skill', 'instrument', 'scenario_inputs']) {
+    assert.match(
+      identity[part].digest,
+      /^sha256:[0-9a-f]{64}$/,
+      `the ${part} half of the stamp is not a digest`,
     );
   }
 });
@@ -148,18 +161,38 @@ function archivedRuns(scenario) {
     }));
 }
 
-// Which files moved, named rather than counted. A digest mismatch says only that the run observed
-// something else; this says what, which is the difference between an operator re-running a round on
-// purpose and one re-running it because a number changed and they could not see why.
+// Which files moved, named rather than counted, across all three parts of the stamp. A digest
+// mismatch says only that the run observed something else; this says what, which is the difference
+// between an operator re-running a round on purpose and one re-running it because a number changed
+// and they could not see why. Naming the part first matters too: "the built skill moved" and "the
+// stub moved" call for different reactions, and only one of them is a change to the gate.
+const IDENTITY_PARTS = ['skill', 'instrument', 'scenario_inputs'];
+
+// A change to `build.mjs` can move every file in the built tree at once, and a stamp written before
+// a part existed reads as though the whole part appeared. Either way the list runs to dozens of lines
+// per run and dozens more per further run, which buries the one line a reader needs. Past a handful
+// the count is the information, so the rest is summarised rather than printed.
+const DRIFT_LIST_LIMIT = 8;
+
 function describeDrift(archived, current) {
-  const names = [...new Set([...Object.keys(archived), ...Object.keys(current)])].sort();
-  return names
-    .filter((name) => archived[name] !== current[name])
-    .map((name) => {
-      if (archived[name] === undefined) return `  + ${name} (not part of the run)`;
-      if (current[name] === undefined) return `  - ${name} (gone from the working tree)`;
-      return `  ~ ${name}`;
-    });
+  const lines = [];
+  for (const part of IDENTITY_PARTS) {
+    const before = archived[part]?.files ?? {};
+    const after = current[part].files;
+    const names = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+    const moved = names.filter((name) => before[name] !== after[name]);
+    if (moved.length === 0) continue;
+    lines.push(`  ${part}: ${moved.length} file(s)`);
+    for (const name of moved.slice(0, DRIFT_LIST_LIMIT)) {
+      if (before[name] === undefined) lines.push(`    + ${name} (not part of the run)`);
+      else if (after[name] === undefined) lines.push(`    - ${name} (gone from the build)`);
+      else lines.push(`    ~ ${name}`);
+    }
+    if (moved.length > DRIFT_LIST_LIMIT) {
+      lines.push(`    … and ${moved.length - DRIFT_LIST_LIMIT} more`);
+    }
+  }
+  return lines;
 }
 
 // The binding between a log and the code it describes. Without it a round observed against one
@@ -183,11 +216,11 @@ function assertBoundToCurrentBuild(run, identity) {
       `  archived: ${stamp.digest}`,
       `  current:  ${identity.digest}`,
       'changed:',
-      ...describeDrift(stamp.files ?? {}, identity.files),
+      ...describeDrift(stamp, identity),
       '',
-      'The log is a real observation of code that has since moved, so it proves nothing about what is',
-      'here now. Re-run the round against the current sources; a content digest cannot tell a reworded',
-      'comment from a changed rule, so this fires for both.',
+      'The log is a real observation of a build that has since moved, so it proves nothing about the',
+      'one here now. Re-run the round; a content digest cannot tell a reworded comment from a changed',
+      'rule, so this fires for both.',
     ].join('\n'),
   );
 }
@@ -255,13 +288,34 @@ function skipWithoutRuns(scenario, runs) {
     : false;
 }
 
+// The stamp describes a built tree, so the comparison needs one that is current rather than
+// whatever a previous build left in the gitignored `dist/`. Built once for the whole file, and only
+// when something will actually be compared — a checkout with no archived runs asserts nothing here
+// and should not pay for a build to find that out.
+//
+// It builds into a throwaway root rather than the checkout's `dist/`: `build.mjs` swaps through
+// fixed `dist.tmp` and `dist.bak` paths, `node --test` runs test files concurrently, and another
+// file in this suite builds too — sharing the destination makes whichever build loses the rename a
+// failure in a test that has nothing to do with the collision. The root is left behind if the
+// process dies, which is what `tmpdir()` is for.
+let builtSkillRoot = null;
+
+function currentIdentity(scenario) {
+  if (builtSkillRoot === null) {
+    const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-build-'));
+    process.on('exit', () => rmSync(outputRoot, { recursive: true, force: true }));
+    builtSkillRoot = buildPortableSkill(outputRoot);
+  }
+  return scenarioBuildIdentity(scenario, builtSkillRoot);
+}
+
 for (const scenario of SCENARIOS) {
   const runs = archivedRuns(scenario);
   const skip = skipWithoutRuns(scenario, runs);
 
   test(`${scenario}: every archived run is a log these assertions can read`, { skip }, async () => {
     const answerable = answerableOperations(scenario);
-    const identity = scenarioBuildIdentity(scenario);
+    const identity = currentIdentity(scenario);
     for (const run of runs) {
       assertBoundToCurrentBuild(run, identity);
       const records = readRun(run);

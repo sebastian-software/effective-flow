@@ -177,14 +177,14 @@ git('commit', '--quiet', '--message', 'chore: seed the eval sandbox checkout');
 
 // The run's provenance, written before the run rather than inferred after it. `prepare.mjs`
 // archives this beside the call log, and `test/merge-gate-eval.test.mjs` refuses to read a log
-// whose stamp no longer matches the working tree — which is what stops a round observed against one
-// version of `src/tools/merge-gate.md` from going on reporting green against the next one.
+// whose stamp no longer matches a fresh build — which is what stops a round observed against one
+// version of the gate from going on reporting green against the next one.
 //
-// It is computed here, at the moment the skill root is copied, because that is the only point where
-// what the run is about to load and what the sources currently say are the same thing by
-// construction. Recomputing it afterwards would be reconstruction, and reconstructed provenance is
-// exactly as good as no provenance.
-const identity = scenarioBuildIdentity(caseName);
+// It is computed here, after the build above and while the copied tree is still exactly what that
+// build produced, because that is the only point where what the run is about to load and what the
+// sources currently produce are the same thing by construction. Recomputing it afterwards would be
+// reconstruction, and reconstructed provenance is exactly as good as no provenance.
+const identity = scenarioBuildIdentity(caseName, BUILT_SKILL_ROOT);
 writeFileSync(buildIdentityPath, `${JSON.stringify(identity, null, 2)}\n`);
 
 process.stdout.write(

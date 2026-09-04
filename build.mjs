@@ -10,8 +10,9 @@ import {
   readdirSync,
   existsSync,
 } from 'node:fs';
-import { join, basename, dirname, relative } from 'node:path';
+import { join, basename, dirname, relative, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   normalizeLineEndings,
@@ -90,9 +91,21 @@ const RELEVANCE_GATE_SOURCE = join(SHARED_DIR, 'central-reasoning-delegation.md'
 // fully successful build (see the atomic swap below), so dist/ is always either
 // entirely the previous build or entirely the new one — never a half-written
 // mix left behind by a mid-build throw.
-const DIST_ROOT = join(ROOT_DIR, 'dist');
-const DIST_TMP = join(ROOT_DIR, 'dist.tmp');
-const DIST_BAK = join(ROOT_DIR, 'dist.bak');
+//
+// Where that tree lands is overridable, because the swap goes through fixed
+// `dist.tmp` and `dist.bak` paths: two builds of the same checkout running at
+// once collide on them and one of them dies mid-rename. That is not
+// hypothetical — `pnpm test` runs its files concurrently, and more than one of
+// them needs a build of its own. A caller that cannot afford to contend for
+// `dist/` sets EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT and gets the same three
+// directories under a root of its choosing. Unset, which is every ordinary
+// build, nothing about the layout changes.
+const OUTPUT_ROOT = process.env.EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT
+  ? resolve(process.env.EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT)
+  : ROOT_DIR;
+const DIST_ROOT = join(OUTPUT_ROOT, 'dist');
+const DIST_TMP = join(OUTPUT_ROOT, 'dist.tmp');
+const DIST_BAK = join(OUTPUT_ROOT, 'dist.bak');
 
 const SKILL_NAME = 'effective-flow';
 const DIST_CODEX = join(DIST_TMP, 'codex');
