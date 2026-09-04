@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -422,6 +422,61 @@ test('the call log records the pinned schema, numbered from one without gaps', (
       records.map((record) => record.seq),
       [1, 2, 3, 4],
       'the sequence is not monotonic across separate stub processes',
+    );
+  } finally {
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+// The sequential case above is the easy half. The gate is free to make several helper calls at
+// once — nothing in it promises otherwise, and each call is its own process — and counting the log
+// before appending to it is two operations with a window between them. Two callers that both count
+// N then both write N+1, and the archived run carries a duplicate `seq` that the schema assertion
+// rejects: a good round thrown away because the bench, not the gate, got it wrong.
+//
+// Asserted with real concurrent processes rather than a reasoned argument about the code, because
+// the reasoned argument is what let this stand through two review rounds. Sixteen is well past the
+// number of calls the gate actually overlaps; the point is to lose the race reliably if the
+// serialisation is ever removed, and without the lock this collides on every attempt.
+test('concurrent stub processes never assign the same sequence number', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'effective-flow-eval-race-'));
+  const logPath = join(logDir, 'tracker-calls.jsonl');
+  const CONCURRENT_CALLS = 16;
+  try {
+    await Promise.all(
+      Array.from(
+        { length: CONCURRENT_CALLS },
+        () =>
+          new Promise((done) => {
+            const child = spawn(process.execPath, [STUB_PATH, 'pr-read'], {
+              env: {
+                ...process.env,
+                EVAL_TRACKER_LOG: logPath,
+                EVAL_TRACKER_FIXTURE: resolve(FIXTURE_DIR, 'guard-blocks-merge.json'),
+                EVAL_TRACKER_NO_MAIN: '',
+              },
+              stdio: ['pipe', 'ignore', 'ignore'],
+            });
+            child.stdin.end('{"number":42}\n');
+            child.on('close', done);
+          }),
+      ),
+    );
+
+    const records = readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line));
+
+    assert.equal(
+      records.length,
+      CONCURRENT_CALLS,
+      'a concurrent call went unrecorded; a dropped record is worse than a duplicated one, because it can turn a merge that happened into a log that shows none',
+    );
+    assert.deepEqual(
+      records.map((record) => record.seq),
+      Array.from({ length: CONCURRENT_CALLS }, (_, index) => index + 1),
+      'concurrent stub processes assigned colliding or out-of-order sequence numbers, so a valid run would be rejected by the schema assertion',
     );
   } finally {
     rmSync(logDir, { recursive: true, force: true });

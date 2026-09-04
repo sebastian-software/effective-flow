@@ -14,7 +14,7 @@
 // envelope has the shape the real `errorEnvelope` produces.
 
 import process from 'node:process';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 // Resolved from this file's own location rather than from an environment variable, because the gate
@@ -97,6 +97,50 @@ function nextSequenceNumber() {
   return existing.split('\n').filter((line) => line.trim() !== '').length + 1;
 }
 
+// Counting the log and then appending to it are two operations, and the gate is free to make
+// several helper calls at once — each one its own process, each counting the same log before any of
+// them has written. Two callers then agree on the same number, the archived run carries a duplicate
+// `seq`, and the schema assertion throws out a round that was perfectly good. The window is small
+// and entirely real: nothing in the gate promises sequential helper calls, and a run costs an agent
+// to produce.
+//
+// So allocation and append happen under a lock. `mkdir` is the primitive because it is atomic
+// everywhere and needs no cleanup protocol beyond removing the directory — a lock file opened with
+// `wx` would do as well, but leaves a file behind that looks like data.
+const LOCK_PATH = `${CALL_LOG_PATH}.lock`;
+const LOCK_TIMEOUT_MS = 5000;
+const LOCK_POLL_MS = 5;
+
+// A blocking sleep with no busy-wait, which this needs because the whole record path is synchronous
+// and a spin would starve the very process holding the lock on a single core.
+function sleepSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// A holder that dies between `mkdir` and `rmSync` would otherwise wedge every later call in the
+// sandbox. The lock is therefore breakable by age: older than the timeout means no live holder, and
+// a sandbox is a single short-lived run rather than a long-running service, so nothing legitimately
+// holds it that long.
+function acquireLock(deadline) {
+  for (;;) {
+    try {
+      mkdirSync(LOCK_PATH);
+      return true;
+    } catch {
+      try {
+        if (Date.now() - statSync(LOCK_PATH).mtimeMs > LOCK_TIMEOUT_MS) {
+          rmSync(LOCK_PATH, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      if (Date.now() >= deadline) return false;
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+}
+
 // Best effort by design: a sandbox whose log directory is unwritable must still produce the
 // envelope the gate is waiting for, so a failure here is swallowed rather than turned into a
 // protocol violation. That is not a licence to read a missing log as "nothing was called" — the
@@ -104,7 +148,19 @@ function nextSequenceNumber() {
 function recordCall(record) {
   try {
     mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
-    appendFileSync(CALL_LOG_PATH, `${JSON.stringify({ seq: nextSequenceNumber(), ...record })}\n`);
+    const locked = acquireLock(Date.now() + LOCK_TIMEOUT_MS);
+    try {
+      // Appending without the lock is the deliberate fallback, not an oversight. The two failures
+      // are not equal: a duplicate `seq` fails the run loudly at the schema assertion, while a
+      // dropped record is invisible and can turn a merge that happened into a log that shows none.
+      // If the lock cannot be had, write anyway and let the noisy failure be the one that happens.
+      appendFileSync(
+        CALL_LOG_PATH,
+        `${JSON.stringify({ seq: nextSequenceNumber(), ...record })}\n`,
+      );
+    } finally {
+      if (locked) rmSync(LOCK_PATH, { recursive: true, force: true });
+    }
   } catch {
     // deliberately ignored — see above
   }
