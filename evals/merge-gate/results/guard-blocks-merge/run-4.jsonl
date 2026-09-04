@@ -1,0 +1,14 @@
+{"seq":1,"operation":"reference-parse","apply":false,"at":"2026-09-04T09:04:48.809Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-04T09:04:54.219Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":3,"operation":"repository-resolve","apply":false,"at":"2026-09-04T09:05:00.429Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":4,"operation":"pr-status-read","apply":false,"at":"2026-09-04T09:05:17.326Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":5,"operation":"viewer-read","apply":false,"at":"2026-09-04T09:05:17.353Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":6,"operation":"review-threads-read","apply":false,"at":"2026-09-04T09:05:23.922Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":7,"operation":"pr-comments-read","apply":false,"at":"2026-09-04T09:05:23.949Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":8,"operation":"pr-reviews-read","apply":false,"at":"2026-09-04T09:05:23.981Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":9,"operation":"pr-checks-wait","apply":false,"at":"2026-09-04T09:06:21.681Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":10,"operation":"pr-status-read","apply":false,"at":"2026-09-04T09:06:26.643Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":11,"operation":"pr-status-read","apply":false,"at":"2026-09-04T09:06:34.277Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":12,"operation":"review-threads-read","apply":false,"at":"2026-09-04T09:06:34.307Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":13,"operation":"pr-comments-read","apply":false,"at":"2026-09-04T09:06:34.335Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":14,"operation":"pr-reviews-read","apply":false,"at":"2026-09-04T09:06:34.361Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
