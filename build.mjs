@@ -255,16 +255,28 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(VERSION ?? '')) {
 }
 // The git hash is purely cosmetic version metadata; outside a git repo
 // (e.g. a source export) fall back to a placeholder instead of failing.
-let GIT_SHORT_HASH;
-try {
-  GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
-    cwd: ROOT_DIR,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-} catch {
-  GIT_SHORT_HASH = 'nogit';
-  process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
+//
+// It is also overridable, and for a reason that is not cosmetic at all. Because
+// the hash changes with every commit, so does every built artifact — which makes
+// the output unusable as an identity for anything that outlives one commit. The
+// behavioural eval suite hashes the built skill to bind its recorded runs to the
+// gate they exercised; with a moving hash in the tree, committing that evidence
+// changes the very thing it claims to describe, and it can never validate. A
+// caller that needs a commit-independent build sets
+// EFFECTIVE_FLOW_BUILD_GIT_HASH to a fixed marker. Ordinary builds set nothing
+// and keep stamping the real hash.
+let GIT_SHORT_HASH = process.env.EFFECTIVE_FLOW_BUILD_GIT_HASH;
+if (!GIT_SHORT_HASH) {
+  try {
+    GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    GIT_SHORT_HASH = 'nogit';
+    process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
+  }
 }
 const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 

@@ -18,14 +18,22 @@
 
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { sandboxPaths } from './sandbox.mjs';
-import { scenarioBuildIdentity } from './build-identity.mjs';
+import { buildPortableSkill, scenarioBuildIdentity } from './build-identity.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
-const BUILT_SKILL_ROOT = resolve(REPOSITORY_ROOT, 'dist', 'portable', 'effective-flow');
 
 function fail(message) {
   process.stderr.write(`${message}\n`);
@@ -45,23 +53,26 @@ if (!existsSync(fixturePath)) fail(`no fixture for case "${caseName}" at ${fixtu
 
 // A stale build would scaffold a skill root that does not match the source under test, which is the
 // one way this suite could report a green result about code nobody is running. So the scaffold
-// builds rather than checks: an existence check cannot tell a current `dist/` from a stale one —
-// `dist/` is gitignored, so its presence says only that somebody built at some point, on some
+// builds rather than checks: an existence check cannot tell a current build from a stale one — the
+// output is gitignored, so its presence says only that somebody built at some point, on some
 // revision — and a staleness check would have to model every input `build.mjs` reads and would be
 // wrong the moment one moved. Building removes the failure mode instead of detecting it, and costs
 // the operator a step they were performing by hand anyway.
+//
+// It builds into a throwaway root rather than the checkout's `dist/`, for two reasons that both
+// matter. The tree is built with a pinned cosmetic git hash so a run's identity does not move with
+// every commit, and that tree must not be left behind where an installer would pick it up as the
+// checkout's real build. And two builds of one checkout collide on `build.mjs`'s fixed swap paths,
+// so a scaffold must not contend for `dist/` with whatever else is running.
+const buildRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-scaffold-'));
+let builtSkillRoot;
 try {
-  execFileSync(process.execPath, ['build.mjs'], {
-    cwd: REPOSITORY_ROOT,
-    stdio: ['ignore', 'ignore', 'inherit'],
-  });
-} catch {
+  builtSkillRoot = buildPortableSkill(buildRoot);
+} catch (error) {
+  rmSync(buildRoot, { recursive: true, force: true });
   fail(
-    `\`node build.mjs\` failed in ${REPOSITORY_ROOT}; nothing was scaffolded.\nFix the build first — a sandbox provisioned from the previous build would validate instructions the current sources do not contain.`,
+    `\`node build.mjs\` failed in ${REPOSITORY_ROOT}; nothing was scaffolded.\n${error.message}\nFix the build first — a sandbox provisioned from the previous build would validate instructions the current sources do not contain.`,
   );
-}
-if (!existsSync(BUILT_SKILL_ROOT)) {
-  fail(`\`node build.mjs\` succeeded but produced no skill root at ${BUILT_SKILL_ROOT}`);
 }
 
 const {
@@ -77,7 +88,7 @@ const {
 rmSync(sandbox, { recursive: true, force: true });
 mkdirSync(traceDir, { recursive: true });
 
-cpSync(BUILT_SKILL_ROOT, skillRoot, { recursive: true });
+cpSync(builtSkillRoot, skillRoot, { recursive: true });
 // The whole point of the sandbox: the gate resolves `<skill-root>/scripts/remote-tracker.mjs` from
 // the skill it loaded, so replacing that one file replaces the entire forge input surface of the
 // run. `remote-tracker-core.mjs` stays beside it untouched — nothing imports it any more, and
@@ -184,7 +195,8 @@ git('commit', '--quiet', '--message', 'chore: seed the eval sandbox checkout');
 // build produced, because that is the only point where what the run is about to load and what the
 // sources currently produce are the same thing by construction. Recomputing it afterwards would be
 // reconstruction, and reconstructed provenance is exactly as good as no provenance.
-const identity = scenarioBuildIdentity(caseName, BUILT_SKILL_ROOT);
+const identity = scenarioBuildIdentity(caseName, builtSkillRoot);
+rmSync(buildRoot, { recursive: true, force: true });
 writeFileSync(buildIdentityPath, `${JSON.stringify(identity, null, 2)}\n`);
 
 process.stdout.write(

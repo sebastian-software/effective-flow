@@ -31,6 +31,13 @@
 // files concurrently, with more than one needing a build. Isolating the test's build is what keeps
 // that from surfacing as an unreproducible failure in whichever file lost the race.
 //
+// Every eval build pins the cosmetic git hash that `build.mjs` otherwise stamps into the router's
+// version line. Without that pin the identity is self-defeating rather than merely noisy: the hash
+// changes with every commit, so the commit that records a round's evidence changes the build that
+// evidence describes, and an archived run could never match a fresh build at the commit containing
+// it. What is pinned is metadata the build itself calls cosmetic — the version number still moves
+// with a release, which genuinely does change the shipped skill.
+//
 // One property is deliberate and not worked around: a content digest cannot tell a rule from a
 // comment. Rewording a comment in the gate invalidates the archived rounds exactly as a changed
 // fail-closed rule would. That is the safe direction of the two, and the cheap alternative — a
@@ -50,6 +57,10 @@ const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
 // configuration ADR the gate reads. Together with the built tree they determine the sandbox exactly,
 // so they are hashed beside it rather than folded into it — a mismatch should be able to say whether
 // the gate moved or the bench did.
+// A marker rather than a plausible hash, so a tree built for an eval cannot be mistaken for one
+// built for release if it ever escapes the sandbox.
+const EVAL_GIT_HASH = 'eval';
+
 const INSTRUMENT_FILES = [
   resolve(import.meta.dirname, 'remote-tracker.mjs'),
   resolve(import.meta.dirname, 'scaffold.mjs'),
@@ -81,21 +92,24 @@ function hashFiles(paths, root) {
   return { digest: digestOf(canonical), files };
 }
 
-export function portableSkillRoot(outputRoot = REPOSITORY_ROOT) {
+export function portableSkillRoot(outputRoot) {
   return resolve(outputRoot, 'dist', 'portable', 'effective-flow');
 }
 
-// Runs `node build.mjs`, so a caller hashes what the current sources produce rather than whatever an
-// earlier build left in a gitignored directory. Pass an `outputRoot` to build somewhere other than
-// the checkout's `dist/`; the header says why a concurrent caller must.
-export function buildPortableSkill(outputRoot = REPOSITORY_ROOT) {
+// Runs `node build.mjs` into a root of the caller's choosing, so a caller hashes what the current
+// sources produce rather than whatever an earlier build left in a gitignored directory. The root is
+// required, not defaulted to the checkout's own `dist/`: every caller here builds a pinned-hash tree
+// that must not be mistaken for the checkout's real build, and two builds sharing a destination
+// collide on `build.mjs`'s fixed swap paths anyway.
+export function buildPortableSkill(outputRoot) {
   execFileSync(process.execPath, ['build.mjs'], {
     cwd: REPOSITORY_ROOT,
     stdio: ['ignore', 'ignore', 'inherit'],
-    env:
-      outputRoot === REPOSITORY_ROOT
-        ? process.env
-        : { ...process.env, EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT: outputRoot },
+    env: {
+      ...process.env,
+      EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT: outputRoot,
+      EFFECTIVE_FLOW_BUILD_GIT_HASH: EVAL_GIT_HASH,
+    },
   });
   const root = portableSkillRoot(outputRoot);
   if (!existsSync(root)) throw new Error(`\`node build.mjs\` produced no skill root at ${root}`);
