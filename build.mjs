@@ -10,8 +10,9 @@ import {
   readdirSync,
   existsSync,
 } from 'node:fs';
-import { join, basename, dirname, relative } from 'node:path';
+import { join, basename, dirname, relative, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   normalizeLineEndings,
@@ -90,9 +91,21 @@ const RELEVANCE_GATE_SOURCE = join(SHARED_DIR, 'central-reasoning-delegation.md'
 // fully successful build (see the atomic swap below), so dist/ is always either
 // entirely the previous build or entirely the new one — never a half-written
 // mix left behind by a mid-build throw.
-const DIST_ROOT = join(ROOT_DIR, 'dist');
-const DIST_TMP = join(ROOT_DIR, 'dist.tmp');
-const DIST_BAK = join(ROOT_DIR, 'dist.bak');
+//
+// Where that tree lands is overridable, because the swap goes through fixed
+// `dist.tmp` and `dist.bak` paths: two builds of the same checkout running at
+// once collide on them and one of them dies mid-rename. That is not
+// hypothetical — `pnpm test` runs its files concurrently, and more than one of
+// them needs a build of its own. A caller that cannot afford to contend for
+// `dist/` sets EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT and gets the same three
+// directories under a root of its choosing. Unset, which is every ordinary
+// build, nothing about the layout changes.
+const OUTPUT_ROOT = process.env.EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT
+  ? resolve(process.env.EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT)
+  : ROOT_DIR;
+const DIST_ROOT = join(OUTPUT_ROOT, 'dist');
+const DIST_TMP = join(OUTPUT_ROOT, 'dist.tmp');
+const DIST_BAK = join(OUTPUT_ROOT, 'dist.bak');
 
 const SKILL_NAME = 'effective-flow';
 const DIST_CODEX = join(DIST_TMP, 'codex');
@@ -242,16 +255,28 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(VERSION ?? '')) {
 }
 // The git hash is purely cosmetic version metadata; outside a git repo
 // (e.g. a source export) fall back to a placeholder instead of failing.
-let GIT_SHORT_HASH;
-try {
-  GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
-    cwd: ROOT_DIR,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-} catch {
-  GIT_SHORT_HASH = 'nogit';
-  process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
+//
+// It is also overridable, and for a reason that is not cosmetic at all. Because
+// the hash changes with every commit, so does every built artifact — which makes
+// the output unusable as an identity for anything that outlives one commit. The
+// behavioural eval suite hashes the built skill to bind its recorded runs to the
+// gate they exercised; with a moving hash in the tree, committing that evidence
+// changes the very thing it claims to describe, and it can never validate. A
+// caller that needs a commit-independent build sets
+// EFFECTIVE_FLOW_BUILD_GIT_HASH to a fixed marker. Ordinary builds set nothing
+// and keep stamping the real hash.
+let GIT_SHORT_HASH = process.env.EFFECTIVE_FLOW_BUILD_GIT_HASH;
+if (!GIT_SHORT_HASH) {
+  try {
+    GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    GIT_SHORT_HASH = 'nogit';
+    process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
+  }
 }
 const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 

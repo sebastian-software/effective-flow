@@ -10,7 +10,8 @@
     "audit:skill-ownership": "node scripts/audit-skill-ownership.mjs",
     "test": "node --test",
     "test:distribution": "node scripts/distribution-smoke.mjs offline",
-    "test:managers": "node scripts/distribution-smoke.mjs managers"
+    "test:managers": "node scripts/distribution-smoke.mjs managers",
+    "prepare:merge-gate-eval": "node evals/merge-gate/prepare.mjs"
   },
   "devDependencies": {
     "oxfmt": "^0.62.0"
