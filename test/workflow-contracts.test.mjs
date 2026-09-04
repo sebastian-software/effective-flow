@@ -5974,13 +5974,21 @@ test("this repository's own gate is not left on a signal its reviewer cannot use
   // Deliberately narrow. `.check` is optional by contract, and a reviewer that genuinely publishes
   // no context must stay configurable without one, so this asserts nothing about bots in general:
   // only about the reviewer configured here, whose check context the gate itself documents.
+  //
+  // That reviewer used to be Greptile and is now recensor. The swap is a configuration decision,
+  // not a weakening of this guard: Greptile stopped being able to run at all once the repository
+  // exhausted its free review credits, which turns a blocking reviewer into a permanent hold — the
+  // same failure this test exists to prevent, arriving through the reviewer's availability instead
+  // of through its check context. What the test asserts is unchanged; only the login it binds to
+  // moved, and it stays bound to exactly one, because a list this repository merely happens to
+  // carry is not the same claim as the reviewer its gate actually waits for.
   const adr = source('docs/adr/effective-flow-project-setup.md');
   const logins = tableRow(adr, 'mergeGate.bots')
     .split('|')[2]
     .split(',')
     .map((login) => login.trim())
     .filter(Boolean);
-  const configured = logins.filter((login) => /greptile/i.test(login));
+  const configured = logins.filter((login) => /recensor/i.test(login));
   assert.ok(
     configured.length > 0,
     'this repository must configure the reviewer its gate waits for',
