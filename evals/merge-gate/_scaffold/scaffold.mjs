@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sandboxPaths } from './sandbox.mjs';
+import { scenarioBuildIdentity } from './build-identity.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
@@ -70,6 +71,7 @@ const {
   fixture: sandboxFixture,
   traceDir,
   callLog,
+  buildIdentity: buildIdentityPath,
 } = sandboxPaths(caseName);
 
 rmSync(sandbox, { recursive: true, force: true });
@@ -173,6 +175,18 @@ git(
 git('add', '--all');
 git('commit', '--quiet', '--message', 'chore: seed the eval sandbox checkout');
 
+// The run's provenance, written before the run rather than inferred after it. `prepare.mjs`
+// archives this beside the call log, and `test/merge-gate-eval.test.mjs` refuses to read a log
+// whose stamp no longer matches the working tree — which is what stops a round observed against one
+// version of `src/tools/merge-gate.md` from going on reporting green against the next one.
+//
+// It is computed here, at the moment the skill root is copied, because that is the only point where
+// what the run is about to load and what the sources currently say are the same thing by
+// construction. Recomputing it afterwards would be reconstruction, and reconstructed provenance is
+// exactly as good as no provenance.
+const identity = scenarioBuildIdentity(caseName);
+writeFileSync(buildIdentityPath, `${JSON.stringify(identity, null, 2)}\n`);
+
 process.stdout.write(
   [
     `scaffolded ${caseName}`,
@@ -180,6 +194,7 @@ process.stdout.write(
     `  project:    ${projectRoot}`,
     `  fixture:    ${sandboxFixture}`,
     `  call log:   ${callLog}`,
+    `  build:      ${identity.digest}`,
     '',
   ].join('\n'),
 );

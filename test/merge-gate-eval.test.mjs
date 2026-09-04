@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { scenarioBuildIdentity } from '../evals/merge-gate/_scaffold/build-identity.mjs';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 
 // The behavioural safety net of docs/plan/2026-09-02-merge-gate-behavioural-evals.md, asserted as
@@ -16,24 +17,30 @@ import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 // is still present. A merge that should be blocked being observed to be blocked is a different kind
 // of fact, and only the call log carries it.
 //
-// ## What the pair of scenarios proves, and what one log cannot
+// ## What the pair of scenarios proves, and what stays unproven
 //
-// State this plainly, because two earlier versions of this comment over-claimed and a third would
-// be a pattern. **A refusal is defined by absence, and a call log records calls rather than
-// verdicts.** From `guard-blocks-merge`'s log alone, what follows is exactly this: no merge was
-// requested, and the reads a Phase-4 evaluation performs did happen. It does **not** follow that the
-// evaluation concluded, which condition decided it, or that the guard is the reason no merge came
-// after — a run that died between those reads and its decision leaves the same log as a run that
-// refused, and no stronger assertion over one log can separate them.
+// State this plainly, because three earlier versions of this comment over-claimed. **A refusal is
+// defined by absence, and a call log records calls rather than verdicts.** From
+// `guard-blocks-merge`'s log alone, what follows is exactly this: no merge was requested, and the
+// reads a Phase-4 evaluation performs did happen. It does **not** follow that the evaluation
+// concluded, which condition decided it, or that the guard is the reason no merge came after — a run
+// that died between those reads and its decision leaves the same log as a run that refused.
 //
-// What closes that gap is not a better assertion but a **positive control**. `merge-proceeds` is the
-// same situation with the blocking thread removed, and its assertion is that `pr-merge` **is**
-// present. It is what proves this harness can reach Phase 5 at all — that a scenario ending without
-// a merge record is a scenario in which the gate declined to merge, and not one in which nothing
-// ever gets that far. So a blanket refusal fails the suite whether it comes from a broken gate or
-// from a broken harness, which is the failure mode a lone refusal scenario is blind to.
+// `merge-proceeds` narrows that, and does not close it. It is the same situation with the blocking
+// thread removed, and its assertion is that `pr-merge` **is** present, which proves the harness can
+// reach Phase 5 at all: a suite in which every scenario refuses — a gate that blocks everything, a
+// sandbox no run can get through — fails here rather than reading as a clean result. That is a claim
+// about **the pair**, and it is the strongest one available.
 //
-// Neither scenario carries that on its own. The pair does.
+// **Per run, the gap remains open, and it is accepted rather than closed.** No assertion over these
+// logs can separate one run's refusal from one run's silent death, because the two produce the same
+// artifact; the only thing that would separate them is a positive trace written at the moment the
+// guard decides, which means changing `src/tools/merge-gate.md` — the artefact under test — to
+// suit its own measurement. That trade was considered and declined: a gate instrumented for this
+// suite is no longer the gate that ships, and the suite would then be measuring its own scaffolding.
+// So the residue is left standing and written down. A round of five refusals is evidence that the
+// gate does not merge under an active guard; it is not proof that each of those five runs evaluated
+// the guard and decided. Anyone reporting on this layer should say the first and not the second.
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -108,13 +115,81 @@ test('the operation-support probe still distinguishes the shipped helper from an
   );
 });
 
+// The build stamp is only worth its failures if the set it digests really covers what a run loads,
+// and that set is derived by walking include fences — so a walker that quietly stopped at the entry
+// file would still produce a stable digest, still match itself, and bind nothing. Asserted over the
+// two ends of the walk: the gate's own source, and a fragment reachable only through another
+// fragment.
+test('the build stamp covers the gate and the fragments it reaches transitively', () => {
+  const digested = Object.keys(scenarioBuildIdentity(SCENARIOS[0]).files);
+  for (const file of [
+    'src/tools/merge-gate.md',
+    'src/shared/worktree-integration.md',
+    'src/shared/base-branch-resolution.md',
+  ]) {
+    assert.ok(
+      digested.includes(file),
+      `the build stamp does not digest ${file}; a run's identity has to cover the gate and every fragment it pulls in, or a change there leaves the archived rounds looking current`,
+    );
+  }
+});
+
 function archivedRuns(scenario) {
   const dir = join(RESULTS_DIR, scenario);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((name) => /^run-\d+\.jsonl$/.test(name))
     .sort((left, right) => Number(left.match(/\d+/)[0]) - Number(right.match(/\d+/)[0]))
-    .map((name) => ({ name, path: join(dir, name) }));
+    .map((name) => ({
+      name,
+      path: join(dir, name),
+      stampName: name.replace(/\.jsonl$/, '.build.json'),
+      stampPath: join(dir, name.replace(/\.jsonl$/, '.build.json')),
+    }));
+}
+
+// Which files moved, named rather than counted. A digest mismatch says only that the run observed
+// something else; this says what, which is the difference between an operator re-running a round on
+// purpose and one re-running it because a number changed and they could not see why.
+function describeDrift(archived, current) {
+  const names = [...new Set([...Object.keys(archived), ...Object.keys(current)])].sort();
+  return names
+    .filter((name) => archived[name] !== current[name])
+    .map((name) => {
+      if (archived[name] === undefined) return `  + ${name} (not part of the run)`;
+      if (current[name] === undefined) return `  - ${name} (gone from the working tree)`;
+      return `  ~ ${name}`;
+    });
+}
+
+// The binding between a log and the code it describes. Without it a round observed against one
+// version of the gate keeps reporting green after that version is rewritten — the suite would go on
+// certifying a build nobody runs, which is the drift the whole layer exists to catch, one level up
+// where nothing was watching.
+//
+// A run archived without a stamp fails rather than skips. It is not "no evidence yet", which is what
+// a skip means everywhere else in this file; it is a file sitting in `results/` that looks like
+// evidence and cannot be read as any, and the two must not report the same way.
+function assertBoundToCurrentBuild(run, identity) {
+  assert.ok(
+    existsSync(run.stampPath),
+    `${run.name} has no build stamp at ${run.stampName}. Nothing says which version of the gate it observed, so it cannot be read as evidence about the current one — re-run the scenario, or delete the log if you no longer know what produced it.`,
+  );
+  const stamp = JSON.parse(readFileSync(run.stampPath, 'utf8'));
+  if (stamp.digest === identity.digest) return;
+  assert.fail(
+    [
+      `${run.name} observed a different build than the working tree holds.`,
+      `  archived: ${stamp.digest}`,
+      `  current:  ${identity.digest}`,
+      'changed:',
+      ...describeDrift(stamp.files ?? {}, identity.files),
+      '',
+      'The log is a real observation of code that has since moved, so it proves nothing about what is',
+      'here now. Re-run the round against the current sources; a content digest cannot tell a reworded',
+      'comment from a changed rule, so this fires for both.',
+    ].join('\n'),
+  );
 }
 
 // A missing or empty log is the failure mode the plan names by hand, and it is the one a naive
@@ -186,7 +261,9 @@ for (const scenario of SCENARIOS) {
 
   test(`${scenario}: every archived run is a log these assertions can read`, { skip }, async () => {
     const answerable = answerableOperations(scenario);
+    const identity = scenarioBuildIdentity(scenario);
     for (const run of runs) {
+      assertBoundToCurrentBuild(run, identity);
       const records = readRun(run);
       assertSchema(run, records);
 

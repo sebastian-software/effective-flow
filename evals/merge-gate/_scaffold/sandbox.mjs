@@ -13,12 +13,18 @@ export const SANDBOX_BASE = '/tmp/effective-flow-merge-gate-eval';
 
 export function sandboxPaths(scenario) {
   const sandbox = resolve(SANDBOX_BASE, scenario);
+  const traceDir = resolve(sandbox, 'trace');
   return {
     sandbox,
     skillRoot: resolve(sandbox, 'skill'),
     projectRoot: resolve(sandbox, 'project'),
     fixture: resolve(sandbox, 'fixture.json'),
-    traceDir: resolve(sandbox, 'trace'),
-    callLog: resolve(sandbox, 'trace', 'tracker-calls.jsonl'),
+    traceDir,
+    callLog: resolve(traceDir, 'tracker-calls.jsonl'),
+    // Written by the scaffold, archived beside the call log. It sits in `trace/` rather than at the
+    // sandbox root because it is part of the run's record, not part of its setup: the scaffold
+    // produces it, the run never reads it, and it is only ever consumed together with the log it
+    // describes.
+    buildIdentity: resolve(traceDir, 'build-identity.json'),
   };
 }

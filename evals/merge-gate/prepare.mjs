@@ -9,7 +9,8 @@
 // Four steps, in this order:
 //
 //   1. archive the call log the previous run left in the sandbox, into
-//      `results/<scenario>/run-<n>.jsonl` with the next free `n`;
+//      `results/<scenario>/run-<n>.jsonl` with the next free `n`, together with the build stamp
+//      the scaffold wrote for that run as `run-<n>.build.json`;
 //   2. re-run `_scaffold/scaffold.mjs`, which wipes and re-provisions the sandbox;
 //   3. confirm the call log is gone, so the next run starts from an empty one;
 //   4. print the scenario's prompt verbatim.
@@ -99,17 +100,40 @@ if (!existsSync(scenarioPath)) {
 }
 
 const prompt = extractPrompt(scenarioPath);
-const { callLog } = sandboxPaths(scenario);
+const { callLog, buildIdentity } = sandboxPaths(scenario);
 const scenarioResults = resolve(RESULTS_DIR, scenario);
 
 // An empty log is archived too. "The gate called nothing" and "the run never started" are different
 // facts, and only the archived file can tell them apart afterwards; discarding the empty one here
 // would erase the difference the assertions are written to catch.
+//
+// A log and its build stamp are archived as one unit or not at all, which is the one case that
+// stops rather than archives. A log without its stamp is evidence nobody can bind to a version of
+// the gate, and the assertions refuse to read it — so filing it alone would put something in
+// `results/` that looks like a result and can never become one. It happens when a sandbox predates
+// the stamp, and the honest response is to name that here, where the operator still knows which
+// run they are looking at, rather than to let the suite reject the file months later with no way
+// left to tell what produced it.
 let archived = null;
 if (existsSync(callLog) && statSync(callLog).isFile()) {
+  if (!existsSync(buildIdentity)) {
+    fail(
+      [
+        `the sandbox at ${callLog} holds a call log but no build stamp at ${buildIdentity}.`,
+        'It was scaffolded before runs were bound to a build, so nothing can say which version of',
+        'the gate it observed, and no assertion may read it.',
+        '',
+        'Either keep the log by hand if you know what produced it, or discard it and re-scaffold:',
+        `  rm -rf ${resolve(callLog, '..', '..')}`,
+        `  node evals/merge-gate/prepare.mjs ${scenario}`,
+      ].join('\n'),
+    );
+  }
   mkdirSync(scenarioResults, { recursive: true });
-  archived = resolve(scenarioResults, `run-${nextRunNumber(scenarioResults)}.jsonl`);
+  const runNumber = nextRunNumber(scenarioResults);
+  archived = resolve(scenarioResults, `run-${runNumber}.jsonl`);
   copyFileSync(callLog, archived);
+  copyFileSync(buildIdentity, resolve(scenarioResults, `run-${runNumber}.build.json`));
 }
 
 execFileSync(process.execPath, [SCAFFOLD, scenario], { stdio: ['ignore', 'inherit', 'inherit'] });
