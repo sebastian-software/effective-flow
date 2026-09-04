@@ -53,16 +53,23 @@ import { relative, resolve } from 'node:path';
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
 
-// The stub replaces `scripts/remote-tracker.mjs` inside the copied tree, and the scaffold writes the
-// configuration ADR the gate reads. Together with the built tree they determine the sandbox exactly,
-// so they are hashed beside it rather than folded into it — a mismatch should be able to say whether
-// the gate moved or the bench did.
 // A marker rather than a plausible hash, so a tree built for an eval cannot be mistaken for one
 // built for release if it ever escapes the sandbox.
 const EVAL_GIT_HASH = 'eval';
 
+// The stub replaces `scripts/remote-tracker.mjs` inside the copied tree, the scaffold writes the
+// configuration ADR the gate reads, and `sandbox.mjs` decides where all of it lands — including the
+// call log the stub writes and the literal paths the prompt hands the agent. Together with the built
+// tree they determine the sandbox exactly, so they are hashed beside it rather than folded into it:
+// a mismatch should be able to say whether the gate moved or the bench did.
+//
+// The membership rule is "would a change here change what the run did", which is why `prepare.mjs`
+// and this file are absent. Neither is read during a run — one archives afterwards, the other only
+// computes this digest, and changing what it hashes already shows up as a changed digest without
+// hashing itself.
 const INSTRUMENT_FILES = [
   resolve(import.meta.dirname, 'remote-tracker.mjs'),
+  resolve(import.meta.dirname, 'sandbox.mjs'),
   resolve(import.meta.dirname, 'scaffold.mjs'),
 ];
 
