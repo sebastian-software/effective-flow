@@ -518,6 +518,22 @@
         },
         "dryRun": false
       }
+    },
+    "issue-lifecycle-receipt-parse": {
+      "input": {
+        "body": "Adds the eval skeleton."
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "issue-lifecycle-receipt-parse",
+        "provider": null,
+        "data": {
+          "found": false,
+          "receipt": null
+        },
+        "dryRun": false
+      }
     }
   }
 }

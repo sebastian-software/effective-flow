@@ -182,6 +182,12 @@ test('every fixture covers the operations a gate run performs', () => {
     'pr-comments-read',
     'pr-reviews-read',
     'review-threads-read',
+    // Reached only on the post-merge path, and not by every run even there — which is exactly why it
+    // is required rather than left to chance. One archived round had a single run call it while its
+    // four siblings did not; the fixture defined nothing, so that run alone took an improvised
+    // fallback and had to be discarded. Whether a scenario exercises an operation should not be a
+    // lottery decided per run.
+    'issue-lifecycle-receipt-parse',
   ];
   for (const file of fixtureFiles()) {
     const fixture = loadFixture(file);

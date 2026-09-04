@@ -1,0 +1,13 @@
+{"seq":1,"operation":"probe","apply":false,"at":"2026-09-04T10:57:55.742Z","cwd":null}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-04T10:58:39.526Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":3,"operation":"pr-status-read","apply":false,"at":"2026-09-04T10:58:55.158Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":4,"operation":"review-threads-read","apply":false,"at":"2026-09-04T10:58:55.185Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":5,"operation":"pr-comments-read","apply":false,"at":"2026-09-04T10:58:55.212Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":6,"operation":"pr-reviews-read","apply":false,"at":"2026-09-04T10:58:55.239Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":7,"operation":"viewer-read","apply":false,"at":"2026-09-04T10:58:55.266Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":8,"operation":"pr-checks-wait","apply":false,"at":"2026-09-04T10:59:35.920Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-04T10:59:40.617Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":10,"operation":"pr-status-read","apply":false,"at":"2026-09-04T10:59:47.428Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":11,"operation":"review-threads-read","apply":false,"at":"2026-09-04T10:59:47.456Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":12,"operation":"pr-comments-read","apply":false,"at":"2026-09-04T10:59:47.483Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":13,"operation":"pr-reviews-read","apply":false,"at":"2026-09-04T10:59:47.511Z","cwd":"/private/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
