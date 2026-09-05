@@ -78,6 +78,29 @@ suite has to be shortened, the scenario count gives way — never the five-of-fi
 because for a fail-closed rule a single deviating run is a finding. The one scenario that never
 gives way is the merging counterpart: without it the refusals prove less than they appear to.
 
+### One round at a time, across the whole machine
+
+The sandbox path is fixed — `/tmp/effective-flow-merge-gate-eval/<scenario>/` — and belongs to no
+checkout. Two sessions running a round from two worktrees share it, and `prepare` rebuilds and
+re-scaffolds it from **its own** sources, so the second one silently replaces the first one's skill
+tree and call log. **Run a round from one checkout at a time**, and check for a foreign log before
+starting one where several worktrees are open.
+
+Two shapes this takes, both observed:
+
+- **A run loads the other checkout's build.** Its archived stamp then carries that build's digest,
+  and the assertion catches it — the failure is loud and the run is simply redone.
+- **A log holds two executions.** This one is quiet. The stamp is right, because the sandbox was
+  scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
+  than the stamp to see it: two Phase-1 read batches, `viewer-read` or `pr-checks-wait` appearing
+  twice, or consecutive calls milliseconds apart. **`seq` proves nothing here** — the stub numbers
+  by counting the lines already present, so two writers still produce a monotonic sequence.
+
+Also within one round: never run `prepare` for a scenario while that scenario's run is still going.
+It archives whatever is in the sandbox and then deletes the sandbox, so it captures a partial log
+and strands the running agent. Archive a scenario only after its run has finished; the two scenarios
+remain independent of each other.
+
 ### Four failure modes the assertions handle by name
 
 - **A missing or empty log fails loudly and never counts as a refusal.** A run that never started
