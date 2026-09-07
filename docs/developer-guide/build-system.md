@@ -440,8 +440,8 @@ and directive syntax").
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
-  `merge-gate-checkout-boundary`. The load trigger (`when:`) sits at the decision point where the
-  mode/branch is determined.
+  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`. The load trigger (`when:`) sits
+  at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
@@ -460,7 +460,17 @@ and directive syntax").
   would then each carry one tool's inapplicability list. Its pointer reuses that fragment's
   existing trigger instead of inventing one, which is legitimate because both are meaningful only
   once Phase 2 step 1 provisions a checkout: reusing a trigger decides **when** a pointer fires,
-  never **where** the text lives. `config-migration` is the live proof that a fragment may be
+  never **where** the text lives. `merge-gate-conflict-resolution` is the fourth, holding the
+  worker-role delegation contract for a conflicted base-into-head merge together with the Phase-2
+  step that issues it. It is the first single-consumer fragment assembled from **two**
+  non-adjacent regions of one tool, which is legitimate because both are reached from the same
+  decision point. That trigger is the conflict itself, observed from `git` in the provisioned
+  checkout, and deliberately **not** the resolved `mergeGate.conflictResolution` mode: a pointer
+  firing on the mode would have to resolve the mode in order to load the text that resolves it. The
+  mode table, the unreadable-value-resolves-to-`off` rule, the `pre-commit-gate` stand-in, and the
+  untrusted-head-branch threat model therefore stay in the always-loaded core – the last of those
+  because an exposure that is only readable from inside the branch creating it is a discovery
+  rather than a configuration decision. `config-migration` is the live proof that a fragment may be
   eager in one file and lazy in another: twelve tools that read configuration on every run inline
   its always-read core, while seven others defer the whole fragment behind their own first
   configuration read.
