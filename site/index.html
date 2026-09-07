@@ -6,12 +6,12 @@
     <title>Effective Flow — Software-Engineering-Workflows für Claude Code &amp; Codex</title>
     <meta
       name="description"
-      content="Effective Flow gibt AI-Coding einen Prozess: 15 Workflow-Tools und 11 spezialisierte Agents für Claude Code und Codex — aus einer Quelle gebaut, mit Plan-Dateien, Review-Gates und Issue-Tracker-Anbindung."
+      content="Effective Flow gibt AI-Coding einen Prozess: 20 Workflow-Tools und 16 spezialisierte Agents für Claude Code und Codex — aus einer Quelle gebaut, mit Plan-Dateien, Review-Gates und Issue-Tracker-Anbindung."
     />
     <meta property="og:title" content="Effective Flow — Workflows statt Prompt-Roulette" />
     <meta
       property="og:description"
-      content="15 Software-Engineering-Tools für Claude Code und Codex. Ein Befehl: /effective-flow."
+      content="20 Software-Engineering-Tools für Claude Code und Codex. Ein Befehl: /effective-flow."
     />
     <meta property="og:type" content="website" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -403,8 +403,8 @@
         <h1>Workflows statt <em>Prompt-Roulette</em>.</h1>
         <p class="sub">
           Effective Flow gibt AI-Coding einen Prozess:
-          <strong>15 Software-Engineering-Tools</strong> und
-          <strong>11 spezialisierte Agents</strong> — mit Plan-Dateien, Review-Gates und
+          <strong>20 Software-Engineering-Tools</strong> und
+          <strong>16 spezialisierte Agents</strong> — mit Plan-Dateien, Review-Gates und
           Issue-Tracker-Anbindung. Ein Befehl, ein wiederholbarer Ablauf: von der Idee bis zum
           Pull-Request.
         </p>
@@ -444,7 +444,7 @@
 
         <div class="stats">
           <div class="stat">
-            <b>15</b><span>Workflow-Tools über <code>/effective-flow</code></span>
+            <b>20</b><span>Workflow-Tools über <code>/effective-flow</code></span>
           </div>
           <div class="stat"><b>11</b><span>spezialisierte Subagents</span></div>
           <div class="stat"><b>2</b><span>Harnesses: Claude Code &amp; Codex</span></div>
@@ -530,13 +530,16 @@
 
       <section id="tools" class="reveal">
         <span class="kicker">Der Werkzeugkasten</span>
-        <h2>15 Tools. Ein Präfix. Kein Vorladen.</h2>
+        <h2>20 Tools. Ein Präfix. Kein Vorladen.</h2>
         <p class="lede">
           Effective Flow ist ein <strong>dünner Router mit Lazy-Loading</strong>: Die Session lädt
           nur den Tool-Katalog — die vollständige Anweisung eines Tools erst beim Aufruf. Deine
           Kontext-Tokens gehören deinem Code, nicht der Tool-Doku.
         </p>
         <div class="tool-grid">
+          <div class="tool">
+            <code>/effective-flow concept</code><span>Konzept für eine neue Anwendung</span>
+          </div>
           <div class="tool">
             <code>/effective-flow build</code><span>Kompletter Feature-Workflow</span>
           </div>
@@ -578,6 +581,22 @@
             <code>/effective-flow open-plans</code><span>Offene Pläne mit Kurzfassung</span>
           </div>
           <div class="tool">
+            <code>/effective-flow iterate</code
+            ><span>Review-Notizen als neue Commits einarbeiten</span>
+          </div>
+          <div class="tool">
+            <code>/effective-flow deliver</code
+            ><span>Bestätigte Änderungen als sauberer Pull-Request</span>
+          </div>
+          <div class="tool">
+            <code>/effective-flow merge-gate</code
+            ><span>Checks, Bot-Notizen und die Merge-Entscheidung</span>
+          </div>
+          <div class="tool">
+            <code>/effective-flow cleanup</code
+            ><span>Migrationsreste und verifizierte Worktrees</span>
+          </div>
+          <div class="tool">
             <code>/effective-flow version</code><span>Version inklusive Git-Hash</span>
           </div>
         </div>
@@ -589,7 +608,7 @@
         <div class="agent-cols">
           <div class="agent-note">
             <p>
-              Effective Flow delegiert an <strong>11 spezialisierte Subagents</strong> — Implementer
+              Effective Flow delegiert an <strong>16 spezialisierte Subagents</strong> — Implementer
               schreiben Code, unabhängige Reviewer prüfen ihn, der Validator hält Types, Lint und
               Build grün. Getrennte Rollen, getrennte Kontexte: Der Reviewer sieht den Code, nicht
               die Selbstgewissheit des Autors.
@@ -629,6 +648,23 @@
             </div>
             <div class="agent-row">
               <code>docs-writer</code><span>README, Guides, Migrationen</span>
+            </div>
+            <div class="agent-row">
+              <code>generic-implementer</code><span>CI/CD, Build- und Release-Tooling</span>
+            </div>
+            <div class="agent-row">
+              <code>generic-product-implementer</code
+              ><span>Produktcode ohne Sprachspezialisten</span>
+            </div>
+            <div class="agent-row">
+              <code>generic-product-reviewer</code
+              ><span>Qualitatives Review ohne Sprachspezialisten</span>
+            </div>
+            <div class="agent-row">
+              <code>merge-conflict-resolver</code><span>Konflikte im Merge-Gate-Checkout</span>
+            </div>
+            <div class="agent-row">
+              <code>marketing-writer</code><span>README als Einstiegsseite</span>
             </div>
           </div>
         </div>

@@ -300,59 +300,65 @@ Recorded so a later pass does not re-derive them:
 
 - [x] **The behavioural eval layer exists.** `evals/merge-gate/` (#399, `364f4d0`) exercises a gate
       run against merge precondition 4 and observes the refusal, over every archived run.
-- [ ] **Per package, the changed region is behaviourally covered or the gap is argued.** Before each
+- [x] **Per package, the changed region is behaviourally covered or the gap is argued.** Before each
       of WP1–WP3 is delivered, either a scenario exercises an outcome its extraction could break —
       a refusal, or for a post-merge region the observation outcome itself — or the pull-request body
       states why the retained entry gate makes that unnecessary for the region actually moved.
       Naming precondition 4 does not discharge this for a package that moves Phase 5.5, the conflict
       contract, or the checkout list — none of which precondition 4 reaches.
-- [ ] **WP1 is delivered last, and not before its region is reachable or the stub question is
+- [x] **WP1 is delivered last, and not before its region is reachable or the stub question is
       answered.** No eval the delivered harness can express reaches Phase 5.5: the static fixture
       keeps reporting an open pull request after the merge, so the fresh read Phase 5.5 requires as
       proof of the merge never confirms it, and the scenario itself records that a state-carrying
       stub is what would change this. WP1 therefore runs after WP3 and WP2, and its pull-request body
       states which of the two happened — a state-carrying stub now exists and the region is covered,
       or it does not and the gap is argued against the region actually moved.
-- [ ] The always-loaded core of `merge-gate`, as the `Always-loaded core (lines/budget)` line of
+- [x] The always-loaded core of `merge-gate`, as the `Always-loaded core (lines/budget)` line of
       `node build.mjs` reports it, is lower than 3147, and the pull-request body states **per
       package** its estimate from this plan, its measured saving, and the deviation between them.
       Source-side arithmetic is not an acceptable measurement.
-- [ ] **The criterion above is falsifiable, not self-adjusting.** A package whose measured saving
+- [x] **The criterion above is falsifiable, not self-adjusting.** A package whose measured saving
       falls short of its estimate by more than 25 % stops the round for a reported decision rather
       than silently lowering the bar: round one delivered 310 lines against a planned 412 because
       the remainder turned out to be rule content, and that is exactly the discovery this stop is
       meant to surface while the round can still be re-scoped. WP1 alone must deliver at least
       200 lines, or the extraction-over-compression premise of this plan did not hold and the round
       is reconsidered rather than continued.
-- [ ] `build.mjs`'s `CONTEXT_BUDGET_LINES` entry for `merge-gate` is lowered to the achieved size
+- [x] `build.mjs`'s `CONTEXT_BUDGET_LINES` entry for `merge-gate` is lowered to the achieved size
       plus its existing headroom, so no removed line is re-admitted.
-- [ ] Every new `lazy-include` has a `when:` clause whose condition is **decidable from text that
+- [x] Every new `lazy-include` has a `when:` clause whose condition is **decidable from text that
       remains loaded**, and each is pinned by trigger token in the battery at
       `test/workflow-contracts.test.mjs:1270`.
-- [ ] For each extraction, the retained entry gate is named in the pull-request body together with
+- [x] For each extraction, the retained entry gate is named in the pull-request body together with
       the reason it could not travel.
-- [ ] Every one of the nine currently eager fragments is still eager, `issue-lifecycle` keeps its
+- [x] Every one of the nine currently eager fragments is still eager, `issue-lifecycle` keeps its
       literal eager fence, `delegation-mandate` is not lazy, and `execution-location` is not added.
-- [ ] `## Edge cases` is not recreated.
-- [ ] Every deleted or moved source line is mapped, in the commit message or the pull-request body,
+- [x] `## Edge cases` is not recreated.
+- [x] Every deleted or moved source line is mapped, in the commit message or the pull-request body,
       to the surviving statement of the same rule.
-- [ ] Every fail-closed rule WP2 lists under "Three things must not travel with it" is still in the
+- [x] Every fail-closed rule WP2 lists under "Three things must not travel with it" is still in the
       always-loaded core, verified by an explicit grep listed in the pull-request body: the
       `mergeGate.conflictResolution` unreadable-value-resolves-to-`off` rule in `## Configuration`,
       the `pre-commit-gate` stand-in in `## Git write boundary`, and the untrusted-head-branch threat
       model. Those three are the enumeration; there is no separate list elsewhere.
-- [ ] `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` pass after **every** commit,
+- [x] `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` pass after **every** commit,
       and `pnpm test` passes except for the merge-gate eval build-stamp assertions, which any edit to
       `src/tools/merge-gate.md` invalidates by design (see "The eval build stamp is a per-package
       cost"). `node --test test/workflow-contracts.test.mjs` must be **fully** green after every
       commit — that is the suite this round can actually keep green, and a failure there is a real
       one.
-- [ ] **The eval round is re-run and the stamps rebound before the round is called finished**, and
+- [x] **The eval round is re-run and the stamps rebound before the round is called finished**, and
       the pull-request body of whichever package carries that re-run names the ten runs and their
       outcomes. Which package carries it is the round's own scheduling decision, recorded when it is
       taken; what is not optional is that no package merges while a stamp still describes a build
       nobody holds.
 - [ ] Each adapted assertion is listed with the reason it pins wording rather than behavior.
+      **Partly discharged, deliberately left open.** The three pull-request bodies list every
+      repointed slice and why its subject moved — including the two that had to change from
+      `section()` to `boundedSlice` and the one that had to be split across the seam — but they
+      argue the repointing rather than the wording-versus-behaviour question this criterion
+      asks. Ticking it on that evidence is exactly the self-adjusting move the criterion four
+      rows above forbids.
 
 ## Validation plan
 
@@ -554,6 +560,32 @@ records that the static fixture keeps reporting an open pull request after the m
 own merge proof never succeeds and the phase is never entered. That is unchanged by this pass and
 was re-observed in this round's logs. The reordering to WP3 → WP2 → WP1 was made so this package
 would not be the round's first argued gap, and it is not: WP3 and WP2 shipped ahead of it.
+
+### Round delivery record, 2026-09-07
+
+Three of the four packages are delivered and merged, in the order this plan settled on:
+
+| Package | Pull request | Estimate | Measured | Deviation | Core after |
+| ------- | ------------ | -------: | -------: | --------: | ---------: |
+| WP3     | #400         |       22 |       21 |    −4.5 % |       3126 |
+| WP2     | #401         |    ≈ 130 |      119 |    −8.5 % |       3007 |
+| WP1     | #402         |    ≈ 295 |      292 |      −1 % |       2715 |
+
+Total measured saving **432 lines**, 3147 → 2715, against a planned ≈ 447 — a −3.4 % deviation for
+the round, well inside the −25 % stop. The budget tracked it down at every step and kept its
+headroom of 72 throughout: 3219 → 3198 → 3079 → 2787. Two full eval rounds were run and the stamps
+rebound, once for WP2 and once for WP1; the WP1 branch was later replayed onto `develop` after WP2
+squash-merged, and its stamps survived that because the replayed tree is byte-identical.
+
+**WP4 is the only package left, and the plan status stays `Not implemented` because of it.** It is
+compression rather than extraction — the `## Delegation contract` rationale, ≈ 45 lines — and this
+plan already records that it "can be dropped without affecting the others". Two endings are
+therefore legitimate: implement it, or record it as deliberately dropped. Neither has been chosen,
+and until one is, the status line is accurate rather than stale.
+
+The acceptance criteria above are ticked against that state. One is deliberately left open, and its
+own row says why: the criterion asking each adapted assertion to be listed with the reason it pins
+wording rather than behaviour was not discharged in that form by the three pull-request bodies.
 
 ### Revision, 2026-09-02 (eval prerequisite resolved)
 
