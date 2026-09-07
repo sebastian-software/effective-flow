@@ -2202,6 +2202,16 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision: 'Phase 5.5',
     },
     {
+      // The steps pointer shares its decision point with `issue-post-merge-observation`, so it
+      // shares that pointer's `Phase 5.5` pin — but not only it. The steps run once the phase is
+      // *entered*, and entry is what the retained gate decides, so the clause has to name the proof
+      // that opens it as well. A `when:` saying only "Phase 5.5" would still fire correctly today
+      // and would stop naming a decision the moment the entry gate moved.
+      fragment: 'merge-gate-issue-observation',
+      trigger: /(?=[\s\S]*Phase 5\.5)(?=[\s\S]*(?:fresh read|observer-only))/i,
+      decision: 'Phase 5.5 being entered on a fresh read proving the merge or observer-only mode',
+    },
+    {
       // `/Phase 5\b/` matches inside `Phase 5.5` — the word boundary sits between the `5` and the
       // `.` — so the observation pointer's own clause would satisfy this one. Require a `Phase 5`
       // that is not `Phase 5.5`, *and* the closure token, since this fragment is loaded for both
@@ -6899,7 +6909,7 @@ test('container completion is deferred until a linked issue is observed terminal
   const applyIssues = prose(source('src/tools/apply-issues.md'));
   const applyReview = prose(source('src/tools/apply-review-remote.md'));
   const mergeObservation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   assert.match(lifecycle, /must not complete a native sub-item or tick a container checklist/);
@@ -6942,7 +6952,13 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   const phase0 = prose(
     section(gate, '### Phase 0: Resolve the pull request and the completion mode'),
   );
-  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  // This test spans the seam: the entry condition is one of the three things Phase 5.5 retains in
+  // the always-loaded core, while everything it asserts after it moved into the fragment. Reading
+  // both from one subject would have let the retained gate satisfy a step pin, or the reverse.
+  const entry = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
 
   assert.match(
     phase0,
@@ -6951,7 +6967,7 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   assert.match(phase0, /performs no check wait, delegation, branch provisioning, or merge/);
   assert.match(phase0, /observer-only mode skip completion-mode resolution/);
   assert.match(
-    observation,
+    entry,
     /only after a fresh PR read proves either that Phase 5 merged the pull request or that Phase 0 selected observer-only mode/,
   );
   assert.match(observation, /fixed 30-second grace period/);
@@ -7003,7 +7019,7 @@ test('external started-state configuration is tracker-verified and only setup pe
 
 test('the post-merge completion assessment states a closed verdict vocabulary and its gating', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   assert.match(
@@ -7039,7 +7055,7 @@ test('the post-merge completion assessment states a closed verdict vocabulary an
 
 test('the confirmed transition revalidates the whole assessment basis before each mutation', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   // The offer is posed once for the whole run and the confirmed issues are then mutated in turn, so
@@ -7172,8 +7188,10 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
 });
 
 test('the terminal-transition offer quotes no text and its option discloses the whole cascade', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  // The fence travelled with the steps it gates, so both halves of this test read the fragment.
+  // The raw source, not the `prose()` form: the fence is located by its literal text.
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const observation = prose(section(fragment, '### Observation steps'));
 
   // The same threat model the set-aside confirmation already carries: the verdict derives from
   // text a third party can write on any repository where they can file an issue, so an excerpt
@@ -7186,11 +7204,11 @@ test('the terminal-transition offer quotes no text and its option discloses the 
   // The `ask` fence itself. One confirmation authorizes three classes of write — the transition,
   // the label removal of step 5, and the container completion of step 6 — so the option text has
   // to disclose all three rather than only the one it is named after.
-  const headerIndex = gate.indexOf('header: Issue done');
+  const headerIndex = fragment.indexOf('header: Issue done');
   assert.notEqual(headerIndex, -1, 'missing the Issue done ask fence header');
-  const fenceStart = gate.lastIndexOf('```ask', headerIndex);
+  const fenceStart = fragment.lastIndexOf('```ask', headerIndex);
   assert.notEqual(fenceStart, -1, 'the Issue done header must sit inside an ask fence');
-  const fence = gate.slice(fenceStart, gate.indexOf('\n```', fenceStart));
+  const fence = fragment.slice(fenceStart, fragment.indexOf('\n```', fenceStart));
   assert.match(
     fence,
     /question: The linked issues listed above are fully implemented by this merged pull request\. May this run set them to their terminal tracker state\?/,
@@ -7211,7 +7229,7 @@ test('the terminal-transition offer quotes no text and its option discloses the 
 
 test('a stated acceptance criterion comes from a closed heading set and its absence is undetermined', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7239,7 +7257,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
 
 test('the completion verdict recognizes the legacy planning-blocker spelling on the forge', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7273,7 +7291,7 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
 
 test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7323,7 +7341,7 @@ test('a terminal outcome is split into done and cancelled before anything is rec
 
 test('the external done state is re-resolved before every transition, not once before the offer', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7352,7 +7370,7 @@ test('the external done state is re-resolved before every transition, not once b
 
 test('an already-terminal external issue resolves its done state where the split is recorded', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7503,7 +7521,7 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
   );
 
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   assert.match(
     observation,

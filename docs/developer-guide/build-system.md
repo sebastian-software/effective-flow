@@ -440,7 +440,8 @@ and directive syntax").
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
-  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`. The load trigger (`when:`) sits
+  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`.
+  The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
@@ -470,7 +471,17 @@ and directive syntax").
   mode table, the unreadable-value-resolves-to-`off` rule, the `pre-commit-gate` stand-in, and the
   untrusted-head-branch threat model therefore stay in the always-loaded core – the last of those
   because an exposure that is only readable from inside the branch creating it is a discovery
-  rather than a configuration decision. `config-migration` is the live proof that a fragment may be
+  rather than a configuration decision. `merge-gate-issue-observation` is the fifth, holding the
+  body of Phase 5.5 – its seven steps and the transition gate they end in – for a phase that runs
+  after an already-successful merge and is explicitly allowed to degrade. Like
+  `merge-gate-checkout-boundary` it reuses an existing trigger, `issue-post-merge-observation`'s,
+  because the two load at the same moment. What separates it from the four above is **where the
+  cut runs**: the section's heading, its entry condition and its missing-receipt rule stay in the
+  always-loaded core, because the entry condition is stated a third time inside the moved region –
+  defer all of it and the run would decide whether it may enter the phase from text it has not
+  loaded. A fragment that holds a phase body therefore keeps that phase's entry gate outside it,
+  which is the general form of the rule the conflict pointer states for a mode.
+  `config-migration` is the live proof that a fragment may be
   eager in one file and lazy in another: twelve tools that read configuration on every run inline
   its always-read core, while seven others defer the whole fragment behind their own first
   configuration read.
