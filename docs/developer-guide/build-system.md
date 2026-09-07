@@ -439,8 +439,9 @@ and directive syntax").
   `config-migration-edge-cases`, `worktree-integration`, `issue-tracker`, `issue-tracker-forge`,
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-archival`,
-  `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`. The load
-  trigger (`when:`) sits at the decision point where the mode/branch is determined.
+  `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
+  `merge-gate-checkout-boundary`. The load trigger (`when:`) sits at the decision point where the
+  mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
@@ -451,7 +452,15 @@ and directive syntax").
   consumers read them on every run, and `config-migration`'s core is the exception the paragraph
   below records rather than a fourth instance of that rule. Cutting a fragment
   along the seam between an always-read part and a one-decision-point part is what lets the second
-  half qualify for deferral at all. `config-migration` is the live proof that a fragment may be
+  half qualify for deferral at all. `merge-gate-checkout-boundary` is the third single-consumer
+  `merge-gate` fragment beside `issue-post-merge-observation` and `pr-merge-completion`, and the
+  first that is **not** a split half: it holds tool-local text – the parts of
+  `worktree-integration` that stay off in the gate, and the lifecycle close of the one checkout it
+  provisions. It is deliberately not folded into `worktree-integration`, whose seven consumers
+  would then each carry one tool's inapplicability list. Its pointer reuses that fragment's
+  existing trigger instead of inventing one, which is legitimate because both are meaningful only
+  once Phase 2 step 1 provisions a checkout: reusing a trigger decides **when** a pointer fires,
+  never **where** the text lives. `config-migration` is the live proof that a fragment may be
   eager in one file and lazy in another: twelve tools that read configuration on every run inline
   its always-read core, while seven others defer the whole fragment behind their own first
   configuration read.

@@ -2165,6 +2165,16 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision: 'the head branch reading BEHIND or DIRTY',
     },
     {
+      // The checkout boundary's inapplicability list is only meaningful once
+      // `worktree-integration` is being loaded, so this pointer deliberately reuses that
+      // moment. Both halves are required: the branch state is the decision point, and naming
+      // the fragment it rides along with is what keeps the reuse visible if either clause is
+      // reworded.
+      fragment: 'merge-gate-checkout-boundary',
+      trigger: /(?=[\s\S]*(?:behind|dirty))(?=[\s\S]*`worktree-integration`)/i,
+      decision: 'the head branch reading BEHIND or DIRTY, the moment `worktree-integration` loads',
+    },
+    {
       // Not merely "language" plus "resolve": a clause saying language must somehow be resolved
       // names no decision point. The pointer has to name *what* is resolved — the artifact output
       // language, or the language context handed to a delegate — because that is the moment the
@@ -8102,11 +8112,17 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
     'the delivery-fragment consumer set changed; re-derive the plan-archival pointers',
   );
 
-  // Exempt because they keep no plan file. Each states that in its own source.
+  // Exempt because they keep no plan file. Each states that in its own source, except
+  // `merge-gate`: its statement sits in the single-consumer `merge-gate-checkout-boundary`
+  // fragment that its own `worktree-integration` pointer co-loads, so the assertion follows the
+  // text there rather than being satisfied vacuously by the tool body it left.
   const exemptions = new Map([
     ['iterate', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
     ['maintain', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
     ['merge-gate', /no deferred pointer to `plan-archival`/],
+  ]);
+  const exemptionStatements = new Map([
+    ['merge-gate', 'src/shared/merge-gate-checkout-boundary.md'],
   ]);
 
   for (const name of deliveryConsumers) {
@@ -8121,7 +8137,14 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
     const reason = exemptions.get(name);
     if (reason) {
       assert.equal(lazy.has('plan-archival'), false, `${name} is exempt and must carry no pointer`);
-      assert.match(body, reason, `${name} must state why it carries no plan-archival pointer`);
+      const statementPath = exemptionStatements.get(name);
+      const statement = statementPath ? source(statementPath) : body;
+      assert.match(
+        statement,
+        reason,
+        `${name} must state why it carries no plan-archival pointer` +
+          (statementPath ? ` (in ${statementPath})` : ''),
+      );
       continue;
     }
 
