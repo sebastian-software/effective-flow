@@ -2175,6 +2175,17 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision: 'the head branch reading BEHIND or DIRTY, the moment `worktree-integration` loads',
     },
     {
+      // The conflict branch, not the mode. The pointer must fire on the merge having conflicted in
+      // Phase 2 step 1, because `off` and an unanswerable `ask` are handled *inside* the deferred
+      // step: a `when:` that named `mergeGate.conflictResolution` instead would have to resolve the
+      // mode to decide whether to load the text that resolves the mode, and an `off` run would
+      // never reach its own `git merge --abort`. Both halves are required — the phase that observes
+      // the conflict, and the conflict itself.
+      fragment: 'merge-gate-conflict-resolution',
+      trigger: /(?=[\s\S]*Phase 2)(?=[\s\S]*conflicted)/i,
+      decision: 'the Phase 2 step 1 merge having conflicted in the provisioned checkout',
+    },
+    {
       // Not merely "language" plus "resolve": a clause saying language must somehow be resolved
       // names no decision point. The pointer has to name *what* is resolved — the artifact output
       // language, or the language context handed to a delegate — because that is the moment the
@@ -5394,8 +5405,19 @@ test('the conflict resolver aborts on uncertainty and writes nothing the gate ow
 });
 
 test('the resolved tree is verified independently before the gate commits and pushes it', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const contract = prose(section(gate, '## Conflict-resolution delegation contract', '\n## '));
+  // The contract and the step that issues it were deferred into a single-consumer fragment; the
+  // subject follows the text rather than the file it left, or every pin below would pass
+  // vacuously against a tool body that no longer carries any of it. `boundedSlice` rather than
+  // `section`: the fragment ends after the step, so a `'\n## '` stop would silently widen the cut
+  // to the step's own prose and let it satisfy assertions about the contract.
+  const fragment = source('src/shared/merge-gate-conflict-resolution.md');
+  const contract = prose(
+    boundedSlice(
+      fragment,
+      '## Conflict-resolution delegation contract',
+      '\n#### Resolving a conflict with the base',
+    ),
+  );
 
   // The worker validating its own resolution is one layer; `code-validator` is the second, and it
   // is the one the producing role did not run. Dropping it would leave the run's only pre-push
@@ -5443,7 +5465,7 @@ test('the resolved tree is verified independently before the gate commits and pu
   // And the order is load-bearing rather than merely stated: resolve, verify, only then commit
   // and push. A verification that happens after the push verifies nothing that can still be
   // stopped.
-  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  const step = section(fragment, '#### Resolving a conflict with the base', '\n#### ');
   ordered(step, '{{AGENT:merge-conflict-resolver}}', '{{AGENT:code-validator}}', 'Commit and push');
 });
 
@@ -5551,11 +5573,13 @@ test('the adjacent-file allowance keeps its bound at both ends of the conflict c
       'judgment call',
   );
 
+  // Deferred into `merge-gate-conflict-resolution`, so the reconciliation end of the allowance is
+  // read from the fragment that now holds it. Bounded by the step heading that follows it there.
   const contract = prose(
-    section(
-      source('src/tools/merge-gate.md'),
+    boundedSlice(
+      source('src/shared/merge-gate-conflict-resolution.md'),
       '## Conflict-resolution delegation contract',
-      '\n## ',
+      '\n#### Resolving a conflict with the base',
     ),
   );
   // Trigger and consequence as separate assertions. An alternation over the two — a window
@@ -5595,8 +5619,11 @@ test('the conflict-resolution mode gate is resolved before any write and degrade
   // `mergeGate.conflictResolution` lives in three documentation tables and, before this test, in no
   // behavioural prose at all: deleting the `off` bullet, running the resolution whatever the mode
   // says, and making a non-interactive `ask` behave as `auto` were all invisible to the suite.
-  const gate = source('src/tools/merge-gate.md');
-  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  const step = section(
+    source('src/shared/merge-gate-conflict-resolution.md'),
+    '#### Resolving a conflict with the base',
+    '\n#### ',
+  );
   const flatStep = prose(step);
 
   // The mode decides before the first write, not after it. A step that resolves first and consults

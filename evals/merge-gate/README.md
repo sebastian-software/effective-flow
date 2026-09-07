@@ -92,9 +92,17 @@ Two shapes this takes, both observed:
   and the assertion catches it — the failure is loud and the run is simply redone.
 - **A log holds two executions.** This one is quiet. The stamp is right, because the sandbox was
   scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
-  than the stamp to see it: two Phase-1 read batches, `viewer-read` or `pr-checks-wait` appearing
-  twice, or consecutive calls milliseconds apart. **`seq` proves nothing here** — the stub numbers
-  by counting the lines already present, so two writers still produce a monotonic sequence.
+  than the stamp to see it. What gives it away is **repetition**: a second Phase-1 read batch, or
+  `viewer-read` or `pr-checks-wait` appearing twice in a scenario that calls each once. **`seq`
+  proves nothing here** — the stub numbers by counting the lines already present, so two writers
+  still produce a monotonic sequence.
+
+  **Speed alone gives nothing away.** Consecutive calls tens of milliseconds apart are ordinary: an
+  agent may issue a whole read batch in one shell command, and the stub is a fresh process per call,
+  so a Phase-1 batch routinely lands within 150 ms end to end. Runs 3 and 4 of the 2026-09-07 round
+  looked exactly like the contamination pattern by that measure and were single runs by every other
+  one. Judge a suspicious log by whether an operation the scenario performs once appears twice, not
+  by the gaps.
 
 Also within one round: never run `prepare` for a scenario while that scenario's run is still going.
 It archives whatever is in the sandbox and then deletes the sandbox, so it captures a partial log

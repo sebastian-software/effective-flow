@@ -1446,7 +1446,7 @@ try {
   // of this map — into a build failure until someone re-sorts. Re-sort when
   // convenient instead.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 3198,
+    'merge-gate': 3079,
     iterate: 1633,
     setup: 1646,
     'apply-review': 1303,
