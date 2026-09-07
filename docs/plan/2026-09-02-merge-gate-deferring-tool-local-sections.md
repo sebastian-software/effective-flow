@@ -514,6 +514,47 @@ scale of its own package. Note for whoever builds it: the sandbox ADR sets
 the controlled stop rather than the resolver, and covering the `auto` path means changing that value
 too.
 
+### WP1 implementation pass, 2026-09-07
+
+Measured saving **292 lines** (3007 → 2715) against an estimate of ≈ 295 — a −1 % deviation, the
+closest of the three packages. Budget lowered 3079 → 2787, keeping its headroom of 72. Content
+preservation accounted for 271 lines with **0 unaccounted**.
+
+The section's split ran where WP1 above says it should: the heading, the entry condition and the
+missing-receipt rule stay in the always-loaded core, and steps 1–7 plus the `ask` fence moved. All
+three retained rules were verified by grep in the **built** core, and the four step-body literals
+that must no longer be there were verified absent there.
+
+Three things the pass found that the section above did not predict:
+
+- **Eleven slices became twelve subjects.** The count was right; the shape was not. One of the
+  eleven — `merge-gate supports already-merged observer re-entry with terminal-only reconciliation`
+  — asserts the entry condition **and** step content from a single subject. That subject now spans
+  the seam, so it had to be split in two: reading both halves from one slice would let the retained
+  gate satisfy a step pin, or a step satisfy the gate pin. A twelfth site had to move as well: the
+  `ask`-fence test locates the fence by raw `indexOf` on the tool source rather than through a
+  slice, so it does not appear in a `section()` count at all.
+- **A fragment's own orientation paragraph can satisfy the assertions about what stayed behind.**
+  The paragraph introducing a single-consumer fragment necessarily restates why the retained text
+  is retained, so it names the entry condition and the missing-receipt rule. Had the eleven slices
+  opened at the fragment's `##` heading, they would have run to end of file and included it. The
+  steps therefore carry their own `### Observation steps` heading and every repointed slice targets
+  that, which excludes the orientation. This is the WP2 widening lesson from the other side: there
+  the danger was the moved text satisfying assertions about the contract, here it is the fragment's
+  **new** text satisfying assertions about the core.
+- **The pointer's trigger names more than the phase number.** `issue-post-merge-observation` pins
+  `/Phase 5\.5/` and that is enough for it, but the steps run once the phase is _entered_, and
+  entry is exactly what the retained gate decides. The battery entry therefore requires the phase
+  number **and** the proof that opens it, so a `when:` reduced to the phase number alone — still
+  correct behaviour today — fails the moment the entry gate is what moves.
+
+**Acceptance criterion 2 is met by the argued-gap branch, as this plan predicted it would have to
+be.** The deep review established that WP1's region is unreachable by construction: `merge-proceeds`
+records that the static fixture keeps reporting an open pull request after the merge, so Phase 5.5's
+own merge proof never succeeds and the phase is never entered. That is unchanged by this pass and
+was re-observed in this round's logs. The reordering to WP3 → WP2 → WP1 was made so this package
+would not be the round's first argued gap, and it is not: WP3 and WP2 shipped ahead of it.
+
 ### Revision, 2026-09-02 (eval prerequisite resolved)
 
 Revised in place after `evals/merge-gate/` landed in #399. The plan's own re-entry note directed
