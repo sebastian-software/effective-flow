@@ -1445,24 +1445,35 @@ try {
   // would turn a successful deferral — a tool shrinking, which is the whole point
   // of this map — into a build failure until someone re-sorts. Re-sort when
   // convenient instead.
+  //
+  // Six entries below carry a `+6 (goal-completion)` marker. That raise is the one case where this
+  // line metric and the real context cost point in opposite directions:
+  // `src/shared/goal-completion.md` stated its whole progress contract as a single
+  // 2 893-character Markdown line, which cost one line of budget and roughly 700 tokens in each of
+  // its ten eager consumers. Rewriting it as the invariants it guarantees dropped the fragment
+  // from 4 413 to 3 036 characters while adding six lines, so every eager consumer grew by exactly
+  // six lines and shrank in tokens. Each marker is that measured delta and nothing more, applied
+  // so the entry keeps the headroom it had; the four other eager consumers (`merge-gate`, `docs`,
+  // `build`, `fix`) are judgement entries with room to absorb it and were left alone. Raise an
+  // entry this way only when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2787,
-    iterate: 1633,
+    iterate: 1639, // +6 (goal-completion)
     setup: 1631,
-    'apply-review': 1303,
-    'apply-issues': 1146,
+    'apply-review': 1309, // +6 (goal-completion)
+    'apply-issues': 1152, // +6 (goal-completion)
     cleanup: 994,
-    refactor: 828,
+    refactor: 834, // +6 (goal-completion)
     deliver: 747,
     'plan-issue': 700, // measured 696 + 4, not the shared judgement 700
     review: 700,
     plan: 700,
     'apply-review-commit-mechanics': 630,
-    maintain: 624,
+    maintain: 630, // +6 (goal-completion)
     docs: 700,
     build: 700,
     apply: 541,
-    'apply-plan': 539,
+    'apply-plan': 545, // +6 (goal-completion)
     investigate: 501,
     fix: 700,
     'plan-review': 420,

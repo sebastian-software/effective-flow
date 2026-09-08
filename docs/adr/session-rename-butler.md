@@ -43,13 +43,14 @@ contract, and degradation to the visible `**Suggested session title:**` line on 
 outcome. Two hosts, one shape.
 
 Capability is established by attempting the call, never by probing. A refusal, an error, or a tool
-that is absent — or merely not loaded yet — ends at the suggestion line, and a run does not conclude
-from a tool's absence from its initial tool list that the host cannot rename. That ban governs
-ordinary runs, and `setup` is its one exception — the same carve-out the ChatGPT Desktop path
-already carries. Only after the user accepts its visible capability check does `setup` call the
-operation once, with its own fixed probe title `Effective Flow setup check`, because a rename nobody
-can see proves nothing. It is a capability check rather than a work title, it happens only with that
-go-ahead, and an absent, denied or failed call means only that this probe failed.
+the host does not carry at all ends at the suggestion line. A tool that is merely **not loaded yet**
+is not that case: a host may defer its session tools until they are loaded by name, so loading the
+operation is part of making the call, and only a refusal or an error from the call itself is a
+failure. A run never concludes from a tool's absence from its initial tool list that the host cannot
+rename. The ban on probing governs ordinary runs, and `setup` is its one exception — the same
+carve-out the ChatGPT Desktop path already carries. Only after the user accepts its visible
+capability check does `setup` call the operation once, with its own fixed probe title
+`Effective Flow setup check`,
 
 **The butler is retired, not kept as a fallback.** Retired with it are the marker title, the pasted
 standing mandate, the `{sessionId, title}` payload, the corrective-request budget, the liveness
@@ -96,5 +97,5 @@ other than its own.
 
 - `src/shared/session-rename.md`
 - `src/shared/session-title.md`
-- `docs/plan/2026-09-08-native-claude-code-session-rename.md`
+- `docs/plan/archive/2026-09-08-native-claude-code-session-rename.md` — the implementation plan
 - `docs/plan/archive/2026-08-09-session-rename-butler.md` — the retired mechanism
