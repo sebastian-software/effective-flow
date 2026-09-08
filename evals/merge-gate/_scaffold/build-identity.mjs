@@ -7,13 +7,30 @@
 // build nobody is running. That is the exact drift this whole layer exists to catch, reappearing in
 // the evidence rather than in the subject.
 //
-// **What is hashed is the built portable skill, not the sources it came from.** An earlier version
-// digested a derived set of source files instead, and that was wrong in a way worth recording: the
-// gate a run loads is the *output* of `build.mjs`, so a change in the build itself — include
-// resolution, the router's tool list, a lazy pointer's wording, the version stamp — changes what
-// runs while every hand-picked source file still hashes the same. Hashing the output covers every
-// input by construction, including the ones nobody thought to list, which is the only version of
-// this guard that cannot be quietly outgrown.
+// **What is hashed is the part of the built portable skill a run actually loads.** Two earlier
+// versions were both wrong, in opposite directions. Digesting a hand-picked set of *source* files
+// missed that the gate a run loads is the *output* of `build.mjs`: include resolution, the router's
+// tool list, a lazy pointer's wording and the version stamp all change what runs while every listed
+// source still hashes the same. Digesting the whole output fixed that but bound each run to 86
+// files when a `merge-gate` run reads roughly 17, so an edit to an unrelated tool, a worker contract
+// or a fragment the gate never reaches invalidated every archived round and forced a re-run that
+// could produce no new information.
+//
+// The set is therefore derived from the built tree rather than listed: the router, the gate tool and
+// the stubbed helper as seeds, plus every `shared/` fragment reachable from the gate tool's own load
+// pointers, transitively. Eagerly included fragments need no entry — the build inlines them into the
+// tool body, so the tool's own hash already covers them. `scripts/remote-tracker-core.mjs` is
+// deliberately absent: the shipped helper imports it, but the scaffold replaces that importer with
+// the stub, so no sandbox run reaches it.
+//
+// Deriving rather than listing keeps the set from drifting as fragments are added, and it keeps the
+// property the binding exists for: any change to the text the gate itself executes still invalidates
+// the evidence. What it drops is invalidation by files no run reads.
+//
+// **A pointer that does not resolve is fatal.** Nothing records which files a sandbox run truly
+// opens, so the set is inferred; a missed route would weaken the guard with no test noticing. The
+// residual is bounded by aborting the stamp when a seed or a pointed-at fragment is absent from the
+// built tree, so this guard can fail loudly but never shrink quietly.
 //
 // A run's identity therefore has three parts, and all three have to hold for an archived log to
 // mean anything:
@@ -46,7 +63,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 import { relative, resolve } from 'node:path';
 
@@ -77,14 +94,50 @@ function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
-function walk(directory) {
-  const found = [];
-  for (const entry of readdirSync(directory)) {
-    const path = resolve(directory, entry);
-    if (statSync(path).isDirectory()) found.push(...walk(path));
-    else found.push(path);
+// The seeds of the load set: the router that dispatches the invocation, the tool body that is the
+// gate itself, and the forge helper the gate calls out to — which the scaffold swaps for the stub,
+// so what the run reads is the stub while what the shipped tree offers is this file. Its
+// `-core.mjs` half is deliberately absent, because the swap means no run ever imports it.
+const LOAD_SET_SEEDS = ['SKILL.md', 'tools/merge-gate.md', 'scripts/remote-tracker.mjs'];
+
+// The built form of a ```lazy-include fence, as `renderLazyPointer` in build-lib.mjs emits it. The
+// prefix is matched rather than the bare path so ordinary prose naming a fragment cannot enlarge
+// the set by accident.
+const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
+
+// Follows the gate tool's own load pointers through the built tree, transitively, and returns the
+// relative paths a `merge-gate` run reads. Only the gate tool and the fragments it reaches are
+// scanned: the router carries no pointer, and the helper is not markdown.
+//
+// An absent seed or an unresolvable pointer throws rather than yielding a shorter set. That is the
+// whole safety property: a set one fragment short produces a perfectly plausible digest, and once
+// the affected rounds have been re-stamped against it, nothing downstream can tell it from a
+// legitimately narrower one — the dropped fragment is then free to drift uncovered. Failing here is
+// the only place the difference is still visible.
+function deriveLoadSet(skillRoot) {
+  const set = new Set(LOAD_SET_SEEDS);
+  for (const seed of LOAD_SET_SEEDS) {
+    if (existsSync(resolve(skillRoot, seed))) continue;
+    throw new Error(`load-set seed missing from the built skill at ${skillRoot}: ${seed}`);
   }
-  return found;
+  const pending = ['tools/merge-gate.md'];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    const body = readFileSync(resolve(skillRoot, current), 'utf8');
+    for (const [, name] of body.matchAll(LOAD_POINTER_RE)) {
+      const fragment = `shared/${name}.md`;
+      if (set.has(fragment)) continue;
+      if (!existsSync(resolve(skillRoot, fragment))) {
+        throw new Error(
+          `load pointer in ${current} names a fragment absent from the built skill at ` +
+            `${skillRoot}: ${fragment}`,
+        );
+      }
+      set.add(fragment);
+      pending.push(fragment);
+    }
+  }
+  return [...set].sort().map((relativePath) => resolve(skillRoot, relativePath));
 }
 
 // Paths are recorded relative to the tree's own root, so the digest describes the skill rather than
@@ -128,7 +181,7 @@ export function buildPortableSkill(outputRoot) {
 // so a mismatch can name which one moved before naming the files.
 export function scenarioBuildIdentity(scenario, skillRoot) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const skill = hashFiles(walk(skillRoot), skillRoot);
+  const skill = hashFiles(deriveLoadSet(skillRoot), skillRoot);
   const instrument = hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
   const scenarioInputs = hashFiles(
     [

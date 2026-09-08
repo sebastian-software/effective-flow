@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import {
   buildPortableSkill,
   scenarioBuildIdentity,
 } from '../evals/merge-gate/_scaffold/build-identity.mjs';
+import { sandboxPaths } from '../evals/merge-gate/_scaffold/sandbox.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
@@ -120,24 +121,69 @@ test('the operation-support probe still distinguishes the shipped helper from an
   );
 });
 
-// The stamp is only worth its failures if it really covers the tree a run loads. A hash of an empty
-// or half-copied directory is still a stable hash: it would match itself run after run and bind
-// nothing at all. Asserted over the three things every run reads — the router it enters through, the
-// gate it runs, and the helper it calls — plus a floor on the tree's size, because the failure this
-// catches is a walk that returned almost nothing rather than one that returned the wrong thing.
+// The seeds every run enters through plus a sample of the fragments the gate reaches by its own
+// pointers. A sample rather than the whole expected list on purpose: the set legitimately grows the
+// day the gate gains a pointer, and pinning the full list would turn every such addition into a
+// failure that carries no information.
+const LOADED_BY_A_RUN = [
+  'SKILL.md',
+  'tools/merge-gate.md',
+  'scripts/remote-tracker.mjs',
+  'shared/merge-gate-checkout-boundary.md',
+  'shared/merge-gate-conflict-resolution.md',
+  'shared/pr-merge-completion.md',
+];
+
+// Files the built portable skill holds that the derived set deliberately stops short of, one from
+// each direction it could wrongly widen again: a worker contract, an unrelated tool, an unrelated
+// `shared/` fragment — which is what separates the derived include graph from the coarser
+// "hash all of `shared/`" set that was weighed and rejected — and `LICENSE`. The worker is the
+// merge-conflict resolver rather than an arbitrary role because it is the one nearest the gate, so
+// it is the first a widening set would pull back in. `scripts/remote-tracker-core.mjs` is the
+// pointed exclusion: the shipped helper imports it, but the scaffold replaces that importer with the
+// stub, so no sandbox run reaches it and hashing it would restore exactly the coupling that was
+// removed.
+const NOT_LOADED_BY_A_RUN = [
+  'workers/effective-flow-merge-conflict-resolver.md',
+  'tools/plan.md',
+  'shared/plan-contract.md',
+  'LICENSE',
+  'scripts/remote-tracker-core.mjs',
+];
+
+// The stamp is only worth its failures if it really covers what a run loads — and only worth
+// keeping if it stops there. The hashed set is derived in `build-identity.mjs` by following
+// `tools/merge-gate.md`'s own load pointers through the built tree: the router a run enters
+// through, the gate tool it runs, the helper it calls, and every `shared/` fragment those pointers
+// reach, transitively. Seventeen paths out of the eighty-six the built portable skill holds.
+//
+// Membership is asserted in both directions because both failures are silent. A set that lost a
+// seed still produces a perfectly stable digest — it would match itself round after round while
+// binding almost nothing, and the suite would go on certifying a gate that had been rewritten
+// underneath it. A set that grew back to the whole tree binds every archived round to files no run
+// reads, so an edit to an unrelated tool or a worker contract invalidates all ten and forces a
+// re-round that can produce no new information; that coupling is what the narrowing removed, and
+// nothing else here would notice it returning.
+//
+// **Do not restore a count floor.** An earlier version asserted `hashed.length > 50`, which
+// contradicted the name above it: it held only while the stamp hashed the whole output, and the
+// correct set fails it. A floor cannot tell the right seventeen files from any other seventeen,
+// which is the only question worth asking here.
 test('the build stamp covers the built tree a run actually loads', () => {
   const identity = currentIdentity(SCENARIOS[0]);
   const hashed = Object.keys(identity.skill.files);
-  for (const file of ['SKILL.md', 'tools/merge-gate.md', 'scripts/remote-tracker.mjs']) {
+  for (const file of LOADED_BY_A_RUN) {
     assert.ok(
       hashed.includes(file),
       `the build stamp does not hash ${file}; a run's identity has to cover the tree it loads, or a change there leaves the archived rounds looking current`,
     );
   }
-  assert.ok(
-    hashed.length > 50,
-    `the build stamp hashes only ${hashed.length} file(s) of the portable skill; that is too few to be the built tree, so the walk is returning a fraction of it and the digest binds almost nothing`,
-  );
+  for (const file of NOT_LOADED_BY_A_RUN) {
+    assert.ok(
+      !hashed.includes(file),
+      `the build stamp hashes ${file}, which no merge-gate run loads; binding the archived rounds to it means an unrelated edit invalidates every one of them and forces a re-round that can produce no new information`,
+    );
+  }
   for (const part of ['skill', 'instrument', 'scenario_inputs']) {
     assert.match(
       identity[part].digest,
@@ -265,6 +311,55 @@ function assertSchema(run, records) {
   });
 }
 
+// `realpathSync` answers only for a path that exists, and the sandbox is torn down between rounds,
+// so the longest ancestor that does exist is resolved and the rest re-appended. That is what makes
+// two spellings of one directory compare equal without hard-coding either: on macOS `/tmp` is a
+// symlink to `/private/tmp`, and three of the ten archived runs — `guard-blocks-merge/run-5`,
+// `merge-proceeds/run-2` and `merge-proceeds/run-5` — carry both spellings *within a single run*,
+// so a strict equality against either one would fail evidence that is entirely valid.
+function normalizePath(path) {
+  let head = resolve(path);
+  const tail = [];
+  for (;;) {
+    if (existsSync(head)) return resolve(realpathSync(head), ...tail);
+    const parent = dirname(head);
+    if (parent === head) return resolve(path);
+    tail.unshift(basename(head));
+    head = parent;
+  }
+}
+
+// Whether the run was operating on the sandbox at all. `assertSchema` above reads the key *set*, so
+// until this was added a record could carry `cwd: null` and pass every assertion in the file. One
+// archived run did — twenty-one records of it, counted toward the documented five-of-five bar until
+// a review bot noticed and the round was re-run. Null is not a formatting defect: the stub falls
+// back to its own inherited process directory when a caller states none, so such a record shows
+// nothing about which checkout the call was made against, and a log of them is not evidence about
+// the scenario.
+//
+// This belongs to the **archived evidence**, not to the stub. The stub's own contract legitimately
+// permits a null `cwd` for a caller that states none — `test/eval-fixture-fidelity.test.mjs` pins
+// exactly that, and the shipped `issue-tracker-forge` contract relies on it. Do not "fix" the stub
+// to reject one.
+//
+// A `cwd` pointing somewhere else entirely fails too, and should: it is a different defect from
+// passing none, and it disqualifies the run as evidence about the sandbox just as completely.
+function assertRuntimeRoot(scenario, run, records) {
+  const declared = sandboxPaths(scenario).projectRoot;
+  const projectRoot = normalizePath(declared);
+  records.forEach((record, index) => {
+    assert.ok(
+      typeof record.cwd === 'string' && record.cwd !== '',
+      `${run.name}: record ${index + 1} states no runtime root (cwd is ${JSON.stringify(record.cwd)}). The stub falls back to its own inherited process directory when a caller states none, so this call was not shown to have been made against the ${scenario} sandbox project at all — the log proves nothing about the sandbox and the round has to be re-run, not re-read.`,
+    );
+    const recorded = normalizePath(record.cwd);
+    assert.ok(
+      recorded === projectRoot || recorded.startsWith(`${projectRoot}${sep}`),
+      `${run.name}: record ${index + 1} was made from ${record.cwd}, which is outside the ${scenario} sandbox project at ${declared}. The run acted on some other checkout, so what it did there is not a measurement of this scenario — re-run the round rather than reading this log.`,
+    );
+  });
+}
+
 function answerableOperations(scenario) {
   const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
   return new Set([...Object.keys(fixture.operations), ...STUB_ANSWERED_OPERATIONS]);
@@ -320,6 +415,7 @@ for (const scenario of SCENARIOS) {
       assertBoundToCurrentBuild(run, identity);
       const records = readRun(run);
       assertSchema(run, records);
+      assertRuntimeRoot(scenario, run, records);
 
       // Contamination is a **divergence between the sandbox and production**, and that is narrower
       // than "the fixture did not define it". An operation the shipped helper supports, left
