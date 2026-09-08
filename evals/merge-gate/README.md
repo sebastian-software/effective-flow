@@ -80,11 +80,13 @@ because for a fail-closed rule a single deviating run is a finding. The one scen
 gives way is the merging counterpart: without it the refusals prove less than they appear to.
 
 That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
-change to what the gate loads — the router, `tools/merge-gate.md`, the stubbed helper, and the
-fragments the gate reaches through its own include graph — rather than by any change anywhere in the
-built skill, so an edit to an unrelated tool, a worker contract or a fragment no run reads leaves the
-standing evidence intact. That is a narrower trigger, not an absent one: two pull requests that both
-touch those files still invalidate each other's rounds, and whichever lands second re-runs.
+change to what the gate loads — the router, `tools/merge-gate.md`, and the fragments the gate
+reaches through its own include graph — rather than by any change anywhere in the built skill, so an
+edit to an unrelated tool, a worker contract or a fragment no run reads leaves the standing evidence
+intact. The shipped `scripts/remote-tracker.mjs` is not among them: the scaffold overwrites it with
+the stub, which is hashed separately as the instrument. That is a narrower trigger, not an absent
+one: two pull requests that both touch those files still invalidate each other's rounds, and
+whichever lands second re-runs.
 
 ### One round at a time, across the whole machine
 
@@ -99,9 +101,9 @@ Two shapes this takes, both observed:
 - **A run loads the other checkout's build.** Its archived stamp then carries that build's digest,
   and the assertion catches it — the failure is loud and the run is simply redone. The stamp hashes
   only the files a run loads, so this catches the swap only where the two checkouts differ in those
-  files: two worktrees whose router, gate tool, helper and reachable fragments are byte-identical
-  produce the same digest, and a run that borrowed the other one's build passes unremarked. Checking
-  for a foreign log before starting is what covers the remainder.
+  files: two worktrees whose router, gate tool and reachable fragments are byte-identical produce
+  the same digest, and a run that borrowed the other one's build passes unremarked. Checking for a
+  foreign log before starting is what covers the remainder.
 - **A log holds two executions.** This one is quiet. The stamp is right, because the sandbox was
   scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
   than the stamp to see it. What gives it away is **repetition**: a second Phase-1 read batch, or

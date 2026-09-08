@@ -12,16 +12,18 @@
 // missed that the gate a run loads is the *output* of `build.mjs`: include resolution, the router's
 // tool list, a lazy pointer's wording and the version stamp all change what runs while every listed
 // source still hashes the same. Digesting the whole output fixed that but bound each run to 86
-// files when a `merge-gate` run reads roughly 17, so an edit to an unrelated tool, a worker contract
+// files when a `merge-gate` run reads roughly 16, so an edit to an unrelated tool, a worker contract
 // or a fragment the gate never reaches invalidated every archived round and forced a re-run that
 // could produce no new information.
 //
-// The set is therefore derived from the built tree rather than listed: the router, the gate tool and
-// the stubbed helper as seeds, plus every `shared/` fragment reachable from the gate tool's own load
-// pointers, transitively. Eagerly included fragments need no entry — the build inlines them into the
-// tool body, so the tool's own hash already covers them. `scripts/remote-tracker-core.mjs` is
-// deliberately absent: the shipped helper imports it, but the scaffold replaces that importer with
-// the stub, so no sandbox run reaches it.
+// The set is therefore derived from the built tree rather than listed: the router and the gate tool
+// as seeds, plus every `shared/` fragment reachable from the gate tool's own load pointers,
+// transitively. Eagerly included fragments need no entry — the build inlines them into the tool
+// body, so the tool's own hash already covers them. Neither `scripts/remote-tracker.mjs` nor its
+// `-core.mjs` half is a member: `scaffold.mjs` overwrites that exact path in the copied tree with
+// the stub before any run, and the stub is already hashed separately as the `instrument` part, so no
+// sandbox run ever loads the shipped helper's content and none ever reaches the core module it
+// imports.
 //
 // Deriving rather than listing keeps the set from drifting as fragments are added, and it keeps the
 // property the binding exists for: any change to the text the gate itself executes still invalidates
@@ -94,11 +96,11 @@ function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
-// The seeds of the load set: the router that dispatches the invocation, the tool body that is the
-// gate itself, and the forge helper the gate calls out to — which the scaffold swaps for the stub,
-// so what the run reads is the stub while what the shipped tree offers is this file. Its
-// `-core.mjs` half is deliberately absent, because the swap means no run ever imports it.
-const LOAD_SET_SEEDS = ['SKILL.md', 'tools/merge-gate.md', 'scripts/remote-tracker.mjs'];
+// The seeds of the load set: the router that dispatches the invocation and the tool body that is the
+// gate itself. `scripts/remote-tracker.mjs` is deliberately absent, together with its `-core.mjs`
+// half: `scaffold.mjs` replaces that path in the copied tree with the stub, which is hashed as the
+// `instrument` part instead, so a run loads neither the shipped helper nor the module it imports.
+const LOAD_SET_SEEDS = ['SKILL.md', 'tools/merge-gate.md'];
 
 // The built form of a ```lazy-include fence, as `renderLazyPointer` in build-lib.mjs emits it. The
 // prefix is matched rather than the bare path so ordinary prose naming a fragment cannot enlarge
@@ -107,7 +109,7 @@ const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 
 // Follows the gate tool's own load pointers through the built tree, transitively, and returns the
 // relative paths a `merge-gate` run reads. Only the gate tool and the fragments it reaches are
-// scanned: the router carries no pointer, and the helper is not markdown.
+// scanned: the router carries no pointer of its own.
 //
 // An absent seed or an unresolvable pointer throws rather than yielding a shorter set. That is the
 // whole safety property: a set one fragment short produces a perfectly plausible digest, and once

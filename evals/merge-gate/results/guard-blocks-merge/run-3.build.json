@@ -1,11 +1,10 @@
 {
   "scenario": "guard-blocks-merge",
-  "digest": "sha256:fb43cd207961e03aa68fdfccbb8c60194bdce19ace849a2de3974b73f764550e",
+  "digest": "sha256:6a36d30556c032afc1d8828257b5f94a2e034ea85cc2dd909f17541d28dcf8b8",
   "skill": {
-    "digest": "sha256:fc6fc3536e7127e30a1630c94d94215404f658ec2f155d22428f0b5c8cb462e3",
+    "digest": "sha256:904f1ddc345c8a27e5f4914d60f748e82e55cc5c19467eecbb0dd24574fa5b81",
     "files": {
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
-      "scripts/remote-tracker.mjs": "sha256:fea8188c3621010610cce10cbe5eca434a7222b21badb00f99548740ab58a32e",
       "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
       "shared/effective-flow-dir-migration.md": "sha256:331328198efd38ad4541449aec9e346ad4ab673cc1c15657915f9912d92952c0",
       "shared/issue-post-merge-observation.md": "sha256:e67a23e9820d785615a378e6e627e61a5a4488f80868b4f372b6a458f13b0363",
