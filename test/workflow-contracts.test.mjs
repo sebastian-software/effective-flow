@@ -12625,3 +12625,217 @@ test('apply-review-remote defers its ADR file name instead of forbidding a numbe
     'the remote branch must defer the ADR file name to the resolved convention',
   );
 });
+
+// `src/shared/goal-completion.md` is eagerly included in ten tools, so every character of it is
+// always-loaded context ten times over. Its "Visible progress" bullet was a single
+// 2 893-character Markdown item that prescribed the mechanics of one harness's native task tool;
+// it was reduced to the guarantees those mechanics existed to produce, leaving the mechanics to
+// whatever task tooling the harness supplies. The only real risk in that compression is silently
+// dropping a guarantee, so each one is pinned below by a token that does not depend on the
+// sentence around it: a reworded fragment stays green, a fragment missing a guarantee does not.
+//
+// These pins were written and run green against the *unmodified* fragment before any prose moved,
+// and were not edited afterwards. That order is what lets a later failure read as "an invariant
+// was lost" rather than "the wording drifted".
+//
+// Eleven guarantees, not the nine the plan enumerated: classifying every sentence of the old
+// bullet surfaced two the list had missed - that the overview is unconditional (the generic
+// task-tracking thresholds govern ad-hoc subtask lists only and never gate it), and that the more
+// specific per-finding, per-issue, per-source and per-reviewer detail rules stay authoritative
+// over this general one.
+test('goal-completion states every invariant of the completion contract', () => {
+  const fragment = prose(source('src/shared/goal-completion.md'));
+
+  // Scope. The pattern steers the workflow's own run and suspends none of its gates.
+  assert.match(
+    fragment,
+    /uniform completion pattern/i,
+    'the loop pattern must be declared uniform rather than ad-hoc',
+  );
+  assert.match(
+    fragment,
+    /regular approval gates always apply/i,
+    "completion control must not suspend the workflow's own approval gates",
+  );
+
+  // 1. One declared, measurable completion condition, derived from the basis, naming the target
+  //    state, the concrete check and the scope boundary.
+  assert.match(
+    fragment,
+    /exactly one explicit, measurable completion condition/i,
+    'invariant 1: exactly one explicit, measurable completion condition',
+  );
+  assert.match(
+    fragment,
+    near('acceptance criteria', 'validation plan', 120),
+    'invariant 1: the condition is derived from the basis, not invented',
+  );
+  assert.match(
+    fragment,
+    near('target state', 'scope boundary', 200),
+    'invariant 1: the condition names the target state, the check and the scope boundary',
+  );
+  assert.match(
+    fragment,
+    /deliberately not changed/i,
+    'invariant 1: the scope boundary covers what is deliberately not changed',
+  );
+
+  // 2. Verified by independent instances, never by self-assessment.
+  assert.match(
+    fragment,
+    /self-assessment/i,
+    'invariant 2: self-assessment must be named and excluded',
+  );
+  assert.match(
+    fragment,
+    near('independent instances', 'code-validator', 250),
+    'invariant 2: the independent technical instance must be named',
+  );
+  assert.match(
+    fragment,
+    near('code-validator', 'reviewer', 200),
+    'invariant 2: the content instance must be named beside the technical one',
+  );
+  assert.match(
+    fragment,
+    near('counts as fulfilled', 'confirm', 200),
+    'invariant 2: confirmation by those instances is what fulfils the condition',
+  );
+
+  // 3. Correction rounds are bounded; an exhausted bound escalates instead of looping.
+  assert.match(
+    fragment,
+    /bound the internal correction rounds/i,
+    'invariant 3: the internal correction rounds are bounded',
+  );
+  assert.match(
+    fragment,
+    near('escalate to the user', 'indefinitely', 200),
+    'invariant 3: an exhausted bound escalates instead of running on indefinitely',
+  );
+
+  // 4. Exactly one workflow owns the progress overview, with the named handoff.
+  assert.match(
+    fragment,
+    /exactly one workflow owns the progress overview/i,
+    'invariant 4: exactly one owner of the progress overview',
+  );
+  assert.match(
+    fragment,
+    near('apply-plan', 'hands ownership', 150),
+    'invariant 4: apply-plan hands ownership to its selected target workflow',
+  );
+  assert.match(
+    fragment,
+    near('apply-issues', 'retain ownership', 200),
+    'invariant 4: apply-issues retains ownership',
+  );
+  assert.match(
+    fragment,
+    near('apply-review', 'retain ownership', 200),
+    'invariant 4: apply-review retains ownership',
+  );
+  assert.match(
+    fragment,
+    near('delegated subworkflow', 'second progress overview', 250),
+    'invariant 4: a delegated subworkflow reports instead of opening a second overview',
+  );
+  assert.match(
+    fragment,
+    near('on resume', 'existing list', 120),
+    'invariant 4: a resumed run continues the existing overview',
+  );
+
+  // 5. Every known phase and every dynamic entry reaches a truthful visible end state before
+  //    completion is reported.
+  assert.match(
+    fragment,
+    near('before work', 'every known remaining numbered phase', 150),
+    'invariant 5: the overview covers every known remaining phase before work starts',
+  );
+  assert.match(
+    fragment,
+    near('findings, issues or parallel subtasks', 'as soon as their set is known', 150),
+    'invariant 5: dynamic entries join the overview once their set is known',
+  );
+  assert.match(
+    fragment,
+    near('every known phase and dynamic entry', 'truthful visible end state', 250),
+    'invariant 5: every entry is reconciled to a truthful visible end state',
+  );
+  for (const state of ['skipped', 'terminally failed', 'aborted']) {
+    assert.ok(
+      fragment.includes(state),
+      `invariant 5: a ${state} step needs its own distinguishable end state`,
+    );
+  }
+  assert.match(
+    fragment,
+    /never report completion with an unresolved entry/i,
+    'invariant 5: completion is not reported while an entry is unresolved',
+  );
+
+  // 6. Terminal failure or abort never satisfies the completion condition.
+  assert.match(
+    fragment,
+    near('terminal failure or abort', 'satisfying the completion condition', 150),
+    'invariant 6: terminal failure or abort never satisfies the completion condition',
+  );
+
+  // 7. A step awaiting user input stays open, carrying its blocker.
+  assert.match(
+    fragment,
+    near('awaiting user input', 'blocker', 80),
+    'invariant 7: a step awaiting user input stays open with its blocker',
+  );
+
+  // 8. Progress updates are not gates.
+  assert.match(
+    fragment,
+    near('not gates', 'approval rule', 200),
+    'invariant 8: progress updates are not gates',
+  );
+  assert.match(
+    fragment,
+    near('not gates', 'continue', 120),
+    'invariant 8: the run continues past an update unless a real blocker applies',
+  );
+
+  // 9. A failed tracking update is reported once, tracking moves to chat without claiming a
+  //    successful tool update, and the domain work continues.
+  assert.match(
+    fragment,
+    near('report that failure once', 'without claiming a successful tool update', 200),
+    'invariant 9: a failed tracking update is reported once and claims nothing',
+  );
+  assert.match(
+    fragment,
+    near('without claiming a successful tool update', 'continue the domain work', 150),
+    'invariant 9: the domain work continues after a failed tracking update',
+  );
+
+  // 10. The overview is unconditional; the generic task-tracking thresholds never gate it.
+  assert.match(
+    fragment,
+    near('visible phase task list', 'only a few phases remain', 200),
+    'invariant 10: the overview is kept even when only a few phases remain',
+  );
+  assert.match(
+    fragment,
+    near('generic task-tracking thresholds', 'ad-hoc subtask lists', 200),
+    'invariant 10: the generic thresholds govern ad-hoc lists only, never this overview',
+  );
+  assert.match(
+    fragment,
+    near('after each numbered phase', 'short update', 150),
+    'invariant 10: a short update follows each phase and each bounded correction round',
+  );
+
+  // 11. More specific detail rules stay authoritative over this general one.
+  assert.match(
+    fragment,
+    near('per-finding, per-issue, per-source and per-reviewer', 'authoritative', 150),
+    'invariant 11: more specific per-finding/per-issue/per-source/per-reviewer rules stay authoritative',
+  );
+});
