@@ -12,7 +12,7 @@
 // missed that the gate a run loads is the *output* of `build.mjs`: include resolution, the router's
 // tool list, a lazy pointer's wording and the version stamp all change what runs while every listed
 // source still hashes the same. Digesting the whole output fixed that but bound each run to 86
-// files when a `merge-gate` run reads roughly 21, so an edit to an unrelated tool, an unreached
+// files when a `merge-gate` run can reach roughly 21, so an edit to an unrelated tool, an unreached
 // worker contract or a fragment the gate never reaches invalidated every archived round and forced a
 // re-run that could produce no new information.
 //
@@ -21,10 +21,14 @@
 // of those seeds' own load pointers, transitively. The delegation targets are seeds because a gate
 // run reaches them — `tools/iterate.md` for a review round, and the merge-conflict-resolver and
 // code-validator worker contracts — and a set that stopped at the gate tool would leave a run bound
-// to a build whose delegated artifact had since changed. They cost little: `iterate` shares most of
-// the gate's fragments, so the three seeds pull in only two further ones, and with the shipped
-// helper dropped below, the whole set moves from 17 files to 21. Eagerly included fragments need no
-// entry — the build inlines them into the tool body, so the tool's own hash already covers them.
+// to a build whose delegated artifact had since changed. Membership is "can the gate reach it", not
+// "did this scenario open it": a scenario that never hits a conflict still binds to the resolver,
+// which is the conservative direction of the two. The seeds are the gate's own delegation surface
+// and go one hop; `iterate`'s further delegations are deliberately not seeded, because seeding them
+// would pull most of the built tree back in and undo the narrowing. The three cost little, since
+// `iterate` shares most of the gate's fragments: they pull in two further ones, for 21 files in
+// all. Eagerly included fragments need no entry — the build inlines them into the tool body, so the
+// tool's own hash already covers them.
 // Neither `scripts/remote-tracker.mjs` nor its `-core.mjs` half is a member: `scaffold.mjs`
 // overwrites that exact path in the copied tree with the stub before any run, and the stub is
 // already hashed separately as the `instrument` part, so no sandbox run ever loads the shipped
