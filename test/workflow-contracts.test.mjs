@@ -2165,6 +2165,27 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision: 'the head branch reading BEHIND or DIRTY',
     },
     {
+      // The checkout boundary's inapplicability list is only meaningful once
+      // `worktree-integration` is being loaded, so this pointer deliberately reuses that
+      // moment. Both halves are required: the branch state is the decision point, and naming
+      // the fragment it rides along with is what keeps the reuse visible if either clause is
+      // reworded.
+      fragment: 'merge-gate-checkout-boundary',
+      trigger: /(?=[\s\S]*(?:behind|dirty))(?=[\s\S]*`worktree-integration`)/i,
+      decision: 'the head branch reading BEHIND or DIRTY, the moment `worktree-integration` loads',
+    },
+    {
+      // The conflict branch, not the mode. The pointer must fire on the merge having conflicted in
+      // Phase 2 step 1, because `off` and an unanswerable `ask` are handled *inside* the deferred
+      // step: a `when:` that named `mergeGate.conflictResolution` instead would have to resolve the
+      // mode to decide whether to load the text that resolves the mode, and an `off` run would
+      // never reach its own `git merge --abort`. Both halves are required — the phase that observes
+      // the conflict, and the conflict itself.
+      fragment: 'merge-gate-conflict-resolution',
+      trigger: /(?=[\s\S]*Phase 2)(?=[\s\S]*conflicted)/i,
+      decision: 'the Phase 2 step 1 merge having conflicted in the provisioned checkout',
+    },
+    {
       // Not merely "language" plus "resolve": a clause saying language must somehow be resolved
       // names no decision point. The pointer has to name *what* is resolved — the artifact output
       // language, or the language context handed to a delegate — because that is the moment the
@@ -2179,6 +2200,16 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       fragment: 'issue-post-merge-observation',
       trigger: /Phase 5\.5/,
       decision: 'Phase 5.5',
+    },
+    {
+      // The steps pointer shares its decision point with `issue-post-merge-observation`, so it
+      // shares that pointer's `Phase 5.5` pin — but not only it. The steps run once the phase is
+      // *entered*, and entry is what the retained gate decides, so the clause has to name the proof
+      // that opens it as well. A `when:` saying only "Phase 5.5" would still fire correctly today
+      // and would stop naming a decision the moment the entry gate moved.
+      fragment: 'merge-gate-issue-observation',
+      trigger: /(?=[\s\S]*Phase 5\.5)(?=[\s\S]*(?:fresh read|observer-only))/i,
+      decision: 'Phase 5.5 being entered on a fresh read proving the merge or observer-only mode',
     },
     {
       // `/Phase 5\b/` matches inside `Phase 5.5` — the word boundary sits between the `5` and the
@@ -5384,8 +5415,19 @@ test('the conflict resolver aborts on uncertainty and writes nothing the gate ow
 });
 
 test('the resolved tree is verified independently before the gate commits and pushes it', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const contract = prose(section(gate, '## Conflict-resolution delegation contract', '\n## '));
+  // The contract and the step that issues it were deferred into a single-consumer fragment; the
+  // subject follows the text rather than the file it left, or every pin below would pass
+  // vacuously against a tool body that no longer carries any of it. `boundedSlice` rather than
+  // `section`: the fragment ends after the step, so a `'\n## '` stop would silently widen the cut
+  // to the step's own prose and let it satisfy assertions about the contract.
+  const fragment = source('src/shared/merge-gate-conflict-resolution.md');
+  const contract = prose(
+    boundedSlice(
+      fragment,
+      '## Conflict-resolution delegation contract',
+      '\n#### Resolving a conflict with the base',
+    ),
+  );
 
   // The worker validating its own resolution is one layer; `code-validator` is the second, and it
   // is the one the producing role did not run. Dropping it would leave the run's only pre-push
@@ -5433,7 +5475,7 @@ test('the resolved tree is verified independently before the gate commits and pu
   // And the order is load-bearing rather than merely stated: resolve, verify, only then commit
   // and push. A verification that happens after the push verifies nothing that can still be
   // stopped.
-  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  const step = section(fragment, '#### Resolving a conflict with the base', '\n#### ');
   ordered(step, '{{AGENT:merge-conflict-resolver}}', '{{AGENT:code-validator}}', 'Commit and push');
 });
 
@@ -5541,11 +5583,13 @@ test('the adjacent-file allowance keeps its bound at both ends of the conflict c
       'judgment call',
   );
 
+  // Deferred into `merge-gate-conflict-resolution`, so the reconciliation end of the allowance is
+  // read from the fragment that now holds it. Bounded by the step heading that follows it there.
   const contract = prose(
-    section(
-      source('src/tools/merge-gate.md'),
+    boundedSlice(
+      source('src/shared/merge-gate-conflict-resolution.md'),
       '## Conflict-resolution delegation contract',
-      '\n## ',
+      '\n#### Resolving a conflict with the base',
     ),
   );
   // Trigger and consequence as separate assertions. An alternation over the two — a window
@@ -5585,8 +5629,11 @@ test('the conflict-resolution mode gate is resolved before any write and degrade
   // `mergeGate.conflictResolution` lives in three documentation tables and, before this test, in no
   // behavioural prose at all: deleting the `off` bullet, running the resolution whatever the mode
   // says, and making a non-interactive `ask` behave as `auto` were all invisible to the suite.
-  const gate = source('src/tools/merge-gate.md');
-  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  const step = section(
+    source('src/shared/merge-gate-conflict-resolution.md'),
+    '#### Resolving a conflict with the base',
+    '\n#### ',
+  );
   const flatStep = prose(step);
 
   // The mode decides before the first write, not after it. A step that resolves first and consults
@@ -6862,7 +6909,7 @@ test('container completion is deferred until a linked issue is observed terminal
   const applyIssues = prose(source('src/tools/apply-issues.md'));
   const applyReview = prose(source('src/tools/apply-review-remote.md'));
   const mergeObservation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   assert.match(lifecycle, /must not complete a native sub-item or tick a container checklist/);
@@ -6905,7 +6952,13 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   const phase0 = prose(
     section(gate, '### Phase 0: Resolve the pull request and the completion mode'),
   );
-  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  // This test spans the seam: the entry condition is one of the three things Phase 5.5 retains in
+  // the always-loaded core, while everything it asserts after it moved into the fragment. Reading
+  // both from one subject would have let the retained gate satisfy a step pin, or the reverse.
+  const entry = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
 
   assert.match(
     phase0,
@@ -6914,7 +6967,7 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
   assert.match(phase0, /performs no check wait, delegation, branch provisioning, or merge/);
   assert.match(phase0, /observer-only mode skip completion-mode resolution/);
   assert.match(
-    observation,
+    entry,
     /only after a fresh PR read proves either that Phase 5 merged the pull request or that Phase 0 selected observer-only mode/,
   );
   assert.match(observation, /fixed 30-second grace period/);
@@ -6966,7 +7019,7 @@ test('external started-state configuration is tracker-verified and only setup pe
 
 test('the post-merge completion assessment states a closed verdict vocabulary and its gating', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   assert.match(
@@ -7002,7 +7055,7 @@ test('the post-merge completion assessment states a closed verdict vocabulary an
 
 test('the confirmed transition revalidates the whole assessment basis before each mutation', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
   // The offer is posed once for the whole run and the confirmed issues are then mutated in turn, so
@@ -7135,8 +7188,10 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
 });
 
 test('the terminal-transition offer quotes no text and its option discloses the whole cascade', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+  // The fence travelled with the steps it gates, so both halves of this test read the fragment.
+  // The raw source, not the `prose()` form: the fence is located by its literal text.
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const observation = prose(section(fragment, '### Observation steps'));
 
   // The same threat model the set-aside confirmation already carries: the verdict derives from
   // text a third party can write on any repository where they can file an issue, so an excerpt
@@ -7149,11 +7204,11 @@ test('the terminal-transition offer quotes no text and its option discloses the 
   // The `ask` fence itself. One confirmation authorizes three classes of write — the transition,
   // the label removal of step 5, and the container completion of step 6 — so the option text has
   // to disclose all three rather than only the one it is named after.
-  const headerIndex = gate.indexOf('header: Issue done');
+  const headerIndex = fragment.indexOf('header: Issue done');
   assert.notEqual(headerIndex, -1, 'missing the Issue done ask fence header');
-  const fenceStart = gate.lastIndexOf('```ask', headerIndex);
+  const fenceStart = fragment.lastIndexOf('```ask', headerIndex);
   assert.notEqual(fenceStart, -1, 'the Issue done header must sit inside an ask fence');
-  const fence = gate.slice(fenceStart, gate.indexOf('\n```', fenceStart));
+  const fence = fragment.slice(fenceStart, fragment.indexOf('\n```', fenceStart));
   assert.match(
     fence,
     /question: The linked issues listed above are fully implemented by this merged pull request\. May this run set them to their terminal tracker state\?/,
@@ -7174,7 +7229,7 @@ test('the terminal-transition offer quotes no text and its option discloses the 
 
 test('a stated acceptance criterion comes from a closed heading set and its absence is undetermined', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7202,7 +7257,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
 
 test('the completion verdict recognizes the legacy planning-blocker spelling on the forge', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7236,7 +7291,7 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
 
 test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7286,7 +7341,7 @@ test('a terminal outcome is split into done and cancelled before anything is rec
 
 test('the external done state is re-resolved before every transition, not once before the offer', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7315,7 +7370,7 @@ test('the external done state is re-resolved before every transition, not once b
 
 test('an already-terminal external issue resolves its done state where the split is recorded', () => {
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -7466,7 +7521,7 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
   );
 
   const observation = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
   assert.match(
     observation,
@@ -8102,11 +8157,17 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
     'the delivery-fragment consumer set changed; re-derive the plan-archival pointers',
   );
 
-  // Exempt because they keep no plan file. Each states that in its own source.
+  // Exempt because they keep no plan file. Each states that in its own source, except
+  // `merge-gate`: its statement sits in the single-consumer `merge-gate-checkout-boundary`
+  // fragment that its own `worktree-integration` pointer co-loads, so the assertion follows the
+  // text there rather than being satisfied vacuously by the tool body it left.
   const exemptions = new Map([
     ['iterate', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
     ['maintain', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
     ['merge-gate', /no deferred pointer to `plan-archival`/],
+  ]);
+  const exemptionStatements = new Map([
+    ['merge-gate', 'src/shared/merge-gate-checkout-boundary.md'],
   ]);
 
   for (const name of deliveryConsumers) {
@@ -8121,7 +8182,14 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
     const reason = exemptions.get(name);
     if (reason) {
       assert.equal(lazy.has('plan-archival'), false, `${name} is exempt and must carry no pointer`);
-      assert.match(body, reason, `${name} must state why it carries no plan-archival pointer`);
+      const statementPath = exemptionStatements.get(name);
+      const statement = statementPath ? source(statementPath) : body;
+      assert.match(
+        statement,
+        reason,
+        `${name} must state why it carries no plan-archival pointer` +
+          (statementPath ? ` (in ${statementPath})` : ''),
+      );
       continue;
     }
 
