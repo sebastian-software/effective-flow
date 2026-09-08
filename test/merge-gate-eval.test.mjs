@@ -121,24 +121,27 @@ test('the operation-support probe still distinguishes the shipped helper from an
   );
 });
 
-// The seeds every run enters through plus a sample of the fragments the gate reaches by its own
-// pointers. A sample rather than the whole expected list on purpose: the set legitimately grows the
-// day the gate gains a pointer, and pinning the full list would turn every such addition into a
-// failure that carries no information.
+// The seeds every run enters through — the router, the gate tool and the artifacts the gate
+// delegates into — plus a sample of the fragments those reach by their own pointers. A sample rather
+// than the whole expected list on purpose: the set legitimately grows the day the gate gains a
+// pointer, and pinning the full list would turn every such addition into a failure that carries no
+// information.
 const LOADED_BY_A_RUN = [
   'SKILL.md',
   'tools/merge-gate.md',
+  'tools/iterate.md',
+  'workers/effective-flow-merge-conflict-resolver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
   'shared/pr-merge-completion.md',
 ];
 
 // Files the built portable skill holds that the derived set deliberately stops short of, one from
-// each direction it could wrongly widen again: a worker contract, an unrelated tool, an unrelated
-// `shared/` fragment — which is what separates the derived include graph from the coarser
-// "hash all of `shared/`" set that was weighed and rejected — and `LICENSE`. The worker is the
-// merge-conflict resolver rather than an arbitrary role because it is the one nearest the gate, so
-// it is the first a widening set would pull back in.
+// each direction it could wrongly widen again: a worker contract the gate never selects, an
+// unrelated tool, an unrelated `shared/` fragment — which is what separates the derived include
+// graph from the coarser "hash all of `shared/`" set that was weighed and rejected — and `LICENSE`.
+// The worker is a UI implementer rather than one of the two the gate can reach, so the entry stays a
+// statement about roles outside the gate's delegation rather than one contradicted by the seeds.
 //
 // The helper is the pointed exclusion, both halves of it. `scaffold.mjs` overwrites
 // `scripts/remote-tracker.mjs` in the copied tree with the stub before any run, and the stub is
@@ -147,7 +150,7 @@ const LOADED_BY_A_RUN = [
 // a file no run reads — exactly the coupling the narrowing removed — and would additionally
 // double-count what the instrument already covers.
 const NOT_LOADED_BY_A_RUN = [
-  'workers/effective-flow-merge-conflict-resolver.md',
+  'workers/effective-flow-ui-implementer.md',
   'tools/plan.md',
   'shared/plan-contract.md',
   'LICENSE',
@@ -156,22 +159,22 @@ const NOT_LOADED_BY_A_RUN = [
 ];
 
 // The stamp is only worth its failures if it really covers what a run loads — and only worth
-// keeping if it stops there. The hashed set is derived in `build-identity.mjs` by following
-// `tools/merge-gate.md`'s own load pointers through the built tree: the router a run enters
-// through, the gate tool it runs, and every `shared/` fragment those pointers reach, transitively.
-// Sixteen paths out of the eighty-six the built portable skill holds.
+// keeping if it stops there. The hashed set is derived in `build-identity.mjs` by following the
+// seeds' own load pointers through the built tree: the router a run enters through, the gate tool it
+// runs, the artifacts it delegates into, and every `shared/` fragment those pointers reach,
+// transitively. Twenty-one paths out of the eighty-six the built portable skill holds.
 //
 // Membership is asserted in both directions because both failures are silent. A set that lost a
 // seed still produces a perfectly stable digest — it would match itself round after round while
 // binding almost nothing, and the suite would go on certifying a gate that had been rewritten
 // underneath it. A set that grew back to the whole tree binds every archived round to files no run
-// reads, so an edit to an unrelated tool or a worker contract invalidates all ten and forces a
-// re-round that can produce no new information; that coupling is what the narrowing removed, and
-// nothing else here would notice it returning.
+// reads, so an edit to an unrelated tool or an unreached worker contract invalidates all ten and
+// forces a re-round that can produce no new information; that coupling is what the narrowing
+// removed, and nothing else here would notice it returning.
 //
 // **Do not restore a count floor.** An earlier version asserted `hashed.length > 50`, which
 // contradicted the name above it: it held only while the stamp hashed the whole output, and the
-// correct set fails it. A floor cannot tell the right sixteen files from any other sixteen,
+// correct set fails it. A floor cannot tell the right twenty-one files from any other twenty-one,
 // which is the only question worth asking here.
 test('the build stamp covers the built tree a run actually loads', () => {
   const identity = currentIdentity(SCENARIOS[0]);

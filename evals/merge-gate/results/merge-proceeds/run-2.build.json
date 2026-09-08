@@ -1,8 +1,8 @@
 {
   "scenario": "merge-proceeds",
-  "digest": "sha256:f5f6aba1f66f02caa9764005933fece10379d5dd96826bf75bb9061c7b446c71",
+  "digest": "sha256:214141c6cfbb7792ea58359d2427c0ed9218688c05c1dbac7153187a18a3c121",
   "skill": {
-    "digest": "sha256:904f1ddc345c8a27e5f4914d60f748e82e55cc5c19467eecbb0dd24574fa5b81",
+    "digest": "sha256:385b27d62d85216eebbb594139e6db15de60080ae703bc518cf212a79d355551",
     "files": {
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
       "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
@@ -17,9 +17,14 @@
       "shared/pr-merge-completion.md": "sha256:abdb3731a62bdccfac7468bc9410db08989c25ced58299b8b17b0eff18afa9fe",
       "shared/pr-review-integration.md": "sha256:6ff2cf8b8780f6e2ecc84f665068bb587818187794236aa938f14990df57e7c0",
       "shared/runtime-state-safety.md": "sha256:900f75b1ff616225785671fb9828b3ad33abe6b68ee184b08920abd53a6f6cc8",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:d7fdb54425d530a900078e5418abdc6a304fccd28735e8cd756aaaa189ccddf0",
       "shared/tracker-target.md": "sha256:f0db77a35380ad671ccf92715fd889e6b2e375da54d8692f83e4a3667a9bed9d",
       "shared/worktree-integration.md": "sha256:af8294d8a4cc1bdee0e3d2952507b3bab185d4c2d388c29788f14703480d8a09",
-      "tools/merge-gate.md": "sha256:440d3d4186fddf50c5a47e1357530e54e13e0a1cef1395dd72587bc7956d4efe"
+      "tools/iterate.md": "sha256:b41284e4f15ab227a7fa55c84203476c57dc6d303d361839e37b8d4857dda3d7",
+      "tools/merge-gate.md": "sha256:440d3d4186fddf50c5a47e1357530e54e13e0a1cef1395dd72587bc7956d4efe",
+      "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
     }
   },
   "instrument": {
