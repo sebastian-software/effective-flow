@@ -311,19 +311,37 @@ function assertSchema(run, records) {
   });
 }
 
+// The one alias the archived logs actually carry. On macOS `/tmp` is a symlink to `/private/tmp`, so
+// `realpathSync` collapses the two spellings there; on Linux `/tmp` is a real directory and
+// `/private/tmp` resolves to nothing at all, leaving the two apart. The rounds were recorded on
+// macOS and carry both spellings — `guard-blocks-merge/run-2` and `merge-proceeds/run-2` entirely in
+// the `/private` form, `guard-blocks-merge/run-5` and `merge-proceeds/run-5` mixing the two *within
+// a single run* — so on Linux every one of those records would resolve outside the sandbox root and
+// evidence that is entirely valid would be rejected, which is exactly what CI reported. Folding the
+// alias away after resolution makes the comparison answer the same on both platforms.
+//
+// It is scoped to `/private/tmp` rather than to `/private` at large, because only that prefix is the
+// alias: a real `/private/...` directory elsewhere keeps its own identity and still fails the
+// containment check it should fail.
+const PRIVATE_TMP_ALIAS = '/private/tmp';
+
+function foldPrivateTmpAlias(path) {
+  if (path === PRIVATE_TMP_ALIAS) return '/tmp';
+  if (path.startsWith(`${PRIVATE_TMP_ALIAS}/`)) return path.slice('/private'.length);
+  return path;
+}
+
 // `realpathSync` answers only for a path that exists, and the sandbox is torn down between rounds,
 // so the longest ancestor that does exist is resolved and the rest re-appended. That is what makes
-// two spellings of one directory compare equal without hard-coding either: on macOS `/tmp` is a
-// symlink to `/private/tmp`, and three of the ten archived runs — `guard-blocks-merge/run-5`,
-// `merge-proceeds/run-2` and `merge-proceeds/run-5` — carry both spellings *within a single run*,
-// so a strict equality against either one would fail evidence that is entirely valid.
+// two spellings of one directory compare equal without hard-coding either — and where the platform
+// resolves nothing, the alias fold above supplies the same answer.
 function normalizePath(path) {
   let head = resolve(path);
   const tail = [];
   for (;;) {
-    if (existsSync(head)) return resolve(realpathSync(head), ...tail);
+    if (existsSync(head)) return foldPrivateTmpAlias(resolve(realpathSync(head), ...tail));
     const parent = dirname(head);
-    if (parent === head) return resolve(path);
+    if (parent === head) return foldPrivateTmpAlias(resolve(path));
     tail.unshift(basename(head));
     head = parent;
   }
