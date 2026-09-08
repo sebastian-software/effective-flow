@@ -1,8 +1,8 @@
 {
   "scenario": "merge-proceeds",
-  "digest": "sha256:d99052b72b707c5cfbfb320acbd1a351aaf2927716a0e015f0ca9ab427eed85b",
+  "digest": "sha256:0c5aa389762aed4f59fe6896b3e1e6dac71b0477c1c7759b2dac472868693737",
   "skill": {
-    "digest": "sha256:407e51e8ceb3b21b292415600ae51ce6c836c0d3e3bc3ae575962a149884cbe2",
+    "digest": "sha256:5d2eb037a7cf9f8027710e04a1f9630c677e0475f5cb70f1a7b4dedc26df16f4",
     "files": {
       "LICENSE": "sha256:1b129bce62f05158c0a415c1fba626081bfc1ecffc61a028a2958dbe60b2559f",
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
@@ -41,8 +41,8 @@
       "shared/review-state.md": "sha256:e55da76a1dce8f52118c77d27ee8c1ae7cededb9699e546644ff522b7735fce9",
       "shared/runtime-state-safety.md": "sha256:900f75b1ff616225785671fb9828b3ad33abe6b68ee184b08920abd53a6f6cc8",
       "shared/security-disclosure-gate.md": "sha256:73f37b63b3a413a09e7eeb343753c736da55fd6657985b1bf140ec3b822fb32c",
-      "shared/session-rename.md": "sha256:0e50d51ed8e6a932f3948a282178de31882947b616649c37c476fec4556bd614",
-      "shared/session-title.md": "sha256:08512564fba2375cfd9d74fc17ef29ca950c47637fc86b006a55f84534f0334d",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:d7fdb54425d530a900078e5418abdc6a304fccd28735e8cd756aaaa189ccddf0",
       "shared/tracker-target.md": "sha256:f0db77a35380ad671ccf92715fd889e6b2e375da54d8692f83e4a3667a9bed9d",
       "shared/unresolved-review-report.md": "sha256:c10ffd267a0f6cc8712cf9ce8615b7e64fb8601a2d9aa94fdba7d81aedcdb1a5",
       "shared/worktree-integration.md": "sha256:af8294d8a4cc1bdee0e3d2952507b3bab185d4c2d388c29788f14703480d8a09",
@@ -72,7 +72,7 @@
       "tools/pr.md": "sha256:3655e44c157b96968fd61579fb1782793f0a4b9b91209bc85d38c79f72a47e06",
       "tools/refactor.md": "sha256:79da5d7afaea6fa7696f40f47015fc827bd38b731a6404eff7fbb6acaf65ea74",
       "tools/review.md": "sha256:ac4d56e71e8cfffd5c109231098451610569b51a7689ce0d972875a9c7bd7e2b",
-      "tools/setup.md": "sha256:4a00bce6f882ed07c4a05b40c08639962e1118c80363962197f03ff40d2dcf8e",
+      "tools/setup.md": "sha256:ea1b5c58981ae7d21d4f04edf472cd315c0d7a764cde6b7658ef3d82587585a4",
       "tools/version.md": "sha256:0432c9a54d537bfd84158299ddfb70b7cb44c30d485312cde66482ebf46d60e5",
       "workers/effective-flow-code-documenter.md": "sha256:eb538adc109fc9131c38b0f3ea686b2201a08e4aabfb3b11d983e6e9e2bd1382",
       "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",

@@ -1459,7 +1459,7 @@ try {
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2787,
     iterate: 1639, // +6 (goal-completion)
-    setup: 1646,
+    setup: 1631,
     'apply-review': 1309, // +6 (goal-completion)
     'apply-issues': 1152, // +6 (goal-completion)
     cleanup: 994,

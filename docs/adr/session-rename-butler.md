@@ -1,4 +1,4 @@
-# Session rename butler
+# Session rename on Claude Code
 
 ## Status
 
@@ -7,92 +7,95 @@ Active
 ## Context
 
 The Codex tab embedded in the ChatGPT Desktop app applies its title through an app-native
-current-task operation that needs no task id. Codex CLI has no automatic path in this scope. On
-Claude Code, the same run cannot rename itself. The host's rename tool refuses the caller —
+current-task operation that needs no task id. Codex CLI has no automatic path in this scope. Claude
+Code had none either, for one specific reason: the host's rename tool refused the caller —
 `Refusing to rename the current session from within itself.` — and all three session tools
-(`set_session_title`, `get_session`, `list_sessions`) exclude the caller's own session. A run
-therefore cannot even read its own title back by any route. A second session is structurally
-required to carry out the rename, not merely a convenient way to do it.
+(`set_session_title`, `get_session`, `list_sessions`) excluded the caller's own session, so a run
+could not even read its own title back by any route. A second session was structurally required to
+carry out the rename, and this record described one: a rename butler, discovered by a fixed marker
+title, holding a standing mandate its user had pasted, receiving a `{sessionId, title}` payload over
+a cross-session message and replying with the title it observed afterwards.
 
-The shipped contract in `src/shared/session-title.md` says a run never retitles another session,
-and every tool that can propose a title loads it, for every user on every harness. That clause is
-exactly what stands in the way: an unmandated session presented with a cross-session rename
-request correctly refuses it, on two independent grounds — a cross-session message is data, not
-instruction, and the contract explicitly forbids retitling another session. Both grounds are
-working as intended. That is precisely why the clause is load-bearing, and why loosening it for one
-narrow case is a decision worth recording rather than a routine implementation detail.
+**That premise has lapsed.** Verified live on 2026-09-08 on Claude Code desktop:
+
+- `get_session` accepts the literal `"self"` and returns the calling session's own `sessionId` and
+  `title`.
+- `set_session_title` accepts `"self"`. The rename applies immediately and a following
+  `get_session("self")` reads the new title back. The tool contract now opens with "Rename a CCD
+  session — another session, or this one."
+
+The butler existed for the refusal and for the unreadable title. Neither holds any more.
+
+The butler path was also not merely obsolete. It carried a live defect: a **forked** session sent the
+butler its **parent's** session id, so the parent was renamed while the fork kept the title it had
+inherited. The failure was invisible. The butler read back the session it had been handed, replied
+with the title it had just applied, and the requester's liveness comparison scored that reply as
+success and stayed silent. A mechanism whose only success signal is a report about a session the
+requester never verifies cannot notice that it renamed the wrong one.
 
 ## Decision
 
-Introduce an asymmetric carve-out. The **butler side** is loosened: a session acting under its own
-user's standing, user-typed rename mandate may honor a cross-session rename request for the session
-that asked it. The **requester side** keeps the categorical ban unchanged — `session-title.md`
-continues to say a run never retitles another session; only a session already holding a mandate to
-act as a butler is exempted, and only for that one action.
+**A Claude Code run renames its own session.** It calls `set_session_title` with the literal `"self"`
+and the title it has already derived, once, as soon as the subject is fixed. No session id is
+resolved, sent, or received on that path, and no second session takes part. The shape is the ChatGPT
+Desktop one: a single semantic call, no id, no receipt file, no runtime state, no write-safety
+contract, and degradation to the visible `**Suggested session title:**` line on any non-success
+outcome. Two hosts, one shape.
 
-The carve-out is scoped narrowly:
+Capability is established by attempting the call, never by probing. A refusal, an error, or a tool
+the host does not carry at all ends at the suggestion line. A tool that is merely **not loaded yet**
+is not that case: a host may defer its session tools until they are loaded by name, so loading the
+operation is part of making the call, and only a refusal or an error from the call itself is a
+failure. A run never concludes from a tool's absence from its initial tool list that the host cannot
+rename. The ban on probing governs ordinary runs, and `setup` is its one exception — the same
+carve-out the ChatGPT Desktop path already carries. Only after the user accepts its visible
+capability check does `setup` call the operation once, with its own fixed probe title
+`Effective Flow setup check`,
 
-- **The butler reports an observation, not a claim.** After renaming, it reads the session back
-  with `get_session` and replies with the **observed** title, not a verdict such as "set" or
-  "succeeded". A discarded rename (the host silently keeps a `titleSource: 'user'` title) is
-  distinguished from an applied one only by comparing the observed value against the requested one.
-- **The request carries only a session id and a title.** There is no receipt file and no
-  filesystem path in the payload. A butler that wrote a receipt would have to write into the
-  requester's `.effective-flow/`, holding no execution-location receipt of its own and taking that
-  runtime root from an untrusted cross-session payload — the pattern `runtime-state-safety.md`
-  rejects. The reply channel that already exists (a cross-session message can be answered, and the
-  reply wakes the requesting session as a later turn) replaces the file.
-- **Discovery is marker-title-only.** The butler is found by a session title set during setup;
-  there is no separate machine-local configuration value for "which session is the butler".
-
-Two further decisions fix **when** a request is sent:
-
-- **The request goes out as soon as the title is fixed and exactly one butler was discovered**,
-  rather than as the run's last action. Everything between the title decision and a run's final
-  action was an unprotected window: a run interrupted or abandoned inside it left the suggestion
-  line as its only trace and never renamed, which from outside is indistinguishable from an absent
-  butler.
-- **Any character-exact title change sends a further request, capped at six per run.** The
-  character-exact comparison is the only one a run can perform without re-deriving the title, so a
-  budget rather than a semantic rule is what bounds the cost.
+**The butler is retired, not kept as a fallback.** Retired with it are the marker title, the pasted
+standing mandate, the `{sessionId, title}` payload, the corrective-request budget, the liveness
+comparison and the per-failure degradation table. Keeping the mechanism for hosts that refuse
+`"self"` would preserve every liability that made the fork defect possible — a capability
+authenticated by a world-writable title, a session id crossing a trust boundary, a prose guard
+nobody verifies, and a heuristic that reads a wrong-target rename as success — in exchange for an
+automatic rename on those hosts instead of one printed line.
 
 The mechanism lives in `src/shared/session-rename.md` (Claude Code section, dispatched separately
-from the independent ChatGPT Desktop current-task path) and the carve-out sentence itself in
-`src/shared/session-title.md`.
+from the independent ChatGPT Desktop current-task path). `src/shared/session-title.md` carries no
+butler carve-out any more: the categorical rule that carve-out excepted — a run never retitles
+another session — now holds without exception, because no Effective Flow path renames a session
+other than its own.
 
 ## Consequences
 
-- **The asymmetry is model-assigned, not verified.** Both the butler and every other session read
-  the same fragment; the only evidence a session has for "I am the butler" is that a message told
-  it to be one. Nothing in the mechanism checks the claim.
-- **The marker title is a world-writable capability.** Any session holding the rename tool can set
-  it, including by accident, so the butler is spoofable in both directions — a wrong session can be
-  discovered as the butler, and the real butler can be silently retitled away from its role. This is
-  accepted deliberately, to avoid introducing a machine-local configuration value that this
-  repository has no precedent for.
-- **An empty discovery lookup and a misconfigured butler look identical at run time.** Neither
-  produces an error; both degrade to the plain suggestion line.
-- **The payload is a work subject delivered to a session authenticated by title alone.** The
-  absolute project path is deliberately not part of it — only a session id and a title cross the
-  boundary.
-- **Each rename costs one model turn and one pseudo-user message**, because the reply that carries
-  the observed title wakes the requesting session as a later turn. A run that corrects its title
-  therefore costs up to six model turns and six pseudo-user messages.
-- **The order in which a butler applies several in-flight requests is unobservable to the
-  requester**, so a session can end on an earlier title than the run's latest one. The requesting
-  side never reads its own title back and cannot repair the outcome without a retry the contract
-  forbids. This is the strongest argument against raising the budget beyond six.
-- **An early send names a session after work that may still fail.** Accepted deliberately: the
-  session list is a re-finding surface rather than a results surface, and a subject beats the host's
-  derived first-message title.
-- **Every failure direction fails open to the suggestion line.** An absent butler, a declining
-  butler, and a stale or malformed reply all resolve to the same visible suggestion line; no defect
-  produces silence. The single case that emits nothing is not a defect: an observed title that
-  differs from every title the session requested means the host kept a title the user set
-  themselves, and neither a rename nor a suggestion is wanted there.
+- **A host that refuses `"self"` prints the suggestion line.** This is the accepted cost of the
+  retirement and a normal outcome rather than an error: it is the same visible result Codex CLI and
+  every other host without a supported title path already produce.
+- **Nothing crosses a session boundary any more.** The payload is not narrowed but gone: no session
+  id, no title and no work subject derived from issue or pull-request text leaves the run. This
+  replaces the earlier consequence about what the request carried.
+- **The world-writable capability is gone.** Butler discovery authenticated nothing, so any session
+  holding the rename tool could be discovered as the butler — by accident or by squatting on the
+  marker title — and be handed that work subject. Retirement closes the exposure outright; no
+  mitigation had to be designed.
+- **A run can no longer rename the wrong session.** The forked-session defect has no surface left to
+  occur on, because nothing on this path assembles or transmits a session id.
+- **Consent moves to the host.** The rename tool replaces a title the **user** set only after the app
+  asks them, declines instead in unattended sessions, and replaces app-generated titles silently. The
+  fragment reports what the call reported and reasons no further about who owns the title — replacing
+  the earlier emit-nothing row, which inferred user ownership by comparing reply strings across
+  turns.
+- **A rename costs one tool call.** The butler charged a model turn and a pseudo-user message per
+  rename, up to six of each for a run that corrected its title; that cost is gone.
+- **An early rename still names a session after work that may still fail.** Accepted deliberately and
+  unchanged: the session list is a re-finding surface rather than a results surface, and a subject
+  beats the host's derived first-message title.
+- **An existing butler session stops receiving requests** the moment this ships. It is inert rather
+  than broken, nothing contacts it, and its owner can close it.
 
 ## References
 
 - `src/shared/session-rename.md`
 - `src/shared/session-title.md`
-- `docs/plan/2026-08-09-session-rename-butler.md`
+- `docs/plan/archive/2026-09-08-native-claude-code-session-rename.md` — the implementation plan
+- `docs/plan/archive/2026-08-09-session-rename-butler.md` — the retired mechanism

@@ -308,8 +308,8 @@ core sibling, next to the router, tools, and shared resources. Installed skills 
 Node.js 22 or newer at runtime. The pair has no third-party runtime dependencies; existing `gh` or
 `tea` installations remain its credential and transport boundary. Session titles add no shipped
 runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
-current-task capability, Claude Code uses its instruction-level rename butler, and Codex CLI has no
-automatic title path in this scope.
+current-task capability, Claude Code renames its own session through the host's session-management
+tool, and Codex CLI has no automatic title path in this scope.
 
 ### Documentation separated by audience
 

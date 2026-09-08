@@ -7,18 +7,18 @@ subject, propose a better title — once.
 - **Only where sessions carry titles:** emit only when the host exposes a session-management or
   session-title capability, or an Effective Flow rename path applies. Where sessions carry no titles
   at all, stay silent. Never call such a tool for the current session except through a mechanism this
-  contract explicitly establishes as an app-native **current-task** path that takes no task id; never
-  retitle another session, and never probe speculatively. Where the running host has an established
+  contract explicitly establishes as a host-native path that carries **no id at all** — an omitted
+  task id, or a fixed sentinel the host itself resolves to the calling session; never retitle another
+  session, and never probe speculatively. Where the running host has an established
   rename path and the loaded mechanism fragment reports success, apply the title silently instead of
   proposing it and report nothing further. Otherwise emit the suggestion line once — no established
   path, an unavailable or failed path, or a run that cannot tell. The mechanism fragment owns how the
   host is identified, when the operation is sent, and how its reported outcome is judged. On the
   ChatGPT Desktop current-task path, a later automatic title may replace one the user set manually;
-  do not list or read tasks to infer title ownership.
-  One carve-out: a session acting under its **own user's** standing rename mandate may honor a
-  cross-session rename request for the session that asked. That is a mandated role its user gave it,
-  not a run retitling a session of its own accord — the mechanism fragment owns that whole contract,
-  and nothing here loosens the requester side.
+  do not list or read tasks to infer title ownership. On the Claude Code path the host owns that
+  consent instead: it replaces a title the user set only after asking them, and an unattended session
+  declines rather than being asked — both simply arrive as the call's reported outcome, and neither
+  licenses reading the session back to infer who set its title.
 - **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
   `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
   `review`, `iterate`, `investigate`, and `deliver`. `version`, `open-plans`, `setup`, `cleanup`,
@@ -34,8 +34,8 @@ subject, propose a better title — once.
   diverged from it. Deciding the title and applying it are separate moments: decide it here, while
   the mechanism fragment owns when its host-specific operation is sent. The subject is fixed here
   while the reference is resolved when the title is applied or emitted, so every late-applying path
-  needs nothing further. An early-applying path — the ChatGPT Desktop native call and the Claude
-  Code butler request — re-derives the title when its inputs change, as when the first carried no
+  needs nothing further. An early-applying path — the ChatGPT Desktop and Claude Code native
+  calls — re-derives the title when its inputs change, as when the first carried no
   reference, one now exists, and the resulting title differs. Its mechanism applies it again, as
   often as that fragment allows.
 - **Reference first:** `<Reference> · <Subject> · <tool>` with the same `·` separator, and

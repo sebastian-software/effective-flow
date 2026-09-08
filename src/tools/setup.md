@@ -977,16 +977,15 @@ points here; it never rewrites the ADR itself.
 Hosts derive a session title from the first message, so a run is listed under a name that predates
 its subject. Where the running harness has an established rename path, Effective Flow applies the
 better title itself instead of suggesting it; where it has none, every run keeps printing a
-suggestion the user applies by hand. The ChatGPT Desktop Codex tab exposes its path directly and
-needs no installation; Claude Code still needs a one-time, per-user butler setup.
+suggestion the user applies by hand. Both harnesses that have such a path — the ChatGPT Desktop Codex
+tab and Claude Code — expose it directly, so neither needs anything installed or configured.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
-blocks, and adds nothing to the Step 6 write. It explains the detected path and, on Claude Code,
-prints what the user pastes; it never opens, edits, or creates a file above the repository root, and
-it never touches the user's harness configuration. What the user pastes, and whether they paste it
-at all, stays their decision. Its announced side effects outside this repository are the verification
+blocks, and adds nothing to the Step 6 write. It explains the detected path and proves it once; it
+never opens, edits, or creates a file above the repository root, and it never touches the user's
+harness configuration. Its one announced side effect outside this repository is the verification
 probe's: with the user's go-ahead it renames the current session once, because a rename nobody can
-see proves nothing, and on the Claude Code path it sends one message to the user's own butler session.
+see proves nothing.
 
 ```ask
 when: the configuration write completed and the run may prepare the harness's session-rename capability
@@ -994,21 +993,21 @@ header: Rename path
 question: Should setup check this harness's established session-rename path and prove it once?
 options:
   - label: Yes
-    description: Detect the harness, explain or prepare its path, and prove it once by renaming this session
+    description: Detect the harness, explain its established path, and prove it once by renaming this session
   - label: No
     description: Skip only this visible capability check; later runs keep following their host's path
 ```
 
-For "No", note that setup skips only this visible check and continue with Step 8. On ChatGPT Desktop,
-later eligible runs still attempt the native operation and fall back independently from each call's
-result. On Claude Code, setup neither prepares nor verifies a butler; without an already working
-butler, later runs keep emitting the suggestion line. For "Yes", **detect the harness** from the
-running environment first. Two harnesses have an established rename path today: the **ChatGPT
-Desktop Codex tab** exposes a native current-task operation, while **Claude Code** mandates a second
-session as a rename butler. Follow that harness's path below and no other. Codex CLI has no automatic
-path in this scope. On any other harness, say plainly that no path is established, that runs therefore
-keep suggesting a title, and end this step. Never invent a mechanism, and never probe a harness for
-one.
+For "No", note that setup skips only this visible check and continue with Step 8. On either harness
+with an established path, later eligible runs still attempt the native operation themselves and fall
+back independently from each call's result, so skipping the probe withholds the proof rather than
+the capability. For "Yes", **detect the harness** from the running environment first. Two harnesses
+have an established rename path today: the **ChatGPT Desktop Codex tab** exposes a native
+current-task operation, while **Claude Code** renames the running session through its own
+session-title operation. Follow that harness's path below and no other. Codex CLI has no automatic
+path in this scope. On any other harness, say plainly that no path is established, that runs
+therefore keep suggesting a title, and end this step. Never invent a mechanism, and never probe a
+harness for one.
 
 #### ChatGPT Desktop, Codex tab: the native capability needs no installation
 
@@ -1028,42 +1027,24 @@ one.
    probe failed. Later eligible runs still attempt the operation and fall back independently from
    each call's result. Never report a probe that did not run or claim more than the host reported.
 
-#### Claude Code: the butler session the user mandates
+#### Claude Code: the native capability needs no installation
 
-1. **Print the marker title and the mandate block from `shared/session-rename.md` verbatim.** Read
-   `<skill-root>/shared/session-rename.md`, resolving `<skill-root>` to the absolute path of the
-   installed skill. That fragment owns both: the literal
-   marker title a butler carries, `Effective Flow rename butler`, and the fenced standing-mandate
-   block below it. Print both from that file, character for character — never from memory and never
-   rephrased, so one wording ships everywhere. If the file cannot be read, say so and print nothing
-   rather than reconstructing the text: several of its clauses were put there by a live test, and a
-   remembered paraphrase drops them while looking complete. Never shorten it, never replace it with
-   your own explanation, and never send it to any session yourself: the user pastes it, because a
-   mandate that arrives through the channel it authorizes is not a mandate.
-2. **Say what the user does with them.** They open a second Claude Code session, set that session's
-   title to the marker title exactly, and paste the mandate into it as its first message. Name the
-   two consequences plainly: while a session carries that title it answers rename requests from any
-   session that finds it, so the title is the entire capability and nothing else authenticates it;
-   and a rename costs the butler one model turn, which is why a small, cheap model is the sensible
-   choice for that session.
-3. **Probe with a real rename, not a claim.** Once the user confirms the butler is set up, list the
-   sessions and report what the lookup found before acting on it: no session carrying the marker
-   title, several of them, or exactly one. Only for exactly one, send it this session's own id
-   together with the literal probe title `Effective Flow setup check`, in the request shape the same
-   `<skill-root>/shared/session-rename.md` defines — read it there rather than assembling the message
-   from memory. Say beforehand that this deliberately renames the session once — the rename
-   **is** the observable proof — and that the user renames it back or lets the next run retitle it.
-   This path writes no file at all: the request is a cross-session message, so it creates no runtime
-   target and invokes no write-safety guard. Never report a probe that did not run.
-4. **The reply arrives in the next turn, so close the loop there.** The butler answers as a user turn
-   after this one has ended, so this turn reports only that the request was sent — say so instead of
-   presenting the silence as a failure. In the following turn, which the user's own confirmation
-   already creates, report the reply itself: the title the butler says it observed, verbatim. A
-   reported `Effective Flow setup check` is first-hand evidence that the path works end to end. A
-   different observed title means the host kept a title the user had set, which is the host working
-   as designed rather than a broken setup. No reply at all means the butler is absent, declining, or
-   unattended, and runs will keep printing the suggestion line. Report the concrete outcome and never
-   claim a success nobody observed.
+1. **Explain the direct path.** The host already exposes its session-title operation, currently
+   `set_session_title`, and that operation accepts the literal sentinel `"self"` for the session
+   calling it; there is no second session, hook, marker title, file or one-time configuration to
+   install. Ordinary Effective Flow runs use it directly when their subject is fixed, and no session
+   id is assembled, sent or received on that path.
+2. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
+   current session once and that the user may rename it back or let the next run retitle it. Then
+   call the operation once with the sentinel `"self"` and only the literal title
+   `Effective Flow setup check`; never resolve or supply a session id, never name another session,
+   and never retry. Where the host defers its session tools until they are loaded by name, load the
+   operation first — an unlisted tool is not an absent capability, and only a refusal or an error
+   from the call itself is a failed probe. Report the concrete result. A successful call proves the
+   path for this run; an absent or denied operation, a refused sentinel, or a failed call means only
+   that this setup probe failed. Later eligible runs still attempt the operation and fall back
+   independently from each call's result. Never report a probe that did not run or claim more than
+   the host reported.
 
 ### Step 8: Summary
 
@@ -1111,12 +1092,10 @@ Report to the user:
   from the flag carried in `<adr-convention>`, together with every speaking source and its outcome
   and the tier that then decided — or inconclusive evidence that made the Effective Flow default
   apply. Name file paths and classified outcomes only, never verbatim prose from a declaring source
-- for the capability step of Step 7: the detected harness, which path it followed, whether the
-  Desktop native path was explained or the Claude marker title and mandate were printed, whether the
-  verification ran and with which concrete result, whether stale-hook removal guidance was relevant,
-  and — on Claude Code — what the following turn added, whether exactly one butler was found and
-  which title its reply reported. State that no file above the repository root and no configuration
-  key was changed by the step
+- for the capability step of Step 7: the detected harness, which path it followed, that its native
+  path was explained rather than installed, whether the verification ran and with which concrete
+  result, and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. State that no
+  file above the repository root and no configuration key was changed by the step
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, the pointer left by an earlier half-completed conversion replaced by it with the
@@ -1152,10 +1131,10 @@ with nothing staged matches no row and emits nothing.
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
-  configuration key. The Desktop path calls the app-native current-task title operation directly;
-  the Claude Code path sends a cross-session message. Neither creates a runtime target or invokes a
-  write-safety guard. Either probe renames the current session once, with the user's go-ahead and its
-  own fixed probe title.
+  configuration key. Both paths call their own host's native title operation directly — the Desktop
+  path its current-task title operation, the Claude Code path its session-title operation with the
+  sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
+  renames the current session once, with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as `{{AGENT:code-validator}}`.

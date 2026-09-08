@@ -13,8 +13,8 @@ defaults while retaining existing values) or **Guided** (explain and choose each
 
 **When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
 settings (project and surface languages, worktree, completion action, tracker target including an
-external tool, advanced review/apply-review values, skill discovery), or to prepare the optional
-session-rename check or Claude Code butler described below.
+external tool, advanced review/apply-review values, skill discovery), or to run the optional
+session-rename capability check described below.
 
 **Typical call:** `/effective-flow setup`
 
@@ -121,14 +121,19 @@ Desktop runs still attempt the native operation independently and print one sugg
 when that individual call is unavailable or fails. Because the app exposes no reliable manual-title
 ownership check, a later Desktop run may replace a title the user set manually.
 
-On Claude Code, setup retains the existing one-time path: the user creates a second session titled
-`Effective Flow rename butler`, pastes the standing mandate, and lets setup verify it by sending one
-message to that session. Codex CLI has no automatic title path in this scope. Choosing **No** skips
-only this visible setup check; it does not disable later host-specific title handling. Runs stay
-suggestion-only on Claude Code without a configured butler, Codex CLI, and any other host without a
-supported title path. The step adds no configuration key, never edits harness configuration, and
-creates no title runtime file. See [Getting
-started](getting-started.md#keeping-sessions-tellable-apart) for each host's current behavior.
+On **Claude Code** the check has the same shape, because the rename itself does: a run renames its
+own session through the host's session-management tool, so there is nothing to install and no
+second session to prepare. After the user consents, setup renames the current session once with the
+fixed title `Effective Flow setup check` and reports the concrete result; the user may rename it
+back or let the next run retitle it. A declined or failed call means only that this probe failed,
+and later runs still attempt the rename on their own. Codex CLI has no automatic title path in this
+scope. Choosing **No** skips only this visible setup check; it does not disable later host-specific
+title handling. Runs stay suggestion-only on Claude Code when the host declines the native rename,
+Codex CLI, and any other host without a supported title path. The step adds no configuration key,
+never edits harness configuration, and creates no title runtime file. If you still keep a separate
+session from the earlier helper-session arrangement, setup no longer contacts it and you can close
+it. See [Getting started](getting-started.md#keeping-sessions-tellable-apart) for each host's
+current behavior.
 
 Users who installed the former Codex path must remove only the `Stop` handler whose command invokes
 `session-title.mjs apply` from their personal or repository-local Codex configuration. Preserve
