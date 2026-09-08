@@ -153,16 +153,16 @@ says nothing once several runs are open at the same time. Two things help:
     titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
     expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
     title you set manually.
-  - On **Claude Code**, the host refuses a self-rename outright – its session-management tools
-    reject the calling session by design – so a run applies its title through a second session
-    acting as a rename butler, which you set up once through `/effective-flow setup`. That request
-    goes out as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
-    a reference that only turns up later – a pull request the run itself opened – follows in a
-    further request, so the listed title still ends up carrying it. Without a butler, the run
-    prints the suggestion. With one, the first run in a session still prints it once while the
-    rename happens in the background; a later run in the same continuing session stays silent. If
-    you rename that session manually, the butler reads the retained title back and stops sending
-    further rename requests, so Claude preserves the title you chose.
+  - On **Claude Code**, a run renames its own session directly, through the host's own
+    session-management tool. It needs no second session, no hook and no setup step. The rename
+    happens as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
+    a reference that only turns up later – a pull request the run itself opened – buys exactly
+    one further rename, so the listed title still ends up carrying it. A successful rename stays
+    silent, in the first run of a session as much as in a later one. If the host declines or the
+    rename fails – an older app, a session without the session-management tools, or a title you
+    set yourself and chose not to have replaced – the run prints the suggestion once and
+    continues. If you still keep a separate session from the earlier helper-session arrangement,
+    nothing contacts it any more and you can close it.
   - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion – in
     the completion report, reference included – when its host carries titles. Other hosts without
     an established rename path behave the same; hosts without titled sessions stay silent.

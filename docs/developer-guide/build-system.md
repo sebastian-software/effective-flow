@@ -405,9 +405,10 @@ pull-request creation. The CLI-level test spawns the real entry point; the build
 checks prove that all three installed payloads contain identical, usable scripts.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
-current-task capability directly, while Claude Code follows the instruction-level rename-butler
-contract in [`src/shared/session-rename.md`](../../src/shared/session-rename.md). Codex CLI has no
-automatic title path in this scope.
+current-task capability directly, and Claude Code renames its own session through the host's
+session-management tool; both follow the instruction-level contract in
+[`src/shared/session-rename.md`](../../src/shared/session-rename.md). Codex CLI has no automatic
+title path in this scope.
 
 ## Progressive disclosure beyond the router
 
