@@ -24,15 +24,16 @@ the expected outcome tests that session's memory instead of the instruction.
 
 ## What is here
 
-| Path                           | What it is                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `scenarios/<name>.md`          | One scenario: the prompt handed to a fresh agent, plus its expected outcome as prose        |
-| `prepare.mjs`                  | Archives the previous run's log, re-scaffolds, prints the prompt. Starts nothing            |
-| `_scaffold/scaffold.mjs`       | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository     |
-| `_scaffold/remote-tracker.mjs` | The canned-envelope stub standing in for the shipped helper, and the writer of the call log |
-| `_scaffold/sandbox.mjs`        | The sandbox layout, shared by the scaffold and the preparation step                         |
-| `fixtures/<name>.json`         | The scenario's envelope set, the provider payload each came from, and its merge opt-in      |
-| `results/<name>/run-<n>.jsonl` | Archived call logs — the evidence the assertions read. Created by `prepare.mjs`             |
+| Path                                | What it is                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `scenarios/<name>.md`               | One scenario: the prompt handed to a fresh agent, plus its expected outcome as prose           |
+| `prepare.mjs`                       | Archives the previous run's log, re-scaffolds, prints the prompt. Starts nothing               |
+| `_scaffold/scaffold.mjs`            | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository        |
+| `_scaffold/remote-tracker.mjs`      | The canned-envelope stub standing in for the shipped helper, and the writer of the call log    |
+| `_scaffold/sandbox.mjs`             | The sandbox layout, shared by the scaffold and the preparation step                            |
+| `fixtures/<name>.json`              | The scenario's envelope set, the provider payload each came from, and its merge opt-in         |
+| `results/<name>/run-<n>.jsonl`      | Archived call logs — the evidence the assertions read. Created by `prepare.mjs`                |
+| `results/<name>/run-<n>.build.json` | The run's build stamp: per-file hashes of what that scenario loads, binding the log to a build |
 
 Two test files in the ordinary `pnpm test` suite belong to this layer:
 
@@ -78,6 +79,16 @@ suite has to be shortened, the scenario count gives way — never the five-of-fi
 because for a fail-closed rule a single deviating run is a finding. The one scenario that never
 gives way is the merging counterpart: without it the refusals prove less than they appear to.
 
+That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
+change to what the gate loads — the router, `tools/merge-gate.md`, the artifacts the gate delegates
+into (`tools/iterate.md` and the `merge-conflict-resolver` and `code-validator` worker contracts),
+and the fragments any of those reach through their own load pointers — rather than by any change
+anywhere in the built skill, so an edit to an unrelated tool, an unreached worker contract or a
+fragment no run reads leaves the standing evidence intact. The shipped `scripts/remote-tracker.mjs`
+is not among them: the scaffold overwrites it with the stub, which is hashed separately as the
+instrument. That is a narrower trigger, not an absent one: two pull requests that both touch those
+files still invalidate each other's rounds, and whichever lands second re-runs.
+
 ### One round at a time, across the whole machine
 
 The sandbox path is fixed — `/tmp/effective-flow-merge-gate-eval/<scenario>/` — and belongs to no
@@ -89,7 +100,11 @@ starting one where several worktrees are open.
 Two shapes this takes, both observed:
 
 - **A run loads the other checkout's build.** Its archived stamp then carries that build's digest,
-  and the assertion catches it — the failure is loud and the run is simply redone.
+  and the assertion catches it — the failure is loud and the run is simply redone. The stamp hashes
+  only the files a run loads, so this catches the swap only where the two checkouts differ in those
+  files: two worktrees whose router, gate tool, delegation targets and reachable fragments are
+  byte-identical produce the same digest, and a run that borrowed the other one's build passes
+  unremarked. Checking for a foreign log before starting is what covers the remainder.
 - **A log holds two executions.** This one is quiet. The stamp is right, because the sandbox was
   scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
   than the stamp to see it. What gives it away is **repetition**: a second Phase-1 read batch, or
@@ -109,11 +124,19 @@ It archives whatever is in the sandbox and then deletes the sandbox, so it captu
 and strands the running agent. Archive a scenario only after its run has finished; the two scenarios
 remain independent of each other.
 
-### Four failure modes the assertions handle by name
+### Six failure modes the assertions handle by name
 
 - **A missing or empty log fails loudly and never counts as a refusal.** A run that never started
   produces no `pr-merge` record, which is indistinguishable from a correct refusal unless the
   emptiness is itself an error. It is.
+- **A record without a runtime root disqualifies the whole run.** Every record of every archived run
+  must carry a non-null `cwd` resolving into that scenario's sandbox project root. A null means the
+  gate stated no working directory, and the helper then falls back to whatever directory the process
+  happened to inherit — so the log is equally consistent with a run that never entered the sandbox,
+  and it proves nothing about the scenario. A `cwd` pointing somewhere outside the sandbox fails for
+  the same reason. One such run, twenty-one records and every one of them null, had already been
+  counted toward the five-of-five bar; the `recensor` review bot found it by reading the logs, which
+  is precisely the work an assertion should have been doing.
 - **With no archived runs at all, the assertions skip with a loud reason rather than passing.** They
   never report success for a scenario nobody ran. Skipping rather than failing is deliberate: a
   permanently red `pnpm test` in every checkout that has not spent quota on a run — CI included,
@@ -208,8 +231,15 @@ fixture. Three behaviours are load-bearing:
 - **Every call is recorded**, as one JSON object per line: `seq`, `operation`, `apply`, `at`, `cwd`.
   `seq` starts at 1 and rises by one per call, derived from the lines already in the file because the
   stub is a fresh process per call; `at` is a millisecond timestamp and can collide, so it cannot
-  carry ordering on its own. That record shape is a contract, pinned by
-  `test/eval-fixture-fidelity.test.mjs`, because it is what every scenario assertion reads.
+  carry ordering on its own. `cwd` is the working directory the caller stated for the call — the
+  runtime root the gate was operating in when it asked. The **stub** does not require one: a caller
+  that states no directory is answered normally and recorded with `cwd: null`, and that tolerance is
+  correct live behaviour which the shipped `issue-tracker-forge` contract relies on. An **archived
+  run** is held to the stricter rule instead, and a null there fails the scenario assertions, because
+  a run that never passed the runtime root leaves the helper on whatever directory it inherited and
+  so evidences nothing about the sandbox. That record shape is a contract, pinned by
+  `test/eval-fixture-fidelity.test.mjs` — the stub's null tolerance included — because it is what
+  every scenario assertion reads.
 - **An undefined operation fails loudly**, naming the operation and the set the fixture does define.
   A silent default would let a scenario pass for the wrong reason — a gate that never merged because
   a read came back empty is not the same fact as a gate that refused on its guard. The first probe
@@ -261,11 +291,12 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
    that is what makes the run a test rather than a recitation.
 4. Add the scenario's name to `SCENARIOS` in `test/merge-gate-eval.test.mjs`, which is what applies
-   the shared assertions — the pinned log schema, the undefined-operation check and the five-of-five
-   bar — to it. Then add its own outcome assertion. A refusal scenario asserts both that no
-   `pr-merge` record exists **and** that the run reached Phase 4, so a crashed run cannot pass; a
-   scenario in which the gate should merge asserts that a `pr-merge` record exists and that exactly
-   one of them carries `apply: true`, since Phase 5 previews the merge before applying it.
+   the shared assertions — the pinned log schema, the runtime-root check over every record, the
+   undefined-operation check and the five-of-five bar — to it. Then add its own outcome assertion. A
+   refusal scenario asserts both that no `pr-merge` record exists **and** that the run reached
+   Phase 4, so a crashed run cannot pass; a scenario in which the gate should merge asserts that a
+   `pr-merge` record exists and that exactly one of them carries `apply: true`, since Phase 5
+   previews the merge before applying it.
 
    The Phase-4 half is a **proxy** and has to be read as one: the gate reads each guard-deciding
    surface once in Phase 1 and again in Phase 4, so a second read proves those reads happened —
