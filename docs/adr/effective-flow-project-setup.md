@@ -43,3 +43,17 @@ a pure runtime directory and completely gitignored.
 | mergeGate.bots                    | recensor                   |
 | mergeGate.bots.recensor.trigger   | /recensor review           |
 | mergeGate.bots.recensor.check     | recensor/review            |
+
+## Branch model
+
+`develop` is the integration branch. All source work happens there, and the `delivery.baseBranch`
+row above names it as the base every delivery branch starts from.
+
+`main` is the published delivery artifact, written mechanically by the release workflow. It carries
+the portable skill payload and the consumer-facing documentation, and no source tree, build script
+or developer guide. Nothing is implemented on it.
+
+`origin/HEAD` and the forge's default branch both point at `main`, so any mechanism that branches
+off the repository default — a harness-managed worktree, `gh pr create` without an explicit
+`--base` — starts from a tree with no source in it. The divergence between `delivery.baseBranch`
+and the repository default is deliberate and permanent.
