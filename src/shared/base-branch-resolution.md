@@ -1,17 +1,26 @@
 ## Base-branch resolution
 
-`delivery.baseBranch` (default `origin/main`) has exactly one resolution rule, and this is it;
-every later step refers back to the results recorded here instead of restating the rule or
-re-deriving anything from the configured value. The value is a remote ref only when the part
-before its first `/` is a remote that `git remote` lists for this repository; local branch names
-carry slashes too, so `feature/foo` is that branch unless `feature` is a configured remote. A
-value with no `/` at all (`main`, `develop`, whatever `setup` proposes where no `origin` exists)
-has no such leading part and is therefore never a remote ref.
+`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step refers
+back to the results recorded here instead of restating the rule or re-deriving anything from the
+configured value. Absent, the key takes `origin/` prefixed to the branch
+`git symbolic-ref refs/remotes/origin/HEAD` names, else `origin/main`; the derived value is a
+remote ref like any other and is classified below as one. An explicit value is used as written. The value is a
+remote ref only when the part before its first `/` is a remote that `git remote` lists for this
+repository; local branch names carry slashes too, so `feature/foo` is that branch unless `feature`
+is a configured remote. A value with no `/` at all (`main`, `develop`, whatever `setup` proposes
+where no `origin` exists) has no such leading part and is therefore never a remote ref.
 
 - Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
   branch starts from the current remote state. If the fetch or the resolution fails (offline,
   credentials, deleted branch), report and stop — never fall back here: a stale local branch
-  can be far behind and would start delivery from the wrong commit.
+  can be far behind and would start delivery from the wrong commit. After a successful
+  resolution, and only where REMOTE is `origin`, read `origin/HEAD`: where it resolves and names
+  another branch, name both facts once, neither as authoritative — the clone-time cache may be the
+  stale side — and offer `git remote set-head origin -a`. This adds no gate: the configured value
+  wins. A `origin/HEAD` that does not resolve is not an error and reports nothing; a base on a
+  differently named remote is not compared against origin's at all. Stay silent where the project
+  setup ADR carries, in prose outside its configuration table, a sentence calling the divergence
+  between `delivery.baseBranch` and the repository default deliberate and permanent.
 - Remote not configured: no such ref can exist in this repository. Resolve the value as a
   local ref instead: as it stands first, and only if that fails the local branch part after
   the first `/` (`main` for `origin/main`); report that substitution once.

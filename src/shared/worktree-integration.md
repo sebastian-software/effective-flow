@@ -69,7 +69,7 @@ If the Effective Flow configuration (project setup ADR) pins corresponding value
 
 Missing values have these defaults:
 
-- `delivery.baseBranch`: `"origin/main"`
+- `delivery.baseBranch`: derived from `origin/HEAD`, else `"origin/main"`
 - `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
 - `delivery.returnBranch`: `"auto"` (the resolved local base branch)

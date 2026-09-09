@@ -1479,7 +1479,7 @@ try {
     investigate: 521,
     fix: 700,
     'plan-review': 438,
-    pr: 423,
+    pr: 432,
     'concept-review': 336,
     'apply-review-remote': 325,
     concept: 324,

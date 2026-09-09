@@ -192,8 +192,9 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | skills.tools.docs.exclude            | humanizer                  |
 ```
 
-The eight explicit language rows illustrate every override. In a typical project, only
-`language.project` is needed; omit an artifact-surface override to inherit the project language,
+`delivery.baseBranch` appears here as an explicit value: omit the row and the default is derived
+from `origin/HEAD` instead. The eight explicit language rows illustrate every override. In a
+typical project, only `language.project` is needed; omit an artifact-surface override to inherit the project language,
 and omit `language.chat` to keep mirroring the language you write in. Omit optional
 skill override rows when no override is needed. `tracker.externalTool`,
 `tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
@@ -437,11 +438,16 @@ dedicated delivery branch.
 
 | Key            | Values                             | Default          | Meaning                                                            |
 | -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `baseBranch`   | Git ref as string                  | `origin/main`    | Starting point of the delivery branch                              |
+| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                              |
 | `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 | `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+
+An absent `baseBranch` takes `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. A configured value is used as written, and a run that finds it
+naming a different branch than `origin/HEAD` reports both once — with the
+`git remote set-head origin -a` hint — and continues.
 
 `delivery.completion` is the fallback when the current invocation does not already contain one
 unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch`. A qualifying
@@ -574,6 +580,11 @@ values are retained unless the user explicitly confirms a change.
 | `tracker.mode`                      | `local`                      |
 | `plan.dir`                          | `docs/plan`                  |
 | `concept.dir`                       | `docs/concept`               |
+
+`delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
+holds where a remote named `origin` is configured and `origin/HEAD` names `main` or is missing;
+where that ref names another branch the base takes it, and a repository without a remote named
+`origin` is proposed its current local branch instead.
 
 Artifact-surface language overrides are absent in the safe base and therefore inherit
 `language.project`. If the entire `language.*` block is absent, the default remains `en`.

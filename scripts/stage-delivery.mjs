@@ -60,6 +60,8 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
     'effective-flow',
     'LICENSE',
     'README.md',
+    'AGENTS.md',
+    'CLAUDE.md',
     join('docs', 'user-guide'),
     join('docs', 'developer-guide'),
     'renovate.json',

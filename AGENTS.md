@@ -4,6 +4,8 @@ This file provides guidance to any coding agent working with code in this reposi
 
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
 
+**Source branch:** `origin/develop` — all source work happens on `develop`. `main` is the published delivery artifact, carries no source tree, and is written mechanically by the release workflow; the repository default branch points there, so never branch or open a pull request against it. See the branch model in the project-setup ADR.
+
 ## What this repo is
 
 Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. `build.mjs` transforms Markdown sources under `src/` plus a small dependency-free Node.js runtime into two harness-native direct-install targets and one harness-neutral portable manager target under `dist/`.

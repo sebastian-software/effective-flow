@@ -18,7 +18,12 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { collectRenderedWorkerRefs, extractFrontmatter, getField } from '../build-lib.mjs';
+import {
+  DELIVERY_GUIDANCE_MARKER,
+  collectRenderedWorkerRefs,
+  extractFrontmatter,
+  getField,
+} from '../build-lib.mjs';
 import { stageDelivery } from './stage-delivery.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -281,6 +286,37 @@ export function assertDeliveryLayout(directory, portableSkill) {
     const actual = readFileSync(join(directory, path));
     const expected = readFileSync(join(ROOT_DIR, path));
     if (!actual.equals(expected)) fail(`delivered trusted automation differs from source: ${path}`);
+  }
+
+  // The guidance pair an agent working in a checkout of the delivery branch actually loads.
+  // `deliveryGuidance` is unit-tested as a pure template, which proves what the string says and
+  // nothing about whether it reaches the branch: a `deliverDocs` that stopped writing either file
+  // would leave every one of those tests green. This runs against the staged tree the release
+  // pushes, so it observes the delivery rather than the template.
+  const claude = join(directory, 'CLAUDE.md');
+  if (!existsSync(claude)) fail('delivery is missing CLAUDE.md');
+  if (readFileSync(claude, 'utf8') !== '@AGENTS.md\n') {
+    fail('delivered CLAUDE.md must be exactly the one-line AGENTS.md import');
+  }
+
+  const agentsPath = join(directory, 'AGENTS.md');
+  if (!existsSync(agentsPath)) fail('delivery is missing AGENTS.md');
+  const agents = readFileSync(agentsPath, 'utf8');
+  if (!agents.includes(DELIVERY_GUIDANCE_MARKER)) {
+    fail('delivered AGENTS.md must carry the delivery-guidance marker');
+  }
+  // The two statements the file exists to make. Without them it is a link, and an agent reading
+  // it learns nothing about why it must not implement here.
+  for (const [pattern, what] of [
+    [/machine-managed delivery branch/, 'name itself as the machine-managed delivery branch'],
+    [/overwritten by the next delivery/, 'say that edits here are overwritten'],
+  ]) {
+    if (!pattern.test(agents)) fail(`delivered AGENTS.md must ${what}`);
+  }
+  // CLAUDE.md imports this file, so any bare `@token` in it becomes a further import. The
+  // generated body never needs one, which makes the strictest check also the cheapest.
+  if (agents.includes('@')) {
+    fail('delivered AGENTS.md must carry no @ token: it would resolve as a further import');
   }
   for (const path of [
     join('.github', 'workflows', 'ci.yml'),
