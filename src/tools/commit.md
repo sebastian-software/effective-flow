@@ -13,6 +13,10 @@ when: the commit message output language must be resolved
 ```
 
 ```include
+chat-language
+```
+
+```include
 config-migration
 ```
 

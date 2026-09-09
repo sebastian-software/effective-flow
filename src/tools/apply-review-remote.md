@@ -6,6 +6,10 @@ description: "Internal sub-file of apply-review: issue-tracker integration, the 
 
 This internal sub-file is loaded by `tools/apply-review.md` as soon as the resolved tracker target is the forge or an external tool (the argument is an epic/container or finding issue). It contains the full issue-tracker integration, the external-target contract, and the tracker flow; on the `local` target it is never loaded.
 
+```include
+chat-language
+```
+
 ```lazy-include
 runtime-state-safety
 when: a remote tracker access is about to write its local migration marker

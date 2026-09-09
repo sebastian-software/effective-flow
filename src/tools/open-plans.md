@@ -20,7 +20,11 @@ You list open implementation plans from `<plan.dir>/`.
 
 ```lazy-include
 language-rules
-when: the conversation language is not recognizable and this run's interactive output language must be resolved from the configuration
+when: the chat-language rule leaves this run's interactive output language on `language.project`, so the artifact-surface resolver must be read
+```
+
+```include
+chat-language
 ```
 
 ```include

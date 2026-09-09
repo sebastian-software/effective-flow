@@ -23,6 +23,10 @@ when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
+chat-language
+```
+
+```include
 task-tracking
 ```
 

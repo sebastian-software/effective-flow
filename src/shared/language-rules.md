@@ -1,7 +1,8 @@
 ## Language resolution
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+Effective Flow resolves language by **target surface**: seven of these keys cover persisted,
+human-readable content, and `language.chat` covers what the run says to the user. The project
+setup ADR may contain these stable keys; each value is `de` or `en`:
 
 | Key                                | Surface                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------- |
@@ -12,6 +13,7 @@ The project setup ADR may contain these stable keys; each value is `de` or `en`:
 | `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
 | `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
 | `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+| `language.chat`                    | Interactive output: what the run says to the user, never a project artifact |
 
 Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
 markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
@@ -30,10 +32,14 @@ For each artifact, determine its target surface first and resolve exactly once:
 4. Otherwise use a valid `language.project`.
 5. Otherwise use `en`.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
+Only `de` and `en` are valid, for every key in the table. For an artifact surface an invalid value
+has no special meaning: report the affected key, ignore it, and continue with the next fallback. A
+missing artifact-surface override means inheritance; `null` is not a language value.
+`language.chat` is not an artifact surface and resolves by its own rule, for a missing **and** for
+an invalid value — both mirror the user instead of falling through to `language.project`. That rule
+is the "Interactive output language" fragment, which the tools that resolve it carry eagerly; the
+router, `{{SKILL:version}}` and the `pr-review` notice carry none by design, and no agent carries
+it, because an agent never resolves this key.
 
 At overlap boundaries, the publication destination decides: local review prose uses
 `language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.

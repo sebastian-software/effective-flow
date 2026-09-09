@@ -76,6 +76,7 @@
       "skill": "effective-writing",
       "consumers": [
         { "consumer": "language-rules", "classification": "delegate" },
+        { "consumer": "chat-language", "classification": "delegate" },
         { "consumer": "code-documenter", "classification": "delegate" },
         { "consumer": "docs-writer", "classification": "delegate" },
         { "consumer": "marketing-writer", "classification": "delegate" },

@@ -172,6 +172,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.workflow                    | en                         |
 | language.forge                       | en                         |
 | language.git                         | en                         |
+| language.chat                        | en                         |
 | plan.dir                             | docs/plan                  |
 | concept.dir                          | docs/concept               |
 | delivery.baseBranch                  | origin/main                |
@@ -191,8 +192,9 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | skills.tools.docs.exclude            | humanizer                  |
 ```
 
-The seven explicit language rows illustrate every override. In a typical project, only
-`language.project` is needed; omit an override to inherit the project language. Omit optional
+The eight explicit language rows illustrate every override. In a typical project, only
+`language.project` is needed; omit an artifact-surface override to inherit the project language,
+and omit `language.chat` to keep mirroring the language you write in. Omit optional
 skill override rows when no override is needed. `tracker.externalTool`,
 `tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
 absent because this example pins `tracker.mode: local`; they belong to an external target only (see
@@ -200,8 +202,9 @@ absent because this example pins `tracker.mode: local`; they belong to an extern
 
 ## Block `language`
 
-Controls the language of human-readable content created or edited by Effective Flow. Every value
-is `de` or `en`; `null` has no special meaning for these keys.
+Controls the language of human-readable content created or edited by Effective Flow. Seven keys
+cover persisted artifacts; `chat` covers what a run says to you. Every value is `de` or `en`;
+`null` has no special meaning for these keys.
 
 | Key                       | Scope                                                                                       |
 | ------------------------- | ------------------------------------------------------------------------------------------- |
@@ -212,19 +215,32 @@ is `de` or `en`; `null` has no special meaning for these keys.
 | `workflow`                | Plans, plan reviews, local review reports, investigations, and other local workflow prose   |
 | `forge`                   | Issues, PR bodies, issue/PR comments, remote reviews, and review-thread replies             |
 | `git`                     | Commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose |
+| `chat`                    | Interactive output: what a run says to you, persisted nowhere                               |
 
 For a new artifact, the surface-specific override wins, then `language.project`, then the
 built-in default `en`. An explicit user instruction for that artifact wins over configuration.
 When editing an existing artifact, its recognizable language is preserved unless translation is
 requested. Incoming third-party text and verbatim quotations are not translated automatically.
-Interactive, non-persisted replies follow the current user's language; the project language is
-only a fallback when the conversation language is unclear.
 
 A local review therefore follows `language.workflow`, while the same review published as issues
 follows `language.forge`. PR bodies and comments follow `language.forge`, but a
 Conventional-Commit PR title follows `language.git` because squash merges may turn it into the
 commit subject. Commit descriptions and generated changelog/release prose also follow
 `language.git`; Conventional-Commit types remain English.
+
+`language.chat` is the one key that does not inherit. Leave it out and Effective Flow keeps
+mirroring the language you write in, exactly as it did before the key existed; `language.project`
+is reached only when the conversation language is unclear. Set it and it wins over the language of
+your message, so `language.chat: de` answers an English prompt in German — that is the intended
+behavior, not a bug. Only an explicit request in the message itself outranks it, and an invalid
+value is reported and treated like an absent row rather than falling back to `language.project`.
+
+The key covers everything a run says itself: prose, status updates, the questions it asks, the
+completion report, the next-steps heading and each option's description, and the session-title
+label. It stops at delegated output. Reports from workers and notices from agents are passed
+through as written, so a run with `language.chat: de` can still show an English worker report. The
+tool catalog, the `version` output, and the `pr-review` deprecation notice appear before any
+configuration is read and stay on the language of the conversation.
 
 Stable machine-facing tokens are never localized: config keys and encoded values, labels, HTML
 idempotency markers, finding IDs, action values, paths, Conventional-Commit types, branch slugs,
@@ -559,8 +575,11 @@ values are retained unless the user explicitly confirms a change.
 | `plan.dir`                          | `docs/plan`                  |
 | `concept.dir`                       | `docs/concept`               |
 
-Language overrides are absent in the safe base and therefore inherit `language.project`. If the
-entire `language.*` block is absent, the default remains `en`.
+Artifact-surface language overrides are absent in the safe base and therefore inherit
+`language.project`. If the entire `language.*` block is absent, the default remains `en`.
+`language.chat` is deliberately absent too, and its absence is not inheritance: the safe base
+leaves interactive replies mirroring the language you write in. Set it through the guided setup
+path when you want a fixed reply language.
 
 The `mergeGate.*` rows and `delivery.mergeMethod` are listed here as the values a run uses, not as
 rows Express writes: they belong to their source tools, a missing line means exactly the value above,
