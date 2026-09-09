@@ -117,9 +117,9 @@ There is deliberately **no** second preset anymore. Anyone who wants a faster so
 changedScope`) reaches these values individually via the guided path (advanced
 settings). Missing artifact-surface `language.*` overrides inherit `language.project`; Express
 therefore writes only `language.project = en` unless existing overrides are preserved. The base
-deliberately carries **no** `language.chat` row and Express writes none, so interactive replies
-keep mirroring the user until the guided path sets one. The legacy `plan.markerLanguage` is never
-written as a current setting.
+deliberately carries **no** `language.chat` row and Express adds none, though it retains an
+existing one like any other override, so interactive replies keep mirroring the user until a row
+is set. The legacy `plan.markerLanguage` is never written as a current setting.
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
@@ -254,8 +254,8 @@ options:
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
-  `language.project = en` per the base, write no `language.chat` row, and retain valid existing
-  language overrides. Apply the
+  `language.project = en` per the base, introduce no new `language.chat` row, and retain valid
+  existing language overrides, `language.chat` among them. Apply the
   confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
   merge-gate block — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there

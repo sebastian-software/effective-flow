@@ -77,9 +77,10 @@ Git/release prose, and — as the seventh — the interactive language Effective
 Choosing “inherit project language” removes or omits an artifact-surface override and appears in
 the before/after confirmation. The chat override differs: its first option is “Mirror the user's
 language (default)”, because an absent `language.chat` row mirrors whatever language you write in
-rather than inheriting the project language. Express writes no row for it, so interactive replies
-keep mirroring until you set one. A new ADR uses the technical-documentation language; setup
-preserves the language of an existing ADR during ordinary updates.
+rather than inheriting the project language. Express adds no row for it but keeps one you already
+set, so interactive replies keep mirroring until you set one. A new ADR uses the
+technical-documentation language; setup preserves the language of an existing ADR during ordinary
+updates.
 
 **Interplay:** `setup` owns configuration writes and migration. Other tools only resolve and read
 the ADR; if they find only a legacy JSON config, they may use it transitionally for that run and
