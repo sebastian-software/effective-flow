@@ -125,6 +125,13 @@ jobs:
         # Consumers that do not run a build (dalo, `npx skills`) grab finished
         # artifacts straight from here.
         #
+        # It also carries a generated AGENTS.md plus a one-line CLAUDE.md importing it.
+        # Those exist because a coding agent working in a checkout of this branch loads
+        # CLAUDE.md unconditionally and reads nothing else on its own: the README footer
+        # already names `develop`, but nothing makes an agent read a README before it
+        # starts editing. Both are written by deliver-docs.mjs and reset by
+        # stage-delivery.mjs, so the delivered set stays declarative.
+        #
         # deliver-docs.mjs rewrites developer-guide links in the delivered docs to
         # absolute develop URLs (they would dangle on `main`) and appends a footer
         # pointing contributors at `develop`. This appends a fresh commit — it never
