@@ -131,7 +131,11 @@ default case, therefore, always. The delivery branch is named
 the plan title, task description, issue, or finding; on a name collision Effective Flow appends
 a numeric suffix and reports the chosen name.
 
-`delivery.baseBranch` (default `origin/main`) serves as the starting point. The value is a remote
+`delivery.baseBranch` serves as the starting point. Without that key, Effective Flow derives the
+default from the repository: `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. An explicitly configured value is used as written; where it names
+a different branch than `origin/HEAD`, the run names both once and suggests
+`git remote set-head origin -a`, without blocking anything. The value is a remote
 ref only when the part before its first `/` is a configured remote – local branch names carry
 slashes too, so `feature/foo` stays that branch, and a value without any `/` is never a remote
 ref. For a configured remote, Effective Flow first fetches the current state via `git fetch`, so
