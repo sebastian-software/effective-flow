@@ -289,15 +289,15 @@ The build aborts with an error message if any of these guards is violated:
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
-  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
-  `review` and `plan` share **700 lines**; `merge-gate` carries **2787**; every other
-  `src/tools/*.md` carries its measured size plus **up to** ten lines. The build prints each
+  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
+  `plan` share **700 lines**; `merge-gate` carries **2787**; every other `src/tools/*.md`
+  carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
   own** limit, naming the tool, its size and that limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than
   `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
   orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Every number other than the six above is a measured
+  the size of an implementation tool. Every number other than the five above is a measured
   backlog rather than a target – it records what a tool costs today with its mode-gated
   fragments still inlined, so each later deferral lowers the entries it touches and a large
   number reads as work outstanding, never as room to fill. The map and the built tool set are
