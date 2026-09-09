@@ -44,6 +44,23 @@
         "dryRun": false
       }
     },
+    "remote-parse": {
+      "input": { "remote": "https://github.com/example/flow.git" },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "remote-parse",
+        "provider": null,
+        "data": {
+          "host": "github.com",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "github"
+        },
+        "dryRun": false
+      }
+    },
     "reference-parse": {
       "input": {
         "reference": "42",
