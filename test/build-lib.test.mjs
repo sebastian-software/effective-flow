@@ -46,6 +46,8 @@ import {
   appendDeliveryFooter,
   deliveryFooter,
   DELIVERY_FOOTER_MARKER,
+  deliveryGuidance,
+  DELIVERY_GUIDANCE_MARKER,
   PORTABLE_WORKER_DELEGATION,
   collectRenderedWorkerRefs,
   HARNESS_TOOL_PARAMETER_OWNERSHIP,
@@ -3881,4 +3883,66 @@ test('appendDeliveryFooter is idempotent (no second footer)', () => {
 
 test('appendDeliveryFooter requires repo and sourceBranch', () => {
   assert.throws(() => appendDeliveryFooter('x', { repo: 'a/b' }), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance names the marker, the source branch and its tree link', () => {
+  // Asserted against a repo/branch pair this repository never uses, so a body that
+  // hardcoded `sebastian-software/effective-flow` or `develop` cannot pass by accident.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.ok(agents.includes(DELIVERY_GUIDANCE_MARKER));
+  assert.ok(agents.includes('trunk'));
+  assert.ok(agents.includes('https://github.com/acme/thing/tree/trunk'));
+});
+
+test('deliveryGuidance states the three things the file exists to say', () => {
+  // The assertions above all hold for a body reduced to a bare link: marker, branch
+  // name and URL survive every rewrite that deletes the actual message. This file
+  // exists only to tell an agent standing in a delivery checkout that it is on the
+  // wrong branch, so the message itself is the contract — pin it, or the guard
+  // silently degrades to a link checker.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.match(agents, /machine-managed delivery branch/);
+  assert.match(agents, /overwritten by the next delivery/);
+  assert.match(agents, /do not open a pull request against this branch/);
+  // A worktree under `<repo>/.claude/worktrees/` sits inside the source checkout, so a
+  // parent-directory CLAUDE.md is loaded alongside this one and describes the source
+  // branch. Without this sentence the two read as equally authoritative.
+  assert.match(agents, /Guidance loaded from a surrounding checkout/);
+});
+
+test('deliveryGuidance rejects missing arguments like its neighbour', () => {
+  // appendDeliveryFooter throws on the same omission. Without this, a caller that
+  // dropped an argument would emit a body linking `github.com/undefined/tree/undefined`.
+  assert.throws(() => deliveryGuidance(), /requires repo and sourceBranch/);
+  assert.throws(() => deliveryGuidance('acme/thing'), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance carries no frontmatter and no bare @ token', () => {
+  const { agents } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  // Two separate hazards of the delivery branch, both invisible until they fire:
+  // frontmatter carrying `name: effective-flow` would enroll this file in
+  // scripts/distribution-smoke.mjs's skill-candidate enumeration, and any `@token`
+  // is read by Claude Code as a further import — from AGENTS.md, which CLAUDE.md
+  // already imports. Neither is a formatting preference. `@` is banned outright
+  // rather than only outside code spans, because this body is generated: it never
+  // needs one, so the cheapest assertion is also the strictest.
+  assert.ok(!agents.startsWith('---'));
+  assert.ok(!agents.includes('name: effective-flow'));
+  assert.ok(!agents.includes('@'));
+});
+
+test('deliveryGuidance returns exactly the one-line CLAUDE.md import', () => {
+  // Equality, not `includes`: CLAUDE.md is loaded unconditionally, so anything
+  // beyond the import is always-on context this file has no mandate to spend.
+  const { claude } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(claude, '@AGENTS.md\n');
+});
+
+test('deliveryGuidance is idempotent (a re-delivery writes identical bytes)', () => {
+  // Both files are written whole rather than appended, so re-running the delivery
+  // step must not produce a diff on the delivery branch.
+  const once = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  const twice = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(twice.agents, once.agents);
+  assert.equal(twice.claude, once.claude);
 });

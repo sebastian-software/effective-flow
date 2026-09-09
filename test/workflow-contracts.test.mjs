@@ -6100,6 +6100,96 @@ test("this repository's own gate is not left on a signal its reviewer cannot use
   }
 });
 
+test("this repository's AGENTS.md carries the ADR's own delivery.baseBranch value", () => {
+  // The branch model is documented in two developer-guide files and in the ADR row, and none of
+  // that stopped a worktree cut from `main` from being handed source work: an agent doing a
+  // targeted edit reads AGENTS.md, not a guide. So AGENTS.md states it too — and because the same
+  // fact now lives in two places, the row and the line have to be pinned to each other.
+  //
+  // The pin is anchored on the labelled line rather than on the whole file. `agents.includes(base)`
+  // would be vacuous: `develop` and `main` both already occur in AGENTS.md as ordinary words, so
+  // that assertion passes with the line deleted outright. Proven by mutating the row to a value
+  // occurring nowhere (`origin/zzz-nonexistent`) and to `origin/main`; both fail here.
+  const adr = source('docs/adr/effective-flow-project-setup.md');
+  const base = rowCells(tableRow(adr, 'delivery.baseBranch'))[1];
+  assert.ok(base, 'the ADR must name a delivery base branch');
+
+  const line = source('AGENTS.md')
+    .split('\n')
+    .find((candidate) => candidate.startsWith('**Source branch:**'));
+  assert.ok(line, 'AGENTS.md must carry a `**Source branch:**` line');
+  // Equality on the backticked token, not `line.includes(base)`. A substring test stays green
+  // for every value the line's own token contains as a prefix: dropping the remote to plain
+  // `develop`, or shortening it to `origin/dev`, would leave AGENTS.md saying `origin/develop`
+  // with nothing complaining. Dropping the remote is not hypothetical — base-branch-resolution
+  // treats the part before the first `/` as a remote only when `git remote` lists it, so a
+  // remoteless project configures exactly that.
+  const named = line.match(/^\*\*Source branch:\*\* `([^`]+)`/)?.[1];
+  assert.equal(
+    named,
+    base,
+    `the AGENTS.md source-branch line must name the ADR's own value exactly: ${base}`,
+  );
+});
+
+test("this repository's AGENTS.md gains no import through a bare @ token", () => {
+  // AGENTS.md is imported by CLAUDE.md, so every bare `@token` in it is a further import that is
+  // loaded into every session unconditionally — the budget the archived import plan cut this file
+  // down to reach. The branch-model line deliberately points at the ADR in prose for that reason,
+  // and this guards the whole file against the next line that forgets. `@` inside a code span is
+  // not an import (`actions/checkout@<sha>` is documentation), so only uncoded occurrences count.
+  const agents = source('AGENTS.md');
+  let fenced = false;
+  const uncoded = agents
+    .split('\n')
+    .filter((line) => {
+      if (line.startsWith('```')) {
+        fenced = !fenced;
+        return false;
+      }
+      return !fenced;
+    })
+    .map((line) => line.replace(/`+[^`]*`+/g, ''))
+    .filter((line) => line.includes('@'));
+  assert.deepEqual(uncoded, [], 'AGENTS.md must carry no @ token outside a code span');
+});
+
+test('setup preserves the ADR prose that follows the configuration table', () => {
+  // setup rewrites the configuration table on every run. The branch-model section sits below it and
+  // is now machine-read, so "surrounding prose" had to stop meaning only the prose *above* the
+  // table. The promise existed at this bullet but nothing asserted it, which is why a rewrite that
+  // dropped everything below the table would have passed the suite.
+  const bullet = boundedSlice(
+    source('src/tools/setup.md'),
+    'For an existing ADR',
+    'Add a short context sentence',
+  );
+  assert.match(
+    flat(bullet),
+    /Sections \*\*after\*\* the configuration table are surrounding prose/,
+  );
+  assert.match(flat(bullet), /rewrite the table in place and keep everything below it/);
+});
+
+test('the project-setup ADR carries the acknowledgement sentence verbatim', () => {
+  // This repository's `delivery.baseBranch` disagrees with its default branch on purpose, and the
+  // base-branch drift check in `src/shared/base-branch-resolution.md` stays silent on finding this
+  // sentence. This is the ADR side of that coupling and the only assertion holding the string
+  // still: rewording it reads correctly to a human while switching the report back on for every
+  // remote resolution, forever. The fragment side is held by "the drift-check silence condition
+  // stays bound to the ADR sentence it reads", which pins the words the condition must use; that
+  // test cannot guard this one, because it locates this sentence *by* those same words.
+  // Compared against the whitespace-flattened file: the sentence is wrapped across two source
+  // lines, so a literal `includes` on the raw text would fail on formatting rather than on drift.
+  const adr = flat(source('docs/adr/effective-flow-project-setup.md'));
+  assert.ok(
+    adr.includes(
+      'The divergence between `delivery.baseBranch` and the repository default is deliberate and permanent.',
+    ),
+    'the acknowledgement sentence must stay byte-identical to the string the drift check recognizes',
+  );
+});
+
 test('the reviewer-state contract pins its three states and its fail-closed precedence', () => {
   const state = source('src/shared/review-bot-state.md');
   const states = flat(section(state, '### The three states'));
@@ -8384,6 +8474,191 @@ test('the base-branch resolution rule keeps a slash-containing local base branch
   );
 });
 
+// The opening prose is where the derived default has to live: `baseBranchRuleParts()` splits on
+// `\n\s*- `, so a fourth bullet — even a nested one — changes the arm count the rule is built on.
+// The three bullets classify *a value*; this states which value the rule starts from.
+test('the base-branch resolution rule states the derived default before classifying a value', () => {
+  const [opening] = baseBranchRuleParts();
+
+  // Arm one: an absent key derives from the repository itself. Hardcoding `origin/main` made the
+  // rule abort by its own third bullet in every repository whose default branch is not `main` —
+  // an avoidable failure, because `origin/HEAD` already carried the answer locally.
+  assert.match(
+    opening,
+    near('Absent', 'git symbolic-ref refs/remotes/origin/HEAD', 120),
+    'a missing key must derive its default from the repository, not from a hardcoded branch',
+  );
+
+  // Arm two: the fallback survives. `origin/HEAD` is absent after `git init` plus `git remote add`
+  // and in some CI checkouts, and that must stay a silent fall-through rather than an error.
+  assert.match(
+    opening,
+    near('git symbolic-ref refs/remotes/origin/HEAD', 'else `origin/main`', 80),
+    'the derivation must name `origin/main` as its fallback where `origin/HEAD` does not exist',
+  );
+
+  // Arm three: derivation applies to the *absent* key only. Without this an implementer could
+  // read the new default as a correction applied to a configured value — which is precisely the
+  // bug the key exists to prevent, since `origin/HEAD` answers a different question than
+  // `delivery.baseBranch` does in a repository that separates the two on purpose.
+  assert.match(
+    opening,
+    /[Aa]n explicit value is used as written/,
+    'an explicitly configured base branch must be used unchanged, whatever `origin/HEAD` names',
+  );
+
+  // Arm four, and the one the whole change rests on: the derived value must carry the `origin/`
+  // prefix. `git symbolic-ref refs/remotes/origin/HEAD` prints a ref whose branch part is bare, and
+  // this rule declares two lines later that a value with no `/` is never a remote ref. A derivation
+  // that yields `trunk` rather than `origin/trunk` therefore takes the remote-NOT-configured arm,
+  // skips the fetch, and starts delivery from a possibly stale local branch — reintroducing exactly
+  // the failure the remote-configured arm exists to prevent. Wording that leaves the prefix
+  // implicit reads as a location ("the branch under `origin/`") and is not enough.
+  assert.match(
+    opening,
+    near('`origin/`', 'git symbolic-ref refs/remotes/origin/HEAD', 60),
+    'the derived default must prefix `origin/`, not merely locate the branch under it',
+  );
+  assert.match(
+    opening,
+    /derived value is a\s+remote ref/,
+    'the derivation must say the value it produces is a remote ref, so classification agrees',
+  );
+});
+
+test('the base-branch drift comparison lives inside the remote-configured case', () => {
+  const cases = baseBranchRuleParts().slice(1);
+
+  // Asserted here as well as in the neighbouring case test, because this is the assertion that
+  // fails first when the drift prose is reshaped. `\s*` in the split spans newlines and
+  // indentation, so an indented sub-bullet counts as a fourth case — and the drift text is
+  // exactly the prose an editor "tidies" into one: a staleness caveat, a remediation hint and a
+  // no-gate statement read like a list.
+  assert.equal(cases.length, 3, 'the rule must carry exactly its three outcome bullets');
+
+  const fetching = cases.filter((part) => /git fetch REMOTE BRANCH/.test(part));
+  assert.equal(fetching.length, 1, 'exactly one outcome case may own the fetch');
+
+  // The comparison is a continuation of the arm that already resolved a remote ref. Split off
+  // into a case of its own it stops being reached by the arm that has both facts in hand.
+  assert.match(
+    fetching[0],
+    /`origin\/HEAD`/,
+    'the drift comparison must sit in the case that already fetched, not in a case of its own',
+  );
+  for (const part of cases.filter((candidate) => !/git fetch REMOTE BRANCH/.test(candidate))) {
+    assert.doesNotMatch(
+      part,
+      /origin\/HEAD/,
+      'no other outcome case may carry the drift comparison',
+    );
+  }
+});
+
+test('the base-branch drift report stays a report and carries its remediation', () => {
+  const configured = baseBranchRuleParts()
+    .slice(1)
+    .find((part) => /git fetch REMOTE BRANCH/.test(part));
+  assert.ok(configured, 'the remote-configured case must still exist');
+
+  // House style for a disagreement between a declared source and an observed fact is
+  // `project-adr-convention.md`: the declared source wins and the disagreement is named, so a
+  // silent override becomes a visible one without adding a gate. A drift check that blocked
+  // would stop delivery in every repository that separates its integration branch from its
+  // published default — this one included.
+  assert.match(
+    configured,
+    near('adds no gate', 'the configured value wins', 80),
+    'the drift comparison must state that it reports and that the configured value still wins',
+  );
+
+  // The report is conditional, and the condition is the whole point. Dropping "where it resolves
+  // and names another branch" leaves a rule that reports on every remote resolution, including the
+  // overwhelming majority where the two agree — noise that trains readers to ignore the one case
+  // that matters. Two further conditions guard the shapes that cannot be compared at all: an
+  // `origin/HEAD` that does not resolve (fresh `git init` plus `git remote add`, many CI checkouts)
+  // is a silent fall-through rather than a failed resolution, and a base on a differently named
+  // remote is never measured against origin's, which would otherwise hand a fork checkout a
+  // permanent report whose remediation cannot resolve it.
+  assert.match(
+    configured,
+    near('where it resolves and names', 'another branch', 40),
+    'the drift report must fire only where `origin/HEAD` resolves to a different branch',
+  );
+  assert.match(
+    configured,
+    near('does not resolve', 'not an error', 60),
+    'an unresolvable `origin/HEAD` must be a silent fall-through, never an abort',
+  );
+  assert.match(
+    configured,
+    near('only where REMOTE is `origin`', 'read `origin/HEAD`', 80),
+    'the comparison must be scoped to origin, never guessed across differently named remotes',
+  );
+
+  // Neither side is authoritative: after an upstream rename the clone-time cache is the stale
+  // one, and after a deliberate divergence the configured value is right. A verdict either way
+  // would be wrong half the time, so the rule names both facts and offers the repair instead.
+  assert.match(
+    configured,
+    near('neither as authoritative', 'may be the stale side', 140),
+    'the report must refuse to rule on which of the two facts is stale',
+  );
+  assert.match(
+    configured,
+    /`git remote set-head origin -a`/,
+    'a report the reader cannot act on is noise; the refresh command is the remediation',
+  );
+});
+
+// The suppression reads prose out of another document, and only these two tests connect them.
+// This one guards the *fragment* side: a paraphrase there — "on purpose", "for good" — leaves the
+// file reading correctly while the condition stops matching the ADR. It deliberately does not
+// guard the ADR side, and cannot: it locates the acknowledgement sentence by the very words it
+// then requires, so any reword that keeps them passes here. The ADR side is held by "the
+// project-setup ADR carries the acknowledgement sentence verbatim", which pins the literal.
+// Either failure is silent and permanent — this repository would report its own deliberate
+// divergence on every remote resolution, and the only symptom is noise nobody traces to a reword.
+test('the drift-check silence condition stays bound to the ADR sentence it reads', () => {
+  // Sentence-split on a period followed by whitespace, so `delivery.baseBranch` does not split.
+  const sentences = (text) => prose(text).split(/(?<=\.)\s+/);
+
+  const acknowledgement = sentences(source('docs/adr/effective-flow-project-setup.md')).find(
+    (sentence) => /deliberate and permanent/.test(sentence),
+  );
+  assert.ok(
+    acknowledgement,
+    'the setup ADR must still carry the acknowledgement sentence the drift check suppresses on; ' +
+      'rewording it silently breaks the suppression in `base-branch-resolution.md`',
+  );
+
+  const configured = baseBranchRuleParts()
+    .slice(1)
+    .find((part) => /git fetch REMOTE BRANCH/.test(part));
+  assert.ok(configured, 'the remote-configured case must still exist');
+  const silence = sentences(configured).find((sentence) => /[Ss]ilent where/.test(sentence));
+  assert.ok(silence, 'the remote-configured case must state when the drift report stays silent');
+
+  // The condition has to name the ADR as its source, or a reader cannot tell which document is
+  // consulted and a `setup` run has nothing to preserve.
+  assert.match(silence, /setup ADR/, 'the silence condition must name the ADR it reads');
+
+  // The binding itself: the distinctive words of the ADR sentence, asserted on both sides at
+  // once, so rewording either document fails here rather than nowhere.
+  for (const token of ['divergence', 'deliberate and permanent']) {
+    assert.ok(
+      acknowledgement.includes(token),
+      `the ADR acknowledgement no longer uses "${token}"; the drift check recognizes it by that ` +
+        'wording, so the suppression in `base-branch-resolution.md` no longer matches',
+    );
+    assert.ok(
+      silence.includes(token),
+      `the silence condition no longer uses "${token}"; it must quote the ADR sentence's wording ` +
+        'rather than paraphrase it, or the two drift apart unnoticed',
+    );
+  }
+});
+
 // `pr` step 4 picks its diff-base arm from the recorded pair, and a complete handoff supplies that
 // pair while running no arm at all. Unless the arm is recoverable from the two values themselves,
 // that selection is undefined on precisely the path that cannot observe which arm ran — so the
@@ -8621,7 +8896,10 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // The config-missing default feeds the shared rule, under which a slashless value is never a
   // remote ref. Documented as `main`, an unconfigured checkout that has `origin/main` and no
   // local `main` resolved no base at all and aborted where it used to open a pull request.
-  assert.match(prose(baseInput), /if the config is missing, `origin\/main`/);
+  // Pinned as a *remote* default rather than as the literal `origin/main`: the absent-key default
+  // is derived from `origin/HEAD` now, so naming one branch here would restate — and outdate — a
+  // rule this step is required to defer to. The remote-ref property is what this guard is for.
+  assert.match(prose(baseInput), /if the config is missing, the derived remote default/);
   assert.match(
     prose(baseInput),
     near('never a remote ref', 'no local `main`', 300),
@@ -8898,6 +9176,47 @@ test('the Express setup path inherits the repository-aware base-branch row', () 
 
   // And Express must keep taking this base, or binding the row reaches nothing.
   assert.match(prose(boundedSlice(setup, '- **Express:**', '- **Guided:**')), /safe-defaults base/);
+});
+
+test('setup reports a base-branch divergence on the express path as well as the guided one', () => {
+  const setup = source('src/tools/setup.md');
+  const safeDefaults = prose(
+    boundedSlice(setup, '### Safe defaults (the single base)', 'There is deliberately'),
+  );
+
+  // The qualifier prose is the only construct both paths adopt: Express builds from the
+  // safe-defaults base and jumps to Step 6, so a rule stated only in the Step 4 question reaches
+  // the guided path alone. This mirrors the Express test above, which exists for that reason.
+  assert.match(
+    safeDefaults,
+    near('resolves this row against `git remote` and `origin/HEAD`', 'Express', 200),
+    'the `origin/HEAD` resolution must bind every path, including the one that skips Step 4',
+  );
+
+  // `origin/HEAD` refines the row rather than replacing it: the table still reads `origin/main`,
+  // and without the refinement stated as such the two read as contradicting each other.
+  assert.match(
+    safeDefaults,
+    near('`origin/HEAD`', 'replaces `main`', 120),
+    'the row must say that a differently named `origin/HEAD` replaces `main` in the safe value',
+  );
+
+  // Second moment, same disagreement. Step 6 is the write, and it is the only step Express
+  // reaches — so the before/after list is where a divergent value becomes visible before it is
+  // persisted. Reported, not gated, exactly as the resolution rule reports it later.
+  const write = prose(
+    boundedSlice(setup, '2. This also applies to the safe defaults', '\n3. Resolve the project'),
+  );
+  assert.match(
+    write,
+    near('`delivery.baseBranch`', '`origin/HEAD`', 200),
+    'the Step 6 write summary must compare the value it is about to write against `origin/HEAD`',
+  );
+  assert.match(
+    write,
+    near('name both in that list', 'a report, not a gate', 60),
+    'the disagreement is named in the before/after list and blocks nothing',
+  );
 });
 
 test('the four plan-carrying tools keep their in-place-without-delivery instruction', () => {
