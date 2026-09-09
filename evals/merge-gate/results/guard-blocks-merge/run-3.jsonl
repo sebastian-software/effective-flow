@@ -1,0 +1,12 @@
+{"seq":1,"operation":"pr-read","apply":false,"at":"2026-09-09T20:33:29.772Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":2,"operation":"viewer-read","apply":false,"at":"2026-09-09T20:33:50.898Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":3,"operation":"pr-status-read","apply":false,"at":"2026-09-09T20:33:55.829Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":4,"operation":"review-threads-read","apply":false,"at":"2026-09-09T20:34:00.502Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":5,"operation":"pr-comments-read","apply":false,"at":"2026-09-09T20:34:05.454Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":6,"operation":"pr-reviews-read","apply":false,"at":"2026-09-09T20:34:05.495Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":7,"operation":"pr-checks-wait","apply":false,"at":"2026-09-09T20:35:19.280Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-09T20:35:23.817Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-09T20:35:33.186Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":10,"operation":"review-threads-read","apply":false,"at":"2026-09-09T20:35:33.213Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":11,"operation":"pr-comments-read","apply":false,"at":"2026-09-09T20:35:33.239Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":12,"operation":"pr-reviews-read","apply":false,"at":"2026-09-09T20:35:33.266Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}

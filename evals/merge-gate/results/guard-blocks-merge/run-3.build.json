@@ -1,8 +1,8 @@
 {
   "scenario": "guard-blocks-merge",
-  "digest": "sha256:a59791da00788a1c514d17bc5ddb64a17b44284a655e1f16c394a6a75d542879",
+  "digest": "sha256:563274a487e56ba31ed0168829c70ff7e7f2ea1082f91153f70fac1d31225e6e",
   "skill": {
-    "digest": "sha256:381fb90e1f6c5c7de9a75a200f25e7933d4793655d3343aa6da65940a67c8efc",
+    "digest": "sha256:df7289884d2d17bdbed7d4e25f157b46ed3e480764494bb83de7be25e58e1897",
     "files": {
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
       "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
@@ -22,7 +22,7 @@
       "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
       "shared/tracker-target.md": "sha256:f0db77a35380ad671ccf92715fd889e6b2e375da54d8692f83e4a3667a9bed9d",
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
-      "shared/worktree-integration.md": "sha256:af8294d8a4cc1bdee0e3d2952507b3bab185d4c2d388c29788f14703480d8a09",
+      "shared/worktree-integration.md": "sha256:acd68abc4aacb0c332cba8ea6f80a9745b123b731fd6b67e11165c0fd927e4b2",
       "tools/iterate.md": "sha256:3da78e2bbdc0575dbc09ab5a6b7ee4ee719142eb847bfd568fbb31ab958ee8b3",
       "tools/merge-gate.md": "sha256:7d96763765f37a78516dcd14229c988199a7a72da08f15d169289f3700fce336",
       "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
