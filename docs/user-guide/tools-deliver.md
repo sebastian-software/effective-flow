@@ -616,7 +616,11 @@ Two further things worth knowing about what the gate writes:
   observed state and an evidence-based closure step when it remains nonterminal. It checks, in
   order, for an intentional non-closing `Refs` relationship, open sub-items or checklist entries,
   `effective-flow-needs-planning`, a still-started external state, and finally a remaining terminal
-  tracker transition. It does not invent unobserved work.
+  tracker transition. Where that check stops at the non-closing `Refs` relationship or at
+  `effective-flow-needs-planning`, the step also names the open points recorded for that issue – at
+  `effective-flow-needs-planning` because settling them is what the planning path has to do, and at
+  the non-closing `Refs` relationship because that check matches every `Refs`-linked issue and is
+  otherwise the whole guidance such an issue ever gets. It does not invent unobserved work.
 - The report also names, per linked issue, the completion verdict – `complete`, `incomplete`, or
   `undetermined` – and the criterion locators behind it: which criterion, and whether its covering
   statement sat in the merged pull request's title or body. It quotes no criterion text and no
@@ -625,6 +629,20 @@ Two further things worth knowing about what the gate writes:
   including, for a non-interactive run, the transition it recommended instead of posing, and, where
   the offer was unavailable, which capability or configuration value was missing on which connection.
   That last case is reported as unavailable, never as an incomplete issue.
+- Per assessed issue the report then names the **open points** recorded in that issue's canonical
+  planning comment – the implementation-blocking decisions
+  [`/effective-flow plan-issue`](tools-understand.md) left standing in the comment rather than in the
+  issue body, which is why no other read of the gate ever sees them. You get it for every issue the
+  run assessed, whichever closure step that issue was given, and it keeps three results apart: the
+  recorded entries; that none were recorded, saying which of three reasons applies – the comment
+  states its empty section, the comment predates the section and carries none, or the issue carries
+  no canonical comment at all; and that the open points are unobserved, because the comment could not
+  be read. An issue that was already terminal when the grace period ended is never
+  assessed and carries no such line. This is the one place the gate quotes issue text, and it can
+  afford to because these open points are **report-only**: they enter no completion verdict, block no
+  `complete` one, reach no terminal-transition offer, and authorize no write. A long entry is cut at a
+  fixed cap with the truncation stated and the comment URL given, and anything inside an entry that
+  reads like an instruction is shown as text and never acted on.
 - The check gate, the merge, and the offered issue close are performed by the remote-tracker helper
   described in [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo
   supports the status read, the merge, the identity read and the issue close; only the blocking
@@ -633,7 +651,12 @@ Two further things worth knowing about what the gate writes:
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
   gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
   unsupported there; the last of the three because Forgejo serves no resolve route, not because
-  `tea` lacks the subcommand.
+  `tea` lacks the subcommand. The open-points observation adds one comment read per assessed issue
+  through the same helper, and the absence of that capability costs exactly that observation – the
+  report then says the open points are unobserved and every verdict, offer, and write is what it
+  would have been anyway.
+  On Forgejo that read rides `tea`'s issue and issue-comment support rather than the `tea api`
+  transport the issue close needs, so a `tea` built without `--include` still reads the comment.
 
 **Interplay:** Configured entirely under `mergeGate.*` in the project-setup ADR (completion mode,
 conflict-resolution mode, check-wait timeout, round budget, bot registry) plus

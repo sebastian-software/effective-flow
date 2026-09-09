@@ -1,0 +1,728 @@
+{
+  "name": "A merged pull request whose linked issue records open points",
+  "description": "An already-merged pull request carrying one valid lifecycle receipt, whose refs-linked issue #17 is still open and whose canonical planning comment records two open points. The gate re-enters in observer-only mode, reaches Phase 5.5, and reads that comment once. It never merges: no fixture in this suite opts in but the merging one, and this run has nothing to merge.",
+  "viewerLogin": "flow-gate",
+  "humanLogin": "casey-reviewer",
+  "headSha": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+  "mergeCommitSha": "0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3",
+  "pullRequest": 42,
+  "linkedIssue": 17,
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "probe": {
+    "executable": "gh",
+    "capabilities": {
+      "viewerRead": true,
+      "pullRequestStatus": true,
+      "pullRequestChecksWait": true,
+      "pullRequestMerge": true,
+      "prCommentsRead": true,
+      "prReviewsRead": true,
+      "reviewThreads": true,
+      "issueRead": true,
+      "issueCommentsRead": true,
+      "issueSubIssuesRead": true,
+      "issueClose": true,
+      "conditionalWrites": false
+    }
+  },
+  "operations": {
+    "repository-resolve": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "repository-resolve",
+        "provider": "github",
+        "data": {
+          "host": "github.com",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "github"
+        },
+        "dryRun": false
+      }
+    },
+    "reference-parse": {
+      "input": {
+        "reference": "42",
+        "expectedKind": "pull-request"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "reference-parse",
+        "provider": null,
+        "data": [
+          {
+            "kind": "pull-request",
+            "number": 42,
+            "repository": {
+              "host": "github.com",
+              "owner": "example",
+              "repository": "flow",
+              "provider": "github"
+            }
+          }
+        ],
+        "dryRun": false
+      }
+    },
+    "probe": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "probe",
+        "provider": "github",
+        "data": {
+          "repository": {
+            "host": "github.com",
+            "owner": "example",
+            "repository": "flow",
+            "slug": "example/flow",
+            "provider": "github"
+          },
+          "executable": "gh",
+          "capabilities": {
+            "viewerRead": true,
+            "pullRequestStatus": true,
+            "pullRequestChecksWait": true,
+            "pullRequestMerge": true,
+            "prCommentsRead": true,
+            "prReviewsRead": true,
+            "reviewThreads": true,
+            "issueRead": true,
+            "issueCommentsRead": true,
+            "issueSubIssuesRead": true,
+            "issueClose": true,
+            "conditionalWrites": false
+          }
+        },
+        "dryRun": false
+      }
+    },
+    "pr-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "number": 42,
+        "title": "feat: report the recorded open points of a linked issue after the merge",
+        "state": "closed",
+        "draft": false,
+        "merged": true,
+        "merged_at": "2026-09-08T11:20:00Z",
+        "merge_commit_sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3",
+        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
+        "html_url": "https://github.com/example/flow/pull/42",
+        "labels": [],
+        "head": {
+          "ref": "effective-flow/build/post-merge-issue-open-points",
+          "sha": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7"
+        },
+        "base": {
+          "ref": "develop"
+        },
+        "user": {
+          "login": "flow-gate",
+          "type": "User"
+        },
+        "created_at": "2026-09-08T08:00:00Z",
+        "updated_at": "2026-09-08T11:20:00Z"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "title": "feat: report the recorded open points of a linked issue after the merge",
+            "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
+            "state": "closed",
+            "labels": [],
+            "url": "https://github.com/example/flow/pull/42",
+            "repository": "example/flow",
+            "head": "effective-flow/build/post-merge-issue-open-points",
+            "base": "develop",
+            "draft": false
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--include", "repos/example/flow/pulls/42"],
+            "includesHeaders": true
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "viewer-read": {
+      "input": {},
+      "provider": {
+        "login": "flow-gate",
+        "id": 4242,
+        "type": "User",
+        "name": "Effective Flow Gate"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "viewer-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "login": "flow-gate",
+            "type": "User"
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "user"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-status-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "data": {
+          "repository": {
+            "pullRequest": {
+              "number": 42,
+              "title": "feat: report the recorded open points of a linked issue after the merge",
+              "url": "https://github.com/example/flow/pull/42",
+              "state": "MERGED",
+              "isDraft": false,
+              "mergeable": "UNKNOWN",
+              "mergeStateStatus": "UNKNOWN",
+              "baseRefName": "develop",
+              "headRefOid": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+              "commits": {
+                "nodes": [
+                  {
+                    "commit": {
+                      "oid": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+                      "committedDate": "2026-09-08T10:00:00Z",
+                      "statusCheckRollup": {
+                        "contexts": {
+                          "totalCount": 1,
+                          "nodes": [
+                            {
+                              "__typename": "CheckRun",
+                              "name": "ci",
+                              "status": "COMPLETED",
+                              "conclusion": "SUCCESS",
+                              "detailsUrl": "https://github.com/example/flow/actions/runs/1",
+                              "isRequired": true
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-status-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "title": "feat: report the recorded open points of a linked issue after the merge",
+            "state": "merged",
+            "draft": false,
+            "headSha": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+            "headCommittedAt": "2026-09-08T10:00:00.000Z",
+            "baseRef": "develop",
+            "mergeState": "UNKNOWN",
+            "mergeable": "UNKNOWN",
+            "url": "https://github.com/example/flow/pull/42",
+            "checksReported": true,
+            "checkCount": 1,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1",
+                "required": true
+              }
+            ]
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "graphql", "--input", "-"],
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-checks-wait": {
+      "input": {
+        "number": 42,
+        "payload": {
+          "timeoutMinutes": 20
+        }
+      },
+      "provider": [
+        {
+          "bucket": "pass",
+          "link": "https://github.com/example/flow/actions/runs/1",
+          "name": "ci",
+          "state": "SUCCESS"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-checks-wait",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "complete": true,
+            "timedOut": false,
+            "checksReported": true,
+            "checkCount": 1,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1"
+              }
+            ]
+          },
+          "commands": [
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--watch",
+                "--interval",
+                "10"
+              ],
+              "timeoutMs": 1200000
+            },
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--json",
+                "bucket,link,name,state"
+              ],
+              "timeoutMs": 60000
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-comments-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": [
+        [
+          {
+            "id": 900001,
+            "body": "Gate run: reading the pull-request state.",
+            "user": {
+              "login": "flow-gate",
+              "type": "User"
+            },
+            "html_url": "https://github.com/example/flow/pull/42#issuecomment-900001",
+            "created_at": "2026-09-08T09:30:00Z"
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-comments-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": 900001,
+              "body": "Gate run: reading the pull-request state.",
+              "author": {
+                "login": "flow-gate",
+                "isBot": false,
+                "authorType": "human"
+              },
+              "url": "https://github.com/example/flow/pull/42#issuecomment-900001",
+              "createdAt": "2026-09-08T09:30:00.000Z"
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--paginate", "--slurp", "repos/example/flow/issues/42/comments"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-reviews-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": [
+        [
+          {
+            "id": 700001,
+            "html_url": "https://github.com/example/flow/pull/42#pullrequestreview-700001",
+            "user": {
+              "login": "casey-reviewer",
+              "type": "User"
+            },
+            "commit_id": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+            "state": "APPROVED",
+            "body": "Looks good overall.",
+            "submitted_at": "2026-09-08T10:15:00Z"
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-reviews-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": 700001,
+              "url": "https://github.com/example/flow/pull/42#pullrequestreview-700001",
+              "author": {
+                "login": "casey-reviewer",
+                "isBot": false,
+                "authorType": "human"
+              },
+              "commitSha": "7c2e9a41b6d8f0e3a5c7b9d1f3e5a7c9b1d3f5e7",
+              "state": "APPROVED",
+              "body": "Looks good overall.",
+              "submittedAt": "2026-09-08T10:15:00.000Z"
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": [
+              "api",
+              "--paginate",
+              "--slurp",
+              "repos/example/flow/pulls/42/reviews?per_page=100"
+            ]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "review-threads-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "data": {
+          "repository": {
+            "pullRequest": {
+              "reviewThreads": {
+                "nodes": []
+              }
+            }
+          }
+        }
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "review-threads-read",
+        "provider": "github",
+        "data": {
+          "result": [],
+          "command": {
+            "executable": "gh",
+            "args": ["api", "graphql", "--input", "-"],
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "issue-lifecycle-receipt-parse": {
+      "input": {
+        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "issue-lifecycle-receipt-parse",
+        "provider": null,
+        "data": {
+          "found": true,
+          "version": "v1",
+          "receipt": {
+            "target": "forge",
+            "repository": "example/flow",
+            "externalTool": null,
+            "items": [
+              {
+                "issue": "#17",
+                "relationship": "refs",
+                "container": null,
+                "containerMechanism": null
+              }
+            ]
+          }
+        },
+        "dryRun": false
+      }
+    },
+    "issue-state-wait": {
+      "input": {
+        "number": 17
+      },
+      "provider": {
+        "number": 17,
+        "title": "Report the recorded open points of a linked issue after the merge",
+        "state": "open",
+        "body": "The merge gate should surface what a linked issue still has open once its pull request is merged.\n\n## Acceptance criteria\n\n- The post-merge observation reads the canonical planning comment of every still-open linked issue.\n- The report names the recorded open points once per assessed issue.\n\n## Notes\n\nThe child issue tracking the external-target half is still open.",
+        "labels": [
+          {
+            "name": "effective-flow-issue-in-progress"
+          },
+          {
+            "name": "effective-flow-issue-done"
+          }
+        ],
+        "html_url": "https://github.com/example/flow/issues/17",
+        "pull_request": null
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "issue-state-wait",
+        "provider": "github",
+        "data": {
+          "result": {
+            "issue": {
+              "number": 17,
+              "title": "Report the recorded open points of a linked issue after the merge",
+              "body": "The merge gate should surface what a linked issue still has open once its pull request is merged.\n\n## Acceptance criteria\n\n- The post-merge observation reads the canonical planning comment of every still-open linked issue.\n- The report names the recorded open points once per assessed issue.\n\n## Notes\n\nThe child issue tracking the external-target half is still open.",
+              "state": "open",
+              "labels": ["effective-flow-issue-in-progress", "effective-flow-issue-done"],
+              "url": "https://github.com/example/flow/issues/17",
+              "repository": "example/flow"
+            },
+            "outcome": "open",
+            "terminal": false,
+            "timedOut": true,
+            "waitMs": 30000,
+            "observedWaitMs": 30000
+          },
+          "commands": [
+            {
+              "executable": "gh",
+              "args": ["api", "--include", "repos/example/flow/issues/17"],
+              "includesHeaders": true,
+              "timeoutMs": 30000
+            },
+            {
+              "executable": "gh",
+              "args": ["api", "--include", "repos/example/flow/issues/17"],
+              "includesHeaders": true,
+              "timeoutMs": 30000
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "issue-read": {
+      "input": {
+        "number": 17
+      },
+      "provider": {
+        "number": 17,
+        "title": "Report the recorded open points of a linked issue after the merge",
+        "state": "open",
+        "body": "The merge gate should surface what a linked issue still has open once its pull request is merged.\n\n## Acceptance criteria\n\n- The post-merge observation reads the canonical planning comment of every still-open linked issue.\n- The report names the recorded open points once per assessed issue.\n\n## Notes\n\nThe child issue tracking the external-target half is still open.",
+        "labels": [
+          {
+            "name": "effective-flow-issue-in-progress"
+          },
+          {
+            "name": "effective-flow-issue-done"
+          }
+        ],
+        "html_url": "https://github.com/example/flow/issues/17",
+        "pull_request": null
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "issue-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 17,
+            "title": "Report the recorded open points of a linked issue after the merge",
+            "body": "The merge gate should surface what a linked issue still has open once its pull request is merged.\n\n## Acceptance criteria\n\n- The post-merge observation reads the canonical planning comment of every still-open linked issue.\n- The report names the recorded open points once per assessed issue.\n\n## Notes\n\nThe child issue tracking the external-target half is still open.",
+            "state": "open",
+            "labels": ["effective-flow-issue-in-progress", "effective-flow-issue-done"],
+            "url": "https://github.com/example/flow/issues/17",
+            "repository": "example/flow"
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--include", "repos/example/flow/issues/17"],
+            "includesHeaders": true
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "issue-sub-issues-read": {
+      "input": {
+        "parent": 17
+      },
+      "provider": [
+        [
+          {
+            "number": 18,
+            "title": "Cover the external-target half of the open-points observation",
+            "state": "open",
+            "body": "Still open.",
+            "labels": [],
+            "html_url": "https://github.com/example/flow/issues/18",
+            "pull_request": null
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "issue-sub-issues-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "number": 18,
+              "title": "Cover the external-target half of the open-points observation",
+              "body": "Still open.",
+              "state": "open",
+              "labels": [],
+              "url": "https://github.com/example/flow/issues/18",
+              "repository": "example/flow",
+              "parent": {
+                "number": 17,
+                "repository": "example/flow"
+              }
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": [
+              "api",
+              "--paginate",
+              "--slurp",
+              "repos/example/flow/issues/17/sub_issues?per_page=100"
+            ]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "issue-comments-read": {
+      "input": {
+        "number": 17
+      },
+      "provider": [
+        [
+          {
+            "id": 810001,
+            "body": "Picked this up alongside the gate work.",
+            "user": {
+              "login": "casey-reviewer",
+              "type": "User"
+            },
+            "html_url": "https://github.com/example/flow/issues/17#issuecomment-810001",
+            "created_at": "2026-09-07T08:00:00Z"
+          },
+          {
+            "id": 810002,
+            "body": "<!-- effective-flow-plan-issues -->\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nSurface the recorded open points of a linked issue in the post-merge report.\n\n### Acceptance criteria\n\n- [ ] The observation reads the canonical planning comment once per assessed issue.\n- [ ] The report names the recorded open points.\n\n### Affected areas/files\n\n- `observation` — the post-merge step that reads the issue.\n\n### Edge cases\n\n- An issue carrying no canonical comment records no open points.\n\n### Assumptions\n\n- The connection that reads comments returns whole comment bodies.\n\n### Plan review\n\n**Result:** Approved\n\n### Open points\n\n- The display cap for a quoted open point is still undecided; pick one before implementing.\n- Whether the external-target half ships in the same change is unresolved.\n",
+            "user": {
+              "login": "flow-gate",
+              "type": "User"
+            },
+            "html_url": "https://github.com/example/flow/issues/17#issuecomment-810002",
+            "created_at": "2026-09-07T09:00:00Z"
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "issue-comments-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": 810001,
+              "body": "Picked this up alongside the gate work.",
+              "author": {
+                "login": "casey-reviewer",
+                "isBot": false,
+                "authorType": "human"
+              },
+              "url": "https://github.com/example/flow/issues/17#issuecomment-810001",
+              "createdAt": "2026-09-07T08:00:00.000Z"
+            },
+            {
+              "id": 810002,
+              "body": "<!-- effective-flow-plan-issues -->\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nSurface the recorded open points of a linked issue in the post-merge report.\n\n### Acceptance criteria\n\n- [ ] The observation reads the canonical planning comment once per assessed issue.\n- [ ] The report names the recorded open points.\n\n### Affected areas/files\n\n- `observation` — the post-merge step that reads the issue.\n\n### Edge cases\n\n- An issue carrying no canonical comment records no open points.\n\n### Assumptions\n\n- The connection that reads comments returns whole comment bodies.\n\n### Plan review\n\n**Result:** Approved\n\n### Open points\n\n- The display cap for a quoted open point is still undecided; pick one before implementing.\n- Whether the external-target half ships in the same change is unresolved.\n",
+              "author": {
+                "login": "flow-gate",
+                "isBot": false,
+                "authorType": "human"
+              },
+              "url": "https://github.com/example/flow/issues/17#issuecomment-810002",
+              "createdAt": "2026-09-07T09:00:00.000Z"
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--paginate", "--slurp", "repos/example/flow/issues/17/comments"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    }
+  }
+}

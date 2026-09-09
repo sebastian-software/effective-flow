@@ -36,7 +36,11 @@ in v0.12.0, and the flag they need on top of it (`--include`) is probed rather t
 `issue-close` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
 every run. `issue-close` joined that list without adding a probe of its own – it rides the same
-transport – so nothing about the check changed except its length. Without `pr-reviews-read` the merge
+transport – so nothing about the check changed except its length. The gate's post-merge read of a
+linked issue's canonical planning comment is deliberately **not** on that list: `issue-comments-read`
+is gated on `tea`'s issue and issue-comment support rather than on the `tea api` transport, so a
+`tea` built without `--include` still reports the open points recorded for an issue even where the
+issue close is unavailable. Without `pr-reviews-read` the merge
 gate cannot establish a reviewer's changes-requested
 verdict, so it reports that and asks once instead of merging – and never merges at all in a
 non-interactive run. Without `issue-close` nothing about the merge changes: only the gate's offered
@@ -109,6 +113,21 @@ either a native lifecycle capability or `tracker.externalDoneState` could not be
 last one the report lists the observed terminal candidates; check the displayed name and stable value
 and persist it with `/effective-flow setup`, exactly as for the started state. An unresolvable
 `externalDoneState` never fails a run – the merge already succeeded – it only leaves the issue open.
+
+The row also gives you what the issue's canonical planning comment recorded as **open points** – the
+implementation-blocking decisions `/effective-flow plan-issue` left standing there rather than in the
+issue body. You get them for every issue the run assessed, whichever next action it named, and their
+text is quoted, which no other issue text in this report is: they are report-only, so no verdict, no
+offered transition, and no write depends on a word of them, and reading them is the shortest route to
+what the issue still needs from you. Three results read differently. Entries are listed, cut at a
+fixed cap with the comment URL given for anything longer. A recorded absence says which of three
+reasons it is: the comment states its empty section, the comment predates the section and carries
+none, or the issue carries no canonical comment at all. Open points reported as unobserved mean the
+comment could not be read – because the read is unsupported, on the forge for a missing
+`issueCommentsRead` capability and on an external tracker for a connection that exposes no way to
+read comments, or because a supported read failed – and that costs nothing but the observation: the
+verdict, the offer, and everything the run wrote are exactly what they would have been. An issue already terminal when the grace period
+ended is not assessed at all and carries no such line.
 
 If automation simply needs longer, run `/effective-flow merge-gate <PR>` again. For an already
 merged pull request, this is observer-only: it repeats receipt validation, tracker observation, the

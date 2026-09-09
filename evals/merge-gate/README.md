@@ -49,8 +49,9 @@ suite.
 ## Running a scenario
 
 ```sh
-pnpm prepare:merge-gate-eval guard-blocks-merge   # build, archive, re-scaffold, print the prompt
-pnpm prepare:merge-gate-eval merge-proceeds       # the merging counterpart, sandboxed separately
+pnpm prepare:merge-gate-eval guard-blocks-merge        # build, archive, re-scaffold, print the prompt
+pnpm prepare:merge-gate-eval merge-proceeds            # the merging counterpart, sandboxed separately
+pnpm prepare:merge-gate-eval linked-issue-open-points  # the observer-only post-merge observation
 ```
 
 There is no separate build step: the scaffold runs `node build.mjs` itself, so the skill root it
@@ -73,11 +74,12 @@ about the gate's behaviour checkable by someone who did not perform the runs.
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-runs of one scenario is therefore about half an hour of wall clock, and the two scenarios that exist
-today are about an hour between them — a scheduling question rather than a budget one. Where the
-suite has to be shortened, the scenario count gives way — never the five-of-five requirement,
-because for a fail-closed rule a single deviating run is a finding. The one scenario that never
-gives way is the merging counterpart: without it the refusals prove less than they appear to.
+runs of one scenario is therefore about half an hour of wall clock, and the three scenarios that
+exist today are about an hour and a half between them — a scheduling question rather than a budget
+one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
+requirement, because for a fail-closed rule a single deviating run is a finding. The one scenario
+that never gives way is the merging counterpart: without it the refusals prove less than they
+appear to.
 
 That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
 change to what the gate loads — the router, `tools/merge-gate.md`, the artifacts the gate delegates
@@ -121,7 +123,7 @@ Two shapes this takes, both observed:
 
 Also within one round: never run `prepare` for a scenario while that scenario's run is still going.
 It archives whatever is in the sandbox and then deletes the sandbox, so it captures a partial log
-and strands the running agent. Archive a scenario only after its run has finished; the two scenarios
+and strands the running agent. Archive a scenario only after its run has finished; the scenarios
 remain independent of each other.
 
 ### Six failure modes the assertions handle by name
@@ -169,11 +171,13 @@ remain independent of each other.
 
 ## What this deliberately does not cover
 
-- **Two scenarios exist, and they are one pair.** A green suite proves that one refusal path holds
-  and that the harness can reach a merge, and nothing about the breadth of the gate. WP3 to WP6 of
-  the plan — the guard's three ordered rules across its three counting surfaces, merge preconditions
-  1/2/3/8/9, the fail-closed input enumeration, the round bound, and Phase 5.5 entry reachability —
-  are all still to come. Read a green result as a proven mechanism, not as a net.
+- **Three scenarios exist: one pair and one observer.** `guard-blocks-merge` and `merge-proceeds`
+  are the pair, and a green result from them proves that one refusal path holds and that the harness
+  can reach a merge, and nothing about the breadth of the gate. `linked-issue-open-points` stands
+  beside them rather than inside them: it makes no merge decision at all, and what it observes is
+  the post-merge phase. WP3 to WP6 of the plan — the guard's three ordered rules across its three
+  counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
+  bound — are still to come. Read a green result as a proven mechanism, not as a net.
 - **No single log can prove a refusal was a decision.** A refusal is defined by absence, and a call
   log records calls rather than verdicts, so a run that died after the Phase-4 reads leaves the same
   log as a run that refused. `guard-blocks-merge` therefore proves only that no merge was requested
@@ -181,11 +185,28 @@ remain independent of each other.
   assertion: `merge-proceeds` is the same fixture with the blocking thread removed and asserts that
   `pr-merge` **is** present, so a blanket refusal — from a broken gate or a broken harness — fails
   the suite. Neither scenario carries the claim on its own.
-- **Phase 5.5 entry is not exercised by the merging scenario.** The canned reads describe an open
-  pull request and go on describing one after the merge, because the fixture is a fixed document
-  rather than a model of forge state, so the fresh read that would confirm the merge does not. That
-  is downstream of everything asserted — the `pr-merge` records are already written — and closing it
-  needs a stateful stub, which is WP6's subject.
+- **Phase 5.5 is reached only through the observer-only branch, and that is a property of the
+  harness rather than a preference.** The merging scenario cannot reach it: its canned reads
+  describe an open pull request and go on describing one after the merge, because the stub resolves
+  an envelope by operation name alone — one fixed document per operation, no state — so the fresh
+  read that Phase 5.5 entry requires never confirms the merge. That limit is downstream of
+  everything `merge-proceeds` asserts, since its `pr-merge` records are already written by then, and
+  removing it needs a stateful stub, which is WP6's subject.
+
+  `linked-issue-open-points` reaches the phase without one. Its pull request is **already merged in
+  the canned document**, which no state is needed to observe, so Phase 0's second entry — an
+  already-merged pull request carrying one valid lifecycle receipt — jumps straight to Phase 5.5
+  with no check wait, no delegation, no branch write and no merge. Every read that path makes is
+  answered truthfully by a fixed document.
+
+  **Do not "fix" that scenario into a merging one.** It would fail nothing and would silently remove
+  the suite's only Phase 5.5 coverage, leaving a green suite that observes the post-merge phase not
+  at all. What it asserts is also narrower than it may look: the record schema is
+  `{seq, operation, apply, at, cwd}` and the chat report is captured nowhere, so the log can carry
+  that the canonical planning comment was read — once for the one open linked issue, not twice — and
+  never that its open points reached the report. That half is asserted as source text in
+  `test/workflow-contracts.test.mjs`, and no assertion here should claim otherwise.
+
 - **Conditions 6, 7 and 10 are out of scope end to end**, per the plan: they are evaluated against
   identifiers the gate mints at run time, which a fixture cannot carry. Their fail-closed halves
   belong to WP5.
@@ -286,6 +307,16 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    per command, a string delivered as raw stdout and anything else JSON-encoded — instead of a single
    `provider`, and a **mutation** states `dryRunEnvelope` and `applyEnvelope` instead of one
    `envelope`, because the real helper answers the two modes differently.
+
+   One entry costs real time to derive and to re-verify. `issue-state-wait` is a **blocking**
+   operation: where the first read finds the issue open it sleeps out the helper's fixed 30-second
+   grace period before its second read, and the fidelity assertion replays it with the helper's own
+   sleeper. So each fixture defining it adds about **30 seconds to `pnpm test`** — and there is no
+   shortcut, because the alternative first read is a closed issue, which is a different observation
+   and reaches no later step. Only `linked-issue-open-points` defines it today; a second fixture
+   that needs the post-merge path pays the same 30 seconds again. The stub itself never waits:
+   it hands the canned envelope back immediately, so a gate run pays nothing.
+
 3. Write `scenarios/<name>.md`: the prompt between the `<!-- prompt:start -->` and
    `<!-- prompt:end -->` markers as a single fenced block, and the expected outcome below it, marked
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
@@ -303,3 +334,10 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    never that the evaluation concluded, and never which condition decided it. The log holds helper
    calls, not verdicts, and no assertion over one log can do better. What makes a refusal readable
    as a decision is the merging scenario beside it.
+
+   An **observer-only** scenario is the third shape, and it asserts neither of those. It makes no
+   merge decision, so it asserts the absence of any `pr-merge` record — observer-only mode skips
+   Phase 5 by construction, dry-run preview included — plus the count of the one read its subject is
+   about, and the absence of any record carrying `apply: true` where the phase is meant to write
+   nothing. Say in the assertion's own comment what the count does **not** show: the chat report is
+   captured nowhere, so a log can carry that a read happened and never what the run said about it.

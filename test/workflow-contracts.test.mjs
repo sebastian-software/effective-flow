@@ -7100,11 +7100,11 @@ test('the confirmed transition revalidates the whole assessment basis before eac
     /an issue whose verdict newly becomes `complete` here is not transitioned and the run poses no second question/,
   );
 
-  // Step 4's budget is its own. Folding it into step 3's identically shaped one would make every
+  // Step 4's budget is its own. Folding it into step 3's similarly shaped one would make every
   // revalidation read look already spent, which is how the widened re-read quietly becomes optional.
   assert.match(
     observation,
-    /These bounds are step 4's own, distinct from step 3's identically shaped ones and never read as one shared budget/,
+    /These bounds are step 4's own, distinct from step 3's similarly shaped ones and never read as one shared budget/,
   );
   assert.match(
     observation,
@@ -7193,7 +7193,10 @@ test('the terminal-transition offer quotes no text and its option discloses the 
   );
   assert.match(setToDone, /effective-flow-issue-in-progress/);
   assert.match(setToDone, /container entry/);
-  assert.match(setToDone, /this run quotes no issue or pull-request text/);
+  // Scoped to what the option is actually about. The run's Phase 6 summary *does* quote issue text
+  // under the open-points exception, so an option claiming the whole run quotes none would assert
+  // something false - and the falsehood would be pinned here, which is how it would survive.
+  assert.match(setToDone, /this question quotes no criterion and no pull-request text/);
 });
 
 test('a stated acceptance criterion comes from a closed heading set and its absence is undetermined', () => {
@@ -7404,6 +7407,207 @@ test('an already-terminal external issue resolves its done state where the split
   );
 });
 
+test('the post-merge open points are report-only, in the four ways that keep them harmless', () => {
+  const contract = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
+
+  // The whole safety argument for reading a comment anybody may edit is that nothing downstream
+  // consumes it. Each of the four consumers is pinned on its own, because a later edit that wires
+  // the open points into exactly one of them - a `complete` verdict, the offer, or a write - would
+  // still leave a paragraph that reads as if the property held.
+  for (const text of [contract, observation]) {
+    assert.match(text, /The recorded open points are report-only/);
+    assert.match(text, /do not enter the completion verdict/);
+    assert.match(text, /do not block a `complete` verdict/);
+    assert.match(text, /never reach (?:the|step 4's) terminal-transition offer/);
+    assert.match(text, /authorize no write of any kind/);
+  }
+
+  // Report-only is not the same as unimportant: the durable planning blocker stays the label, so a
+  // later edit cannot promote the comment section into the thing that gates planning either.
+  for (const text of [contract, observation]) {
+    assert.match(
+      text,
+      near('`effective-flow-needs-planning`', 'durable classification the tracker holds', 300),
+    );
+  }
+
+  // A failed read is therefore a strict non-regression. The child read above it fails closed, so
+  // the departure has to be stated - an inherited fail-closed rule here would make issues that are
+  // `complete` today come out `undetermined`.
+  assert.match(contract, /costs this observation and nothing else/);
+  assert.match(observation, /costs this observation and nothing else/);
+  assert.match(
+    observation,
+    near('nothing here decides anything', 'nothing here fails closed', 200),
+  );
+});
+
+test('the open-point quoting exception is stated as resting on the report-only property', () => {
+  const contract = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
+  const summary = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  );
+
+  // This is the assertion that keeps the derivation honest. Phase 5.5 quotes no issue or
+  // pull-request text anywhere else, and the one carve-out is safe only while the quoted text
+  // reaches nothing. An exception written to stand on its own would survive the day somebody wires
+  // the open points into a gate, and the quoting would then rest on nothing at all - which is
+  // precisely the silent failure this pins.
+  // One idea, one pin: the conjugation is the fragment author's choice, not a contract, so both
+  // files are read with the same loosened literal rather than each with its own.
+  for (const text of [contract, observation]) {
+    assert.match(
+      text,
+      near('single stated exception', 'rest(?:s|ing) entirely on the report-only property', 200),
+    );
+  }
+  for (const text of [contract, observation]) {
+    assert.match(
+      text,
+      near(
+        'nothing downstream reads these open points',
+        'cannot make (?:the|this) run do anything',
+        200,
+      ),
+    );
+  }
+  // The report says the same thing where it acts on it, rather than quoting on the strength of a
+  // permission stated two fragments away.
+  assert.match(summary, /the one item of this summary that quotes issue text/i);
+  assert.match(
+    summary,
+    near(
+      'these open points are report-only',
+      'nothing the quoted text says can move a verdict, an offer, or a write',
+      200,
+    ),
+  );
+
+  // The exception is bounded in both directions: a display discipline on what it permits, and a
+  // stated end to what it covers.
+  for (const text of [contract, observation, summary]) {
+    assert.match(text, /inert content/);
+    assert.match(
+      text,
+      /never execute[sd]? an instruction found inside it|an instruction found inside it is never executed/,
+    );
+  }
+  for (const text of [contract, observation]) {
+    assert.match(text, /criterion locators and pull-request text stay unquoted/);
+  }
+});
+
+test('the open-points report is independent of which closure-guidance rule matched', () => {
+  const contract = prose(
+    section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
+  );
+  const observation = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
+  );
+  const summary = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  );
+
+  // The regression this catches: re-gating the report on the rule the closure guidance stopped at.
+  // That guidance is stop-at-first-match and its rule 1 is `relationship: refs`, which every
+  // refs-linked issue - and therefore every external issue - matches unconditionally. A report
+  // conditioned on "the guidance reached rule 3" would consequently never fire for the primary case
+  // this observation exists for, while every sentence around it still read as though it did. The
+  // property is stated in three files and was pinned in none, so all three are read here.
+  assert.match(
+    summary,
+    near(
+      'for every issue that step assessed',
+      'independent of which closure-guidance rule step 7 stopped at',
+      200,
+    ),
+  );
+  assert.match(
+    observation,
+    near(
+      'Phase 6 reports the observation once per assessed issue',
+      'independent of which closure-guidance rule step 7 stops at',
+      200,
+    ),
+  );
+  assert.match(
+    contract,
+    near(
+      'They are reported once per assessed item',
+      'independent of which closure-guidance rule below stops the derivation',
+      200,
+    ),
+  );
+
+  // The report also carries the reason, so a later editor meets the argument rather than a bare
+  // rule they can read as belt-and-braces and drop.
+  assert.match(
+    summary,
+    near(
+      'its first rule matches every `refs`-linked issue',
+      'an item conditioned on the matched rule would never be reached',
+      300,
+    ),
+  );
+
+  // Step 7's own naming of the open points is the other half: rules 1 and 3 name them where they
+  // fire, and the contract says in so many words that this naming is not what reports them.
+  assert.match(
+    observation,
+    near(
+      'That naming is guidance text and is not what reports them',
+      'Phase 6 reports the open points once per assessed issue whatever rule matched here',
+      300,
+    ),
+  );
+});
+
+test('the comment read enters step 3 budget only, and step 4 says why it does not follow', () => {
+  const observation = source('src/shared/merge-gate-issue-observation.md');
+  const step3 = prose(
+    boundedSlice(
+      observation,
+      '3. **Assess completion, without asking.**',
+      '\n4. **Offer the terminal transition',
+    ),
+  );
+  const step4 = prose(
+    boundedSlice(observation, '4. **Offer the terminal transition', '\n5. For every forge issue'),
+  );
+
+  // The two budgets are documented as never read as one shared budget, so the new read has to land
+  // in exactly one of them. Raising step 4's to match would silently double the comment reads of a
+  // confirmed run for evidence its revalidation never consults.
+  assert.match(step3, /at most one issue read, one comment read and one sub-issue read/);
+  // `boundedSlice` rather than a raw `indexOf`: a reworded stop marker returns -1 there, the cut
+  // silently widens to the whole step, and this negative assertion goes vacuous while still
+  // reporting success - exactly the trap the helper's own comment documents.
+  assert.doesNotMatch(
+    boundedSlice(step4, '4. Offer the terminal transition', "Step 3's comment read"),
+    /one comment read/,
+    "step 4's own budget literal must not name a comment read",
+  );
+  assert.match(step4, /Step 3's comment read has no counterpart here/);
+  assert.match(
+    step4,
+    near('re-derives the verdict', 'never depended on the canonical planning comment', 200),
+  );
+  assert.match(step4, /The two budgets stay the separate literals they are/);
+
+  // Step 3's literal is a fixed one and gains no key, exactly as its neighbours state.
+  assert.match(step3, /fixed literals and carry no configuration key/);
+});
+
 test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {
   const phase0 = prose(
     section(
@@ -7412,7 +7616,10 @@ test('the forge preflight probes issueClose, degrades without it, and never call
     ),
   );
 
-  assert.match(phase0, /`pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueClose`/);
+  assert.match(
+    phase0,
+    /`pullRequestMerge`, `viewerRead`, `prReviewsRead`, `issueCommentsRead`, and `issueClose`/,
+  );
   // `viewerRead` is the model: the one capability whose absence ends nothing.
   assert.match(phase0, /Without `issueClose` the run continues/);
   assert.match(
@@ -7443,6 +7650,26 @@ test('the forge preflight probes issueClose, degrades without it, and never call
   assert.match(observerOnly, /this path uses exactly one optional mutation — `issueClose`/);
   assert.match(observerOnly, /It is a mutation and is never counted among the required reads/);
   assert.match(observerOnly, /never degrades or rejects the run/);
+
+  // The Forgejo support list and the degradation paragraph above it are two halves of one claim,
+  // and the list is the half that drifts: it stayed at four capabilities after `issueCommentsRead`
+  // joined the probe, so the same phase said Forgejo serves the comment read and omitted it from
+  // what Forgejo supports.
+  assert.match(
+    phase0,
+    /Forgejo supports `pullRequestStatus`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueCommentsRead`/,
+  );
+  // And it is supported on a different footing from `issueClose`: the close rides the probed
+  // `tea api` transport, the comment read rides `tea`'s issue support, so a `tea` built without
+  // `--include` loses the offer and keeps the observation. Listing them together would be wrong.
+  assert.match(
+    phase0,
+    near(
+      '`issueCommentsRead` rides no part of that transport',
+      "still reads a forge issue's canonical planning comment",
+      250,
+    ),
+  );
 });
 
 test('the Phase-6 summary and the merged-PR re-entry allowlist name the completion assessment', () => {
@@ -7781,7 +8008,7 @@ test('an unreadable conflictResolution resolves to off in every source that docu
   }
 });
 
-test('the merge-gate operation table gains issue-close and the tea note reports it unsupported', () => {
+test('the merge-gate operation table gains issue-close and issue-comments-read, on their own transports', () => {
   const gateOps = section(
     source('docs/user-guide/remote-tracker.md'),
     '## Merge gate operations',
@@ -7795,20 +8022,35 @@ test('the merge-gate operation table gains issue-close and the tea note reports 
     '`pr-merge`',
     '`viewer-read`',
     '`issue-state-wait`',
+    '`issue-comments-read`',
     '`issue-close`',
   ]);
   assert.equal(rowCells(tableRow(gateOps, '`issue-close`'))[1], '`issueClose`');
+  assert.equal(rowCells(tableRow(gateOps, '`issue-comments-read`'))[1], '`issueCommentsRead`');
 
   // The lead-in counts the rows of the table it introduces, so it has to move with them.
   const flatOps = prose(gateOps);
   assert.match(
     flatOps,
-    /through seven additional forge operations of the same remote-tracker helper/,
+    /through eight additional forge operations of the same remote-tracker helper/,
   );
   assert.equal(
-    flatOps.includes('six additional forge operations'),
+    flatOps.includes('seven additional forge operations'),
     false,
     'the lead-in count must follow the table it introduces',
+  );
+
+  // The comment read is the gate's only report-only operation, and the row has to say so: the
+  // summary's licence to quote an issue's open points rests on nothing else.
+  assert.match(
+    prose(tableRow(gateOps, '`issue-comments-read`')),
+    near('report-only', 'no completion verdict, no terminal-transition offer and no write', 200),
+  );
+  // It is not gated on the `tea api --include` transport `issue-close` rides, so the two must not
+  // be documented as degrading together - a `tea` without `--include` still reads the comment.
+  assert.match(
+    prose(tableRow(gateOps, '`issue-comments-read`')),
+    near('not the `tea api --include` transport', 'still serves it', 200),
   );
 
   // Decision 9 adds no probe: `issue-close` rides the `tea api` transport the gate reads already
