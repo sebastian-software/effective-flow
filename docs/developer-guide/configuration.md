@@ -239,11 +239,21 @@ continues with `off`.
 
 `language.project` defaults to `en`. Optional `language.source`,
 `language.documentation.user`, `language.documentation.technical`, `language.workflow`,
-`language.forge`, and `language.git` overrides accept `de` or `en`; a missing override inherits
-the project language. Artifact precedence, destination overlap, stable-token boundaries, and the
-one-generation `plan.markerLanguage` migration are defined in the living
+`language.forge`, and `language.git` overrides accept `de` or `en`; a missing artifact-surface
+override inherits the project language. Artifact precedence, destination overlap, stable-token
+boundaries, and the one-generation `plan.markerLanguage` migration are defined in the living
 [project language policy](../adr/language-policy.md) and the binding
 [`language-rules`](../../src/shared/language-rules.md) source.
+
+`language.chat` is the eighth key and the one exception to that inheritance rule. It configures
+interactive output rather than a persisted artifact, so a missing row means mirror the language
+the user writes in — never `language.project`. That is what keeps the key upgrade-safe: an
+existing project behaves identically until a value is set. An invalid value is reported and
+treated as an absent row for the same reason. Its precedence is an explicit in-message request,
+the configured value, the conversation language, `language.project`, then `en`, and its scope,
+the verbatim relay of delegated output, and the router/`version`/`pr-review` exceptions are
+binding in [`chat-language`](../../src/shared/chat-language.md), which every tool that speaks
+carries as an eager include.
 
 ## Migration compatibility
 

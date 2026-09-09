@@ -31,12 +31,20 @@ overrides in the project-setup ADR:
 | `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports                      |
 | `language.forge`                   | Issues, pull-request bodies, comments, remote reviews, and thread replies                 |
 | `language.git`                     | Commit descriptions, Conventional Commit pull-request titles, and generated release prose |
+| `language.chat`                    | Interactive output: replies, questions, and reports the run speaks to the user            |
 
 The supported values are `en` and `de`; `null` has no special inheritance meaning. A missing or
-invalid surface override inherits `language.project`, and a missing or invalid project value
-falls back to `en`. For an individual artifact, an explicit user instruction wins, followed by
-the language of an existing artifact, the surface override, the project default, and finally
+invalid artifact-surface override inherits `language.project`, and a missing or invalid project
+value falls back to `en`. For an individual artifact, an explicit user instruction wins, followed
+by the language of an existing artifact, the surface override, the project default, and finally
 `en`.
+
+`language.chat` is the one key that does not inherit, because it is an interaction key rather than
+an artifact surface. A missing or invalid row means mirror the language the user writes in, never
+`language.project`, so the key changes nothing in an already configured project until a value is
+set. Where a value is set it outranks the language of the incoming message; only an explicit
+in-message request beats it. The order is an explicit in-message request, the configured value,
+the conversation language, `language.project`, and finally `en`.
 
 The publishing destination resolves overlaps. Local reviews use `language.workflow`; remote
 review issues use `language.forge`. Pull-request bodies and comments use `language.forge`, while
@@ -57,11 +65,16 @@ ADR in `language.documentation.technical` and preserves the recognizable languag
 ADR on ordinary updates; changing the configured language does not translate it implicitly.
 
 Visible product strings such as UI, CLI, and error messages remain governed by the target
-project's product localization requirements. Interactive non-persisted replies follow the
-current user's language. Locale-specific typography is delegated to `effective-writing`, the
-consolidated central skill that took over the retired `locale-typography` skill upstream, using
-`en-US` for `en` and `de-DE` for `de`. Only the delegation target changed; the typography
-contract itself is unchanged.
+project's product localization requirements. Interactive, non-persisted output follows
+`language.chat`, and mirrors the user's language for as long as that key is unset. Its scope is
+every line a run emits itself, including the questions it poses, the next-steps heading and option
+descriptions, and the session-title label. Delegated output stays outside it: worker reports and
+agent notices are relayed verbatim, so a run can be visibly bilingual. The tool catalog, the
+`version` output, and the `pr-review` deprecation notice are emitted before any configuration read
+and stay on the conversation language. Locale-specific typography is delegated to
+`effective-writing`, the consolidated central skill that took over the retired `locale-typography`
+skill upstream, using `en-US` for `en` and `de-DE` for `de`. Only the delegation target changed;
+the typography contract itself is unchanged.
 
 `plan.markerLanguage` is retired. During one compatibility generation, runtime readers may use it
 as a workflow fallback only when neither a valid `language.workflow` nor a valid
@@ -78,8 +91,13 @@ a separate decision.
   documentation artifacts, or choose any other supported combination.
 - Artifact writers and readers need a shared resolution contract and complete bilingual
   compatibility mappings.
-- Setup gains a project-language question and optional inheriting overrides, while Express keeps
-  the all-English safe default.
+- Setup gains a project-language question and optional overrides: the artifact surfaces offer
+  **Inherit project language** first, `language.chat` offers **Mirror the user's language**
+  first, and both states are written as an absent row. Express keeps the all-English safe
+  default and writes no `language.chat` row.
+- Adding `language.chat` changes nothing for an existing project until it is set, because
+  mirroring is exactly the previous behaviour. The cost is that the key cannot be read off
+  `language.project` the way every artifact surface can.
 - Existing artifacts are not mass-translated when configuration changes. New artifacts can
   therefore coexist temporarily with older content during an intentional migration.
 - Machine-readable tokens remain interoperable across language combinations.
@@ -91,11 +109,13 @@ a separate decision.
 Alignment is checked by the source-to-dist build, targeted compatibility scenarios, the normal
 format/test/build pipeline, and inspection of both generated harnesses. Revisit this decision
 when Effective Flow adds a third content language, supports region-specific locale selection,
-introduces another persisted artifact surface, or changes its squash-merge/release model.
+introduces another persisted artifact surface or non-persisted interaction surface, or changes
+its squash-merge/release model.
 
 ## References
 
 - `src/shared/language-rules.md`
+- `src/shared/chat-language.md`
 - `src/shared/config-setup-migration.md`
 - `docs/user-guide/configuration.md`
 - `docs/developer-guide/plan-conventions.md`

@@ -17,6 +17,10 @@ when: local or remote review output languages must be resolved
 ```
 
 ```include
+chat-language
+```
+
+```include
 task-tracking
 ```
 

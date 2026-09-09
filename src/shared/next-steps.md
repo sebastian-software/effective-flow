@@ -23,12 +23,13 @@ instead of relying on the receiving tool to notice.
 ## Shape of the block
 
 - At most **two** options, the most likely one first, as the **last** element of the report, under a
-  heading in the conversation language. The block is interactive output and is persisted nowhere, so
-  no `language.*` surface applies to it.
+  heading in the resolved chat language. The block is interactive output and is never a project
+  artifact, so it follows `language.chat` rather than any artifact surface.
 - Each option is **one line**: the copy-paste-ready invocation with this run's real arguments — the
   actual plan path, the actual pull-request number, the actual report path — followed by an em dash
   and at most about twelve words describing what that tool would do **from here**, not what the tool
-  is in general.
+  is in general. That description follows the chat language too; the invocation token itself is
+  copy-paste input and is never translated.
 - Never name an invocation whose argument this run does not have. If an edge cannot be filled, drop
   that option; if neither can be filled, emit nothing rather than a generic suggestion.
 - When one run opened several pull requests, name the first one and state in that same line that the

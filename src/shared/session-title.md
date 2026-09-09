@@ -53,6 +53,6 @@ subject, propose a better title — once.
 - **One line, never blocking:** output `**Suggested session title:** <title>` and nothing else — no
   explanation, no follow-up question, and never in place of the run's own output. Wherever it is
   emitted at all, it is printed in the run's completion report, by which time the reference is
-  bound — never earlier and never twice. The label follows the conversation language while a
+  bound — never earlier and never twice. The label follows the resolved chat language while a
   reused artifact title keeps its own. Never put secrets or credential values in a title; the
   session list is a persistent visible surface.

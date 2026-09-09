@@ -22,6 +22,10 @@ when: the PR title and body output languages must be resolved
 ```
 
 ```include
+chat-language
+```
+
+```include
 task-tracking
 ```
 

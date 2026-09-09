@@ -214,8 +214,9 @@ not rewrite earlier files.
 
 Other surfaces intentionally may differ: remote issues and comments and PR bodies use
 `language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
-Each missing override inherits `language.project`, which itself defaults to `en`. An invalid
-`de`/`en` value is reported and ignored in favor of the next fallback rather than guessed.
+Each missing artifact-surface override inherits `language.project`, which itself defaults to `en`.
+An invalid `de`/`en` value is reported and ignored in favor of the next fallback rather than
+guessed. The reply language is a separate question with a separate key; see the next section.
 
 Use [`/effective-flow setup`](./tools-setup.md) to inspect and change these values. If only a
 legacy `plan.markerLanguage` row exists, Effective Flow can still read it as a temporary workflow
@@ -224,6 +225,27 @@ without language settings may temporarily infer the workflow language from exist
 when plan prose and markers are consistently German or English. Mixed or contradictory plans are
 not a valid signal. If one existing artifact is itself mixed or unclear, clarify its intended
 language before asking Effective Flow to edit it.
+
+## Effective Flow answers in the wrong language
+
+The language a run speaks to you in is `language.chat`, not `language.project` and not any
+artifact surface. Three results surprise people, and none of them is a bug:
+
+- **It answers German although you wrote English** (or the reverse). A configured `language.chat`
+  outranks the language of your message; that is what the key is for. Only an explicit request in
+  the message itself beats it. Change or remove the row with
+  [`/effective-flow setup`](./tools-setup.md).
+- **One run mixes both languages.** The key covers what the run says itself, including the
+  next-steps block and the session-title label. Reports from delegated workers and notices from
+  agents are relayed word for word, so they arrive in the language they were written in. The tool
+  catalog, `/effective-flow version`, and the `pr-review` deprecation notice appear before any
+  configuration is read and stay on the language of the conversation.
+- **Setting the key seems to do nothing.** Check the spelling of the value: only `de` and `en` are
+  valid, and an invalid value is reported and then treated as if the row were absent — which means
+  mirroring the language you write in, not falling back to `language.project`.
+
+Leaving `language.chat` out is the default and is not inheritance: replies mirror whatever
+language you write in, and `language.project` is reached only when that language is unclear.
 
 ## There is no project-setup ADR
 

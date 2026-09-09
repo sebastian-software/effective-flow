@@ -70,12 +70,16 @@ resulting merge commit. That last one is the only one of those defaults that lea
 and it is what changes behavior for a project upgrading from an earlier generation; see
 [Block `mergeGate`](configuration.md#block-mergegate).
 
-Express stores `language.project: en` and lets every absent override inherit it. Guided asks for
-the project language first, then offers independent `de`/`en` overrides for source prose, user
-documentation, technical documentation, local workflow artifacts, Forge prose, and Git/release
-prose. Choosing “inherit project language” removes or omits the override and appears in the
-before/after confirmation. A new ADR uses the technical-documentation language; setup preserves
-the language of an existing ADR during ordinary updates.
+Express stores `language.project: en` and lets every absent artifact-surface override inherit it.
+Guided asks for the project language first, then offers independent `de`/`en` overrides for source
+prose, user documentation, technical documentation, local workflow artifacts, Forge prose,
+Git/release prose, and — as the seventh — the interactive language Effective Flow speaks to you in.
+Choosing “inherit project language” removes or omits an artifact-surface override and appears in
+the before/after confirmation. The chat override differs: its first option is “Mirror the user's
+language (default)”, because an absent `language.chat` row mirrors whatever language you write in
+rather than inheriting the project language. Express writes no row for it, so interactive replies
+keep mirroring until you set one. A new ADR uses the technical-documentation language; setup
+preserves the language of an existing ADR during ordinary updates.
 
 **Interplay:** `setup` owns configuration writes and migration. Other tools only resolve and read
 the ADR; if they find only a legacy JSON config, they may use it transitionally for that run and

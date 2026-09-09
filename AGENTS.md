@@ -145,6 +145,13 @@ Identifiers, public API names, config keys and values, labels, finding IDs, acti
 Conventional-Commit types, branch slugs, and runtime schemas remain language-stable. Product UI,
 CLI, and error-message localization belongs to the target project's product i18n policy.
 
+`language.chat` is the eighth key and the only one that does **not** inherit: it fixes the
+language a run speaks to the user in, and a missing row means mirror whatever language the user
+writes in rather than fall back to `language.project`. Its contract — precedence, scope, the
+verbatim relay of delegated output, and the router/`version`/`pr-review` exceptions — is
+`src/shared/chat-language.md`, an eager include in every tool that speaks. This repository sets no
+`language.chat` row, so replies here mirror the user.
+
 Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing,
 number and date formats) is one strand of the central
 [`effective-writing`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-writing)

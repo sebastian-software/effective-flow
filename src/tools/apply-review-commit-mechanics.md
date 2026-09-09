@@ -6,6 +6,10 @@ description: "Internal sub-file of apply-review: git commit mutex, worktree isol
 
 This internal sub-file is loaded by `tools/apply-review.md` as soon as the commit strategy `Individually` or `Individually with worktrees` is fixed in Phase 2. With `No commits` it is not needed.
 
+```include
+chat-language
+```
+
 ```lazy-include
 runtime-state-safety
 when: the commit lock or a component worktree below `.effective-flow/` is about to be mutated

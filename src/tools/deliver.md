@@ -22,6 +22,10 @@ language-rules
 when: commit and forge output languages are resolved
 ```
 
+```include
+chat-language
+```
+
 ```lazy-include
 config-migration
 when: the Effective Flow configuration is first read or a legacy config is migrated

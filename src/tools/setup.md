@@ -23,6 +23,10 @@ when: the language configuration keys are offered or the ADR output language mus
 ```
 
 ```include
+chat-language
+```
+
+```include
 task-tracking
 ```
 
@@ -68,8 +72,9 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`review`** (source: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (source: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
 - **`language`** (source: shared "Language resolution"): `project` and optional `source`,
-  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
-  (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
+  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git`, `chat` overrides
+  (`de`/`en`; a missing artifact-surface override inherits `language.project`, whose default is
+  `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
 - **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
@@ -110,9 +115,11 @@ Express, which never reaches Step 4, as much as the guided path, whose base-bran
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
 changedScope`) reaches these values individually via the guided path (advanced
-settings). Missing `language.*` overrides inherit `language.project`; Express therefore writes
-only `language.project = en` unless existing overrides are preserved. The legacy
-`plan.markerLanguage` is never written as a current setting.
+settings). Missing artifact-surface `language.*` overrides inherit `language.project`; Express
+therefore writes only `language.project = en` unless existing overrides are preserved. The base
+deliberately carries **no** `language.chat` row and Express writes none, so interactive replies
+keep mirroring the user until the guided path sets one. The legacy `plan.markerLanguage` is never
+written as a current setting.
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
@@ -247,7 +254,8 @@ options:
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
-  `language.project = en` per the base and retain valid existing language overrides. Apply the
+  `language.project = en` per the base, write no `language.chat` row, and retain valid existing
+  language overrides. Apply the
   confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
   merge-gate block — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
@@ -325,8 +333,10 @@ options:
 **Project and surface languages.** Explain: the project language is the fallback for every new
 human-readable artifact, while optional surface overrides let source prose, documentation,
 workflow artifacts, Forge communication, and Git history differ. A plan is entirely in the
-workflow language, including its status marker. Only `de` and `en` are supported; German maps to
-`de-DE` typography and English to `en-US`.
+workflow language, including its status marker. `language.chat` is the one non-artifact surface:
+it fixes the language Effective Flow speaks to the user in — replies, questions, and completion
+reports — and, left unset, mirrors whatever language the user writes in. Only `de` and `en` are
+supported; German maps to `de-DE` typography and English to `en-US`.
 
 ```ask
 header: Language
@@ -339,12 +349,14 @@ options:
 ```
 
 Then offer each override in turn: `language.source`, `language.documentation.user`,
-`language.documentation.technical`, `language.workflow`, `language.forge`, and `language.git`.
-For every override, offer **Inherit project language** first, then English and German. Inherit is
-represented by an absent row, not `null`; removing an existing override is a normal before/after
-change that requires confirmation. Explain the exact target surface from the shared language
-table. In particular, a Conventional Commit PR title uses `language.git`, while the PR body and
-comments use `language.forge`.
+`language.documentation.technical`, `language.workflow`, `language.forge`, `language.git`, and
+`language.chat`. For every artifact-surface override, offer **Inherit project language** first,
+then English and German; `language.chat` offers **Mirror the user's language (default)** first,
+then English and German, because an absent chat row mirrors instead of inheriting. Inherit and
+mirror are alike represented by an absent row, not `null`; removing an existing override is a
+normal before/after change that requires confirmation. Explain the exact target surface from the
+shared language table. In particular, a Conventional Commit PR title uses `language.git`, while the
+PR body and comments use `language.forge`.
 
 Before asking, detect compatibility input. If `language.workflow` is absent and a valid
 `plan.markerLanguage` exists, show the old value and explain that migration changes it from a
@@ -440,7 +452,7 @@ config value or default as the pre-selection:
 
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `language`: the project language and six overrides already asked in Step 4 — carry over
+3. `language`: the project language and seven overrides already asked in Step 4 — carry over
 4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
    `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
    canonicalized before they are written; reject values that resolve to the same directory or nest

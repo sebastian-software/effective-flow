@@ -2225,6 +2225,81 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
   }
 });
 
+// Two-sided on purpose, unlike the `pinned` whitelist above: that one checks the pointers it
+// lists and is silent about the rest, which is right for a battery pinning individual clauses.
+// The chat-language rule is a *distribution*, and both of its sides are load-bearing. A tool
+// that loses the include silently stops following the configured chat language, and a
+// `version` or `pr-review` that gains one would read config before emitting text those two
+// emit *before* any config read — the exception the fragment itself documents. Deriving both
+// sets from the directory means a 29th tool has to make a deliberate choice here.
+test('every tool but version and pr-review eagerly includes the chat-language rule', () => {
+  const toolNames = readdirSync(new URL('src/tools/', repositoryRoot))
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => file.slice(0, -3))
+    .sort();
+
+  // Not a vacuous pass on a mis-globbed directory, and a spelled-out reminder that the
+  // exempt names must exist as tools at all rather than as two strings nothing matches.
+  assert.ok(toolNames.length >= 28, 'the tool directory scan found too few sources');
+  const exempt = ['pr-review', 'version'];
+  for (const name of exempt) {
+    assert.ok(toolNames.includes(name), `${name} must exist for its exemption to mean anything`);
+  }
+
+  const carriers = [];
+  for (const name of toolNames) {
+    const { eager, lazy } = collectIncludeNames(source(`src/tools/${name}.md`));
+    // A lazy pointer is not an acceptable substitute either way round: the rule governs the
+    // run's very first interactive line, so a `when:` a model may judge inapplicable would
+    // let it be skipped, and an exempt tool must carry no reference in either form.
+    assert.equal(
+      lazy.has('chat-language'),
+      false,
+      `${name} must not defer chat-language behind a when: clause`,
+    );
+    if (eager.has('chat-language')) carriers.push(name);
+  }
+
+  assert.deepEqual(
+    carriers,
+    toolNames.filter((name) => !exempt.includes(name)),
+    'exactly the non-exempt tools carry the eager chat-language include',
+  );
+});
+
+// The tool side is only half the claim. `src/shared/language-rules.md` states that no agent
+// carries the fragment, "because an agent never resolves this key", and the fragment itself says
+// the value is not handed down -- which is what makes the verbatim-relay rule hold: a worker that
+// resolved `language.chat` would translate its own report, and the orchestrator would relay a
+// translation it never asked for. Mutation showed an eager include appended to any `src/agents/*.md`
+// passed the whole suite and the build, so the assertion above proved nothing about the axis the
+// design actually rests on.
+test('no agent carries the chat-language rule, eagerly or lazily', () => {
+  const agentDir = new URL('../src/agents/', import.meta.url);
+  const agentNames = readdirSync(agentDir)
+    .filter((file) => file.endsWith('.md'))
+    .sort();
+
+  assert.ok(
+    agentNames.length >= 16,
+    'the agent directory scan found too few sources - an agent was removed, or the glob is wrong; confirm which before adjusting this floor',
+  );
+
+  for (const name of agentNames) {
+    const { eager, lazy } = collectIncludeNames(source(`src/agents/${name}`));
+    assert.equal(
+      eager.has('chat-language'),
+      false,
+      `${name} must not carry chat-language: an agent never resolves this key, and one that did would translate output the orchestrator relays verbatim`,
+    );
+    assert.equal(
+      lazy.has('chat-language'),
+      false,
+      `${name} must not point at chat-language either - a pointer is still a route to resolving a key agents do not own`,
+    );
+  }
+});
+
 test('plan-issue runs the full quality baseline before its per-issue deep-review gate', () => {
   const planIssue = source('src/tools/plan-issue.md');
 
