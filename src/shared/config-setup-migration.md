@@ -13,9 +13,11 @@ repeated here; they live in the "Effective Flow configuration (project setup ADR
 The supported language keys and their surface mapping live only in the shared "Language
 resolution" fragment. This configuration contract accepts `language.project`,
 `language.source`, `language.documentation.user`, `language.documentation.technical`,
-`language.workflow`, `language.forge`, and `language.git`; every value is `de` or `en`.
-Missing overrides inherit `language.project`, and a missing project language resolves to `en`.
-Invalid values are ignored with a diagnostic and never guessed.
+`language.workflow`, `language.forge`, `language.git`, and `language.chat`; every value is `de`
+or `en`. Missing artifact-surface overrides inherit `language.project`, and a missing project
+language resolves to `en`. A missing `language.chat` row is the exception: it means mirror the
+user's language and never inherits `language.project`, so absence is written as an absent row
+rather than as a value. Invalid values are ignored with a diagnostic and never guessed.
 
 `plan.markerLanguage` is a legacy read/migration key, not part of the current schema. If
 `language.workflow` is absent, {{SKILL:setup}} may propose migrating a valid legacy `de`/`en`

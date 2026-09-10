@@ -23,6 +23,10 @@ when: the language configuration keys are offered or the ADR output language mus
 ```
 
 ```include
+chat-language
+```
+
+```include
 task-tracking
 ```
 
@@ -68,10 +72,11 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`review`** (source: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (source: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
 - **`language`** (source: shared "Language resolution"): `project` and optional `source`,
-  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
-  (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
+  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git`, `chat` overrides
+  (`de`/`en`; a missing artifact-surface override inherits `language.project`, whose default is
+  `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
+- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
@@ -103,16 +108,19 @@ ADR's table-encoding form):
 
 `delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
 holds where a remote named `origin` is configured, while every other repository takes its current
-local branch instead. Every path resolves this row against `git remote` before writing it —
-Express, which never reaches Step 4, as much as the guided path, whose base-branch question
-(Step 4) states the rule in full and presents the resolved value as its proposal.
+local branch instead. `origin/HEAD` refines it: where it names another branch, that branch
+replaces `main`. Every path resolves this row against `git remote` and `origin/HEAD` before
+writing it — Express, which never reaches Step 4, as much as the guided path, whose base-branch
+question (Step 4) states the rule in full and presents the resolved value as its proposal.
 
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
 changedScope`) reaches these values individually via the guided path (advanced
-settings). Missing `language.*` overrides inherit `language.project`; Express therefore writes
-only `language.project = en` unless existing overrides are preserved. The legacy
-`plan.markerLanguage` is never written as a current setting.
+settings). Missing artifact-surface `language.*` overrides inherit `language.project`; Express
+therefore writes only `language.project = en` unless existing overrides are preserved. The base
+deliberately carries **no** `language.chat` row and Express adds none, though it retains an
+existing one like any other override, so interactive replies keep mirroring the user until a row
+is set. The legacy `plan.markerLanguage` is never written as a current setting.
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
@@ -247,7 +255,8 @@ options:
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
-  `language.project = en` per the base and retain valid existing language overrides. Apply the
+  `language.project = en` per the base, introduce no new `language.chat` row, and retain valid
+  existing language overrides, `language.chat` among them. Apply the
   confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
   merge-gate block — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
@@ -298,10 +307,11 @@ options:
 **Base branch.** Briefly explain the base branch (the branch that is delivered into) and ask for
 it as free text (`delivery.baseBranch`). Derive the proposal from `git remote` before asking
 instead of offering `origin/main` unconditionally: with a remote named `origin`, propose
-`origin/main`; without one, no `origin/…` ref can ever resolve in this repository, so propose its
-current local branch, which does resolve, and name the reason (no remote at all, or none named
-`origin`). Never guess a remote ref from a differently named remote — with several remotes none
-of them is the obvious one, and free text carries `upstream/main` just as well. Either way it
+`origin/main` — or the branch `origin/HEAD` names, where that ref names another; without one, no
+`origin/…` ref can ever resolve in this repository, so propose its current local branch, which
+does resolve, and name the reason (no remote at all, or none named `origin`). Never guess a remote
+ref from a differently named remote — with several remotes none of them is the obvious one, and
+free text carries `upstream/main` just as well. Either way it
 stays a proposal — free text overrides it, and only the confirmed Step 6 write persists it. Ask
 for the switch-back target (`delivery.returnBranch`, default `auto`) only optionally.
 
@@ -325,8 +335,10 @@ options:
 **Project and surface languages.** Explain: the project language is the fallback for every new
 human-readable artifact, while optional surface overrides let source prose, documentation,
 workflow artifacts, Forge communication, and Git history differ. A plan is entirely in the
-workflow language, including its status marker. Only `de` and `en` are supported; German maps to
-`de-DE` typography and English to `en-US`.
+workflow language, including its status marker. `language.chat` is the one non-artifact surface:
+it fixes the language Effective Flow speaks to the user in — replies, questions, and completion
+reports — and, left unset, mirrors whatever language the user writes in. Only `de` and `en` are
+supported; German maps to `de-DE` typography and English to `en-US`.
 
 ```ask
 header: Language
@@ -339,12 +351,14 @@ options:
 ```
 
 Then offer each override in turn: `language.source`, `language.documentation.user`,
-`language.documentation.technical`, `language.workflow`, `language.forge`, and `language.git`.
-For every override, offer **Inherit project language** first, then English and German. Inherit is
-represented by an absent row, not `null`; removing an existing override is a normal before/after
-change that requires confirmation. Explain the exact target surface from the shared language
-table. In particular, a Conventional Commit PR title uses `language.git`, while the PR body and
-comments use `language.forge`.
+`language.documentation.technical`, `language.workflow`, `language.forge`, `language.git`, and
+`language.chat`. For every artifact-surface override, offer **Inherit project language** first,
+then English and German; `language.chat` offers **Mirror the user's language (default)** first,
+then English and German, because an absent chat row mirrors instead of inheriting. Inherit and
+mirror are alike represented by an absent row, not `null`; removing an existing override is a
+normal before/after change that requires confirmation. Explain the exact target surface from the
+shared language table. In particular, a Conventional Commit PR title uses `language.git`, while the
+PR body and comments use `language.forge`.
 
 Before asking, detect compatibility input. If `language.workflow` is absent and a valid
 `plan.markerLanguage` exists, show the old value and explain that migration changes it from a
@@ -440,7 +454,7 @@ config value or default as the pre-selection:
 
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `language`: the project language and six overrides already asked in Step 4 — carry over
+3. `language`: the project language and seven overrides already asked in Step 4 — carry over
 4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
    `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
    canonicalized before they are written; reject values that resolve to the same directory or nest
@@ -602,7 +616,7 @@ options:
 ### Step 6: Merge and write
 
 1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
-2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
+2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation. Where the `delivery.baseBranch` about to be written names a branch other than `origin/HEAD`, name both in that list — a report, not a gate.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
    - If the fresh locator reports **several** matching project setup ADRs and falls through on
@@ -697,7 +711,9 @@ options:
      `## Kontext`, `## Konfiguration`, `| Schlüssel | Wert |`) for `de`.
    - For an existing ADR, preserve its recognized English or German envelope and surrounding
      prose during a normal update, even when the configured technical-documentation language
-     changes. Do not translate it incidentally.
+     changes. Do not translate it incidentally. Sections **after** the configuration table are
+     surrounding prose too: rewrite the table in place and keep everything below it in every mode,
+     a confirmed full overwrite included — that discards values, never prose a later run may read.
    - Add a short context sentence in that envelope's language explaining that the ADR holds the
      tracked Effective Flow configuration and `.effective-flow/` is a pure runtime directory.
    - Use one row per key in the table-encoding form (boolean, unquoted string, literal `null`,

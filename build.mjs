@@ -1410,8 +1410,8 @@ try {
   // Every file in src/tools is measured, and the reconciliation below keeps this
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own limit rather than a share of
-  // one number. Only six of these numbers are a judgement: the five
-  // implementation tools agree on 700 lines, and `merge-gate` carries 3219,
+  // one number. Only five of these numbers are a judgement: the four
+  // implementation tools agree on 700 lines, and `merge-gate` carries 2787,
   // because it is an orchestration gate whose phases, delegation contracts and
   // provider rules do not compress to the size of an implementation tool.
   //
@@ -1419,7 +1419,7 @@ try {
   // what a tool costs today, with its mode-gated fragments still inlined eagerly;
   // it is not a size anyone argued for. Each later conversion of an eager include
   // to a `lazy-include` lowers the entries it touches, so a large number reads as
-  // work outstanding and never as room to fill. `merge-gate`'s 3219 is the same
+  // work outstanding and never as room to fill. `merge-gate`'s 2787 is the same
   // kind of ratchet, a little above its measured size.
   //
   // The allowance above the measured size is a flat line count rather than a
@@ -1430,7 +1430,7 @@ try {
   // most entries carry less, because a deferral that shrank a tool was recorded
   // by lowering its entry to the new measurement rather than by re-adding the
   // full ten. Read an entry's actual headroom off the report below, never as
-  // "ten"; only the six judgement entries and `merge-gate` sit further above
+  // "ten"; only the five judgement entries sit further above
   // their measured size, and they do so on purpose.
   //
   // Measure with `node build.mjs` and read the `Always-loaded core (lines/budget)`
@@ -1446,43 +1446,45 @@ try {
   // of this map — into a build failure until someone re-sorts. Re-sort when
   // convenient instead.
   //
-  // Six entries below carry a `+6 (goal-completion)` marker. That raise is the one case where this
-  // line metric and the real context cost point in opposite directions:
+  // Six entries below once carried a `+6 (goal-completion)` marker. That raise was the one case
+  // where this line metric and the real context cost point in opposite directions:
   // `src/shared/goal-completion.md` stated its whole progress contract as a single
   // 2 893-character Markdown line, which cost one line of budget and roughly 700 tokens in each of
   // its ten eager consumers. Rewriting it as the invariants it guarantees dropped the fragment
   // from 4 413 to 3 036 characters while adding six lines, so every eager consumer grew by exactly
-  // six lines and shrank in tokens. Each marker is that measured delta and nothing more, applied
-  // so the entry keeps the headroom it had; the four other eager consumers (`merge-gate`, `docs`,
-  // `build`, `fix`) are judgement entries with room to absorb it and were left alone. Raise an
-  // entry this way only when a measurement points the same way.
+  // six lines and shrank in tokens. Each marker was that measured delta and nothing more, applied
+  // so the entry kept the headroom it had; the four other eager consumers (`merge-gate`, `docs`,
+  // `build`, `fix`) are judgement entries with room to absorb it and were left alone. A later
+  // re-measurement folded those six deltas into the fresh measurements below, so the markers are
+  // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
+  // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2787,
-    iterate: 1639, // +6 (goal-completion)
-    setup: 1631,
-    'apply-review': 1309, // +6 (goal-completion)
-    'apply-issues': 1152, // +6 (goal-completion)
-    cleanup: 994,
-    refactor: 834, // +6 (goal-completion)
-    deliver: 747,
-    'plan-issue': 700, // measured 696 + 4, not the shared judgement 700
-    review: 700,
+    iterate: 1661,
+    setup: 1662,
+    'apply-review': 1332,
+    'apply-issues': 1179,
+    cleanup: 1014,
+    refactor: 856,
+    deliver: 767,
+    'plan-issue': 726,
+    review: 720,
     plan: 700,
-    'apply-review-commit-mechanics': 630,
-    maintain: 630, // +6 (goal-completion)
+    'apply-review-commit-mechanics': 648,
+    maintain: 652,
     docs: 700,
     build: 700,
-    apply: 541,
-    'apply-plan': 545, // +6 (goal-completion)
-    investigate: 501,
+    apply: 564,
+    'apply-plan': 568,
+    investigate: 521,
     fix: 700,
-    'plan-review': 420,
-    pr: 405,
-    'concept-review': 316,
-    'apply-review-remote': 303,
-    concept: 304,
-    commit: 211,
-    'open-plans': 121,
+    'plan-review': 438,
+    pr: 432,
+    'concept-review': 336,
+    'apply-review-remote': 325,
+    concept: 324,
+    commit: 231,
+    'open-plans': 139,
     'pr-review': 38,
     version: 38,
   };

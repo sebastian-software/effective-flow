@@ -167,7 +167,15 @@ const NOT_LOADED_BY_A_RUN = [
 // keeping if it stops there. The hashed set is derived in `build-identity.mjs` by following the
 // seeds' own load pointers through the built tree: the router a run enters through, the gate tool it
 // runs, the artifacts it delegates into, and every `shared/` fragment those pointers reach,
-// transitively. Twenty-one paths out of the eighty-six the built portable skill holds.
+// transitively. Twenty-three paths out of the eighty-seven the built portable skill holds.
+//
+// Two of those twenty-three arrived with `chat-language`, the eager fragment every speaking tool
+// carries: its two `lazy-include` pointers pull `shared/config-migration.md` and
+// `shared/typography-rules.md` into the set. The typography one is reached only under
+// `when: the resolved chat language is de` — a branch neither scenario takes — so it widens the
+// identity for a file these rounds never read. That is the coupling the paragraph below warns
+// about, arriving through a conditional pointer rather than through a lost narrowing; whether a
+// conditional pointer should widen the set at all is an open call recorded on the re-round.
 //
 // Membership is asserted in both directions because both failures are silent. A set that lost a
 // seed still produces a perfectly stable digest — it would match itself round after round while
@@ -179,7 +187,7 @@ const NOT_LOADED_BY_A_RUN = [
 //
 // **Do not restore a count floor.** An earlier version asserted `hashed.length > 50`, which
 // contradicted the name above it: it held only while the stamp hashed the whole output, and the
-// correct set fails it. A floor cannot tell the right twenty-one files from any other twenty-one,
+// correct set fails it. A floor cannot tell the right twenty-three files from any other twenty-three,
 // which is the only question worth asking here.
 test('the build stamp covers the built tree a run actually loads', () => {
   const identity = currentIdentity(SCENARIOS[0]);

@@ -128,6 +128,15 @@ Effective Flow separates source and built delivery across two branches:
   `.github/scripts/close-develop-issues.mjs` helper. It contains no `claude/`, `codex/`, or
   `portable/` wrapper and therefore no competing same-name candidate.
 
+The delivered branch additionally carries a generated `AGENTS.md` and a one-line `CLAUDE.md`
+importing it, both written by `scripts/deliver-docs.mjs` and reset by `scripts/stage-delivery.mjs`.
+They exist for a narrow reason: a coding agent working in a checkout of `main` loads `CLAUDE.md`
+unconditionally and reads nothing else on its own, so it is the only place a "this is the delivery
+branch, source lives on `develop`" statement actually reaches it. The `README.md` delivery footer
+says the same thing, but nothing makes an agent read a README before it starts editing — which is
+how a session once began editing `build.mjs` in a worktree cut from `main`, where that file does
+not exist.
+
 This establishes one supported end-user interface: DALO and Skills CLI consume the same portable
 bytes from the default branch and use bundled worker contracts with built-in/general subagents.
 The release archive preserves all build targets for verification and release maintenance, but it

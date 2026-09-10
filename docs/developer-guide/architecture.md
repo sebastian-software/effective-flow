@@ -10,9 +10,9 @@ instead of duplicating them.
 
 Human-readable output uses the target project's project-setup ADR rather than harness-specific
 defaults. `language.project` is the common `de`/`en` fallback; optional overrides select source
-prose, user documentation, technical documentation, local workflow artifacts, Forge prose, and
-Git/release prose. Missing overrides inherit the project language, and a completely missing
-configuration resolves to `en`.
+prose, user documentation, technical documentation, local workflow artifacts, Forge prose,
+Git/release prose, and the interactive output a run speaks to the user. Missing artifact-surface
+overrides inherit the project language, and a completely missing configuration resolves to `en`.
 
 Resolution order is artifact-specific: an explicit user request wins; while editing, a
 recognizable existing artifact language comes next; a new artifact then uses its surface
@@ -21,13 +21,24 @@ for a run once and pass the concrete values to delegated workers. A standalone t
 same resolution itself. Workers do not independently reparse the ADR, which prevents parallel
 writers from making inconsistent choices.
 
+Interactive output is the one surface outside that model. `language.chat` is not an artifact
+surface, so neither the preserve-existing-language step nor inheritance applies to it: an absent
+row means mirror the language the user writes in, and a configured value outranks that language
+while still yielding to an explicit in-message request. It is also not part of the delegation
+payload, precisely because workers do not reparse the ADR and hold no value to apply — delegated
+reports and agent notices are relayed verbatim inside orchestrator framing that does follow the
+key. The always-loaded router, `version`, and the `pr-review` deprecation notice emit before any
+configuration read and stay on the conversation language. The contract is
+[`src/shared/chat-language.md`](../../src/shared/chat-language.md), an eager include in every tool
+that speaks, because every emitted line is its decision point.
+
 Publication target selects the surface. Plans, local reviews, and investigations use
 `language.workflow`; issues, PR bodies, comments, and remote reviews use `language.forge`;
 commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose use
 `language.git`. Root README/user-guide work uses `language.documentation.user`; developer/API,
 operations, and runbook work uses `language.documentation.technical`; code comments, test
-descriptions, and in-code documentation use `language.source`. Product UI and CLI localization is
-outside this model.
+descriptions, and in-code documentation use `language.source`; what the run says to the user uses
+`language.chat`. Product UI and CLI localization is outside this model.
 
 This selection affects visible prose only. Config keys and encoded values, identifiers, API
 names, labels, HTML markers, finding IDs, action values, paths, Conventional-Commit types, branch

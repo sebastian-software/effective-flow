@@ -54,6 +54,7 @@ mixes columns. Readers accept both columns and normalize them to the same intern
 | Workflow-Sprache                      | workflow language                | `language.workflow`                |
 | Forge-Sprache                         | Forge language                   | `language.forge`                   |
 | Git-Sprache                           | Git language                     | `language.git`                     |
+| Chat-Sprache                          | chat language                    | `language.chat`                    |
 
 The keys and their `de`/`en` values are machine-facing and are never translated. The same applies
 to label names, HTML idempotency markers, finding IDs, action values, file paths,

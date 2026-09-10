@@ -46,6 +46,8 @@ import {
   appendDeliveryFooter,
   deliveryFooter,
   DELIVERY_FOOTER_MARKER,
+  deliveryGuidance,
+  DELIVERY_GUIDANCE_MARKER,
   PORTABLE_WORKER_DELEGATION,
   collectRenderedWorkerRefs,
   HARNESS_TOOL_PARAMETER_OWNERSHIP,
@@ -3452,9 +3454,26 @@ test('checked-in language configuration remains complete and migration-only', ()
     'language.workflow',
     'language.forge',
     'language.git',
+    'language.chat',
   ]) {
     assert.match(languageRules, new RegExp(`\\b${key.replaceAll('.', '\\.')}\\b`));
   }
+  // The fragment test pins the non-inheritance where the fragment states it. The same rule is
+  // restated here, in the file the resolver and every agent carry, and mutation showed all three
+  // ways of breaking it left the suite green: deleting the carve-out, inverting it to fall
+  // through to `language.project`, and dropping the table row. The key-presence loop above does
+  // not cover any of them -- it matches the key anywhere in the file, so the carve-out prose
+  // satisfies it once the row is gone, and the row satisfies it once the prose is gone.
+  assert.match(languageRules, /\|\s*`language\.chat`\s*\|/);
+  assert.match(languageRules, /`language\.chat` is not an artifact\s+surface/);
+  assert.match(
+    languageRules,
+    /for a missing \*\*and\*\* for\s+an invalid value — both mirror the user instead of falling through to `language\.project`/,
+  );
+  // The unqualified form this change deliberately narrowed. Left standing it would read as
+  // covering `language.chat` too, which is the collapse the carve-out exists to prevent.
+  assert.doesNotMatch(languageRules, /A missing override means inheritance/);
+
   assert.match(languageRules, /resolves every required surface once per run/i);
   assert.match(languageRules, /must not\s+independently re-read the project setup ADR/i);
 
@@ -3514,6 +3533,82 @@ test('checked-in language configuration remains complete and migration-only', ()
     ['shared/config-setup-migration.md', 1],
     ['shared/language-rules.md', 2],
   ]);
+});
+
+test('the chat-language fragment pins its domain, its mirror default and its exceptions', () => {
+  const fragment = readFileSync(new URL('../src/shared/chat-language.md', import.meta.url), 'utf8');
+  // Matched against whitespace-normalized prose. Every assertion below is about a word
+  // sequence, never about where a line happens to wrap; pinning the wrapping too would
+  // turn a harmless re-wrap into a failure, and a failure nobody believes is the one that
+  // gets "fixed" by loosening the assertion.
+  const prose = fragment.replace(/\s+/g, ' ');
+
+  // Eager presence is not execution. The fragment ships in 26 tools, but its value is read
+  // through a lazy config pointer, so a run that emits its first status line before resolving
+  // would never come back -- the "silently not running" failure mode the eager decision was
+  // made to avoid, reappearing one level down. The timing is therefore part of the rule.
+  assert.match(
+    prose,
+    /Resolve `language\.chat` once, before this run's first interactive output, and hold it for the whole run/,
+  );
+
+  // The value domain, bound to the sentence that names the key so it cannot drift onto some
+  // other subject. `de`/`en` alone would still be satisfied by a source that re-admitted a
+  // third token, so the absence of `auto` is asserted twice: once as the stated rule, and
+  // once as a count, because a re-introduced `auto` value would be a *second* occurrence
+  // beside this negation.
+  assert.match(prose, /It is `de` or `en`; there is no `auto`/);
+  // Counting backticked `auto` was tried and does not guard this: re-admitting the value
+  // means rewriting the negation in the same edit, so the count stays at one, while an
+  // unbackticked "a value of auto also means mirror" slips past entirely. Assert the shape
+  // a permissive rule actually takes instead, spelling-insensitively.
+  assert.doesNotMatch(
+    prose,
+    /\bor\s+`?auto`?\b/i,
+    'the domain stays two-valued; `auto` is never offered as a third',
+  );
+
+  // The one key that does not inherit. Asserting only "mirror the user's language" would
+  // still pass if the never-inherit half were dropped, and dropping it is exactly how
+  // `language.chat` would silently collapse into the other seven keys.
+  assert.match(
+    prose,
+    /a missing row means \*\*mirror the user's language\*\*, never inherit `language\.project`/,
+  );
+  assert.match(
+    prose,
+    /Precedence: an explicit in-message request, then a configured value, then the conversation language, then `language\.project`, then `en`/,
+  );
+  // An invalid value is the absent row, not a jump up the chain -- the same non-inheritance,
+  // stated for the error path.
+  assert.match(
+    prose,
+    /An invalid value is reported and treated as an absent row — mirror, not a jump to `language\.project`/,
+  );
+
+  // The `ask` block is the only interactive surface built as a literal parameter list, so a
+  // run holding "translate the question" would pass header and labels through untouched and
+  // produce a half-translated dialog. The parts are named for that reason.
+  assert.match(prose, /an `ask` block's header, question, option labels and descriptions/);
+
+  // Delegated output is relayed, never translated: the key is not handed down, so a run may
+  // be visibly bilingual.
+  assert.match(prose, /Delegated output is relayed \*\*verbatim\*\*: this key is not handed down/);
+  assert.match(prose, /a run may be visibly bilingual/);
+
+  // The three documented exceptions, asserted as one clause. Naming them separately would let
+  // the shared reason -- that all three precede any config read -- be lost while each name
+  // still appeared somewhere in the file.
+  assert.match(
+    prose,
+    /The router catalog, `\{\{SKILL:version\}\}` and the `pr-review` notice precede any config read and stay on the conversation language/,
+  );
+
+  // The fragment is eager in 26 tools, so it must stay a pointer host rather than inlining
+  // the config locator or the typography rules into every one of them.
+  const { eager, lazy } = collectIncludeNames(fragment);
+  assert.deepEqual([...eager], [], 'chat-language must eager-include nothing');
+  assert.deepEqual([...lazy].sort(), ['config-migration', 'typography-rules']);
 });
 
 test('workflow report consumers retain bilingual status and remote epic prose', () => {
@@ -3788,4 +3883,66 @@ test('appendDeliveryFooter is idempotent (no second footer)', () => {
 
 test('appendDeliveryFooter requires repo and sourceBranch', () => {
   assert.throws(() => appendDeliveryFooter('x', { repo: 'a/b' }), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance names the marker, the source branch and its tree link', () => {
+  // Asserted against a repo/branch pair this repository never uses, so a body that
+  // hardcoded `sebastian-software/effective-flow` or `develop` cannot pass by accident.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.ok(agents.includes(DELIVERY_GUIDANCE_MARKER));
+  assert.ok(agents.includes('trunk'));
+  assert.ok(agents.includes('https://github.com/acme/thing/tree/trunk'));
+});
+
+test('deliveryGuidance states the three things the file exists to say', () => {
+  // The assertions above all hold for a body reduced to a bare link: marker, branch
+  // name and URL survive every rewrite that deletes the actual message. This file
+  // exists only to tell an agent standing in a delivery checkout that it is on the
+  // wrong branch, so the message itself is the contract — pin it, or the guard
+  // silently degrades to a link checker.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.match(agents, /machine-managed delivery branch/);
+  assert.match(agents, /overwritten by the next delivery/);
+  assert.match(agents, /do not open a pull request against this branch/);
+  // A worktree under `<repo>/.claude/worktrees/` sits inside the source checkout, so a
+  // parent-directory CLAUDE.md is loaded alongside this one and describes the source
+  // branch. Without this sentence the two read as equally authoritative.
+  assert.match(agents, /Guidance loaded from a surrounding checkout/);
+});
+
+test('deliveryGuidance rejects missing arguments like its neighbour', () => {
+  // appendDeliveryFooter throws on the same omission. Without this, a caller that
+  // dropped an argument would emit a body linking `github.com/undefined/tree/undefined`.
+  assert.throws(() => deliveryGuidance(), /requires repo and sourceBranch/);
+  assert.throws(() => deliveryGuidance('acme/thing'), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance carries no frontmatter and no bare @ token', () => {
+  const { agents } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  // Two separate hazards of the delivery branch, both invisible until they fire:
+  // frontmatter carrying `name: effective-flow` would enroll this file in
+  // scripts/distribution-smoke.mjs's skill-candidate enumeration, and any `@token`
+  // is read by Claude Code as a further import — from AGENTS.md, which CLAUDE.md
+  // already imports. Neither is a formatting preference. `@` is banned outright
+  // rather than only outside code spans, because this body is generated: it never
+  // needs one, so the cheapest assertion is also the strictest.
+  assert.ok(!agents.startsWith('---'));
+  assert.ok(!agents.includes('name: effective-flow'));
+  assert.ok(!agents.includes('@'));
+});
+
+test('deliveryGuidance returns exactly the one-line CLAUDE.md import', () => {
+  // Equality, not `includes`: CLAUDE.md is loaded unconditionally, so anything
+  // beyond the import is always-on context this file has no mandate to spend.
+  const { claude } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(claude, '@AGENTS.md\n');
+});
+
+test('deliveryGuidance is idempotent (a re-delivery writes identical bytes)', () => {
+  // Both files are written whole rather than appended, so re-running the delivery
+  // step must not produce a diff on the delivery branch.
+  const once = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  const twice = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(twice.agents, once.agents);
+  assert.equal(twice.claude, once.claude);
 });

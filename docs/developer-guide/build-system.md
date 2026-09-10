@@ -180,9 +180,10 @@ The build aborts with an error message if any of these guards is violated:
   **`route-when-relevant`** consumer is checked **per relationship**, because a relevance-gate
   consumer such as `plan` reaches its owner through the structured marker in
   `central-reasoning-delegation.md` instead of a section of its own. Shared-fragment consumers
-  (`language-rules`, `dependency-version-policy`, `documentation-sync-contract`,
-  `worktree-integration`) are exempt **by kind** in both cases: a fragment expresses its ownership
-  as prose inside the tool that embeds it and can never produce a chain. The
+  (`language-rules`, `chat-language`, `dependency-version-policy`,
+  `documentation-sync-contract`, `worktree-integration`) are exempt **by kind** in both cases: a
+  fragment expresses its ownership as prose inside the tool that embeds it and can never produce a
+  chain. The
   `recommendationCapableConsumers` argument that carries that filter is required, so dropping it
   fails the build instead of silently disabling the check.
 - **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
@@ -288,15 +289,15 @@ The build aborts with an error message if any of these guards is violated:
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
-  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs`,
-  `review` and `plan` share **700 lines**; `merge-gate` carries **3219**; every other
-  `src/tools/*.md` carries its measured size plus **up to** ten lines. The build prints each
+  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
+  `plan` share **700 lines**; `merge-gate` carries **2787**; every other `src/tools/*.md`
+  carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
   own** limit, naming the tool, its size and that limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than
   `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
   orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Every number other than the six above is a measured
+  the size of an implementation tool. Every number other than the five above is a measured
   backlog rather than a target – it records what a tool costs today with its mode-gated
   fragments still inlined, so each later deferral lowers the entries it touches and a large
   number reads as work outstanding, never as room to fill. The map and the built tool set are
@@ -419,8 +420,8 @@ eagerly but moves the **mode-gated** blocks behind a `lazy-include` pointer (see
 and directive syntax").
 
 - **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
-  `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`,
-  `goal-completion`, `apply-clarity-gate`, `delegation-mandate`, and the status markers in
+  `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`, `goal-completion`,
+  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, and the status markers in
   `plan-status`. `goal-completion` governs every remaining phase rather than one decision point,
   and `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
   nobody notices. Neither is deferred, however tempting their size. `delegation-mandate` is eager
@@ -428,12 +429,18 @@ and directive syntax").
   default this fragment corrects skip the pointer's own trigger, so the mandate must be present
   before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
   narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
-  decision point at which a pointer could sit. `typography-rules` is eager in all sixteen agents
-  for a third reason: it states how a resolved `de`/`en` value is rendered, not how it is resolved,
-  so deferring it behind `language-rules` would hide it from exactly the orchestrated agents that
-  are handed a value and never resolve one. The fragment is split out of `language-rules` — which
-  still embeds it, so every consumer of the resolver keeps the rule — precisely so the locale rule
-  travels with the writer rather than with the resolver.
+  decision point at which a pointer could sit. `chat-language` is eager in every tool that speaks
+  for both of those reasons at once: every emitted line is its decision point, so no pointer has
+  anywhere to sit, and its failure mode is silently not running — a run that never loads it simply
+  keeps mirroring the user and nothing reports the configured value was ignored. It carries its
+  own lazy pointer to `typography-rules`, which is a genuine branch (only a resolved `de` reaches
+  it) and would otherwise triple the eager cost across every host for a rule most runs never need.
+  `typography-rules` is eager in all sixteen agents for a third reason: it states how a resolved
+  `de`/`en` value is rendered, not how it is resolved, so deferring it behind `language-rules`
+  would hide it from exactly the orchestrated agents that are handed a value and never resolve
+  one. The fragment is split out of `language-rules` — which still embeds it, so every consumer of
+  the resolver keeps the rule — precisely so the locale rule travels with the writer rather than
+  with the resolver.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
@@ -538,24 +545,25 @@ order, which runs largest **measured** size first — not largest limit, so `fix
 between a 501 and a 420 limit is the order working rather than a sort violation. The order is a reading
 aid and is deliberately unenforced: asserting it would turn a successful deferral, which is the
 work the map exists to track, into a build failure until the map is re-sorted.
-The five implementation tools share **700 lines** and currently measure `build` 538, `fix`
-434, `docs` 570, `review` 692, and `plan` 624 — headroom ranges from `review`'s 8 lines, the
-tightest since the eager `delegation-mandate` include was added, to `fix`'s 266 lines.
-`merge-gate` is budgeted separately at **3219** and measures 3145: an orchestration gate whose
+The four implementation tools share **700 lines** and currently measure `build` 567, `fix`
+463, `docs` 599, and `plan` 647 — headroom ranges from `plan`'s 53 lines to `fix`'s 237.
+`review` left that group when the eager `chat-language` include pushed it past 700; it now carries
+a measurement like every other tool.
+`merge-gate` is budgeted separately at **2787** and measures 2744: an orchestration gate whose
 phases, delegation contracts and provider rules do not compress to the size of an implementation
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
 The rest is loaded only when the mode is reached.
 
 Every remaining tool carries its **measured size plus at most ten lines**, which is a backlog
-rather than a target: those tools still inline the mode-gated fragments that the five
+rather than a target: those tools still inline the mode-gated fragments that the four
 implementation tools already defer, and each conversion of an eager include to a `lazy-include`
 lowers the entries it touches. The headroom is a flat line count rather than a percentage on
 purpose — a percentage would give the largest tools the most room, which is where unwatched growth
 costs the most — and ten lines are wide enough for the short pointer a deferral leaves behind. Ten
 is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
 tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
-so `apply-issues` at 1143/1146 has three lines of room and not ten. Read a specific entry's
-headroom off the build report. `iterate` at 1625 and `setup` at 1645 are the two largest
+so `apply-issues` at 1174/1179 has five lines of room and not ten. Read a specific entry's
+headroom off the build report. `iterate` at 1656 and `setup` at 1657 are the two largest
 entries of that kind today.
 
 ## Optional upstream ownership audit

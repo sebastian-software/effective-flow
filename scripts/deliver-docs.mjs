@@ -1,6 +1,7 @@
-// Rewrite developer-guide links and append the delivery footer in the docs the
-// release workflow copies onto the delivery branch `main`. The pure transforms
-// live in build-lib.mjs (unit-tested); this thin wrapper does the file I/O.
+// Rewrite developer-guide links, append the delivery footer, and write the
+// AGENTS.md/CLAUDE.md guidance pair in the tree the release workflow copies onto
+// the delivery branch `main`. The pure transforms and the generated guidance
+// bodies live in build-lib.mjs (unit-tested); this thin wrapper does the file I/O.
 //
 // Usage: node scripts/deliver-docs.mjs <work-dir> <repo> <source-branch>
 //   <work-dir>      main worktree that already holds README.md + docs/user-guide/
@@ -11,7 +12,11 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rewriteDeveloperGuideLinks, appendDeliveryFooter } from '../build-lib.mjs';
+import {
+  rewriteDeveloperGuideLinks,
+  appendDeliveryFooter,
+  deliveryGuidance,
+} from '../build-lib.mjs';
 
 function fail(message) {
   console.error(`deliver-docs: ${message}`);
@@ -23,6 +28,16 @@ export function deliverDocs(work, repo, sourceBranch) {
     throw new Error('work, repo and sourceBranch are required');
   }
 
+  // Refuse to run against a source checkout. This writes AGENTS.md and CLAUDE.md whole,
+  // so pointing the documented standalone CLI at the repository root would replace a
+  // full source-tree AGENTS.md with the nine-line delivery one and report success. A
+  // delivery work tree never carries build.mjs or src/; a source checkout always does.
+  if (existsSync(join(work, 'build.mjs')) || existsSync(join(work, 'src'))) {
+    throw new Error(
+      `refusing to deliver into a source checkout at ${work}: it carries build.mjs or src/`,
+    );
+  }
+
   // Root README: developer-guide links use the `docs/developer-guide/` prefix,
   // and only the delivered README carries the delivery footer.
   const readmePath = join(work, 'README.md');
@@ -31,6 +46,13 @@ export function deliverDocs(work, repo, sourceBranch) {
   readme = rewriteDeveloperGuideLinks(readme, { repo, sourceBranch, fromRoot: true });
   readme = appendDeliveryFooter(readme, { repo, sourceBranch });
   writeFileSync(readmePath, readme);
+
+  // AGENTS.md + CLAUDE.md: the only carrier an agent loads unconditionally, so a
+  // worktree cut from the delivery branch learns the branch model without being
+  // asked. Both are written whole, which makes a re-delivery byte-identical.
+  const guidance = deliveryGuidance(repo, sourceBranch);
+  writeFileSync(join(work, 'AGENTS.md'), guidance.agents);
+  writeFileSync(join(work, 'CLAUDE.md'), guidance.claude);
 
   // docs/user-guide/**/*.md: developer-guide links use the
   // `../developer-guide/` prefix. Sibling user-guide links stay relative.
@@ -63,7 +85,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   try {
     deliverDocs(work, repo, sourceBranch);
-    console.log(`deliver-docs: rewrote developer-guide links and appended footer under ${work}`);
+    console.log(
+      `deliver-docs: rewrote developer-guide links, appended footer and wrote AGENTS.md + CLAUDE.md under ${work}`,
+    );
   } catch (error) {
     fail(error.message);
   }
