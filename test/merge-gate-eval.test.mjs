@@ -47,6 +47,11 @@ import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 // So the residue is left standing and written down. A round of five refusals is evidence that the
 // gate does not merge under an active guard; it is not proof that each of those five runs evaluated
 // the guard and decided. Anyone reporting on this layer should say the first and not the second.
+//
+// **`linked-issue-open-points` is a third scenario and not a third member of that pair.** Its pull
+// request is already merged in the canned document, so it makes no merge decision at all: it enters
+// observer-only mode and is the only scenario that reaches Phase 5.5. It carries none of the pair's
+// claim and the pair carries none of its own — read its assertion below on its own terms.
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -71,7 +76,7 @@ const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-r
 // assertion answers, and it is answered in both directions below.
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
-const SCENARIOS = ['guard-blocks-merge', 'merge-proceeds'];
+const SCENARIOS = ['guard-blocks-merge', 'merge-proceeds', 'linked-issue-open-points'];
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -579,3 +584,70 @@ test('merge-proceeds: every archived run merges', { skip: mergeSkip }, () => {
     );
   }
 });
+
+const openPointsRuns = archivedRuns('linked-issue-open-points');
+const openPointsSkip = skipWithoutRuns('linked-issue-open-points', openPointsRuns);
+
+// The third scenario, and the only one that reaches Phase 5.5. It is deliberately **not** part of
+// the refusal/merge pair above and carries none of that pair's claim: its pull request is already
+// merged in the canned document, so the gate re-enters in observer-only mode and there is no merge
+// decision here to prove or disprove.
+//
+// **Observer-only is a property of the harness.** The stub answers by operation name with one fixed
+// document, so a merging scenario's post-merge `pr-read` keeps describing an open pull request and
+// the fresh read Phase 5.5 entry requires never proves the merge — which is exactly the limit
+// `merge-proceeds` records. An already-merged pull request needs no state to be observed as merged.
+// A later change that turns this scenario into a merging one would remove the suite's only Phase 5.5
+// coverage without failing anything.
+//
+// **What is asserted is the read, never the report.** The record schema is
+// `{seq, operation, apply, at, cwd}` and the chat report is captured nowhere, so a run that read the
+// canonical planning comment and then said nothing about its open points leaves the same log as one
+// that reported them. The count is the honest observable: the comment read happened, once for the
+// one open linked issue and not twice. That the observation reaches the Phase 6 report, and stays
+// report-only there, is asserted as source text in `test/workflow-contracts.test.mjs` — do not add an
+// assertion here that claims to check it.
+test(
+  'linked-issue-open-points: every archived run reads the planning comment exactly once and writes nothing',
+  { skip: openPointsSkip },
+  () => {
+    for (const run of openPointsRuns) {
+      const records = readRun(run);
+
+      // Both directions matter. No read at all means the observation never happened — the run
+      // stopped before Phase 5.5, or entered it and skipped the comment. A second read means the
+      // per-issue bound of one comment read was not held, and a phase that re-reads its own inputs
+      // is one whose fixed literal nothing is enforcing.
+      const commentReads = records.filter(
+        (record) => record.operation === 'issue-comments-read',
+      ).length;
+      assert.equal(
+        commentReads,
+        1,
+        `${run.name}: issue-comments-read appears ${commentReads} time(s); Phase 5.5 assesses the one still-open linked issue of this fixture and reads its comments once, so zero means the observation never happened and more than one means the per-issue read bound was exceeded`,
+      );
+
+      // Observer-only mode performs no merge at all — not even the dry-run preview Phase 5 inspects
+      // — because Phase 0 jumps past Phase 5 entirely. A `pr-merge` record here is the gate having
+      // taken the open-PR path on an already-merged pull request.
+      const merges = records.filter((record) => record.operation === 'pr-merge');
+      assert.deepEqual(
+        merges,
+        [],
+        `${run.name}: the gate requested pr-merge on an already-merged pull request; observer-only mode skips Phase 5 by construction`,
+      );
+
+      // The whole phase is read-and-report for this fixture: the completion verdict cannot be
+      // `complete` while issue #17 has an open native sub-issue, so no terminal transition is
+      // eligible, and a non-interactive run poses no offer regardless. `apply: true` is what
+      // separates a performed mutation from the dry-run preview that precedes one, so this is the
+      // log's own statement that nothing was written.
+      const applied = records.filter((record) => record.apply === true);
+      assert.deepEqual(
+        applied.map((record) => `${record.seq}:${record.operation}`),
+        [],
+        `${run.name}: the run performed an applied mutation; this scenario's observation is read-only — its issue is incomplete, so no terminal transition is eligible, and a non-interactive run offers none anyway`,
+      );
+    }
+  },
+);

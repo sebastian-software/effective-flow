@@ -57,6 +57,16 @@ function loadFixture(name) {
 // A response stated as a **string** is delivered as raw stdout; anything else is JSON-encoded. That
 // distinction is the provider's, not this file's: `gh pr merge` prints a line of prose, and encoding
 // it as JSON would hand the normalizer a document no forge produces.
+// A monotonic clock that jumps a whole minute per reading. `issue-state-wait` takes one reading
+// before its wait and one after, and clamps the difference to its own fixed grace period, so a step
+// larger than that period always yields the clamped value — the same number a real wait emits, with
+// no dependence on how long this suite actually took. Each envelope gets a fresh instance, so an
+// operation replayed twice (dry run and apply) does not inherit the first replay's offset.
+function steppingClock() {
+  let elapsed = 0;
+  return () => (elapsed += 60_000);
+}
+
 function runnerFor(entry) {
   const responses = Array.isArray(entry.providers) ? entry.providers : [entry.provider];
   const repeat = !Array.isArray(entry.providers);
@@ -133,6 +143,15 @@ test('every fixture envelope is one the real normalizer emits', async () => {
             // The probe is stated by the fixture rather than performed, so the corpus declares the
             // provider capabilities it assumes instead of inheriting whatever a live `gh` reports.
             skipProbe: true,
+            // `issue-state-wait` is the one operation that sleeps: between its two reads it waits
+            // the helper's fixed grace period. Replaying that for real costs this suite half a
+            // minute per such envelope and makes the emitted `observedWaitMs` depend on the wall
+            // clock, which is both slow and a flake. The no-op sleeper and the stepping clock below
+            // reproduce the same envelope instantly and deterministically: the helper clamps the
+            // observed wait to its fixed period, so any step larger than that period yields exactly
+            // the value a real wait produces. Every other operation ignores both options.
+            sleeper: async () => {},
+            clock: steppingClock(),
             ...(apply ? { apply: true } : {}),
           },
         );
