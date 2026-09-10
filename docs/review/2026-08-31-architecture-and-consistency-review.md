@@ -435,7 +435,7 @@ rather than deleted, because the two misreadings are the more useful part.
   separation it asks for already existed as a file boundary: `session-title.md` holds the invariant,
   `session-rename.md` the mechanism, and that fragment says so in its own opening. What remained was
   that 232 of its 282 lines belonged to one host — which #405 removed by retiring the butler. The
-  fragment is now 95 lines: 22 of dispatch and two symmetrical host sections of 30 and 44 lines.
+  fragment is now 95 lines: 22 of dispatch and two symmetrical host sections of 30 and 43 lines.
 - **Point 2 was wrong in its direction, and misplaced one of its examples.** Phase 2/3 branches on
   **forges**, not harnesses: every bot name in it is an illustration, every forge name a branch, so a
   harness-motivated change buys almost nothing there. The emoji-acknowledgement sentence is not in
