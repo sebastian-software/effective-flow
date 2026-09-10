@@ -420,6 +420,30 @@ Three places do encode mechanism rather than intent, and will need edits when th
 
 Everything else reads as durable.
 
+**Resolved 2026-09-10, and the finding was right about one of its three points.** Recorded here
+rather than deleted, because the two misreadings are the more useful part.
+
+- **Point 3 held, and understated the case.** `goal-completion` was rewritten in #404: bullet 4 now
+  names the guarantees and leaves the mechanics to whatever task tooling the harness offers, taking
+  the fragment from 4 413 to 3 036 characters in each of its ten eager consumers. Establishing
+  completeness by classifying _every_ sentence as invariant or mechanism — rather than by extracting
+  a list — found **two invariants neither this report nor the implementing plan knew about**: that
+  the progress overview is unconditional and outranks the generic task-tracking thresholds, and that
+  more specific per-finding rules stay authoritative. Both would have been deleted with a green
+  suite, because a test derived from an invariant list can only prove that test and list agree.
+- **Point 1 was half stale when it was written, and the rest has since gone.** The intent/mechanism
+  separation it asks for already existed as a file boundary: `session-title.md` holds the invariant,
+  `session-rename.md` the mechanism, and that fragment says so in its own opening. What remained was
+  that 232 of its 282 lines belonged to one host — which #405 removed by retiring the butler. The
+  fragment is now 95 lines: 22 of dispatch and two symmetrical host sections of 30 and 44 lines.
+- **Point 2 was wrong in its direction, and misplaced one of its examples.** Phase 2/3 branches on
+  **forges**, not harnesses: every bot name in it is an illustration, every forge name a branch, so a
+  harness-motivated change buys almost nothing there. The emoji-acknowledgement sentence is not in
+  Phase 2/3 at all — it sits in `## Configuration` and is a **negative** rule, stating that nothing
+  may be inferred from a reaction, which is durable evidence discipline rather than a bot
+  integration. What genuinely remains of this point is a structural question about `merge-gate`'s
+  size, which belongs to F-15.
+
 ---
 
 ## 5. Architecture against current practice
@@ -561,8 +585,16 @@ The **per-run** saving is a different and much smaller quantity that varies by i
 
 - **F-15 / §5** restructure `merge-gate` and `iterate` into the central skills' route-table shape:
   a phase/mode table plus lazily loaded fragments. Target ~1 200 always-loaded lines for `merge-gate`.
-- **F-16** de-couple `goal-completion`, `session-title`/`session-rename` and the `merge-gate` bot
-  handling from harness mechanics; state invariants, not procedures.
+- ~~**F-16** de-couple `goal-completion`, `session-title`/`session-rename` and the `merge-gate` bot
+  handling from harness mechanics.~~ **Resolved 2026-09-10** — see the finding for what held and
+  what did not.
+- **F-15 prerequisite: a third eval scenario with a configured reviewer.** Both existing scenarios
+  set `mergeGate.bots` empty by design, so Phase 3 executes in no archived run and Phase 2 only in
+  its single-green-check happy path. The assertions guarding those phases check **text**, and
+  `merge-gate-eval.test.mjs` names the hazard itself: a restructure can move a fail-closed rule
+  somewhere the run never reaches while its wording is still present. Rewriting Phase 2/3 before
+  that scenario exists means rewriting fail-closed logic in the one area the behavioural net does
+  not cover.
 - **§5** add a behavioural eval layer (mirroring the central skills' `evals/evals.json`), starting
   with `merge-gate` refusal conditions and `iterate` classification.
 
