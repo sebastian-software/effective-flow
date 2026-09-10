@@ -292,9 +292,9 @@ Because no authorship is established, the Forgejo renderer's missing poster fiel
 
 | Check                    | Result                                                          |
 | ------------------------ | --------------------------------------------------------------- |
-| `pnpm agent:check`       | pass, 358 files                                                 |
-| `node build.mjs`         | pass; `merge-gate` always-loaded core 2752/2787, no budget bump |
-| `pnpm test`              | 867 pass, 2 fail, 3 skipped                                     |
+| `pnpm agent:check`       | pass, 362 files                                                 |
+| `node build.mjs`         | pass; `merge-gate` always-loaded core 2775/2787, no budget bump |
+| `pnpm test`              | 885 pass, 2 fail, 3 skipped                                     |
 | `pnpm test:distribution` | pass                                                            |
 
 The two failures are `guard-blocks-merge` and `merge-proceeds` in `test/merge-gate-eval.test.mjs`,
@@ -309,6 +309,13 @@ archived runs rather than failing.
 
 Acceptance criteria 8 and 9 are therefore **not met** and the branch is not mergeable until the
 rounds run. Every other criterion is met.
+
+`origin/develop` was merged into this branch after the implementation, bringing in the ten rounds
+#410 had just re-recorded — and invalidating them again on contact, for the same reason and by the
+same mechanism. That is worth recording rather than glossing: two consecutive changes to what a
+merge-gate run loads each forced a full re-recording, so the ~1.5-hour cost is a property of
+binding the stamp to the whole built tree, not of either change. The layer is doing its job; the
+question of whether that price is the right one belongs in its own plan.
 
 One regression was found and fixed during implementation rather than shipped: adding the
 `issue-state-wait` envelope made `test/eval-fixture-fidelity.test.mjs` replay the helper's real
