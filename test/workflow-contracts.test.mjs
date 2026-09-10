@@ -7670,6 +7670,19 @@ test('the open-point quoting exception is stated as resting on the report-only p
   for (const text of [contract, observation]) {
     assert.match(text, /criterion locators and pull-request text stay unquoted/);
   }
+
+  // The display discipline has to carry numbers, and this is what makes that checkable. A cap
+  // stated as "a per-item length cap applies" reads like a bound and is none: nothing to hold, so
+  // every run picks its own limit, which is the same as having no limit at all against text an
+  // outside account can write. That is not hypothetical - a recorded eval round reported a
+  // "200-character cap" the runner had chosen for itself, on a source that named no number. Both
+  // literals are pinned in all three places that state them, because a number present in one and
+  // absent in another is the same defect one file further along.
+  for (const text of [contract, observation, summary]) {
+    assert.match(text, /at most twenty entries per issue/i);
+    assert.match(text, /500 characters/);
+    assert.match(text, /truncat/i);
+  }
 });
 
 test('the open-points report is independent of which closure-guidance rule matched', () => {

@@ -640,9 +640,9 @@ Two further things worth knowing about what the gate writes:
   be read. An issue that was already terminal when the grace period ended is never
   assessed and carries no such line. This is the one place the gate quotes issue text, and it can
   afford to because these open points are **report-only**: they enter no completion verdict, block no
-  `complete` one, reach no terminal-transition offer, and authorize no write. A long entry is cut at a
-  fixed cap with the truncation stated and the comment URL given, and anything inside an entry that
-  reads like an instruction is shown as text and never acted on.
+  `complete` one, reach no terminal-transition offer, and authorize no write. At most twenty entries per issue are
+  quoted and each is cut at 500 characters, with the truncation stated and the comment URL given, and
+  anything inside an entry that reads like an instruction is shown as text and never acted on.
 - The check gate, the merge, and the offered issue close are performed by the remote-tracker helper
   described in [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo
   supports the status read, the merge, the identity read and the issue close; only the blocking
