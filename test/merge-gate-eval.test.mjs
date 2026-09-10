@@ -172,17 +172,21 @@ const NOT_LOADED_BY_A_RUN = [
 // Two of those twenty-three arrived with `chat-language`, the eager fragment every speaking tool
 // carries: its two `lazy-include` pointers pull `shared/config-migration.md` and
 // `shared/typography-rules.md` into the set. The typography one is reached only under
-// `when: the resolved chat language is de` — a branch neither scenario takes — so it widens the
+// `when: the resolved chat language is de` — a branch no scenario takes — so it widens the
 // identity for a file these rounds never read. That is the coupling the paragraph below warns
-// about, arriving through a conditional pointer rather than through a lost narrowing; whether a
-// conditional pointer should widen the set at all is an open call recorded on the re-round.
+// about, arriving through a conditional pointer rather than through a lost narrowing. That it
+// widens the set anyway is a stated decision rather than an open question: `build-identity.mjs`
+// records it beside `LOAD_POINTER_RE`, where the derivation lives. A rendered pointer's `when:`
+// clause is English prose with no predicate to test against, and the blanket rule that would drop
+// this one drops `shared/config-migration.md` with it — the other pointer the same fragment
+// carries, which runs do read.
 //
 // Membership is asserted in both directions because both failures are silent. A set that lost a
 // seed still produces a perfectly stable digest — it would match itself round after round while
 // binding almost nothing, and the suite would go on certifying a gate that had been rewritten
 // underneath it. A set that grew back to the whole tree binds every archived round to files no run
-// reads, so an edit to an unrelated tool or an unreached worker contract invalidates all ten and
-// forces a re-round that can produce no new information; that coupling is what the narrowing
+// reads, so an edit to an unrelated tool or an unreached worker contract invalidates all fifteen
+// and forces a re-round that can produce no new information; that coupling is what the narrowing
 // removed, and nothing else here would notice it returning.
 //
 // **Do not restore a count floor.** An earlier version asserted `hashed.length > 50`, which
