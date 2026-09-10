@@ -1,6 +1,6 @@
 {
-  "scenario": "merge-proceeds",
-  "digest": "sha256:a8b593d847bdd9e3a006e623773bfda97d9692a7d9675f27b7e7d2e726ca9f77",
+  "scenario": "linked-issue-open-points",
+  "digest": "sha256:5ef4a33cddc72008b83e3fda43b3b2afe3ca7d16a8d7e6f3630bc95be3910b56",
   "skill": {
     "digest": "sha256:2035d15b3143687591abee4176a28bb8b91173e436bd1487fca07ce87c9fc1b1",
     "files": {
@@ -38,10 +38,10 @@
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:14c7b78602a4d662d21ade789e57bbbd99c064c1cb74820f611e47bcb409e725",
+    "digest": "sha256:18ec03d1d1564e1fa9e2bcebcf268afb6305828c1d3504b6c72844e2b0f6d11c",
     "files": {
-      "evals/merge-gate/fixtures/merge-proceeds.json": "sha256:90db390b2ba52557ab450868ee2ee7935d499abcb618a5ac022251783f862074",
-      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:72b239ea27f0be3bafba123f8155f0d77891951ce6e989843d1650ea971341ec"
+      "evals/merge-gate/fixtures/linked-issue-open-points.json": "sha256:6cde745b0f72ca883ccca7dbe507cfa6f31dfb06d154a66f2e855589a5ad6ba9",
+      "evals/merge-gate/scenarios/linked-issue-open-points.md": "sha256:a343a6d3de8187de10ad45b8eafaff5a0970b078214e543c906e18c7e9bae457"
     }
   }
 }
