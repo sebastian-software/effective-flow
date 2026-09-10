@@ -425,7 +425,7 @@ rather than deleted, because the two misreadings are the more useful part.
 
 - **Point 3 held, and understated the case.** `goal-completion` was rewritten in #404: bullet 4 now
   names the guarantees and leaves the mechanics to whatever task tooling the harness offers, taking
-  the fragment from 4 413 to 3 036 characters in each of its ten eager consumers. Establishing
+  the fragment from 4 401 to 3 032 characters in each of its ten eager consumers. Establishing
   completeness by classifying _every_ sentence as invariant or mechanism — rather than by extracting
   a list — found **two invariants neither this report nor the implementing plan knew about**: that
   the progress overview is unconditional and outranks the generic task-tracking thresholds, and that
