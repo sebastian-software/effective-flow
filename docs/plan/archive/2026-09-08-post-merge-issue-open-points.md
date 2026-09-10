@@ -1,6 +1,6 @@
 # Post-merge analysis of an issue's open points and its closure follow-up
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -288,34 +288,45 @@ Because no authorship is established, the Forgejo renderer's missing poster fiel
 
 ## Test results
 
-**Date:** 2026-09-09
+**Date:** 2026-09-10
 
 | Check                    | Result                                                          |
 | ------------------------ | --------------------------------------------------------------- |
-| `pnpm agent:check`       | pass, 362 files                                                 |
+| `pnpm agent:check`       | pass, 367 files                                                 |
 | `node build.mjs`         | pass; `merge-gate` always-loaded core 2775/2787, no budget bump |
-| `pnpm test`              | 885 pass, 2 fail, 3 skipped                                     |
+| `pnpm test`              | 890 pass, 0 fail, 0 skipped                                     |
 | `pnpm test:distribution` | pass                                                            |
 
-The two failures are `guard-blocks-merge` and `merge-proceeds` in `test/merge-gate-eval.test.mjs`,
-both reporting that their archived runs observed a different build. This is the build-stamp drift
-the validation plan predicted with certainty: the stamp hashes the built tree, so any edit here
-invalidates all ten archived runs. The remedy is the scheduled re-run, never a refreshed stamp,
-which would forge the evidence the stamp exists to prevent. **The 15 rounds were deferred by an
-explicit decision during implementation**; the scenario, its fixture, its `SCENARIOS` entry, its
-outcome assertion and the corrected eval README all shipped, so the rounds can be executed without
-further authoring. The three skipped tests are the new scenario's, skipping cleanly for want of
-archived runs rather than failing.
+**Every acceptance criterion is met.** The eval rounds were run: sixteen rounds to archive fifteen,
+a fresh five-of-five for all three scenarios.
 
-Acceptance criteria 8 and 9 are therefore **not met** and the branch is not mergeable until the
-rounds run. Every other criterion is met.
+One round was discarded as an invalid measurement rather than read. Every record of the fourth
+`linked-issue-open-points` round carried `cwd: null`, so the stub answered outside the sandbox and
+the log proves nothing about the gate — regardless of how plausible that round's report read, which
+is exactly why validity is judged from the call log and not from the agent's prose. The scenario's
+runs are therefore numbered 1, 2, 3, 5 and 6.
 
-`origin/develop` was merged into this branch after the implementation, bringing in the ten rounds
-#410 had just re-recorded — and invalidating them again on contact, for the same reason and by the
-same mechanism. That is worth recording rather than glossing: two consecutive changes to what a
-merge-gate run loads each forced a full re-recording, so the ~1.5-hour cost is a property of
-binding the stamp to the whole built tree, not of either change. The layer is doing its job; the
-question of whether that price is the right one belongs in its own plan.
+What the fifteen rounds establish, beyond the checks passing:
+
+- `guard-blocks-merge` refuses in five of five, with `pr-merge` absent from every log in dry-run and
+  applied form alike, and no round writing anything. For a fail-closed rule that unanimity is the
+  claim; a single deviating round would have been a finding rather than noise.
+- `merge-proceeds` merges in five of five, each round with exactly one applied operation, and that
+  operation the merge.
+- `linked-issue-open-points` reaches Phase 5.5 through observer-only mode in five of five, performs
+  exactly one `issue-comments-read` per round, and writes nothing. Two properties this plan argued
+  for in prose are visible in the behaviour: every round reports the recorded open points **while**
+  its closure guidance stops at the non-closing `refs` rule, which is the independence the report is
+  deliberately not gated on; and every round takes its acceptance criteria from the issue body
+  alone, leaving the planning comment's own checkbox list out of the task-list dimension — the
+  collision that made the criteria idea unworkable.
+
+`origin/develop` was merged into this branch before those rounds, bringing in the ten rounds #410
+had just re-recorded — and invalidating them again on contact, for the same reason and by the same
+mechanism. That is worth recording rather than glossing: two consecutive changes to what a
+merge-gate run loads each forced a full re-recording, so the ~1.5-hour cost is a property of binding
+the stamp to the whole built tree, not of either change. The layer is doing its job; the question of
+whether that price is the right one belongs in its own plan.
 
 One regression was found and fixed during implementation rather than shipped: adding the
 `issue-state-wait` envelope made `test/eval-fixture-fidelity.test.mjs` replay the helper's real
