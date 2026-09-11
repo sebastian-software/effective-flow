@@ -1,0 +1,9 @@
+{"seq":1,"operation":"probe","apply":false,"at":"2026-09-11T13:09:19.685Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-11T13:09:25.049Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":3,"operation":"viewer-read","apply":false,"at":"2026-09-11T13:09:31.902Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":4,"operation":"pr-status-read","apply":false,"at":"2026-09-11T13:09:31.931Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":5,"operation":"review-threads-read","apply":false,"at":"2026-09-11T13:09:37.516Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":6,"operation":"pr-comments-read","apply":false,"at":"2026-09-11T13:09:37.544Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":7,"operation":"pr-reviews-read","apply":false,"at":"2026-09-11T13:09:37.572Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":8,"operation":"pr-checks-wait","apply":false,"at":"2026-09-11T13:09:49.123Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-11T13:10:11.616Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
