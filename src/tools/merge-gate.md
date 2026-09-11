@@ -1761,6 +1761,21 @@ condition.
   read this gate could perform. Name the pull request and `VERIFIED_HEAD_SHA` in the lines that
   precede the question, so the answer is given about a concrete commit rather than about the
   repository in general.
+- **Which runs reach this question at all, which is narrower than this section's opening reads.**
+  A waiver posed in Phase 4 is reachable only from a run whose Phase-2 check wait did not already end
+  it, and on GitHub the **default** `mergeGate.requireAllChecks: true` ends it. On a repository with
+  no CI the structured half of `pr-checks-wait` comes back with no parsable check list at all, and
+  the helper classifies that as an operational error (`COMMAND_FAILED`) rather than as an empty
+  result; Phase 2 step 2 names a recovery for a timeout and for a missing watch capability and none
+  for that, so the run ends there and this question is never composed. **Two configurations do reach
+  it.** With `mergeGate.requireAllChecks: false` step 2 restricts that read to the forge's own
+  required checks, and the helper turns the identical response into a **successful** result carrying
+  `requiredChecksDefined: false`, so the loop runs on to step 4's own unreported-list question and
+  Phase 4 follows it. On **Forgejo** `pr-checks-wait` is unsupported outright and
+  returns `UNSUPPORTED_CAPABILITY`, which step 2 already answers by reporting and asking once, so the
+  waiver is reachable there under either setting. This is a scope statement, not a second gate: a
+  GitHub repository with no CI and the default check criterion is still unmergeable from this tool,
+  and closing that is a change to the helper's error discrimination rather than to anything here.
 - **The operator was already asked once in Phase 2, and asking again here is accepted.** Phase 2
   does not leave its check loop on an unreported check list either: it reports that and asks once
   under step 2's rule before proceeding, so on exactly the repository this waiver exists for a gated

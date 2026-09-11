@@ -198,7 +198,14 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    question unanswered, ends the run; a non-interactive run cannot ask and therefore does not merge.
    The question covers the missing list alone: a check that has appeared and is pending or red
    blocks exactly as before, and the question is put to you only where nothing else is blocking the
-   merge either.
+   merge either. Fewer runs reach that question than the paragraph above suggests, and the two
+   forges differ: on GitHub the check wait that precedes it treats a response carrying no check list
+   at all as a failed command rather than as an empty result, so a run on the default
+   `mergeGate.requireAllChecks: true` ends in that wait and neither question is put to you. Setting
+   `mergeGate.requireAllChecks: false` makes the same response readable instead – the wait then asks
+   only about the forge's own required checks – and on Forgejo the wait is unsupported altogether and
+   already asks you once. Those two are where the waiver is reachable; a GitHub repository that runs
+   no CI at all and keeps the default check criterion still cannot be merged by this tool.
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
