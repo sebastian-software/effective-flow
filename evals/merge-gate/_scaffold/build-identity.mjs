@@ -49,10 +49,13 @@
 // two session fragments `iterate` pulls in, the other introduced the interactive-language fragment
 // the gate now inlines, changing what the gate says and nothing it does — and the exclusion weighed
 // at the derivation below would have spared neither. The re-rounds this binding forces are
-// therefore mostly re-rounds that were owed. Six against two is also a floor rather than a ceiling
-// on the behavioural share: a squash merge folds a branch's intra-branch re-records away before
-// they reach this history, so what the operator actually paid is under-counted here, never
-// over-counted.
+// therefore mostly re-rounds that were owed. Six against two is what the merge history shows,
+// not a bound on the behavioural share: a squash merge folds a branch's intra-branch re-records
+// away before they reach this history, so the total the operator paid is under-counted here. The
+// one hidden invalidation known — #407's open-point display cap, whose fix in `3673cdd` forced the
+// re-record in `32e09d2` — governs what the gate says rather than what it does, so counting it
+// reads 6 to 3 and moves the share down rather than up. Which way the hidden rounds bias the share
+// is therefore not knowable from this history alone.
 //
 // **A pointer that does not resolve is fatal.** Nothing records which files a sandbox run truly
 // opens, so the set is inferred; a missed route would weaken the guard with no test noticing. The
