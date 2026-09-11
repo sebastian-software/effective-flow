@@ -178,13 +178,13 @@ Conditions 1, 2, 3, 8 and 9 are decidable from configuration and one status enve
 `delivery.mergeMethod: squash`.
 
 Condition 2 deserves its own attention: the non-obvious branch is that an empty check list under
-`requireAllChecks: true` must **not** pass, and that `checksReported: false` blocks outright. Both
+`requireAllChecks: true` must **not** pass, and that `checksReported: false` blocks unless the Phase-4 no-check-list waiver cleared it. Both
 are exactly the kind of rule a restructure could relocate silently.
 
 ### WP5 — Fail-closed inputs and the round bound
 
 Every fail-closed input is expressed as an _absence_ — an absent login, an unset verified head, an
-unreported check list, an unreadable thread list, an unknown review state. Absence is trivial to
+unreported check list nobody waived, an unreadable thread list, an unknown review state. Absence is trivial to
 express in an envelope and the correct verdict is always the same one, so this package is the
 cheapest per scenario and the closest to the plan's stated minimum bar.
 

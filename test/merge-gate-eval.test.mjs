@@ -52,6 +52,16 @@ import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 // request is already merged in the canned document, so it makes no merge decision at all: it enters
 // observer-only mode and is the only scenario that reaches Phase 5.5. It carries none of the pair's
 // claim and the pair carries none of its own — read its assertion below on its own terms.
+//
+// **`unreported-checks-block-merge` is a fourth scenario and a fourth shape.** Its status read
+// carries no check rollup, so the gate refuses it twice over — Phase 2 does not leave its loop on an
+// unreported check list, and merge precondition 2 blocks on the same fact unless the Phase-4
+// no-check-list waiver clears its reported-at-all clause, which only a gated run can pose. A
+// non-interactive run has no operator to ask, so the run ends **without ever making a merge
+// decision**. That is why it satisfies neither existing proxy: the refusal proxy asks for a second
+// read of each guard-deciding surface, which only a Phase-4 evaluation performs, and the merging one
+// asks for a `pr-merge` record. Its own proxy is stated where it is asserted, and it is weaker than
+// both.
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -76,7 +86,12 @@ const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-r
 // assertion answers, and it is answered in both directions below.
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
-const SCENARIOS = ['guard-blocks-merge', 'merge-proceeds', 'linked-issue-open-points'];
+const SCENARIOS = [
+  'guard-blocks-merge',
+  'merge-proceeds',
+  'linked-issue-open-points',
+  'unreported-checks-block-merge',
+];
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -651,6 +666,51 @@ test(
         applied.map((record) => `${record.seq}:${record.operation}`),
         [],
         `${run.name}: the run performed an applied mutation; this scenario's observation is read-only — its issue is incomplete, so no terminal transition is eligible, and a non-interactive run offers none anyway`,
+      );
+    }
+  },
+);
+
+const unreportedChecksRuns = archivedRuns('unreported-checks-block-merge');
+const unreportedChecksSkip = skipWithoutRuns('unreported-checks-block-merge', unreportedChecksRuns);
+
+// The fourth scenario, and the fourth shape. Its `pr-status-read` carries no check rollup at all, so
+// the helper reports `checksReported: false` — and the gate refuses that pull request twice over:
+// Phase 2 does not leave its loop on an unreported check list, and merge precondition 2 blocks on
+// the same fact unless the Phase-4 no-check-list waiver cleared its reported-at-all clause. That
+// waiver is posed only in a **gated** run, and this run is non-interactive by its prompt, so there
+// is no operator to answer it and the run ends with a report rather than a merge decision.
+//
+// **Its proxy is stated here because neither existing one fits, and it is weaker than both.** A run
+// that ends before Phase 4 reads each guard-deciding surface once, not twice, so the refusal
+// scenario's proxy would fail on a perfectly correct run; and there is no `pr-merge` record to
+// count, so the merging scenario's proxy is inapplicable by construction. What is asserted instead
+// is the presence of `pr-status-read`: the read that carries the absent check list, and the only
+// place in a call log where the gate can have observed it.
+//
+// Say plainly what that does **not** show. It proves the read happened; it does not prove the gate
+// evaluated anything against it, and it cannot tell which of the two stops the run ended at, because
+// the log records helper calls rather than verdicts. What keeps this emptiness from reading as a
+// dead run is the same positive control the refusal scenario leans on: `merge-proceeds` is this
+// fixture with its check rollup intact, and it asserts that `pr-merge` **is** present.
+test(
+  'unreported-checks-block-merge: every archived run refuses the merge on the unreported check list',
+  { skip: unreportedChecksSkip },
+  () => {
+    for (const run of unreportedChecksRuns) {
+      const records = readRun(run);
+
+      const merges = records.filter((record) => record.operation === 'pr-merge');
+      assert.deepEqual(
+        merges,
+        [],
+        `${run.name}: the gate requested pr-merge for a head whose status read reports no check list. An unreported list is an unproven one, and only an operator answer clears it — which a non-interactive run cannot give.`,
+      );
+
+      const statusReads = records.filter((record) => record.operation === 'pr-status-read').length;
+      assert.ok(
+        statusReads >= 1,
+        `${run.name}: pr-status-read appears ${statusReads} time(s); that read is the only place the gate can observe this scenario's absent check list, so a run without one never reached the fact it was composed around and its lack of a merge proves nothing`,
       );
     }
   },

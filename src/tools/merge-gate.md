@@ -755,6 +755,14 @@ At the start, generate a session ID (e.g. via timestamp) and use
   thread's forge thread ID – plus every later consumption of it with the item and the round whose
   answer authorized it. It is bound to `VERIFIED_HEAD_SHA` and discarded with it, so no second head
   SHA is recorded here either
+- per round, the **no-check-list waiver** of Phase 4: whether it was posed, skipped because the
+  resolved completion mode is not `merge`, because another condition was unmet too, or because the
+  record already covered the evaluation, or could not be posed at all in a non-interactive run;
+  and, where it was posed, the operator's answer. A `Waive` is recorded beside `VERIFIED_HEAD_SHA`,
+  bound to that value and to nothing else, so no second head SHA is recorded here either; it is
+  discarded wherever that value is discarded – a Phase-3 restart discards both together – and is
+  consumed in no evaluation whose freshly read head does not equal it. It clears condition 2's
+  reported-at-all clause alone and is never evidence that a check ran
 - per round, where the base-into-head merge conflicted: the observed merge state and which entry
   point detected the conflict, the resolved `mergeGate.conflictResolution` mode with its source, the
   conflicted paths with their risk classification, `{{AGENT:merge-conflict-resolver}}`'s per-file
@@ -1314,12 +1322,17 @@ returning condition unbounded the day it is added.
 
 1. the resolved completion mode is `merge`;
 2. the check criterion from `mergeGate.requireAllChecks` is satisfied, **and the fresh read reported
-   a check list at all**. `checksReported: false` blocks this condition outright. The Phase-2
-   question does not cover it: this condition is re-evaluated against a **different, later** read,
-   and the criterion is vacuously satisfied by an empty list under `requireAllChecks: true` — so a
-   combined-status response that came back empty at Phase-4 time would otherwise pass silently,
-   after the operator answered a question about an entirely different read. An unreported list is an
-   unproven one, exactly as an unstated requiredness and an absent `draft` flag are;
+   a check list at all**. `checksReported: false` blocks this condition outright unless "The
+   no-check-list waiver" below cleared the reported-at-all clause for this evaluation. Without that
+   answer the rationale is unchanged: an unreported list is an unproven one, exactly as an unstated
+   requiredness and an absent `draft` flag are. The waiver reaches **only** that clause and never
+   the check criterion — a check that has appeared makes `checksReported` true and takes the
+   question off the table, and a pending or red check still blocks here whatever the operator
+   answered. The Phase-2 question covers neither half: this condition is re-evaluated against a
+   **different, later** read, and the criterion is vacuously satisfied by an empty list under
+   `requireAllChecks: true` — so a combined-status response that came back empty at Phase-4 time
+   would otherwise pass silently, after the operator answered a question about an entirely different
+   read;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
@@ -1715,6 +1728,101 @@ into the Phase-6 summary with the author it carries, its review id and its URL. 
 it is not a condition and never blocks the merge**, for the same reasons the two reports above state:
 the residual is accepted and made visible rather than closed.
 
+#### The no-check-list waiver
+
+Condition 2 blocks on a fresh read that states `checksReported: false`, and on a repository that
+runs no CI that value is never anything else: no check ever attaches, so the condition is
+unsatisfiable **by construction** and no run of this gate can ever merge there. The operator is left
+merging by hand, which forfeits the whole tail this tool exists for — the lifecycle receipt, the
+post-merge issue observation, the offered terminal transition, and the container reconciliation. One
+operator answer is what makes such a repository mergeable, and it satisfies exactly one clause of one
+condition.
+
+- **What it is posed for, and what it never reaches.** Pose it only where condition 2 is the
+  **only** unmet condition of that evaluation, and is unmet **solely** because the fresh read states
+  `checksReported: false` while the check criterion of `mergeGate.requireAllChecks` is otherwise
+  satisfied. An affirmative answer satisfies condition 2's "a check list was reported at all" clause
+  for **that one evaluation** and nothing else. It never satisfies the check criterion and reaches
+  no other condition. Where a check **has** appeared the read states `checksReported: true`, this
+  question is not posed at all, and a pending or red check blocks exactly as it does today.
+- **Why this one waits for an otherwise clean evaluation where the set-aside confirmation does
+  not.** That question is posed "whatever else the same evaluation left unmet" because a set-aside
+  finding needs disposing of whether or not this run merges, and its answer is carried forward to
+  the round that does. This answer disposes of nothing: it authorizes a merge and nothing else.
+  Posed while another condition still blocks, it asks the operator to authorize an outcome their
+  answer cannot produce — so such an evaluation reports its unmet conditions and poses no question,
+  and the waiver waits for an evaluation in which condition 2 is all that stands between this run
+  and the merge.
+- **What the operator is actually answering, stated honestly.** The waiver covers
+  `checksReported: false` at the verified head **whatever its cause** — a repository that runs no CI
+  at all, and equally a CI-bearing repository whose checks had simply not attached at the instant of
+  that read. No provider signal separates the two: an empty rollup is the same document in both
+  cases, which is exactly why this is an operator's answer about their own repository rather than a
+  read this gate could perform. Name the pull request and `VERIFIED_HEAD_SHA` in the lines that
+  precede the question, so the answer is given about a concrete commit rather than about the
+  repository in general.
+- **The operator was already asked once in Phase 2, and asking again here is accepted.** Phase 2
+  does not leave its check loop on an unreported check list either: it reports that and asks once
+  under step 2's rule before proceeding, so on exactly the repository this waiver exists for a gated
+  merge-mode run is asked **twice**. That is deliberate and not an oversight — condition 2 states
+  why the earlier answer cannot carry, because it was given about an earlier read and this one
+  decides the merge — but the operator meets the second question as a repeat, so name the Phase-2
+  question in the lines that precede this one rather than letting it read as the same question
+  asked twice over.
+- **Posing it in Phase 4 is what makes the head binding sound, and no revocation rule is needed.**
+  `VERIFIED_HEAD_SHA` is already set by the time this phase runs, condition 8 requires the freshly
+  read head to equal it, and Phase 4 evaluates every condition against **one** fresh read at one
+  instant. The answer and the read it concerns are therefore the same moment: there is no interval
+  in which an acknowledgement could outlive its evidence, no second head SHA to record, and nothing
+  to revoke.
+- **The verified head must be a full object name.** Pose nothing unless `VERIFIED_HEAD_SHA` is a
+  full object name — 40 or 64 hex digits, in either letter case, which is the shape the helper
+  itself enforces. An abbreviated or unreadable value is not a commit the operator can go and look
+  at, and a waiver given against one is a waiver against nothing; that run blocks on condition 8 and
+  is reported there instead.
+- **A decline, or no answer, ends the run** with a report naming the **declined waiver** rather than
+  condition 2. The operator's decision is the fact worth reporting, and naming the condition instead
+  hides that they were asked at all. Nothing returns into Phase 3: no further round changes an
+  answer about a repository's own CI, exactly as none changes a declined set-aside confirmation.
+- **A non-interactive run cannot pose it, so it blocks and reports.** Take the shape "The set-aside
+  confirmation" takes for a non-interactive run — report and end the run, never merge — and report
+  that an **interactive** run with `mergeGate.completion: merge` is what would authorize the waiver.
+  The waiver is available to a **gated** run only, so a repository with no CI stays unmergeable from
+  a non-interactive run, precisely as a set-aside finding stays unconfirmable from one.
+- **Not posed at all where the resolved completion mode is not `merge`.** Condition 1 is unmet in a
+  report-mode run, so no answer could authorize a merge; the report names the unreported check list
+  instead.
+- **It is recorded per round and expires with the head.** Record the answer in the wisdom file beside
+  `VERIFIED_HEAD_SHA`, bound to that value and to nothing else, so Phase 2's statement that nothing
+  else in this workflow records a head SHA for later use stays true. Discard it wherever that value
+  is discarded — a Phase-3 restart does exactly that (Phase 3 step 6) — and consume nothing from it
+  in an evaluation whose freshly read head does not equal it, which is condition 8's own comparison.
+  A new commit is a new check list: the repository that reported none may have grown one since, and
+  the operator answered about the head they looked at.
+- **A later evaluation at the same head reads that record instead of asking again.** A Phase-4
+  return into Phase 3 that produces **no** implementation leaves `VERIFIED_HEAD_SHA` standing —
+  Phase 3 step 6 discards it only where an implementation happened — so the next evaluation runs
+  against the very head the operator answered about. Take the set-aside confirmation's own
+  mechanism: every later Phase-4 evaluation reads the record **before** it composes the question,
+  and an evaluation the record already covers poses none — condition 2's reported-at-all clause is
+  simply clear there, and the evaluation continues on its remaining conditions. Without that, a run
+  that returns into Phase 3 without implementing anything poses the identical question every round
+  until `mergeGate.maxRounds` is spent.
+- **A merge performed on a waived check list is reported as one.** Phase 6 names it rather than
+  letting the run read as a merge whose checks were green, because nothing here verified that any
+  check ran at all.
+
+```ask
+when: condition 2 is the only unmet condition of this evaluation and is unmet solely because the fresh read states `checksReported: false`, the check criterion is otherwise satisfied, the waiver record does not already cover this evaluation, `VERIFIED_HEAD_SHA` is a full object name of 40 or 64 hex digits in either case, the resolved completion mode is `merge`, and the run is gated. An evaluation that leaves any other condition unmet poses nothing: this answer authorizes a merge rather than disposing of anything, so it is asked only where it can decide the outcome
+header: Checks
+question: The head named above reports no check list at all, so nothing in this read proves that any check ran. May this run treat the absent check list as expected for this repository and merge once every other precondition holds?
+options:
+  - label: Waive
+    description: Treat the unreported check list as expected at the verified head named above and continue the gate; every other merge precondition still has to hold on its own
+  - label: Stop
+    description: End the run with a report naming the declined waiver; nothing is merged, and no further round is delegated because no round changes this answer
+```
+
 ### Phase 5: Merge
 
 In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
@@ -1809,6 +1917,14 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
      outcomes and never folded into them: a confirmed finding still reads `rejected` or `deferred`,
      and without this entry the report would show a merged pull request whose findings all read
      `rejected` with nothing anywhere naming who authorized that;
+   - **a merge performed on a waived check list**, named as exactly that: the round whose
+     no-check-list waiver authorized it, the verified head the operator answered about, and the
+     statement that **no check was verified** for this merge because the fresh read reported no
+     check list at all. Report the other outcomes of that question the same way — a declined or
+     unanswered waiver as the blocking fact the run ended on, a non-interactive run as the waiver it
+     could not pose, and a report-mode run as the question that was not posed because the completion
+     mode is not `merge`. Without this entry a merged pull request with no check list anywhere reads
+     exactly like one whose checks all passed;
    - **every changes-requested review that matched no configured login**, when Phase 4 carried that
      case here, each with the author it carries, its review id and its URL – this one blocked nothing
      and nothing is written back onto the review, so this summary is where it reaches the user;

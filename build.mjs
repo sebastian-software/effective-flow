@@ -1411,7 +1411,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own limit rather than a share of
   // one number. Only five of these numbers are a judgement: the four
-  // implementation tools agree on 700 lines, and `merge-gate` carries 2787,
+  // implementation tools agree on 700 lines, and `merge-gate` carries 2897,
   // because it is an orchestration gate whose phases, delegation contracts and
   // provider rules do not compress to the size of an implementation tool.
   //
@@ -1419,7 +1419,7 @@ try {
   // what a tool costs today, with its mode-gated fragments still inlined eagerly;
   // it is not a size anyone argued for. Each later conversion of an eager include
   // to a `lazy-include` lowers the entries it touches, so a large number reads as
-  // work outstanding and never as room to fill. `merge-gate`'s 2787 is the same
+  // work outstanding and never as room to fill. `merge-gate`'s 2897 is the same
   // kind of ratchet, a little above its measured size.
   //
   // The allowance above the measured size is a flat line count rather than a
@@ -1459,7 +1459,7 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2787,
+    'merge-gate': 2897,
     iterate: 1661,
     setup: 1662,
     'apply-review': 1332,

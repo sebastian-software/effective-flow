@@ -188,7 +188,17 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    round that handled its reviewer sends the run back for another round instead; see
    [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late). A reviewer that
    states its objection as a **verdict** rather than as a thread is handled by its own precondition;
-   see [A reviewer that requests changes](#a-reviewer-that-requests-changes).
+   see [A reviewer that requests changes](#a-reviewer-that-requests-changes). "All checks green"
+   additionally means a check list was reported at all, and a repository that runs **no CI** never
+   reports one: there an interactive run with `mergeGate.completion: merge` asks you whether the
+   absent list is expected – once while it waits for checks, and again at the verified head commit
+   it would merge, because that second question is asked about the read the merge is actually
+   decided on. It merges only if you confirm that second one, and reports afterwards that the merge
+   was performed on a waived check list rather than on green checks. Declining, or leaving the
+   question unanswered, ends the run; a non-interactive run cannot ask and therefore does not merge.
+   The question covers the missing list alone: a check that has appeared and is pending or red
+   blocks exactly as before, and the question is put to you only where nothing else is blocking the
+   merge either.
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
