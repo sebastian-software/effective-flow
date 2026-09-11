@@ -52,6 +52,7 @@ suite.
 pnpm prepare:merge-gate-eval guard-blocks-merge        # build, archive, re-scaffold, print the prompt
 pnpm prepare:merge-gate-eval merge-proceeds            # the merging counterpart, sandboxed separately
 pnpm prepare:merge-gate-eval linked-issue-open-points  # the observer-only post-merge observation
+pnpm prepare:merge-gate-eval unreported-checks-block-merge  # the unreported check list, refused
 ```
 
 There is no separate build step: the scaffold runs `node build.mjs` itself, so the skill root it
@@ -74,8 +75,8 @@ about the gate's behaviour checkable by someone who did not perform the runs.
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-runs of one scenario is therefore about half an hour of wall clock, and the three scenarios that
-exist today are about an hour and a half between them — a scheduling question rather than a budget
+runs of one scenario is therefore about half an hour of wall clock, and the four scenarios that
+exist today are about two hours between them — a scheduling question rather than a budget
 one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
 requirement, because for a fail-closed rule a single deviating run is a finding. The one scenario
 that never gives way is the merging counterpart: without it the refusals prove less than they
@@ -175,11 +176,15 @@ remain independent of each other.
 
 ## What this deliberately does not cover
 
-- **Three scenarios exist: one pair and one observer.** `guard-blocks-merge` and `merge-proceeds`
-  are the pair, and a green result from them proves that one refusal path holds and that the harness
-  can reach a merge, and nothing about the breadth of the gate. `linked-issue-open-points` stands
-  beside them rather than inside them: it makes no merge decision at all, and what it observes is
-  the post-merge phase. WP3 to WP6 of the plan — the guard's three ordered rules across its three
+- **Four scenarios exist: one pair, one observer and one unreported-check-list refusal.**
+  `guard-blocks-merge` and `merge-proceeds` are the pair, and a green result from them proves that
+  one refusal path holds and that the harness can reach a merge, and nothing about the breadth of
+  the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
+  decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`
+  stands beside them too, and makes no merge decision either: its status read carries no check
+  rollup, which Phase 2 refuses to leave its loop on and merge precondition 2 refuses to pass unless
+  the Phase-4 no-check-list waiver clears it — and that waiver is posed only in a gated run, which
+  no scenario here is. WP3 to WP6 of the plan — the guard's three ordered rules across its three
   counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
   bound — are still to come. Read a green result as a proven mechanism, not as a net.
 - **No single log can prove a refusal was a decision.** A refusal is defined by absence, and a call
@@ -345,3 +350,13 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    about, and the absence of any record carrying `apply: true` where the phase is meant to write
    nothing. Say in the assertion's own comment what the count does **not** show: the chat report is
    captured nowhere, so a log can carry that a read happened and never what the run said about it.
+
+   A scenario that ends **before any merge decision is made** is the fourth shape, and it fits
+   neither refusal proxy. `unreported-checks-block-merge` is the one that exists: a non-interactive
+   run stops at the unreported check list without reaching Phase 4, so it reads each guard-deciding
+   surface once rather than twice and the refusal proxy would fail a correct run, while there is no
+   `pr-merge` record for the merging proxy to count. Assert the absence of `pr-merge` plus the
+   presence of the **one read that carries the scenario's deciding fact**, and state in the
+   assertion's own comment that this is weaker than either pair proxy: it shows the read happened,
+   never that anything was evaluated against it, and never which of several correct stops the run
+   ended at.

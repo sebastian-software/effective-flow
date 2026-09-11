@@ -1,6 +1,9 @@
-{"seq":1,"operation":"pr-read","apply":false,"at":"2026-09-11T16:51:10.551Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
-{"seq":2,"operation":"pr-status-read","apply":false,"at":"2026-09-11T16:51:17.061Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
-{"seq":3,"operation":"issue-state-wait","apply":false,"at":"2026-09-11T16:52:11.049Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
-{"seq":4,"operation":"issue-read","apply":false,"at":"2026-09-11T16:52:19.731Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
-{"seq":5,"operation":"issue-sub-issues-read","apply":false,"at":"2026-09-11T16:52:23.984Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
-{"seq":6,"operation":"issue-comments-read","apply":false,"at":"2026-09-11T16:52:31.514Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":1,"operation":"pr-read","apply":false,"at":"2026-09-11T21:56:06.019Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":2,"operation":"probe","apply":false,"at":"2026-09-11T21:56:14.456Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":3,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-11T21:56:25.047Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":4,"operation":"pr-status-read","apply":false,"at":"2026-09-11T21:56:29.559Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":5,"operation":"issue-state-wait","apply":false,"at":"2026-09-11T21:56:55.604Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":6,"operation":"issue-read","apply":false,"at":"2026-09-11T21:57:06.850Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":7,"operation":"issue-sub-issues-read","apply":false,"at":"2026-09-11T21:57:06.879Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":8,"operation":"pr-read","apply":false,"at":"2026-09-11T21:57:15.288Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":9,"operation":"issue-comments-read","apply":false,"at":"2026-09-11T21:57:15.318Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}

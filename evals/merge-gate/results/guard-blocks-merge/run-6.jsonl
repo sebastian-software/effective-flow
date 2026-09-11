@@ -1,0 +1,13 @@
+{"seq":1,"operation":"pr-read","apply":false,"at":"2026-09-11T22:08:22.501Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":2,"operation":"probe","apply":false,"at":"2026-09-11T22:08:28.189Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":3,"operation":"pr-status-read","apply":false,"at":"2026-09-11T22:08:37.542Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":4,"operation":"review-threads-read","apply":false,"at":"2026-09-11T22:08:37.571Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":5,"operation":"pr-comments-read","apply":false,"at":"2026-09-11T22:08:37.597Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":6,"operation":"pr-reviews-read","apply":false,"at":"2026-09-11T22:08:37.622Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":7,"operation":"viewer-read","apply":false,"at":"2026-09-11T22:08:37.646Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":8,"operation":"pr-checks-wait","apply":false,"at":"2026-09-11T22:09:05.348Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-11T22:09:11.237Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":10,"operation":"pr-status-read","apply":false,"at":"2026-09-11T22:09:39.594Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":11,"operation":"review-threads-read","apply":false,"at":"2026-09-11T22:09:39.624Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":12,"operation":"pr-comments-read","apply":false,"at":"2026-09-11T22:09:39.650Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}
+{"seq":13,"operation":"pr-reviews-read","apply":false,"at":"2026-09-11T22:09:39.675Z","cwd":"/tmp/effective-flow-merge-gate-eval/guard-blocks-merge/project"}

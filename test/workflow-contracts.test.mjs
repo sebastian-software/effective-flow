@@ -10447,6 +10447,320 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
   );
 });
 
+// A repository that runs no CI never reports a check list, so merge precondition 2 — which blocks
+// outright on `checksReported: false` — is unsatisfiable there by construction and no run of the
+// gate could ever merge. The waiver is the one operator answer that clears that single clause, and
+// every assertion below is about keeping it that narrow: one clause, one evaluation, one head.
+test('the no-check-list waiver clears one clause of condition 2 and nothing else', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const raw = boundedSlice(gate, '#### The no-check-list waiver', '\n### Phase 5');
+  const waiver = prose(raw);
+  const condition2 = prose(mergeCondition(mergeConditions(gate), 2));
+
+  // The gate on the question, pinned field by field. Each clause is one an implementer could drop
+  // and leave a question that still looks right: without the full-object-name guard the operator
+  // answers about a head they cannot go and read, and without the `merge` mode the question is put
+  // to a run whose condition 1 is unmet anyway.
+  const ask = raw.match(/```ask\n([\s\S]*?)```/);
+  assert.ok(ask, 'the waiver must be written as an ask block');
+  const when = ask[1].match(/^when: .*$/m)[0];
+  assert.match(
+    when,
+    /is unmet solely because the fresh read states `checksReported: false`/,
+    'the waiver must fire only where condition 2 is unmet solely on the unreported check list',
+  );
+  // "Solely" scopes **why** condition 2 is unmet, never **whether** anything else is. The mixed
+  // evaluation is settled the opposite way from the set-aside confirmation's own `when:`, and the
+  // two assertions below are one-sided on purpose: the positive pin states the rule, and the
+  // negative one refuses the neighbouring fence's wording, which is the single edit that would
+  // silently import the other answer.
+  assert.match(
+    when,
+    /condition 2 is the only unmet condition of this evaluation/,
+    'the waiver must be posed only where condition 2 is the sole unmet condition of the evaluation',
+  );
+  assert.doesNotMatch(
+    when,
+    /whatever else the same evaluation left unmet/,
+    "the waiver must not take the set-aside confirmation's mixed-evaluation wording: that answer disposes of findings regardless, this one only authorizes a merge",
+  );
+  assert.match(
+    when,
+    /check criterion is otherwise satisfied/,
+    'the waiver must require the check criterion to be satisfied on its own',
+  );
+  assert.match(
+    when,
+    /the waiver record does not already cover this evaluation/,
+    'the waiver must not be re-posed for an evaluation its own record already covers',
+  );
+  // 40 or 64 hex digits in either case, which is the `FULL_OBJECT_NAME` shape
+  // `src/scripts/remote-tracker-core.mjs` enforces case-insensitively. A prose guard reading
+  // "lowercase" would be stricter than the code it mirrors and would refuse a head the helper
+  // accepts.
+  assert.match(
+    when,
+    /`VERIFIED_HEAD_SHA` is a full object name of 40 or 64 hex digits in either case/,
+    'the waiver must require a full object name of the shape the helper itself enforces',
+  );
+  assert.match(
+    when,
+    /completion mode is `merge`.*gated/,
+    'the waiver must fire only in a gated run allowed to merge',
+  );
+  const header = ask[1].match(/^header: (.+)$/m);
+  assert.ok(header, 'the ask block must carry a header');
+  assert.ok(header[1].length <= 12, `the ask header must stay within 12 characters: ${header[1]}`);
+  assert.deepEqual(
+    [...ask[1].matchAll(/^\s+- label: (.+)$/gm)].map((match) => match[1].trim()),
+    ['Waive', 'Stop'],
+    'the waiver must offer exactly the two labelled options',
+  );
+  for (const label of ['Waive', 'Stop']) {
+    assert.match(
+      ask[1],
+      new RegExp(`- label: ${label}\\n\\s+description: \\S`),
+      `the ${label} option must carry a one-line description the parser can read`,
+    );
+  }
+  // A non-empty description is a parser guarantee, not a contract: gutted to one word each option
+  // still satisfies it. What the operator actually reads in the picker is the scope of what they
+  // are authorizing, so both descriptions are pinned on the phrase that carries it.
+  assert.match(
+    ask[1],
+    /- label: Waive\n\s+description: [^\n]*every other merge precondition still has to hold on its own/,
+    'the Waive description must tell the operator that every other merge precondition still holds on its own',
+  );
+  assert.match(
+    ask[1],
+    /- label: Stop\n\s+description: [^\n]*naming the declined waiver/,
+    'the Stop description must name the declined waiver as what the report ends on',
+  );
+
+  // What an affirmative answer reaches, and what it must never reach. A waiver that satisfied the
+  // criterion would merge a red check, which is the opposite of what the absence of a list means.
+  assert.match(
+    waiver,
+    near('a check list was reported at all" clause', 'that one evaluation', 200),
+    'an affirmative answer must satisfy the reported-at-all clause for one evaluation only',
+  );
+  assert.match(
+    waiver,
+    near('never satisfies the check criterion', 'reaches no other condition', 200),
+    'the waiver must never satisfy the check criterion or reach another condition',
+  );
+  // The two proximity pairs above pin that the words are present; neither notices a softening
+  // clause appended to them. These two do, and they are the whole scope boundary of this change:
+  // one clause of one condition, and no escape hatch bolted onto either sentence.
+  assert.doesNotMatch(
+    waiver,
+    /reaches no other condition\b[^.]{0,80}\b(?:unless|except|other than|if the operator)\b/i,
+    'the waiver must reach no other condition unconditionally, with no operator-answerable exception appended',
+  );
+  assert.doesNotMatch(
+    waiver,
+    /clears condition (?:1|3|4|5|6|7|8|9|10)\b/i,
+    'the waiver must clear no condition other than condition 2',
+  );
+
+  // The rationale for settling the mixed evaluation the other way from the set-aside confirmation,
+  // carried in the prose rather than only in the `when:` line an editor might rewrite alone.
+  assert.match(
+    waiver,
+    near('needs disposing of whether or not this run merges', 'it authorizes a merge', 400),
+    'the waiver must say why a disposing answer may be posed in a blocked evaluation and an authorizing one may not',
+  );
+  assert.match(
+    waiver,
+    near('another condition still blocks', 'answer cannot produce', 250),
+    'the waiver must say that asking while another condition blocks poses a question whose answer cannot change the outcome',
+  );
+
+  // The double ask is real: Phase 2 already asked about this same absent list, one read earlier.
+  // Nothing in the source said so before, which left the second question looking like a bug.
+  assert.match(
+    waiver,
+    near('already asked once in Phase 2', 'asked twice', 400),
+    'the waiver must acknowledge that Phase 2 already asked about the unreported check list',
+  );
+  assert.match(
+    waiver,
+    near('`checksReported: true`', 'pending or red check blocks', 250),
+    'a check that has appeared must take the question off the table and block as before',
+  );
+
+  // Condition 2 keeps its own rationale for the branch nobody waived, and points at the waiver
+  // rather than restating it.
+  assert.match(
+    condition2,
+    near('unreported list is an unproven one', 'unstated requiredness', 200),
+    'condition 2 must keep the unreported-is-unproven rationale for the non-waived branch',
+  );
+  assert.match(
+    condition2,
+    near('no-check-list waiver', 'reported-at-all clause', 300),
+    'condition 2 must name the waiver as reaching its reported-at-all clause',
+  );
+
+  // The head binding, and why it needs no revocation rule. Posed anywhere but Phase 4 it would.
+  assert.match(
+    waiver,
+    near(
+      'condition 8 requires the freshly read head to equal it',
+      'one fresh read at one instant',
+      300,
+    ),
+    'the waiver must state why a Phase-4 answer is bound to the read it concerns',
+  );
+  assert.match(
+    waiver,
+    near('outlive its evidence', 'nothing to revoke', 200),
+    'the waiver must state that no revocation rule is needed',
+  );
+
+  // The honest account of what is being waived. No provider signal separates a repository with no
+  // CI from one whose checks had not attached, which is why this is an operator answer at all.
+  assert.match(
+    waiver,
+    near('whatever its cause', 'had simply not attached', 400),
+    'the waiver must say it covers an unreported list whatever its cause',
+  );
+  assert.match(
+    waiver,
+    near(
+      'No provider signal separates the two',
+      "operator's answer about their own repository",
+      300,
+    ),
+    "the waiver must say why no read could decide this in the operator's place",
+  );
+});
+
+// The three endings an implementer copying the wrong precedent gets wrong, plus the record that
+// keeps the answer from outliving the head it was given for.
+test('the no-check-list waiver ends the run three ways and expires with the head', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const waiver = prose(boundedSlice(gate, '#### The no-check-list waiver', '\n### Phase 5'));
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
+
+  // A decline is reported as a decline. Reporting condition 2 instead would hide that an operator
+  // was asked and said no, which is the one fact a reader of that report needs.
+  assert.match(
+    waiver,
+    near('decline, or no answer, ends the run', 'declined waiver', 200),
+    'a declined or unanswered waiver must end the run naming the declined waiver',
+  );
+  assert.match(
+    waiver,
+    near('declined waiver', 'rather than condition 2', 150),
+    'the report must name the declined waiver rather than condition 2',
+  );
+  assert.match(
+    waiver,
+    near('Nothing returns into Phase 3', 'no further round changes', 200),
+    'a declined waiver must send nothing back into Phase 3',
+  );
+
+  // The non-interactive ending, and the fact that makes this waiver unavailable to such a run at
+  // all: a repository with no CI is simply not mergeable from one.
+  assert.match(
+    waiver,
+    near('non-interactive run cannot pose it', 'report and end the run, never merge', 300),
+    'a non-interactive run must block and report rather than merge',
+  );
+  assert.match(
+    waiver,
+    near('an interactive run with `mergeGate.completion: merge`', 'authorize the waiver', 150),
+    'the report must name the interactive merge-mode run as what would authorize the waiver',
+  );
+  assert.match(
+    waiver,
+    near('available to a gated run only', 'stays unmergeable from a non-interactive run', 200),
+    'the waiver must state that a gated run is the only one that has it',
+  );
+  // The three pairs above all survive a sentence appended to that bullet letting a non-interactive
+  // run assume the answer, because each one only asks that its two tokens still sit near each
+  // other. This is the one-sided half: the gated-only guarantee is what makes "no operator, no
+  // merge" true, and an exception written anywhere in this section dissolves it.
+  assert.doesNotMatch(
+    waiver,
+    /non-interactive[^.]{0,160}\b(?:may|can|could)\b[^.]{0,60}(?:assume|assumed|waive|waived|take|taken|grant|granted|skip)\b/i,
+    'a non-interactive run must never be allowed to assume, take, or grant the waiver for itself',
+  );
+
+  // The third ending: in report mode condition 1 is unmet, so the question is not posed at all.
+  // Pinned on the rule's own sentence rather than on two tokens sitting near each other, because
+  // "pose it even where the resolved completion mode is not `merge`" carries both of those tokens
+  // while stating the opposite rule.
+  assert.match(
+    waiver,
+    /Not posed at all where the resolved completion mode is not `merge`/,
+    'the waiver must state outright that it is not posed where the completion mode is not merge',
+  );
+  assert.match(
+    waiver,
+    near('completion mode is not `merge`', '(?:Condition 1|report-mode)', 300),
+    'the non-merge rule must keep its reason: condition 1 is unmet, so no answer could authorize a merge',
+  );
+
+  // The record, and its lifetime. Bound to the verified head and to nothing else, so Phase 2's
+  // statement about head SHAs stays true and a Phase-3 restart discards both together.
+  assert.match(
+    waiver,
+    near('beside `VERIFIED_HEAD_SHA`', 'bound to that value and to nothing else', 150),
+    'the waiver record must be bound to the verified head and to nothing else',
+  );
+  assert.match(
+    waiver,
+    near('nothing else in this workflow records a head SHA for later use', 'stays true', 150),
+    "the waiver must keep Phase 2's statement about recorded head SHAs true",
+  );
+  assert.match(
+    waiver,
+    near('Discard it wherever that value is discarded', 'Phase-3 restart', 200),
+    'the waiver record must be discarded wherever the verified head is',
+  );
+  // The head binding alone does not say how often the question is posed **at one head**, and the
+  // same head is reachable twice: a Phase-4 return into Phase 3 that implements nothing leaves
+  // `VERIFIED_HEAD_SHA` standing (Phase 3 step 6 discards it only on an implementation), so without
+  // this the operator is asked again every round until `mergeGate.maxRounds` is spent. The
+  // set-aside confirmation already owns the mechanism; this asserts the waiver took it.
+  assert.match(
+    waiver,
+    /every later Phase-4 evaluation reads the record before it composes the question/,
+    'every later evaluation must read the waiver record before composing the question',
+  );
+  assert.match(
+    waiver,
+    near('an evaluation the record already covers', 'poses none', 150),
+    'an evaluation the waiver record already covers must pose no question at all',
+  );
+  assert.match(
+    waiver,
+    near('produces no implementation', 'Phase 3 step 6', 250),
+    'the waiver must name the return that leaves the verified head standing, which is what makes a second evaluation at one head reachable',
+  );
+  assert.match(
+    wisdom,
+    near('no-check-list waiver', "operator's answer", 400),
+    "the wisdom record must carry the waiver and the operator's answer",
+  );
+  assert.match(
+    wisdom,
+    near('no-check-list waiver', 'discarded wherever that value is discarded', 600),
+    'the wisdom record must state that the waiver is discarded with the verified head',
+  );
+
+  // Phase 6. Without this a merged pull request with no check list anywhere reads exactly like one
+  // whose checks all passed.
+  assert.match(
+    phase6,
+    near('merge performed on a waived check list', 'no check was verified', 400),
+    'Phase 6 must report a merge performed on a waived check list as one',
+  );
+});
+
 test('a thread item records its inspection URL where the gate still has it', () => {
   const gate = source('src/tools/merge-gate.md');
   const delegation = prose(section(gate, '## Delegation contract', '\n## '));
