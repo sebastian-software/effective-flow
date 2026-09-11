@@ -111,7 +111,9 @@ The German display mapping is `Schweregrad`, `Komplexität`, `Bereich`, `Datei`,
 `Empfehlung`, `Prompt-Vorschlag`, `Sicherheit`, `Befunde`, and
 `Übersprungen (Architekturentscheidungen)`. English uses the template labels below. The exposure
 values `external`, `internal`, and `none` of the `Security`/`Sicherheit` field are machine tokens
-and stay unlocalized in both forms. `Action`,
+and stay unlocalized in both forms, as does the forge auto-close keyword with its variants
+(`Closes #<issue>`, `Refs #<issue>`), which the code host parses and which therefore stays English
+in a PR body written in another language. `Action`,
 `Epic`, and `Signature` are stable helper/dedup fields and remain canonical English in both
 forms, as do their action values. Displayed severities map to
 `Kritisch`/`Wichtig`/`Hinweis`, and displayed complexities map to

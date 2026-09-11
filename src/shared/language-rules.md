@@ -16,10 +16,12 @@ setup ADR may contain these stable keys; each value is `de` or `en`:
 | `language.chat`                    | Interactive output: what the run says to the user, never a project artifact |
 
 Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+markers, finding IDs, action values, Conventional Commit types, branch slugs, and the forge
+auto-close keyword with its variants (`Closes #<issue>`, `Refs #<issue>`) are not localized. The
+code host parses that keyword, so it stays English inside a PR body written in another language.
+Product UI/CLI/error text follows the target project's product-i18n rules and is not controlled by
+this configuration. Exact quotations and incoming third-party text are not translated unless
+explicitly requested.
 
 ### Resolver (the single precedence rule)
 

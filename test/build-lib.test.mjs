@@ -3477,6 +3477,29 @@ test('checked-in language configuration remains complete and migration-only', ()
   assert.match(languageRules, /resolves every required surface once per run/i);
   assert.match(languageRules, /must not\s+independently re-read the project setup ADR/i);
 
+  // The forge auto-close keyword is a machine token. Left out of these enumerations, a run with
+  // `language.forge: de` translated it, the code host registered no closing link, and the
+  // delivered issue stayed open after merge. One assertion per source site that states the rule.
+  assert.match(
+    languageRules,
+    /branch slugs, and the forge\s+auto-close keyword with its variants[^.]*are not localized/,
+  );
+  assert.match(
+    readSource('shared/issue-tracker-forge.md'),
+    /as does the forge auto-close keyword with its variants/,
+  );
+  assert.match(
+    readSource('shared/tracker-target.md'),
+    /The forge auto-close keyword and its variants are machine tokens/,
+  );
+  for (const tool of ['tools/apply-issues.md', 'tools/apply-review-remote.md', 'tools/pr.md']) {
+    assert.match(
+      readSource(tool).replace(/\s+/g, ' '),
+      /machine tokens the code host parses: (?:write|keep) them in English whatever `language\.forge` resolves to, never translated/,
+      `missing forge auto-close keyword language rule: ${tool}`,
+    );
+  }
+
   const agentDomains = {
     'marketing-writer': ['language.documentation.user'],
     'docs-writer': [

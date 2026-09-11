@@ -144,8 +144,9 @@ English for code-adjacent prose and documentation; existing German artifacts rem
 Plans and local reviews use `language.workflow`; remote issues, PR bodies, and comments use
 `language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
 Identifiers, public API names, config keys and values, labels, finding IDs, action values, paths,
-Conventional-Commit types, branch slugs, and runtime schemas remain language-stable. Product UI,
-CLI, and error-message localization belongs to the target project's product i18n policy.
+Conventional-Commit types, branch slugs, the forge auto-close keyword with its variants, and
+runtime schemas remain language-stable. Product UI, CLI, and error-message localization belongs to
+the target project's product i18n policy.
 
 `language.chat` is the eighth key and the only one that does **not** inherit: it fixes the
 language a run speaks to the user in, and a missing row means mirror whatever language the user

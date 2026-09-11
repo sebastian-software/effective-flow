@@ -56,8 +56,8 @@ configuration.
 Complete plans, including status markers and human-readable headers, use one language. Existing
 German and English plan and review formats remain readable. New writers emit only the resolved
 language. Configuration keys and encoded values, labels, HTML idempotency markers, finding IDs,
-action values, paths, Conventional Commit types, branch slugs, and internal runtime-state schemas
-remain stable English/ASCII tokens.
+action values, paths, Conventional Commit types, branch slugs, the forge auto-close keyword with
+its variants, and internal runtime-state schemas remain stable English/ASCII tokens.
 
 Project-setup readers bootstrap before language resolution by recognizing the complete English
 and German ADR envelopes while keeping their keys and encoded values stable. Setup creates a new

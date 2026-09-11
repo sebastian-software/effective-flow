@@ -321,6 +321,9 @@ line closes an unrelated forge issue when the PR merges. The rule per target is 
 | `forge`    | the auto-close keyword `Closes #<issue>` (or `Refs #<issue>` where it must stay open) |
 | `external` | a plain, non-auto-closing reference to the tool-native identifier or its URL          |
 
+The forge auto-close keyword and its variants are machine tokens: the code host parses them, so
+they stay English whatever `language.forge` resolves to.
+
 On an external target the issue lifecycle is carried by the classification value plus the PR-link
 comment, never by a code-host keyword. Do not substitute a forge issue number for the external
 identifier, and do not emit both forms.

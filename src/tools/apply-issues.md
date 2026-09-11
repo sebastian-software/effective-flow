@@ -336,12 +336,14 @@ Issues with the same target PR run sequentially so that new commits are created 
    target per the
    `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<issue>` (or
    `Refs #<issue>`), on an external target a plain, non-auto-closing reference to the tool-native
-   identifier. Never write `Closes #<number>` for an external issue — the code host would resolve
-   it against its own issue of that number and close an unrelated one on merge. Build the exact
-   versioned lifecycle receipt from the retained target, repository, relationship, issue, optional
-   container, and container mechanism. A new PR contains it at creation; a reused PR is extended only
-   after a fresh body read through the hash-guarded `pr-update-body` path. Invalid, duplicate,
-   mismatched, or stale receipt state fails closed.
+   identifier. That keyword and its variants are machine tokens the code host parses: write them in
+   English whatever `language.forge` resolves to, never translated. Never write `Closes #<number>`
+   for an external issue — the code host would resolve it against its own issue of that number and
+   close an unrelated one on merge. Build the exact versioned lifecycle receipt from the retained
+   target, repository, relationship, issue, optional container, and container mechanism. A new PR
+   contains it at creation; a reused PR is extended only after a fresh body read through the
+   hash-guarded `pr-update-body` path. Invalid, duplicate, mismatched, or stale receipt state fails
+   closed.
 4. **Immediately after a successful push or PR creation:** write the PR-link comment through the
    helper and set label `effective-flow-issue-done`; on an external target use the resolved
    connection under the `tracker-target` write discipline. Do **not** set a native sub-item to done
