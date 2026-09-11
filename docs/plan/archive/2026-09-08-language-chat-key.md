@@ -10,7 +10,7 @@ Effective Flow configures the language of seven _persisted_ surfaces (`language.
 `language.source`, `language.documentation.user`, `language.documentation.technical`,
 `language.workflow`, `language.forge`, `language.git`). It configures nothing for the language the
 run speaks to the user in. That behaviour is a single sentence in
-[`src/shared/language-rules.md:35`](../../src/shared/language-rules.md), and it is not a setting:
+[`src/shared/language-rules.md:35`](../../../src/shared/language-rules.md), and it is not a setting:
 
 > Interactive, non-persisted replies follow the user's current language, using `language.project`
 > only if the conversation language is not recognizable.
@@ -47,7 +47,7 @@ Writing the rule into `src/shared/language-rules.md` would leave it unreachable.
 **40** include sites for that fragment is a ` ```lazy-include ` pointer — there is not one eager
 include in the tree — and every `when:` clause is keyed to _persisted artifact_ language, e.g.
 `an artifact output language or delegated language context must be resolved` (16 tools). Only
-[`open-plans.md:23`](../../src/tools/open-plans.md) and [`cleanup.md:38`](../../src/tools/cleanup.md)
+[`open-plans.md:23`](../../../src/tools/open-plans.md) and [`cleanup.md:38`](../../../src/tools/cleanup.md)
 carry an interactive trigger today. For the other 22 tools no clause fires when the run is merely
 about to speak, so the fragment is never loaded and the rule never runs.
 

@@ -6,7 +6,7 @@
 
 ## Anforderung
 
-Teil 3 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md). Stellt die Auslieferung vom Claude-Plugin/Marketplace auf ein **Standard-Directory-Skill** um, das via **`npx skills`** installierbar und **dalo**-kompatibel ist. Setzt Teil 2 (0060) voraus (Ein-Skill-Layout existiert).
+Teil 3 der Staffelung von [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md). Stellt die Auslieferung vom Claude-Plugin/Marketplace auf ein **Standard-Directory-Skill** um, das via **`npx skills`** installierbar und **dalo**-kompatibel ist. Setzt Teil 2 (0060) voraus (Ein-Skill-Layout existiert).
 
 ## Scope-Abgrenzung
 
@@ -24,7 +24,7 @@ Teil 3 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md). Ste
 
 ## Implementierungsdetails
 
-Delivery-Details und die konkreten Learnings (npx-skills-Symlink-Fallstricke `--copy`, externen `~/.claude/skills`-Symlink nicht ersetzen, schlanke Payload ohne `node_modules`/`dist`) siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Auslieferung“, „Learnings“ und die zugehörigen Akzeptanzkriterien/Edge Cases.
+Delivery-Details und die konkreten Learnings (npx-skills-Symlink-Fallstricke `--copy`, externen `~/.claude/skills`-Symlink nicht ersetzen, schlanke Payload ohne `node_modules`/`dist`) siehe [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Auslieferung“, „Learnings“ und die zugehörigen Akzeptanzkriterien/Edge Cases.
 
 ## Akzeptanzkriterien
 

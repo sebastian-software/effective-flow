@@ -8,7 +8,7 @@
 
 ## Anforderung
 
-Teil 4 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md). Bringt die Dokumentation auf den Firmo-Stand: `README.md` neu (Firmo, `/firmo <tool>`, Lazy-Loading, Auslieferung via `npx skills`/dalo, kein Plugin) sowie die betroffenen `docs/`-Dateien. Setzt die Teile 1–3 voraus, damit die Doku den tatsächlichen Zustand beschreibt.
+Teil 4 der Staffelung von [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md). Bringt die Dokumentation auf den Firmo-Stand: `README.md` neu (Firmo, `/firmo <tool>`, Lazy-Loading, Auslieferung via `npx skills`/dalo, kein Plugin) sowie die betroffenen `docs/`-Dateien. Setzt die Teile 1–3 voraus, damit die Doku den tatsächlichen Zustand beschreibt.
 
 ## Scope-Abgrenzung
 

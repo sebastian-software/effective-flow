@@ -6,7 +6,7 @@
 
 ## Symptom
 
-Nach dem Quell-Layout-Refactor ([0064](0064-firmo-source-layout-src.md), PR #5) waren die generierten Markdown-Dateien unter `dist/` weitestgehend leer: alle `dist/*/firmo/tools/*.md` hatten **0 Bytes**, die Agent-Dateien nur eine leere Frontmatter. Der Router (`SKILL.md`) war intakt.
+Nach dem Quell-Layout-Refactor ([0064](2026-07-16-0064-firmo-source-layout-src.md), PR #5) waren die generierten Markdown-Dateien unter `dist/` weitestgehend leer: alle `dist/*/firmo/tools/*.md` hatten **0 Bytes**, die Agent-Dateien nur eine leere Frontmatter. Der Router (`SKILL.md`) war intakt.
 
 ## Root Cause
 

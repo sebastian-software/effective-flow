@@ -4,7 +4,7 @@
 **Quelle:** /plan
 **Empfohlener Workflow:** Feature (`/build`)
 
-**Umsetzung:** In vier Teilplänen umgesetzt — [0059](0059-firmo-config-dir-rename-and-migration.md) (`.firmo/`-Verzeichnis + Migration), [0060](0060-firmo-router-lazy-loading-and-build.md) (Router, Lazy-Loading, `build.mjs`), [0061](0061-firmo-delivery-npx-skills-dalo.md) (Auslieferung als Directory-Skill) und [0062](0062-firmo-documentation.md) (Dokumentation) — alle „Umgesetzt“.
+**Umsetzung:** In vier Teilplänen umgesetzt — [0059](2026-07-16-0059-firmo-config-dir-rename-and-migration.md) (`.firmo/`-Verzeichnis + Migration), [0060](2026-07-16-0060-firmo-router-lazy-loading-and-build.md) (Router, Lazy-Loading, `build.mjs`), [0061](2026-07-16-0061-firmo-delivery-npx-skills-dalo.md) (Auslieferung als Directory-Skill) und [0062](2026-07-16-0062-firmo-documentation.md) (Dokumentation) — alle „Umgesetzt“.
 
 ## Anforderung
 
@@ -27,12 +27,12 @@ Begründung der Workflow-Empfehlung: Es entstehen neue nutzer-sichtbare Fähigke
 
 Auf Wunsch wird 0058 **gestaffelt** umgesetzt. Dieser Master-Plan bleibt die vollständige Referenz (Architektur, Learnings, Akzeptanzkriterien); die tatsächliche Umsetzung läuft über vier einzeln prüfbare Teilpläne, deren Grenzen so gewählt sind, dass jeder Teil den Build grün hält (der `sf-`-Präfix wandert zu Teil 2, weil er mit `build.mjs` verzahnt ist):
 
-| Teil | Plan                                                  | Inhalt                                                                                                            | Empf. Workflow |
-| ---- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------- |
-| 1    | [0059](0059-firmo-config-dir-rename-and-migration.md) | `.sf-plugin/` → `.firmo/` + Migration/Fallback + `package.json`/`.gitignore` (build.mjs & `sf-`-Präfix unberührt) | Refactoring    |
-| 2    | [0060](0060-firmo-router-lazy-loading-and-build.md)   | Router, Lazy-Loading, `build.mjs`-Umbau, `sf-*` → `firmo`, `apply-*` intern, `plan-issue`                         | Feature        |
-| 3    | [0061](0061-firmo-delivery-npx-skills-dalo.md)        | Auslieferung via `npx skills`/dalo, Deploy-Skripte, Plugin/Marketplace entfernen, Cleanup                         | Refactoring    |
-| 4    | [0062](0062-firmo-documentation.md)                   | README + `docs/` auf Firmo-Stand                                                                                  | Dokumentation  |
+| Teil | Plan                                                             | Inhalt                                                                                                            | Empf. Workflow |
+| ---- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------- |
+| 1    | [0059](2026-07-16-0059-firmo-config-dir-rename-and-migration.md) | `.sf-plugin/` → `.firmo/` + Migration/Fallback + `package.json`/`.gitignore` (build.mjs & `sf-`-Präfix unberührt) | Refactoring    |
+| 2    | [0060](2026-07-16-0060-firmo-router-lazy-loading-and-build.md)   | Router, Lazy-Loading, `build.mjs`-Umbau, `sf-*` → `firmo`, `apply-*` intern, `plan-issue`                         | Feature        |
+| 3    | [0061](2026-07-16-0061-firmo-delivery-npx-skills-dalo.md)        | Auslieferung via `npx skills`/dalo, Deploy-Skripte, Plugin/Marketplace entfernen, Cleanup                         | Refactoring    |
+| 4    | [0062](2026-07-16-0062-firmo-documentation.md)                   | README + `docs/` auf Firmo-Stand                                                                                  | Dokumentation  |
 
 0058 selbst wird nicht direkt umgesetzt; sein Status wird auf `Umgesetzt` gesetzt, sobald 0059–0062 abgeschlossen sind.
 

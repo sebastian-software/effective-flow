@@ -6,7 +6,7 @@
 
 ## Anforderung
 
-Nachtrag zur Firmo-Migration ([0058](0058-firmo-rename-and-lazy-tool-router.md)). Teil 2 hat die 11 Spezialisten-Agents genestet unter `firmo/agents/` ausgeliefert — in Anlehnung an pbakaus/impeccable. Diese genestete Auto-Discovery ist jedoch eine **Codex**-Eigenschaft; **Claude Code** entdeckt Subagents laut offizieller Doku ausschließlich aus `~/.claude/agents/`, `.claude/agents/` oder dem `agents/`-Verzeichnis eines Plugins — **nicht** aus einem skill-internen `agents/`-Ordner.
+Nachtrag zur Firmo-Migration ([0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md)). Teil 2 hat die 11 Spezialisten-Agents genestet unter `firmo/agents/` ausgeliefert — in Anlehnung an pbakaus/impeccable. Diese genestete Auto-Discovery ist jedoch eine **Codex**-Eigenschaft; **Claude Code** entdeckt Subagents laut offizieller Doku ausschließlich aus `~/.claude/agents/`, `.claude/agents/` oder dem `agents/`-Verzeichnis eines Plugins — **nicht** aus einem skill-internen `agents/`-Ordner.
 
 Folge: Auf Claude Code liefen die Tools zwar (Router + Lazy-Loading + `tools/`), aber jede Delegation an einen Spezialisten (`ui-implementer`, `nodejs-reviewer`, `code-validator` …) ging ins Leere. Dieser Plan behebt das für Claude Code, ohne Codex zu verändern.
 
