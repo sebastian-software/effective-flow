@@ -14,9 +14,9 @@ origin/main` returns `.github`, `LICENSE`, `README.md`, `docs`, `effective-flow`
 
 **This is already documented — on both branches — and that is exactly the point.** Two
 developer-guide passages state it plainly:
-[`architecture.md:58`](../developer-guide/architecture.md) ("Source and delivery live on **two
+[`architecture.md:58`](../../developer-guide/architecture.md) ("Source and delivery live on **two
 branches**") and the `## Source and delivery branch` section at
-[`release-and-installation.md:118`](../developer-guide/release-and-installation.md). The machine
+[`release-and-installation.md:118`](../../developer-guide/release-and-installation.md). The machine
 form is `delivery.baseBranch | origin/develop` in the project-setup ADR, which Effective Flow's own
 tooling honours correctly. And the delivered `main` README already carries a machine-generated
 footer, `build-lib.mjs`'s `deliveryFooter`:
@@ -66,7 +66,7 @@ Meanwhile the harness asserts the opposite first: a session starts with
 - **On the `develop` side: one prose line in `AGENTS.md`, no `@` import.** `AGENTS.md` is 188 lines
   and the ADR is 45, so an import would put the always-loaded chain at 233 against the documented
   ~200-line memory-file target that the archived plan
-  [`2026-09-02-claude-md-imports-agents-md.md`](archive/2026-09-02-claude-md-imports-agents-md.md)
+  [`2026-09-02-claude-md-imports-agents-md.md`](2026-09-02-claude-md-imports-agents-md.md)
   cut `AGENTS.md` from 254 lines to reach. That plan also records the intent an import would
   reverse: moving content _out_ of `AGENTS.md` "keeps it that way — the moved text becomes genuinely
   lazy, which is the point" (`:300-301`). A third objection is independent of budget: an `@` path is
