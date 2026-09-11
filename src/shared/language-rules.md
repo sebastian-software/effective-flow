@@ -17,11 +17,11 @@ setup ADR may contain these stable keys; each value is `de` or `en`:
 
 Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
 markers, finding IDs, action values, Conventional Commit types, branch slugs, and the forge
-auto-close keyword with its variants (`Closes #<issue>`, `Refs #<issue>`) are not localized. The
-code host parses that keyword, so it stays English inside a PR body written in another language.
-Product UI/CLI/error text follows the target project's product-i18n rules and is not controlled by
-this configuration. Exact quotations and incoming third-party text are not translated unless
-explicitly requested.
+issue-reference keywords — the auto-close keyword with its variants (`Closes #<issue>`) and the
+non-closing `Refs #<issue>` — are not localized. The code host parses them, so they stay English
+inside a PR body written in another language. Product UI/CLI/error text follows the target
+project's product-i18n rules and is not controlled by this configuration. Exact quotations and
+incoming third-party text are not translated unless explicitly requested.
 
 ### Resolver (the single precedence rule)
 

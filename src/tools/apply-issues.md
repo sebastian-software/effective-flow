@@ -336,8 +336,8 @@ Issues with the same target PR run sequentially so that new commits are created 
    target per the
    `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<issue>` (or
    `Refs #<issue>`), on an external target a plain, non-auto-closing reference to the tool-native
-   identifier. That keyword and its variants are machine tokens the code host parses: write them in
-   English whatever `language.forge` resolves to, never translated. Never write `Closes #<number>`
+   identifier. Both forge keywords are machine tokens the code host parses: write them in English
+   whatever `language.forge` resolves to, never translated. Never write `Closes #<number>`
    for an external issue — the code host would resolve it against its own issue of that number and
    close an unrelated one on merge. Build the exact versioned lifecycle receipt from the retained
    target, repository, relationship, issue, optional container, and container mechanism. A new PR

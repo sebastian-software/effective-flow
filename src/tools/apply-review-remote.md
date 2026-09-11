@@ -122,8 +122,8 @@ Per implementable finding, in its verified execution root:
    body only through a fresh body read plus hash-guarded `pr-update-body`. If no target PR is present:
    create exactly one PR against the base branch via `{{SKILL:pr}}`. Choose the reference form by
    tracker target: `Closes #<sub-issue>` or `Refs #<sub-issue>` on the forge, and a plain non-closing
-   reference on external. That keyword and its variants are machine tokens the code host parses:
-   write them in English whatever `language.forge` resolves to, never translated. Add exactly one
+   reference on external. Both forge keywords are machine tokens the code host parses: write them
+   in English whatever `language.forge` resolves to, never translated. Add exactly one
    validated versioned lifecycle receipt carrying the issue, relationship, and optional
    epic/mechanism. Reject malformed, duplicate, mismatched, or stale receipt state rather than
    overwriting body prose or dropping the handoff.
