@@ -100,14 +100,14 @@ A `lazy-include` fence **defers** a mode-gated shared fragment (progressive disc
 below). Instead of inlining it eagerly, the build delivers `src/shared/<name>.md` once per
 harness as a loadable file `shared/<name>.md` and replaces the directive with a conditional load
 pointer at the decision point. The `when:` line is the load trigger and is rendered in the
-pointer after "as soon as":
+pointer as a trailing `, when …` clause:
 
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined
 ```
 
-→ becomes: "**Load on demand:** Read `shared/worktree-integration.md` as soon as the
+→ becomes: "**Load on demand:** Read `shared/worktree-integration.md`, when the
 delivery/worktree mode is determined." A routine run that never reaches the mode never loads the
 fragment.
 
@@ -129,6 +129,15 @@ pointer can defer further work rather than paying for it. Because resolving one 
 name a fragment no tool references directly, the build walks the fragment set as a worklist —
 every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
 cycle the walk would otherwise not terminate on.
+
+One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
+layer derives the content identity each archived round is stamped with by following exactly
+these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
+gate can reach widens that identity and invalidates every archived round — currently fifteen, and
+roughly an hour and a half of re-recording an operator has to drive by hand through fresh agent
+sessions. A conditional pointer widens it whether or not any scenario takes its branch. See
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and
+`evals/merge-gate/_scaffold/build-identity.mjs` for the derivation itself.
 
 ## Guards
 

@@ -11,8 +11,8 @@
 // versions were both wrong, in opposite directions. Digesting a hand-picked set of *source* files
 // missed that the gate a run loads is the *output* of `build.mjs`: include resolution, the router's
 // tool list, a lazy pointer's wording and the version stamp all change what runs while every listed
-// source still hashes the same. Digesting the whole output fixed that but bound each run to 86
-// files when a `merge-gate` run can reach roughly 21, so an edit to an unrelated tool, an unreached
+// source still hashes the same. Digesting the whole output fixed that but bound each run to 87
+// files when a `merge-gate` run can reach 23, so an edit to an unrelated tool, an unreached
 // worker contract or a fragment the gate never reaches invalidated every archived round and forced a
 // re-run that could produce no new information.
 //
@@ -26,7 +26,8 @@
 // which is the conservative direction of the two. The seeds are the gate's own delegation surface
 // and go one hop; `iterate`'s further delegations are deliberately not seeded, because seeding them
 // would pull most of the built tree back in and undo the narrowing. The three cost little, since
-// `iterate` shares most of the gate's fragments: they pull in two further ones, for 21 files in
+// `iterate` shares most of the gate's fragments: the router and the gate tool alone reach 18 paths,
+// and the three delegation seeds add themselves plus two further fragments, for 23 files in
 // all. Eagerly included fragments need no entry — the build inlines them into the tool body, so the
 // tool's own hash already covers them.
 // Neither `scripts/remote-tracker.mjs` nor its `-core.mjs` half is a member: `scaffold.mjs`
@@ -37,6 +38,24 @@
 // Deriving rather than listing keeps the set from drifting as fragments are added, and it keeps the
 // property the binding exists for: any change to the text the gate itself executes still invalidates
 // the evidence. What it drops is invalidation by files no run reads.
+//
+// **What the narrowing still costs has since been measured, and it does not argue for narrowing
+// further.** Of the 12 non-merge commits that reached `origin/develop` since this layer landed in
+// `364f4d0` (#399), 8 touched at least one of the 43 source files that feed these 23 built paths,
+// and 6 of those 8 changed what a gate run does: the checkout inapplicability list, the
+// conflict-resolution contract, the post-merge observation body, the completion invariants that
+// bound the correction rounds, the base-branch derivation that decides the merge target, and a
+// post-merge observation a new scenario now asserts. Only two were report-only — one touched the
+// two session fragments `iterate` pulls in, the other introduced the interactive-language fragment
+// the gate now inlines, changing what the gate says and nothing it does — and the exclusion weighed
+// at the derivation below would have spared neither. The re-rounds this binding forces are
+// therefore mostly re-rounds that were owed. Six against two is what the merge history shows,
+// not a bound on the behavioural share: a squash merge folds a branch's intra-branch re-records
+// away before they reach this history, so the total the operator paid is under-counted here. The
+// one hidden invalidation known — #407's open-point display cap, whose fix in `3673cdd` forced the
+// re-record in `32e09d2` — governs what the gate says rather than what it does, so counting it
+// reads 6 to 3 and moves the share down rather than up. Which way the hidden rounds bias the share
+// is therefore not knowable from this history alone.
 //
 // **A pointer that does not resolve is fatal.** Nothing records which files a sandbox run truly
 // opens, so the set is inferred; a missed route would weaken the guard with no test noticing. The
@@ -71,6 +90,21 @@
 // fail-closed rule would. That is the safe direction of the two, and the cheap alternative — a
 // digest that decides for itself which edits matter — is a much larger thing to be wrong about than
 // an occasional round re-run.
+//
+// The obvious lever for such an alternative was looked at and rejected, which is worth recording
+// because it reads the wrong way round at first. `test/merge-gate-eval.test.mjs` pins each archived
+// call to `['apply', 'at', 'cwd', 'operation', 'seq']`; the log carries no payload text whatsoever —
+// no comment body, no PR title, no report line — so **no change to the text a run emits is
+// observable to any assertion in this suite.** What a reworded rule can still move is which
+// `operation` records appear at all, and that the suite does assert. The narrow reading looks like
+// a warrant for exempting prose and is the opposite. A rule resting on it would have to treat
+// essentially all prose as inert, and in a skill whose runtime is a model reading Markdown, an
+// instruction's wording **is** its behaviour: the log's blindness to a reworded rule is a limit of
+// the evidence, not a property of the gate. An exemption here has to fail toward invalidating, and
+// one that classified edits by what the log can observe fails the other way. A marker the editing
+// author sets to declare an edit prose-only is not a candidate either, since it asks the author to
+// classify their own change — the judgment the digest exists in order not to depend on. **No
+// mechanism is adopted; the re-run stands.**
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -122,6 +156,35 @@ const LOAD_SET_SEEDS = [
 // The built form of a ```lazy-include fence, as `renderLazyPointer` in build-lib.mjs emits it. The
 // prefix is matched rather than the bare path so ordinary prose naming a fragment cannot enlarge
 // the set by accident.
+//
+// **A conditional pointer widens the set unconditionally, and that is the decision rather than an
+// oversight.** The membership rule stated at the top of this file settles it: "can the gate reach
+// it", not "did this scenario open it". Excluding the `de` branch means separating pointers by
+// which branch the scenarios take — the rejected half of that rule wearing a different hat — and it
+// would cost much of the set, the merge-conflict resolver included, which is a member for precisely
+// the reason the `de` branch is. That is the permissive direction, the one failure this file exists
+// to make impossible. A conditional pointer is not a special case needing its own justification; it
+// is an ordinary consequence of the rule already stated.
+//
+// A second obstacle stands independently of that. `renderLazyPointer` renders the fence's `when:`
+// clause as free-form English, so what lands in the built tree reads **Load on demand:** Read
+// `shared/x.md`, when <trigger>, with no predicate to test a scenario against.
+// `shared/chat-language.md`, the eager fragment every speaking tool carries, holds one of each kind
+// side by side: `config-migration` under a clause a run does reach — `when: the project setup ADR
+// must be located to read the configured language.chat value` — and `typography-rules` under
+// `when: the resolved chat language is de`, which no scenario takes. A blanket "skip conditional
+// pointers" rule cannot tell those apart and drops `shared/config-migration.md`, a fragment runs
+// genuinely load. A machine-readable condition key on the fence would parse the clause and settle
+// nothing: the question is which membership rule is wanted, not whether the condition can be read.
+//
+// The narrow version — an exclusion keyed to this pointer alone — would remove
+// `shared/typography-rules.md`, touched exactly once in this repository's history (`21466f1`,
+// #395), and before this eval layer existed, so no archived round has ever been invalidated by it.
+// That figure does not carry to the broader criterion, which is rejected on the membership rule and
+// not for buying nothing: inside this closure `19ef541` (#409) touched only
+// `base-branch-resolution` and `worktree-integration`, both feeding the one built path
+// `shared/worktree-integration.md`, which a run reaches only on a `BEHIND` or `DIRTY` head branch —
+// a re-round scenario reachability would have spared.
 const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 
 // Follows the seeds' own load pointers through the built tree, transitively, and returns the

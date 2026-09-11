@@ -89,7 +89,11 @@ anywhere in the built skill, so an edit to an unrelated tool, an unreached worke
 fragment no run reads leaves the standing evidence intact. The shipped `scripts/remote-tracker.mjs`
 is not among them: the scaffold overwrites it with the stub, which is hashed separately as the
 instrument. That is a narrower trigger, not an absent one: two pull requests that both touch those
-files still invalidate each other's rounds, and whichever lands second re-runs.
+files still invalidate each other's rounds, and whichever lands second re-runs. A load pointer also
+counts whether or not a run can take its branch: `shared/typography-rules.md` is hashed today only
+because `chat-language` points at it under `when: the resolved chat language is de`, a branch
+neither scenario reaches. That widening is a recorded decision rather than an accident, and its
+reasoning sits beside `LOAD_POINTER_RE` in `_scaffold/build-identity.mjs`.
 
 ### One round at a time, across the whole machine
 
