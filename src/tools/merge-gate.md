@@ -1793,8 +1793,11 @@ condition.
 - **The verified head must be a full object name.** Pose nothing unless `VERIFIED_HEAD_SHA` is a
   full object name — 40 or 64 hex digits, in either letter case, which is the shape the helper
   itself enforces. An abbreviated or unreadable value is not a commit the operator can go and look
-  at, and a waiver given against one is a waiver against nothing; that run blocks on condition 8 and
-  is reported there instead.
+  at, and a waiver given against one is a waiver against nothing. **Condition 8 does not catch that,
+  and the report must not name it:** that condition asks only whether `VERIFIED_HEAD_SHA` is set and
+  equals the freshly read head, so two abbreviated values that agree satisfy it just as two full ones
+  do. What an unposed waiver leaves behind is an uncleared reported-at-all clause, so such a run
+  blocks on **condition 2** and is reported there instead.
 - **A decline, or no answer, ends the run** with a report naming the **declined waiver** rather than
   condition 2. The operator's decision is the fact worth reporting, and naming the condition instead
   hides that they were asked at all. Nothing returns into Phase 3: no further round changes an
