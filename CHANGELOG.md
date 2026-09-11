@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.64.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.63.0...effective-flow-v1.64.0) (2026-09-11)
+
+
+### Features
+
+* add behavioural evals for the merge gate ([#399](https://github.com/sebastian-software/effective-flow/issues/399)) ([364f4d0](https://github.com/sebastian-software/effective-flow/commit/364f4d0114263bc6167099f2fdf3bbb65176f8dd))
+* configure the language of interactive output with language.chat ([#408](https://github.com/sebastian-software/effective-flow/issues/408)) ([887cdf8](https://github.com/sebastian-software/effective-flow/commit/887cdf850dd537bb4f8ca3bf88157ec15e86d1c4))
+* deliver branch-model guidance and derive the base-branch default ([#409](https://github.com/sebastian-software/effective-flow/issues/409)) ([19ef541](https://github.com/sebastian-software/effective-flow/commit/19ef541231a0cec4256c519813db3a12ecc0563e))
+* import AGENTS.md from CLAUDE.md and split the canonical guidance ([#397](https://github.com/sebastian-software/effective-flow/issues/397)) ([9adffe2](https://github.com/sebastian-software/effective-flow/commit/9adffe286a700f69c6bdfbe3b45f6fb5d70073ba))
+* rename the Claude Code session natively and retire the butler ([#405](https://github.com/sebastian-software/effective-flow/issues/405)) ([0e48411](https://github.com/sebastian-software/effective-flow/commit/0e484115427391f7bb0b8865fe2bae13891ee60b))
+* report a linked issue's recorded open points after a merge ([#407](https://github.com/sebastian-software/effective-flow/issues/407)) ([1d8a0ed](https://github.com/sebastian-software/effective-flow/commit/1d8a0edeecd0cf58eb6b6afe29fe72b5c9fcc902))
+
+
+### Bug Fixes
+
+* bind eval stamps to the files a run loads and reject a missing runtime root ([#406](https://github.com/sebastian-software/effective-flow/issues/406)) ([2c82846](https://github.com/sebastian-software/effective-flow/commit/2c82846d4c7621ae08dca3c6b744153d715f8c9a))
+* generate the router's tool list instead of hand-writing it ([02e6696](https://github.com/sebastian-software/effective-flow/commit/02e669619ac4128701c9e4c81388866b81b77ed5))
+* keep the forge auto-close keyword English in a translated PR body ([#415](https://github.com/sebastian-software/effective-flow/issues/415)) ([243a3c2](https://github.com/sebastian-software/effective-flow/commit/243a3c23cffbabd8fc08c7cd61ca7d5c2ef779d4))
+* let an operator waive an unreported check list at the verified head ([#417](https://github.com/sebastian-software/effective-flow/issues/417)) ([4321151](https://github.com/sebastian-software/effective-flow/commit/4321151a370157e73421db261a9a7ed9660e45fe))
+* resolve a local base branch when no remote is configured ([4740ca0](https://github.com/sebastian-software/effective-flow/commit/4740ca06be7697fb7734575786686d6e56f830e4))
+* resolve the base branch once and name both of its results ([#391](https://github.com/sebastian-software/effective-flow/issues/391)) ([8d559ec](https://github.com/sebastian-software/effective-flow/commit/8d559eca71bdd2df7d58d2ef75d89b8fb682fee3))
+* retire the stale Firmo branding from shipped descriptions ([ce23e7a](https://github.com/sebastian-software/effective-flow/commit/ce23e7ad8133b241943a4476f6622880f0787fb8))
+
 ## [1.63.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.62.0...effective-flow-v1.63.0) (2026-08-28)
 
 
