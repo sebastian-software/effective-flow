@@ -8,11 +8,11 @@
 ## Requirement
 
 `/effective-flow merge-gate` currently ends a run as soon as the pull request conflicts with its
-base branch. Phase 2 step 2 of [`src/tools/merge-gate.md:546`](../../src/tools/merge-gate.md#L546)
+base branch. Phase 2 step 2 of [`src/tools/merge-gate.md:546`](../../../src/tools/merge-gate.md#L546)
 states it plainly: "**Conflict with the base (`DIRTY`).** Not repaired automatically: stop, report
 the conflict, and do not merge." The same dead end is reached from the other direction in step 1,
 where a base-into-head merge that turns out to conflict aborts the run
-([`src/tools/merge-gate.md:543`](../../src/tools/merge-gate.md#L543)).
+([`src/tools/merge-gate.md:543`](../../../src/tools/merge-gate.md#L543)).
 
 A conflict with the merge target is an objective defect of the branch, not an opinion under
 discussion. The gate already owns the one repair of that shape — merging `origin/<base>` into the
@@ -55,7 +55,7 @@ describe reality.
   is discovered locally in exactly one place either way.
 - **The conflicted merge is a second sanctioned kind of Git write, stated as such.** The current
   boundary is written as a single exception
-  ([`src/tools/merge-gate.md:140`](../../src/tools/merge-gate.md#L140)) and is pinned by
+  ([`src/tools/merge-gate.md:140`](../../../src/tools/merge-gate.md#L140)) and is pinned by
   `test/workflow-contracts.test.mjs` (the "merge-gate states its no-commit/no-push boundary"
   assertion). It is reworded to name two kinds of write — the clean base-into-head merge and the
   conflict-resolving one — with the same per-occurrence bound: one merge commit plus one normal push

@@ -6,7 +6,7 @@
 
 ## Anforderung
 
-Teil 1 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md) (Master-Plan mit vollständiger Architektur, Learnings und Akzeptanzkriterien). Dieser Teil ist **verhaltensnah/refactoring-artig** und hält den Build grün, weil er `build.mjs` und den `sf-`-Skill-Präfix **nicht** anfasst.
+Teil 1 der Staffelung von [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md) (Master-Plan mit vollständiger Architektur, Learnings und Akzeptanzkriterien). Dieser Teil ist **verhaltensnah/refactoring-artig** und hält den Build grün, weil er `build.mjs` und den `sf-`-Skill-Präfix **nicht** anfasst.
 
 Ziel: das projektlokale Laufzeitverzeichnis von `.sf-plugin/` auf `.firmo/` umstellen – in den Skill-Quellen, in `.gitignore` und `package.json` – und die Skills so ergänzen, dass ein vorhandenes `.sf-plugin/` in Zielprojekten **einmalig nicht-destruktiv nach `.firmo/` migriert** und bis dahin als Fallback gelesen wird.
 

@@ -7,8 +7,8 @@
 ## Requirement
 
 `delivery.baseBranch` has a **hardcoded** default of `origin/main`
-([`src/shared/base-branch-resolution.md:3`](../../src/shared/base-branch-resolution.md),
-[`src/tools/setup.md:79`](../../src/tools/setup.md)). That default is wrong for every repository
+([`src/shared/base-branch-resolution.md:3`](../../../src/shared/base-branch-resolution.md),
+[`src/tools/setup.md:79`](../../../src/tools/setup.md)). That default is wrong for every repository
 whose default branch is not `main`, and nothing ever compares the configured value against what the
 repository itself says.
 
@@ -61,7 +61,7 @@ stays; only its default becomes repository-aware.
   no network round trip — but writing the _rationale_ into the source ("this needs no second
   `git fetch`") would make the count two. Keep the rationale in this plan, not in the fragment.
 - **The drift check reports and never gates.** House style is established at
-  [`src/shared/project-adr-convention.md:100`](../../src/shared/project-adr-convention.md): "the
+  [`src/shared/project-adr-convention.md:100`](../../../src/shared/project-adr-convention.md): "the
   declared source still wins and the disagreement is named in the completion report, so a silent
   override becomes a visible one without adding a gate."
 - **A deliberate divergence is acknowledged in the ADR prose, not by a config key.** Where the ADR

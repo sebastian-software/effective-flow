@@ -19,7 +19,7 @@ design (#278), the released version was permanently stranded: consumers installi
 branch still receive 1.60.0 until someone cuts another release.
 
 Diagnosis:
-[`.effective-flow/investigation/investigation-2026-08-19-delivery-push-403.md`](../../.effective-flow/investigation/investigation-2026-08-19-delivery-push-403.md).
+`.effective-flow/investigation/investigation-2026-08-19-delivery-push-403.md`.
 It excluded eight candidate causes by direct API and git reads — the App installation, its
 `contents: write` grant, the ruleset bypass, the credentials, the repository state, and the CI
 sources are all verifiably unchanged since **before** the successful 1.60.0 delivery — and concluded

@@ -6,7 +6,7 @@
 
 ## Anforderung
 
-Teil 2 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md) – das Herzstück. Baut die Auslieferung von einem Marketplace/Plugin (Claude) bzw. Skill+TOML (Codex) auf **ein universelles `firmo`-Skill je Harness** mit **dünnem Router und Lazy-Loading** um und entfernt den `sf-`-Präfix. Setzt Teil 1 (0059, `.firmo/`-Verzeichnis) voraus.
+Teil 2 der Staffelung von [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md) – das Herzstück. Baut die Auslieferung von einem Marketplace/Plugin (Claude) bzw. Skill+TOML (Codex) auf **ein universelles `firmo`-Skill je Harness** mit **dünnem Router und Lazy-Loading** um und entfernt den `sf-`-Präfix. Setzt Teil 1 (0059, `.firmo/`-Verzeichnis) voraus.
 
 ## Scope-Abgrenzung
 
@@ -24,7 +24,7 @@ Teil 2 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md) – 
 
 ## Implementierungsdetails
 
-Details, Router-/Lazy-Load-Mechanik, `build.mjs`-Änderungen und Edge Cases siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Architekturentscheidungen“, „Implementierungsdetails“, „Edge Cases“ und „Learnings“.
+Details, Router-/Lazy-Load-Mechanik, `build.mjs`-Änderungen und Edge Cases siehe [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Architekturentscheidungen“, „Implementierungsdetails“, „Edge Cases“ und „Learnings“.
 
 ### Vorgehen (Kurzfassung)
 
@@ -35,7 +35,7 @@ Details, Router-/Lazy-Load-Mechanik, `build.mjs`-Änderungen und Edge Cases sieh
 
 ## Akzeptanzkriterien
 
-Maßgeblich sind die betreffenden Kriterien aus [0058](0058-firmo-rename-and-lazy-tool-router.md); für diesen Teil insbesondere:
+Maßgeblich sind die betreffenden Kriterien aus [0058](2026-07-16-0058-firmo-rename-and-lazy-tool-router.md); für diesen Teil insbesondere:
 
 - [ ] `node build.mjs` erzeugt je Harness **ein** `firmo/`-Skill (Router-`SKILL.md` + `tools/<tool>.md` für die 15 Tools + `agents/<agent>.md`); kein `marketplace.json`, kein `plugins/`- und kein separates Codex-Agent-TOML-Layout.
 - [ ] Router-`SKILL.md` enthält nur Katalog + Dispatch; `/firmo` listet 15 Tools, `/firmo <tool>` lädt nur `tools/<tool>.md`; unbekanntes Tool → Liste.
