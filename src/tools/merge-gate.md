@@ -352,10 +352,11 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   is still a grammar the text can match;
 
 - **the token keeps the unforgeability a declared length had, and asks less of the operator.** A
-  declared UTF-8 byte count was unforgeable because the frame was fixed from outside the span, but it
-  demanded byte arithmetic and byte-offset slicing, which a language-model operator performs
-  unreliably once a body carries multibyte Unicode; a substring search and a split are exact under
-  any encoding. There is deliberately only one framing: no byte count is kept alongside the token;
+  declared UTF-8 byte count was unforgeable because the frame was fixed from outside the span, but
+  byte arithmetic and byte-offset slicing are what a language-model operator performs unreliably once
+  a body carries multibyte Unicode, failing closed a round at a time on an off-by-one nobody can see;
+  a substring search and a split are exact under any encoding. Only one framing is kept: a byte count
+  beside the token would be two descriptions of one boundary to hold in step;
 
 - **a body that carries the delimiter is refused, never neutralised.** Before the message is written,
   compare each line of each body against the delimiter after trimming; a body carrying it is not

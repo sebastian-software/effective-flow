@@ -299,7 +299,7 @@ The build aborts with an error message if any of these guards is violated:
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
-  `plan` share **700 lines**; `merge-gate` carries **2787**; every other `src/tools/*.md`
+  `plan` share **700 lines**; `merge-gate` carries **2741**; every other `src/tools/*.md`
   carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
   own** limit, naming the tool, its size and that limit. That printed size is the number to
@@ -571,7 +571,7 @@ The four implementation tools share **700 lines** and currently measure `build` 
 463, `docs` 599, and `plan` 647 — headroom ranges from `plan`'s 53 lines to `fix`'s 237.
 `review` left that group when the eager `chat-language` include pushed it past 700; it now carries
 a measurement like every other tool.
-`merge-gate` is budgeted separately at **2741** and measures 2736: an orchestration gate whose
+`merge-gate` is budgeted separately at **2741** and measures 2737: an orchestration gate whose
 phases, delegation contracts and provider rules do not compress to the size of an implementation
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
 The rest is loaded only when the mode is reached.
