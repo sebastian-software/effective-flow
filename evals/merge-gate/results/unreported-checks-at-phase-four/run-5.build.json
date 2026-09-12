@@ -1,0 +1,47 @@
+{
+  "scenario": "unreported-checks-at-phase-four",
+  "digest": "sha256:b094321f2e78734fad4dc75c0e290b0ba5889405c48aab988e60d68a9992b9f7",
+  "skill": {
+    "digest": "sha256:5c9962706fb204df75d32cda097a5cefdb76a260d0dc5cfc076d40a2d3ac23eb",
+    "files": {
+      "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
+      "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
+      "shared/config-migration.md": "sha256:d275036ec9012ee3740fb70cdc4df7be5432e0ef44a527efd60d09d0b3c70702",
+      "shared/effective-flow-dir-migration.md": "sha256:331328198efd38ad4541449aec9e346ad4ab673cc1c15657915f9912d92952c0",
+      "shared/issue-post-merge-observation.md": "sha256:53b300a64c629366c3b2404627eef215b7977ea1200498c9492546d4517fa06f",
+      "shared/issue-tracker-forge.md": "sha256:1fe23582e3bd10190ff6152fdecf2211350f7bc07557eaa1b1c30a1c764317f7",
+      "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
+      "shared/merge-gate-checkout-boundary.md": "sha256:2cec54fc23be7e1f2f373a5c7a832095103f13744513a85db5953315e038782b",
+      "shared/merge-gate-conflict-resolution.md": "sha256:b222e6d4dab1ab511986462ed10f2332b00de2ed365c8a680352ce07e43e6fc8",
+      "shared/merge-gate-issue-observation.md": "sha256:12610b31650719424ef44a60eee3d8de4aae1665b18b04ad94ae726f8d1bfa1d",
+      "shared/next-steps.md": "sha256:4290691291c74e4c5d026f08c75ecd52f9f72e9bfa5a934037343502512d745f",
+      "shared/pr-merge-completion.md": "sha256:abdb3731a62bdccfac7468bc9410db08989c25ced58299b8b17b0eff18afa9fe",
+      "shared/pr-review-integration.md": "sha256:6ff2cf8b8780f6e2ecc84f665068bb587818187794236aa938f14990df57e7c0",
+      "shared/runtime-state-safety.md": "sha256:900f75b1ff616225785671fb9828b3ad33abe6b68ee184b08920abd53a6f6cc8",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
+      "shared/tracker-target.md": "sha256:4164086fbc2e6562c52d2da4fdfd8bf7a4b1982aeb0eaa548c24c811a700dd99",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "shared/worktree-integration.md": "sha256:acd68abc4aacb0c332cba8ea6f80a9745b123b731fd6b67e11165c0fd927e4b2",
+      "tools/iterate.md": "sha256:3da78e2bbdc0575dbc09ab5a6b7ee4ee719142eb847bfd568fbb31ab958ee8b3",
+      "tools/merge-gate.md": "sha256:da2116f05e6eac403033487f8d904b88148ed534a8e3369cf9d5a92fd095508d",
+      "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "files": {
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:0d6e3284bb921bdba99d8db8ec691ac6f5966247ffd3d243aaa7c7839c82c015",
+    "files": {
+      "evals/merge-gate/fixtures/unreported-checks-at-phase-four.json": "sha256:340438162a2dcbcd933905296fd83eadab1df8d1176144bd8026ec99c75260e6",
+      "evals/merge-gate/scenarios/unreported-checks-at-phase-four.md": "sha256:cb0e9dbd5a83addb2726592439807a2c132073c189e5c788d701013b47bbf973"
+    }
+  }
+}
