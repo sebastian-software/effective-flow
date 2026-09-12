@@ -14,15 +14,26 @@ This document records the repository as it stood at `3b44300`. It is kept as the
 review it was, not rewritten as work lands, so the table below is the only place that tracks what
 has changed since. Update it when a finding is closed; leave the finding text itself alone.
 
-| Finding                                              | Status      | Landed as                                                                                                       |
-| ---------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------- |
-| F-01 `deliver` missing from the router description   | implemented | `02e6696` — the tool list is generated from `EXPOSED_TOOLS` and guarded                                         |
-| F-02 stale `Firmo` branding in shipped descriptions  | implemented | `ce23e7a` — plus a guard scanning `src/` and both build scripts                                                 |
-| F-10 local base branch unresolvable without a remote | implemented | `4740ca0` — one resolution rule distinguishing a missing remote from a failed fetch                             |
-| F-05, F-06, §6.4 (the P2 ownership tier)             | implemented | `51d0dc9` (#393) — both specialist implementers thinned, `effective-marketing` declared, two build guards added |
-| Everything else                                      | open        | —                                                                                                               |
+| Finding                                                        | Status      | Landed as                                                                                                                                                                                             |
+| -------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-01 `deliver` missing from the router description             | implemented | `02e6696` — the tool list is generated from `EXPOSED_TOOLS` and guarded                                                                                                                               |
+| F-02 stale `Firmo` branding in shipped descriptions            | implemented | `ce23e7a` — plus a guard scanning `src/` and both build scripts                                                                                                                                       |
+| F-10 local base branch unresolvable without a remote           | implemented | `4740ca0` — one resolution rule distinguishing a missing remote from a failed fetch                                                                                                                   |
+| F-05, F-06, §6.4 (the P2 ownership tier)                       | implemented | `51d0dc9` (#393) — both specialist implementers thinned, `effective-marketing` declared, two build guards added                                                                                       |
+| P2 audit of the two generic implementers                       | implemented | `51d0dc9` (#393) — both now name `effective-delivery`, and the agent roster guard enforces a central owner for every agent                                                                            |
+| F-12 context budget covers 6 of 28 tools                       | implemented | `21466f1` (#395) — every tool budgeted, reconciled against the built tool set in both directions                                                                                                      |
+| F-03 `worktree-integration` eager in three tools               | implemented | `21466f1` (#395) — deferred in `refactor`, `maintain` and `iterate`                                                                                                                                   |
+| F-04 `issue-tracker` eager regardless of tracker mode          | implemented | `21466f1` (#395) split the forge mechanics into `issue-tracker-forge`; `368b7ff` (#396) deferred it at the last three eager sites                                                                     |
+| F-13 eager `language-rules` and `config-migration`             | implemented | `21466f1` (#395) deferred `language-rules` at all 32 sites; `368b7ff` (#396) split `config-migration`, keeping the legacy marker spelling eager because it is the pointer's own detection predicate   |
+| F-14 session title in the always-on router                     | implemented | `21466f1` (#395) — moved into the tools that emit a title; the router fell from 142 to 85 resolved lines                                                                                              |
+| F-16 harness mechanics in the sources                          | implemented | `b8488f8` (#404) and `0e48411` (#405), closed in `9b26fbd` (#411) — only point 3 held; see the note under the finding                                                                                 |
+| §5 behavioural eval layer                                      | partial     | `364f4d0` (#399) added `guard-blocks-merge` and `merge-proceeds`, `1d8a0ed` (#407) `linked-issue-open-points` and `4321151` (#417) `unreported-checks-block-merge`; `iterate` classification has none |
+| F-15 `merge-gate` size                                         | partial     | `2379fbe` (#400), `ceca964` (#401) and `6127387` (#402) deferred three blocks; still 2 910 resolved lines at `4321151` against a ~1 200 target, after #417 added a rule                               |
+| F-15 prerequisite: an eval scenario with a configured reviewer | open        | — all four scenarios leave `mergeGate.bots` unset, so Phase 3 runs in no recorded round                                                                                                               |
+| D-4 exclusion rationale in `merge-gate`                        | withdrawn   | — overstated; see the correction below                                                                                                                                                                |
+| F-07, F-08, F-09, F-11, M-1 … M-6                              | open        | —                                                                                                                                                                                                     |
 
-Two corrections the implementation work produced, recorded here because they are defects in this
+Three corrections the implementation work produced, recorded here because they are defects in this
 document rather than in the code:
 
 - **The Rust CLI contract should not have been on the cut list.** `§6.1 D-1` and the P2 plan derived
@@ -34,6 +45,12 @@ document rather than in the code:
   skill checkout established that `route-typescript.md` is a language-contract route and covers
   none of the Node runtime layer, so only the language half was delegated. The asymmetry between
   Rust and Node in #393 is deliberate and evidence-based, not an unfinished migration.
+- **D-4 and F-15 overstated the exclusion rationale.** Both cite `merge-gate.md:35–123` as 89 lines
+  spent explaining why `effective-delivery` is not loaded. That range runs from the section heading
+  to the next one, but the rationale itself is two paragraphs of 11 lines. The rest of the range is
+  include and lazy-include fences and the delegation-mandate scoping paragraphs, which belong to the
+  tool's own contract rather than to the exclusion. D-4 therefore has nothing left to cut and is
+  withdrawn; the size question it was part of stays with F-15.
 
 ---
 
