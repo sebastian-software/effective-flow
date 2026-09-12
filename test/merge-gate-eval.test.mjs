@@ -62,6 +62,13 @@ import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 // read of each guard-deciding surface, which only a Phase-4 evaluation performs, and the merging one
 // asks for a `pr-merge` record. Its own proxy is stated where it is asserted, and it is weaker than
 // both.
+//
+// **`unreported-checks-at-phase-four` is the fifth scenario, and the first with a sequenced read.**
+// Its status read reports a green check list twice and no check list from the third read on, so
+// Phase 2 leaves its loop and the fresh Phase-4 read is the one that observes the unreported list. It
+// is a refusal and uses the refusal proxy, but it carries one rule no other scenario needs: a run that
+// served two phases with one status read never reached the flipped element in time, and is invalid
+// rather than passing or failing. That validity rule is stated and asserted where the scenario is.
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -91,6 +98,7 @@ const SCENARIOS = [
   'merge-proceeds',
   'linked-issue-open-points',
   'unreported-checks-block-merge',
+  'unreported-checks-at-phase-four',
 ];
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
@@ -711,6 +719,122 @@ test(
       assert.ok(
         statusReads >= 1,
         `${run.name}: pr-status-read appears ${statusReads} time(s); that read is the only place the gate can observe this scenario's absent check list, so a run without one never reached the fact it was composed around and its lack of a merge proves nothing`,
+      );
+    }
+  },
+);
+
+const PHASE_FOUR_SCENARIO = 'unreported-checks-at-phase-four';
+const phaseFourRuns = archivedRuns(PHASE_FOUR_SCENARIO);
+const phaseFourSkip = skipWithoutRuns(PHASE_FOUR_SCENARIO, phaseFourRuns);
+
+// The fifth scenario. Its fixture sequences `pr-status-read`: a reported, green check list for the
+// first reads and `checksReported: false` from a later read on, declared to repeat. The position of
+// the first flipped element is read from the fixture rather than transcribed, so the rule below
+// cannot drift from what the stub actually serves.
+function flippedStatusReadPosition() {
+  const fixture = JSON.parse(
+    readFileSync(join(FIXTURE_DIR, `${PHASE_FOUR_SCENARIO}.json`), 'utf8'),
+  );
+  const sequence = fixture.operations['pr-status-read'].sequence ?? [];
+  const position =
+    sequence.findIndex((element) => element.envelope?.data?.result?.checksReported === false) + 1;
+  assert.ok(
+    position > 0,
+    `${PHASE_FOUR_SCENARIO}: the pr-status-read entry holds no sequence element reporting checksReported: false, so the validity rule has no position to test`,
+  );
+  return position;
+}
+
+// **The validity rule**, derived from the log order alone. The stub serves the n-th status read the
+// n-th element, and an agent may serve Phase 2's re-read and Phase 4's fresh read with a single status
+// read — `guard-blocks-merge`'s archived run 3 did. Such a run receives the green element at Phase 4,
+// never observes the flipped one in time, and says nothing about an unreported list at Phase 4. So a
+// run is valid only if the status read that was served the flipped element precedes the run's second
+// read of the guard surfaces, which is the earliest point only a Phase-4 evaluation reaches.
+//
+// It separates cleanly from the dangerous failure: a regression that merges on an unreported list
+// does so **after** the flipped read, so its run is valid and fails the outcome assertion. A run with
+// no second guard read at all has not reached Phase 4, and is left to that assertion too.
+//
+// Returns why a run is invalid, or null when it is valid.
+function phaseFourInvalidity(records, flippedPosition) {
+  const statusReads = records.filter((record) => record.operation === 'pr-status-read');
+  const flipped = statusReads[flippedPosition - 1];
+  if (flipped === undefined) {
+    return `it holds ${statusReads.length} pr-status-read record(s), so no read was served the checksReported: false element at position ${flippedPosition}`;
+  }
+  const secondGuardReads = GUARD_SURFACES.map(
+    (surface) => records.filter((record) => record.operation === surface)[1],
+  ).filter((record) => record !== undefined);
+  if (secondGuardReads.length === 0) return null;
+  const earliest = Math.min(...secondGuardReads.map((record) => record.seq));
+  return flipped.seq < earliest
+    ? null
+    : `the flipped pr-status-read is seq ${flipped.seq}, which does not precede the earliest second guard-surface read at seq ${earliest}`;
+}
+
+// An invalid run is discarded and redone, exactly as a run with a `cwd: null` record is — and, like
+// that one, an invalid run left in `results/` fails here rather than being skipped over, because a
+// file there looks like evidence. Validity is also what the five-of-five bar is counted over.
+test(
+  `${PHASE_FOUR_SCENARIO}: every archived run is valid under the sequence-position rule`,
+  { skip: phaseFourSkip },
+  () => {
+    const flippedPosition = flippedStatusReadPosition();
+    const invalid = phaseFourRuns
+      .map((run) => ({ run, reason: phaseFourInvalidity(readRun(run), flippedPosition) }))
+      .filter(({ reason }) => reason !== null)
+      .map(({ run, reason }) => `${run.name}: ${reason}`);
+    assert.deepEqual(
+      invalid,
+      [],
+      `archived run(s) of ${PHASE_FOUR_SCENARIO} never received the flipped status read before Phase 4, so they observed a green check list there and are no evidence about an unreported one. Delete them and re-run the round; an invalid run is neither a pass nor a failure.`,
+    );
+    assert.ok(
+      phaseFourRuns.length - invalid.length >= REQUIRED_RUNS,
+      `${PHASE_FOUR_SCENARIO} has ${phaseFourRuns.length - invalid.length} valid archived run(s) and the plan's bar is ${REQUIRED_RUNS}`,
+    );
+  },
+);
+
+// The outcome, asserted over valid runs. With the check list unreported at Phase 4 and no operator to
+// answer the no-check-list waiver, merge precondition 2 blocks: no `pr-merge` record, the refusal
+// proxy — a second read of each guard surface — and the flipped status read itself present.
+//
+// What this does **not** show is which rule inside Phase 4 decided the block. Condition 2's own
+// clause blocks whether or not the waiver's text was ever loaded, so the log is identical either way;
+// that the waiver fragment is reached is a question for the text tests, not for this assertion.
+test(
+  `${PHASE_FOUR_SCENARIO}: every valid archived run blocks at Phase 4 without merging`,
+  { skip: phaseFourSkip },
+  () => {
+    const flippedPosition = flippedStatusReadPosition();
+    for (const run of phaseFourRuns) {
+      const records = readRun(run);
+      // An invalid run is the validity test's to fail; reporting it here too would read a run that
+      // should be redone as a finding about the gate.
+      if (phaseFourInvalidity(records, flippedPosition) !== null) continue;
+
+      const merges = records.filter((record) => record.operation === 'pr-merge');
+      assert.deepEqual(
+        merges,
+        [],
+        `${run.name}: the gate requested pr-merge after its Phase-4 status read reported no check list. An unreported list is an unproven one, and only an operator answer clears it — which a non-interactive run cannot give.`,
+      );
+
+      for (const surface of GUARD_SURFACES) {
+        const reads = records.filter((record) => record.operation === surface).length;
+        assert.ok(
+          reads >= 2,
+          `${run.name}: ${surface} appears ${reads} time(s); the gate reads it once in Phase 1 and again in Phase 4, so fewer than two reads means the run never reached Phase 4 and its lack of a merge proves nothing`,
+        );
+      }
+
+      const statusReads = records.filter((record) => record.operation === 'pr-status-read').length;
+      assert.ok(
+        statusReads >= flippedPosition,
+        `${run.name}: pr-status-read appears ${statusReads} time(s); the unreported check list is served from read ${flippedPosition} on, so the run never observed it`,
       );
     }
   },

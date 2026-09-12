@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -16,7 +24,8 @@ import {
 // ships for exactly this — a static import would have it read standard input as a side effect of
 // asking what the predicate is.
 process.env.EVAL_TRACKER_NO_MAIN = '1';
-const { servesMerge } = await import('../evals/merge-gate/_scaffold/remote-tracker.mjs');
+const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
+  await import('../evals/merge-gate/_scaffold/remote-tracker.mjs');
 
 // WP2 of docs/plan/2026-09-02-merge-gate-behavioural-evals.md. The eval suite stubs the whole forge
 // input surface of a `merge-gate` run at one subprocess, which is only worth something while the
@@ -109,6 +118,76 @@ function statedEnvelopes(file, operation, entry) {
   ];
 }
 
+// A sequenced entry is proven element by element. Each element is a complete single-envelope shape —
+// its own provider payload and its own envelope — under the entry's shared `input`, so it faces
+// exactly the check a plain entry does; a plain entry is its own one element. The stub's own rules
+// for a well-formed entry are applied first, so a malformed one fails here with the stub's reason
+// rather than as a confusing normalizer mismatch.
+function fixtureElements(file, fixture) {
+  const elements = [];
+  for (const [operation, entry] of Object.entries(fixture.operations)) {
+    const resolved = resolveEnvelope(fixture, operation, false, 1);
+    assert.doesNotMatch(
+      resolved.error?.message ?? '',
+      /is malformed/,
+      `${file}: the stub rejects the entry for "${operation}"`,
+    );
+    if (!isSequenced(entry)) {
+      elements.push({ operation, label: '', entry, element: entry });
+      continue;
+    }
+    const problem = sequencedEntryProblem(entry);
+    assert.equal(problem, null, `${file}: the sequenced entry for "${operation}" is malformed`);
+    entry.sequence.forEach((element, index) => {
+      elements.push({ operation, label: ` (sequence element ${index + 1})`, entry, element });
+    });
+  }
+  return elements;
+}
+
+// The envelope one plain entry, or one sequence element, states for a call in the given mode — the
+// same choice the stub makes.
+function elementEnvelope(element, apply) {
+  return apply
+    ? (element.applyEnvelope ?? element.envelope)
+    : (element.dryRunEnvelope ?? element.envelope);
+}
+
+function readCallLog(path) {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+}
+
+// Synthetic sequences for the stub's own mechanics, written to a temporary directory and never to
+// `fixtures/`, so the fidelity corpus is untouched by them. Each element is the positive control's
+// real status envelope with its title marked, which is enough to tell the elements apart and is all
+// these tests need: what they prove is which element a call received, not that the element is
+// realistic — the corpus assertions above prove that.
+const SEQUENCED_OPERATION = 'pr-status-read';
+
+function markedStatusElements(count) {
+  const { provider, envelope } = loadFixture('merge-proceeds.json').operations[SEQUENCED_OPERATION];
+  return Array.from({ length: count }, (_, index) => {
+    const marked = structuredClone(envelope);
+    marked.data.result.title = `${marked.data.result.title} [element ${index + 1}]`;
+    return { provider, envelope: marked };
+  });
+}
+
+function writeSequencedFixture(dir, elements, declaration = {}) {
+  const fixture = loadFixture('merge-proceeds.json');
+  fixture.operations[SEQUENCED_OPERATION] = {
+    input: fixture.operations[SEQUENCED_OPERATION].input,
+    sequence: elements,
+    ...declaration,
+  };
+  const path = join(dir, 'fixture.json');
+  writeFileSync(path, `${JSON.stringify(fixture)}\n`);
+  return path;
+}
+
 function runStub(operation, argv = [], env = {}) {
   // `EVAL_TRACKER_NO_MAIN` is set in this process so the import above stays inert; a child that
   // inherited it would exit without writing an envelope, which is the opposite of what a spawned
@@ -132,9 +211,9 @@ test('every fixture envelope is one the real normalizer emits', async () => {
     assert.ok(fixture.repository, `${file}: fixture states no repository`);
     assert.ok(fixture.probe, `${file}: fixture states no probe`);
 
-    for (const [operation, entry] of Object.entries(fixture.operations)) {
-      for (const { apply, envelope } of statedEnvelopes(file, operation, entry)) {
-        const runner = runnerFor(entry);
+    for (const { operation, label, entry, element } of fixtureElements(file, fixture)) {
+      for (const { apply, envelope } of statedEnvelopes(file, `${operation}${label}`, element)) {
+        const runner = runnerFor(element);
         const produced = await executeOperation(
           operation,
           { repository: fixture.repository, probe: fixture.probe, ...(entry.input ?? {}) },
@@ -158,11 +237,11 @@ test('every fixture envelope is one the real normalizer emits', async () => {
         assert.deepEqual(
           produced,
           envelope,
-          `${file}: the canned ${apply ? 'apply' : 'dry-run'} envelope for "${operation}" is not what executeOperation emits for its provider payload`,
+          `${file}: the canned ${apply ? 'apply' : 'dry-run'} envelope for "${operation}"${label} is not what executeOperation emits for its provider payload`,
         );
         // Only the applied call issues every command a mutation has; a dry run returns its preview
         // before the first one, so its unconsumed responses say nothing.
-        if (apply) runner.assertDrained(`${file}: "${operation}"`);
+        if (apply) runner.assertDrained(`${file}: "${operation}"${label}`);
       }
     }
   }
@@ -227,6 +306,8 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
     try {
       const asked = [];
       for (const [operation, entry] of Object.entries(fixture.operations)) {
+        // Walked element by element in the next test: one call here would ask for element 1 only.
+        if (isSequenced(entry)) continue;
         for (const { apply, envelope: stated } of statedEnvelopes(file, operation, entry)) {
           asked.push(operation);
           const { status, envelope } = runStub(operation, apply ? ['--apply'] : [], {
@@ -256,6 +337,73 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
       rmSync(logDir, { recursive: true, force: true });
     }
   }
+});
+
+// The sequenced half of the test above. A sequenced entry is walked rather than called once: the
+// n-th call must receive the n-th element, so every element is asked for in order against one log,
+// and one call more shows what the entry declared for exhaustion. Positions count dry runs and
+// applies alike, which is why each mode the elements state gets a log of its own.
+test('the stub walks every element of a sequenced fixture entry in order', () => {
+  let walked = 0;
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    const fixturePath = join(FIXTURE_DIR, file);
+    for (const [operation, entry] of Object.entries(fixture.operations)) {
+      if (!isSequenced(entry)) continue;
+      walked += 1;
+      const elements = entry.sequence;
+      const modes = elements.some((element) => element.applyEnvelope !== undefined)
+        ? [false, true]
+        : [false];
+      for (const apply of modes) {
+        const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+        const logPath = join(logDir, 'tracker-calls.jsonl');
+        const env = { EVAL_TRACKER_FIXTURE: fixturePath, EVAL_TRACKER_LOG: logPath };
+        const argv = apply ? ['--apply'] : [];
+        try {
+          elements.forEach((element, index) => {
+            const stated = elementEnvelope(element, apply);
+            const { status, envelope } = runStub(operation, argv, env);
+            assert.equal(
+              status,
+              stated.ok ? 0 : 1,
+              `${file}: call ${index + 1} of "${operation}" exited with the wrong status`,
+            );
+            assert.deepEqual(
+              envelope,
+              stated,
+              `${file}: call ${index + 1} of "${operation}" was not served sequence element ${index + 1}`,
+            );
+          });
+
+          const past = runStub(operation, argv, env);
+          if (entry.repeatLast === true) {
+            assert.deepEqual(
+              past.envelope,
+              elementEnvelope(elements.at(-1), apply),
+              `${file}: "${operation}" declares repeatLast, and a call past its last element did not receive that element again`,
+            );
+          } else {
+            assert.equal(past.status, 1, `${file}: a call past the end of "${operation}" exited 0`);
+            assert.equal(past.envelope.ok, false);
+            assert.match(past.envelope.error.message, /is exhausted/);
+          }
+
+          assert.deepEqual(
+            readCallLog(logPath).map((record) => [record.seq, record.operation]),
+            Array.from({ length: elements.length + 1 }, (_, index) => [index + 1, operation]),
+            `${file}: the stub's call log does not record every call of the sequenced "${operation}"`,
+          );
+        } finally {
+          rmSync(logDir, { recursive: true, force: true });
+        }
+      }
+    }
+  }
+  assert.ok(
+    walked > 0,
+    'no fixture declares a sequenced entry, so nothing here exercised sequencing against the corpus',
+  );
 });
 
 // One fixture on each side of the merge opt-in, selected by the flag rather than by taking the
@@ -505,5 +653,247 @@ test('concurrent stub processes never assign the same sequence number', async ()
     );
   } finally {
     rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+// What a call past the last element receives is the entry's declaration and never a default. Both
+// an absent and an explicit `false` declaration have to fail, and the failure has to be loud: a run
+// that reads more often than its scenario was composed for must not quietly receive a plausible
+// answer.
+test('a sequenced entry fails loudly past its last element unless it declares repeatLast', () => {
+  const elements = markedStatusElements(2);
+  for (const declaration of [{}, { repeatLast: false }, { repeatLast: true }]) {
+    const label = `declaration ${JSON.stringify(declaration)}`;
+    const dir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+    const logPath = join(dir, 'tracker-calls.jsonl');
+    const env = {
+      EVAL_TRACKER_FIXTURE: writeSequencedFixture(dir, elements, declaration),
+      EVAL_TRACKER_LOG: logPath,
+    };
+    try {
+      elements.forEach((element, index) => {
+        const { status, envelope } = runStub(SEQUENCED_OPERATION, [], env);
+        assert.equal(status, 0, `${label}: call ${index + 1} exited non-zero`);
+        assert.deepEqual(envelope, element.envelope, `${label}: call ${index + 1}`);
+      });
+      for (const call of [3, 4]) {
+        const { status, envelope } = runStub(SEQUENCED_OPERATION, [], env);
+        if (declaration.repeatLast === true) {
+          assert.equal(status, 0, `${label}: call ${call} exited non-zero`);
+          assert.deepEqual(envelope, elements[1].envelope, `${label}: call ${call}`);
+        } else {
+          assert.equal(status, 1, `${label}: call ${call} past the end exited 0`);
+          assert.equal(envelope.ok, false);
+          assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+          assert.match(envelope.error.message, new RegExp(`is exhausted: this is call ${call}`));
+          assert.deepEqual(envelope.error.details, {
+            operation: SEQUENCED_OPERATION,
+            position: call,
+            sequenceLength: 2,
+          });
+        }
+      }
+      // A call past the end is still a call the run made, so it is recorded like any other.
+      assert.equal(readCallLog(logPath).length, 4, `${label}: not every call was recorded`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+// The concurrency test above proves unique `seq` values, and for a sequence that is not enough: two
+// processes can hold distinct `seq` values and still be served the same element if the position is
+// counted anywhere but inside the lock. So this asserts the envelopes themselves — the N served
+// envelopes are exactly the N elements, each once — and then ties every process to its own record
+// through the `cwd` it stated, proving it received the element its locked position names.
+test('concurrent calls of a sequenced operation are served each element exactly once', async () => {
+  const CONCURRENT_CALLS = 16;
+  const elements = markedStatusElements(CONCURRENT_CALLS);
+  const dir = mkdtempSync(join(tmpdir(), 'effective-flow-eval-sequence-race-'));
+  const logPath = join(dir, 'tracker-calls.jsonl');
+  const fixturePath = writeSequencedFixture(dir, elements);
+  const { EVAL_TRACKER_NO_MAIN: _suppressed, ...inherited } = process.env;
+  try {
+    const calls = await Promise.all(
+      Array.from(
+        { length: CONCURRENT_CALLS },
+        (_, index) =>
+          new Promise((done, failed) => {
+            const child = spawn(process.execPath, [STUB_PATH, SEQUENCED_OPERATION], {
+              env: { ...inherited, EVAL_TRACKER_LOG: logPath, EVAL_TRACKER_FIXTURE: fixturePath },
+              stdio: ['pipe', 'pipe', 'ignore'],
+            });
+            let stdout = '';
+            child.stdout.setEncoding('utf8');
+            child.stdout.on('data', (chunk) => {
+              stdout += chunk;
+            });
+            child.on('error', failed);
+            child.on('close', (status) => done({ index, status, stdout }));
+            child.stdin.end(
+              `${JSON.stringify({ cwd: `/tmp/effective-flow-merge-gate-eval/unit/call-${index}` })}\n`,
+            );
+          }),
+      ),
+    );
+
+    assert.deepEqual(
+      calls.filter((call) => call.status !== 0).map((call) => `call-${call.index}: ${call.stdout}`),
+      [],
+      'a concurrent call of a sequenced operation failed; every call holds a position within the sequence, so none may be refused',
+    );
+    const served = new Map(calls.map((call) => [call.index, JSON.parse(call.stdout)]));
+    const titleOf = (envelope) => envelope.data.result.title;
+    assert.deepEqual(
+      [...served.values()].map(titleOf).sort(),
+      elements.map((element) => titleOf(element.envelope)).sort(),
+      'the served envelopes are not exactly the sequence elements, each once; two concurrent calls received the same position',
+    );
+
+    const records = readCallLog(logPath);
+    assert.deepEqual(
+      records.map((record) => record.seq),
+      Array.from({ length: CONCURRENT_CALLS }, (_, index) => index + 1),
+    );
+    for (const record of records) {
+      const index = Number(record.cwd.match(/call-(\d+)$/)[1]);
+      assert.deepEqual(
+        served.get(index),
+        elements[record.seq - 1].envelope,
+        `call-${index} was recorded at position ${record.seq} and served a different element; selection did not use the position computed under the lock`,
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Fail-closed, proven against a genuinely held lock. The lock directory is created fresh, so the
+// stub cannot break it as abandoned, and `EVAL_TRACKER_LOCK_WAIT_MS` — the one environment variable
+// the stub reads only for this test — shortens the wait from five seconds. The plain entry beside it
+// is the contrast that shows the failure belongs to the sequence: it keeps today's behaviour exactly,
+// appends without the lock and is served.
+test('a sequenced entry fails closed when the call-log lock cannot be obtained', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+  const logPath = join(dir, 'tracker-calls.jsonl');
+  const env = {
+    EVAL_TRACKER_FIXTURE: writeSequencedFixture(dir, markedStatusElements(1), { repeatLast: true }),
+    EVAL_TRACKER_LOG: logPath,
+    EVAL_TRACKER_LOCK_WAIT_MS: '100',
+  };
+  mkdirSync(`${logPath}.lock`);
+  try {
+    const sequenced = runStub(SEQUENCED_OPERATION, [], env);
+    assert.equal(sequenced.status, 1, 'a sequenced call without the lock exited 0');
+    assert.equal(sequenced.envelope.ok, false);
+    assert.equal(sequenced.envelope.error.code, 'COMMAND_FAILED');
+    assert.match(sequenced.envelope.error.message, /could not be obtained/);
+    assert.ok(
+      !existsSync(logPath),
+      'a sequenced call appended to the log without holding the lock',
+    );
+
+    const plain = runStub('viewer-read', [], env);
+    assert.equal(plain.status, 0, 'a plain entry lost its unlocked-append fallback');
+    assert.equal(plain.envelope.ok, true);
+    assert.deepEqual(
+      readCallLog(logPath).map((record) => record.operation),
+      ['viewer-read'],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The other two fail-closed inputs: a log that exists and cannot be read, and one that can be read
+// but not counted. Each would otherwise have to be guessed at, and the guess a naive reader makes —
+// no prior records, so element 1 — is exactly the wrong one. A plain entry keeps serving in both.
+test('a sequenced entry fails closed when the call log cannot be read or counted', () => {
+  for (const [label, prepare] of [
+    ['a directory where the log should be', (logPath) => mkdirSync(logPath)],
+    ['a log line that is not JSON', (logPath) => writeFileSync(logPath, 'not json\n')],
+  ]) {
+    const dir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+    const logPath = join(dir, 'tracker-calls.jsonl');
+    const env = {
+      EVAL_TRACKER_FIXTURE: writeSequencedFixture(dir, markedStatusElements(1), {
+        repeatLast: true,
+      }),
+      EVAL_TRACKER_LOG: logPath,
+    };
+    prepare(logPath);
+    try {
+      const sequenced = runStub(SEQUENCED_OPERATION, [], env);
+      assert.equal(sequenced.status, 1, `${label}: the sequenced call exited 0`);
+      assert.equal(sequenced.envelope.ok, false, `${label}: the sequenced call was served`);
+      assert.equal(sequenced.envelope.error.code, 'COMMAND_FAILED', label);
+      assert.ok(!existsSync(`${logPath}.lock`), `${label}: the failed call left its lock behind`);
+
+      const plain = runStub('viewer-read', [], env);
+      assert.equal(plain.status, 0, `${label}: a plain entry stopped being served`);
+      assert.equal(plain.envelope.ok, true, label);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+// A malformed entry is refused with the reason, never interpreted. Asked of the stub's exported
+// resolver directly, because every case here is decided before a position or a log is involved.
+test('the stub rejects a malformed sequenced entry loudly rather than guessing', () => {
+  const element = {
+    envelope: loadFixture('merge-proceeds.json').operations['viewer-read'].envelope,
+  };
+  const pair = { dryRunEnvelope: element.envelope, applyEnvelope: element.envelope };
+  const cases = [
+    ['an empty sequence', { sequence: [] }],
+    ['a sequence that is not an array', { sequence: element }],
+    ['a sequence beside a single envelope', { sequence: [element], envelope: element.envelope }],
+    ['a sequence beside a provider payload', { sequence: [element], provider: null }],
+    ['a sequence beside an ordered provider list', { sequence: [element], providers: [] }],
+    ['a non-boolean exhaustion declaration', { sequence: [element], repeatLast: 'yes' }],
+    ['an element that is not an object', { sequence: ['envelope'] }],
+    ['an element stating no envelope', { sequence: [{ provider: null }] }],
+    [
+      'an element stating half a mutation pair',
+      { sequence: [{ dryRunEnvelope: element.envelope }] },
+    ],
+    ['an element stating both shapes', { sequence: [{ ...element, ...pair }] }],
+    ['an element carrying its own input', { sequence: [{ ...element, input: {} }] }],
+    ['a nested sequence', { sequence: [{ ...element, sequence: [element] }] }],
+    ['repeatLast without a sequence', { ...element, repeatLast: true }],
+  ];
+  for (const [label, entry] of cases) {
+    const envelope = resolveEnvelope(
+      { operations: { 'viewer-read': entry } },
+      'viewer-read',
+      false,
+      1,
+    );
+    assert.equal(envelope.ok, false, `${label} was served`);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', label);
+    assert.match(envelope.error.message, /is malformed/, label);
+  }
+
+  // A merge record must never be withheld, and a sequenced entry withholds its record to fail closed.
+  const merge = resolveEnvelope(
+    { servesMerge: true, operations: { 'pr-merge': { sequence: [pair] } } },
+    'pr-merge',
+    true,
+    1,
+  );
+  assert.equal(merge.ok, false, 'a sequenced pr-merge entry was served');
+  assert.match(merge.error.message, /cannot be sequenced/);
+
+  // A well-formed sequence handed no locked position serves nothing rather than element 1.
+  for (const position of [null, 0, 1.5]) {
+    const unpositioned = resolveEnvelope(
+      { operations: { 'viewer-read': { sequence: [element] } } },
+      'viewer-read',
+      false,
+      position,
+    );
+    assert.equal(unpositioned.ok, false, `position ${position} was served`);
+    assert.equal(unpositioned.error.code, 'COMMAND_FAILED');
   }
 });

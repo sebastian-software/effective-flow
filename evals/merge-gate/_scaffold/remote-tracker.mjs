@@ -111,6 +111,17 @@ const LOCK_PATH = `${CALL_LOG_PATH}.lock`;
 const LOCK_TIMEOUT_MS = 5000;
 const LOCK_POLL_MS = 5;
 
+// How long a caller waits for the lock before giving up, as distinct from how old a lock has to be
+// before it counts as abandoned. The two were one number, and without an override they still are.
+// `EVAL_TRACKER_LOCK_WAIT_MS` shortens only the wait, and exists only for the fidelity test that
+// proves a sequenced entry fails closed on a held lock: that test holds a fresh lock, so the
+// staleness threshold has to stay where it is — otherwise the stub would break the lock as abandoned
+// before its own wait ran out, and the test would prove the opposite of what it names.
+const LOCK_WAIT_MS = (() => {
+  const configured = Number(process.env.EVAL_TRACKER_LOCK_WAIT_MS);
+  return Number.isInteger(configured) && configured > 0 ? configured : LOCK_TIMEOUT_MS;
+})();
+
 // A blocking sleep with no busy-wait, which this needs because the whole record path is synchronous
 // and a spin would starve the very process holding the lock on a single core.
 function sleepSync(milliseconds) {
@@ -148,7 +159,7 @@ function acquireLock(deadline) {
 function recordCall(record) {
   try {
     mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
-    const locked = acquireLock(Date.now() + LOCK_TIMEOUT_MS);
+    const locked = acquireLock(Date.now() + LOCK_WAIT_MS);
     try {
       // Appending without the lock is the deliberate fallback, not an oversight. The two failures
       // are not equal: a duplicate `seq` fails the run loudly at the schema assertion, while a
@@ -163,6 +174,53 @@ function recordCall(record) {
     }
   } catch {
     // deliberately ignored — see above
+  }
+}
+
+// The strict counterpart of `recordCall`, used only for an operation whose fixture entry is
+// sequenced. It returns the call's **position** within its operation — 1 for the first record of
+// that operation in the log, dry runs and applies alike — counted from the very log content `seq` is
+// counted from, under the same lock, immediately before the append. Envelope selection uses that
+// value and never counts again: a second count outside the lock would see whatever concurrent
+// callers had appended in between, and two processes could be served the same element.
+//
+// None of `recordCall`'s leniency survives here, because the trade that justifies it does not hold.
+// Appending without the lock is tolerable for `seq` only because a duplicate `seq` fails the schema
+// assertion loudly; a duplicated sequence **position** fails nothing — two calls silently receive
+// the same element, and a scenario whose whole subject is which element a call received measures
+// nothing. So an unobtainable lock, a log that exists and cannot be read or parsed, and a failed
+// append all throw, and the caller answers with an error envelope: never element 1, and never an
+// unlocked append.
+function recordSequencedCall(record) {
+  mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
+  if (!acquireLock(Date.now() + LOCK_WAIT_MS)) {
+    throw new Error(
+      `the call-log lock at ${LOCK_PATH} could not be obtained within ${LOCK_WAIT_MS} ms`,
+    );
+  }
+  try {
+    let existing = '';
+    try {
+      existing = readFileSync(CALL_LOG_PATH, 'utf8');
+    } catch (error) {
+      // A log that does not exist yet is the first call's normal case, exactly as it is for `seq`.
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    const lines = existing.split('\n').filter((line) => line.trim() !== '');
+    let prior = 0;
+    for (const line of lines) {
+      if (JSON.parse(line).operation === record.operation) prior += 1;
+    }
+    appendFileSync(CALL_LOG_PATH, `${JSON.stringify({ seq: lines.length + 1, ...record })}\n`);
+    return prior + 1;
+  } finally {
+    // The record is written by the time a removal can fail, so that failure must not turn a
+    // correctly positioned call into an error; a lock left behind is broken by age like any other.
+    try {
+      rmSync(LOCK_PATH, { recursive: true, force: true });
+    } catch {
+      // deliberately ignored — see above
+    }
   }
 }
 
@@ -187,11 +245,88 @@ function loadFixture() {
   return fixture;
 }
 
+// A fixture entry answers every call of its operation with one envelope, unless it is **sequenced**:
+// then it states an ordered list of envelopes under `sequence`, and the n-th call of that operation
+// in the run — dry runs and applies alike — receives the n-th element. That is what lets a status
+// read answer differently in Phase 2 and in Phase 4, which an answer keyed by operation name alone
+// cannot do.
+//
+// The field is deliberately not `providers`. That name already means "one provider response per
+// command inside a single call", and the two orderings are unrelated: one runs within a call, this
+// one across calls.
+//
+// What a call past the last element receives is the entry's own declaration, never a default:
+// `repeatLast: true` serves the last element again, and without it the call fails loudly with an
+// error envelope. A silent repeat would let a run read more often than the scenario was composed
+// for and still receive a plausible answer.
+const SEQUENCE_FIELD = 'sequence';
+const REPEAT_LAST_FIELD = 'repeatLast';
+
+// The fields that state a single envelope, or the provider payload one is derived from, directly on
+// an entry. A sequenced entry states those inside its elements only: carrying one beside the
+// sequence as well would leave open which of the two a call receives.
+const SINGLE_SHAPE_FIELDS = [
+  'envelope',
+  'dryRunEnvelope',
+  'applyEnvelope',
+  'provider',
+  'providers',
+];
+
+export function isSequenced(entry) {
+  return entry !== null && typeof entry === 'object' && Object.hasOwn(entry, SEQUENCE_FIELD);
+}
+
+// Why a sequenced entry is malformed, or null when it is not. Exported so the fidelity test applies
+// the stub's own rule to the corpus instead of restating it.
+export function sequencedEntryProblem(entry) {
+  const elements = entry[SEQUENCE_FIELD];
+  if (!Array.isArray(elements) || elements.length === 0) {
+    return `${SEQUENCE_FIELD} must be a non-empty array`;
+  }
+  const stray = SINGLE_SHAPE_FIELDS.filter((field) => Object.hasOwn(entry, field));
+  if (stray.length > 0) {
+    return `a sequenced entry states its envelopes only inside its elements, and this one also carries ${stray.join(', ')}`;
+  }
+  if (Object.hasOwn(entry, REPEAT_LAST_FIELD) && typeof entry[REPEAT_LAST_FIELD] !== 'boolean') {
+    return `${REPEAT_LAST_FIELD} must be a boolean`;
+  }
+  for (const [index, element] of elements.entries()) {
+    const label = `element ${index + 1}`;
+    if (element === null || typeof element !== 'object' || Array.isArray(element)) {
+      return `${label} is not an object`;
+    }
+    for (const field of [SEQUENCE_FIELD, REPEAT_LAST_FIELD, 'input']) {
+      if (Object.hasOwn(element, field))
+        return `${label} carries ${field}, which belongs to the entry`;
+    }
+    const single = element.envelope !== undefined;
+    const dryRun = element.dryRunEnvelope !== undefined;
+    const applied = element.applyEnvelope !== undefined;
+    if (single ? dryRun || applied : !(dryRun && applied)) {
+      return `${label} must state either envelope or both dryRunEnvelope and applyEnvelope`;
+    }
+  }
+  return null;
+}
+
+function malformedEntry(operation, problem) {
+  return errorEnvelope(
+    operation,
+    'INVALID_PAYLOAD',
+    `fixture entry for "${operation}" is malformed: ${problem}`,
+    { operation },
+  );
+}
+
 // An operation the fixture does not define fails loudly and names both the operation and the set
 // the fixture does define. Returning a plausible-looking empty result instead would let a scenario
 // pass for the wrong reason — a gate that never merges because a read it needed came back as a
 // silent default is not the same fact as a gate that refused on its guard.
-export function resolveEnvelope(fixture, operation, apply) {
+//
+// `position` is the call's position within its operation, as `recordSequencedCall` computed it under
+// the lock. It is required for a sequenced entry and ignored for every other one.
+export function resolveEnvelope(fixture, operation, apply, position = null) {
   const entry = fixture.operations[operation];
   if (entry === undefined) {
     const defined = Object.keys(fixture.operations).sort().join(', ');
@@ -202,6 +337,44 @@ export function resolveEnvelope(fixture, operation, apply) {
       { operation, definedOperations: defined },
     );
   }
+  if (!isSequenced(entry)) {
+    if (entry !== null && typeof entry === 'object' && Object.hasOwn(entry, REPEAT_LAST_FIELD)) {
+      return malformedEntry(
+        operation,
+        `${REPEAT_LAST_FIELD} is declared without a ${SEQUENCE_FIELD}`,
+      );
+    }
+    return envelopeFor(entry, operation, apply);
+  }
+  // A merge record is the evidence the refusal scenarios rest on, and it must never be dropped. A
+  // sequenced entry fails closed by withholding its record, so `pr-merge` stays unsequenced.
+  if (REFUSABLE_OPERATIONS.has(operation)) {
+    return malformedEntry(operation, `${operation} cannot be sequenced`);
+  }
+  const problem = sequencedEntryProblem(entry);
+  if (problem !== null) return malformedEntry(operation, problem);
+  if (!Number.isInteger(position) || position < 1) {
+    return errorEnvelope(
+      operation,
+      'COMMAND_FAILED',
+      `eval stub has no locked sequence position for "${operation}" and serves no element of its sequence`,
+      { operation },
+    );
+  }
+  const elements = entry[SEQUENCE_FIELD];
+  if (position > elements.length && entry[REPEAT_LAST_FIELD] !== true) {
+    return errorEnvelope(
+      operation,
+      'INVALID_PAYLOAD',
+      `eval stub sequence for "${operation}" is exhausted: this is call ${position}, the entry holds ${elements.length} envelope(s) and does not declare ${REPEAT_LAST_FIELD}`,
+      { operation, position, sequenceLength: elements.length },
+    );
+  }
+  return envelopeFor(elements[Math.min(position, elements.length) - 1], operation, apply);
+}
+
+// The envelope one plain entry, or one element of a sequence, states for the call's mode.
+function envelopeFor(entry, operation, apply) {
   // A defined mutation may state its two envelopes separately, so a dry run and an applied write
   // stay distinguishable exactly as they are in the real helper. Every operation this scenario
   // needs is a read, for which one envelope serves both.
@@ -236,17 +409,49 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       // Read stdin before anything else, so the caller's write always finds a reader and a refused
       // operation cannot turn into an EPIPE on the gate's side.
       const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
-      recordCall({
+      const record = {
         operation,
         apply,
         at: new Date().toISOString(),
         cwd: typeof input.cwd === 'string' ? input.cwd : null,
-      });
+      };
+      // The fixture is read before the call is recorded, because whether this operation's entry is
+      // sequenced decides how it is recorded. A fixture that cannot be read is still recorded — best
+      // effort, as every call always was — and its error is rethrown only afterwards.
+      let fixture = null;
+      let fixtureError = null;
+      try {
+        fixture = loadFixture();
+      } catch (error) {
+        fixtureError = error;
+      }
+      let position = null;
+      let allocationError = null;
+      if (
+        fixture !== null &&
+        !REFUSABLE_OPERATIONS.has(operation) &&
+        isSequenced(fixture.operations[operation])
+      ) {
+        try {
+          position = recordSequencedCall(record);
+        } catch (error) {
+          allocationError = error;
+        }
+      } else {
+        recordCall(record);
+      }
       // The fixture is loaded before the refusal decision, because the refusal is now the
       // fixture's to waive. A fixture that cannot be read throws out of here into the catch below,
       // which produces an error envelope rather than a served merge — the fail-closed direction.
-      const fixture = loadFixture();
-      if (REFUSABLE_OPERATIONS.has(operation) && !servesMerge(fixture)) {
+      if (fixtureError !== null) throw fixtureError;
+      if (allocationError !== null) {
+        envelope = errorEnvelope(
+          operation,
+          'COMMAND_FAILED',
+          `eval stub could not allocate a sequence position for "${operation}" and serves no element of its sequence: ${allocationError?.message ?? 'unexpected failure'}`,
+          { operation, apply },
+        );
+      } else if (REFUSABLE_OPERATIONS.has(operation) && !servesMerge(fixture)) {
         envelope = errorEnvelope(
           operation,
           'COMMAND_FAILED',
@@ -255,7 +460,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
           !apply,
         );
       } else {
-        envelope = resolveEnvelope(fixture, operation, apply);
+        envelope = resolveEnvelope(fixture, operation, apply, position);
       }
     }
   } catch (error) {
@@ -269,6 +474,6 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   return envelope;
 }
 
-// Guarded so the fidelity test can import `resolveEnvelope` and `MERGE_REFUSAL_MARKER` without the
-// module reading standard input on import.
+// Guarded so the fidelity test can import `resolveEnvelope`, the sequence predicates and
+// `MERGE_REFUSAL_MARKER` without the module reading standard input on import.
 if (process.env.EVAL_TRACKER_NO_MAIN !== '1') await main();
