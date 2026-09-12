@@ -110,8 +110,10 @@ be included, use `deliver`; direct `pr` aborts on a dirty checkout rather than o
 
 **Input/output:** A direct invocation takes the clean currently checked-out branch as its head. A
 returning delivery handback supplies an exact head branch, base branch, and verified head OID, even
-if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`,
-with the legacy `worktree.baseBranch` and then `main` as fallbacks. Output is the PR URL, head and
+if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`;
+without that key it is the branch `origin/HEAD` names, and `main` where that ref does not resolve. A
+retired `worktree.baseBranch` row is never read: without `delivery.baseBranch` beside it, `pr` stops
+and points to `/effective-flow setup`. Output is the PR URL, head and
 base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
 no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
 before publishing.

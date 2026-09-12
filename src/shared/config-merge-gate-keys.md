@@ -1,7 +1,7 @@
 ## Merge-gate configuration keys
 
 This fragment carries only the `mergeGate.*` block of the Effective Flow configuration: the keys,
-their values and defaults, and the per-key read fallback to the legacy `prReview.*` namespace. It
+their values and defaults, and the retirement of the legacy `prReview.*` namespace. It
 is loaded by the sources that resolve those keys without documenting them themselves. The config
 locator (where the project setup ADR is found) and the table encoding (how a value is written and
 read) are not repeated here; they live in the "Effective Flow configuration (project setup ADR)"
@@ -28,9 +28,8 @@ A login containing brackets (`greptileai[bot]`) is a valid middle segment, becau
 splits on `.` only.
 
 **`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
-the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
-a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
-migrate, or report as shadowed. `auto` resolves a conflict with the base through
+the legacy namespace, so there is no `prReview.conflictResolution` row to detect, migrate, or report as
+shadowed, and a project whose legacy block {{SKILL:setup}} migrates gets the default `auto`. `auto` resolves a conflict with the base through
 {{SKILL:merge-gate}}'s dedicated worker, `ask` asks once **per conflicted round** in a gated run —
 once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
 once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
@@ -44,14 +43,8 @@ default and the documented default are the same value, and for this one they are
 unparseable line must never authorize a commit and a push. Report the affected key as that rule
 requires and continue with `off`.
 
-**Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
-`mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
-that the legacy namespace was read and that {{SKILL:setup}} migrates it. Precedence is per key: a
-present `mergeGate.<key>` always wins over a present `prReview.<key>`, and the two namespaces are
-never merged at a finer grain than the individual key. Reading is all this fallback does — only
-{{SKILL:setup}} writes configuration, and it rewrites a legacy block in place (carry the values
-over, remove the old rows, report a shadowed key). Once every project has run {{SKILL:setup}} once,
-the fallback has no remaining reader and is removable rather than load-bearing.
+**Retired namespace:** these keys were formerly named `prReview.*`. A `prReview.<key>` row is retired
+and never read; the configuration building block's retired-key rule decides whether it stops a run.
 
 **`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
 publishes **its own review findings** onto a pull request it created (see the encoding rule above),

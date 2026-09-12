@@ -103,7 +103,7 @@ base-branch-resolution
 - **Base branch:** the PR target — always the resolved local base branch, never the resolved base
   ref. On a direct invocation it comes from applying "Base-branch resolution" to
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);
-  legacy fallback: `worktree.baseBranch`; if the config is missing, the derived remote default —
+  if the config is missing, the derived remote default —
   the one the delivery configuration documents, and a remote ref deliberately. A slashless `main`
   is never a remote ref under that rule and `git rev-parse` does not widen it into one, so an
   unconfigured checkout that has `origin/main` but no local `main` — a `--single-branch` clone, a
@@ -118,7 +118,7 @@ base-branch-resolution
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     falling back to the old `worktree.baseBranch` value and then the documented default. Record
+     or the documented default where that line is absent. Record
      that configured value and resolve nothing from it here: step 4 applies "Base-branch
      resolution" to it, deliberately behind the step 2 preconditions, so a direct invocation
      reaches the network only once its checkout has been accepted.

@@ -77,7 +77,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
 - **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
-- **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -228,11 +228,12 @@ options:
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
-   ("currently not set – default: …"). While parsing, record a legacy merge-gate block: every row
+   ("currently not set – default: …"). While parsing, record every retired row: every row
    whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
-   for each such row note whether a `mergeGate.*` row with the same trailing key already exists.
-   `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the recorded
-   block in place.
+   a `worktree.baseBranch`, `worktree.branchPrefix` or `worktree.completion` row is the former
+   spelling of the same `delivery.*` key. For each such row note whether its successor row already
+   exists. `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the
+   recorded rows in place.
 5. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
    not valid JSON, do not overwrite silently. Inform the user with that exact handle and the error,
    and ask whether the configuration should be newly created (old backup/overwrite) or the run
@@ -257,8 +258,8 @@ options:
   plus – if a valid config exists – its existing values. Derive
   `language.project = en` per the base, introduce no new `language.chat` row, and retain valid
   existing language overrides, `language.chat` among them. Apply the
-  confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
-  merge-gate block — when needed. Jump directly to Step 6
+  confirmed compatibility migrations described below — the language keys and the retired
+  `prReview.*` and `worktree.*` rows — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
@@ -468,7 +469,7 @@ config value or default as the pre-selection:
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
 `review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
 
-Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but the legacy `prReview.*` namespace is still read, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
+Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but a retired `prReview.*` row may still stand in an ADR, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
 
 Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that.
 
@@ -484,7 +485,7 @@ different things:
   open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
   configured automatic reviewers, refuses to implement or merge while a comment from an account
   that is neither a bot nor the one it runs as is open, and finally merges. If the project still
-  carries these keys as `prReview.*`, show the recorded legacy values as the current ones and say
+  carries these keys as `prReview.*`, show the recorded `prReview.*` values as the current ones and say
   that Step 6 migrates the block.
 
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
@@ -615,7 +616,7 @@ options:
 
 ### Step 6: Merge and write
 
-1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
+1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. The retired `prReview.*` and `worktree.*` rows recorded in Step 2 are not unknown keys: rewrite them as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
 2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation. Where the `delivery.baseBranch` about to be written names a branch other than `origin/HEAD`, name both in that list — a report, not a gate.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
@@ -964,19 +965,23 @@ blocks, and adds nothing to the ADR written in item 4.
 
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
-The merge-gate keys of block 9 were named `prReview.*` in an earlier generation. If Step 2 recorded
-such rows, rewrite that block **in place** as part of this same confirmed write — on the Express
-path as well as the guided one:
+The merge-gate keys of block 9 were named `prReview.*` in an earlier generation, and three `delivery`
+keys were named `worktree.*`. Both spellings are retired. If Step 2 recorded such rows, rewrite them
+**in place** as part of this same confirmed write — on the Express path as well as the guided one:
 
 - **Carry every legacy row over** to the identical trailing key under `mergeGate.`
   (`prReview.completion` → `mergeGate.completion`, `prReview.bots.<login>.trigger` →
   `mergeGate.bots.<login>.trigger`, and so on), preserving the recorded value verbatim. The values
   are unchanged by the rename; only the namespace moves.
-- **Remove the old rows.** Do not leave both blocks standing. Nothing breaks if you do — every
-  reader resolves `mergeGate.*` first — but two adjacent blocks of plausible-looking configuration,
-  one of them inert, is exactly the artifact a later maintainer edits without effect.
-- **Report a shadowed key, do not merge it.** If a `mergeGate.<key>` and a `prReview.<key>` row are
-  both present with different values, keep the `mergeGate` value, name the discarded legacy value
+- **Carry the three retired `worktree.*` rows over the same way:** `worktree.baseBranch` →
+  `delivery.baseBranch`, `worktree.branchPrefix` → `delivery.branchPrefix`, `worktree.completion` →
+  `delivery.completion`, value verbatim, under the same removal and shadowed-key rules below.
+  `worktree.enabled`, `worktree.setup` and `worktree.baseDir` are current keys and stay.
+- **Remove the old rows.** Do not leave both standing. Nothing breaks if you do — the successor
+  wins and other runs only report the inert row — but plausible-looking configuration that is
+  inert is exactly the artifact a later maintainer edits without effect.
+- **Report a shadowed key, do not merge it.** If a successor row and its retired row are both
+  present with different values, keep the successor's value, name the discarded retired value
   explicitly, and never combine the two into one setting.
 - **`delivery.prReview` is not part of this block.** It is a `delivery` key with an unrelated
   meaning, keeps its name, and is neither carried over nor removed.
@@ -984,9 +989,9 @@ path as well as the guided one:
   the before/after list of item 2 and write it only after the same confirmation as any other change.
   Without that confirmation, leave the legacy rows exactly as they are.
 
-This skill is the **only** writer of the configuration. A `{{SKILL:merge-gate}}` or
-`{{SKILL:iterate}}` run that resolves a value through the legacy namespace reports that once and
-points here; it never rewrites the ADR itself.
+This skill is the **only** writer of the configuration. Every other run that meets a retired row
+stops or reports under the configuration building block's retired-key rule and points here; it
+never resolves a value through that row and never rewrites the ADR itself.
 
 ### Step 7: Session rename capability (optional)
 
@@ -1084,9 +1089,9 @@ Report to the user:
 - whether two `mergeGate.bots` entries were collapsed into one reviewer: which login was kept, which
   redundant list member and rows were removed, and, for every key the two disagreed about, both
   recorded values and the one the user chose
-- whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
-  over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
-  discarded because a `mergeGate.*` row already held a different one
+- whether retired `prReview.*` or `worktree.*` rows were rewritten in place: which rows were carried
+  over to `mergeGate.*` or `delivery.*`, that the old rows were removed, and every shadowed retired
+  value that was discarded because its successor row already held a different one
 - for `tracker.mode = external`: the external tool and hint verbatim, the observed state candidates,
   and the confirmed `tracker.externalStartedState` and `tracker.externalDoneState` stable values or
   `null`, plus the note that the connection is

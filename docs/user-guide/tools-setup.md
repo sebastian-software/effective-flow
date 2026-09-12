@@ -90,7 +90,12 @@ without deleting its on-disk content. A legacy `plan.markerLanguage` remains a r
 one compatibility generation when neither a valid workflow nor project language exists. Whenever
 `language.workflow` is absent, setup may show that the old marker-only choice becomes the language
 of the complete workflow artifact, propose the new key, and remove the old row only after
-confirmation; an existing new key always wins. The values set here
+confirmation; an existing new key always wins. Setup is also the repair path for retired rows:
+it rewrites `prReview.*` rows as `mergeGate.*` (see
+[Configuration](configuration.md#block-mergegate)) and `worktree.baseBranch`,
+`worktree.branchPrefix`, and `worktree.completion` as their `delivery.*` successors (see
+[Configuration](configuration.md#block-delivery)), in place and after the same confirmation, while
+other tools stop or report when they meet such a row. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
 `skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 

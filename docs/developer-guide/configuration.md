@@ -206,8 +206,8 @@ ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-proj
 this repository's own rows.
 
 `mergeGate.*` configures the merge-gate tool. It is not `delivery.prReview`, which is an unrelated
-boolean deciding whether a delivery workflow publishes its own review findings onto the pull
-request it just created. `delivery.prReview` keeps its name deliberately: it belongs to the
+key (`ask`, the default, `always`, or `off`) deciding whether a delivery workflow publishes its own
+review findings onto the pull request it just created. `delivery.prReview` keeps its name deliberately: it belongs to the
 review-publication concept, not to the gate, and renaming it would recreate the confusion the
 `pr-review` → `merge-gate` tool rename removed.
 
@@ -219,18 +219,23 @@ form. The former translated empty-list token `(leer)`, former marker spelling, a
 remain readable compatibility inputs. On write, setup keeps the recognized envelope language,
 uses the stable `(empty)` value, and preserves known and unknown rows.
 
-The former gate namespace `prReview.*` is readable in the same way: a reader resolves
-`mergeGate.<key>` first and falls back to `prReview.<key>` per key, reporting once that it read a
-legacy name. Precedence is per key and never merged at a finer grain. This is one generation of
-read compatibility, the same commitment the `firmo-` label prefix had. Only setup writes: it
-carries the values over to `mergeGate.*`, removes the legacy rows, and reports a shadowed key
-rather than merging it, so the fallback loses its last reader once every project has run setup
-once.
+Not every former name stays readable. The former gate namespace `prReview.*` and the former
+`delivery` spellings `worktree.baseBranch`, `worktree.branchPrefix`, and `worktree.completion` are
+**retired**: a retired row is never read as a value, and its successor (`mergeGate.<same trailing
+key>`, `delivery.<key>`) is the only key a run resolves. Each run checks the successors its own tool
+can resolve at its first configuration read, before any fetch, branch, worktree, commit, push,
+delegation, or merge. An absent successor stops the run, naming the retired row, its successor, and
+setup; this is the one exception to the safe-default rule. A present successor wins, and the inert
+row is reported once. `delivery.prReview` does not begin with `prReview.` and is never matched.
+Setup is exempt as the repair path and is the only reader of a retired row's value: it carries the
+value over, removes the old row, and reports a shadowed value rather than merging it. The binding
+contract, including which tool checks which successors and the login-keyed
+`prReview.bots.<login>.*` case, is the "Retired keys" section of
+`src/shared/config-migration-edge-cases.md`.
 
 `mergeGate.conflictResolution` is the one key in that block with **no** legacy counterpart: it never
-existed as `prReview.conflictResolution`, so the per-key fallback finds nothing to read, migrate, or
-report as shadowed, and a project carrying only an unmigrated legacy block gets the documented
-default `auto`. It is also the one key whose safe fallback and documented default diverge: an
+existed as `prReview.conflictResolution`, so there is no retired row to detect, migrate, or report as
+shadowed, and a project whose legacy block setup migrates gets the documented default `auto`. It is also the one key whose safe fallback and documented default diverge: an
 unreadable or invalid value resolves to `off`, not to `auto`, because an unparseable line must never
 authorize a commit and a push. The reader reports the affected key as the general rule requires and
 continues with `off`.
