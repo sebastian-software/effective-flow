@@ -2189,6 +2189,17 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       trigger: /(?=[\s\S]*Phase 5(?!\.5))(?=[\s\S]*closure)/i,
       decision: 'Phase 5 (not Phase 5.5) and the issue-closure offer',
     },
+    {
+      // The waiver pointer fires on the Phase-4 read, deliberately broader than the ask fence's own
+      // `when:`: every branch that poses no question — report mode, a non-interactive run, another
+      // unmet condition, a verified head that is not a full object name, an evaluation the waiver
+      // record already covers — is decided inside the deferred text too, so a clause naming only the
+      // posed case would leave those runs deciding from text they have not loaded. Both halves are
+      // required: the phase whose evaluation raises it, and the read state that does.
+      fragment: 'merge-gate-check-list-waiver',
+      trigger: /(?=[\s\S]*Phase-4)(?=[\s\S]*`checksReported: false`)/,
+      decision: "a Phase-4 evaluation's fresh read stating `checksReported: false`",
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -10453,7 +10464,7 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
 // every assertion below is about keeping it that narrow: one clause, one evaluation, one head.
 test('the no-check-list waiver clears one clause of condition 2 and nothing else', () => {
   const gate = source('src/tools/merge-gate.md');
-  const raw = boundedSlice(gate, '#### The no-check-list waiver', '\n### Phase 5');
+  const raw = section(source('src/shared/merge-gate-check-list-waiver.md'), '### Waiver rules');
   const waiver = prose(raw);
   const condition2 = prose(mergeCondition(mergeConditions(gate), 2));
 
@@ -10640,7 +10651,9 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
 // keeps the answer from outliving the head it was given for.
 test('the no-check-list waiver ends the run three ways and expires with the head', () => {
   const gate = source('src/tools/merge-gate.md');
-  const waiver = prose(boundedSlice(gate, '#### The no-check-list waiver', '\n### Phase 5'));
+  const waiver = prose(
+    section(source('src/shared/merge-gate-check-list-waiver.md'), '### Waiver rules'),
+  );
   const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
   const phase6 = prose(section(gate, '### Phase 6', '\n## '));
 

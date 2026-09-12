@@ -159,6 +159,7 @@ const LOADED_BY_A_RUN = [
   'tools/merge-gate.md',
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
+  'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
   'shared/pr-merge-completion.md',

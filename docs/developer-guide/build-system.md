@@ -457,7 +457,8 @@ and directive syntax").
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
-  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`.
+  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
+  `merge-gate-check-list-waiver`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
@@ -498,6 +499,14 @@ and directive syntax").
   defer all of it and the run would decide whether it may enter the phase from text it has not
   loaded. A fragment that holds a phase body therefore keeps that phase's entry gate outside it,
   which is the general form of the rule the conflict pointer states for a mode.
+  `merge-gate-check-list-waiver` is the sixth, holding the rule bullets and the `ask` fence of Phase
+  4's no-check-list waiver, and it takes the fifth's cut: the section heading with an entry gate
+  stating when the question can arise stays in the always-loaded core, together with condition 2's
+  clause naming the waiver, Phase 2's unreported-list rule, the wisdom record, and the Phase-6 report
+  of a merge on a waived check list. Its trigger – a Phase-4 evaluation's fresh read stating
+  `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
+  every branch that poses **no** question is decided inside the moved text as well; a pointer firing
+  only where the question is posed would leave those runs deciding from text they have not loaded.
   `config-migration` is the live proof that a fragment may be
   eager in one file and lazy in another: twelve tools that read configuration on every run inline
   its always-read core, while seven others defer the whole fragment behind their own first
