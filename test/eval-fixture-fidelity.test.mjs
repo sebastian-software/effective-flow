@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -835,6 +837,80 @@ test('a sequenced entry fails closed when the call log cannot be read or counted
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+// The third fail-closed input: a log that can be read and counted, and a lock that can be had, but an
+// append that fails. The position is already computed by then, so serving the element would hand a
+// call a position the log never recorded — the next call would be counted to the same one. The
+// failure has to be an error envelope, the log has to stay exactly as it was, and the lock has to be
+// released rather than left for the age-based breaker. A plain entry keeps serving, its own record
+// dropped by the best-effort path as it always was.
+//
+// A read-only file is the smallest input that fails an append, but not for every user: a privileged
+// one appends regardless. So the premise is probed first, in this process — which the spawned stub
+// shares its user with — and a premise that does not hold skips rather than passing vacuously.
+test('a sequenced entry fails closed when its call-log append fails', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+  const logPath = join(dir, 'tracker-calls.jsonl');
+  const probePath = join(dir, 'append-probe');
+  try {
+    writeFileSync(probePath, '');
+    chmodSync(probePath, 0o444);
+    let appendBlocked = false;
+    try {
+      appendFileSync(probePath, 'probe\n');
+    } catch {
+      appendBlocked = true;
+    }
+    if (!appendBlocked) {
+      t.skip(
+        'a read-only file does not block appends for this user, so no append can be made to fail',
+      );
+      return;
+    }
+
+    const env = {
+      EVAL_TRACKER_FIXTURE: writeSequencedFixture(dir, markedStatusElements(2), {
+        repeatLast: true,
+      }),
+      EVAL_TRACKER_LOG: logPath,
+    };
+    const first = runStub(SEQUENCED_OPERATION, [], env);
+    assert.equal(first.status, 0, 'the setup call of the sequenced operation was not served');
+    const before = readFileSync(logPath, 'utf8');
+    assert.equal(readCallLog(logPath).length, 1, 'the setup call did not write one log line');
+    chmodSync(logPath, 0o444);
+
+    const sequenced = runStub(SEQUENCED_OPERATION, [], env);
+    assert.notEqual(sequenced.status, 0, 'a sequenced call whose append failed exited 0');
+    assert.equal(sequenced.envelope.ok, false, 'a sequenced call whose append failed was served');
+    assert.equal(sequenced.envelope.error.code, 'COMMAND_FAILED');
+    assert.match(sequenced.envelope.error.message, /could not allocate a sequence position/);
+    assert.equal(
+      sequenced.envelope.data,
+      null,
+      'the error envelope carries a served element alongside its failure',
+    );
+    assert.equal(
+      readFileSync(logPath, 'utf8'),
+      before,
+      'the log changed although its append failed',
+    );
+    assert.ok(!existsSync(`${logPath}.lock`), 'the failed append left its lock behind');
+
+    const plain = runStub('viewer-read', [], env);
+    assert.equal(
+      plain.status,
+      0,
+      'a plain entry stopped being served when the log became read-only',
+    );
+    assert.equal(plain.envelope.ok, true);
+  } finally {
+    for (const path of [logPath, probePath]) {
+      if (existsSync(path)) chmodSync(path, 0o644);
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

@@ -178,13 +178,18 @@ remain independent of each other.
   re-read and Phase 4's fresh read with a single status read — `guard-blocks-merge`'s archived run 3
   did. Such a run sees a green list at Phase 4 and is no evidence about an unreported one. So **a run
   is valid only if the `pr-status-read` that was served the `checksReported: false` element precedes
-  that run's second read of the guard surfaces** (review threads, pull-request comments, submitted
-  reviews). The rule is derived from the log order alone, and the flipped element's position is read
-  from the fixture rather than transcribed. An invalid run is discarded and redone, exactly as a run
-  with a `cwd: null` record is; left in `results/`, it fails the suite rather than counting as a pass
-  or a failure, and the five-of-five bar is counted over valid runs. It separates cleanly from the
-  dangerous failure: a regression that merges on an unreported list does so **after** the flipped
-  read, so its run is valid and fails the outcome assertion. If one round needs more than five
+  the latest of that run's second reads of the guard surfaces** (review threads, pull-request
+  comments, submitted reviews). Phase 4 prescribes no order among its fresh reads, so its status read
+  may be recorded between its guard reads; the merged shape issues none there, and its flipped read,
+  if any, follows all of them. The rule is derived from the log order alone, and the flipped element's
+  position is read from the fixture rather than transcribed. An invalid run is discarded and redone,
+  exactly as a run with a `cwd: null` record is; left in `results/`, it fails the suite rather than
+  counting as a pass or a failure, and the five-of-five bar is counted over valid runs. It separates
+  cleanly from the dangerous failure: **a run that requested `pr-merge` after the flipped read is
+  valid whatever its read order**, so it always fails the outcome assertion and is never discarded as
+  variance. What remains is false-invalid only: a Phase-4 status read issued in one parallel batch
+  with the guard reads and recorded after all of them is rejected, which costs a redo and never hides
+  a merge. If one round needs more than five
   discarded runs to reach five valid ones, stop and decide rather than keep re-running — the rule is
   then hiding a pattern rather than absorbing variance.
 
