@@ -7295,8 +7295,8 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
-  const summary = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  const reportItems = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
   );
 
   // The shared contract is the condensed statement of the same rule, so leaving it on a state-only
@@ -7327,7 +7327,7 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   // Without this the report spells a declined issue and a revalidation-blocked one identically, and
   // the case where the operator said yes while the run still wrote nothing goes unreported.
   assert.match(
-    summary,
+    reportItems,
     /Where a confirmed issue was not transitioned because step 4's revalidation found its basis changed, name the dimension that changed/,
   );
 });
@@ -7572,13 +7572,15 @@ test('an already-terminal external issue resolves its done state where the split
   // closed list, so an outcome missing from that list has no valid row: a reconciliation-unavailable
   // issue would have to be filed as done, cancelled, open, timed out or unobservable, and every one
   // of those five says something about it that nobody established.
-  const summary = prose(section(source('src/tools/merge-gate.md'), '### Phase 6: Summary'));
+  const reportItems = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
+  );
   assert.match(
-    summary,
+    reportItems,
     /one row per linked issue with its observed terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
   );
   assert.match(
-    summary,
+    reportItems,
     /a reconciliation-unavailable one naming the missing capability or configuration value that left `tracker.externalDoneState` unresolved/,
   );
 });
@@ -7630,8 +7632,8 @@ test('the open-point quoting exception is stated as resting on the report-only p
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
-  const summary = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  const reportItems = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
   );
 
   // This is the assertion that keeps the derivation honest. Phase 5.5 quotes no issue or
@@ -7659,9 +7661,9 @@ test('the open-point quoting exception is stated as resting on the report-only p
   }
   // The report says the same thing where it acts on it, rather than quoting on the strength of a
   // permission stated two fragments away.
-  assert.match(summary, /the one item of this summary that quotes issue text/i);
+  assert.match(reportItems, /the one item of this summary that quotes issue text/i);
   assert.match(
-    summary,
+    reportItems,
     near(
       'these open points are report-only',
       'nothing the quoted text says can move a verdict, an offer, or a write',
@@ -7671,7 +7673,7 @@ test('the open-point quoting exception is stated as resting on the report-only p
 
   // The exception is bounded in both directions: a display discipline on what it permits, and a
   // stated end to what it covers.
-  for (const text of [contract, observation, summary]) {
+  for (const text of [contract, observation, reportItems]) {
     assert.match(text, /inert content/);
     assert.match(
       text,
@@ -7689,7 +7691,7 @@ test('the open-point quoting exception is stated as resting on the report-only p
   // "200-character cap" the runner had chosen for itself, on a source that named no number. Both
   // literals are pinned in all three places that state them, because a number present in one and
   // absent in another is the same defect one file further along.
-  for (const text of [contract, observation, summary]) {
+  for (const text of [contract, observation, reportItems]) {
     assert.match(text, /at most twenty entries per issue/i);
     assert.match(text, /500 characters/);
     assert.match(text, /truncat/i);
@@ -7703,8 +7705,8 @@ test('the open-points report is independent of which closure-guidance rule match
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
-  const summary = prose(
-    section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '),
+  const reportItems = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
   );
 
   // The regression this catches: re-gating the report on the rule the closure guidance stopped at.
@@ -7712,9 +7714,9 @@ test('the open-points report is independent of which closure-guidance rule match
   // refs-linked issue - and therefore every external issue - matches unconditionally. A report
   // conditioned on "the guidance reached rule 3" would consequently never fire for the primary case
   // this observation exists for, while every sentence around it still read as though it did. The
-  // property is stated in three files and was pinned in none, so all three are read here.
+  // property is stated in three places and was pinned in none, so all three are read here.
   assert.match(
-    summary,
+    reportItems,
     near(
       'for every issue that step assessed',
       'independent of which closure-guidance rule step 7 stopped at',
@@ -7741,7 +7743,7 @@ test('the open-points report is independent of which closure-guidance rule match
   // The report also carries the reason, so a later editor meets the argument rather than a bare
   // rule they can read as belt-and-braces and drop.
   assert.match(
-    summary,
+    reportItems,
     near(
       'its first rule matches every `refs`-linked issue',
       'an item conditioned on the matched rule would never be reached',
@@ -7863,18 +7865,22 @@ test('the forge preflight probes issueClose, degrades without it, and never call
 
 test('the Phase-6 summary and the merged-PR re-entry allowlist name the completion assessment', () => {
   const gate = source('src/tools/merge-gate.md');
-  const summary = prose(section(gate, '### Phase 6: Summary', '\n## '));
+  const reportItems = prose(
+    section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
+  );
 
-  assert.match(summary, /per linked issue, the completion verdict of Phase 5\.5 by its name/);
-  assert.match(summary, /together with the criterion locators that produced it/);
-  // The summary states three lines above that it reads "no body, deliberately"; an extension that
-  // quoted criterion or pull-request text would reverse its own discipline.
+  assert.match(reportItems, /per linked issue, the completion verdict of Phase 5\.5 by its name/);
+  assert.match(reportItems, /together with the criterion locators that produced it/);
+  // Phase 6's guard-exclusion item states that it reads "no body, deliberately"; an extension that
+  // quoted criterion or pull-request text would reverse that discipline. The verdict item names that
+  // item explicitly, because it no longer sits above it once the report items moved to the fragment.
+  assert.match(reportItems, /for the same reason Phase 6's guard-exclusion item reads none/);
   assert.match(
-    summary,
+    reportItems,
     /Report the locators and never the criterion text or any pull-request text/,
   );
   assert.match(
-    summary,
+    reportItems,
     /whether the terminal transition was offered, how the operator answered, and what the transition did/,
   );
 
@@ -7884,6 +7890,32 @@ test('the Phase-6 summary and the merged-PR re-entry allowlist name the completi
     prose(gate),
     /A merged PR is re-entered: run only receipt validation, bounded tracker observation, the completion assessment and its offered terminal transition, terminal label cleanup, and eligible container reconciliation/,
   );
+});
+
+test('the Phase-6 receipt result stays inline and the per-issue report items follow the Issue done fence', () => {
+  // A merge with a missing or invalid lifecycle receipt ends Phase 5.5 before the observation
+  // fragment loads, yet still owes the receipt result. That item therefore stays in the core, and
+  // only the per-issue items a run can owe after reaching the pointer are read from the fragment.
+  const phase6 = prose(section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '));
+  assert.match(
+    phase6,
+    /after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;/,
+  );
+  assert.match(
+    phase6,
+    /where Phase 5\.5 observed linked issues, the items listed under `### Observation report items` in the loaded `merge-gate-issue-observation` fragment/,
+  );
+  assert.doesNotMatch(phase6, /one row per linked issue/);
+
+  // `section(fragment, '### Observation steps')` ends at the next `### ` heading, so the report
+  // heading has to come after the fence every such slice reads.
+  const fragment = source('src/shared/merge-gate-issue-observation.md');
+  const fence = fragment.indexOf('header: Issue done');
+  const heading = fragment.indexOf('\n### Observation report items\n');
+  assert.notEqual(fence, -1, 'missing the Issue done ask fence header');
+  assert.notEqual(heading, -1, 'missing the Observation report items heading');
+  assert.ok(fence < heading, 'the report items heading must follow the Issue done fence');
+  assert.match(section(fragment, '### Observation steps'), /header: Issue done/);
 });
 
 test('both force-close prohibitions survive verbatim beside the operator-confirmed carve-out', () => {

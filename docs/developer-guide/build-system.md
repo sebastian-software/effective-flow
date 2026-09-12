@@ -490,15 +490,19 @@ and directive syntax").
   untrusted-head-branch threat model therefore stay in the always-loaded core – the last of those
   because an exposure that is only readable from inside the branch creating it is a discovery
   rather than a configuration decision. `merge-gate-issue-observation` is the fifth, holding the
-  body of Phase 5.5 – its seven steps and the transition gate they end in – for a phase that runs
-  after an already-successful merge and is explicitly allowed to degrade. Like
+  body of Phase 5.5 – its seven steps and the transition gate they end in – together with the
+  per-issue items Phase 6 reports for what those steps observed, under its closing
+  `### Observation report items` heading, for a phase that runs after an already-successful merge
+  and is explicitly allowed to degrade. Like
   `merge-gate-checkout-boundary` it reuses an existing trigger, `issue-post-merge-observation`'s,
   because the two load at the same moment. What separates it from the four above is **where the
   cut runs**: the section's heading, its entry condition and its missing-receipt rule stay in the
   always-loaded core, because the entry condition is stated a third time inside the moved region –
   defer all of it and the run would decide whether it may enter the phase from text it has not
   loaded. A fragment that holds a phase body therefore keeps that phase's entry gate outside it,
-  which is the general form of the rule the conflict pointer states for a mode.
+  which is the general form of the rule the conflict pointer states for a mode. Phase 6's report of
+  the lifecycle receipt result stays in the core for the same reason: a merge without a valid
+  receipt ends Phase 5.5 before the fragment loads, and still owes that report.
   `merge-gate-check-list-waiver` is the sixth, holding the rule bullets and the `ask` fence of Phase
   4's no-check-list waiver, and it takes the fifth's cut: the section heading with an entry gate
   stating when the question can arise stays in the always-loaded core, together with condition 2's
