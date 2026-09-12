@@ -326,13 +326,9 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
 
 - **the absence check is scoped to the content this gate did not write, and deliberately excludes the
   content it did.** The token stands by construction in its own `Boundary token:` declaration line
-  and in every separator line below the delimiter, so a check that covered the whole message – or
-  every other part of it – would find every candidate colliding with its own framing and re-mint
-  forever: no message would ever go out, every finding would come back unassessed, and the merge
-  would stay blocked on all of them. The sender's own occurrences are not a collision – they **are**
-  the framing. The property still holds, and for the same reason it always did: the token is verified
-  absent from everything the caller supplies before any of that content is framed, so no sequence of
-  characters a body can contain changes how it is framed;
+  and in every separator line, so a check reaching past the caller-supplied content would re-mint
+  forever: no message would go out, and every finding would stay unassessed with the merge blocked.
+  The sender's own occurrences are not a collision – they **are** the framing;
 
 - the **item manifest**, above the delimiter: one line per body-carried finding, each in the exact
   literal form `Item: <stable identifier> | review=<review id> | author=<author login> |
@@ -348,27 +344,18 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
 
 - **the framing below the delimiter is a minted token, never a pattern.** An introducer line – the
   former `[<stable identifier>]`, or any other grammar – is something the caller-supplied text can
-  state, and one body stating it moves a boundary: the body truncates itself, the entry after it is
-  orphaned, or a span nobody wrote appears. Either way the region stops matching the manifest and the
-  round dies on `ABORT` – with the finding unassessed and the merge blocked on it, which is the same
-  round-losing shape as an abort fired by body content and not an improvement on it. A minted token
-  is the opposite of a grammar: it is chosen after the bodies already exist and admitted only once a
-  substring search has shown it occurs in none of them, so **no sequence of characters a body can
-  contain changes how it is framed** – a body would have to carry a value that was picked after it
-  was written and verified absent from it. This is the delimiter's own decision applied one level
-  down: position decides where the untrusted region starts, a token the untrusted text provably does
-  not contain decides how it is cut, and content decides neither. Making the introducer grammar
-  stricter would not do it – a stricter grammar is still a grammar the text can match;
+  state; one body stating it moves a boundary, the region stops matching the manifest, and the round
+  dies on `ABORT` with the finding unassessed and the merge blocked. A minted token is chosen after
+  the bodies exist and admitted only once a substring search has shown it occurs in none of them, so
+  **no sequence of characters a body can contain changes how it is framed**. Position decides where
+  the untrusted region starts, the token how it is cut, and content neither – and a stricter grammar
+  is still a grammar the text can match;
 
 - **the token keeps the unforgeability a declared length had, and asks less of the operator.** A
-  declared UTF-8 byte count was unforgeable for the same reason: the frame was fixed from outside the
-  span, before any byte of the untrusted text was read. It bought that with exact byte arithmetic on
-  the sending side and byte-offset slicing on the receiving side – work this language-model-executed
-  workflow performs unreliably the moment a body carries multibyte Unicode, and which fails closed
-  one round at a time, leaving the finding unassessed and the merge blocked on an off-by-one nobody
-  can see. The token buys the same property with a substring search and a split, which are exact
-  under any encoding. There is deliberately only one framing here: keeping a byte count alongside the
-  token would be two descriptions of one boundary and a second thing to hold in step;
+  declared UTF-8 byte count was unforgeable because the frame was fixed from outside the span, but it
+  demanded byte arithmetic and byte-offset slicing, which a language-model operator performs
+  unreliably once a body carries multibyte Unicode; a substring search and a split are exact under
+  any encoding. There is deliberately only one framing: no byte count is kept alongside the token;
 
 - **a body that carries the delimiter is refused, never neutralised.** Before the message is written,
   compare each line of each body against the delimiter after trimming; a body carrying it is not
@@ -388,16 +375,10 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   emit one line a reliable way to stop this gate, which is the opposite of what the boundary is for;
 
 - the **summary-comment suppression**, on its own line, in the exact literal form
-  `Summary comment: suppressed`. This is mandatory in every delegation from this gate, and it rests
-  on four grounds, none of which is how this run's own Phase 4 read would classify such a comment:
-  up to `mergeGate.maxRounds` summary comments per run is noise on someone's pull request; nothing
-  is lost, because `{{SKILL:iterate}}` hands that content back and Phase 6 reports it in chat; the
-  guarantee that a **gate-initiated run leaves at most one item of its own** on the discussion (see
-  "A deferred finding gets no thread reply") depends on it; and a gate running under a **different**
-  account than the delegated run reads that summary as a foreign comment, which would activate the
-  guard against the very work the round just completed. Under the same account the guard's identity
-  rule excludes it, so that last ground is the residual rather than the main case – but the
-  obligation is not conditional on the mode, and neither is the line;
+  `Summary comment: suppressed`. This is mandatory in every delegation from this gate, on the four
+  grounds "PR review comment integration" states – none of them about how this run's own Phase 4
+  read would classify such a comment. Under the same account the guard's identity rule already
+  excludes it, but the obligation is not conditional on the mode, and neither is the line;
 - the **next-step suppression**, on its own line, in the exact literal form `Next steps: suppressed`.
   This is mandatory in every delegation from this gate. A delegated round is an intermediate result
   inside this run, and only Phase 6 knows whether the gate ended merged, blocked, or out of rounds,
@@ -426,10 +407,8 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   removing the guard. Omitting the line is worse: a non-interactive gate run cannot answer the
   guard's question and comes back as `ABORT: review still in flight`.
 
-  The line stays its own and is deliberately **not** derived from `Item filter:`. A filter states the
-  scope of a run; only the caller knows whether that scope, or its own prior observation, makes the
-  guard unnecessary. Deriving one from the other would hand the exemption to any future workflow that
-  filters merely for scoping, without it ever having earned it;
+  The line stays its own and is deliberately **not** derived from `Item filter:`: a filter states only
+  scope, and only the caller knows whether that scope or its own prior observation earns the exemption;
 
 - for a CI repair, the free-text instruction derived from the failing check names and their reported
   failure detail;
