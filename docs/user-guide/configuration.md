@@ -394,8 +394,9 @@ the other is about driving somebody else's pull request to merge.
 
 **Retired `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
 to `merge-gate`. Those rows are retired: no run reads a `prReview.*` row as a value any more.
-`merge-gate`, and `iterate` for the bot keys, look for such a row at the first configuration read,
-before fetching, committing, pushing, or merging anything:
+`merge-gate`, and `iterate` in PR mode for `mergeGate.bots`, `mergeGate.bots.<login>.trigger`,
+`mergeGate.bots.<login>.check`, and `mergeGate.botWaitMinutes`, look for such a row at the first
+configuration read, before fetching, committing, pushing, or merging anything:
 
 - **The matching `mergeGate.*` row is absent:** the run stops, names the retired row, its
   `mergeGate.*` successor, and `/effective-flow setup`, and does nothing else. It never quietly
