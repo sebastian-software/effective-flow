@@ -122,6 +122,9 @@ base-branch-resolution
      that configured value and resolve nothing from it here: step 4 applies "Base-branch
      resolution" to it, deliberately behind the step 2 preconditions, so a direct invocation
      reaches the network only once its checkout has been accepted.
+   - A `worktree.baseBranch` row is retired and never read, on a direct invocation and a committed handoff
+     alike. With no `delivery.baseBranch` row beside it, stop here, before any fetch or push, naming both keys
+     and {{SKILL:setup}}; with both present, `delivery.baseBranch` wins and the retired row is reported once.
    - Classify the call as either a direct invocation from its current checkout or a returning
      committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
      `{{SKILL:deliver}}` for that lifecycle.

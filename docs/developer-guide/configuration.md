@@ -233,9 +233,10 @@ contract, including which tool checks which successors and the login-keyed
 `prReview.bots.<login>.*` case, is the "Retired keys" section of
 `src/shared/config-migration-edge-cases.md`.
 
-`mergeGate.conflictResolution` is the one key in that block with **no** legacy counterpart: it never
-existed as `prReview.conflictResolution`, so there is no retired row to detect, migrate, or report as
-shadowed, and a project whose legacy block setup migrates gets the documented default `auto`. It is also the one key whose safe fallback and documented default diverge: an
+`mergeGate.conflictResolution` has **no** legacy counterpart that any earlier generation wrote: no
+such generation produced a `prReview.conflictResolution` row. A row that exists anyway is retired like
+any other `prReview.<key>` row, with `mergeGate.conflictResolution` as its successor; without one, a
+project whose legacy block setup migrates gets the documented default `auto`. `mergeGate.conflictResolution` is also the one key whose safe fallback and documented default diverge: an
 unreadable or invalid value resolves to `off`, not to `auto`, because an unparseable line must never
 authorize a commit and a push. The reader reports the affected key as the general rule requires and
 continues with `off`.

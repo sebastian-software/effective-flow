@@ -9267,26 +9267,71 @@ test('base-branch resolution reaches both hosts eagerly, with exactly one fetch 
   }
 });
 
-// `pr` reaches the configuration core only lazily, so the one rule it always loads carries its own
-// stop for a retired `worktree.baseBranch`. It is prose in the opening paragraph: a fourth bullet
-// would break the three-outcome count, and a literal fetch would break the per-host count above.
-test('base-branch resolution stops on a retired worktree.baseBranch row before any arm runs', () => {
+// The shared rule is the wrong place for the retired `worktree.baseBranch` stop: it also runs while
+// PR-mode `iterate` and `merge-gate` provision a checkout, runs that never read the key and could
+// stop there after a base merge was already pushed. And a complete committed handoff to `pr` skips
+// the rule entirely. So `pr` carries the stop in step 1, which every call reaches, and the retired-key
+// contract states that checkout provisioning is no successor read.
+test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared base-branch rule', () => {
   const parts = baseBranchRuleParts();
-  assert.equal(parts.length, 4, 'the clause must stay in the opening paragraph, not a new bullet');
+  assert.equal(parts.length, 4, 'the opening paragraph must stay prose ahead of the three arms');
   const [opening] = parts;
-  assert.match(opening, near('`worktree\\.baseBranch` row is retired', 'never read', 30));
-  assert.match(
+  assert.doesNotMatch(
     opening,
-    near('no `delivery\\.baseBranch` row', 'stop before any arm', 80),
-    'a retired worktree.baseBranch without its successor must stop before the rule resolves anything',
+    /worktree\.baseBranch/,
+    'the shared rule must not stop PR-mode checkout provisioning on a key those runs never read',
   );
-  assert.match(opening, near('stop before any arm', '\\{\\{SKILL:setup\\}\\}', 120));
+
+  const step1 = prose(
+    boundedSlice(
+      source('src/tools/pr.md'),
+      '   - Read the Effective Flow configuration',
+      '   - Classify the',
+    ),
+  );
+  assert.match(step1, near('`worktree\\.baseBranch` row is retired', 'never read', 30));
   assert.match(
-    opening,
+    step1,
+    near('direct invocation', 'committed handoff alike', 30),
+    'a complete handoff skips the shared rule, so the stop must cover it explicitly',
+  );
+  assert.match(
+    step1,
+    near('no `delivery\\.baseBranch` row', 'stop here, before any fetch or push', 60),
+    'a retired worktree.baseBranch without its successor must stop before the network is touched',
+  );
+  assert.match(step1, near('before any fetch or push', '\\{\\{SKILL:setup\\}\\}', 80));
+  assert.match(
+    step1,
     near('both present', '`delivery\\.baseBranch` wins', 60),
     'with both rows present the successor must win',
   );
-  assert.doesNotMatch(opening, /git fetch/);
+  assert.match(step1, /retired row is reported once/);
+  assert.doesNotMatch(step1, /git fetch/);
+  assert.ok(
+    step1.indexOf('resolve nothing from it here') < step1.indexOf('`worktree.baseBranch`'),
+    'the stop follows the recorded-value sentence, which must stay close to its step 4 pointer',
+  );
+
+  const retired = prose(
+    section(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Retired keys (table encoding)',
+    ),
+  );
+  assert.match(
+    retired,
+    near(
+      'checkout provisioning of \\{\\{SKILL:iterate\\}\\} in PR mode and of \\{\\{SKILL:merge-gate\\}\\}',
+      'not a successor read',
+      200,
+    ),
+    'PR-mode checkout provisioning must be named as no successor read',
+  );
+  assert.match(
+    retired,
+    near('not a successor read', '`worktree\\.baseBranch` neither stops nor is reported there', 80),
+  );
 });
 
 // The rule records two results and every consuming site names one of them. Each site gets its own

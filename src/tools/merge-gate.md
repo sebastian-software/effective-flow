@@ -604,9 +604,9 @@ building block. A missing line means the default.
   degrades to `off` in a **non-interactive delegated** run, where Phase 2 states the degradation and
   the report it produces. That degradation mirrors how `mergeGate.completion` degrades; the
   per-round cadence deliberately does **not** mirror that key's once-per-run entry gate.
-- **`mergeGate.conflictResolution` has no `prReview.*` predecessor.** No retired row stands in for it:
-  a project whose old namespace `{{SKILL:setup}}` migrates gets the default `auto`, which is a
-  behavior change on upgrade; `off` restores the previous behavior exactly.
+- **No earlier generation wrote a `prReview.conflictResolution` row.** One that exists anyway is retired
+  like any other `prReview.<key>` row, with successor `mergeGate.conflictResolution`. Without one, a project
+  whose old namespace `{{SKILL:setup}}` migrates gets the default `auto`, a behavior change on upgrade; `off` restores the previous behavior exactly.
 - **An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to the documented
   default `auto`.** The loaded configuration building block says to continue with a safe default and
   to report the affected key. For every other key this gate reads, that safe default and the

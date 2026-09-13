@@ -27,9 +27,9 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
 
-**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
-the legacy namespace, so there is no `prReview.conflictResolution` row to detect, migrate, or report as
-shadowed, and a project whose legacy block {{SKILL:setup}} migrates gets the default `auto`. `auto` resolves a conflict with the base through
+**`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
+row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
+`mergeGate.conflictResolution`, and a project whose legacy block {{SKILL:setup}} migrates without one gets the default `auto`. `auto` resolves a conflict with the base through
 {{SKILL:merge-gate}}'s dedicated worker, `ask` asks once **per conflicted round** in a gated run —
 once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
 once-per-run entry gate, because each round's conflict is a new one against a base that moved — and

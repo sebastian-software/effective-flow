@@ -8,10 +8,7 @@ remote ref like any other and is classified below as one. An explicit value is u
 remote ref only when the part before its first `/` is a remote that `git remote` lists for this
 repository; local branch names carry slashes too, so `feature/foo` is that branch unless `feature`
 is a configured remote. A value with no `/` at all (`main`, `develop`, whatever `setup` proposes
-where no `origin` exists) has no such leading part and is therefore never a remote ref. A
-`worktree.baseBranch` row is retired and never read: with no `delivery.baseBranch` row beside it,
-stop before any arm below runs, naming both keys and {{SKILL:setup}}; with both present,
-`delivery.baseBranch` wins and the inert row is reported once.
+where no `origin` exists) has no such leading part and is therefore never a remote ref.
 
 - Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
   branch starts from the current remote state. If the fetch or the resolution fails (offline,

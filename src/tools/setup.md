@@ -529,8 +529,8 @@ value or default as the pre-selection:
   one — and behaves as `off` in a non-interactive delegated one. Say when asking that the default
   **changes** behavior for
   a project upgrading from an earlier generation, and that `off` restores the previous behavior
-  exactly. This key is new: it never existed as `prReview.conflictResolution`, so there is no legacy
-  row to carry over for it.
+  exactly. No earlier generation wrote a `prReview.conflictResolution` row; one that exists anyway is
+  retired like any other `prReview.<key>` row and carried over to this key.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.

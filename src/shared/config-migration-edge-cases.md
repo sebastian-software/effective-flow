@@ -103,7 +103,10 @@ at any point of the run, not only the ones it is about to read:
 
 A tool not listed resolves no successor, so a retired row neither stops nor is reported there. A run
 that hands work to another workflow does not check that workflow's successors on its behalf; the
-receiving run checks its own at its own first configuration read.
+receiving run checks its own at its own first configuration read. The checkout provisioning of
+{{SKILL:iterate}} in PR mode and of {{SKILL:merge-gate}} applies "Base-branch resolution" to
+`delivery.baseBranch` only as a checkout precondition; that is not a successor read, so a retired
+`worktree.baseBranch` neither stops nor is reported there.
 
 **When.** Detect at the run's **first configuration read**, before any fetch, branch, worktree,
 commit, push, delegation or merge, over that whole successor set. Detecting only when a successor is

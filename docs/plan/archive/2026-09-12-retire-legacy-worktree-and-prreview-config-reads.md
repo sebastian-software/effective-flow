@@ -7,7 +7,7 @@
 ## Requirement
 
 Implements findings **F-07** and **F-08** of
-[`docs/review/2026-08-31-architecture-and-consistency-review.md`](../review/2026-08-31-architecture-and-consistency-review.md).
+[`docs/review/2026-08-31-architecture-and-consistency-review.md`](../../review/2026-08-31-architecture-and-consistency-review.md).
 
 Two configuration namespaces are still described as one-generation read fallbacks:
 
@@ -375,7 +375,7 @@ Manual checks, each in a scratch repository with a project-setup ADR:
   `applyReview.worktree.*`; adding the two missing re-record steps to `evals/merge-gate/README.md`
   (worth a separate small docs change).
 - Ordering with the sibling plan
-  [`2026-09-12-deployment-line-profile-in-guided-setup.md`](2026-09-12-deployment-line-profile-in-guided-setup.md):
+  `2026-09-12-deployment-line-profile-in-guided-setup.md`:
   both edit `src/tools/setup.md` and its budget entry. Whichever lands second rebases and re-measures;
   neither relies on the other's savings.
 - Eval cost: the re-record is roughly two hours of wall-clock time and must run from one checkout at a

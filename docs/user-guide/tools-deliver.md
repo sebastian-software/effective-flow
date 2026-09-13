@@ -113,7 +113,8 @@ returning delivery handback supplies an exact head branch, base branch, and veri
 if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`;
 without that key it is the branch `origin/HEAD` names, and `main` where that ref does not resolve. A
 retired `worktree.baseBranch` row is never read: without `delivery.baseBranch` beside it, `pr` stops
-and points to `/effective-flow setup`. Output is the PR URL, head and
+before any fetch or push, on a direct invocation and a committed handoff alike, and points to
+`/effective-flow setup`. Output is the PR URL, head and
 base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
 no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
 before publishing.

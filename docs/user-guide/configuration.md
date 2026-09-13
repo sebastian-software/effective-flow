@@ -344,10 +344,10 @@ that one merge commit; `conflictResolution: off` is the switch for a run that ma
 push at all. What the resolver does with a conflict, and where it refuses to guess, is described
 under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base).
 
-**This key is new and has no legacy `prReview.*` counterpart.** It never existed as
-`prReview.conflictResolution`, so there is no retired row for it (see below) and
-`/effective-flow setup` has no row to migrate. A project whose legacy block setup migrates therefore
-gets the default `auto` here.
+**This key is new.** No earlier generation wrote a `prReview.conflictResolution` row. One that exists
+anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
+its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
+setup migrates gets the default `auto` here.
 
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
@@ -475,8 +475,9 @@ delivery settings still control its refreshed base, branch prefix, setup, and wo
 
 **Retired `worktree.*` spellings.** `worktree.baseBranch`, `worktree.branchPrefix`, and
 `worktree.completion` are the former names of `delivery.baseBranch`, `delivery.branchPrefix`, and
-`delivery.completion`. They are retired and never read as values. A run that uses one of these
-delivery keys looks for the old row at its first configuration read, before any fetch, branch,
+`delivery.completion`. They are retired and never read as values. A run that reads one of these
+delivery keys as its own setting, not merely to provision a pull request's checkout, looks for the
+old row at its first configuration read, before any fetch, branch,
 worktree, or commit. If the `delivery.*` row is absent, the run stops and names both keys and
 [`/effective-flow setup`](./tools-setup.md), which rewrites the row in place. If the `delivery.*`
 row is present, it wins and the inert row is reported once. `/effective-flow deliver` only reports a
