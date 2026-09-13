@@ -31,7 +31,8 @@ has changed since. Update it when a finding is closed; leave the finding text it
 | F-15 `merge-gate` size                                         | partial     | `2379fbe` (#400), `ceca964` (#401) and `6127387` (#402) deferred three blocks; still 2 910 resolved lines at `4321151` against a ~1 200 target, after #417 added a rule                               |
 | F-15 prerequisite: an eval scenario with a configured reviewer | open        | — all four scenarios leave `mergeGate.bots` unset, so Phase 3 runs in no recorded round                                                                                                               |
 | D-4 exclusion rationale in `merge-gate`                        | withdrawn   | — overstated; see the correction below                                                                                                                                                                |
-| F-07, F-08, F-09, F-11, M-1 … M-6                              | open        | —                                                                                                                                                                                                     |
+| F-07, F-08 legacy `worktree.*` and `prReview.*` config reads   | implemented | #420 — the legacy `worktree.*` and `prReview.*` reads are retired: a run stops on a retired row whose successor is absent and names `setup`, which rewrites it in place                               |
+| F-09, F-11, M-1 … M-6                                          | open        | —                                                                                                                                                                                                     |
 
 Three corrections the implementation work produced, recorded here because they are defects in this
 document rather than in the code:
