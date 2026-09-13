@@ -1,6 +1,6 @@
 {
-  "scenario": "unreported-checks-block-merge",
-  "digest": "sha256:78c8160493d4503b46275fb04ebec3f03181ac0b31e64bac729cee449ffa6c9b",
+  "scenario": "unreported-checks-at-phase-four",
+  "digest": "sha256:a1614999e25ffd3723a1db4b6f0aabb97fee9c25bc66784ac82b87d725f720d3",
   "skill": {
     "digest": "sha256:9c7c2feabde8ca2cbb8f7bf9539c596a2a3b813c53c1f4604608b7bc9031dc5d",
     "files": {
@@ -39,10 +39,10 @@
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:495f431e0b48dad26919898cc60ebe90c786b56d0a2987962541406265fcb9cf",
+    "digest": "sha256:d3528cd03412b9b620c5dd52d550e4f641e5bb7e6eb9fc8482c6138df62ff31f",
     "files": {
-      "evals/merge-gate/fixtures/unreported-checks-block-merge.json": "sha256:3b145d614c8696837e0454b839cf54fd8307837d96ced2d5d1207a63e773ac5b",
-      "evals/merge-gate/scenarios/unreported-checks-block-merge.md": "sha256:ec62c14a1b37dfadf87452753f99ebfaa5a77db326afd49940e76ae177684061"
+      "evals/merge-gate/fixtures/unreported-checks-at-phase-four.json": "sha256:340438162a2dcbcd933905296fd83eadab1df8d1176144bd8026ec99c75260e6",
+      "evals/merge-gate/scenarios/unreported-checks-at-phase-four.md": "sha256:8ecdf742fbd46a80304a2d5e3d46200f60cca23478b0f59c5987b9162656155f"
     }
   }
 }

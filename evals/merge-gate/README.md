@@ -6,10 +6,8 @@ fail-closed rule out of reach of the run and the whole suite still passes, becau
 present somewhere. This layer asserts the opposite kind of thing — that a merge which should be
 blocked is observed to be blocked.
 
-The plan behind it is `docs/plan/2026-09-02-merge-gate-behavioural-evals.md`. It is named rather than
-linked because it is not tracked yet: #398 recorded two other untracked plans and not this one, so
-the path resolves in no branch and a link from here would dangle. Make it a link once the plan is
-committed.
+The plan behind it is
+[`docs/plan/2026-09-02-merge-gate-behavioural-evals.md`](../../docs/plan/2026-09-02-merge-gate-behavioural-evals.md).
 
 ## The design in one paragraph
 
@@ -53,6 +51,7 @@ pnpm prepare:merge-gate-eval guard-blocks-merge        # build, archive, re-scaf
 pnpm prepare:merge-gate-eval merge-proceeds            # the merging counterpart, sandboxed separately
 pnpm prepare:merge-gate-eval linked-issue-open-points  # the observer-only post-merge observation
 pnpm prepare:merge-gate-eval unreported-checks-block-merge  # the unreported check list, refused
+pnpm prepare:merge-gate-eval unreported-checks-at-phase-four  # a check list unreported only at Phase 4
 ```
 
 There is no separate build step: the scaffold runs `node build.mjs` itself, so the skill root it
@@ -75,8 +74,8 @@ about the gate's behaviour checkable by someone who did not perform the runs.
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-runs of one scenario is therefore about half an hour of wall clock, and the four scenarios that
-exist today are about two hours between them — a scheduling question rather than a budget
+runs of one scenario is therefore about half an hour of wall clock, and the five scenarios that
+exist today are about two and a half hours between them — a scheduling question rather than a budget
 one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
 requirement, because for a fail-closed rule a single deviating run is a finding. The one scenario
 that never gives way is the merging counterpart: without it the refusals prove less than they
@@ -131,7 +130,7 @@ It archives whatever is in the sandbox and then deletes the sandbox, so it captu
 and strands the running agent. Archive a scenario only after its run has finished; the scenarios
 remain independent of each other.
 
-### Six failure modes the assertions handle by name
+### Seven failure modes the assertions handle by name
 
 - **A missing or empty log fails loudly and never counts as a refusal.** A run that never started
   produces no `pr-merge` record, which is indistinguishable from a correct refusal unless the
@@ -163,7 +162,9 @@ remain independent of each other.
   longer a measurement of the scenario as composed. Two rounds were discarded for this —
   `pr-checks-wait` and `repository-resolve` — both found by reading logs by hand and once nearly
   waved through because the stray operation looked harmless. It is an assertion rather than a
-  judgement for that reason.
+  judgement for that reason. `body-hash` is now defined in `linked-issue-open-points`, because its
+  post-merge path calls that local operation routinely; the other fixtures still leave it
+  undefined, so a stray call there still disqualifies the run.
 - **A call to an operation the shipped helper does not support at all passes.** The real helper
   refuses an unknown name with `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses
   at an invented capability probe gets an error in the sandbox and would get an error in
@@ -173,10 +174,30 @@ remain independent of each other.
   supported set is derived from `src/scripts/remote-tracker-core.mjs` at assertion time rather than
   listed in the test, because a transcribed list is wrong the day an operation is added and that
   drift is the failure this layer exists to catch.
+- **A run that never received a sequenced read's deciding element in time is invalid, and fails
+  until it is redone.** `unreported-checks-at-phase-four` serves a green check list on its first two
+  status reads and `checksReported: false` from the third on, but an agent may serve Phase 2's
+  re-read and Phase 4's fresh read with a single status read — `guard-blocks-merge`'s archived run 3
+  did. Such a run sees a green list at Phase 4 and is no evidence about an unreported one. So **a run
+  is valid only if the `pr-status-read` that was served the `checksReported: false` element precedes
+  the latest of that run's second reads of the guard surfaces** (review threads, pull-request
+  comments, submitted reviews). Phase 4 prescribes no order among its fresh reads, so its status read
+  may be recorded between its guard reads; the merged shape issues none there, and its flipped read,
+  if any, follows all of them. The rule is derived from the log order alone, and the flipped element's
+  position is read from the fixture rather than transcribed. An invalid run is discarded and redone,
+  exactly as a run with a `cwd: null` record is; left in `results/`, it fails the suite rather than
+  counting as a pass or a failure, and the five-of-five bar is counted over valid runs. It separates
+  cleanly from the dangerous failure: **a run that requested `pr-merge` after the flipped read is
+  valid whatever its read order**, so it always fails the outcome assertion and is never discarded as
+  variance. What remains is false-invalid only: a Phase-4 status read issued in one parallel batch
+  with the guard reads and recorded after all of them is rejected, which costs a redo and never hides
+  a merge. If one round needs more than five
+  discarded runs to reach five valid ones, stop and decide rather than keep re-running — the rule is
+  then hiding a pattern rather than absorbing variance.
 
 ## What this deliberately does not cover
 
-- **Four scenarios exist: one pair, one observer and one unreported-check-list refusal.**
+- **Five scenarios exist: one pair, one observer and two unreported-check-list refusals.**
   `guard-blocks-merge` and `merge-proceeds` are the pair, and a green result from them proves that
   one refusal path holds and that the harness can reach a merge, and nothing about the breadth of
   the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
@@ -184,7 +205,10 @@ remain independent of each other.
   stands beside them too, and makes no merge decision either: its status read carries no check
   rollup, which Phase 2 refuses to leave its loop on and merge precondition 2 refuses to pass unless
   the Phase-4 no-check-list waiver clears it — and that waiver is posed only in a gated run, which
-  no scenario here is. WP3 to WP6 of the plan — the guard's three ordered rules across its three
+  no scenario here is. `unreported-checks-at-phase-four` is the refusal that reaches that decision
+  point: its status read is sequenced to report a green list through Phase 2 and none at Phase 4, so
+  a valid run blocks at Phase 4 on condition 2. Its log cannot tell whether the waiver's own text was
+  loaded, because condition 2 blocks either way. WP3 to WP6 of the plan — the guard's three ordered rules across its three
   counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
   bound — are still to come. Read a green result as a proven mechanism, not as a net.
 - **No single log can prove a refusal was a decision.** A refusal is defined by absence, and a call
@@ -197,8 +221,9 @@ remain independent of each other.
 - **Phase 5.5 is reached only through the observer-only branch, and that is a property of the
   harness rather than a preference.** The merging scenario cannot reach it: its canned reads
   describe an open pull request and go on describing one after the merge, because the stub resolves
-  an envelope by operation name alone — one fixed document per operation, no state — so the fresh
-  read that Phase 5.5 entry requires never confirms the merge. That limit is downstream of
+  an envelope by operation name — one fixed document per operation, or for a sequenced entry one per
+  call position, and no model of forge state — so the fresh read that Phase 5.5 entry requires never
+  confirms the merge. That limit is downstream of
   everything `merge-proceeds` asserts, since its `pr-merge` records are already written by then, and
   removing it needs a stateful stub, which is WP6's subject.
 
@@ -256,7 +281,7 @@ fake `scripts/remote-tracker.mjs` on the scaffolded skill root is a **complete**
 network, no `gh`, no `tea`, no recorded cassettes.
 
 It dispatches on the operation name in `argv` and returns that operation's canned envelope from the
-fixture. Three behaviours are load-bearing:
+fixture. Four behaviours are load-bearing:
 
 - **Every call is recorded**, as one JSON object per line: `seq`, `operation`, `apply`, `at`, `cwd`.
   `seq` starts at 1 and rises by one per call, derived from the lines already in the file because the
@@ -296,8 +321,40 @@ fixture. Three behaviours are load-bearing:
   one; deriving the applied one takes an ordered pair of provider responses, because `pr-merge`
   re-reads the pull-request status to check the head has not moved before it merges.
 
+- **A sequenced entry answers the n-th call of its operation with its n-th element.** An entry may
+  state an ordered list under `sequence` instead of a single envelope; that is what lets a status
+  read answer differently in Phase 2 and in Phase 4. Each element is a complete single-envelope
+  shape — its own `provider` (or `providers`) and its own `envelope` (or `dryRunEnvelope` and
+  `applyEnvelope`) — under the entry's shared `input`, and a sequenced entry states none of those
+  fields beside the list, so which one a call receives is never ambiguous. The field is deliberately
+  not `providers`, which means one response per command **within** a call; `sequence` orders
+  **across** calls.
+  - **Position.** n is the number of earlier records of that operation in the run's log, dry runs and
+    applies alike, plus one. It is computed inside the same `mkdir` lock that computes `seq`, from
+    the log content read immediately before the append, and envelope selection uses that value
+    without counting again — so calls issued concurrently, each its own process, receive distinct
+    elements.
+  - **Fail closed.** For a sequenced entry, a lock that cannot be obtained, a log that exists and
+    cannot be read or counted, or a failed append answers with an error envelope — never element 1,
+    and never the unlocked append a plain entry falls back to. That fallback is tolerable for `seq`
+    only because a duplicate `seq` fails the schema assertion loudly; a duplicated position would fail
+    nothing. `pr-merge` cannot be sequenced, because failing closed withholds the record and a merge
+    record must never be dropped.
+  - **Exhaustion is declared per entry.** A call past the last element fails loudly with an error
+    envelope unless the entry states `repeatLast: true`, which serves the last element again. There is
+    no silent default. A malformed entry — an empty list, a single-envelope field beside the list, an
+    element stating no envelope, `repeatLast` without a list — is refused with the reason.
+
+  The log record does not change: `{seq, operation, apply, at, cwd}` stays exactly as pinned, and the
+  position is derivable from it. Fidelity is still proven **per envelope** — every element passes the
+  same check against `executeOperation` a single envelope does — and nothing proves that a sequence
+  as a whole is one a real forge produces; a scenario that composes one says so.
+
 The stub finds its fixture and its call log relative to its own location, so it needs no environment
 of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exist for the unit tests.
+`EVAL_TRACKER_LOCK_WAIT_MS` shortens how long a call waits for the lock, without changing when a lock
+counts as abandoned, and exists only for the test that proves a sequenced entry fails closed on a
+held lock.
 
 ## Adding a scenario
 
@@ -315,7 +372,11 @@ of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exis
    An operation that issues **several** commands states `providers` — an ordered list, one response
    per command, a string delivered as raw stdout and anything else JSON-encoded — instead of a single
    `provider`, and a **mutation** states `dryRunEnvelope` and `applyEnvelope` instead of one
-   `envelope`, because the real helper answers the two modes differently.
+   `envelope`, because the real helper answers the two modes differently. An operation that has to
+   answer **successive calls** differently states a `sequence` of such shapes and declares whether
+   `repeatLast` applies; see "How the stub works". A sequence needs a validity rule in its scenario's
+   assertions for a run that never reaches the deciding position in time, as
+   `unreported-checks-at-phase-four` has.
 
    One entry costs real time to derive and to re-verify. `issue-state-wait` is a **blocking**
    operation: where the first read finds the issue open it sleeps out the helper's fixed 30-second

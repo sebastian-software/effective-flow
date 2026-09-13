@@ -503,6 +503,21 @@
         "dryRun": false
       }
     },
+    "body-hash": {
+      "input": {
+        "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "body-hash",
+        "provider": null,
+        "data": {
+          "hash": "685dc58bd989bd067e54c5fd0101b6db98fd40f5952b8948e0a38ea08903cc98"
+        },
+        "dryRun": false
+      }
+    },
     "issue-state-wait": {
       "input": {
         "number": 17

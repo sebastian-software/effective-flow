@@ -1,0 +1,12 @@
+{"seq":1,"operation":"probe","apply":false,"at":"2026-09-12T23:47:59.991Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-12T23:48:01.526Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":3,"operation":"pr-status-read","apply":false,"at":"2026-09-12T23:48:09.580Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":4,"operation":"review-threads-read","apply":false,"at":"2026-09-12T23:48:10.887Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":5,"operation":"pr-comments-read","apply":false,"at":"2026-09-12T23:48:12.118Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":6,"operation":"pr-reviews-read","apply":false,"at":"2026-09-12T23:48:13.287Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":7,"operation":"viewer-read","apply":false,"at":"2026-09-12T23:48:15.005Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-12T23:48:28.961Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":9,"operation":"pr-status-read","apply":false,"at":"2026-09-12T23:48:44.431Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":10,"operation":"review-threads-read","apply":false,"at":"2026-09-12T23:48:45.911Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":11,"operation":"pr-comments-read","apply":false,"at":"2026-09-12T23:48:47.280Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":12,"operation":"pr-reviews-read","apply":false,"at":"2026-09-12T23:48:48.843Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}

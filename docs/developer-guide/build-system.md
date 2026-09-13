@@ -299,7 +299,7 @@ The build aborts with an error message if any of these guards is violated:
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
-  `plan` share **700 lines**; `merge-gate` carries **2787**; every other `src/tools/*.md`
+  `plan` share **700 lines**; `merge-gate` carries **2741**; every other `src/tools/*.md`
   carries its measured size plus **up to** ten lines. The build prints each
   measured size next to the budget it was measured against and aborts if a tool exceeds **its
   own** limit, naming the tool, its size and that limit. That printed size is the number to
@@ -457,7 +457,8 @@ and directive syntax").
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
-  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`.
+  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
+  `merge-gate-check-list-waiver`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
@@ -489,15 +490,27 @@ and directive syntax").
   untrusted-head-branch threat model therefore stay in the always-loaded core – the last of those
   because an exposure that is only readable from inside the branch creating it is a discovery
   rather than a configuration decision. `merge-gate-issue-observation` is the fifth, holding the
-  body of Phase 5.5 – its seven steps and the transition gate they end in – for a phase that runs
-  after an already-successful merge and is explicitly allowed to degrade. Like
+  body of Phase 5.5 – its seven steps and the transition gate they end in – together with the
+  per-issue items Phase 6 reports for what those steps observed, under its closing
+  `### Observation report items` heading, for a phase that runs after an already-successful merge
+  and is explicitly allowed to degrade. Like
   `merge-gate-checkout-boundary` it reuses an existing trigger, `issue-post-merge-observation`'s,
   because the two load at the same moment. What separates it from the four above is **where the
   cut runs**: the section's heading, its entry condition and its missing-receipt rule stay in the
   always-loaded core, because the entry condition is stated a third time inside the moved region –
   defer all of it and the run would decide whether it may enter the phase from text it has not
   loaded. A fragment that holds a phase body therefore keeps that phase's entry gate outside it,
-  which is the general form of the rule the conflict pointer states for a mode.
+  which is the general form of the rule the conflict pointer states for a mode. Phase 6's report of
+  the lifecycle receipt result stays in the core for the same reason: a merge without a valid
+  receipt ends Phase 5.5 before the fragment loads, and still owes that report.
+  `merge-gate-check-list-waiver` is the sixth, holding the rule bullets and the `ask` fence of Phase
+  4's no-check-list waiver, and it takes the fifth's cut: the section heading with an entry gate
+  stating when the question can arise stays in the always-loaded core, together with condition 2's
+  clause naming the waiver, Phase 2's unreported-list rule, the wisdom record, and the Phase-6 report
+  of a merge on a waived check list. Its trigger – a Phase-4 evaluation's fresh read stating
+  `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
+  every branch that poses **no** question is decided inside the moved text as well; a pointer firing
+  only where the question is posed would leave those runs deciding from text they have not loaded.
   `config-migration` is the live proof that a fragment may be
   eager in one file and lazy in another: twelve tools that read configuration on every run inline
   its always-read core, while seven others defer the whole fragment behind their own first
@@ -558,7 +571,7 @@ The four implementation tools share **700 lines** and currently measure `build` 
 463, `docs` 599, and `plan` 647 — headroom ranges from `plan`'s 53 lines to `fix`'s 237.
 `review` left that group when the eager `chat-language` include pushed it past 700; it now carries
 a measurement like every other tool.
-`merge-gate` is budgeted separately at **2787** and measures 2744: an orchestration gate whose
+`merge-gate` is budgeted separately at **2741** and measures 2737: an orchestration gate whose
 phases, delegation contracts and provider rules do not compress to the size of an implementation
 tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
 The rest is loaded only when the mode is reached.

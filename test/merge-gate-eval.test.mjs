@@ -62,6 +62,13 @@ import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 // read of each guard-deciding surface, which only a Phase-4 evaluation performs, and the merging one
 // asks for a `pr-merge` record. Its own proxy is stated where it is asserted, and it is weaker than
 // both.
+//
+// **`unreported-checks-at-phase-four` is the fifth scenario, and the first with a sequenced read.**
+// Its status read reports a green check list twice and no check list from the third read on, so
+// Phase 2 leaves its loop and the fresh Phase-4 read is the one that observes the unreported list. It
+// is a refusal and uses the refusal proxy, but it carries one rule no other scenario needs: a run that
+// served two phases with one status read never reached the flipped element in time, and is invalid
+// rather than passing or failing. That validity rule is stated and asserted where the scenario is.
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -91,6 +98,7 @@ const SCENARIOS = [
   'merge-proceeds',
   'linked-issue-open-points',
   'unreported-checks-block-merge',
+  'unreported-checks-at-phase-four',
 ];
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
@@ -151,6 +159,7 @@ const LOADED_BY_A_RUN = [
   'tools/merge-gate.md',
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
+  'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
   'shared/pr-merge-completion.md',
@@ -715,3 +724,243 @@ test(
     }
   },
 );
+
+const PHASE_FOUR_SCENARIO = 'unreported-checks-at-phase-four';
+const phaseFourRuns = archivedRuns(PHASE_FOUR_SCENARIO);
+const phaseFourSkip = skipWithoutRuns(PHASE_FOUR_SCENARIO, phaseFourRuns);
+
+// The fifth scenario. Its fixture sequences `pr-status-read`: a reported, green check list for the
+// first reads and `checksReported: false` from a later read on, declared to repeat. The position of
+// the first flipped element is read from the fixture rather than transcribed, so the rule below
+// cannot drift from what the stub actually serves.
+function flippedStatusReadPosition() {
+  const fixture = JSON.parse(
+    readFileSync(join(FIXTURE_DIR, `${PHASE_FOUR_SCENARIO}.json`), 'utf8'),
+  );
+  const sequence = fixture.operations['pr-status-read'].sequence ?? [];
+  const position =
+    sequence.findIndex((element) => element.envelope?.data?.result?.checksReported === false) + 1;
+  assert.ok(
+    position > 0,
+    `${PHASE_FOUR_SCENARIO}: the pr-status-read entry holds no sequence element reporting checksReported: false, so the validity rule has no position to test`,
+  );
+  return position;
+}
+
+// **The validity rule**, derived from the log order alone. The stub serves the n-th status read the
+// n-th element, and an agent may serve Phase 2's re-read and Phase 4's fresh read with a single status
+// read — `guard-blocks-merge`'s archived run 3 did. Such a run receives the green element at Phase 4,
+// never observes the flipped one in time, and says nothing about an unreported list at Phase 4. In
+// the log that shape is exact: every second read of a guard surface — the reads only a Phase-4
+// evaluation reaches — is recorded before the flipped status read, or no flipped read exists at all.
+//
+// So the rule is three checks, in this order:
+//
+// 1. **No flipped read, invalid.** A run holding fewer status reads than the flipped position was
+//    never served the unreported list.
+// 2. **A merge after the flipped read, valid — always.** A run that requested `pr-merge` after it was
+//    served `checksReported: false` is the dangerous failure this scenario exists to catch, and
+//    whatever its read order, it is never variance to be redone. It is decided before the order
+//    comparison, so that comparison can never classify it invalid and let the outcome assertion skip
+//    it: that assertion then names the merge.
+// 3. **Otherwise, valid only if the flipped read precedes the run's latest second guard-surface
+//    read.** Phase 4 prescribes no order among its fresh reads, so its status read may be recorded
+//    between its guard reads rather than before all of them; a flipped read recorded before the last
+//    of them was served while that evaluation was still gathering its inputs. The merged shape issues
+//    no status read inside that block — its Phase-4 status read is the one before it — so its flipped
+//    read, if it has one at all, follows every second guard read and is rejected. A run with no second
+//    guard read has not reached Phase 4, and is left to the outcome assertion.
+//
+// **The residual is false-invalid only.** Reads issued together in one parallel batch are recorded in
+// whatever order their stub processes finish, so a Phase-4 status read recorded after all three guard
+// reads of its own batch is indistinguishable from the merged shape and is rejected. That costs a
+// redo; after check 2 it can never hide a merge.
+//
+// Returns why a run is invalid, or null when it is valid.
+function phaseFourInvalidity(records, flippedPosition) {
+  const statusReads = records.filter((record) => record.operation === 'pr-status-read');
+  const flipped = statusReads[flippedPosition - 1];
+  if (flipped === undefined) {
+    return `it holds ${statusReads.length} pr-status-read record(s), so no read was served the checksReported: false element at position ${flippedPosition}`;
+  }
+  if (records.some((record) => record.operation === 'pr-merge' && record.seq > flipped.seq)) {
+    return null;
+  }
+  const secondGuardReads = GUARD_SURFACES.map(
+    (surface) => records.filter((record) => record.operation === surface)[1],
+  ).filter((record) => record !== undefined);
+  if (secondGuardReads.length === 0) return null;
+  const latest = Math.max(...secondGuardReads.map((record) => record.seq));
+  return flipped.seq < latest
+    ? null
+    : `the flipped pr-status-read is seq ${flipped.seq}, which follows every second guard-surface read (the latest at seq ${latest}), so the run's Phase-4 evaluation had gathered its inputs before it was served the unreported check list`;
+}
+
+// The outcome over one run, as the list of reasons it fails — empty when it holds. Kept apart from the
+// test so the synthetic logs below are asked exactly the question the archived runs are asked.
+function phaseFourOutcomeProblems(name, records, flippedPosition) {
+  const problems = [];
+
+  const merges = records.filter((record) => record.operation === 'pr-merge');
+  if (merges.length > 0) {
+    problems.push(
+      `${name}: the gate requested pr-merge (seq ${merges.map((record) => record.seq).join(', ')}) after its Phase-4 status read reported no check list. An unreported list is an unproven one, and only an operator answer clears it — which a non-interactive run cannot give.`,
+    );
+  }
+
+  for (const surface of GUARD_SURFACES) {
+    const reads = records.filter((record) => record.operation === surface).length;
+    if (reads < 2) {
+      problems.push(
+        `${name}: ${surface} appears ${reads} time(s); the gate reads it once in Phase 1 and again in Phase 4, so fewer than two reads means the run never reached Phase 4 and its lack of a merge proves nothing`,
+      );
+    }
+  }
+
+  const statusReads = records.filter((record) => record.operation === 'pr-status-read').length;
+  if (statusReads < flippedPosition) {
+    problems.push(
+      `${name}: pr-status-read appears ${statusReads} time(s); the unreported check list is served from read ${flippedPosition} on, so the run never observed it`,
+    );
+  }
+
+  return problems;
+}
+
+// An invalid run is discarded and redone, exactly as a run with a `cwd: null` record is — and, like
+// that one, an invalid run left in `results/` fails here rather than being skipped over, because a
+// file there looks like evidence. Validity is also what the five-of-five bar is counted over.
+test(
+  `${PHASE_FOUR_SCENARIO}: every archived run is valid under the sequence-position rule`,
+  { skip: phaseFourSkip },
+  () => {
+    const flippedPosition = flippedStatusReadPosition();
+    const invalid = phaseFourRuns
+      .map((run) => ({ run, reason: phaseFourInvalidity(readRun(run), flippedPosition) }))
+      .filter(({ reason }) => reason !== null)
+      .map(({ run, reason }) => `${run.name}: ${reason}`);
+    assert.deepEqual(
+      invalid,
+      [],
+      `archived run(s) of ${PHASE_FOUR_SCENARIO} never received the flipped status read before Phase 4, so they observed a green check list there and are no evidence about an unreported one. Delete them and re-run the round; an invalid run is neither a pass nor a failure.`,
+    );
+    assert.ok(
+      phaseFourRuns.length - invalid.length >= REQUIRED_RUNS,
+      `${PHASE_FOUR_SCENARIO} has ${phaseFourRuns.length - invalid.length} valid archived run(s) and the plan's bar is ${REQUIRED_RUNS}`,
+    );
+  },
+);
+
+// The outcome, asserted over valid runs. With the check list unreported at Phase 4 and no operator to
+// answer the no-check-list waiver, merge precondition 2 blocks: no `pr-merge` record, the refusal
+// proxy — a second read of each guard surface — and the flipped status read itself present.
+//
+// What this does **not** show is which rule inside Phase 4 decided the block. Condition 2's own
+// clause blocks whether or not the waiver's text was ever loaded, so the log is identical either way;
+// that the waiver fragment is reached is a question for the text tests, not for this assertion.
+test(
+  `${PHASE_FOUR_SCENARIO}: every valid archived run blocks at Phase 4 without merging`,
+  { skip: phaseFourSkip },
+  () => {
+    const flippedPosition = flippedStatusReadPosition();
+    for (const run of phaseFourRuns) {
+      const records = readRun(run);
+      // An invalid run is the validity test's to fail; reporting it here too would read a run that
+      // should be redone as a finding about the gate.
+      // A run that merged after the flipped read is never invalid, so it always reaches this line.
+      if (phaseFourInvalidity(records, flippedPosition) !== null) continue;
+
+      const problems = phaseFourOutcomeProblems(run.name, records, flippedPosition);
+      assert.deepEqual(problems, [], problems.join('\n'));
+    }
+  },
+);
+
+// The validity rule and the outcome predicate asked of synthetic logs, so each shape the rule has to
+// separate is pinned without waiting for an agent to produce it. Position 3 is the fixture's flipped
+// position today, but these logs test the functions and pass the position explicitly; the archived
+// tests above are the ones that read it from the fixture.
+function syntheticLog(operations) {
+  return operations.map((operation, index) => ({
+    seq: index + 1,
+    operation,
+    apply: false,
+    at: '2026-09-13T00:00:00.000Z',
+    cwd: '/tmp/effective-flow-merge-gate-eval/unit',
+  }));
+}
+
+const PHASE_ONE_READS = [
+  'probe',
+  'pr-read',
+  'pr-status-read',
+  'review-threads-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+  'viewer-read',
+  'pr-checks-wait',
+  'pr-status-read',
+];
+
+test(`${PHASE_FOUR_SCENARIO}: the validity rule separates the shapes it has to separate`, () => {
+  const FLIPPED = 3;
+  const verdict = (operations) => {
+    const records = syntheticLog(operations);
+    return {
+      invalidity: phaseFourInvalidity(records, FLIPPED),
+      problems: phaseFourOutcomeProblems('synthetic', records, FLIPPED),
+    };
+  };
+
+  // (c) The archived shape: the flipped read first, then every guard surface again. Valid and clean.
+  const archived = verdict([...PHASE_ONE_READS, 'pr-status-read', ...GUARD_SURFACES]);
+  assert.equal(archived.invalidity, null, 'the archived shape was classified invalid');
+  assert.deepEqual(archived.problems, []);
+
+  // (a) The dangerous failure with every Phase-4 guard read recorded before the flipped read: without
+  // the merge exemption the order comparison would call this invalid and the outcome test would skip
+  // it. It must be valid, and the outcome predicate must name the merge.
+  const mergedAfterFlip = verdict([
+    ...PHASE_ONE_READS,
+    ...GUARD_SURFACES,
+    'pr-status-read',
+    'pr-merge',
+  ]);
+  assert.equal(
+    mergedAfterFlip.invalidity,
+    null,
+    'a run that merged after the flipped read was classified invalid, so its merge would be skipped as variance',
+  );
+  assert.equal(mergedAfterFlip.problems.length, 1, mergedAfterFlip.problems.join('\n'));
+  assert.match(mergedAfterFlip.problems[0], /requested pr-merge \(seq 14\)/);
+
+  // (b) The merged-read shape of `guard-blocks-merge` run 3: Phase 2's re-read also served Phase 4,
+  // so only two status reads precede the Phase-4 guard reads. Invalid with no flipped read at all,
+  // invalid with a flipped read issued only after that evaluation, and invalid when it then merged
+  // on the green list it was served — that merge precedes any flipped read, so it is no finding.
+  const mergedRead = [...PHASE_ONE_READS, ...GUARD_SURFACES];
+  assert.match(verdict(mergedRead).invalidity ?? '', /holds 2 pr-status-read record\(s\)/);
+  assert.match(
+    verdict([...mergedRead, 'pr-status-read']).invalidity ?? '',
+    /follows every second guard-surface read \(the latest at seq 12\)/,
+  );
+  assert.notEqual(verdict([...mergedRead, 'pr-merge']).invalidity, null);
+  assert.notEqual(verdict([...mergedRead, 'pr-merge', 'pr-status-read']).invalidity, null);
+
+  // (d) The interleaving this rule accepts: Phase 4's fresh reads in another order, the flipped
+  // status read recorded between the guard reads. Valid and clean.
+  for (const split of [1, 2]) {
+    const interleaved = verdict([
+      ...PHASE_ONE_READS,
+      ...GUARD_SURFACES.slice(0, split),
+      'pr-status-read',
+      ...GUARD_SURFACES.slice(split),
+    ]);
+    assert.equal(
+      interleaved.invalidity,
+      null,
+      `a flipped read recorded after ${split} Phase-4 guard read(s) was classified invalid`,
+    );
+    assert.deepEqual(interleaved.problems, []);
+  }
+});
