@@ -162,7 +162,9 @@ remain independent of each other.
   longer a measurement of the scenario as composed. Two rounds were discarded for this —
   `pr-checks-wait` and `repository-resolve` — both found by reading logs by hand and once nearly
   waved through because the stray operation looked harmless. It is an assertion rather than a
-  judgement for that reason.
+  judgement for that reason. `body-hash` is now defined in `linked-issue-open-points`, because its
+  post-merge path calls that local operation routinely; the other fixtures still leave it
+  undefined, so a stray call there still disqualifies the run.
 - **A call to an operation the shipped helper does not support at all passes.** The real helper
   refuses an unknown name with `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses
   at an invented capability probe gets an error in the sandbox and would get an error in
