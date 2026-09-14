@@ -273,8 +273,11 @@ defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): workt
 completion via merge, local tracker as the safe base, and English as the project language.
 Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
 Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
-[`/effective-flow setup`](./tools-setup.md); its Express path adopts the safe base after one
-before/after confirmation.
+[`/effective-flow setup`](./tools-setup.md) and choose one of the three common profiles after the
+Chat question. Use `/effective-flow setup express` explicitly when you intentionally want the
+safe-base-plus-existing-values path after one before/after confirmation. Use
+`/effective-flow setup guided` when you need per-key configuration, including an explicit
+GitHub/Forgejo provider override or base that Profile mode cannot verify without guessing.
 
 If a convention-file marker exists but points to a missing ADR, Effective Flow reports the stale
 marker and continues through the default-path scan and other fallbacks. Run setup to correct the

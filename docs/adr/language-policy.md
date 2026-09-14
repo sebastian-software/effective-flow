@@ -53,6 +53,14 @@ commit subject. An orchestrator resolves the required language once per run and 
 concrete language to delegated agents; agents do not independently reinterpret the project
 configuration.
 
+Profile setup is the only exception to binding `language.chat` before a run's first interactive
+output. It resolves an entry language read-only, asks **Chat** in that language, then binds the
+selected Mirror, English, or German result once for the following **Profile** question and every
+later line of that setup run. Mirror keeps the recognizable conversation language and proposes
+removing an existing `language.chat` row; English and German propose `en` or `de`. Persistence
+still waits for the common confirmed write. Express, Guided, and every non-setup tool retain the
+whole-run resolve-once rule and cannot rebind the result.
+
 Complete plans, including status markers and human-readable headers, use one language. Existing
 German and English plan and review formats remain readable. New writers emit only the resolved
 language. Configuration keys and encoded values, labels, HTML idempotency markers, finding IDs,
@@ -92,10 +100,11 @@ a separate decision.
   documentation artifacts, or choose any other supported combination.
 - Artifact writers and readers need a shared resolution contract and complete bilingual
   compatibility mappings.
-- Setup gains a project-language question and optional overrides: the artifact surfaces offer
-  **Inherit project language** first, `language.chat` offers **Mirror the user's language**
-  first, and both states are written as an absent row. Express keeps the all-English safe
-  default and writes no `language.chat` row.
+- Profile setup asks **Chat** before **Profile**, and that first answer controls the remainder of
+  setup immediately. Mirror and inherited artifact-surface values are both encoded as absent rows,
+  although they have different semantics. Guided retains its project-language and optional
+  override questions; Express keeps the all-English safe default and writes no new
+  `language.chat` row.
 - Adding `language.chat` changes nothing for an existing project until it is set, because
   mirroring is exactly the previous behaviour. The cost is that the key cannot be read off
   `language.project` the way every artifact surface can.
@@ -108,15 +117,17 @@ a separate decision.
 ## Validation and review triggers
 
 Alignment is checked by the source-to-dist build, targeted compatibility scenarios, the normal
-format/test/build pipeline, and inspection of both generated harnesses. Revisit this decision
-when Effective Flow adds a third content language, supports region-specific locale selection,
-introduces another persisted artifact surface or non-persisted interaction surface, or changes
-its squash-merge/release model.
+format/test/build pipeline, and inspection of both generated harnesses. Tests separately pin the
+Profile-only bootstrap and the unchanged resolve-once rule for every other speaking tool. Revisit
+this decision when Effective Flow adds a third content language, supports region-specific locale
+selection, introduces another persisted artifact surface or non-persisted interaction surface, or
+changes its squash-merge/release model.
 
 ## References
 
 - `src/shared/language-rules.md`
 - `src/shared/chat-language.md`
+- `src/shared/setup-profiles.md`
 - `src/shared/config-setup-migration.md`
 - `docs/user-guide/configuration.md`
 - `docs/developer-guide/plan-conventions.md`

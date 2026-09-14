@@ -6,6 +6,14 @@ language**, never inherit `language.project`. Precedence: an explicit in-message
 configured value, then the conversation language, then `language.project`, then `en`. An invalid
 value is reported and treated as an absent row — mirror, not a jump to `language.project`.
 
+The sole bootstrap exception is `{{SKILL:setup}}` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
+
 Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
 question, option labels and descriptions, the next-steps heading and each option's description (never its
 invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values

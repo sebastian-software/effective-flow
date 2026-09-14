@@ -172,6 +172,35 @@ says nothing once several runs are open at the same time. Two things help:
   repository-local Codex configuration file. Old title request and receipt files are inert and may
   remain; Effective Flow does not delete them or edit your Codex configuration.
 
+## Choose a workflow topology
+
+Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex to choose one of
+three common topologies. The standard Profile flow asks only **Chat** and then **Profile** before
+its normal confirmation and any conditional safety questions:
+
+- **Fully local** keeps issue-shaped work in local Markdown, develops on local Git branches, and
+  completes by local merge. It neither creates GitHub/Forgejo issues nor opens pull requests.
+- **Forge issues and development** uses GitHub or Forgejo for issue-backed planning and tracking,
+  and delivers development through a pull request on that forge.
+- **External issues and forge development** uses an external project-management tool such as
+  Linear for issue-backed planning and tracking, while branches and pull requests stay on GitHub or
+  Forgejo.
+  This profile can ask additional questions for the configured external connection, its exact
+  workspace/team/project context, and valid started/done states.
+
+The selected profile is not stored as a preset. Setup writes the resulting tracker, completion,
+and base-branch settings only after showing their exact before/after changes. The forge-backed
+profiles require a verifiable GitHub or Forgejo `origin`; setup never guesses the provider or
+downgrades silently. Use `/effective-flow setup guided` when you need provider overrides or other
+per-setting control, and `/effective-flow setup express` when you deliberately want the
+safe-default path without the profile questions.
+
+The tracker choice governs work that already has an issue reference. A natural-language
+`/effective-flow plan "…"` call still writes a local plan under `plan.dir`; choosing a forge or
+external profile does not automatically create a remote issue for it. See
+[Setup & info](tools-setup.md#effective-flow-setup), [Configuration](configuration.md), and
+[Remote tracker](remote-tracker.md) for the detailed contracts.
+
 ## The typical flow: Plan → Build → Pull Request
 
 For new functionality or a larger change, this is the usual three-step process:
