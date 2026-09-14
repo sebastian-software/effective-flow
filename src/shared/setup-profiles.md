@@ -116,6 +116,11 @@ only for missing or changed external integration data. Do not enter Guided's wor
 language, tracker-mode, or advanced questions. Preselect a recorded value only after validating it
 under the rules below.
 
+```lazy-include
+tracker-target
+when: the selected Profile is External + forge and the external integration interview begins
+```
+
 1. Ask for `tracker.externalTool`, the short non-empty identifier of the tool holding the issues,
    when no valid value is recorded. There is no whitelist: the name proves no capability, state,
    connection, or identifier convention. An empty or unanswered value stops without writing.

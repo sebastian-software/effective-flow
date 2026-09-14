@@ -2179,6 +2179,23 @@ test('the external profile alone captures reproducible connection context and ve
   const external = section(profiles, '### External-only integration interview', '\n## ');
   const contract = prose(external);
 
+  const pointers = new Map(
+    [...external.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.deepEqual([...pointers.keys()], ['tracker-target']);
+  assert.match(
+    pointers.get('tracker-target'),
+    /selected Profile is External \+ forge.*external integration interview begins/,
+  );
+  ordered(
+    external,
+    '```lazy-include\ntracker-target',
+    '3. From that tool and hint, discover read-only exactly one configured MCP connection',
+  );
+
   assert.match(
     contract,
     /asks only for missing or changed external integration data.*Do not enter Guided's worktree, delivery, language, tracker-mode, or advanced questions/,
