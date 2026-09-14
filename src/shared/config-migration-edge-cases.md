@@ -2,10 +2,10 @@
 
 These are the circumstance-gated parts of the Effective Flow configuration contract: the legacy
 marker and slug tolerances of the config locator, the ranking that resolves a several-match scan,
-the transitional JSON fallback, and the two `tracker.*` state keys only an `external` target
-resolves. The ordered resolution steps and the table encoding they extend live in the "Effective
-Flow configuration (project setup ADR)" building block (`config-migration.md`), which every source
-that loads this one carries.
+the transitional JSON fallback, the two `tracker.*` state keys only an `external` target
+resolves, and the stop contract for retired rows. The ordered resolution steps and the table
+encoding they extend live in the "Effective Flow configuration (project setup ADR)" building block
+(`config-migration.md`), which every source that loads this one carries.
 
 ### Legacy setup marker (locator step 1)
 
@@ -69,3 +69,65 @@ and touches **no** Git.
   value that fails there makes that issue's reconciliation unavailable rather than its transition.
   Only `{{SKILL:setup}}` writes a confirmed
   tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
+
+### Retired keys (table encoding)
+
+The core names these rows as retired. A retired row is **never read as a value**, not even to report
+what it would have held; its successor is the only key a run resolves.
+
+| Retired row                             | Successor                                |
+| --------------------------------------- | ---------------------------------------- |
+| `worktree.baseBranch`                   | `delivery.baseBranch`                    |
+| `worktree.branchPrefix`                 | `delivery.branchPrefix`                  |
+| `worktree.completion`                   | `delivery.completion`                    |
+| a row whose key begins with `prReview.` | the same trailing key under `mergeGate.` |
+
+`delivery.prReview` does not begin with `prReview.`: it is a live `delivery` key, never retired, and
+never matched. `worktree.enabled`, `worktree.setup`, `worktree.baseDir` and `applyReview.worktree.*`
+are current keys.
+
+**Which runs resolve which successors.** A run checks exactly the successors its own tool can resolve
+at any point of the run, not only the ones it is about to read:
+
+- `delivery.baseBranch`, `delivery.branchPrefix` and `delivery.completion`: {{SKILL:build}},
+  {{SKILL:fix}}, {{SKILL:docs}}, {{SKILL:refactor}} and {{SKILL:maintain}}, through "Delivery and
+  worktree integration".
+- `delivery.baseBranch` and `delivery.branchPrefix`: {{SKILL:deliver}}, {{SKILL:apply-issues}} and
+  {{SKILL:apply-review}} in remote mode.
+- `delivery.baseBranch` only: {{SKILL:pr}}, and {{SKILL:iterate}} in local mode, the only mode that
+  reads it.
+- every `mergeGate.*` key: {{SKILL:merge-gate}}.
+- `mergeGate.bots`, `mergeGate.bots.<login>.trigger`, `mergeGate.bots.<login>.check` and
+  `mergeGate.botWaitMinutes`: {{SKILL:iterate}} in PR mode, including a run {{SKILL:merge-gate}}
+  delegates, the `.check` key through "Automatic reviewer state". In PR mode these are its whole set.
+
+A tool not listed resolves no successor, so a retired row neither stops nor is reported there. A run
+that hands work to another workflow does not check that workflow's successors on its behalf; the
+receiving run checks its own at its own first configuration read. The checkout provisioning of
+{{SKILL:iterate}} in PR mode and of {{SKILL:merge-gate}} applies "Base-branch resolution" to
+`delivery.baseBranch` only as a checkout precondition; that is not a successor read, so a retired
+`worktree.baseBranch` neither stops nor is reported there.
+
+**When.** Detect at the run's **first configuration read**, before any fetch, branch, worktree,
+commit, push, delegation or merge, over that whole successor set. Detecting only when a successor is
+about to be resolved would stop a run after it already delivered: a project carrying only
+`worktree.completion` would implement and commit before stopping at handback.
+
+- **Successor absent → stop.** Name the retired row, its successor, and {{SKILL:setup}}, which
+  rewrites the row in place; do nothing else. This is the one exception to the safe-default rule of
+  the core: never take the successor's default instead. A non-interactive delegated run stops the same
+  way and returns that reason to its caller like any other precondition failure.
+- **Successor present → the successor wins.** Report the inert retired row **once** per run, point to
+  {{SKILL:setup}}, and continue; the two rows are never combined.
+- **Login-keyed subkeys.** A retired `prReview.bots.<login>.trigger` or `.check` has as its successor
+  the same subkey under the `mergeGate.bots` entry that denotes the same reviewer under "Matching a
+  configured login", including its one-trailing-`[bot]` equivalence and collapsed entries. A retired
+  subkey whose login matches no reviewer the run resolves has no resolvable successor: report it once
+  and do not stop.
+- **{{SKILL:deliver}} and `worktree.completion`.** `deliver` reads `delivery.completion` only to state
+  that its own pull-request intent overrides it, so a retired `worktree.completion` there is reported
+  and never stops the run.
+- **{{SKILL:setup}} is exempt.** It is the repair path: it records every retired row and rewrites it
+  in place, and is the only source that reads a retired row's value, in order to carry it over.
+
+The same rule applies to rows read from the transitional JSON configuration of locator step 3.

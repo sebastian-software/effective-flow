@@ -344,10 +344,10 @@ that one merge commit; `conflictResolution: off` is the switch for a run that ma
 push at all. What the resolver does with a conflict, and where it refuses to guess, is described
 under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base).
 
-**This key is new and has no legacy `prReview.*` counterpart.** It never existed as
-`prReview.conflictResolution`, so the per-key legacy fallback described below finds nothing for it
-and `/effective-flow setup` has no row to migrate. A project that carries only an unmigrated legacy
-block therefore gets the default `auto` here.
+**This key is new.** No earlier generation wrote a `prReview.conflictResolution` row. One that exists
+anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
+its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
+setup migrates gets the default `auto` here.
 
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
@@ -392,14 +392,33 @@ controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable
 reviewers it expects. They control unrelated things – one is about publishing your own findings,
 the other is about driving somebody else's pull request to merge.
 
-**Legacy `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
-to `merge-gate`. A run still reads each legacy key when its `mergeGate.*` counterpart is absent, so
-an unmigrated project keeps its configured behavior instead of silently falling back to the
-defaults; the run reports once that it did so. A present `mergeGate.<key>` always wins over the
-legacy name, per key. This fallback lasts one generation: run
-[`/effective-flow setup`](./tools-setup.md), which carries the values over, removes the old rows,
-and names any legacy key it discarded because a `mergeGate.*` value already existed. No other tool
-writes configuration.
+**Retired `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
+to `merge-gate`. Those rows are retired: no run reads a `prReview.*` row as a value any more.
+`merge-gate`, and `iterate` in PR mode for `mergeGate.bots`, `mergeGate.bots.<login>.trigger`,
+`mergeGate.bots.<login>.check`, and `mergeGate.botWaitMinutes`, look for such a row at the first
+configuration read, before fetching, committing, pushing, or merging anything:
+
+- **The matching `mergeGate.*` row is absent:** the run stops, names the retired row, its
+  `mergeGate.*` successor, and `/effective-flow setup`, and does nothing else. It never quietly
+  continues with the default instead, because that would change what the gate does without telling
+  you.
+- **The matching `mergeGate.*` row is present:** that row wins, the run reports the inert legacy row
+  once, and it continues. The two rows are never combined.
+
+A retired `prReview.bots.<login>.trigger` or `.check` row for a login that matches no reviewer the
+run knows about is only reported. The repair is one step: run
+[`/effective-flow setup`](./tools-setup.md), which rewrites resolvable rows in place. For login-keyed
+rows, setup carries and removes a retired row only when it can establish its reviewer destination
+or that destination already exists. An unmatched login is reported and retained without creating a
+reviewer. Equal values from equivalent retired login spellings are deduplicated. If unequal raw
+values collapse onto one destination and no current successor exists in the source configuration, setup reports a `Bot conflict`
+and asks you to choose the first value, the second value, or a replacement raw value. A completed
+choice establishes one current successor under the surviving configured spelling and removes all
+contributing retired rows only during the normal confirmed write. If the choice cannot complete,
+setup stops with manual-repair and rerun instructions and does not claim completion. An existing
+resolved `mergeGate.*` successor still wins without prompting; setup names the shadowed retired raw
+values before removing those source rows. No other tool writes configuration.
+`delivery.prReview` is not a `prReview.*` row and is unaffected.
 
 The merge method itself is a delivery property, not a gate property, and lives under
 [Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
@@ -461,6 +480,18 @@ confirmed.
 It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
 action default, and reports when its `pr` outcome replaces a different configured value. The other
 delivery settings still control its refreshed base, branch prefix, setup, and worktree location.
+
+**Retired `worktree.*` spellings.** `worktree.baseBranch`, `worktree.branchPrefix`, and
+`worktree.completion` are the former names of `delivery.baseBranch`, `delivery.branchPrefix`, and
+`delivery.completion`. They are retired and never read as values. A run that reads one of these
+delivery keys as its own setting, not merely to provision a pull request's checkout, looks for the
+old row at its first configuration read, before any fetch, branch,
+worktree, or commit. If the `delivery.*` row is absent, the run stops and names both keys and
+[`/effective-flow setup`](./tools-setup.md), which rewrites the row in place. If the `delivery.*`
+row is present, it wins and the inert row is reported once. `/effective-flow deliver` only reports a
+retired `worktree.completion`, because its own pull-request intent overrides the completion setting
+anyway. `worktree.enabled`, `worktree.setup`, and `worktree.baseDir` are current keys and are
+unaffected.
 
 ## Block `worktree`
 

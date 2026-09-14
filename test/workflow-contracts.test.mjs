@@ -2123,6 +2123,258 @@ test('the config locator keeps every predicate its own lazy trigger depends on',
   assert.match(core, /\.effective-flow\/config\.json[\s\S]*\.firmo\/config\.json/);
 });
 
+// The retired-key stop lives behind the same pointer, and the same trap applies: a reader that had to
+// load the edge-cases fragment to learn which rows are retired could never decide that its trigger
+// fired, would classify a retired row as an unknown key, take the safe default and never stop. So
+// the key names, the anchored `prReview.` form and the safe-default exception stay in the loaded
+// core, outside every fence, and the pointer names the condition.
+test('the configuration core keeps the retired-key predicate its own lazy trigger depends on', () => {
+  const core = source('src/shared/config-migration.md');
+  const encoding = prose(section(core.replace(/```[\s\S]*?```/g, ''), '### Table encoding'));
+
+  for (const key of ['worktree.baseBranch', 'worktree.branchPrefix', 'worktree.completion']) {
+    assert.ok(
+      encoding.includes(`\`${key}\``),
+      `the table encoding must name the retired ${key} outside any fence`,
+    );
+  }
+  assert.match(
+    encoding,
+    /a row whose key begins with `prReview\.`/,
+    'the retired merge-gate namespace must be named in the anchored "begins with" form, which ' +
+      'keeps the live delivery.prReview out of it',
+  );
+  assert.match(
+    encoding,
+    near('Retired rows', 'exception to the safe-default rule', 300),
+    'the retired-row stop must be named as the exception to the safe-default rule',
+  );
+
+  const when = new Map(
+    [...core.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  ).get('config-migration-edge-cases');
+  assert.match(
+    when ?? '',
+    /retired row/i,
+    'the edge-cases pointer must name a present retired row as one of its trigger conditions',
+  );
+});
+
+// Where the stop happens decides whether it protects anything. Stopping when a late successor is
+// about to be resolved would leave a delivery branch, a worktree or pushed repairs behind, so the
+// contract pins the detection moment, and the exemptions that keep it from stopping runs it must
+// not stop.
+test('the retired-key contract detects at the first configuration read and names its exemptions', () => {
+  const retired = prose(
+    section(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Retired keys (table encoding)',
+    ),
+  );
+
+  for (const [from, to] of [
+    ['worktree\\.baseBranch', 'delivery\\.baseBranch'],
+    ['worktree\\.branchPrefix', 'delivery\\.branchPrefix'],
+    ['worktree\\.completion', 'delivery\\.completion'],
+  ]) {
+    assert.match(retired, near(`\`${from}\``, `\`${to}\``, 60), `${from} must map to ${to}`);
+  }
+  assert.match(
+    retired,
+    near('a row whose key begins with `prReview\\.`', 'same trailing key under `mergeGate\\.`', 60),
+  );
+  assert.match(retired, /`delivery\.prReview` does not begin with `prReview\.`/);
+
+  assert.match(
+    retired,
+    /first configuration read, before any fetch, branch, worktree, commit, push, delegation or merge/i,
+    'detection must happen at the first configuration read, before any write-capable step',
+  );
+  assert.match(
+    retired,
+    near('Successor absent → stop', '\\{\\{SKILL:setup\\}\\}', 120),
+    'an absent successor must stop the run and name setup',
+  );
+  assert.match(
+    retired,
+    near('the successor wins', 'inert retired row once', 80),
+    'a present successor must win and the inert row be reported once',
+  );
+  assert.match(
+    retired,
+    near('Matching a configured login', 'report it once and do not stop', 400),
+    'login-keyed subkeys must resolve through the login rule, and an unresolvable one only reports',
+  );
+  assert.match(
+    retired,
+    near('\\{\\{SKILL:deliver\\}\\} and `worktree\\.completion`', 'never stops the run', 250),
+    'deliver must only report a retired worktree.completion',
+  );
+  assert.match(retired, near('\\{\\{SKILL:setup\\}\\} is exempt', 'repair path', 60));
+  assert.match(
+    retired,
+    /never read as a value, not even to report what it would have held/,
+    'a retired value must never be read',
+  );
+  assert.match(
+    retired,
+    near('`mergeGate\\.bots\\.<login>\\.check`', '\\{\\{SKILL:iterate\\}\\}', 120),
+    'iterate resolves the .check key through the reviewer-state block, so a retired .check row ' +
+      'must be in its detection set',
+  );
+  // Only iterate's local mode reads `delivery.baseBranch`. Without the qualifier a PR-mode run —
+  // including one merge-gate delegates after its own waits — would stop on a retired
+  // `worktree.baseBranch` it never reads.
+  assert.match(
+    retired,
+    /\{\{SKILL:iterate\}\} in local mode, the only mode that reads it/,
+    "iterate's delivery.baseBranch detection must be limited to its local mode",
+  );
+  assert.match(
+    retired,
+    near('\\{\\{SKILL:iterate\\}\\} in PR mode', 'In PR mode these are its whole set', 200),
+    "iterate's PR-mode detection set must be exactly the mergeGate.* successors it resolves",
+  );
+
+  // A tool missing from its successor bullet is a tool that never stops, and "A tool not listed
+  // resolves no successor" then licenses it to resolve a default silently — the original defect.
+  const bullets = section(
+    source('src/shared/config-migration-edge-cases.md'),
+    '### Retired keys (table encoding)',
+  )
+    .split(/\n- /)
+    .map(flat);
+  for (const [lead, tools] of [
+    [
+      '`delivery.baseBranch`, `delivery.branchPrefix` and `delivery.completion`:',
+      ['build', 'fix', 'docs', 'refactor', 'maintain'],
+    ],
+    [
+      '`delivery.baseBranch` and `delivery.branchPrefix`:',
+      ['deliver', 'apply-issues', 'apply-review'],
+    ],
+    ['`delivery.baseBranch` only:', ['pr']],
+    ['every `mergeGate.*` key:', ['merge-gate']],
+  ]) {
+    const bullet = bullets.find((part) => part.startsWith(lead));
+    assert.ok(bullet, `missing successor bullet: ${lead}`);
+    for (const tool of tools) {
+      assert.ok(bullet.includes(`{{SKILL:${tool}}}`), `${tool} must check the successors ${lead}`);
+    }
+  }
+  assert.match(retired, near('tool not listed', 'neither stops nor is reported', 80));
+  assert.match(
+    retired,
+    near('one exception to the safe-default rule', "never take the successor's default", 120),
+    'a stop must never degrade into the successor default the defect silently resolved to',
+  );
+  assert.match(
+    retired,
+    near('non-interactive delegated run stops', 'returns that reason to its caller', 80),
+  );
+  assert.match(
+    retired,
+    near('`worktree\\.enabled`, `worktree\\.setup`, `worktree\\.baseDir`', 'are current keys', 60),
+    'the live worktree.* keys must stay outside the retirement',
+  );
+  assert.match(retired, near('same rule applies', 'transitional JSON configuration', 60));
+});
+
+// The shared retirement contract names build and fix, but that alone does not make either tool
+// consult it before doing work. Keep each tool's operational preflight above its workflow and its
+// first real delegation: a presence-only assertion would stay green if the paragraph moved below
+// the plan/explore delegation and left a branch, worktree or delegated write behind before stopping.
+test('build and fix retire delivery keys before their first delegation', () => {
+  const workflows = [
+    {
+      name: 'build',
+      path: 'src/tools/build.md',
+      phase: '## Phase 0: Intent Gate',
+      firstDelegation: '1. Start `{{SKILL:plan}}` with the feature requirement.',
+    },
+    {
+      name: 'fix',
+      path: 'src/tools/fix.md',
+      phase: '### Phase 1: Investigation',
+      firstDelegation: 'investigate the relevant code via an internal explore sub-agent',
+    },
+  ];
+
+  for (const { name, path, phase, firstDelegation } of workflows) {
+    const workflow = source(path);
+    const preflight = prose(boundedSlice(workflow, '## Configuration preflight', '\n```include'));
+
+    ordered(workflow, '## Configuration preflight', phase, firstDelegation);
+    assert.match(
+      preflight,
+      /unconditionally perform this run's first Effective Flow configuration read/i,
+      `${name} must make the retired-key check its first configuration read`,
+    );
+    assert.match(
+      preflight,
+      near('loaded retired-key contract', 'every successor this workflow can resolve', 120),
+      `${name} must apply the retired-key contract to its delivery successors`,
+    );
+    assert.deepEqual(
+      [...preflight.matchAll(/`(delivery\.[^`]+)`/g)].map((match) => match[1]),
+      ['delivery.baseBranch', 'delivery.branchPrefix', 'delivery.completion'],
+      `${name} must check exactly the three delivery successors it can resolve`,
+    );
+    assert.match(
+      preflight,
+      /Complete its stop or report decision before any delegation or write/i,
+      `${name} must finish the retired-key decision before delegation or mutation`,
+    );
+    assert.match(
+      preflight,
+      /does not replace or move any later purpose-specific configuration read; perform each one at its documented workflow point/i,
+      `${name} must preserve its later purpose-specific configuration reads`,
+    );
+  }
+});
+
+// The retirement is only real while no restatement still describes the old read. Both namespaces
+// had several of them, and one survived in a tool that never loads the canonical fragment.
+// The defect this retirement repairs began as a claim that the configuration core migrates the
+// `worktree.*` rows — a migration deleted long before the claim was — so a sentence that credits the
+// core with moving a retired key counts as an offender too.
+test('no source outside the retired-key contract pairs a retired key with fallback wording', () => {
+  const retiredKey =
+    /(?<!delivery\.)prReview\.|(?<!applyReview\.)worktree\.(?:(?:baseBranch|branchPrefix|completion)\b|`)/;
+  const fallbackWording = /fall(?:s|ing)? back|fallback|still read|legacy value|backcompat/i;
+  const configCore = /config-migration\.md|"Config migration"/gi;
+  const migrationWording = /\bmov(?:e|es|ing)\b|migrat|consolidat/i;
+  const markdownFiles = (dir) =>
+    readdirSync(new URL(dir, repositoryRoot), { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? markdownFiles(`${dir}/${entry.name}`)
+        : entry.name.endsWith('.md')
+          ? [`${dir}/${entry.name}`]
+          : [],
+    );
+
+  const offenders = [];
+  for (const path of markdownFiles('src')) {
+    let text = source(path);
+    if (path === 'src/shared/config-migration-edge-cases.md') {
+      text = text.replace(section(text, '### Retired keys (table encoding)'), '');
+    }
+    // List items often end without a period, so cut at item and paragraph boundaries first; a
+    // report list would otherwise read as one sentence spanning a dozen unrelated keys.
+    const blocks = text.split(/\n\s*\n|\n\s*(?=- |\d+\. )/).map(prose);
+    for (const sentence of blocks.flatMap((block) => block.split(/(?<=\.)\s+(?=[A-Z`{(])/))) {
+      if (!retiredKey.test(sentence)) continue;
+      const creditsCore =
+        configCore.test(sentence) && migrationWording.test(sentence.replace(configCore, ''));
+      configCore.lastIndex = 0;
+      if (fallbackWording.test(sentence) || creditsCore) {
+        offenders.push(`${path}: ${sentence.slice(0, 160)}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], 'a retired key is still described as a fallback read');
+});
+
 // A deferred fragment is only correctly deferred while its pointer still says *when* to load it.
 // `LAZY_INCLUDE_RE` in build-lib.mjs makes the `when:` line optional and `assertNoEagerLazyOverlap`
 // is the build's only lazy-side guard, so a pointer that loses its condition still renders (as a
@@ -6577,50 +6829,350 @@ test('the gate branches on three reviewer states and triggers only on "not start
   );
 });
 
-test('setup rewrites a legacy prReview.* block in place instead of leaving both standing', () => {
-  // Without the in-place rewrite a migrated project ends up with two adjacent blocks of
-  // plausible-looking configuration, one of them inert — the artifact a later maintainer edits
-  // without effect. Sliced to setup's own migration section so a sentence elsewhere in the file
-  // cannot satisfy these.
-  const migration = flat(
-    section(
-      source('src/tools/setup.md'),
-      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
-    ),
-  );
+function setupPrReviewMigration(setup = source('src/tools/setup.md')) {
+  return prose(section(setup, '#### Rewriting a legacy `prReview.*` merge-gate block in place'));
+}
+
+function setupLoginKeyedMigration() {
+  return prose(source('src/shared/setup-retired-login-migration.md'));
+}
+
+test('setup keeps the mechanical mapping only for ordinary non-login prReview rows', () => {
+  const setup = source('src/tools/setup.md');
+  const migration = setupPrReviewMigration(setup);
 
   assert.match(
     migration,
-    near('carry', '`mergeGate\\.', 300),
-    'every legacy row must be carried over to the identical trailing key under mergeGate',
+    near('ordinary non-login', '`prReview\\.completion` → `mergeGate\\.completion`', 240),
+    'an ordinary row must still map to the identical trailing mergeGate key',
   );
   assert.match(
     migration,
-    /(?:Remove the old rows|remove the legacy rows)/i,
-    'the old rows must be removed, not left beside the new ones',
-  );
-
-  // A shadowed key is reported rather than merged: merging two differing values into one setting
-  // would invent a configuration nobody chose.
-  assert.match(
-    migration,
-    near(
-      '(?:shadow|both present|both.{0,30}different values)',
-      '(?:do not merge|never combine|not merge)',
-      400,
-    ),
-    'a shadowed legacy key must be reported and never merged with its mergeGate counterpart',
+    near('ordinary non-login', 'preserv(?:e|ing) the recorded value verbatim', 300),
+    'the ordinary mapping must preserve its value rather than reinterpret it',
   );
 
   // The write authority boundary the migration rests on: only setup writes configuration.
   assert.match(
-    flat(source('src/tools/setup.md')),
+    prose(setup),
     near('only', 'writer of the configuration', 200),
     'setup must state that it is the only writer of the configuration',
   );
 });
 
-test('the shared configuration fragment documents every merge-gate key and the legacy fallback', () => {
+test('setup lazily loads its retired-login migration contract and canonical reviewer rules', () => {
+  const setup = source('src/tools/setup.md');
+  const pointers = new Map(
+    [...setup.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  );
+  const when = pointers.get('setup-retired-login-migration');
+
+  assert.ok(when !== undefined, 'setup must ship its writer-only retired-login migration contract');
+  assert.notEqual(when, '', 'the retired-login migration include must remain circumstance-gated');
+  assert.match(when, /collaps/i, 'the pointer must fire for duplicate configured bot spellings');
+  assert.match(
+    when,
+    /(?:login-keyed[\s\S]*migration|migration[\s\S]*login-keyed|retired `prReview\.bots)/i,
+    'the pointer must also fire when retired login-keyed rows need destinations',
+  );
+
+  const contract = source('src/shared/setup-retired-login-migration.md');
+  const { eager } = collectIncludeNames(contract);
+  assert.ok(
+    eager.has('review-bot-state'),
+    'the setup-only fragment must load review-bot-state when its matching rules are needed',
+  );
+});
+
+test('setup resolves retired login-keyed destinations before shadow detection or removal', () => {
+  const setupMigration = setupPrReviewMigration();
+  const migration = setupLoginKeyedMigration();
+
+  // The detailed writer behavior has one setup-only home, but setup must explicitly enter it.
+  // Merely shipping the fragment through the build does not connect its rules to the only writer.
+  assert.match(
+    setupMigration,
+    near(
+      '`setup-retired-login-migration`',
+      '(?:follow|apply|invoke|use)[^.]{0,100}retired login',
+      300,
+    ),
+    'setup must invoke its setup-only fragment when it rewrites retired login-keyed rows',
+  );
+
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'current `mergeGate\\.bots`[^.]{0,100}wins', 300),
+    'the effective reviewer list must prefer the current list over the retired one',
+  );
+  assert.match(
+    migration,
+    near(
+      'retired `prReview\\.bots` list',
+      '(?:fallback|only when (?:the )?current `mergeGate\\.bots`[^.]{0,80}(?:is absent|does not exist))',
+      300,
+    ),
+    'the retired reviewer list may supply the effective list only when no current list exists',
+  );
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'before (?:shadow detection|detecting shadows)', 400),
+    'login-keyed destinations must be resolved before a row can be classified as shadowed',
+  );
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'before (?:source |retired-row )?removal', 400),
+    'login-keyed destinations must be resolved before any retired source row is removed',
+  );
+  assert.match(
+    migration,
+    near('exactly one trailing `\\[bot\\]`', 'surviving configured spelling', 300),
+    'a login destination must use the surviving configured spelling after one-suffix collapse',
+  );
+  assert.match(
+    migration,
+    near(
+      'exactly one trailing `\\[bot\\]`',
+      '(?:never|not) (?:strip|trim|remove)[^.]{0,80}(?:again|twice|repeatedly|more than once)',
+      300,
+    ),
+    'normalization must not erase two or more trailing [bot] suffixes',
+  );
+});
+
+test('setup handles every resolved and unresolved retired login-row outcome without invention', () => {
+  const migration = setupLoginKeyedMigration();
+
+  assert.match(
+    migration,
+    near(
+      '(?:unmatched retired login row|matches no (?:entry|reviewer) in the effective `mergeGate\\.bots` list)',
+      '(?:report[^.]{0,120}retain|retain[^.]{0,120}report)',
+      350,
+    ),
+    'an unmatched retired login row must be reported and retained',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:unmatched retired login row|matches no (?:entry|reviewer))',
+      '(?:neither|do not|never)[^.]{0,100}(?:synthesi[sz]e|invent)[^.]{0,100}(?:nor|or)[^.]{0,80}remov',
+      350,
+    ),
+    'an unmatched row must neither create a reviewer nor be removed',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:equal|same) (?:recorded )?values?',
+      '(?:de-?duplicate|deduplicate|write (?:the value )?once)',
+      300,
+    ),
+    'equal retired values collapsed onto one destination must deduplicate',
+  );
+  assert.match(
+    migration,
+    near('different (?:recorded )?values?', '(?:configuration )?conflict', 240),
+    'differing retired values collapsed onto one destination must be reported as a conflict',
+  );
+  assert.match(
+    migration,
+    near('(?:configuration )?conflict', '(?:never|not)[^.]{0,100}(?:silent|guess|combine)', 300),
+    'a collapsed-value conflict must never be resolved silently or combined',
+  );
+  assert.match(
+    migration,
+    near('existing resolved successor', '(?:successor )?wins', 200),
+    'an already configured destination must win over the retired row',
+  );
+  assert.match(
+    migration,
+    near(
+      'existing resolved successor',
+      '(?:explicitly )?(?:name|report)[^.]{0,100}retired value[^.]{0,60}shadow',
+      350,
+    ),
+    'the losing retired value must be named explicitly as shadowed',
+  );
+});
+
+test('setup resolves conflicting retired login values through the existing Bot conflict decision', () => {
+  const setup = source('src/tools/setup.md');
+  const migration = setupLoginKeyedMigration();
+  const botConflict = setup.match(/```ask\n([\s\S]*?^header: Bot conflict$[\s\S]*?)```/m);
+
+  assert.ok(botConflict, 'setup must retain the existing Bot conflict decision');
+  assert.match(
+    botConflict[1],
+    /retired login-keyed sources with no resolved current successor/i,
+    'the Bot conflict fence must explicitly cover conflicting retired sources without a successor',
+  );
+  for (const option of ['First value', 'Second value', 'Neither']) {
+    assert.match(
+      botConflict[1],
+      new RegExp(`label: ${option}`),
+      `Bot conflict must retain ${option}`,
+    );
+  }
+  assert.match(
+    botConflict[1],
+    /capture the replacement as free text/i,
+    'the third choice must preserve the free-text replacement path',
+  );
+  assert.match(
+    migration,
+    near('different (?:recorded )?values?', '(?:existing )?`Bot conflict` decision', 700),
+    'retired-value conflicts must reuse the existing Bot conflict decision',
+  );
+  assert.match(
+    setup,
+    near(
+      "`Bot conflict` is that key's",
+      'sole answer[^.]{0,100}ordinary follow-up is not posed',
+      220,
+    ),
+    'a retired conflict must have one answer and skip the ordinary reviewer follow-up',
+  );
+  assert.match(
+    migration,
+    near('source configuration', 'Never treat a value gathered by an ordinary follow-up', 320),
+    'only a source-state successor may shadow retired rows',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:selected|chosen) raw value',
+      'exactly one reachable `mergeGate\\.bots\\.<surviving-login>\\.(?:trigger|check)` successor',
+      450,
+    ),
+    'the selected raw value must become exactly one reachable successor under the surviving login',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:selected|chosen) raw value',
+      'remove[^.]{0,180}(?:retired )?source rows?[^.]{0,180}(?:confirmed write|confirmation)',
+      550,
+    ),
+    'the conflicting retired sources must be removed only after selection and confirmation',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:cannot|unable to)[^.]{0,120}(?:complete|obtain|pose|resolve)[^.]{0,80}(?:choice|decision|answer)',
+      '(?:stop|end)[^.]{0,160}manual repair',
+      450,
+    ),
+    'a conflict whose choice cannot be completed must stop with manual-repair instructions',
+  );
+  assert.match(
+    migration,
+    near('manual repair', '(?:run|rerun)[^.]{0,80}(?:setup|\\{\\{SKILL:setup\\}\\})', 350),
+    'manual repair must tell the operator to run setup again after resolving the conflicting rows',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:cannot|unable to)[^.]{0,120}(?:complete|obtain|pose|resolve)[^.]{0,80}(?:choice|decision|answer)',
+      '(?:do not|never|must not)[^.]{0,100}(?:report|claim)[^.]{0,80}(?:success|complete)',
+      550,
+    ),
+    'an unresolved choice must never be reported as successful setup completion',
+  );
+});
+
+test('setup handles general retired-row removal only for established destinations', () => {
+  const rawMigration = section(
+    source('src/tools/setup.md'),
+    '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+  );
+  const removal = prose(boundedSlice(rawMigration, '- **Remove', '\n- **Report a shadowed key'));
+
+  // This is intentionally pinned on the removal bullet itself. Retention language in an earlier
+  // login-specific bullet cannot qualify an unconditional "remove all old rows" instruction that
+  // follows it; both instructions would remain live and the write would be ambiguous.
+  assert.match(
+    removal,
+    near('remove only', '(?:reachable|resolved) destination', 220),
+    'the general removal rule must be limited to rows with a destination the migration resolved',
+  );
+  assert.match(
+    removal,
+    near('(?:reachable|resolved) destination', '(?:established|shadowed)', 220),
+    'the removal rule must name established and shadowed destinations as its removable cases',
+  );
+  assert.match(
+    removal,
+    near('(?:explicit )?exception', 'unmatched[^.]{0,100}retain', 240),
+    'unmatched login rows must be explicit retained exceptions to general removal',
+  );
+  assert.match(
+    removal,
+    near('conflict', '(?:Bot conflict|selected|chosen)[^.]{0,180}(?:confirmation|confirmed)', 320),
+    'conflicting login rows must become removable only through the confirmed Bot conflict decision',
+  );
+  assert.doesNotMatch(
+    removal,
+    /Remove the old rows\. Do not leave both standing\./i,
+    'the stale unconditional removal sentence must not survive beside the exceptions',
+  );
+});
+
+test('setup migration user guide documents removable and retained prReview rows', () => {
+  const retiredGuide = prose(
+    boundedSlice(
+      source('docs/user-guide/configuration.md'),
+      '**Retired `prReview.*` keys.**',
+      '\nThe merge method itself',
+    ),
+  );
+
+  assert.match(
+    retiredGuide,
+    near('setup carries and removes', '(?:establish|resolv)[^.]{0,100}destination', 280),
+    'the guide must limit removal to login rows whose destination setup can resolve',
+  );
+  assert.match(
+    retiredGuide,
+    near('unmatched login', '(?:report|reported)[^.]{0,80}retain', 240),
+    'the guide must say that an unmatched login row is reported and retained',
+  );
+  assert.match(
+    retiredGuide,
+    near('conflict', '(?:choose|choice|select)[^.]{0,160}(?:one|single)[^.]{0,100}successor', 320),
+    'the guide must say that conflicting collapsed values are resolved to one successor by choice',
+  );
+  assert.doesNotMatch(
+    retiredGuide,
+    /setup[^.]{0,100}(?:rewrite|carr|remov)[^.]{0,80}(?:every|all) retired/i,
+    'the guide must not restore a generic claim that setup removes every retired row',
+  );
+});
+
+// The `worktree.*` half of the retirement shares the `prReview.*` rewrite rather than a second one, so
+// the three mappings are pinned inside that same section. Without them a project carrying only
+// `worktree.baseBranch` is told to run setup and setup never moves the row, which leaves the stop
+// permanent.
+test('setup rewrites each retired worktree.* row to its delivery.* successor', () => {
+  const setup = source('src/tools/setup.md');
+  const migration = prose(
+    section(setup, '#### Rewriting a legacy `prReview.*` merge-gate block in place'),
+  );
+  for (const key of ['baseBranch', 'branchPrefix', 'completion']) {
+    assert.match(
+      migration,
+      new RegExp(`\`worktree\\.${key}\` → \`delivery\\.${key}\``),
+      `setup's in-place rewrite must carry worktree.${key} over to delivery.${key}`,
+    );
+  }
+  assert.match(
+    prose(setup),
+    near('record every retired row', '`worktree\\.completion`', 300),
+    'Step 2 must record the retired worktree.* rows it later rewrites',
+  );
+});
+
+test('the shared configuration fragment documents every merge-gate key and the retired legacy namespace', () => {
   // This fragment is what `setup` and `iterate` load to resolve these keys — `merge-gate` documents
   // them in its own Configuration section instead — so a key missing here is a key those runs do
   // not resolve: it silently falls back to a default, turning a configured `merge` completion into
@@ -6665,18 +7217,24 @@ test('the shared configuration fragment documents every merge-gate key and the l
     );
   }
 
-  // The read fallback with its per-key precedence. A whole-block fallback would let one migrated
-  // key hide every unmigrated one.
+  // The legacy namespace is retired, not read. A surviving per-key read instruction would let a stale
+  // `prReview.*` row keep configuring the gate while its successor is absent, which is exactly the
+  // state the retired-key rule stops on instead.
   const flatBlock = flat(block);
   assert.match(
     flatBlock,
-    near('`prReview\\.<key>`', '(?:absent|missing|where a)', 300),
-    'the legacy namespace must be read where the mergeGate key is absent',
+    near('`prReview\\.<key>` row is retired', 'never read', 40),
+    'the block must state that a prReview.<key> row is retired and never read',
   );
   assert.match(
     flatBlock,
-    near('per key', '(?:wins|precedence)', 300),
-    'precedence must be stated per key, not per block',
+    /retired-key rule/,
+    'the block must defer the stop decision to the configuration building block',
+  );
+  assert.doesNotMatch(
+    flatBlock,
+    /(?:read `prReview\.<key>`|use its value|Backcompat|Precedence is per key)/i,
+    'the block must no longer instruct reading prReview.<key> or rank it against mergeGate.<key>',
   );
 });
 
@@ -9192,6 +9750,73 @@ test('base-branch resolution reaches both hosts eagerly, with exactly one fetch 
       `${path} must carry the fetch instruction exactly once once its includes are resolved`,
     );
   }
+});
+
+// The shared rule is the wrong place for the retired `worktree.baseBranch` stop: it also runs while
+// PR-mode `iterate` and `merge-gate` provision a checkout, runs that never read the key and could
+// stop there after a base merge was already pushed. And a complete committed handoff to `pr` skips
+// the rule entirely. So `pr` carries the stop in step 1, which every call reaches, and the retired-key
+// contract states that checkout provisioning is no successor read.
+test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared base-branch rule', () => {
+  const parts = baseBranchRuleParts();
+  assert.equal(parts.length, 4, 'the opening paragraph must stay prose ahead of the three arms');
+  const [opening] = parts;
+  assert.doesNotMatch(
+    opening,
+    /worktree\.baseBranch/,
+    'the shared rule must not stop PR-mode checkout provisioning on a key those runs never read',
+  );
+
+  const step1 = prose(
+    boundedSlice(
+      source('src/tools/pr.md'),
+      '   - Read the Effective Flow configuration',
+      '   - Classify the',
+    ),
+  );
+  assert.match(step1, near('`worktree\\.baseBranch` row is retired', 'never read', 30));
+  assert.match(
+    step1,
+    near('direct invocation', 'committed handoff alike', 30),
+    'a complete handoff skips the shared rule, so the stop must cover it explicitly',
+  );
+  assert.match(
+    step1,
+    near('no `delivery\\.baseBranch` row', 'stop here, before any fetch or push', 60),
+    'a retired worktree.baseBranch without its successor must stop before the network is touched',
+  );
+  assert.match(step1, near('before any fetch or push', '\\{\\{SKILL:setup\\}\\}', 80));
+  assert.match(
+    step1,
+    near('both present', '`delivery\\.baseBranch` wins', 60),
+    'with both rows present the successor must win',
+  );
+  assert.match(step1, /retired row is reported once/);
+  assert.doesNotMatch(step1, /git fetch/);
+  assert.ok(
+    step1.indexOf('resolve nothing from it here') < step1.indexOf('`worktree.baseBranch`'),
+    'the stop follows the recorded-value sentence, which must stay close to its step 4 pointer',
+  );
+
+  const retired = prose(
+    section(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Retired keys (table encoding)',
+    ),
+  );
+  assert.match(
+    retired,
+    near(
+      'checkout provisioning of \\{\\{SKILL:iterate\\}\\} in PR mode and of \\{\\{SKILL:merge-gate\\}\\}',
+      'not a successor read',
+      200,
+    ),
+    'PR-mode checkout provisioning must be named as no successor read',
+  );
+  assert.match(
+    retired,
+    near('not a successor read', '`worktree\\.baseBranch` neither stops nor is reported there', 80),
+  );
 });
 
 // The rule records two results and every consuming site names one of them. Each site gets its own
@@ -12479,7 +13104,7 @@ test('the reviewer advisory conservatively classifies and retains candidates wit
   );
   for (const [claim, pattern] of [
     ['the one trailing bot suffix rule', /bot-typed one-suffix rule/i],
-    ['the legacy per-key fallback', /per-key legacy `prReview\.\*` fallback/i],
+    ['the exclusion of retired rows', /never a retired `prReview\.\*` row/i],
     ['collapsed duplicate entries', /collapsed duplicate entries/i],
   ]) {
     assert.match(advisory, pattern, `candidate classification must retain ${claim}`);
