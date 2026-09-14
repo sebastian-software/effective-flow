@@ -10,6 +10,10 @@ defaults, and migration behavior. The guides [Worktree and delivery](./worktree-
 [Remote tracker](./remote-tracker.md), and [Skill discovery](./skill-discovery.md) explain how the
 corresponding settings affect everyday use.
 
+The standard `/effective-flow setup` flow asks for the chat language and one common workflow
+profile, then derives the relevant rows. A profile is only a transient setup overlay: the ADR stores
+the resulting individual settings and never a profile name.
+
 ## Project-setup ADR
 
 The configuration is a mutable, numberless Markdown ADR whose current contents are the tracked
@@ -243,6 +247,13 @@ through as written, so a run with `language.chat: de` can still show an English 
 tool catalog, the `version` output, and the `pr-review` deprecation notice appear before any
 configuration is read and stay on the language of the conversation.
 
+Profile setup is the sole exception to resolving this key once before a run's first question. It
+asks **Chat** in the language established at entry, immediately binds Mirror, English, or German,
+and uses that choice for the following **Profile** question and all later setup output. Mirror
+removes the `language.chat` row only in the confirmed write; English and German persist `en` or
+`de`. No other setup mode or Effective Flow tool can rebind its resolved chat language during a
+run.
+
 Stable machine-facing tokens are never localized: config keys and encoded values, labels, HTML
 idempotency markers, finding IDs, action values, paths, Conventional-Commit types, branch slugs,
 schemas, and runtime/wisdom headings. `language.source` does not rename identifiers, public API
@@ -378,7 +389,7 @@ two-state behavior for that reviewer. See
 
 When the gate conservatively observes a bot-typed submitted review or review thread whose login is
 missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
-effective `.check`, its final chat summary recommends `/effective-flow setup` → **Guided** →
+effective `.check`, its final chat summary recommends `/effective-flow setup guided` →
 **Advanced settings** → **Block 9 (`mergeGate`)**. Add or select the reviewer there and copy only an
 exact `.check` context confirmed in a pull request that tool reviewed. A normal check name or
 top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
@@ -494,6 +505,16 @@ at run time. Both keys are ignored for routing while the mode is `local` or `rem
 in the ADR. A `mode: external` without a non-empty `externalTool` is invalid configuration: the run
 aborts instead of falling back to the forge or to `local`.
 
+Choosing **External issues and forge development** in Profile setup can populate these rows in a
+fresh project. After the two common Chat and Profile questions, setup asks only for missing
+external-tool, exact connection-context, and lifecycle-state information. It resolves a configured
+MCP connection or authenticated CLI, never a connector guessed from a product name. When the tool
+identifier is not sufficient to select the same context again, `externalToolHint` includes the
+stable, non-secret workspace, team, or project identity chosen by the user. The proposed hint and
+stable state values appear in the common before/after confirmation, and setup repeats discovery
+immediately before the write. Ambiguous or changed context, missing capability, or an invalid
+started state stops without changing the tracker mode.
+
 `externalStartedState` is a nullable structured connection value, not a display-name preference.
 Missing or `null` means unset and never authorizes a guessed transition. A non-null value stores the
 state ID exposed by the selected workspace, team, or project. Only when the connection exposes no
@@ -553,7 +574,9 @@ uninstalled included skill is ignored.
 ## Safe defaults at a glance
 
 `/effective-flow setup` always starts from this single conservative base. Existing differing
-values are retained unless the user explicitly confirms a change.
+values are retained unless the user explicitly confirms a change. In Profile mode, the selected
+topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
+keys, while all other known and unknown rows remain untouched.
 
 | Key                                 | Value                        |
 | ----------------------------------- | ---------------------------- |
@@ -589,8 +612,23 @@ where that ref names another branch the base takes it, and a repository without 
 Artifact-surface language overrides are absent in the safe base and therefore inherit
 `language.project`. If the entire `language.*` block is absent, the default remains `en`.
 `language.chat` is deliberately absent too, and its absence is not inheritance: the safe base
-leaves interactive replies mirroring the language you write in. Set it through the guided setup
-path when you want a fixed reply language.
+leaves interactive replies mirroring the language you write in. Profile setup asks for this choice
+first; Guided also exposes it among the individual language settings.
+
+There is no persisted profile key. The three transient Profile-mode overlays own only these
+topology values. Setup constructs the target as safe defaults, then existing known and unknown
+values, then this profile overlay, and finally the explicit Chat choice.
+
+| Profile                               | Profile-owned result                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fully local                           | `tracker.mode: local`; `delivery.completion: merge`; `delivery.baseBranch` set to the current named local branch                                 |
+| Forge issues and development          | `tracker.mode: remote`; `delivery.completion: pr`; repository-derived forge base; `tracker.remoteToolOverride: auto` when classification works   |
+| External issues and forge development | Forge delivery result above; `tracker.mode: external`; freshly verified external tool, context hint, required started state, optional done state |
+
+Worktree, review, validation, branch-prefix, merge-gate, plan/concept path, skill, and artifact
+language settings are not profile-owned. Existing external/provider rows are retained when another
+profile makes them dormant. The full preview still requires confirmation before profile-dependent
+configuration, ADR, marker, or migration writes.
 
 The `mergeGate.*` rows and `delivery.mergeMethod` are listed here as the values a run uses, not as
 rows Express writes: they belong to their source tools, a missing line means exactly the value above,
@@ -623,13 +661,22 @@ It first normalizes `.gitignore` to the single runtime-directory entry:
 .effective-flow/
 ```
 
-The wizard then resolves and rereads any existing source, offers **Express** or **Guided** setup,
-shows every proposed change, and writes only after confirmation. Express combines the safe base,
-including `language.project: en`, with existing values. Guided first explains the project
-language, then offers each optional language override with “inherit project language” represented
-by an absent row. Removing an existing override appears in the same before/after diff as any other
-change. In both paths, existing values and unknown rows are preserved unless a change is
-explicitly confirmed.
+With no argument, or with the explicit `profile` argument, setup asks **Chat** and then
+**Profile** before it resolves later conditional gates. Fully local, Forge issues and development,
+and External issues and forge development map to the transient overlays above. The two forge-backed
+profiles require an identifiable GitHub or Forgejo `origin` and a repository-derived base. The
+external profile may then ask the additional tool, exact connection-context, and lifecycle-state
+questions needed for valid issue routing. Issue-backed planning follows the resulting tracker; a
+natural-language `/effective-flow plan "…"` request without an issue reference still creates a
+local plan under `plan.dir`.
+
+`/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly,
+including `language.project: en`. `/effective-flow setup guided` enters the existing per-setting
+interview directly; it first explains the project language, then offers each optional language
+override with “inherit project language” represented by an absent row. No explicit mode asks for a
+profile. Every path shows all proposed changes and writes only after confirmation. Removing an
+existing override appears in the same before/after diff as any other change, and all unknown or
+unowned rows are preserved.
 
 On write, setup creates or updates the living ADR and writes or corrects the convention-file
 marker. As the last part of that write it also offers a one-line `CLAUDE.md` importing

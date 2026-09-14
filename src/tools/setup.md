@@ -1,6 +1,6 @@
 ---
-description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration via a guided wizard into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, offers an express and a guided path, explains every option even for Effective Flow newcomers, and shows the currently recorded values when a config exists. Maintains an existing configuration non-destructively. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
-catalogHint: "Sets up Effective Flow in the project – guided wizard, starts with safe defaults."
+description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
+catalogHint: "Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard."
 ---
 
 # Effective Flow Setup
@@ -10,9 +10,10 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 ## Goal
 
 - enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
-- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
+- write the Effective Flow configuration through the selected setup mode into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
-- always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
+- always start from safe defaults; use **Profile** as the standard two-question path and retain
+  **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice
 - do not run project validation such as linting, tests, or build checks
@@ -132,6 +133,29 @@ that writes, and it is what changes behavior for a project upgrading from an ear
 
 ## Workflow
 
+### Step 0: Resolve the setup mode
+
+Classify the invocation before Step 1 and before any file, Git, ADR, marker, migration, or runtime
+mutation. Trim surrounding whitespace and fold ASCII case only. Accept exactly these forms:
+
+- `{{SKILL:setup}}` and `{{SKILL:setup}} profile` select **Profile**;
+- `{{SKILL:setup}} express` selects **Express**;
+- `{{SKILL:setup}} guided` selects **Guided**.
+
+An additional or unknown argument prints all four accepted forms above and stops without mutation.
+Do not reinterpret it as free text and do not ask a setup-mode question. Record the resolved mode
+once and carry it through the summary.
+
+For Profile mode, resolve the entry chat language read-only under the shared chat-language rule,
+then load and follow the profile contract below immediately. Its `Chat` and `Profile` asks are the
+first two substantive configuration questions and both precede Step 1. Express and Guided do not
+load it and proceed directly to Step 1.
+
+```lazy-include
+setup-profiles
+when: the normalized invocation has no argument or its single argument is `profile`
+```
+
 ### Step 1: .gitignore entry
 
 Target state: the entire runtime directory `.effective-flow/` (excluding the `config.json` migration — the config now lives in the ADR; runtime files like `memory.json`, `cache.json`, `review/`, `.worktrees/`) is ignored. The single line achieves this:
@@ -165,7 +189,7 @@ There is **no** `!.effective-flow/config.json` exception pattern anymore: the Ef
    search globs of `{{SKILL:review}}`): `docs/adr/`, `docs/decisions/`, `adr/`. Use an
    existing directory. If none exists, the default is `docs/adr/`. If
    **several** exist, prefer `docs/adr/` for the project setup ADR; ask only on genuine
-   ambiguity in the guided path:
+   ambiguity in Profile or Guided mode:
 
 ```ask
 when: several ADR directories exist and none is clearly `docs/adr/`
@@ -239,19 +263,7 @@ options:
    aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
    ADR, create a new one, untrack either JSON file, or mark the migration complete.
 
-### Step 3: Express or Guided
-
-Briefly explain to the user that Effective Flow is immediately ready to use with safe defaults and that they only need to adjust something if they want to. Then offer the two paths:
-
-```ask
-header: Setup path
-question: How would you like to set up the Effective Flow configuration?
-options:
-  - label: Express
-    description: Adopt safe defaults (keep the current values of an existing config) — one confirmation step, then done
-  - label: Guided
-    description: Step by step through the options — each is explained, ideal if you do not yet know Effective Flow
-```
+### Step 3: Enter the selected mode
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
@@ -263,6 +275,11 @@ options:
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
   advanced gate follows afterwards (Step 5).
+- **Profile:** Apply the retained answers and the topology preflight from the loaded
+  `setup-profiles` fragment to the current values formed in Step 2. Do not ask any Guided core or
+  advanced question. A local or forge profile proceeds directly to Step 6; only External + forge
+  may first ask the integration questions required by that fragment. The common before/after list
+  and confirmation in Step 6 remain the write authority.
 
 ### Step 4: Core switches (guided path only)
 
@@ -615,8 +632,25 @@ options:
 
 ### Step 6: Merge and write
 
-1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
-2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation. Where the `delivery.baseBranch` about to be written names a branch other than `origin/HEAD`, name both in that list — a report, not a gate.
+1. Build the target configuration non-destructively. Express and Guided retain their existing merge
+   order. For Profile, use `safe defaults → freshly read existing known and unknown values →
+selected profile overlay → explicit chat-language choice`; the last two overlays intentionally
+   win only for the keys the profile contract owns. Carry over every unasked known value and every
+   unknown row byte-for-byte, and never write the selected profile name or any equivalent key. A
+   legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as
+   described below before the before/after list is built. Two recorded `mergeGate.bots` entries
+   that denote one reviewer are collapsed just as early, as described for block 9.
+2. This also applies to the safe defaults: a default value that would replace an already-present,
+   differing config value is set only after explicit confirmation. Before writing, show a
+   before/after list of **all** keys to be changed, whether from Profile-owned topology and chat
+   values, the Express base, the Guided core switches, or the advanced settings, and obtain one
+   explicit confirmation. Profile selection is not write confirmation. A full overwrite
+   (discarding existing values) likewise only after explicit confirmation. Where the
+   `delivery.baseBranch` about to be written names a branch other than `origin/HEAD`, name both in
+   that list — a report, not a gate. For Profile also show the selected topology, detected forge
+   provider and base where applicable, and the non-secret external connection/context/state
+   evidence retained by `setup-profiles`; these are evidence for the pending write, not additional
+   persisted profile metadata.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
    - If the fresh locator reports **several** matching project setup ADRs and falls through on
@@ -648,7 +682,18 @@ options:
      fallback or to defaults.
 
    Rebuild the target configuration from the applicable fresh values so that intervening changes,
-   including unknown keys, are not lost.
+   including unknown keys, are not lost. For Profile, reapply only the retained profile and chat
+   overlays after that fresh read; never let the fresh source silently discard or reinterpret either
+   answer.
+
+   For External + forge, after rebuilding and immediately before item 4, repeat read-only discovery
+   using the exact proposed `tracker.externalTool` and `tracker.externalToolHint`. It must uniquely
+   reselect the same configured connection and exact workspace/team/project context. List states
+   again and compare the selected started/done stable values plus their context, normalized
+   category, terminal flag, and writability against the basis shown in the confirmed preview. Do
+   not compare or retain credentials or unrelated connector metadata. If connection, context, hint
+   replay, state identity, or any validity-affecting property differs, discard the confirmation and
+   stop, or rebuild the complete before/after preview and obtain a new confirmation before writing.
 
    Before Step 4 in a migration case, perform a read-only idempotency check. This check creates
    nothing and touches no Git: read the verified absolute
@@ -942,11 +987,11 @@ options:
 
 This fence is deliberately **unconditional** rather than guided-path only, for the reason
 `project-adr-convention` gives for its own: it decides whether a file is written to the project
-root rather than a presentation detail. The Express path poses it exactly as the guided path does,
-and a run that cannot pose it — unanswered, skipped, or non-interactive — writes nothing and
-reports that the fence could not be posed. There is no silent default on either path. Item 5's
-express behavior does not extend here: setup cannot work without a marker host, while nothing
-requires a `CLAUDE.md` import.
+root rather than a presentation detail. Profile, Express, and Guided all pose it, and a run that
+cannot pose it — unanswered, skipped, or non-interactive — writes nothing and reports that the
+fence could not be posed. There is no silent default in any mode. Item 5's express behavior does
+not extend here: setup cannot work without a marker host, while nothing requires a `CLAUDE.md`
+import.
 
 ```ask
 when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration
@@ -1067,7 +1112,9 @@ harness for one.
 Report to the user:
 
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
-- which path was chosen (Express or Guided) and whether advanced settings were adjusted
+- which mode was chosen (Profile, Express, or Guided); for Profile, the selected topology, chat
+  choice, profile-owned final values and detected provider/base, and for Guided whether advanced
+  settings were adjusted
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
   `delivery.prReview` [default `ask`],
@@ -1152,6 +1199,13 @@ with nothing staged matches no row and emits nothing.
   sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
   renames the current session once, with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
+- Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge
+  profiles ask no further substantive configuration questions; only External + forge may ask for
+  its missing integration details. Safety, consent, invalid-source and write-confirmation questions
+  remain conditional and do not count as profile-configuration questions.
+- The profile name is run state, never configuration. A profile-dependent ADR, marker or migration
+  write happens only through the common confirmed Step 6 path; Step 1 keeps its independent
+  `.gitignore` repair lifecycle.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as `{{AGENT:code-validator}}`.
 - Do not create commits. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing; Step 7's next-step block names who commits it.

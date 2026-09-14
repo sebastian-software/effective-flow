@@ -458,9 +458,15 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`.
+  `merge-gate-check-list-waiver`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
+  `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
+  argument classification: only an absent argument or the explicit `profile` token loads it.
+  The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
+  external-only connection/context/state interview. Express and Guided runs never pay that context
+  cost. Keeping the argument router in `tools/setup.md` also makes an unknown argument stop before
+  the fragment or any mutating setup step can run.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
@@ -562,31 +568,25 @@ also states the executable `/effective-flow` (Claude Code) and `$effective-flow`
 so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
-build (see "Guards"), each against its own budget; the build prints the sizes as a report, in map
-order, which runs largest **measured** size first — not largest limit, so `fix`'s 700 sitting
-between a 501 and a 420 limit is the order working rather than a sort violation. The order is a reading
-aid and is deliberately unenforced: asserting it would turn a successful deferral, which is the
-work the map exists to track, into a build failure until the map is re-sorted.
-The four implementation tools share **700 lines** and currently measure `build` 567, `fix`
-463, `docs` 599, and `plan` 647 — headroom ranges from `plan`'s 53 lines to `fix`'s 237.
-`review` left that group when the eager `chat-language` include pushed it past 700; it now carries
-a measurement like every other tool.
-`merge-gate` is budgeted separately at **2741** and measures 2737: an orchestration gate whose
-phases, delegation contracts and provider rules do not compress to the size of an implementation
-tool, so it is held to a number that ratchets its own history down rather than to the shared 700.
-The rest is loaded only when the mode is reached.
+build (see "Guards"), each against its own per-tool budget. No tool now shares a broad allowance
+with a group. The build prints the measured size and budget in map order; that order is a reading
+aid and deliberately unenforced, so growth or a successful deferral may leave it temporarily
+non-descending until maintainers reorder the map.
 
-Every remaining tool carries its **measured size plus at most ten lines**, which is a backlog
-rather than a target: those tools still inline the mode-gated fragments that the four
-implementation tools already defer, and each conversion of an eager include to a `lazy-include`
-lowers the entries it touches. The headroom is a flat line count rather than a percentage on
-purpose — a percentage would give the largest tools the most room, which is where unwatched growth
-costs the most — and ten lines are wide enough for the short pointer a deferral leaves behind. Ten
-is the ceiling and not a fixed offset: most entries carry less, because a deferral that shrinks a
-tool is recorded by lowering its entry to the new measurement instead of re-adding the full ten,
-so `apply-issues` at 1174/1179 has five lines of room and not ten. Read a specific entry's
-headroom off the build report. `iterate` at 1656 and `setup` at 1657 are the two largest
-entries of that kind today.
+Each budget is the tool's measured size plus at most ten lines. The limit is a ratchet and backlog,
+not a target: moving a mode-gated block behind a `lazy-include` lowers the affected entry rather
+than creating reusable room. Headroom is a flat count instead of a percentage, because a percentage
+would give the largest tools the most unchecked growth. Ten is the ceiling, not a fixed offset, and
+most entries carry less.
+
+The current report makes that policy visible without a separate budget class:
+`merge-gate` is 2746/2750, `setup` 1722/1723, `iterate` 1664/1669,
+`apply-review` 1335/1340, `apply-issues` 1184/1187, and `cleanup` 1017/1022.
+The four tools that formerly shared a 700-line allowance now carry individual ratchets:
+`plan` 655/665, `docs` 607/617, `build` 575/585, and `fix` 471/481. Read every
+other tool's current measurement and exact headroom from the build report rather than from a
+category-wide assumption. The conditional Profile contract remains in the lazy
+`setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
 
 ## Optional upstream ownership audit
 

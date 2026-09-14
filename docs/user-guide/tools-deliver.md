@@ -372,8 +372,8 @@ a top-level bot comment does not qualify, so ordinary CI, coverage, deployment, 
 activity does not produce the hint; a reviewer that writes only a top-level or sticky comment can
 therefore go unnoticed. The advisory does not enroll the reviewer in the current run, trigger or
 wait for it, change a merge condition, write the project-setup ADR, or post to the pull request. To
-complete the configuration, run `/effective-flow setup`, choose **Guided**, open **Advanced
-settings**, and select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
+complete the configuration, run `/effective-flow setup guided`, open **Advanced settings**, and
+select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
 existing login and trigger when only `.check` is missing, set a distinctive per-reviewer trigger
 only when the tool supports one, and copy the exact `.check` context from the checks list of a pull
 request that reviewer has handled. Never guess the context; leave it unset only when the reviewer

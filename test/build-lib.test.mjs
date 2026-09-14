@@ -3611,6 +3611,22 @@ test('the chat-language fragment pins its domain, its mirror default and its exc
     /An invalid value is reported and treated as an absent row — mirror, not a jump to `language\.project`/,
   );
 
+  // Setup Profile is the one deliberate bootstrap exception. It may bind the answer after the
+  // first ask so the second ask uses the selected language, but the pending row still crosses the
+  // same common confirmation gate. Every legacy setup mode and every other tool stays resolve-once.
+  assert.match(
+    prose,
+    /sole bootstrap exception is `\{\{SKILL:setup\}\}` in Profile mode.*asks `Chat` in that language as its first substantive question.*binds the selected `de`, `en`, or recognizable mirrored conversation language once for its second question and the remainder of that setup run/,
+  );
+  assert.match(
+    prose,
+    /Mirror is pending removal of `language\.chat`; English and German are pending `en`\/`de`, and none is persisted before setup's common confirmation/,
+  );
+  assert.match(
+    prose,
+    /Express, Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never rebind their chat language during a run/,
+  );
+
   // The `ask` block is the only interactive surface built as a literal parameter list, so a
   // run holding "translate the question" would pass header and labels through untouched and
   // produce a half-translated dialog. The parts are named for that reason.

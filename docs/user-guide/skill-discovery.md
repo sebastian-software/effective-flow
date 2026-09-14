@@ -74,11 +74,12 @@ Example – prefer `humanizer` globally, but disable it for the `docs` tool:
 | skills.tools.docs.exclude    | humanizer |
 ```
 
-## Materialization via `/effective-flow setup`
+## Materialization via `/effective-flow setup guided`
 
-In the guided path of [`/effective-flow setup`](./tools-setup.md) you can have the built-in
-fallback recommendations of individual agents written visibly into the config (section
-"Advanced settings"). For a fallback recommendation like `impeccable › frontend-design`,
+With [`/effective-flow setup guided`](./tools-setup.md) you can have the built-in fallback
+recommendations of individual agents written visibly into the config (section “Advanced
+settings”). Profile setup does not ask about skill preferences. For a fallback recommendation like
+`impeccable › frontend-design`,
 only the **primary** skill is materialized (row `skills.agents.<name>.include`, value `impeccable`)
 – the built-in fallback to `frontend-design` still stays active in case `impeccable` is
 ever unavailable. A flat recommendation without a fallback (e.g. `humanizer`) is taken over

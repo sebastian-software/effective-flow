@@ -8,21 +8,91 @@ and version information.
 **Purpose:** Prepares a target project for Effective Flow. It makes `.effective-flow/` a fully
 gitignored runtime directory, creates or updates the living project-setup ADR, and writes the
 canonical `**Effective Flow project setup:** <path>` marker in `AGENTS.md` or another existing
-convention file. The wizard starts from safe defaults and offers two paths: **Express** (adopt
-defaults while retaining existing values) or **Guided** (explain and choose each option).
+convention file. The standard wizard applies one of three common workflow profiles after asking
+only for the chat language and the profile. **Express** and **Guided** remain available as explicit
+modes.
 
-**When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
-settings (project and surface languages, worktree, completion action, tracker target including an
-external tool, advanced review/apply-review values, skill discovery), or to run the optional
-session-rename capability check described below.
+**When to use:** On the first use of Effective Flow in a project, or later, to switch its common
+planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
+(project and surface languages, worktree, completion action, tracker details, advanced
+review/apply-review values, or skill discovery), and Express when you intentionally want the safe
+base without an interview. Any mode may offer the optional session-rename capability check
+described below.
 
 **Typical call:** `/effective-flow setup`
 
-**Input/output:** No input is required beyond the wizard answers. The output is the normalized
-`.gitignore`, the project-setup ADR (by default
+The accepted invocations are:
+
+```text
+/effective-flow setup
+/effective-flow setup profile
+/effective-flow setup express
+/effective-flow setup guided
+```
+
+The first two forms enter Profile mode. An unknown or additional argument reports these forms and
+stops before changing `.gitignore`, configuration, convention files, or runtime state.
+
+**Input/output:** Profile mode first asks **Chat**, then **Profile**. Local and forge profiles need
+no further configuration answers; the external profile additionally asks only for the external
+tool, exact connection context, and lifecycle states needed for a valid integration. Conditional
+write confirmations, safety decisions, `CLAUDE.md` consent, and the session-rename consent can
+still follow. The output is the normalized `.gitignore`, the project-setup ADR (by default
 `docs/adr/effective-flow-project-setup.md`), and its convention-file marker. When configuration
 already exists, the wizard shows current values and changes them only after explicit
 confirmation. Unknown ADR rows are preserved.
+
+### Profile mode
+
+Profile mode asks its two common questions before any conditional `.gitignore`, configuration
+source, ADR-convention, or topology question:
+
+1. **Chat** — mirror the language you write in, use English, or use German. The answer immediately
+   controls the Profile question and the rest of this setup run. Mirror removes an existing
+   `language.chat` row in the confirmed write; English and German persist `en` or `de`.
+2. **Profile** — choose one of the following topologies.
+
+| Profile                               | Issue-backed planning and tracking | Development and completion                                                                  |
+| ------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| Fully local                           | Local Markdown artifacts           | Local branch, local merge, and no GitHub or Forgejo issue or pull-request operations        |
+| Forge issues and development          | GitHub or Forgejo issues           | Pull request on the verified `origin`, using the repository-derived default branch          |
+| External issues and forge development | External project-management tool   | Pull request on the verified GitHub or Forgejo `origin` and repository-derived default base |
+
+The selected profile is a transient overlay, not a saved preset: no `setup.profile` or equivalent
+row is written. Every profile owns `tracker.mode`, `delivery.completion`, and the base required
+by its topology, plus `tracker.remoteToolOverride` when the forge can be classified. The external
+profile additionally owns its verified tool, context hint, started state, and optional done state.
+Unrelated and unknown rows remain unchanged, while these profile-owned values intentionally replace
+conflicting values after the user confirms the complete before/after preview. Dormant provider or
+external-tracker values stay in the ADR when their mode is inactive.
+
+The fully local profile uses the current named local branch as its base and keeps work local even
+when an `origin` exists. The two forge-backed profiles require an identifiable GitHub or Forgejo
+`origin` and a repository-derived base; setup never guesses a provider or silently falls back to a
+local topology. If that preflight is ambiguous, use `/effective-flow setup guided` to make the
+necessary provider or base choice explicitly.
+
+The external profile builds on verified forge delivery and sets `tracker.mode: external`. It
+preselects recorded external values only after revalidating them, and asks for missing or changed
+tool, connection context, writable non-terminal started state, and optional writable terminal done
+state. The connection must come from a configured MCP integration or authenticated CLI; setup does
+not infer one from a familiar tool name. When several contexts are possible, the proposed
+non-secret `tracker.externalToolHint` includes enough stable workspace, team, or project identity
+to select the same context again. Setup shows the provider, base, context, state evidence, and exact
+hint before confirmation, then repeats discovery before writing. Missing capability, unanswered
+ambiguity, an invalid started state, or changed evidence stops the profile without writing its
+configuration. Omitting a valid done state is allowed, but leaves post-merge completion
+unavailable and is disclosed in the preview.
+
+Profiles route **issue-backed** work. A natural-language `/effective-flow plan "…"` request without
+an issue reference still creates a local plan file under `plan.dir`; choosing a forge or external
+profile does not turn every planning request into a remote issue.
+
+### Explicit Express and Guided modes
+
+`/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly.
+`/effective-flow setup guided` enters the existing per-setting interview and its optional Advanced
+settings directly. Neither invocation asks for a profile first.
 
 Setup follows an ADR file-naming convention your project has already decided on instead of
 imposing its own. Before writing, it looks for a naming rule stated in `AGENTS.md`, `CLAUDE.md`,
@@ -77,8 +147,9 @@ Git/release prose, and — as the seventh — the interactive language Effective
 Choosing “inherit project language” removes or omits an artifact-surface override and appears in
 the before/after confirmation. The chat override differs: its first option is “Mirror the user's
 language (default)”, because an absent `language.chat` row mirrors whatever language you write in
-rather than inheriting the project language. Express adds no row for it but keeps one you already
-set, so interactive replies keep mirroring until you set one. A new ADR uses the
+rather than inheriting the project language. Profile mode asks that chat question first and binds
+the selected language for the remainder of setup; Express adds no row for it but keeps one you
+already set. A new ADR uses the
 technical-documentation language; setup preserves the language of an existing ADR during ordinary
 updates.
 
@@ -97,7 +168,7 @@ confirmation; an existing new key always wins. The values set here
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
-reliably present. The offer is a question on both paths, Express included, and a run that cannot
+reliably present. The offer is a question in every mode, Express included, and a run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
 file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
 pointer to `AGENTS.md` and, where an earlier run left one there, setup's own marker line — and, when
