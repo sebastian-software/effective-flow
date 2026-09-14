@@ -11,8 +11,8 @@
 // versions were both wrong, in opposite directions. Digesting a hand-picked set of *source* files
 // missed that the gate a run loads is the *output* of `build.mjs`: include resolution, the router's
 // tool list, a lazy pointer's wording and the version stamp all change what runs while every listed
-// source still hashes the same. Digesting the whole output fixed that but bound each run to 87
-// files when a `merge-gate` run can reach 23, so an edit to an unrelated tool, an unreached
+// source still hashes the same. Digesting the whole output fixed that but bound each run to files
+// a `merge-gate` run cannot reach, so an edit to an unrelated tool, an unreached
 // worker contract or a fragment the gate never reaches invalidated every archived round and forced a
 // re-run that could produce no new information.
 //
@@ -26,10 +26,11 @@
 // which is the conservative direction of the two. The seeds are the gate's own delegation surface
 // and go one hop; `iterate`'s further delegations are deliberately not seeded, because seeding them
 // would pull most of the built tree back in and undo the narrowing. The three cost little, since
-// `iterate` shares most of the gate's fragments: the router and the gate tool alone reach 18 paths,
-// and the three delegation seeds add themselves plus two further fragments, for 23 files in
-// all. Eagerly included fragments need no entry — the build inlines them into the tool body, so the
-// tool's own hash already covers them.
+// `iterate` shares most of the gate's fragments: the delegation seeds add only themselves and the
+// further fragments unique to their reachable closures. The exact count is deliberately derived
+// below because a scenario overlay can replace one seed and change that closure. Eagerly included
+// fragments need no entry — the build inlines them into the tool body, so the tool's own hash already
+// covers them.
 // Neither `scripts/remote-tracker.mjs` nor its `-core.mjs` half is a member: `scaffold.mjs`
 // overwrites that exact path in the copied tree with the stub before any run, and the stub is
 // already hashed separately as the `instrument` part, so no sandbox run ever loads the shipped
@@ -41,7 +42,8 @@
 //
 // **What the narrowing still costs has since been measured, and it does not argue for narrowing
 // further.** Of the 12 non-merge commits that reached `origin/develop` since this layer landed in
-// `364f4d0` (#399), 8 touched at least one of the 43 source files that feed these 23 built paths,
+// `364f4d0` (#399), 8 touched at least one of the 43 source files that fed the then-current 23 built
+// paths,
 // and 6 of those 8 changed what a gate run does: the checkout inapplicability list, the
 // conflict-resolution contract, the post-merge observation body, the completion invariants that
 // bound the correction rounds, the base-branch derivation that decides the merge target, and a

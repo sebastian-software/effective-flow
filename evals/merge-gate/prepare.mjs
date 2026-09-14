@@ -10,7 +10,8 @@
 //
 //   1. archive the call log the previous run left in the sandbox, into
 //      `results/<scenario>/run-<n>.jsonl` with the next free `n`, together with the build stamp
-//      the scaffold wrote for that run as `run-<n>.build.json`;
+//      the scaffold wrote for that run as `run-<n>.build.json` and, for the configured-reviewer
+//      scenario, its paired `run-<n>.iterate.jsonl` echo trace;
 //   2. re-run `_scaffold/scaffold.mjs`, which wipes and re-provisions the sandbox;
 //   3. confirm the call log is gone, so the next run starts from an empty one;
 //   4. print the scenario's prompt verbatim.
@@ -125,13 +126,15 @@ try {
 // facts, and only the archived file can tell them apart afterwards; discarding the empty one here
 // would erase the difference the assertions are written to catch.
 //
-// A log and its build stamp are archived as one unit or not at all, which is the one case that
-// stops rather than archives. A log without its stamp is evidence nobody can bind to a version of
-// the gate, and the assertions refuse to read it — so filing it alone would put something in
-// `results/` that looks like a result and can never become one. It happens when a sandbox predates
-// the stamp, and the honest response is to name that here, where the operator still knows which
-// run they are looking at, rather than to let the suite reject the file months later with no way
-// left to tell what produced it.
+// A run's required evidence is archived as one unit or not at all, which is the one case that stops
+// rather than archives. Every run requires its log and build stamp; a configured-reviewer run also
+// requires its iterate echo trace. A log without its partners is evidence nobody can bind to both
+// the gate version and the delegated handoff, and the assertions refuse to read it — so filing it
+// alone would put something in `results/` that looks like a result and can never become one. A
+// missing stamp happens when a sandbox predates build binding; a missing trace means the configured
+// scenario did not exercise its required echo. The honest response is to name either failure here,
+// where the operator still knows which run they are looking at, rather than to let the suite reject
+// the file months later with no way left to tell what produced it.
 let archived = null;
 if (existsSync(callLog) && statSync(callLog).isFile()) {
   if (!existsSync(buildIdentity)) {

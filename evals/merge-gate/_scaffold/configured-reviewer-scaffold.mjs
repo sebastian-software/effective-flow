@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 // Additive wrapper for the sole configured-reviewer scenario. Keeping the established scaffold
-// byte-for-byte unchanged preserves the existing five scenarios' build identities.
+// byte-for-byte unchanged preserves the existing five scenarios' scaffold behavior and
+// instrumentation membership.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';

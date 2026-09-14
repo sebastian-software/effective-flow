@@ -474,13 +474,13 @@ test('every fixture envelope is one the real normalizer emits', async () => {
 // defined, and worked around all three. A scenario has to exercise the **normal** path, so those
 // three are required alongside the five reads WP2 names.
 //
-// `reference-parse` is a local operation — the normalizer resolves it without touching the provider,
-// so its fixture entry states a null provider payload the fake runner never delivers. `probe` is
-// piped through `executeOperation` with `skipProbe`, so what the fidelity assertion proves for it is
-// the envelope the operation wraps around a probe result rather than the capability detection
-// itself; the capabilities are the set this fixture declares at its top level. `repository-resolve`
-// is remote by classification but answers from the stated repository without reaching the runner
-// either, so it likewise carries a null provider payload.
+// `reference-parse` and `body-hash` are local operations — the normalizer resolves them without
+// touching the provider, so their fixture entries state a null provider payload the fake runner
+// never delivers. `probe` is piped through `executeOperation` with `skipProbe`, so what the fidelity
+// assertion proves for it is the envelope the operation wraps around a probe result rather than the
+// capability detection itself; the capabilities are the set this fixture declares at its top
+// level. `repository-resolve` is remote by classification but answers from the stated repository
+// without reaching the runner either, so it likewise carries a null provider payload.
 //
 // `pr-checks-wait` and `repository-resolve` were added because runs performed against the earlier
 // corpus asked for them and got `UNSUPPORTED_CAPABILITY` back: three of five archived runs took a
@@ -494,6 +494,7 @@ test('every fixture covers the operations a gate run performs', () => {
     'reference-parse',
     'probe',
     'pr-read',
+    'body-hash',
     'viewer-read',
     'pr-status-read',
     'pr-checks-wait',
@@ -518,19 +519,33 @@ test('every fixture covers the operations a gate run performs', () => {
   }
 });
 
-test('the configured-reviewer fixture hashes exactly the PR body it read', () => {
-  const fixture = loadFixture('configured-reviewer-set-aside-blocks.json');
-  const operation = fixture.operations['body-hash'];
-  const pullRequestBody = fixture.operations['pr-read'].envelope.data.result.body;
-  assert.equal(operation.input.body, pullRequestBody);
-  assert.equal(operation.provider, null, 'body-hash is local and must not invent a provider call');
-  assert.deepEqual(operation.envelope, {
-    ok: true,
-    operation: 'body-hash',
-    provider: null,
-    data: { hash: bodyHash(pullRequestBody) },
-    dryRun: false,
-  });
+test('every fixture hashes exactly the PR body it read', () => {
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    const operation = fixture.operations['body-hash'];
+    const pullRequestBody = fixture.operations['pr-read'].envelope.data.result.body;
+    assert.equal(
+      operation.input.body,
+      pullRequestBody,
+      `${file}: body-hash input differs from the normalized pr-read body`,
+    );
+    assert.equal(
+      operation.provider,
+      null,
+      `${file}: body-hash is local and must not invent a provider call`,
+    );
+    assert.deepEqual(
+      operation.envelope,
+      {
+        ok: true,
+        operation: 'body-hash',
+        provider: null,
+        data: { hash: bodyHash(pullRequestBody) },
+        dryRun: false,
+      },
+      `${file}: body-hash envelope was not derived from the normalized pr-read body`,
+    );
+  }
 });
 
 test('the stub hands out exactly the fixture envelope for every defined operation', () => {

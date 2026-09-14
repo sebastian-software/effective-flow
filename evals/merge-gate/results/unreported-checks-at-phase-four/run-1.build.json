@@ -1,8 +1,8 @@
 {
   "scenario": "unreported-checks-at-phase-four",
-  "digest": "sha256:a1614999e25ffd3723a1db4b6f0aabb97fee9c25bc66784ac82b87d725f720d3",
+  "digest": "sha256:d2d997985d3c7a4bdfd72ada3668544106dd8d596806bcf7fbef130029393ca6",
   "skill": {
-    "digest": "sha256:9c7c2feabde8ca2cbb8f7bf9539c596a2a3b813c53c1f4604608b7bc9031dc5d",
+    "digest": "sha256:b3268cf4756f3d7258f27c0252df20516c81ae1315defc244461ae306a76948a",
     "files": {
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
       "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
@@ -13,6 +13,7 @@
       "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
       "shared/merge-gate-check-list-waiver.md": "sha256:30c255294e9da26c6654d7e9bb8bdd2bcc112c9649cb161ee34b29db1f97601d",
       "shared/merge-gate-checkout-boundary.md": "sha256:2cec54fc23be7e1f2f373a5c7a832095103f13744513a85db5953315e038782b",
+      "shared/merge-gate-configured-reviewer.md": "sha256:1af0c5a56faed86d487696970d51e54794d63bdb59727289a0082f9e1e070c48",
       "shared/merge-gate-conflict-resolution.md": "sha256:b222e6d4dab1ab511986462ed10f2332b00de2ed365c8a680352ce07e43e6fc8",
       "shared/merge-gate-issue-observation.md": "sha256:dd3c4bb7b21b38b0d4f90cade4945937be35102d5796b4af3ff13ee6f23940dd",
       "shared/next-steps.md": "sha256:4290691291c74e4c5d026f08c75ecd52f9f72e9bfa5a934037343502512d745f",
@@ -25,7 +26,7 @@
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:acd68abc4aacb0c332cba8ea6f80a9745b123b731fd6b67e11165c0fd927e4b2",
       "tools/iterate.md": "sha256:3da78e2bbdc0575dbc09ab5a6b7ee4ee719142eb847bfd568fbb31ab958ee8b3",
-      "tools/merge-gate.md": "sha256:469e1ac8888ecc47579cad32de1d5c3c3ea2e51d83c072df08df20a08b29ac2b",
+      "tools/merge-gate.md": "sha256:fb86a619d5154e2bd56bb8589e9a2c4b42c8ff3d55581a271e4e8bb7a37401c8",
       "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
       "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
     }
@@ -39,9 +40,9 @@
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:d3528cd03412b9b620c5dd52d550e4f641e5bb7e6eb9fc8482c6138df62ff31f",
+    "digest": "sha256:1bd0d22e4849069422b1971224f46344f012100b45b8089435b2ca0d64108bed",
     "files": {
-      "evals/merge-gate/fixtures/unreported-checks-at-phase-four.json": "sha256:340438162a2dcbcd933905296fd83eadab1df8d1176144bd8026ec99c75260e6",
+      "evals/merge-gate/fixtures/unreported-checks-at-phase-four.json": "sha256:e9b9a35c56ad330701ecb8f53056727a8ccf7681cd3e720561f3e00c844d239d",
       "evals/merge-gate/scenarios/unreported-checks-at-phase-four.md": "sha256:8ecdf742fbd46a80304a2d5e3d46200f60cca23478b0f59c5987b9162656155f"
     }
   }

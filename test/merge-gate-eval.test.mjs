@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
@@ -192,10 +193,10 @@ const NOT_LOADED_BY_A_RUN = [
 // keeping if it stops there. The hashed set is derived in `build-identity.mjs` by following the
 // seeds' own load pointers through the built tree: the router a run enters through, the gate tool it
 // runs, the artifacts it delegates into, and every `shared/` fragment those pointers reach,
-// transitively. Twenty-three paths out of the eighty-seven the built portable skill holds.
+// transitively. That reachability closure is a strict subset of the built portable tree.
 //
-// Two of those twenty-three arrived with `chat-language`, the eager fragment every speaking tool
-// carries: its two `lazy-include` pointers pull `shared/config-migration.md` and
+// `chat-language`, the eager fragment every speaking tool carries, adds the fragments referenced by
+// its `lazy-include` pointers to the closure: `shared/config-migration.md` and
 // `shared/typography-rules.md` into the set. The typography one is reached only under
 // `when: the resolved chat language is de` — a branch no scenario takes — so it widens the
 // identity for a file these rounds never read. That is the coupling the paragraph below warns
@@ -210,14 +211,14 @@ const NOT_LOADED_BY_A_RUN = [
 // seed still produces a perfectly stable digest — it would match itself round after round while
 // binding almost nothing, and the suite would go on certifying a gate that had been rewritten
 // underneath it. A set that grew back to the whole tree binds every archived round to files no run
-// reads, so an edit to an unrelated tool or an unreached worker contract invalidates all fifteen
+// reads, so an edit to an unrelated tool or an unreached worker contract invalidates every round
 // and forces a re-round that can produce no new information; that coupling is what the narrowing
 // removed, and nothing else here would notice it returning.
 //
 // **Do not restore a count floor.** An earlier version asserted `hashed.length > 50`, which
 // contradicted the name above it: it held only while the stamp hashed the whole output, and the
-// correct set fails it. A floor cannot tell the right twenty-three files from any other twenty-three,
-// which is the only question worth asking here.
+// correct set fails it. A floor cannot distinguish the files the gate can reach from an equally
+// sized arbitrary set, which is the only question worth asking here.
 test('the build stamp covers the built tree a run actually loads', () => {
   const identity = currentIdentity(SCENARIOS[0]);
   const hashed = Object.keys(identity.skill.files);
@@ -574,6 +575,11 @@ const configuredReviewerSkip = skipWithoutRuns(
   CONFIGURED_REVIEWER_SCENARIO,
   configuredReviewerRuns,
 );
+const configuredReviewerFixture = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, `${CONFIGURED_REVIEWER_SCENARIO}.json`), 'utf8'),
+);
+const configuredReviewResults =
+  configuredReviewerFixture.operations['pr-reviews-read'].envelope.data.result;
 
 function readIterateTrace(run) {
   assert.ok(
@@ -595,6 +601,18 @@ test(
   `${CONFIGURED_REVIEWER_SCENARIO}: every archived run delegates two attributed items exactly once`,
   { skip: configuredReviewerSkip },
   () => {
+    assert.equal(
+      configuredReviewResults.length,
+      1,
+      'the configured-reviewer fixture must identify exactly one review body for this scenario',
+    );
+    const [expectedReview] = configuredReviewResults;
+    assert.equal(typeof expectedReview.body, 'string');
+    const expectedBodyBytes = Buffer.byteLength(expectedReview.body, 'utf8');
+    const expectedBodyDigest = `sha256:${createHash('sha256')
+      .update(expectedReview.body, 'utf8')
+      .digest('hex')}`;
+
     for (const run of configuredReviewerRuns) {
       const trace = readIterateTrace(run);
       assert.equal(trace.schema, 'effective-flow/merge-gate-iterate-echo/v1');
@@ -607,14 +625,23 @@ test(
         reviewGuard: 'established',
       });
       assert.equal(trace.body.spans, 1);
-      assert.match(trace.body.digest, /^sha256:[0-9a-f]{64}$/);
+      assert.equal(
+        trace.body.bytes,
+        expectedBodyBytes,
+        `${run.name}: the delegated review body byte length differs from the configured-reviewer fixture`,
+      );
+      assert.equal(
+        trace.body.digest,
+        expectedBodyDigest,
+        `${run.name}: the delegated review body differs from the configured-reviewer fixture`,
+      );
       assert.deepEqual(
         trace.items.map((item) => item.kind),
         ['thread', 'review-body'],
       );
       assert.equal(trace.items[0].threadId, 'PRRT_kwDOconfiguredReviewer');
-      assert.equal(trace.items[1].reviewId, '700002');
-      assert.equal(trace.items[1].author, 'recensor[bot]');
+      assert.equal(trace.items[1].reviewId, String(expectedReview.id));
+      assert.equal(trace.items[1].author, expectedReview.author.login);
       assert.equal(new Set(trace.items.map((item) => item.identifier)).size, 2);
       assert.deepEqual(
         trace.outcomes,

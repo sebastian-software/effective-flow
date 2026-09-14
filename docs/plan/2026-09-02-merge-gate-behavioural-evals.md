@@ -456,6 +456,20 @@ project's real work, which is a scheduling question rather than a budget one. WP
 therefore be scoped more generously than the original cost framing implied. The 5-of-5 requirement
 is unaffected either way.
 
+### Partial delivery record, 2026-09-14
+
+The configured-reviewer slice is now covered without claiming this broader plan complete. The
+`configured-reviewer-set-aside-blocks` scenario supplies `mergeGate.bots: recensor`, replaces only
+the sandbox copy of `iterate` with a bounded attribution echo, and records one unresolved thread
+plus one changes-requested review-body finding. Five current-build runs delegate both durable
+identifiers exactly once, validate two `deferred` outcomes, repeat the Phase-4 reads, and stop at the
+non-interactive set-aside gate without a merge call.
+
+The complete merge-gate corpus now contains six scenarios with five valid current-build runs each.
+The existing refusal, merge, and linked-issue outcomes remain unchanged. This closes the missing
+configured-reviewer reachability for `merge-gate`; it does not cover production `iterate`
+classification behavior, and it does not complete the remaining scenario groups in this plan.
+
 ## Open points
 
 - No open points.
