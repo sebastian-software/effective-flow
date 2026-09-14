@@ -89,19 +89,15 @@ Valid values:
 `delivery.enabled` is **retired**: delivery is no longer activated via its own switch,
 but is active whenever work happens in a worktree/dedicated branch
 (see "Delivery is implied by worktree/branch"). A `delivery.enabled` still
-present in a legacy config is ignored on read and removed by the full config migration
-(see "Config migration").
+present in a legacy config is ignored on read.
 
 ### Config migration
 
-Reading the Effective Flow configuration from the project setup ADR and the one-time consolidation
-of a legacy config onto the current schema – in particular moving old delivery values out of
-`worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion` into `delivery.*` and
-removing the retired `delivery.enabled` – is handled by the shared fragment
-"Config migration" (`config-migration.md`) once and centrally. This fragment performs **no** own
-per-block migration anymore. Until a config is migrated, reading applies: new value from
-`delivery.*` before legacy value from `worktree.*` before default; an existing
-`delivery.enabled` is ignored.
+Reading the Effective Flow configuration from the project setup ADR is handled by the shared
+fragment "Config migration" (`config-migration.md`); this fragment performs **no** own per-block
+migration. `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` are retired rows
+of that table and are never read: a run stops or reports under its retired-key rule, and
+{{SKILL:setup}} rewrites them in place to their `delivery.*` successors.
 
 ### Determine mode (setup phase): Delivery is implied by worktree/branch
 
@@ -116,7 +112,7 @@ At the start of the actual implementation work, determine the effective mode:
 - Record the explicit action and its evidence separately from configuration. When one exists, it is
   the effective completion even when it differs from `delivery.completion`; do not modify the
   configured value. The completion report names both the configured value and applied override.
-  With no qualifying directive, retain the configured value and existing fallback behavior.
+  With no qualifying directive, retain the configured value, or its documented default when unset.
 - Before any fetch, setup, branch change or other write-capable action, issue and verify an
   execution-location receipt for the current checkout. Before worktree creation, resolve and
   retain its verified `RUNTIME_STATE_ROOT` from the first record of
