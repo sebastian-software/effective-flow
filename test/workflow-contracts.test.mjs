@@ -2264,6 +2264,59 @@ test('the retired-key contract detects at the first configuration read and names
   assert.match(retired, near('same rule applies', 'transitional JSON configuration', 60));
 });
 
+// The shared retirement contract names build and fix, but that alone does not make either tool
+// consult it before doing work. Keep each tool's operational preflight above its workflow and its
+// first real delegation: a presence-only assertion would stay green if the paragraph moved below
+// the plan/explore delegation and left a branch, worktree or delegated write behind before stopping.
+test('build and fix retire delivery keys before their first delegation', () => {
+  const workflows = [
+    {
+      name: 'build',
+      path: 'src/tools/build.md',
+      phase: '## Phase 0: Intent Gate',
+      firstDelegation: '1. Start `{{SKILL:plan}}` with the feature requirement.',
+    },
+    {
+      name: 'fix',
+      path: 'src/tools/fix.md',
+      phase: '### Phase 1: Investigation',
+      firstDelegation: 'investigate the relevant code via an internal explore sub-agent',
+    },
+  ];
+
+  for (const { name, path, phase, firstDelegation } of workflows) {
+    const workflow = source(path);
+    const preflight = prose(boundedSlice(workflow, '## Configuration preflight', '\n```include'));
+
+    ordered(workflow, '## Configuration preflight', phase, firstDelegation);
+    assert.match(
+      preflight,
+      /unconditionally perform this run's first Effective Flow configuration read/i,
+      `${name} must make the retired-key check its first configuration read`,
+    );
+    assert.match(
+      preflight,
+      near('loaded retired-key contract', 'every successor this workflow can resolve', 120),
+      `${name} must apply the retired-key contract to its delivery successors`,
+    );
+    assert.deepEqual(
+      [...preflight.matchAll(/`(delivery\.[^`]+)`/g)].map((match) => match[1]),
+      ['delivery.baseBranch', 'delivery.branchPrefix', 'delivery.completion'],
+      `${name} must check exactly the three delivery successors it can resolve`,
+    );
+    assert.match(
+      preflight,
+      /Complete its stop or report decision before any delegation or write/i,
+      `${name} must finish the retired-key decision before delegation or mutation`,
+    );
+    assert.match(
+      preflight,
+      /does not replace or move any later purpose-specific configuration read; perform each one at its documented workflow point/i,
+      `${name} must preserve its later purpose-specific configuration reads`,
+    );
+  }
+});
+
 // The retirement is only real while no restatement still describes the old read. Both namespaces
 // had several of them, and one survived in a tool that never loads the canonical fragment.
 // The defect this retirement repairs began as a claim that the configuration core migrates the
