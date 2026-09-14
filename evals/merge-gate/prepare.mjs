@@ -22,14 +22,25 @@
 
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  CONFIGURED_REVIEWER_SCENARIO,
+  iterateTracePath,
+  scenarioSetup,
+} from './_scaffold/configured-reviewer-scenario.mjs';
+import { archiveEvidence, validateArchivedPairing } from './_scaffold/run-evidence.mjs';
 import { sandboxPaths } from './_scaffold/sandbox.mjs';
 
 const SUITE_ROOT = import.meta.dirname;
 const SCENARIO_DIR = resolve(SUITE_ROOT, 'scenarios');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
 const SCAFFOLD = resolve(SUITE_ROOT, '_scaffold', 'scaffold.mjs');
+const CONFIGURED_REVIEWER_SCAFFOLD = resolve(
+  SUITE_ROOT,
+  '_scaffold',
+  'configured-reviewer-scaffold.mjs',
+);
 
 // The markers the scenario file wraps its prompt in. Extracting between them rather than taking the
 // file's first code fence keeps the scenario free to show a command or a snippet above the prompt
@@ -101,7 +112,14 @@ if (!existsSync(scenarioPath)) {
 
 const prompt = extractPrompt(scenarioPath);
 const { callLog, buildIdentity } = sandboxPaths(scenario);
+const iterateTrace = iterateTracePath(scenario);
 const scenarioResults = resolve(RESULTS_DIR, scenario);
+const requiresIterateTrace = scenarioSetup(scenario).iterateEcho;
+try {
+  validateArchivedPairing(scenarioResults, requiresIterateTrace);
+} catch (error) {
+  fail(error.message);
+}
 
 // An empty log is archived too. "The gate called nothing" and "the run never started" are different
 // facts, and only the archived file can tell them apart afterwards; discarding the empty one here
@@ -129,14 +147,35 @@ if (existsSync(callLog) && statSync(callLog).isFile()) {
       ].join('\n'),
     );
   }
+  if (requiresIterateTrace && !existsSync(iterateTrace)) {
+    fail(
+      `the sandbox at ${callLog} holds a call log but no configured-reviewer echo trace at ${iterateTrace}.`,
+    );
+  }
+  if (!requiresIterateTrace && existsSync(iterateTrace)) {
+    fail(
+      `the sandbox at ${iterateTrace} holds an orphan echo trace for a scenario without an echo`,
+    );
+  }
   mkdirSync(scenarioResults, { recursive: true });
   const runNumber = nextRunNumber(scenarioResults);
   archived = resolve(scenarioResults, `run-${runNumber}.jsonl`);
-  copyFileSync(callLog, archived);
-  copyFileSync(buildIdentity, resolve(scenarioResults, `run-${runNumber}.build.json`));
+  try {
+    archiveEvidence(scenarioResults, runNumber, [
+      ['jsonl', callLog],
+      ['build.json', buildIdentity],
+      ...(requiresIterateTrace ? [['iterate.jsonl', iterateTrace]] : []),
+    ]);
+  } catch (error) {
+    fail(`could not archive run ${runNumber} atomically: ${error.message}`);
+  }
+} else if (existsSync(iterateTrace)) {
+  fail(`the sandbox at ${iterateTrace} holds an echo trace without a tracker call log`);
 }
 
-execFileSync(process.execPath, [SCAFFOLD, scenario], { stdio: ['ignore', 'inherit', 'inherit'] });
+const scaffold =
+  scenario === CONFIGURED_REVIEWER_SCENARIO ? CONFIGURED_REVIEWER_SCAFFOLD : SCAFFOLD;
+execFileSync(process.execPath, [scaffold, scenario], { stdio: ['ignore', 'inherit', 'inherit'] });
 
 // The scaffold wipes the sandbox, so the log is gone by construction. Stating it as a check rather
 // than assuming it keeps a future scaffold change that stopped wiping from handing the next run a

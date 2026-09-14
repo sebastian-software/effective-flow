@@ -1,0 +1,16 @@
+{"seq":1,"operation":"reference-parse","apply":false,"at":"2026-09-14T16:38:52.061Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":2,"operation":"repository-resolve","apply":false,"at":"2026-09-14T16:38:57.506Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":3,"operation":"pr-read","apply":false,"at":"2026-09-14T16:39:01.593Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":4,"operation":"body-hash","apply":false,"at":"2026-09-14T16:39:06.184Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":5,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-14T16:39:10.425Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":6,"operation":"probe","apply":false,"at":"2026-09-14T16:39:14.699Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":7,"operation":"review-threads-read","apply":false,"at":"2026-09-14T16:39:35.807Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-14T16:39:35.839Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":9,"operation":"viewer-read","apply":false,"at":"2026-09-14T16:39:35.870Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":10,"operation":"pr-reviews-read","apply":false,"at":"2026-09-14T16:39:35.900Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":11,"operation":"pr-comments-read","apply":false,"at":"2026-09-14T16:39:35.930Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":12,"operation":"pr-status-read","apply":false,"at":"2026-09-14T16:39:51.899Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":13,"operation":"pr-status-read","apply":false,"at":"2026-09-14T16:41:25.544Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":14,"operation":"review-threads-read","apply":false,"at":"2026-09-14T16:41:25.575Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":15,"operation":"pr-comments-read","apply":false,"at":"2026-09-14T16:41:25.604Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}
+{"seq":16,"operation":"pr-reviews-read","apply":false,"at":"2026-09-14T16:41:25.633Z","cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"}

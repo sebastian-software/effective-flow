@@ -3,18 +3,29 @@ import { spawn, spawnSync } from 'node:child_process';
 import {
   appendFileSync,
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import {
+  archiveEvidence,
+  validateArchivedPairing,
+} from '../evals/merge-gate/_scaffold/run-evidence.mjs';
+import {
+  CONFIGURED_REVIEWER_SCENARIO,
+  scenarioSetup,
+} from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
+import {
+  bodyHash,
   errorEnvelope,
   executeOperation,
   RemoteTrackerError,
@@ -42,6 +53,7 @@ const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
 const STUB_PATH = resolve(SUITE_ROOT, '_scaffold', 'remote-tracker.mjs');
+const ITERATE_TRACE_PATH = resolve(SUITE_ROOT, '_scaffold', 'iterate-trace.mjs');
 
 function fixtureFiles() {
   return readdirSync(FIXTURE_DIR)
@@ -52,6 +64,212 @@ function fixtureFiles() {
 function loadFixture(name) {
   return JSON.parse(readFileSync(join(FIXTURE_DIR, name), 'utf8'));
 }
+
+const THREAD_IDENTIFIER = 'A'.repeat(32);
+const REVIEW_IDENTIFIER = 'B'.repeat(32);
+const BOUNDARY_TOKEN = 'C'.repeat(32);
+const REVIEW_BODY = 'The fallback branch still accepts an unverified reviewer outcome.';
+
+function echoHandoff(overrides = {}) {
+  const threadIdentifier = overrides.threadIdentifier ?? THREAD_IDENTIFIER;
+  const reviewIdentifier = overrides.reviewIdentifier ?? REVIEW_IDENTIFIER;
+  const filteredThread = overrides.filteredThread ?? 'PRRT_kwDOconfiguredReviewer';
+  const manifestedThread = overrides.manifestedThread ?? 'PRRT_kwDOconfiguredReviewer';
+  return [
+    `Item filter: threads=${filteredThread}`,
+    `Boundary token: ${BOUNDARY_TOKEN}`,
+    `Thread item: ${threadIdentifier} | thread=${manifestedThread}`,
+    `Item: ${reviewIdentifier} | review=700002 | author=recensor[bot] | url=https://github.com/example/flow/pull/42#pullrequestreview-700002`,
+    'Summary comment: suppressed',
+    'Next steps: suppressed',
+    'Review guard: established',
+    '--- caller-supplied item text follows ---',
+    REVIEW_BODY,
+  ].join('\n');
+}
+
+function runIterateEcho(message, sandbox = null) {
+  const root = sandbox ?? mkdtempSync(join(tmpdir(), 'effective-flow-iterate-echo-'));
+  const scripts = join(root, 'skill', 'scripts');
+  const project = join(root, 'project');
+  mkdirSync(scripts, { recursive: true });
+  mkdirSync(project, { recursive: true });
+  copyFileSync(ITERATE_TRACE_PATH, join(scripts, 'iterate-trace.mjs'));
+  const result = spawnSync(process.execPath, [join(scripts, 'iterate-trace.mjs'), '42'], {
+    cwd: project,
+    input: message,
+    encoding: 'utf8',
+  });
+  return { root, result, trace: join(root, 'trace', 'iterate-calls.jsonl') };
+}
+
+test('only the configured-reviewer scenario opts into resolved reviewer rows and the iterate echo', () => {
+  assert.deepEqual(scenarioSetup(CONFIGURED_REVIEWER_SCENARIO), {
+    projectSetupRows: [
+      ['mergeGate.bots', 'recensor'],
+      ['mergeGate.bots.recensor.trigger', '@recensor review'],
+      ['mergeGate.bots.recensor.check', 'recensor'],
+    ],
+    iterateEcho: true,
+  });
+  for (const file of fixtureFiles()) {
+    const scenario = file.slice(0, -'.json'.length);
+    if (scenario === CONFIGURED_REVIEWER_SCENARIO) continue;
+    assert.deepEqual(
+      scenarioSetup(scenario),
+      { projectSetupRows: [], iterateEcho: false },
+      `${scenario}: an existing scenario no longer has the shared no-reviewer setup`,
+    );
+  }
+});
+
+test('the iterate echo records one bounded attributed handoff and returns deferred for both keys', () => {
+  const { root, result, trace } = runIterateEcho(echoHandoff());
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      result.stdout,
+      [
+        'Returned outcome record:',
+        `- ${THREAD_IDENTIFIER}: deferred`,
+        `- ${REVIEW_IDENTIFIER}: deferred`,
+        '',
+        'Suppressed summary:',
+        '2 configured-reviewer items were deferred for the caller-owned decision.',
+        '',
+      ].join('\n'),
+    );
+    const raw = readFileSync(trace, 'utf8');
+    assert.ok(Buffer.byteLength(raw) < 16 * 1024, 'one echo record exceeded its byte bound');
+    assert.ok(!raw.includes(REVIEW_BODY), 'the trace retained attacker-influenceable review text');
+    const records = readCallLog(trace);
+    assert.equal(records.length, 1);
+    assert.deepEqual(Object.keys(records[0]).sort(), [
+      'body',
+      'controls',
+      'cwd',
+      'itemFilter',
+      'items',
+      'outcomes',
+      'pullRequest',
+      'schema',
+      'seq',
+    ]);
+    assert.equal(records[0].schema, 'effective-flow/merge-gate-iterate-echo/v1');
+    assert.equal(records[0].seq, 1);
+    assert.equal(records[0].cwd, realpathSync(join(root, 'project')));
+    assert.equal(records[0].pullRequest, 42);
+    assert.equal(records[0].itemFilter, 'threads=PRRT_kwDOconfiguredReviewer');
+    assert.deepEqual(records[0].controls, {
+      summaryComment: 'suppressed',
+      nextSteps: 'suppressed',
+      reviewGuard: 'established',
+    });
+    assert.deepEqual(records[0].items, [
+      {
+        identifier: THREAD_IDENTIFIER,
+        kind: 'thread',
+        threadId: 'PRRT_kwDOconfiguredReviewer',
+      },
+      {
+        identifier: REVIEW_IDENTIFIER,
+        kind: 'review-body',
+        reviewId: '700002',
+        author: 'recensor[bot]',
+        url: 'https://github.com/example/flow/pull/42#pullrequestreview-700002',
+      },
+    ]);
+    assert.deepEqual(records[0].outcomes, [
+      { identifier: THREAD_IDENTIFIER, outcome: 'deferred' },
+      { identifier: REVIEW_IDENTIFIER, outcome: 'deferred' },
+    ]);
+    assert.equal(records[0].body.spans, 1);
+    assert.equal(records[0].body.bytes, Buffer.byteLength(REVIEW_BODY));
+    assert.match(records[0].body.digest, /^sha256:[0-9a-f]{64}$/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the iterate echo fails on missing, duplicate, or mismatched item attribution', () => {
+  const cases = [
+    [
+      'missing identifier',
+      echoHandoff().replace(`Thread item: ${THREAD_IDENTIFIER}`, 'Thread item:'),
+    ],
+    ['duplicate identifier', echoHandoff({ reviewIdentifier: THREAD_IDENTIFIER })],
+    ['mismatched thread', echoHandoff({ manifestedThread: 'PRRT_kwDOotherThread' })],
+  ];
+  for (const [label, message] of cases) {
+    const { root, result, trace } = runIterateEcho(message);
+    try {
+      assert.notEqual(result.status, 0, `${label}: malformed handoff was accepted`);
+      assert.ok(!existsSync(trace), `${label}: rejected handoff wrote a trace`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('the iterate echo trace is capped at four atomic JSONL records', () => {
+  const root = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-echo-'));
+  try {
+    for (let call = 1; call <= 5; call += 1) {
+      const { result, trace } = runIterateEcho(echoHandoff(), root);
+      assert.equal(result.status === 0, call <= 4, `call ${call}: ${result.stderr}`);
+      const records = readCallLog(trace);
+      assert.equal(records.length, Math.min(call, 4));
+      assert.deepEqual(
+        records.map((record) => record.seq),
+        Array.from({ length: Math.min(call, 4) }, (_, index) => index + 1),
+      );
+      assert.ok(!existsSync(`${trace}.lock`), `call ${call}: trace lock survived`);
+      assert.deepEqual(
+        readdirSync(dirname(trace)).filter((name) => name.endsWith('.tmp')),
+        [],
+        `call ${call}: atomic trace temporary survived`,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('run evidence archives as one explicit trio and rejects missing or orphaned partners', () => {
+  const root = mkdtempSync(join(tmpdir(), 'effective-flow-run-evidence-'));
+  const source = join(root, 'source');
+  const results = join(root, 'results');
+  mkdirSync(source);
+  mkdirSync(results);
+  const sources = [
+    ['jsonl', join(source, 'tracker.jsonl')],
+    ['build.json', join(source, 'build.json')],
+    ['iterate.jsonl', join(source, 'iterate.jsonl')],
+  ];
+  sources.forEach(([suffix, path]) => writeFileSync(path, `${suffix}\n`));
+  try {
+    archiveEvidence(results, 1, sources);
+    assert.deepEqual(readdirSync(results).sort(), [
+      'run-1.build.json',
+      'run-1.iterate.jsonl',
+      'run-1.jsonl',
+    ]);
+    validateArchivedPairing(results, true);
+
+    rmSync(join(results, 'run-1.iterate.jsonl'));
+    assert.throws(() => validateArchivedPairing(results, true), /missing run-1\.iterate\.jsonl/);
+    writeFileSync(join(results, 'run-1.iterate.jsonl'), 'orphan\n');
+    rmSync(join(results, 'run-1.jsonl'));
+    assert.throws(() => validateArchivedPairing(results, true), /missing run-1\.jsonl/);
+    writeFileSync(join(results, 'run-1.jsonl'), 'restored\n');
+    assert.throws(
+      () => validateArchivedPairing(results, false),
+      /orphaned in a scenario without an echo/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 // A fixture entry states its provider side one of two ways, and this resolves both into a runner.
 //
@@ -298,6 +516,21 @@ test('every fixture covers the operations a gate run performs', () => {
       );
     }
   }
+});
+
+test('the configured-reviewer fixture hashes exactly the PR body it read', () => {
+  const fixture = loadFixture('configured-reviewer-set-aside-blocks.json');
+  const operation = fixture.operations['body-hash'];
+  const pullRequestBody = fixture.operations['pr-read'].envelope.data.result.body;
+  assert.equal(operation.input.body, pullRequestBody);
+  assert.equal(operation.provider, null, 'body-hash is local and must not invent a provider call');
+  assert.deepEqual(operation.envelope, {
+    ok: true,
+    operation: 'body-hash',
+    provider: null,
+    data: { hash: bodyHash(pullRequestBody) },
+    dryRun: false,
+  });
 });
 
 test('the stub hands out exactly the fixture envelope for every defined operation', () => {

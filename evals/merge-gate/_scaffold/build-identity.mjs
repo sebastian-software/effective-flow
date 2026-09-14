@@ -108,9 +108,10 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 import { relative, resolve } from 'node:path';
+import { scenarioSetup } from './configured-reviewer-scenario.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
@@ -135,6 +136,11 @@ const INSTRUMENT_FILES = [
   resolve(import.meta.dirname, 'scaffold.mjs'),
 ];
 
+const CONFIGURED_REVIEWER_INSTRUMENT_FILES = [
+  resolve(import.meta.dirname, 'configured-reviewer-scenario.mjs'),
+  resolve(import.meta.dirname, 'configured-reviewer-scaffold.mjs'),
+];
+
 function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
@@ -152,6 +158,26 @@ const LOAD_SET_SEEDS = [
   'workers/effective-flow-merge-conflict-resolver.md',
   'workers/effective-flow-code-validator.md',
 ];
+
+const ITERATE_ECHO_SOURCE = resolve(import.meta.dirname, 'iterate-echo.md');
+const ITERATE_TRACE_SOURCE = resolve(import.meta.dirname, 'iterate-trace.mjs');
+const ITERATE_TRACE_SKILL_PATH = 'scripts/iterate-trace.mjs';
+
+// Apply the exact overlay a scenario executes before deriving its load set. The echo replaces the
+// production `tools/iterate.md` seed rather than being hashed beside it, and its trace helper is an
+// additional seed because the replacement explicitly executes it. Both files therefore appear
+// once in `skill.files`, at their sandbox paths, and never again under `instrument.files`.
+function applyScenarioSkillOverlay(scenario, skillRoot) {
+  const setup = scenarioSetup(scenario);
+  if (!setup.iterateEcho) return setup;
+  for (const source of [ITERATE_ECHO_SOURCE, ITERATE_TRACE_SOURCE]) {
+    if (!existsSync(source))
+      throw new Error(`${scenario}: iterate echo source missing at ${source}`);
+  }
+  copyFileSync(ITERATE_ECHO_SOURCE, resolve(skillRoot, 'tools', 'iterate.md'));
+  copyFileSync(ITERATE_TRACE_SOURCE, resolve(skillRoot, ITERATE_TRACE_SKILL_PATH));
+  return setup;
+}
 
 // The built form of a ```lazy-include fence, as `renderLazyPointer` in build-lib.mjs emits it. The
 // prefix is matched rather than the bare path so ordinary prose naming a fragment cannot enlarge
@@ -197,13 +223,14 @@ const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 // the affected rounds have been re-stamped against it, nothing downstream can tell it from a
 // legitimately narrower one — the dropped fragment is then free to drift uncovered. Failing here is
 // the only place the difference is still visible.
-function deriveLoadSet(skillRoot) {
-  const set = new Set(LOAD_SET_SEEDS);
-  for (const seed of LOAD_SET_SEEDS) {
+function deriveLoadSet(skillRoot, iterateEcho) {
+  const seeds = iterateEcho ? [...LOAD_SET_SEEDS, ITERATE_TRACE_SKILL_PATH] : LOAD_SET_SEEDS;
+  const set = new Set(seeds);
+  for (const seed of seeds) {
     if (existsSync(resolve(skillRoot, seed))) continue;
     throw new Error(`load-set seed missing from the built skill at ${skillRoot}: ${seed}`);
   }
-  const pending = [...LOAD_SET_SEEDS];
+  const pending = [...seeds];
   while (pending.length > 0) {
     const current = pending.shift();
     const body = readFileSync(resolve(skillRoot, current), 'utf8');
@@ -264,8 +291,14 @@ export function buildPortableSkill(outputRoot) {
 // so a mismatch can name which one moved before naming the files.
 export function scenarioBuildIdentity(scenario, skillRoot) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const skill = hashFiles(deriveLoadSet(skillRoot), skillRoot);
-  const instrument = hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
+  const setup = applyScenarioSkillOverlay(scenario, skillRoot);
+  const skill = hashFiles(deriveLoadSet(skillRoot, setup.iterateEcho), skillRoot);
+  const instrument = hashFiles(
+    setup.iterateEcho
+      ? [...INSTRUMENT_FILES, ...CONFIGURED_REVIEWER_INSTRUMENT_FILES]
+      : INSTRUMENT_FILES,
+    REPOSITORY_ROOT,
+  );
   const scenarioInputs = hashFiles(
     [
       resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`),

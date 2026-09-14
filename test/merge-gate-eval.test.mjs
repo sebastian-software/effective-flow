@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -94,6 +94,7 @@ const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-r
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
 const SCENARIOS = [
+  'configured-reviewer-set-aside-blocks',
   'guard-blocks-merge',
   'merge-proceeds',
   'linked-issue-open-points',
@@ -252,6 +253,8 @@ function archivedRuns(scenario) {
       path: join(dir, name),
       stampName: name.replace(/\.jsonl$/, '.build.json'),
       stampPath: join(dir, name.replace(/\.jsonl$/, '.build.json')),
+      iterateName: name.replace(/\.jsonl$/, '.iterate.jsonl'),
+      iteratePath: join(dir, name.replace(/\.jsonl$/, '.iterate.jsonl')),
     }));
 }
 
@@ -467,8 +470,42 @@ function currentIdentity(scenario) {
     process.on('exit', () => rmSync(outputRoot, { recursive: true, force: true }));
     builtSkillRoot = buildPortableSkill(outputRoot);
   }
-  return scenarioBuildIdentity(scenario, builtSkillRoot);
+  // A configured scenario replaces `tools/iterate.md`. Copy the pristine build before applying a
+  // scenario overlay, so asking for that identity cannot leak the echo into a later production
+  // scenario's identity merely because this test caches one build.
+  const scenarioRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-identity-'));
+  const scenarioSkillRoot = resolve(scenarioRoot, 'skill');
+  try {
+    cpSync(builtSkillRoot, scenarioSkillRoot, { recursive: true });
+    return scenarioBuildIdentity(scenario, scenarioSkillRoot);
+  } finally {
+    rmSync(scenarioRoot, { recursive: true, force: true });
+  }
 }
+
+test('the configured scenario identity replaces production iterate without double-counting it', () => {
+  const production = currentIdentity('guard-blocks-merge');
+  const configured = currentIdentity('configured-reviewer-set-aside-blocks');
+  assert.notEqual(
+    configured.skill.files['tools/iterate.md'],
+    production.skill.files['tools/iterate.md'],
+    'the configured scenario still hashes production iterate at the executed tool path',
+  );
+  assert.ok(
+    Object.hasOwn(configured.skill.files, 'scripts/iterate-trace.mjs'),
+    'the configured scenario does not hash the trace helper its echo executes',
+  );
+  assert.ok(
+    !Object.hasOwn(production.skill.files, 'scripts/iterate-trace.mjs'),
+    'an existing scenario identity acquired the configured-reviewer trace helper',
+  );
+  for (const sourceName of ['iterate-echo.md', 'iterate-trace.mjs']) {
+    assert.ok(
+      !Object.keys(configured.instrument.files).some((name) => name.endsWith(sourceName)),
+      `${sourceName} is hashed as both executed skill content and harness instrumentation`,
+    );
+  }
+});
 
 for (const scenario of SCENARIOS) {
   const runs = archivedRuns(scenario);
@@ -530,6 +567,87 @@ for (const scenario of SCENARIOS) {
     },
   );
 }
+
+const CONFIGURED_REVIEWER_SCENARIO = 'configured-reviewer-set-aside-blocks';
+const configuredReviewerRuns = archivedRuns(CONFIGURED_REVIEWER_SCENARIO);
+const configuredReviewerSkip = skipWithoutRuns(
+  CONFIGURED_REVIEWER_SCENARIO,
+  configuredReviewerRuns,
+);
+
+function readIterateTrace(run) {
+  assert.ok(
+    existsSync(run.iteratePath),
+    `${run.name} has no paired iterate trace at ${run.iterateName}; a call log cannot prove Phase 3 delegated or validate the returned identifiers`,
+  );
+  const lines = readFileSync(run.iteratePath, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+  assert.equal(
+    lines.length,
+    1,
+    `${run.name}: Phase 3 invoked the iterate echo ${lines.length} times`,
+  );
+  return JSON.parse(lines[0]);
+}
+
+test(
+  `${CONFIGURED_REVIEWER_SCENARIO}: every archived run delegates two attributed items exactly once`,
+  { skip: configuredReviewerSkip },
+  () => {
+    for (const run of configuredReviewerRuns) {
+      const trace = readIterateTrace(run);
+      assert.equal(trace.schema, 'effective-flow/merge-gate-iterate-echo/v1');
+      assert.equal(trace.seq, 1);
+      assert.equal(trace.pullRequest, 42);
+      assert.equal(trace.itemFilter, 'threads=PRRT_kwDOconfiguredReviewer');
+      assert.deepEqual(trace.controls, {
+        summaryComment: 'suppressed',
+        nextSteps: 'suppressed',
+        reviewGuard: 'established',
+      });
+      assert.equal(trace.body.spans, 1);
+      assert.match(trace.body.digest, /^sha256:[0-9a-f]{64}$/);
+      assert.deepEqual(
+        trace.items.map((item) => item.kind),
+        ['thread', 'review-body'],
+      );
+      assert.equal(trace.items[0].threadId, 'PRRT_kwDOconfiguredReviewer');
+      assert.equal(trace.items[1].reviewId, '700002');
+      assert.equal(trace.items[1].author, 'recensor[bot]');
+      assert.equal(new Set(trace.items.map((item) => item.identifier)).size, 2);
+      assert.deepEqual(
+        trace.outcomes,
+        trace.items.map(({ identifier }) => ({ identifier, outcome: 'deferred' })),
+        `${run.name}: the echo did not return exactly one deferred outcome under each caller-minted key`,
+      );
+      const expectedRoot = normalizePath(sandboxPaths(CONFIGURED_REVIEWER_SCENARIO).projectRoot);
+      assert.equal(normalizePath(trace.cwd), expectedRoot);
+    }
+  },
+);
+
+test(
+  `${CONFIGURED_REVIEWER_SCENARIO}: every archived run reaches Phase 4 and blocks without merging`,
+  { skip: configuredReviewerSkip },
+  () => {
+    for (const run of configuredReviewerRuns) {
+      const records = readRun(run);
+      assert.deepEqual(
+        records.filter((record) => record.operation === 'pr-merge'),
+        [],
+        `${run.name}: the gate requested a merge after both reviewer findings came back deferred and no interactive set-aside confirmation was available`,
+      );
+      for (const surface of GUARD_SURFACES) {
+        const reads = records.filter((record) => record.operation === surface).length;
+        assert.ok(
+          reads >= 2,
+          `${run.name}: ${surface} appears ${reads} time(s); the configured-reviewer run did not perform the fresh Phase-4 read after its echo return`,
+        );
+      }
+    }
+  },
+);
 
 const guardRuns = archivedRuns('guard-blocks-merge');
 const guardSkip = skipWithoutRuns('guard-blocks-merge', guardRuns);
