@@ -83,7 +83,7 @@ Create the per-finding tasks as in local mode; the finding ID is the `R-XXXXXXX`
 
 ### Phase 2 remote: Commit and PR strategy
 
-In remote mode the commit/PR strategy is by default **"one PR per finding"** — the local commit-strategy question is omitted. Every implementable finding without a target PR is its **own component** in its own delivery branch, preferably with worktree isolation. Base branch and branch naming rely on the `delivery` config block: branch `<delivery.branchPrefix>/apply-review/<R-ID-or-slug>` off `delivery.baseBranch` (legacy fallback: old `worktree.baseBranch`/`worktree.branchPrefix` values). File-overlapping findings run sequentially to avoid working-tree conflicts.
+In remote mode the commit/PR strategy is by default **"one PR per finding"** — the local commit-strategy question is omitted. Every implementable finding without a target PR is its **own component** in its own delivery branch, preferably with worktree isolation. Base branch and branch naming rely on the `delivery` config block: branch `<delivery.branchPrefix>/apply-review/<R-ID-or-slug>` off `delivery.baseBranch`. File-overlapping findings run sequentially to avoid working-tree conflicts.
 
 If a finding has a target PR from Phase 1 remote, **"new commit on existing PR"** applies instead:
 

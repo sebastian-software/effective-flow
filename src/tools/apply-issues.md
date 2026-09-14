@@ -276,7 +276,7 @@ options:
 
 ### Phase 4: Routing & delegation
 
-The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `{{SKILL:apply-review}}` (Phase 4 remote): branch off the base branch from the `delivery` config block (legacy fallback: old `worktree.baseBranch`/`worktree.branchPrefix` values), one PR via `{{SKILL:pr}}`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
+The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `{{SKILL:apply-review}}` (Phase 4 remote): branch off the base branch from the `delivery` config block, one PR via `{{SKILL:pr}}`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
 
 Every worktree this workflow creates carries the lifecycle contract below. It is embedded here
 rather than referenced through `{{SKILL:apply-review}}`: a reference by analogy is not a contract,

@@ -80,6 +80,14 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 
 If the project has an `AGENTS.md`, read it before investigation and fix and follow its guidance for analysis, implementation, tests, validation and commits.
 
+## Configuration preflight
+
+Before Phase 1, unconditionally perform this run's first Effective Flow configuration read. Apply
+the loaded retired-key contract over every successor this workflow can resolve:
+`delivery.baseBranch`, `delivery.branchPrefix`, and `delivery.completion`. Complete its stop or
+report decision before any delegation or write. This preflight does not replace or move any later
+purpose-specific configuration read; perform each one at its documented workflow point.
+
 ```include
 completion-protocol
 ```

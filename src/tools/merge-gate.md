@@ -604,10 +604,9 @@ building block. A missing line means the default.
   degrades to `off` in a **non-interactive delegated** run, where Phase 2 states the degradation and
   the report it produces. That degradation mirrors how `mergeGate.completion` degrades; the
   per-round cadence deliberately does **not** mirror that key's once-per-run entry gate.
-- **`mergeGate.conflictResolution` has no `prReview.*` predecessor.** The per-key legacy fallback
-  below therefore finds nothing for it: a project that configured the old namespace and nothing since
-  gets the default `auto`, which is a behavior change on upgrade; `off` restores the previous
-  behavior exactly.
+- **No earlier generation wrote a `prReview.conflictResolution` row.** One that exists anyway is retired
+  like any other `prReview.<key>` row, with successor `mergeGate.conflictResolution`. Without one, a project
+  whose old namespace `{{SKILL:setup}}` migrates gets the default `auto`, a behavior change on upgrade; `off` restores the previous behavior exactly.
 - **An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to the documented
   default `auto`.** The loaded configuration building block says to continue with a safe default and
   to report the affected key. For every other key this gate reads, that safe default and the
@@ -639,12 +638,9 @@ building block. A missing line means the default.
   that introduced the check-based signal: it found nothing, therefore opened no thread, and its
   frozen summary edit was its whole output for that head.
 
-- The legacy `prReview.*` names are still read, and this workflow resolves them itself: take
-  `mergeGate.<key>` wherever its line is present, and only where that line is absent read
-  `prReview.<key>` and use its value. Precedence is per key – a present `mergeGate.<key>` always
-  wins over a present `prReview.<key>`, and the two namespaces are never merged at a coarser grain
-  than the individual key. Report **once per run** that the legacy namespace was read. Reading is
-  all of it: this workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
+- The former `prReview.*` names are retired and never read: the loaded retired-key rule decides at
+  this run's first configuration read, before any wait, delegation or write, whether a row stops it.
+  This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
 - **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
@@ -676,8 +672,8 @@ writes only a top-level or sticky summary can therefore remain undiscovered. Tha
 cost of not inventing future merge policy from ambiguous evidence.
 
 Classify each candidate against the **effective** configuration already resolved for this run. Reuse
-"Matching a configured login" in full, including its bot-typed one-suffix rule, the per-key legacy
-`prReview.*` fallback, and collapsed duplicate entries; create no second login normalizer.
+"Matching a configured login" in full, including its bot-typed one-suffix rule and collapsed
+duplicate entries, and never a retired `prReview.*` row; create no second login normalizer.
 
 1. **No effective reviewer login:** record `missing reviewer`. The advisory may recommend adding the
    observed login to `mergeGate.bots`, plus an optional distinctive trigger when that reviewer
@@ -687,8 +683,7 @@ Classify each candidate against the **effective** configuration already resolved
    `.check` value. A conflicting collapsed `.check` pair supplies no effective value and stays on
    this branch; the existing collapse report remains the authoritative account of the conflict.
 3. **Effective reviewer login and effective `.check`:** record nothing. That reviewer is already
-   fully represented, whether the value came from current rows, the legacy fallback, or a collapsed
-   entry.
+   fully represented, whether the value came from a current row or a collapsed entry.
 
 De-duplicate candidates across reads and surfaces by the same bot-typed one-suffix equivalence. Keep
 the first observed login for a `missing reviewer` display and the configured spelling for a `missing

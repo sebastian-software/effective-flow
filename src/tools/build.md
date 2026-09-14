@@ -67,6 +67,14 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance for planning, implementation, review, tests, docs and commits.
 
+## Configuration preflight
+
+Before Phase 0, unconditionally perform this run's first Effective Flow configuration read. Apply
+the loaded retired-key contract over every successor this workflow can resolve:
+`delivery.baseBranch`, `delivery.branchPrefix`, and `delivery.completion`. Complete its stop or
+report decision before any delegation or write. This preflight does not replace or move any later
+purpose-specific configuration read; perform each one at its documented workflow point.
+
 ```include
 plan-status
 ```

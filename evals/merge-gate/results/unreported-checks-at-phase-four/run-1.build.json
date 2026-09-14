@@ -1,12 +1,12 @@
 {
   "scenario": "unreported-checks-at-phase-four",
-  "digest": "sha256:a1614999e25ffd3723a1db4b6f0aabb97fee9c25bc66784ac82b87d725f720d3",
+  "digest": "sha256:943c9c2ab63ddf188af6f32bd96d08af189e4b499b925624c31da9e647a93925",
   "skill": {
-    "digest": "sha256:9c7c2feabde8ca2cbb8f7bf9539c596a2a3b813c53c1f4604608b7bc9031dc5d",
+    "digest": "sha256:74d43ebd809aa0d48efa517676ef1eb04f78560123b424628baf3bfd92eacac1",
     "files": {
       "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
-      "shared/config-migration-edge-cases.md": "sha256:de626e5d9cdbf8c5458d4276460e2890cf9ae734b401dc4a5606a9aa495d0344",
-      "shared/config-migration.md": "sha256:d275036ec9012ee3740fb70cdc4df7be5432e0ef44a527efd60d09d0b3c70702",
+      "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
+      "shared/config-migration.md": "sha256:fe6944a9a6b8230fd658593cc95f3f6fbe30ec5c544bc69c30b1de648084ebf2",
       "shared/effective-flow-dir-migration.md": "sha256:331328198efd38ad4541449aec9e346ad4ab673cc1c15657915f9912d92952c0",
       "shared/issue-post-merge-observation.md": "sha256:53b300a64c629366c3b2404627eef215b7977ea1200498c9492546d4517fa06f",
       "shared/issue-tracker-forge.md": "sha256:1fe23582e3bd10190ff6152fdecf2211350f7bc07557eaa1b1c30a1c764317f7",
@@ -23,9 +23,9 @@
       "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
       "shared/tracker-target.md": "sha256:4164086fbc2e6562c52d2da4fdfd8bf7a4b1982aeb0eaa548c24c811a700dd99",
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
-      "shared/worktree-integration.md": "sha256:acd68abc4aacb0c332cba8ea6f80a9745b123b731fd6b67e11165c0fd927e4b2",
-      "tools/iterate.md": "sha256:3da78e2bbdc0575dbc09ab5a6b7ee4ee719142eb847bfd568fbb31ab958ee8b3",
-      "tools/merge-gate.md": "sha256:469e1ac8888ecc47579cad32de1d5c3c3ea2e51d83c072df08df20a08b29ac2b",
+      "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
+      "tools/iterate.md": "sha256:45ab1f124b53ac8b27fedd1aa9da100c46d5295d55be2f9386be89fe0008dbeb",
+      "tools/merge-gate.md": "sha256:dcb9bff7758af86fa2a5c01980a3b3f3576b8de221407d08ed9cdae5743e7931",
       "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
       "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
     }

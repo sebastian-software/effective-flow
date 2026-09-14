@@ -33,14 +33,14 @@ first matching step wins:
    deferred building block's.
 4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-The deterministic read path of any tool is non-blocking: It reads the ADR (or
-the transitional fallback), but itself creates no file and mutates no Git. Creating
-the ADR, the markers and the migration happen exclusively in the Git-touching path of
-{{SKILL:setup}}.
+The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
+transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
+the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
+in the Git-touching path of {{SKILL:setup}}.
 
 ```lazy-include
 config-migration-edge-cases
-when: the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`
+when: the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present
 ```
 
 ### Table encoding (binding for writers and readers)
@@ -70,6 +70,9 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
+  whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
+  to the safe-default rule below, under the deferred building block's retired-key contract.
 - **`tracker.externalStartedState`** and **`tracker.externalDoneState`** → nullable state IDs read
   only by a `tracker.mode: external` run; their per-key notes are the deferred building block's.
 
