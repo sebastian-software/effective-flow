@@ -2160,7 +2160,10 @@ test('local and forge profile preflights fail closed instead of guessing a deliv
   assert.match(prose(local), /Never persist a commit SHA as a base/);
 
   assert.match(forge, /origin.*GitHub or Forgejo.*authenticated matching CLI/s);
-  assert.match(prose(forge), /read-only `repository-resolve` operation/);
+  // `repository-resolve` returns before the provider probe, so it cannot establish the required
+  // CLI presence or authentication. The profile must invoke the operation that performs both.
+  assert.match(prose(forge), /read-only `probe` operation/);
+  assert.doesNotMatch(prose(forge), /Invoke[^.]*`repository-resolve` operation/);
   assert.match(
     prose(forge),
     /`origin\/HEAD`, falling back to `origin\/main` only when that symbolic ref is absent/,

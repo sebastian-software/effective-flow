@@ -95,11 +95,12 @@ Git isolation, not forge usage.
 ### Forge preflight shared by both forge-backed profiles
 
 Require an `origin` URL that names a repository on GitHub or Forgejo, an authenticated matching CLI,
-and a repository-derived base. Invoke the shipped remote helper's read-only `repository-resolve`
-operation so its exact host classification and authentication behavior remain authoritative. Derive
-`delivery.baseBranch` from the branch named by `origin/HEAD`, falling back to `origin/main` only when
-that symbolic ref is absent, and verify the resulting remote ref. Record the provider and base as
-preview evidence.
+and a repository-derived base. Invoke the shipped remote helper's read-only `probe` operation so its
+exact host classification, CLI presence, and authentication behavior remain authoritative. Treat
+`data.repository` from the successful probe envelope as the resolved provider and repository
+evidence for this preflight. Derive `delivery.baseBranch` from the branch named by `origin/HEAD`,
+falling back to `origin/main` only when that symbolic ref is absent, and verify the resulting remote
+ref. Record the provider and base as preview evidence.
 
 When the helper classifies the origin without an override, set
 `tracker.remoteToolOverride = auto`. On an ambiguous or custom host, reuse a valid recorded
