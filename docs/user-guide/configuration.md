@@ -410,10 +410,14 @@ run knows about is only reported. The repair is one step: run
 [`/effective-flow setup`](./tools-setup.md), which rewrites resolvable rows in place. For login-keyed
 rows, setup carries and removes a retired row only when it can establish its reviewer destination
 or that destination already exists. An unmatched login is reported and retained without creating a
-reviewer. If equivalent retired login spellings collapse onto one destination but hold conflicting
-values, setup reports the conflict and retains those rows rather than choosing a value. An existing
-resolved `mergeGate.*` successor wins; setup names the shadowed retired raw value before removing
-that source row. No other tool writes configuration.
+reviewer. Equal values from equivalent retired login spellings are deduplicated. If unequal raw
+values collapse onto one destination and no current successor exists in the source configuration, setup reports a `Bot conflict`
+and asks you to choose the first value, the second value, or a replacement raw value. A completed
+choice establishes one current successor under the surviving configured spelling and removes all
+contributing retired rows only during the normal confirmed write. If the choice cannot complete,
+setup stops with manual-repair and rerun instructions and does not claim completion. An existing
+resolved `mergeGate.*` successor still wins without prompting; setup names the shadowed retired raw
+values before removing those source rows. No other tool writes configuration.
 `delivery.prReview` is not a `prReview.*` row and is unaffected.
 
 The merge method itself is a delivery property, not a gate property, and lives under

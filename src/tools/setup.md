@@ -589,10 +589,10 @@ login" rule **before** the two follow-up questions above, on the Express path as
 one:
 
 - **Collapse first, then ask.** Group the recorded logins into reviewers under that rule and ask
-  `.trigger` and `.check` once per reviewer. Asking once per login asks one reviewer's question
-  twice, and two different answers to it write exactly the conflict that rule refuses to resolve by
-  guessing — one this skill, as the only writer of the configuration, would leave nothing able to
-  repair.
+  `.trigger` and `.check` once per reviewer, except for a destination key whose retired sources
+  conflict and whose source configuration has no current successor: `Bot conflict` is that key's
+  sole answer, and the ordinary follow-up is not posed. Asking once per login would ask one
+  reviewer's question twice and write a conflict only this configuration writer can repair.
 - **Keep one entry.** The rule keeps the first of the collapsing logins as the reviewer's key, so
   record the chosen values under that spelling and drop the other entry's `mergeGate.bots` member and
   its `.trigger`/`.check` rows.
@@ -602,7 +602,7 @@ one:
   key set on only one of the two is no disagreement: it is simply the reviewer's value.
 
 ```ask
-when: two collapsing `mergeGate.bots` entries carry different recorded values for the same key
+when: two collapsing current `mergeGate.bots` entries, or two retired login-keyed sources with no resolved current successor, carry different recorded values for the same key
 header: Bot conflict
 question: These two entries are one reviewer and recorded different values for this key. Which value should the single entry keep?
 options:
@@ -981,8 +981,8 @@ recorded these retired rows, rewrite them **in place** in this same confirmed Ex
   `delivery.baseBranch`, `worktree.branchPrefix` → `delivery.branchPrefix`, `worktree.completion` →
   `delivery.completion`, value verbatim, under the same removal and shadowed-key rules below.
   `worktree.enabled`, `worktree.setup` and `worktree.baseDir` are current keys and stay.
-- **Remove only retired rows with a reachable destination established or shadowed.** Explicit
-  exceptions: unmatched login rows are retained; conflicting login rows are retained.
+- **Remove only retired rows with a reachable destination established or shadowed.** Unmatched login rows are a retained explicit exception.
+  A conflicting retired login row becomes removable only after the `Bot conflict` choice selects its destination value and the normal confirmation produces the confirmed write.
 - **Report a shadowed key, do not merge it.** If a successor row and its retired row are both
   present with different values, keep the successor's value, name the discarded retired value
   explicitly, and never combine the two into one setting.

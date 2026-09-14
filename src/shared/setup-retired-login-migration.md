@@ -20,7 +20,24 @@ established, shadowed, or removed.
 Report and retain an unmatched retired login row whose login matches no reviewer in the effective
 `mergeGate.bots` list; neither synthesize a reviewer nor remove the source row. When equivalent
 retired spellings converge on one destination, equal recorded values deduplicate and write the value
-once. Different recorded values are a configuration conflict: report and retain every source row,
-and never guess, pick, or combine a value. When an existing resolved successor is present, the
-successor wins; explicitly report the losing retired value and its raw bytes as shadowed before the
-confirmed write removes that source row.
+once. Different recorded values are a configuration conflict. An existing resolved successor in
+the source configuration wins without prompting; explicitly report every losing retired
+value and its raw bytes as shadowed before the confirmed write removes those source rows. Never
+treat a value gathered by an ordinary follow-up during this run as that existing successor.
+
+When no resolved current successor exists in the source configuration, report each conflicting
+retired row and its raw value, then use setup's existing `Bot conflict` decision as the sole answer
+for that destination key; do not pose the ordinary reviewer follow-up for it. Preserve the first
+value, second value, or free-text replacement exactly as the selected raw value. That choice establishes exactly one
+reachable `mergeGate.bots.<surviving-login>.trigger` successor or exactly one reachable
+`mergeGate.bots.<surviving-login>.check` successor, as applicable. Include that successor and every
+contributing retired source row in the before/after list, and remove those source rows only after the
+selected raw value and removals receive the normal confirmation and confirmed write. Never resolve
+the conflict silently, guess, or combine values.
+
+If setup cannot pose or complete the choice, cannot obtain an answer, or runs non-interactively,
+stop with explicit manual repair instructions and do not claim setup completed successfully. Name
+the conflicting retired rows and tell the operator to set exactly one current successor, remove the
+retired sources, and rerun {{SKILL:setup}}. Leave every source row unchanged until either that manual
+repair or a completed `Bot conflict` decision followed by normal confirmation establishes the
+destination.

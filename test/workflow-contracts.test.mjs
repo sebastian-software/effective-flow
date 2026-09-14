@@ -6821,8 +6821,8 @@ test('setup handles every resolved and unresolved retired login-row outcome with
   );
   assert.match(
     migration,
-    near('(?:configuration )?conflict', 'never (?:guess|pick|combine)', 300),
-    'a collapsed-value conflict must never be guessed or combined',
+    near('(?:configuration )?conflict', '(?:never|not)[^.]{0,100}(?:silent|guess|combine)', 300),
+    'a collapsed-value conflict must never be resolved silently or combined',
   );
   assert.match(
     migration,
@@ -6837,6 +6837,91 @@ test('setup handles every resolved and unresolved retired login-row outcome with
       350,
     ),
     'the losing retired value must be named explicitly as shadowed',
+  );
+});
+
+test('setup resolves conflicting retired login values through the existing Bot conflict decision', () => {
+  const setup = source('src/tools/setup.md');
+  const migration = setupLoginKeyedMigration();
+  const botConflict = setup.match(/```ask\n([\s\S]*?^header: Bot conflict$[\s\S]*?)```/m);
+
+  assert.ok(botConflict, 'setup must retain the existing Bot conflict decision');
+  assert.match(
+    botConflict[1],
+    /retired login-keyed sources with no resolved current successor/i,
+    'the Bot conflict fence must explicitly cover conflicting retired sources without a successor',
+  );
+  for (const option of ['First value', 'Second value', 'Neither']) {
+    assert.match(
+      botConflict[1],
+      new RegExp(`label: ${option}`),
+      `Bot conflict must retain ${option}`,
+    );
+  }
+  assert.match(
+    botConflict[1],
+    /capture the replacement as free text/i,
+    'the third choice must preserve the free-text replacement path',
+  );
+  assert.match(
+    migration,
+    near('different (?:recorded )?values?', '(?:existing )?`Bot conflict` decision', 700),
+    'retired-value conflicts must reuse the existing Bot conflict decision',
+  );
+  assert.match(
+    setup,
+    near(
+      "`Bot conflict` is that key's",
+      'sole answer[^.]{0,100}ordinary follow-up is not posed',
+      220,
+    ),
+    'a retired conflict must have one answer and skip the ordinary reviewer follow-up',
+  );
+  assert.match(
+    migration,
+    near('source configuration', 'Never treat a value gathered by an ordinary follow-up', 320),
+    'only a source-state successor may shadow retired rows',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:selected|chosen) raw value',
+      'exactly one reachable `mergeGate\\.bots\\.<surviving-login>\\.(?:trigger|check)` successor',
+      450,
+    ),
+    'the selected raw value must become exactly one reachable successor under the surviving login',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:selected|chosen) raw value',
+      'remove[^.]{0,180}(?:retired )?source rows?[^.]{0,180}(?:confirmed write|confirmation)',
+      550,
+    ),
+    'the conflicting retired sources must be removed only after selection and confirmation',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:cannot|unable to)[^.]{0,120}(?:complete|obtain|pose|resolve)[^.]{0,80}(?:choice|decision|answer)',
+      '(?:stop|end)[^.]{0,160}manual repair',
+      450,
+    ),
+    'a conflict whose choice cannot be completed must stop with manual-repair instructions',
+  );
+  assert.match(
+    migration,
+    near('manual repair', '(?:run|rerun)[^.]{0,80}(?:setup|\\{\\{SKILL:setup\\}\\})', 350),
+    'manual repair must tell the operator to run setup again after resolving the conflicting rows',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:cannot|unable to)[^.]{0,120}(?:complete|obtain|pose|resolve)[^.]{0,80}(?:choice|decision|answer)',
+      '(?:do not|never|must not)[^.]{0,100}(?:report|claim)[^.]{0,80}(?:success|complete)',
+      550,
+    ),
+    'an unresolved choice must never be reported as successful setup completion',
   );
 });
 
@@ -6867,8 +6952,8 @@ test('setup handles general retired-row removal only for established destination
   );
   assert.match(
     removal,
-    near('(?:explicit )?exception', 'conflict[^.]{0,100}retain', 240),
-    'conflicting login rows must be explicit retained exceptions to general removal',
+    near('conflict', '(?:Bot conflict|selected|chosen)[^.]{0,180}(?:confirmation|confirmed)', 320),
+    'conflicting login rows must become removable only through the confirmed Bot conflict decision',
   );
   assert.doesNotMatch(
     removal,
@@ -6898,8 +6983,8 @@ test('setup migration user guide documents removable and retained prReview rows'
   );
   assert.match(
     retiredGuide,
-    near('conflict', '(?:report|reported)[^.]{0,100}retain', 240),
-    'the guide must say that conflicting collapsed values retain their source rows',
+    near('conflict', '(?:choose|choice|select)[^.]{0,160}(?:one|single)[^.]{0,100}successor', 320),
+    'the guide must say that conflicting collapsed values are resolved to one successor by choice',
   );
   assert.doesNotMatch(
     retiredGuide,
