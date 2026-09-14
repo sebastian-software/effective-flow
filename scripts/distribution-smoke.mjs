@@ -572,6 +572,23 @@ function offlineSmoke() {
     }
     stageDelivery(delivery, 'sebastian-software/effective-flow', 'develop');
     assertDeliveryLayout(delivery, join(dist, 'portable', 'effective-flow'));
+    const deliveredReadme = readFileSync(join(delivery, 'README.md'), 'utf8');
+    if (!deliveredReadme.includes('oss.sebastian-software.com/main/app/assets/logo-software.svg')) {
+      fail('delivery dropped the public Sebastian logo from the generated README');
+    }
+    stageDelivery(delivery, 'sebastian-software/effective-flow', 'develop');
+    if (readFileSync(join(delivery, 'README.md'), 'utf8') !== deliveredReadme) {
+      fail('re-delivery changed the themed README');
+    }
+    for (const sourceOnly of [
+      'README.md.src',
+      'mdtheme.yaml',
+      'mise.toml',
+      '.github/workflows/readme.yml',
+    ]) {
+      if (existsSync(join(delivery, sourceOnly)))
+        fail(`delivery leaked source tooling: ${sourceOnly}`);
+    }
     assertStageDeliveryChecksTransformedDocs(dist, temp);
 
     const archive = join(temp, 'effective-flow-test.tar.gz');
