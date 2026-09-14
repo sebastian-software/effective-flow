@@ -6673,46 +6673,238 @@ test('the gate branches on three reviewer states and triggers only on "not start
   );
 });
 
-test('setup rewrites a legacy prReview.* block in place instead of leaving both standing', () => {
-  // Without the in-place rewrite a migrated project ends up with two adjacent blocks of
-  // plausible-looking configuration, one of them inert — the artifact a later maintainer edits
-  // without effect. Sliced to setup's own migration section so a sentence elsewhere in the file
-  // cannot satisfy these.
-  const migration = flat(
-    section(
-      source('src/tools/setup.md'),
-      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
-    ),
-  );
+function setupPrReviewMigration(setup = source('src/tools/setup.md')) {
+  return prose(section(setup, '#### Rewriting a legacy `prReview.*` merge-gate block in place'));
+}
+
+function setupLoginKeyedMigration() {
+  return prose(source('src/shared/setup-retired-login-migration.md'));
+}
+
+test('setup keeps the mechanical mapping only for ordinary non-login prReview rows', () => {
+  const setup = source('src/tools/setup.md');
+  const migration = setupPrReviewMigration(setup);
 
   assert.match(
     migration,
-    near('carry', '`mergeGate\\.', 300),
-    'every legacy row must be carried over to the identical trailing key under mergeGate',
+    near('ordinary non-login', '`prReview\\.completion` → `mergeGate\\.completion`', 240),
+    'an ordinary row must still map to the identical trailing mergeGate key',
   );
   assert.match(
     migration,
-    /(?:Remove the old rows|remove the legacy rows)/i,
-    'the old rows must be removed, not left beside the new ones',
-  );
-
-  // A shadowed key is reported rather than merged: merging two differing values into one setting
-  // would invent a configuration nobody chose.
-  assert.match(
-    migration,
-    near(
-      '(?:shadow|both present|both.{0,30}different values)',
-      '(?:do not merge|never combine|not merge)',
-      400,
-    ),
-    'a shadowed legacy key must be reported and never merged with its mergeGate counterpart',
+    near('ordinary non-login', 'preserv(?:e|ing) the recorded value verbatim', 300),
+    'the ordinary mapping must preserve its value rather than reinterpret it',
   );
 
   // The write authority boundary the migration rests on: only setup writes configuration.
   assert.match(
-    flat(source('src/tools/setup.md')),
+    prose(setup),
     near('only', 'writer of the configuration', 200),
     'setup must state that it is the only writer of the configuration',
+  );
+});
+
+test('setup lazily loads its retired-login migration contract and canonical reviewer rules', () => {
+  const setup = source('src/tools/setup.md');
+  const pointers = new Map(
+    [...setup.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  );
+  const when = pointers.get('setup-retired-login-migration');
+
+  assert.ok(when !== undefined, 'setup must ship its writer-only retired-login migration contract');
+  assert.notEqual(when, '', 'the retired-login migration include must remain circumstance-gated');
+  assert.match(when, /collaps/i, 'the pointer must fire for duplicate configured bot spellings');
+  assert.match(
+    when,
+    /(?:login-keyed[\s\S]*migration|migration[\s\S]*login-keyed|retired `prReview\.bots)/i,
+    'the pointer must also fire when retired login-keyed rows need destinations',
+  );
+
+  const contract = source('src/shared/setup-retired-login-migration.md');
+  const { eager } = collectIncludeNames(contract);
+  assert.ok(
+    eager.has('review-bot-state'),
+    'the setup-only fragment must load review-bot-state when its matching rules are needed',
+  );
+});
+
+test('setup resolves retired login-keyed destinations before shadow detection or removal', () => {
+  const setupMigration = setupPrReviewMigration();
+  const migration = setupLoginKeyedMigration();
+
+  // The detailed writer behavior has one setup-only home, but setup must explicitly enter it.
+  // Merely shipping the fragment through the build does not connect its rules to the only writer.
+  assert.match(
+    setupMigration,
+    near(
+      '`setup-retired-login-migration`',
+      '(?:follow|apply|invoke|use)[^.]{0,100}retired login',
+      300,
+    ),
+    'setup must invoke its setup-only fragment when it rewrites retired login-keyed rows',
+  );
+
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'current `mergeGate\\.bots`[^.]{0,100}wins', 300),
+    'the effective reviewer list must prefer the current list over the retired one',
+  );
+  assert.match(
+    migration,
+    near(
+      'retired `prReview\\.bots` list',
+      '(?:fallback|only when (?:the )?current `mergeGate\\.bots`[^.]{0,80}(?:is absent|does not exist))',
+      300,
+    ),
+    'the retired reviewer list may supply the effective list only when no current list exists',
+  );
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'before (?:shadow detection|detecting shadows)', 400),
+    'login-keyed destinations must be resolved before a row can be classified as shadowed',
+  );
+  assert.match(
+    migration,
+    near('effective `mergeGate\\.bots` list', 'before (?:source |retired-row )?removal', 400),
+    'login-keyed destinations must be resolved before any retired source row is removed',
+  );
+  assert.match(
+    migration,
+    near('exactly one trailing `\\[bot\\]`', 'surviving configured spelling', 300),
+    'a login destination must use the surviving configured spelling after one-suffix collapse',
+  );
+  assert.match(
+    migration,
+    near(
+      'exactly one trailing `\\[bot\\]`',
+      '(?:never|not) (?:strip|trim|remove)[^.]{0,80}(?:again|twice|repeatedly|more than once)',
+      300,
+    ),
+    'normalization must not erase two or more trailing [bot] suffixes',
+  );
+});
+
+test('setup handles every resolved and unresolved retired login-row outcome without invention', () => {
+  const migration = setupLoginKeyedMigration();
+
+  assert.match(
+    migration,
+    near(
+      '(?:unmatched retired login row|matches no (?:entry|reviewer) in the effective `mergeGate\\.bots` list)',
+      '(?:report[^.]{0,120}retain|retain[^.]{0,120}report)',
+      350,
+    ),
+    'an unmatched retired login row must be reported and retained',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:unmatched retired login row|matches no (?:entry|reviewer))',
+      '(?:neither|do not|never)[^.]{0,100}(?:synthesi[sz]e|invent)[^.]{0,100}(?:nor|or)[^.]{0,80}remov',
+      350,
+    ),
+    'an unmatched row must neither create a reviewer nor be removed',
+  );
+  assert.match(
+    migration,
+    near(
+      '(?:equal|same) (?:recorded )?values?',
+      '(?:de-?duplicate|deduplicate|write (?:the value )?once)',
+      300,
+    ),
+    'equal retired values collapsed onto one destination must deduplicate',
+  );
+  assert.match(
+    migration,
+    near('different (?:recorded )?values?', '(?:configuration )?conflict', 240),
+    'differing retired values collapsed onto one destination must be reported as a conflict',
+  );
+  assert.match(
+    migration,
+    near('(?:configuration )?conflict', 'never (?:guess|pick|combine)', 300),
+    'a collapsed-value conflict must never be guessed or combined',
+  );
+  assert.match(
+    migration,
+    near('existing resolved successor', '(?:successor )?wins', 200),
+    'an already configured destination must win over the retired row',
+  );
+  assert.match(
+    migration,
+    near(
+      'existing resolved successor',
+      '(?:explicitly )?(?:name|report)[^.]{0,100}retired value[^.]{0,60}shadow',
+      350,
+    ),
+    'the losing retired value must be named explicitly as shadowed',
+  );
+});
+
+test('setup handles general retired-row removal only for established destinations', () => {
+  const rawMigration = section(
+    source('src/tools/setup.md'),
+    '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+  );
+  const removal = prose(boundedSlice(rawMigration, '- **Remove', '\n- **Report a shadowed key'));
+
+  // This is intentionally pinned on the removal bullet itself. Retention language in an earlier
+  // login-specific bullet cannot qualify an unconditional "remove all old rows" instruction that
+  // follows it; both instructions would remain live and the write would be ambiguous.
+  assert.match(
+    removal,
+    near('remove only', '(?:reachable|resolved) destination', 220),
+    'the general removal rule must be limited to rows with a destination the migration resolved',
+  );
+  assert.match(
+    removal,
+    near('(?:reachable|resolved) destination', '(?:established|shadowed)', 220),
+    'the removal rule must name established and shadowed destinations as its removable cases',
+  );
+  assert.match(
+    removal,
+    near('(?:explicit )?exception', 'unmatched[^.]{0,100}retain', 240),
+    'unmatched login rows must be explicit retained exceptions to general removal',
+  );
+  assert.match(
+    removal,
+    near('(?:explicit )?exception', 'conflict[^.]{0,100}retain', 240),
+    'conflicting login rows must be explicit retained exceptions to general removal',
+  );
+  assert.doesNotMatch(
+    removal,
+    /Remove the old rows\. Do not leave both standing\./i,
+    'the stale unconditional removal sentence must not survive beside the exceptions',
+  );
+});
+
+test('setup migration user guide documents removable and retained prReview rows', () => {
+  const retiredGuide = prose(
+    boundedSlice(
+      source('docs/user-guide/configuration.md'),
+      '**Retired `prReview.*` keys.**',
+      '\nThe merge method itself',
+    ),
+  );
+
+  assert.match(
+    retiredGuide,
+    near('setup carries and removes', '(?:establish|resolv)[^.]{0,100}destination', 280),
+    'the guide must limit removal to login rows whose destination setup can resolve',
+  );
+  assert.match(
+    retiredGuide,
+    near('unmatched login', '(?:report|reported)[^.]{0,80}retain', 240),
+    'the guide must say that an unmatched login row is reported and retained',
+  );
+  assert.match(
+    retiredGuide,
+    near('conflict', '(?:report|reported)[^.]{0,100}retain', 240),
+    'the guide must say that conflicting collapsed values retain their source rows',
+  );
+  assert.doesNotMatch(
+    retiredGuide,
+    /setup[^.]{0,100}(?:rewrite|carr|remov)[^.]{0,80}(?:every|all) retired/i,
+    'the guide must not restore a generic claim that setup removes every retired row',
   );
 });
 

@@ -45,6 +45,11 @@ effective-flow-dir-migration
 when: the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker
 ```
 
+```lazy-include
+setup-retired-login-migration
+when: setup collapses configured bot spellings or migrates retired `prReview.bots.<login>.trigger` or `.check` rows
+```
+
 ```include
 adr-convention
 ```
@@ -965,21 +970,19 @@ blocks, and adds nothing to the ADR written in item 4.
 
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
-The merge-gate keys of block 9 were named `prReview.*` in an earlier generation, and three `delivery`
-keys were named `worktree.*`. Both spellings are retired. If Step 2 recorded such rows, rewrite them
-**in place** as part of this same confirmed write — on the Express path as well as the guided one:
+The merge-gate keys were formerly `prReview.*`, and three `delivery` keys were `worktree.*`. If Step 2
+recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write:
 
-- **Carry every legacy row over** to the identical trailing key under `mergeGate.`
-  (`prReview.completion` → `mergeGate.completion`, `prReview.bots.<login>.trigger` →
-  `mergeGate.bots.<login>.trigger`, and so on), preserving the recorded value verbatim. The values
-  are unchanged by the rename; only the namespace moves.
+- **Carry ordinary non-login rows mechanically:** `prReview.completion` → `mergeGate.completion`;
+  keep the identical trailing key and preserve the recorded value verbatim.
+- **Apply `setup-retired-login-migration`.** Follow it for every retired login `.trigger` or
+  `.check` row and all destination, removal, retention, deduplication, conflict, and shadow outcomes.
 - **Carry the three retired `worktree.*` rows over the same way:** `worktree.baseBranch` →
   `delivery.baseBranch`, `worktree.branchPrefix` → `delivery.branchPrefix`, `worktree.completion` →
   `delivery.completion`, value verbatim, under the same removal and shadowed-key rules below.
   `worktree.enabled`, `worktree.setup` and `worktree.baseDir` are current keys and stay.
-- **Remove the old rows.** Do not leave both standing. Nothing breaks if you do — the successor
-  wins and other runs only report the inert row — but plausible-looking configuration that is
-  inert is exactly the artifact a later maintainer edits without effect.
+- **Remove only retired rows with a reachable destination established or shadowed.** Explicit
+  exceptions: unmatched login rows are retained; conflicting login rows are retained.
 - **Report a shadowed key, do not merge it.** If a successor row and its retired row are both
   present with different values, keep the successor's value, name the discarded retired value
   explicitly, and never combine the two into one setting.

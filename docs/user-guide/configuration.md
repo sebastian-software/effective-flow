@@ -407,9 +407,13 @@ configuration read, before fetching, committing, pushing, or merging anything:
 
 A retired `prReview.bots.<login>.trigger` or `.check` row for a login that matches no reviewer the
 run knows about is only reported. The repair is one step: run
-[`/effective-flow setup`](./tools-setup.md), which rewrites the rows in place, carrying each value
-over verbatim, removing the old rows, and naming any legacy value it discarded because a
-`mergeGate.*` row already held a different one. No other tool writes configuration.
+[`/effective-flow setup`](./tools-setup.md), which rewrites resolvable rows in place. For login-keyed
+rows, setup carries and removes a retired row only when it can establish its reviewer destination
+or that destination already exists. An unmatched login is reported and retained without creating a
+reviewer. If equivalent retired login spellings collapse onto one destination but hold conflicting
+values, setup reports the conflict and retains those rows rather than choosing a value. An existing
+resolved `mergeGate.*` successor wins; setup names the shadowed retired raw value before removing
+that source row. No other tool writes configuration.
 `delivery.prReview` is not a `prReview.*` row and is unaffected.
 
 The merge method itself is a delivery property, not a gate property, and lives under
