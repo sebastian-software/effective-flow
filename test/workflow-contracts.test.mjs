@@ -2470,12 +2470,11 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
     },
     {
       // Presence is the decision, not a successfully parsed value. An empty or malformed authored
-      // row still needs the route that explains its safe default and reports what happened. Both
-      // namespaces stay in this trigger while the per-key legacy read remains supported.
+      // row still needs the route that explains its safe default and reports what happened. The
+      // retired namespace must not reopen this route.
       fragment: 'merge-gate-configured-reviewer',
-      trigger:
-        /(?=[\s\S]*`mergeGate\.bots` row)(?=[\s\S]*`prReview\.bots` row)(?=[\s\S]*(?:regardless|presence|contains))/i,
-      decision: 'presence of either the current or legacy configured-reviewer row',
+      trigger: /(?=[\s\S]*`mergeGate\.bots` row)(?=[\s\S]*(?:regardless|presence|contains))/i,
+      decision: 'presence of the current configured-reviewer row',
     },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
@@ -2556,6 +2555,25 @@ test('the configured-reviewer route stays reachable through exact retained workf
     ['src/tools/merge-gate.md'],
     "merge-gate must remain the configured-reviewer fragment's single consumer",
   );
+  const configuredReviewerPointer = [...gate.matchAll(LAZY_INCLUDE_RE)].find(
+    (match) => match[1].trim() === 'merge-gate-configured-reviewer',
+  );
+  assert.ok(configuredReviewerPointer, 'merge-gate must carry the configured-reviewer pointer');
+  assert.doesNotMatch(
+    configuredReviewerPointer[2] ?? '',
+    /prReview\./,
+    'the retired prReview namespace must not trigger the configured-reviewer route',
+  );
+  assert.match(
+    route,
+    /`mergeGate\.bots` is a flat comma list[\s\S]*A bot acknowledges with an emoji reaction[\s\S]*A bot edits one sticky comment in place/,
+    'the deferred fragment must retain the configured-reviewer configuration bodies',
+  );
+  assert.doesNotMatch(
+    gate,
+    /`mergeGate\.bots` is a flat comma list|A bot acknowledges with an emoji reaction|A bot edits one sticky comment in place/,
+    'configured-reviewer configuration bodies must live only in the deferred fragment',
+  );
   for (const heading of headings) {
     assert.equal(
       route.split('\n').filter((line) => line === heading).length,
@@ -2598,8 +2616,8 @@ test('the configured-reviewer route stays reachable through exact retained workf
     );
     assert.match(
       mergeCondition(conditions, number),
-      /when both reviewer rows are absent[\s\S]{0,160}(?:condition is satisfied|satisfies this condition)/i,
-      `condition ${number} must remain fail-closed but satisfiable without either reviewer row`,
+      /when the `mergeGate\.bots` row is absent[\s\S]{0,160}(?:condition is satisfied|satisfies this condition)/i,
+      `condition ${number} must remain fail-closed but satisfiable without the current reviewer row`,
     );
   }
   assert.match(

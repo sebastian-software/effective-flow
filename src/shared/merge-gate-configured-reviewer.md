@@ -1,10 +1,10 @@
 # Configured automatic-reviewer route
 
 This single-consumer fragment owns the route that exists only when the Effective Flow configuration
-contains a current `mergeGate.bots` row or the supported legacy `prReview.bots` row. Its consumer
-is `{{SKILL:merge-gate}}`. Read the exact section named by each shell in that tool when execution
-reaches the corresponding point. Row presence loads this fragment before parsing, so empty and
-unreadable present values retain their safe-default and reporting behavior.
+contains a `mergeGate.bots` row. Its consumer is `{{SKILL:merge-gate}}`. Read the exact section named
+by each shell in that tool when execution reaches the corresponding point. Row presence loads this
+fragment before parsing, so empty and unreadable present values retain their safe-default and
+reporting behavior.
 
 The always-loaded gate retains the configuration table and row-presence resolution, the empty-list
 Phase-3 skip, Phase-4 numbering and conditions 1–4, 6, 8, and 9, every run-wide receiver failure,

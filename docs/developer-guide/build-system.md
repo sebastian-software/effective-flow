@@ -131,13 +131,13 @@ every newly discovered name is queued, shipped, and revisited, with a `seen` set
 cycle the walk would otherwise not terminate on.
 
 `merge-gate-configured-reviewer` is a single-consumer, presence-gated example. `merge-gate`
-resolves whether the project setup contains the current `mergeGate.bots` row or the supported
-legacy `prReview.bots` row before it parses either value. A present row therefore loads the
-fragment even when its value is empty or unreadable; only the absence of both rows leaves it
-deferred. Extracting that route reduced the measured always-loaded `merge-gate` core from 2,737 to
-2,120 lines for Claude, from 2,725 to 2,114 for Codex, and from 2,728 to 2,117 for the portable
-target. Its context budget is now 2,127 lines. The configured-reviewer contract remains in one
-source fragment while the default, row-absent route no longer pays its context cost.
+resolves whether the project setup contains the `mergeGate.bots` row before it parses the value. A
+present row therefore loads the fragment even when its value is empty or unreadable; only the
+absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
+`merge-gate` core for Claude from 2,737 to 2,118 lines, for Codex from 2,725 to 2,112, and for the
+portable target from 2,728 to 2,115. Its context budget is now 2,125 lines. The configured-reviewer
+contract remains in one source fragment while the default, row-absent route no longer pays its
+context cost.
 
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly

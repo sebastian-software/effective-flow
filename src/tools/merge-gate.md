@@ -491,13 +491,13 @@ building block. A missing line means the default.
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
 | `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
 
-Resolve whether the configuration contains a `mergeGate.bots` row or, while the legacy read remains
-supported, a `prReview.bots` row before parsing its value. Row presence – including an empty or
-unreadable value – opens the configured-reviewer route; parsed non-emptiness does not.
+Resolve whether the configuration contains a `mergeGate.bots` row before parsing its value. Row
+presence – including an empty or unreadable value – opens the configured-reviewer route; parsed
+non-emptiness does not.
 
 ```lazy-include
 merge-gate-configured-reviewer
-when: the configuration contains a `mergeGate.bots` row or a `prReview.bots` row, regardless of whether its value parses or is non-empty
+when: the configuration contains a `mergeGate.bots` row, regardless of whether its value parses or is non-empty
 ```
 
 When that pointer loads, apply `## Configured reviewer configuration` in the fragment before using
@@ -522,31 +522,6 @@ any reviewer entry, trigger, or check value.
   documented default are the same value; for this one they are not, because an unparseable line must
   never authorize a commit and a push. Report the key as that rule requires and run the conflict
   branch as `off`.
-- `mergeGate.bots` is a flat comma list of reviewer logins; the trigger text and the check context of
-  each bot are their own dotted keys. A login containing brackets (`greptileai[bot]`) is a valid
-  middle segment, because the encoding splits on `.` only.
-- An empty `mergeGate.bots` list means no automatic reviewer is expected. The bot round is then
-  skipped instead of blocking the merge forever.
-- `mergeGate.bots.<login>.check` names the commit status or check run that reviewer publishes, for
-  example `recensor/review`. It is matched against the normalized `name` of an entry in
-  `pr-status-read`'s check list, per the loaded "Automatic reviewer state". Unset is the default and
-  selects that block's fallback signal, so a project that configures nothing keeps its previous
-  behavior exactly.
-
-  **A bot acknowledges with an emoji reaction instead of a comment; an acknowledgment is not a
-  check.** Greptile does both: the reaction is unreadable through the helper and proves nothing
-  about the review, while its `Greptile Review` check context makes the reviewer's state provable
-  before any output arrives. Do not read the reaction as evidence that a reviewer has no check to
-  configure.
-
-  **A bot edits one sticky comment in place.** Its `createdAt` never moves past `headCommittedAt`,
-  so on a head whose **only** output is that edit the fallback signal reports **not started** for a
-  reviewer that has in fact reviewed. Two things resolve that and the frozen timestamp is neither: a
-  configured `.check`, and the reviewer's own **submitted review** wherever it publishes one.
-  recensor edits its summary comment this way, and Greptile did exactly this on the pull request
-  that introduced the check-based signal: it found nothing, therefore opened no thread, and its
-  frozen summary edit was its whole output for that head.
-
 - The former `prReview.*` names are retired and never read: the loaded retired-key rule decides at
   this run's first configuration read, before any wait, delegation or write, whether a row stops it.
   This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
@@ -1097,7 +1072,7 @@ returning condition unbounded the day it is added.
    read;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
-5. when both reviewer rows are absent, the empty default means no configured reviewer and this
+5. when the `mergeGate.bots` row is absent, the empty default means no configured reviewer and this
    condition is satisfied. Otherwise apply `## Phase 4 condition 5: Configured reviewer has run` in
    the loaded `merge-gate-configured-reviewer` fragment;
 6. every bot thread **whose finding this run implemented** is answered and resolved – those are
@@ -1108,7 +1083,7 @@ returning condition unbounded the day it is added.
    left untouched. That scoping is deliberate, not an oversight – nothing in this workflow may write
    into such a thread any more (see "A deferred finding gets no thread reply"), so requiring an
    answer there would be a condition no run could ever satisfy;
-7. when both reviewer rows are absent, the empty default produces no configured-reviewer thread and
+7. when the `mergeGate.bots` row is absent, the empty default produces no configured-reviewer thread and
    this condition is satisfied. Otherwise apply
    `## Phase 4 condition 7: Configured reviewer threads are assessed` in the loaded
    `merge-gate-configured-reviewer` fragment;
@@ -1122,7 +1097,7 @@ returning condition unbounded the day it is added.
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
    here.
 
-10. when both reviewer rows are absent, the empty default produces no configured-reviewer verdict
+10. when the `mergeGate.bots` row is absent, the empty default produces no configured-reviewer verdict
     and this condition is satisfied. Otherwise apply
     `## Phase 4 condition 10: Configured reviewer verdicts are assessed` in the loaded
     `merge-gate-configured-reviewer` fragment.
