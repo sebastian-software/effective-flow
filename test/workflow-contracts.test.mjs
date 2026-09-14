@@ -2179,11 +2179,14 @@ test('the external profile alone captures reproducible connection context and ve
   const external = section(profiles, '### External-only integration interview', '\n## ');
   const contract = prose(external);
 
+  const pointerMatches = [...external.matchAll(LAZY_INCLUDE_RE)];
+  assert.equal(
+    pointerMatches.length,
+    1,
+    'the external profile must carry exactly one lazy-include pointer',
+  );
   const pointers = new Map(
-    [...external.matchAll(LAZY_INCLUDE_RE)].map((match) => [
-      match[1].trim(),
-      (match[2] ?? '').trim(),
-    ]),
+    pointerMatches.map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
   );
   assert.deepEqual([...pointers.keys()], ['tracker-target']);
   assert.match(
