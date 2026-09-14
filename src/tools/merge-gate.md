@@ -1833,11 +1833,12 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
      candidate under one setup route, list each reviewer once with its compact non-body evidence,
      and say whether its login is missing or only its `.check` is missing. For a missing login,
      advise adding that observed login; for a missing `.check`, preserve the configured login and
-     trigger and advise adding only the context. Then show `{{SKILL:setup}}` → Guided → Advanced
-     settings → Block 9 (`mergeGate`) → add or select the login in `mergeGate.bots` → preserve or
-     set a distinctive per-reviewer `.trigger` only when the reviewer supports one → set `.check`
-     only to the exact context manually confirmed in a pull request reviewed by that tool. Point to
-     this pull request's checks list when the record says one was reported, otherwise to a recent
+     trigger and advise adding only the context. Then show `{{SKILL:setup}} guided` → Advanced
+     settings → Block 9 (`mergeGate`) → add or select the login
+     in `mergeGate.bots` → preserve or set a distinctive per-reviewer `.trigger` only when the
+     reviewer supports one → set `.check` only to the exact context manually confirmed in a pull
+     request reviewed by that tool. Point to this pull request's checks list when the record says
+     one was reported, otherwise to a recent
      pull request reviewed by the tool; never invent a check name. State that setup is the sole ADR
      writer, `.check` stays unset only when the reviewer publishes none, and the advisory changed
      neither this gate result nor the pull request. With no retained candidate, emit nothing.

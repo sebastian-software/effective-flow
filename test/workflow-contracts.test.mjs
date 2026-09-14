@@ -20,6 +20,12 @@ function source(path) {
   return readFileSync(new URL(path, repositoryRoot), 'utf8');
 }
 
+function askContracts(text, context) {
+  return [...text.matchAll(/```ask\n([\s\S]*?)\n```/g)].map((match, index) =>
+    parseAskBlock(match[1], { context: `${context} ask ${index + 1}` }),
+  );
+}
+
 function ordered(text, ...fragments) {
   let position = -1;
   for (const fragment of fragments) {
@@ -1027,13 +1033,13 @@ test('setup offers the CLAUDE.md import behind one ask fence that writes only @A
   assert.match(contract, near('not part of the configuration', 'declares no key', 200));
 });
 
-test('the CLAUDE.md import fence is posed on both paths and an unposable run writes nothing', () => {
+test('the CLAUDE.md import fence is posed in every mode and an unposable run writes nothing', () => {
   const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
   const contract = prose(item);
   const ask = setupClaudeMdImportAsk(item);
 
   // The gate is the recorded file state, not the presentation path. A `when:` that named the
-  // wizard would let the Express path write a file into the project root unasked.
+  // mode would let another mode write a file into the project root unasked.
   assert.match(
     ask.when,
     /state recorded by item 5/,
@@ -1046,20 +1052,20 @@ test('the CLAUDE.md import fence is posed on both paths and an unposable run wri
   );
   assert.doesNotMatch(
     ask.when,
-    /guided|express|wizard/i,
-    'the fence condition must not gate on which path is running',
+    /profile|guided|express|wizard/i,
+    'the fence condition must not gate on which mode is running',
   );
 
   assert.match(contract, near('deliberately unconditional', 'rather than guided-path only', 160));
   assert.match(
     contract,
-    near('Express path poses it', 'exactly as the guided path does', 160),
-    'the Express path must pose the fence too',
+    /Profile, Express, and Guided all pose it/,
+    'the source must explicitly pose the fence in all three setup modes',
   );
   assert.doesNotMatch(
     contract,
     /Express path (?:skips|omits|never poses|does not pose)/i,
-    'nothing may restrict the fence to the guided path',
+    'nothing may restrict the fence to one setup mode',
   );
 
   // The half that makes it a gate rather than a prompt: no answer is not a quiet yes, and it is
@@ -1073,7 +1079,7 @@ test('the CLAUDE.md import fence is posed on both paths and an unposable run wri
     ),
     'a run that cannot pose the fence must write nothing and say so',
   );
-  assert.match(contract, /There is no silent default on either path/);
+  assert.match(contract, /There is no silent default in any mode/);
 });
 
 test('setup names every CLAUDE.md state the import offer can meet', () => {
@@ -2028,6 +2034,242 @@ test('every lazy-include fragment referenced by a tool or shared fragment has a 
       `a lazy include references ${name}, but src/shared/${name}.md does not exist`,
     );
   }
+});
+
+test('setup routes only the empty, profile, express, and guided invocations before mutation', () => {
+  const setup = source('src/tools/setup.md');
+  const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
+
+  assert.match(step0, /Trim surrounding whitespace and fold ASCII case only/);
+  assert.match(
+    prose(step0),
+    /`\{\{SKILL:setup\}\}` and `\{\{SKILL:setup\}\} profile` select Profile/,
+  );
+  assert.match(step0, /`\{\{SKILL:setup\}\} express` selects \*\*Express\*\*/);
+  assert.match(step0, /`\{\{SKILL:setup\}\} guided` selects \*\*Guided\*\*/);
+  assert.match(
+    prose(step0),
+    /An additional or unknown argument prints all four accepted forms above and stops without mutation/,
+  );
+  assert.match(step0, /Do not reinterpret it as free text and do not ask a setup-mode question/);
+  assert.match(prose(step0), /Express and Guided do not load it and proceed directly to Step 1/);
+
+  const pointers = new Map(
+    [...step0.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  );
+  assert.deepEqual([...pointers.keys()], ['setup-profiles']);
+  assert.match(
+    pointers.get('setup-profiles'),
+    /normalized invocation has no argument or its single argument is `profile`/,
+  );
+});
+
+test('Profile setup asks Chat then exactly three topology choices before later setup handling', () => {
+  const setup = source('src/tools/setup.md');
+  const profiles = source('src/shared/setup-profiles.md');
+  const asks = askContracts(profiles, 'src/shared/setup-profiles.md');
+
+  assert.equal(
+    asks.length,
+    2,
+    'the profile fragment must contain exactly the two common ask fences',
+  );
+  assert.equal(asks[0].header, 'Chat');
+  assert.deepEqual(
+    asks[0].options.map(({ label }) => label),
+    ['Mirror', 'English', 'German'],
+  );
+  assert.equal(asks[1].header, 'Profile');
+  assert.deepEqual(
+    asks[1].options.map(({ label }) => label),
+    ['Fully local', 'Forge + issues', 'External + forge'],
+  );
+  assert.doesNotMatch(
+    asks[1].options.map(({ label }) => label).join(' '),
+    /Express|Guided/,
+    'Express and Guided are explicit setup modes, not profile options',
+  );
+
+  ordered(profiles, 'header: Chat', 'header: Profile', '### Target construction and ownership');
+  assert.match(
+    prose(section(profiles, '### The two common questions', '\n### Target construction')),
+    /first two substantive configuration questions, before `.gitignore`, source, ADR-convention, non-Git, invalid-source, duplicate-ADR, and topology handling/,
+  );
+  assert.match(
+    prose(profiles),
+    /Do not guess either answer in a non-interactive run[\s\S]*stop without mutation/,
+  );
+  ordered(setup, '### Step 0: Resolve the setup mode', 'setup-profiles', '### Step 1:');
+  assert.match(
+    prose(boundedSlice(setup, '- **Profile:**', '### Step 4:')),
+    /A local or forge profile proceeds directly to Step 6; only External \+ forge may first ask the integration questions required by that fragment/,
+  );
+});
+
+test('profile overlays own only topology and override existing values without persisting identity', () => {
+  const profiles = source('src/shared/setup-profiles.md');
+  const target = boundedSlice(
+    profiles,
+    '### Target construction and ownership',
+    '### Fully local preflight',
+  );
+
+  assert.match(
+    prose(target),
+    /safe defaults → freshly read existing known and unknown values → selected topology overlay → chat choice/,
+  );
+  assert.match(target, /Preserve all unrelated known values and every unknown row byte-for-byte/);
+  assert.match(
+    prose(target),
+    /topology overlay intentionally wins over existing values only for the keys/,
+  );
+
+  assert.match(
+    tableRow(target, 'Fully local'),
+    /`tracker\.mode = local`.*`delivery\.completion = merge`.*current or retained valid local branch/,
+  );
+  assert.match(
+    tableRow(target, 'Forge + issues'),
+    /`tracker\.mode = remote`.*`delivery\.completion = pr`.*verified origin default.*`tracker\.remoteToolOverride = auto`/,
+  );
+  assert.match(
+    tableRow(target, 'External + forge'),
+    /forge delivery values above.*`tracker\.mode = external`.*verified external tool.*required started state.*optional done state/,
+  );
+  assert.match(target, /Do not write `setup\.profile`, `profile`, or any equivalent identity row/);
+  assert.match(
+    prose(target),
+    /Review depth, validation, worktree policy, branch prefix, `delivery\.prReview`, return branch, merge method, merge-gate policy, plan\/concept paths, skills, and artifact languages are not profile-owned/,
+  );
+});
+
+test('local and forge profile preflights fail closed instead of guessing a delivery base', () => {
+  const profiles = source('src/shared/setup-profiles.md');
+  const local = boundedSlice(profiles, '### Fully local preflight', '### Forge preflight');
+  const forge = boundedSlice(profiles, '### Forge preflight', '### External-only');
+
+  assert.match(local, /usable Git repository with a named, born local branch/);
+  assert.match(
+    prose(local),
+    /Use the current local branch for `delivery\.baseBranch` even when `origin` exists/,
+  );
+  assert.match(
+    prose(local),
+    /On an unborn branch, outside Git, or where no valid local branch can be proved, stop before the profile-dependent configuration write/,
+  );
+  assert.match(prose(local), /Never persist a commit SHA as a base/);
+
+  assert.match(forge, /origin.*GitHub or Forgejo.*authenticated matching CLI/s);
+  // `repository-resolve` returns before the provider probe, so it cannot establish the required
+  // CLI presence or authentication. The profile must invoke the operation that performs both.
+  assert.match(prose(forge), /read-only `probe` operation/);
+  assert.doesNotMatch(prose(forge), /Invoke[^.]*`repository-resolve` operation/);
+  assert.match(
+    prose(forge),
+    /`origin\/HEAD`, falling back to `origin\/main` only when that symbolic ref is absent/,
+  );
+  assert.match(
+    prose(forge),
+    /A missing origin, failed authentication, ambiguous provider, or unresolvable base never downgrades to Fully local and never guesses a provider or branch/,
+  );
+});
+
+test('the external profile alone captures reproducible connection context and verified states', () => {
+  const profiles = source('src/shared/setup-profiles.md');
+  const external = section(profiles, '### External-only integration interview', '\n## ');
+  const contract = prose(external);
+
+  const pointerMatches = [...external.matchAll(LAZY_INCLUDE_RE)];
+  assert.equal(
+    pointerMatches.length,
+    1,
+    'the external profile must carry exactly one lazy-include pointer',
+  );
+  const pointers = new Map(
+    pointerMatches.map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  );
+  assert.deepEqual([...pointers.keys()], ['tracker-target']);
+  assert.match(
+    pointers.get('tracker-target'),
+    /selected Profile is External \+ forge.*external integration interview begins/,
+  );
+  ordered(
+    external,
+    '```lazy-include\ntracker-target',
+    '3. From that tool and hint, discover read-only exactly one configured MCP connection',
+  );
+
+  assert.match(
+    contract,
+    /asks only for missing or changed external integration data.*Do not enter Guided's worktree, delivery, language, tracker-mode, or advanced questions/,
+  );
+  ordered(
+    external,
+    '1. Ask for `tracker.externalTool`',
+    '2. Ask for an optional `tracker.externalToolHint`',
+    '3. From that tool and hint, discover read-only exactly one configured MCP connection',
+    '4. When the explicit context selection was necessary for unique discovery',
+    '5. List writable native workflow states fresh in that exact context',
+    '6. From the same fresh list, validate or ask for an optional done state',
+  );
+  assert.match(contract, /empty or unanswered value stops without writing/);
+  assert.match(contract, /never inspect environment credentials, dotfiles, or shell history/);
+  assert.match(
+    contract,
+    /merge enough stable, non-secret workspace\/team\/project identity into the proposed `tracker\.externalToolHint` to make the same connection and context uniquely reselectable/,
+  );
+  assert.match(
+    contract,
+    /started state only by stable value, exact context, `started` category, writability, and a non-terminal flag/,
+  );
+  assert.match(
+    contract,
+    /optional done state using stable value, exact context, a normalized done category, writability, and a terminal flag/,
+  );
+  assert.match(contract, /`tracker\.externalDoneState = null`/);
+  assert.match(
+    contract,
+    /freshly replay the exact proposed tool\/hint, connection\/context, and every validity-affecting state property immediately before writing/,
+  );
+  assert.match(contract, /Drift invalidates the preview/);
+});
+
+test('all setup modes share the preview gate while Express and Guided retain their paths', () => {
+  const setup = source('src/tools/setup.md');
+  const modeEntry = boundedSlice(setup, '### Step 3: Enter the selected mode', '### Step 4:');
+  const write = boundedSlice(setup, '### Step 6: Merge and write', '### Step 7:');
+
+  assert.match(
+    prose(modeEntry),
+    /Express: Build the target configuration from the safe-defaults base.*Jump directly to Step 6/,
+  );
+  assert.match(modeEntry, /\*\*Guided:\*\* Continue with Step 4.*Step 5/s);
+  assert.match(prose(modeEntry), /Do not ask any Guided core or advanced question/);
+  assert.match(prose(write), /Express and Guided retain their existing merge order/);
+  assert.match(
+    prose(write),
+    /Before writing, show a before\/after list of all keys to be changed.*obtain one explicit confirmation/,
+  );
+  assert.match(write, /Profile selection is not write confirmation/);
+  assert.match(write, /unknown keys, are not lost/);
+
+  const externalRevalidation = boundedSlice(
+    write,
+    'For External + forge, after rebuilding and immediately before item 4',
+    'Before Step 4 in a migration case',
+  );
+  assert.match(
+    externalRevalidation,
+    /exact proposed `tracker\.externalTool` and `tracker\.externalToolHint`/,
+  );
+  assert.match(
+    prose(externalRevalidation),
+    /selected started\/done stable values plus their context, normalized category, terminal flag, and writability against the basis shown in the confirmed preview/,
+  );
+  assert.match(
+    prose(externalRevalidation),
+    /discard the confirmation and stop, or rebuild the complete before\/after preview and obtain a new confirmation before writing/,
+  );
 });
 
 // The check above is satisfied vacuously by a *deleted* pointer: a name nobody references is a
@@ -13089,8 +13331,7 @@ test('Phase 6 gives the complete setup route before the literal final next-step 
     '3. Emit the next-step block per `next-steps` as the last element of that chat report.',
   );
   for (const [claim, pattern] of [
-    ['the setup invocation', /`\{\{SKILL:setup\}\}`/],
-    ['Guided mode', /Guided/],
+    ['the explicit Guided setup invocation', /`\{\{SKILL:setup\}\} guided`/],
     ['Advanced settings', /Advanced settings/],
     ['Block 9', /Block 9 \(`mergeGate`\)/],
     ['the reviewer list', /`mergeGate\.bots`/],
