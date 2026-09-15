@@ -69,6 +69,11 @@ this repository's expectations and no sight of the scenario file's expected outc
 previous run left behind, so **run `prepare` once more after the last run** before asserting; that
 final call also re-scaffolds and reprints the prompt, which costs nothing.
 
+Every scenario prompt states the sandbox project twice: as the execution root and as the literal
+`cwd` field required in every helper request. The second form is deliberate. Merely running a shell
+from that directory does not populate the JSON contract, and a missing field makes the resulting
+record invalid even when the inherited process directory happened to be correct.
+
 ```sh
 node --test test/merge-gate-eval.test.mjs         # or just pnpm test
 ```

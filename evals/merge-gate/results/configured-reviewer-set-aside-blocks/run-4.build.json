@@ -1,10 +1,10 @@
 {
   "scenario": "configured-reviewer-set-aside-blocks",
-  "digest": "sha256:eaeaadbd5cb7884cabaec76d8b9563f92f6d249e4b16889e140965fbfb8c9a8b",
+  "digest": "sha256:8919dfa3eb1dc7e2373ce57ee41a97fad9c5687e124ced805a932127b40c276a",
   "skill": {
-    "digest": "sha256:2c82042856dd8b55ba8468d0abdb9467a851e40beb165d3e48e012479e9ac46f",
+    "digest": "sha256:c745dd77696e8acc0e7246e978e4bcb4ef3f7b052b60e06aaeacc56a53ca8818",
     "files": {
-      "SKILL.md": "sha256:ebc089822058fe52bf901f2e9b0320505bc835913174f4b936a8203fc1f64070",
+      "SKILL.md": "sha256:1c0b0c49473f385bda509a0226791a7e654c76d3a032942b8d3c6afb86c5c28c",
       "scripts/iterate-trace.mjs": "sha256:0bcf4c5f5c965f1fa46912d5ea943d423359edfb5d22d4a351c472437e2e8986",
       "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
       "shared/config-migration.md": "sha256:fe6944a9a6b8230fd658593cc95f3f6fbe30ec5c544bc69c30b1de648084ebf2",
@@ -25,7 +25,7 @@
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
       "tools/iterate.md": "sha256:2f8489d3e79073765958b92387223270c8b209ec6e32a71a4a40187546ee4967",
-      "tools/merge-gate.md": "sha256:4349c3c879b4c71149a857acab8746d4285eb0261d6b979b83d12906ae209dba",
+      "tools/merge-gate.md": "sha256:3c6bcd1ea48a5c2d8417c0e8f9d72a7b50efae385ee7658e11b857628603bd8d",
       "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
       "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
     }
@@ -41,10 +41,10 @@
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:bed5faf1df8bd8e5ae455c51d569de61ada7f4df37d796785e38f696912e43b6",
+    "digest": "sha256:97609376e3797c1aca908dc261f0743353539165a377e39ef24f88700413997a",
     "files": {
       "evals/merge-gate/fixtures/configured-reviewer-set-aside-blocks.json": "sha256:f73f9ac640127e3313bbe99b7d0c320064a4f2782542c7580889463d29df4c35",
-      "evals/merge-gate/scenarios/configured-reviewer-set-aside-blocks.md": "sha256:664b539ff2c7779e9cea538ab1ef28db1429a432a0585504663926ce096cb6f3"
+      "evals/merge-gate/scenarios/configured-reviewer-set-aside-blocks.md": "sha256:0a743539d706999c87d1349920e0cac3270fe44a8c540568ab72dabf084f806e"
     }
   }
 }

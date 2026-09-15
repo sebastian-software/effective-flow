@@ -52,6 +52,7 @@ const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
+const SCENARIO_DIR = resolve(SUITE_ROOT, 'scenarios');
 const STUB_PATH = resolve(SUITE_ROOT, '_scaffold', 'remote-tracker.mjs');
 const ITERATE_TRACE_PATH = resolve(SUITE_ROOT, '_scaffold', 'iterate-trace.mjs');
 
@@ -119,6 +120,24 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
       scenarioSetup(scenario),
       { projectSetupRows: [], iterateEcho: false },
       `${scenario}: an existing scenario no longer has the shared no-reviewer setup`,
+    );
+  }
+});
+
+test('every scenario prompt requires the runtime root in each helper request', () => {
+  for (const file of fixtureFiles()) {
+    const scenario = file.slice(0, -'.json'.length);
+    const prompt = readFileSync(join(SCENARIO_DIR, `${scenario}.md`), 'utf8');
+    const project = `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
+    assert.match(
+      prompt,
+      new RegExp(`"cwd":"${project}"`),
+      `${scenario}: prompt does not require the literal cwd request field`,
+    );
+    assert.match(
+      prompt,
+      /Omit\s+that\s+field\s+from\s+no\s+invocation\./,
+      `${scenario}: prompt leaves cwd optional`,
     );
   }
 });

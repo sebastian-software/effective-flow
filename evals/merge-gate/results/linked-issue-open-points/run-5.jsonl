@@ -1,0 +1,10 @@
+{"seq":1,"operation":"repository-resolve","apply":false,"at":"2026-09-15T05:22:31.324Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":2,"operation":"reference-parse","apply":false,"at":"2026-09-15T05:22:36.490Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":3,"operation":"probe","apply":false,"at":"2026-09-15T05:22:41.952Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":4,"operation":"pr-read","apply":false,"at":"2026-09-15T05:22:46.728Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":5,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-15T05:23:20.571Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":6,"operation":"issue-state-wait","apply":false,"at":"2026-09-15T05:23:28.779Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":7,"operation":"issue-read","apply":false,"at":"2026-09-15T05:23:37.314Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":8,"operation":"issue-sub-issues-read","apply":false,"at":"2026-09-15T05:23:41.391Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":9,"operation":"pr-read","apply":false,"at":"2026-09-15T05:23:45.475Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":10,"operation":"issue-comments-read","apply":false,"at":"2026-09-15T05:23:51.783Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}

@@ -45,7 +45,10 @@ Resolve the paths the tool asks for as follows and use no others:
   so every remote-tracker invocation runs
   `node /tmp/effective-flow-merge-gate-eval/linked-issue-open-points/skill/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project.
+  /tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project;
+- every JSON request sent to `remote-tracker.mjs` includes
+  `"cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"`. Omit that field
+  from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
 path, take it. Finish with the tool's own report of what it did and why.
