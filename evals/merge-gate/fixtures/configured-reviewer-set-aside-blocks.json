@@ -1,0 +1,588 @@
+{
+  "name": "Configured reviewer findings require set-aside confirmation",
+  "description": "The configured reviewer recensor has completed its check for the verified head and published one unresolved thread plus one changes-requested review-body finding. The scenario-local iterate echo returns deferred for both, so the non-interactive set-aside gate must block without requesting a merge.",
+  "viewerLogin": "flow-gate",
+  "humanLogin": "casey-reviewer",
+  "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+  "pullRequest": 42,
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "probe": {
+    "executable": "gh",
+    "capabilities": {
+      "viewerRead": true,
+      "pullRequestStatus": true,
+      "pullRequestChecksWait": true,
+      "pullRequestMerge": true,
+      "prCommentsRead": true,
+      "prReviewsRead": true,
+      "reviewThreads": true,
+      "issueClose": true,
+      "conditionalWrites": false
+    }
+  },
+  "operations": {
+    "repository-resolve": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "repository-resolve",
+        "provider": "github",
+        "data": {
+          "host": "github.com",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "github"
+        },
+        "dryRun": false
+      }
+    },
+    "remote-parse": {
+      "input": {
+        "remote": "https://github.com/example/flow.git"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "remote-parse",
+        "provider": null,
+        "data": {
+          "host": "github.com",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "github"
+        },
+        "dryRun": false
+      }
+    },
+    "reference-parse": {
+      "input": {
+        "reference": "42",
+        "expectedKind": "pull-request"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "reference-parse",
+        "provider": null,
+        "data": [
+          {
+            "kind": "pull-request",
+            "number": 42,
+            "repository": {
+              "host": "github.com",
+              "owner": "example",
+              "repository": "flow",
+              "provider": "github"
+            }
+          }
+        ],
+        "dryRun": false
+      }
+    },
+    "probe": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "probe",
+        "provider": "github",
+        "data": {
+          "repository": {
+            "host": "github.com",
+            "owner": "example",
+            "repository": "flow",
+            "slug": "example/flow",
+            "provider": "github"
+          },
+          "executable": "gh",
+          "capabilities": {
+            "viewerRead": true,
+            "pullRequestStatus": true,
+            "pullRequestChecksWait": true,
+            "pullRequestMerge": true,
+            "prCommentsRead": true,
+            "prReviewsRead": true,
+            "reviewThreads": true,
+            "issueClose": true,
+            "conditionalWrites": false
+          }
+        },
+        "dryRun": false
+      }
+    },
+    "pr-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "number": 42,
+        "title": "feat: add the merge-gate behavioural eval skeleton",
+        "state": "open",
+        "draft": false,
+        "body": "Adds the eval skeleton.",
+        "html_url": "https://github.com/example/flow/pull/42",
+        "labels": [],
+        "head": {
+          "ref": "effective-flow/build/merge-gate-behavioural-evals",
+          "sha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+        },
+        "base": {
+          "ref": "develop"
+        },
+        "user": {
+          "login": "flow-gate",
+          "type": "User"
+        },
+        "created_at": "2026-09-01T08:00:00Z",
+        "updated_at": "2026-09-01T09:00:00Z"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "title": "feat: add the merge-gate behavioural eval skeleton",
+            "body": "Adds the eval skeleton.",
+            "state": "open",
+            "labels": [],
+            "url": "https://github.com/example/flow/pull/42",
+            "repository": "example/flow",
+            "head": "effective-flow/build/merge-gate-behavioural-evals",
+            "base": "develop",
+            "draft": false
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--include", "repos/example/flow/pulls/42"],
+            "includesHeaders": true
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "viewer-read": {
+      "input": {},
+      "provider": {
+        "login": "flow-gate",
+        "id": 4242,
+        "type": "User",
+        "name": "Effective Flow Gate"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "viewer-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "login": "flow-gate",
+            "type": "User"
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "user"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-status-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "data": {
+          "repository": {
+            "pullRequest": {
+              "number": 42,
+              "title": "feat: add the merge-gate behavioural eval skeleton",
+              "url": "https://github.com/example/flow/pull/42",
+              "state": "OPEN",
+              "isDraft": false,
+              "mergeable": "MERGEABLE",
+              "mergeStateStatus": "CLEAN",
+              "baseRefName": "develop",
+              "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "commits": {
+                "nodes": [
+                  {
+                    "commit": {
+                      "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                      "committedDate": "2026-09-01T09:00:00Z",
+                      "statusCheckRollup": {
+                        "contexts": {
+                          "totalCount": 2,
+                          "nodes": [
+                            {
+                              "__typename": "CheckRun",
+                              "name": "ci",
+                              "status": "COMPLETED",
+                              "conclusion": "SUCCESS",
+                              "detailsUrl": "https://github.com/example/flow/actions/runs/1",
+                              "isRequired": true
+                            },
+                            {
+                              "__typename": "CheckRun",
+                              "name": "recensor",
+                              "status": "COMPLETED",
+                              "conclusion": "SUCCESS",
+                              "detailsUrl": "https://github.com/example/flow/checks/recensor",
+                              "isRequired": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-status-read",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "title": "feat: add the merge-gate behavioural eval skeleton",
+            "state": "open",
+            "draft": false,
+            "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "headCommittedAt": "2026-09-01T09:00:00.000Z",
+            "baseRef": "develop",
+            "mergeState": "CLEAN",
+            "mergeable": "MERGEABLE",
+            "url": "https://github.com/example/flow/pull/42",
+            "checksReported": true,
+            "checkCount": 2,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1",
+                "required": true
+              },
+              {
+                "name": "recensor",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/checks/recensor",
+                "required": false
+              }
+            ]
+          },
+          "command": {
+            "executable": "gh",
+            "args": ["api", "graphql", "--input", "-"],
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-checks-wait": {
+      "input": {
+        "number": 42,
+        "payload": {
+          "timeoutMinutes": 20
+        }
+      },
+      "provider": [
+        {
+          "bucket": "pass",
+          "link": "https://github.com/example/flow/actions/runs/1",
+          "name": "ci",
+          "state": "SUCCESS"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-checks-wait",
+        "provider": "github",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "complete": true,
+            "timedOut": false,
+            "checksReported": true,
+            "checkCount": 1,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1"
+              }
+            ]
+          },
+          "commands": [
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--watch",
+                "--interval",
+                "10"
+              ],
+              "timeoutMs": 1200000
+            },
+            {
+              "executable": "gh",
+              "args": [
+                "pr",
+                "checks",
+                "42",
+                "--repo",
+                "example/flow",
+                "--json",
+                "bucket,link,name,state"
+              ],
+              "timeoutMs": 60000
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-comments-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": [
+        [
+          {
+            "id": 900001,
+            "body": "Gate run: reading the pull-request state.",
+            "user": {
+              "login": "flow-gate",
+              "type": "User"
+            },
+            "html_url": "https://github.com/example/flow/pull/42#issuecomment-900001",
+            "created_at": "2026-09-01T09:30:00Z"
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-comments-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": 900001,
+              "body": "Gate run: reading the pull-request state.",
+              "author": {
+                "login": "flow-gate",
+                "isBot": false,
+                "authorType": "human"
+              },
+              "url": "https://github.com/example/flow/pull/42#issuecomment-900001",
+              "createdAt": "2026-09-01T09:30:00.000Z"
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": ["api", "--paginate", "--slurp", "repos/example/flow/issues/42/comments"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-reviews-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": [
+        [
+          {
+            "id": 700002,
+            "html_url": "https://github.com/example/flow/pull/42#pullrequestreview-700002",
+            "user": {
+              "login": "recensor[bot]",
+              "type": "Bot"
+            },
+            "commit_id": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "state": "CHANGES_REQUESTED",
+            "body": "The fallback branch still accepts an unverified reviewer outcome.",
+            "submitted_at": "2026-09-01T10:20:00Z"
+          }
+        ]
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-reviews-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": 700002,
+              "url": "https://github.com/example/flow/pull/42#pullrequestreview-700002",
+              "author": {
+                "login": "recensor[bot]",
+                "isBot": true,
+                "authorType": "bot"
+              },
+              "commitSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "state": "CHANGES_REQUESTED",
+              "body": "The fallback branch still accepts an unverified reviewer outcome.",
+              "submittedAt": "2026-09-01T10:20:00.000Z"
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": [
+              "api",
+              "--paginate",
+              "--slurp",
+              "repos/example/flow/pulls/42/reviews?per_page=100"
+            ]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "review-threads-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "data": {
+          "repository": {
+            "pullRequest": {
+              "reviewThreads": {
+                "nodes": [
+                  {
+                    "id": "PRRT_kwDOconfiguredReviewer",
+                    "isResolved": false,
+                    "path": "src/tools/merge-gate.md",
+                    "line": 1095,
+                    "startLine": null,
+                    "diffSide": "RIGHT",
+                    "comments": {
+                      "nodes": [
+                        {
+                          "id": "PRRC_kwDOconfiguredReviewer",
+                          "databaseId": 800002,
+                          "url": "https://github.com/example/flow/pull/42#discussion_r800002",
+                          "body": "The reviewer outcome should stay blocked until a person confirms it.",
+                          "path": "src/tools/merge-gate.md",
+                          "line": 1095,
+                          "originalLine": 1095,
+                          "startLine": null,
+                          "originalStartLine": null,
+                          "createdAt": "2026-09-01T10:45:00Z",
+                          "author": {
+                            "__typename": "Bot",
+                            "login": "recensor"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "review-threads-read",
+        "provider": "github",
+        "data": {
+          "result": [
+            {
+              "id": "PRRT_kwDOconfiguredReviewer",
+              "isResolved": false,
+              "path": "src/tools/merge-gate.md",
+              "line": 1095,
+              "startLine": null,
+              "createdAt": "2026-09-01T10:45:00.000Z",
+              "url": "https://github.com/example/flow/pull/42#discussion_r800002",
+              "comments": [
+                {
+                  "id": "PRRC_kwDOconfiguredReviewer",
+                  "databaseId": 800002,
+                  "body": "The reviewer outcome should stay blocked until a person confirms it.",
+                  "author": {
+                    "login": "recensor",
+                    "isBot": true,
+                    "authorType": "bot"
+                  },
+                  "path": "src/tools/merge-gate.md",
+                  "line": 1095,
+                  "startLine": null,
+                  "createdAt": "2026-09-01T10:45:00.000Z",
+                  "url": "https://github.com/example/flow/pull/42#discussion_r800002"
+                }
+              ]
+            }
+          ],
+          "command": {
+            "executable": "gh",
+            "args": ["api", "graphql", "--input", "-"],
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "issue-lifecycle-receipt-parse": {
+      "input": {
+        "body": "Adds the eval skeleton."
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "issue-lifecycle-receipt-parse",
+        "provider": null,
+        "data": {
+          "found": false,
+          "receipt": null
+        },
+        "dryRun": false
+      }
+    },
+    "body-hash": {
+      "input": {
+        "body": "Adds the eval skeleton."
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "body-hash",
+        "provider": null,
+        "data": {
+          "hash": "df8ff84b4403d431d25bca3989a5c1eebc97b37b0496144abdf90fa284d84746"
+        },
+        "dryRun": false
+      }
+    }
+  }
+}

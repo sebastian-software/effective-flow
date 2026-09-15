@@ -1,6 +1,6 @@
 # Merge-gate: deferring tool-local sections
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Refactoring (`/effective-flow refactor`)
 
@@ -352,7 +352,10 @@ Recorded so a later pass does not re-derive them:
       outcomes. Which package carries it is the round's own scheduling decision, recorded when it is
       taken; what is not optional is that no package merges while a stamp still describes a build
       nobody holds.
-- [ ] Each adapted assertion is listed with the reason it pins wording rather than behavior.
+- [x] The earlier request to list every adapted assertion with a wording-versus-behavior rationale
+      is retired. The delivered source-contract tests instead name and bound their owning source;
+      #419 added the superseding closure evidence, so a retrospective PR-body inventory would add
+      no executable protection.
       **Partly discharged, deliberately left open.** The three pull-request bodies list every
       repointed slice and why its subject moved — including the two that had to change from
       `section()` to `boundedSlice` and the one that had to be split across the seam — but they
@@ -577,15 +580,15 @@ headroom of 72 throughout: 3219 → 3198 → 3079 → 2787. Two full eval rounds
 rebound, once for WP2 and once for WP1; the WP1 branch was later replayed onto `develop` after WP2
 squash-merged, and its stamps survived that because the replayed tree is byte-identical.
 
-**WP4 is the only package left, and the plan status stays `Not implemented` because of it.** It is
-compression rather than extraction — the `## Delegation contract` rationale, ≈ 45 lines — and this
-plan already records that it "can be dropped without affecting the others". Two endings are
-therefore legitimate: implement it, or record it as deliberately dropped. Neither has been chosen,
-and until one is, the status line is accurate rather than stale.
+**WP4 was superseded and delivered in #419 (`cf71425`).** That change deferred the no-check-list
+waiver and post-merge report items behind their real entry conditions, providing a larger
+behavior-preserving reduction than the optional in-place compression proposed here. The original
+compression-only WP4 and its retrospective assertion inventory are therefore deliberately retired;
+WP1–WP3 plus the superseding delivery complete this plan.
 
-The acceptance criteria above are ticked against that state. One is deliberately left open, and its
-own row says why: the criterion asking each adapted assertion to be listed with the reason it pins
-wording rather than behaviour was not discharged in that form by the three pull-request bodies.
+The acceptance criteria above are reconciled against that delivered state. The final criterion now
+records why the superseding executable closure evidence replaces its earlier retrospective prose
+inventory.
 
 ### Revision, 2026-09-02 (eval prerequisite resolved)
 

@@ -1410,17 +1410,14 @@ try {
   // Every file in src/tools is measured, and the reconciliation below keeps this
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own limit rather than a share of
-  // one number. Only five of these numbers are a judgement: the four
-  // implementation tools agree on 700 lines, and `merge-gate` carries 2897,
-  // because it is an orchestration gate whose phases, delegation contracts and
-  // provider rules do not compress to the size of an implementation tool.
+  // one number. Only four of these numbers are a judgement: the implementation
+  // tools agree on 700 lines.
   //
   // Every other number here is a **measured backlog, not a target**. It records
   // what a tool costs today, with its mode-gated fragments still inlined eagerly;
   // it is not a size anyone argued for. Each later conversion of an eager include
   // to a `lazy-include` lowers the entries it touches, so a large number reads as
-  // work outstanding and never as room to fill. `merge-gate`'s 2897 is the same
-  // kind of ratchet, a little above its measured size.
+  // work outstanding and never as room to fill.
   //
   // The allowance above the measured size is a flat line count rather than a
   // percentage, deliberately: a percentage hands the largest tools the most room,
@@ -1430,7 +1427,7 @@ try {
   // most entries carry less, because a deferral that shrank a tool was recorded
   // by lowering its entry to the new measurement rather than by re-adding the
   // full ten. Read an entry's actual headroom off the report below, never as
-  // "ten"; only the five judgement entries sit further above
+  // "ten"; only the four judgement entries sit further above
   // their measured size, and they do so on purpose.
   //
   // Measure with `node build.mjs` and read the `Always-loaded core (lines/budget)`
@@ -1459,7 +1456,7 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2750,
+    'merge-gate': 2134,
     iterate: 1669,
     setup: 1723,
     'apply-review': 1340,

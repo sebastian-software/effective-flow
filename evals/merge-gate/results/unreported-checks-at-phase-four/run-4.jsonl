@@ -1,0 +1,15 @@
+{"seq":1,"operation":"reference-parse","apply":false,"at":"2026-09-15T04:58:11.804Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-15T04:58:17.523Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":3,"operation":"body-hash","apply":false,"at":"2026-09-15T04:58:28.365Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":4,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-15T04:58:28.397Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":5,"operation":"probe","apply":false,"at":"2026-09-15T04:58:34.767Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":6,"operation":"viewer-read","apply":false,"at":"2026-09-15T04:59:44.866Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":7,"operation":"review-threads-read","apply":false,"at":"2026-09-15T04:59:44.866Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-15T04:59:44.866Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":9,"operation":"pr-comments-read","apply":false,"at":"2026-09-15T04:59:44.889Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":10,"operation":"pr-reviews-read","apply":false,"at":"2026-09-15T04:59:44.924Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":11,"operation":"pr-status-read","apply":false,"at":"2026-09-15T04:59:58.878Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":12,"operation":"pr-comments-read","apply":false,"at":"2026-09-15T05:00:18.903Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":13,"operation":"review-threads-read","apply":false,"at":"2026-09-15T05:00:18.903Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":14,"operation":"pr-status-read","apply":false,"at":"2026-09-15T05:00:18.903Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}
+{"seq":15,"operation":"pr-reviews-read","apply":false,"at":"2026-09-15T05:00:18.903Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project"}

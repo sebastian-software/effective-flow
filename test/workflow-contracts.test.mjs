@@ -238,6 +238,22 @@ function mergeCondition(conditions, number) {
   return conditions[index];
 }
 
+function configuredReviewerRoute() {
+  return source('src/shared/merge-gate-configured-reviewer.md');
+}
+
+function configuredReviewerSection(heading) {
+  return section(configuredReviewerRoute(), heading, '\n## ');
+}
+
+function configuredReviewerCondition(number) {
+  const heading = configuredReviewerRoute()
+    .split('\n')
+    .find((line) => line.startsWith(`## Phase 4 condition ${number}:`));
+  assert.ok(heading, `configured reviewer route must carry Phase 4 condition ${number}`);
+  return configuredReviewerSection(heading);
+}
+
 test('plan routes an unambiguous issue through Stage A and exits before local planning', () => {
   const plan = source('src/tools/plan.md');
   const gateway = source('src/shared/plan-input-gateway.md');
@@ -2694,6 +2710,14 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       trigger: /(?=[\s\S]*Phase-4)(?=[\s\S]*`checksReported: false`)/,
       decision: "a Phase-4 evaluation's fresh read stating `checksReported: false`",
     },
+    {
+      // Presence is the decision, not a successfully parsed value. An empty or malformed authored
+      // row still needs the route that explains its safe default and reports what happened. The
+      // retired namespace must not reopen this route.
+      fragment: 'merge-gate-configured-reviewer',
+      trigger: /(?=[\s\S]*`mergeGate\.bots` row)(?=[\s\S]*(?:regardless|presence|contains))/i,
+      decision: 'presence of the current configured-reviewer row',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -2728,6 +2752,150 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
     );
   }
+});
+
+test('the configured-reviewer route stays reachable through exact retained workflow shells', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const route = configuredReviewerRoute();
+  const headings = [
+    '## Configured reviewer configuration',
+    '## Returned outcome record',
+    '## Configured reviewer wisdom records',
+    '## Phase 3: Automatic reviewer round',
+    '## Phase 4 condition 5: Configured reviewer has run',
+    '## Phase 4 condition 7: Configured reviewer threads are assessed',
+    '## Phase 4 condition 10: Configured reviewer verdicts are assessed',
+    '## The set-aside confirmation',
+    '## Unmatched configured-reviewer reports',
+    '## Phase 6 configured-reviewer report items',
+  ];
+
+  const gateIncludes = collectIncludeNames(gate);
+  assert.ok(
+    gateIncludes.lazy.has('merge-gate-configured-reviewer'),
+    'removing the lazy pointer must break the only build-closure edge to the configured-reviewer route',
+  );
+  assert.equal(
+    gateIncludes.eager.has('merge-gate-configured-reviewer'),
+    false,
+    'the configured-reviewer route must not return to the always-loaded core as an eager include',
+  );
+  const carriers = ['src/tools', 'src/shared'].flatMap((directory) =>
+    readdirSync(new URL(`${directory}/`, repositoryRoot))
+      .filter((file) => file.endsWith('.md'))
+      .filter((file) => {
+        const includes = collectIncludeNames(source(`${directory}/${file}`));
+        return (
+          includes.eager.has('merge-gate-configured-reviewer') ||
+          includes.lazy.has('merge-gate-configured-reviewer')
+        );
+      })
+      .map((file) => `${directory}/${file}`),
+  );
+  assert.deepEqual(
+    carriers,
+    ['src/tools/merge-gate.md'],
+    "merge-gate must remain the configured-reviewer fragment's single consumer",
+  );
+  const configuredReviewerPointer = [...gate.matchAll(LAZY_INCLUDE_RE)].find(
+    (match) => match[1].trim() === 'merge-gate-configured-reviewer',
+  );
+  assert.ok(configuredReviewerPointer, 'merge-gate must carry the configured-reviewer pointer');
+  assert.doesNotMatch(
+    configuredReviewerPointer[2] ?? '',
+    /prReview\./,
+    'the retired prReview namespace must not trigger the configured-reviewer route',
+  );
+  assert.match(
+    route,
+    /`mergeGate\.bots` is a flat comma list[\s\S]*A bot acknowledges with an emoji reaction[\s\S]*A bot edits one sticky comment in place/,
+    'the deferred fragment must retain the configured-reviewer configuration bodies',
+  );
+  assert.doesNotMatch(
+    gate,
+    /`mergeGate\.bots` is a flat comma list|A bot acknowledges with an emoji reaction|A bot edits one sticky comment in place/,
+    'configured-reviewer configuration bodies must live only in the deferred fragment',
+  );
+  for (const heading of headings) {
+    assert.equal(
+      route.split('\n').filter((line) => line === heading).length,
+      1,
+      `the configured-reviewer fragment must own exactly one ${heading}`,
+    );
+    assert.ok(
+      gate.includes(`\`${heading}\``),
+      `the retained gate must point to the exact configured-reviewer heading ${heading}`,
+    );
+  }
+
+  const phase3 = section(gate, '### Phase 3: Automatic reviewer round', '\n### Phase 4');
+  ordered(
+    phase3,
+    'If `mergeGate.bots` is empty, skip this phase entirely',
+    '`## Phase 3: Automatic reviewer round`',
+  );
+  assert.match(
+    phase3,
+    /record that no automatic reviewer is\s+configured[\s\S]{0,160}do not block the merge/,
+    'the absent-row route must remain complete without loading the configured-reviewer fragment',
+  );
+
+  const conditions = mergeConditions(gate);
+  assert.equal(
+    conditions.length,
+    10,
+    'the retained Phase-4 list must keep all ten numbered shells',
+  );
+  for (const [number, heading] of [
+    [5, headings[4]],
+    [7, headings[5]],
+    [10, headings[6]],
+  ]) {
+    assert.match(
+      mergeCondition(conditions, number),
+      new RegExp(`apply[\\s\\S]{0,120}${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}`, 'i'),
+      `condition ${number} must retain an ordered shell pointing to its exact route heading`,
+    );
+    assert.match(
+      mergeCondition(conditions, number),
+      /when the `mergeGate\.bots` row is absent[\s\S]{0,160}(?:condition is satisfied|satisfies this condition)/i,
+      `condition ${number} must remain fail-closed but satisfiable without the current reviewer row`,
+    );
+  }
+  assert.match(
+    mergeCondition(conditions, 6),
+    /every bot thread \*\*whose finding this run implemented\*\* is answered and resolved/,
+    'condition 6 must remain an executable inline condition rather than move with reviewer-only bodies',
+  );
+
+  for (const [sectionHeading, routeHeading] of [
+    ['## Configuration', headings[0]],
+    ['## Returned outcome record', headings[1]],
+    ['## Wisdom accumulation', headings[2]],
+    ['#### The set-aside confirmation', headings[7]],
+  ]) {
+    assert.ok(
+      section(gate, sectionHeading).includes(`\`${routeHeading}\``),
+      `${sectionHeading} must point locally to its exact configured-reviewer owner`,
+    );
+  }
+  assert.match(
+    section(gate, '#### The set-aside confirmation', '\n#### '),
+    /When the loaded bodies of condition 7 or 10 yield a set-aside item/,
+    'the set-aside shell must stay dormant when the configured route did not produce an item',
+  );
+  assert.match(
+    section(gate, '### Phase 4: Merge preconditions', '\n### Phase 5'),
+    /When the configured-reviewer route is loaded and its effective reviewer list is non-empty[\s\S]{0,160}`## Unmatched configured-reviewer reports`/,
+    'unmatched-reviewer reporting must remain conditional on the loaded non-empty route',
+  );
+  assert.equal(
+    section(gate, '### Phase 6: Summary', '\n## ').match(
+      /`## Phase 6 configured-reviewer report items`/g,
+    )?.length,
+    3,
+    'Phase 6 must retain its three ordered configured-reviewer report insertion points',
+  );
 });
 
 // Two-sided on purpose, unlike the `pinned` whitelist above: that one checks the pointers it
@@ -5549,36 +5717,40 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
   // Sliced per numbered condition, because condition 6 already carries the "deferred or rejected"
   // vocabulary: matched against the whole Phase-4 section, the assertions below would stay green
   // with the new condition deleted outright.
-  const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
+  const conditions = mergeConditions(gate);
   // Condition 7 is selected by its **ordinal**, never by first match on "assessed". Condition 10
   // carries that word too — it is the same protection one surface over, for a changes-requested
   // review nobody assessed — so a first-match selector would retarget this whole battery the moment
   // the two are reordered, and condition 7 would go unchecked while every assertion stayed green.
-  const ordinal = (number) =>
-    conditions.findIndex((item) => item.trimStart().startsWith(`${number}.`));
-  const unassessedIndex = ordinal(7);
-  const implementedIndex = conditions.findIndex((item) =>
-    /implement[a-z]*[\s\S]{0,160}(?:answered|resolved)/i.test(item),
-  );
-  assert.notEqual(unassessedIndex, -1, 'Phase 4 must carry a condition 7');
+  const unassessedShell = mergeCondition(conditions, 7);
+  const implementedShell = mergeCondition(conditions, 6);
   assert.match(
-    conditions[unassessedIndex],
+    unassessedShell,
     /assessed/i,
     'condition 7 must remain the never-assessed precondition',
   );
-  assert.notEqual(implementedIndex, -1, 'Phase 4 must keep its implemented-and-answered condition');
+  assert.match(
+    unassessedShell,
+    /`## Phase 4 condition 7: Configured reviewer threads are assessed`/,
+    'condition 7 must retain the exact pointer to its detailed route body',
+  );
+  assert.match(
+    implementedShell,
+    /implemented[\s\S]{0,160}(?:answered|resolved)/i,
+    'Phase 4 must keep its implemented-and-answered condition inline',
+  );
 
   // Two conditions, never one. Folding them back together is the realistic regression — they read
   // as near-duplicates — and each direction of that fold reintroduces a defect: widening
   // condition 6 demands a thread reply for a deferred finding, which nothing may write and no run
   // could satisfy, while narrowing this one to implemented findings merges past the unread thread.
   assert.notEqual(
-    unassessedIndex,
-    implementedIndex,
+    conditions.indexOf(unassessedShell),
+    conditions.indexOf(implementedShell),
     'the never-assessed rule must be its own condition, not folded into the implemented one',
   );
 
-  const unassessed = flat(conditions[unassessedIndex]);
+  const unassessed = flat(configuredReviewerCondition(7));
 
   // What "assessed" covers has to be enumerated, or the condition is unexecutable. This used to be
   // a loop over `implement`, `defer` and `reject` asserting that each "counts as assessed". Those
@@ -5713,7 +5885,7 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
 });
 
 test('the trigger idempotency check rests on evidence the forge actually exposes', () => {
-  const phase3 = flat(section(source('src/tools/merge-gate.md'), '### Phase 3'));
+  const phase3 = flat(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
   const IDEMPOTENCY = '(?:idempot|second trigger|already been posted|already posted)';
 
   // The evidence is authorship plus the exact body plus the timestamps — all normalized
@@ -6451,9 +6623,9 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
   // Both claims now sit where the key they qualify is documented — the `.check` bullet of the gate's
   // configuration — rather than in a separate edge-case list. A reader deciding whether to configure
   // `.check` for a reviewer reads that bullet; the pairs below are unchanged, only their home is.
-  const gateSource = source('src/tools/merge-gate.md');
+  const gateSource = configuredReviewerRoute();
   const gateCheckKey =
-    section(gateSource, '## Configuration', '\n## ')
+    section(gateSource, '## Configured reviewer configuration', '\n## ')
       .split(/\n-\s+/)
       .find((entry) => entry.includes('`mergeGate.bots.<login>.check` names')) ?? '';
   assert.ok(
@@ -6477,11 +6649,13 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     near('reaction', '(?:is not a check|no check to configure)', 300),
     "a reaction must be stated not to be evidence about the reviewer's check context",
   );
-  assert.doesNotMatch(
-    flat(gateSource),
-    /publishes no check/i,
-    'no part of the gate may reintroduce the claim that this reviewer publishes no check context',
-  );
+  for (const sourceText of [source('src/tools/merge-gate.md'), gateSource]) {
+    assert.doesNotMatch(
+      flat(sourceText),
+      /publishes no check/i,
+      'neither side of the gate seam may claim that this reviewer publishes no check context',
+    );
+  }
 
   // The sticky-comment case is the concrete failure the fallback cannot survive, and it is the
   // reason `.check` is not merely an optimisation for these reviewers. Each assertion here is
@@ -6599,7 +6773,7 @@ test("this repository's own gate is not left on a signal its reviewer cannot use
     // And the reviewer's own context, not a plausible-looking typo: a context that never appears
     // resolves to **not started** exactly like a missing row does, so the two failures are one.
     assert.ok(
-      source('src/tools/merge-gate.md').includes(context),
+      configuredReviewerRoute().includes(context),
       `the configured context for ${login} must be the one the gate documents: ${context}`,
     );
   }
@@ -6878,7 +7052,7 @@ test("iterate's review-in-flight guard is exempted by the switch, never by a fil
 });
 
 test('the gate branches on three reviewer states and triggers only on "not started"', () => {
-  const phase3 = flat(section(source('src/tools/merge-gate.md'), '### Phase 3'));
+  const phase3 = flat(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
 
   // Three states, not two. Under a check-based signal the old "has run" / "has not run" split is
   // wrong: a reviewer whose check is still pending has not run and must not be triggered — a
@@ -7640,7 +7814,7 @@ test('one rule decides when a configured reviewer login matches a reported one',
 test('every site that matches mergeGate.bots resolves through the shared login rule', () => {
   const gate = source('src/tools/merge-gate.md');
   const phase1 = flat(section(gate, '### Phase 1'));
-  const phase3 = flat(section(gate, '### Phase 3'));
+  const phase3 = flat(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
 
   // Four sites compare a configured login against a reported one, on two surfaces that spell the
   // same account differently. A site that restates a bare equality instead of resolving through the
@@ -7658,14 +7832,13 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   // Phase-4 paragraph under the last condition, and three of those paragraphs name this same rule —
   // so the condition-10 assertion below passed on prose outside condition 10 and stayed green with
   // the reference deleted from the condition itself. That is the regression this test exists for.
-  const conditions = mergeConditions(gate);
   assert.match(
-    flat(mergeCondition(conditions, 5)),
+    flat(configuredReviewerCondition(5)),
     reference,
     'the has-run condition must resolve the configured login through the rule',
   );
   assert.match(
-    flat(mergeCondition(conditions, 7)),
+    flat(configuredReviewerCondition(7)),
     reference,
     'the never-assessed condition must resolve the configured login through the rule',
   );
@@ -7673,7 +7846,7 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   // question on the review surface as on the thread surface, and a restated bare equality here would
   // reintroduce the two-spellings defect at one more site.
   assert.match(
-    flat(mergeCondition(conditions, 10)),
+    flat(configuredReviewerCondition(10)),
     reference,
     'the unassessed-verdict condition must resolve the configured login through the rule',
   );
@@ -7685,8 +7858,8 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
   // The numbered preconditions and the commentary after them come out of one shared cut, so every
   // assertion below can tell a merge condition apart from the prose that follows it — and so this
   // test does not carry a second copy of that boundary to drift against the first.
-  const { conditions, afterList: tail } = mergeConditionsAndTail(gate);
-  const afterList = flat(tail);
+  const conditions = mergeConditions(gate);
+  const afterList = flat(configuredReviewerSection('## Unmatched configured-reviewer reports'));
 
   // The slicing is itself under test: an empty or truncated condition list would let the
   // not-a-precondition check below pass without ever reading a condition.
@@ -10526,10 +10699,7 @@ test('one supersession rule serves the gate condition and the guard, and lives i
   // One home, referenced from every consumer, as the login-matching rule already is. Four sites
   // restating it is four places for it to drift.
   const gate = source('src/tools/merge-gate.md');
-  const conditions = mergeConditions(gate);
-  const verdictCondition = flat(
-    conditions.find((item) => item.trimStart().startsWith('10.')) ?? '',
-  );
+  const verdictCondition = flat(configuredReviewerCondition(10));
   assert.ok(verdictCondition, 'Phase 4 must carry condition 10');
   assert.match(
     verdictCondition,
@@ -10544,9 +10714,8 @@ test('one supersession rule serves the gate condition and the guard, and lives i
 });
 
 test('the unassessed-verdict condition blocks the absence of an outcome, never the verdict', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const conditions = mergeConditions(gate);
-  const condition = prose(conditions.find((item) => item.trimStart().startsWith('10.')) ?? '');
+  const conditionRaw = configuredReviewerCondition(10);
+  const condition = prose(conditionRaw);
   assert.ok(condition, 'Phase 4 must carry condition 10');
 
   assert.match(condition, /`VERIFIED_HEAD_SHA`/, 'the condition must bind to the verified head');
@@ -10615,10 +10784,7 @@ test('the unassessed-verdict condition blocks the absence of an outcome, never t
   );
   // Every continuation paragraph of condition 10 is indented, or the Phase-4 list terminator in the
   // neighbouring test truncates the slice and stops asserting anything past this condition.
-  for (const line of (conditions.find((item) => item.trimStart().startsWith('10.')) ?? '')
-    .replace(/^\n+/, '')
-    .split('\n')
-    .slice(1)) {
+  for (const line of conditionRaw.replace(/^\n+/, '').split('\n').slice(1)) {
     assert.ok(
       line.trim() === '' || /^\s/.test(line),
       `condition 10 continuation must stay indented: ${line}`,
@@ -10651,8 +10817,7 @@ test('a changes-requested review is the guard third counting surface, decided by
 });
 
 test('the gate reports every reviewer verdict per finding, and every unmatched one', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const phase6 = prose(section(gate, '### Phase 6'));
+  const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
 
   assert.match(
     phase6,
@@ -10675,7 +10840,7 @@ test('the gate reports every reviewer verdict per finding, and every unmatched o
     'Phase 6 must report a changes-requested review that matched no configured login',
   );
 
-  const phase4 = prose(section(gate, '### Phase 4'));
+  const phase4 = prose(configuredReviewerSection('## Unmatched configured-reviewer reports'));
   assert.match(
     phase4,
     near('changes-requested review', 'matched no configured login', 500),
@@ -10753,26 +10918,32 @@ test('a review body reaches iterate as identified free text, never as direction'
 
 test('the sentences reviews make false are corrected rather than left standing', () => {
   const gate = source('src/tools/merge-gate.md');
+  const configuredReviewer = configuredReviewerRoute();
   const shared = source('src/shared/review-bot-state.md');
   const prComments = source('src/shared/pr-review-comments.md');
 
   // Each of these was true only while no workflow read a review. Left standing they contradict the
   // condition, the guard and the fallback that now do.
-  assert.doesNotMatch(
-    gate,
-    /a review body is in neither/i,
-    'the claim that a review body can never hold the guard must go',
-  );
-  assert.doesNotMatch(
-    gate,
-    /Only a configured `\.check` resolves it/i,
-    'the fallback now reads a fourth surface, so the check is no longer the only remedy',
-  );
-  assert.doesNotMatch(
-    gate,
-    /the single exception condition 7 states for itself/i,
-    'the returning exception must be stated over the return, not over one condition by name',
-  );
+  for (const [text, label] of [
+    [gate, 'the retained gate'],
+    [configuredReviewer, 'the configured-reviewer route'],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /a review body is in neither/i,
+      `${label} must not claim that a review body can never hold the guard`,
+    );
+    assert.doesNotMatch(
+      text,
+      /Only a configured `\.check` resolves it/i,
+      `${label} must not drop the submitted-review fallback`,
+    );
+    assert.doesNotMatch(
+      text,
+      /the single exception condition 7 states for itself/i,
+      `${label} must state the returning exception over the return, not one condition`,
+    );
+  }
   assert.doesNotMatch(
     shared,
     /newest comment, review thread, or thread reply/i,
@@ -10808,7 +10979,7 @@ test('an undecided latest verdict blocks in its own right, on both halves of the
   const supersession = prose(
     section(state, '### A changes-requested verdict and what supersedes it'),
   );
-  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+  const condition = prose(configuredReviewerCondition(10));
 
   // Two halves, asserted separately, because the merged change shipped a remedy that closed only
   // the first: an implementer could satisfy every criterion and fix half the bug.
@@ -10833,11 +11004,14 @@ test('an undecided latest verdict blocks in its own right, on both halves of the
   assert.match(supersession, /these four cases are the whole rule/i);
   assert.doesNotMatch(state, /three cases/i, 'the supersession list no longer holds three cases');
   assert.doesNotMatch(
-    gate,
+    configuredReviewerRoute(),
     /three fail-closed causes/i,
     "Phase 6's fail-closed-cause count must follow condition 10",
   );
-  assert.match(prose(section(gate, '### Phase 6')), /four fail-closed causes/i);
+  assert.match(
+    prose(configuredReviewerSection('## Phase 6 configured-reviewer report items')),
+    /four fail-closed causes/i,
+  );
 });
 
 test('the undecided cause is scoped to condition 10 and never reaches the human-comment guard', () => {
@@ -10872,8 +11046,7 @@ test('the undecided cause is scoped to condition 10 and never reaches the human-
 });
 
 test('condition 10 retains an undecidable review before it applies its filters', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+  const condition = prose(configuredReviewerCondition(10));
 
   assert.match(
     condition,
@@ -10893,8 +11066,7 @@ test('condition 10 retains an undecidable review before it applies its filters',
 // reviewer is posed once per round for both surfaces.
 
 test('a non-implemented outcome from a delegated return no longer clears condition 10', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+  const condition = prose(configuredReviewerCondition(10));
 
   assert.match(
     condition,
@@ -10938,8 +11110,7 @@ test('a non-implemented outcome from a delegated return no longer clears conditi
 });
 
 test('an implemented body finding counts only with an observed head movement, stated as coarse', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+  const condition = prose(configuredReviewerCondition(10));
 
   assert.match(
     condition,
@@ -10972,22 +11143,22 @@ test('an implemented body finding counts only with an observed head movement, st
 
 test('one set-aside confirmation per round covers both returning conditions and quotes no review', () => {
   const gate = source('src/tools/merge-gate.md');
-  const confirmation = section(gate, '#### The set-aside confirmation', '\n**Report every');
+  const confirmation = configuredReviewerSection('## The set-aside confirmation');
   const flatConfirmation = prose(confirmation);
 
   // It sits after the numbered list and is referenced from inside it, never written as an
   // eleventh precondition — a question inside the list would be evaluated as one.
-  const { conditions, afterList } = mergeConditionsAndTail(gate);
+  const conditions = mergeConditions(gate);
   assert.ok(
-    afterList.includes('```ask'),
-    'the confirmation question must sit after the numbered preconditions',
+    confirmation.includes('```ask'),
+    'the configured-reviewer confirmation section must own the ask block',
   );
   for (const item of conditions) {
     assert.ok(!item.includes('```ask'), 'no numbered precondition may carry the ask block itself');
   }
   for (const number of [7, 10]) {
     assert.match(
-      prose(mergeCondition(conditions, number)),
+      prose(configuredReviewerCondition(number)),
       /The set-aside confirmation/,
       `condition ${number} must reference the confirmation by name`,
     );
@@ -11083,10 +11254,8 @@ test('one set-aside confirmation per round covers both returning conditions and 
 });
 
 test('a mixed Phase-4 evaluation poses the confirmation and returns in the same one round', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const rawConfirmation = section(gate, '#### The set-aside confirmation', '\n**Report every');
+  const rawConfirmation = configuredReviewerSection('## The set-aside confirmation');
   const confirmation = prose(rawConfirmation);
-  const conditions = mergeConditions(gate);
 
   // One evaluation used to lose the set-aside item of a mixed outcome set entirely: the
   // confirmation was gated on the set-aside value being the *only* unmet cause, while the return
@@ -11136,12 +11305,12 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
 
   // Both halves of the single return, so a confirmed item is not carried back a second time.
   assert.match(
-    prose(mergeCondition(conditions, 7)),
+    prose(configuredReviewerCondition(7)),
     near('return to Phase 3', 'never a thread "The set-aside confirmation" cleared', 250),
     "condition 7's return must exclude a thread the confirmation cleared",
   );
   assert.match(
-    prose(mergeCondition(conditions, 10)),
+    prose(configuredReviewerCondition(10)),
     near(
       'declined or unanswered confirmation ends the run',
       'unassessed item would otherwise have returned',
@@ -11176,9 +11345,9 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
 // answered. What makes the answer survive is a record keyed by something that outlives the round.
 test('a confirmed item is recorded durably, consumed later, and expired by a head movement', () => {
   const gate = source('src/tools/merge-gate.md');
-  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
-  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
-  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
+  const confirmation = prose(configuredReviewerSection('## The set-aside confirmation'));
+  const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
+  const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
 
   // The key has to be the durable one. The per-message identifier is minted afresh per delegation,
   // so a record keyed by it matches nothing the next round and loses the answer exactly when it is
@@ -11232,7 +11401,7 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     'a confirmed item must be excluded from the next delegation',
   );
   assert.match(
-    prose(section(gate, '### Phase 3')),
+    prose(configuredReviewerSection('## Phase 3: Automatic reviewer round')),
     near('durable confirmation record', 'Exclude every item', 120),
     "Phase 3's own delegation step must carry the exclusion an executor reads there",
   );
@@ -11676,9 +11845,9 @@ test('the no-check-list waiver ends the run three ways and expires with the head
 test('a thread item records its inspection URL where the gate still has it', () => {
   const gate = source('src/tools/merge-gate.md');
   const delegation = prose(section(gate, '## Delegation contract', '\n## '));
-  const phase3 = prose(section(gate, '### Phase 3'));
-  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
-  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+  const phase3 = prose(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
+  const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
+  const confirmation = prose(configuredReviewerSection('## The set-aside confirmation'));
 
   // The confirmation promises the operator a link. A thread record carrying only the thread ID has
   // none, and the fresh read that had it is over by the time Phase 4 asks.
@@ -11754,8 +11923,7 @@ test('a thread item records its inspection URL where the gate still has it', () 
 });
 
 test('condition 7 blocks an unassessed thread and shares the confirmation with condition 10', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const condition = prose(mergeCondition(mergeConditions(gate), 7));
+  const condition = prose(configuredReviewerCondition(7));
 
   // Delegation membership used to clear this condition, which made it read its own heading
   // backwards: an item nobody judged came back `unassessed` and cleared anyway.
@@ -11792,13 +11960,15 @@ test('condition 7 blocks an unassessed thread and shares the confirmation with c
 test('the retired rejected-merges sentence is gone and condition 6 is disambiguated by surface', () => {
   const gate = source('src/tools/merge-gate.md');
   const conditions = mergeConditions(gate);
-  const condition = prose(mergeCondition(conditions, 10));
+  const condition = prose(configuredReviewerCondition(10));
 
-  assert.doesNotMatch(
-    prose(gate),
-    /findings this run read and deliberately rejected merges/i,
-    'the sentence stating that a deliberately rejected finding merges must be gone',
-  );
+  for (const text of [gate, configuredReviewerRoute()]) {
+    assert.doesNotMatch(
+      prose(text),
+      /findings this run read and deliberately rejected merges/i,
+      'the sentence stating that a deliberately rejected finding merges must be gone on both sides of the seam',
+    );
+  }
   assert.match(
     condition,
     near('replaces the retired sentence', 'only once the operator has confirmed', 300),
@@ -11844,10 +12014,9 @@ test('the retired rejected-merges sentence is gone and condition 6 is disambigua
 });
 
 test('the confirmation is recorded as a per-round fact and adds no fifth outcome value', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
-  const phase6 = prose(section(gate, '### Phase 6', '\n## '));
-  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+  const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
+  const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
+  const confirmation = prose(configuredReviewerSection('## The set-aside confirmation'));
 
   assert.match(
     wisdom,
@@ -11879,8 +12048,7 @@ test('the confirmation is recorded as a per-round fact and adds no fifth outcome
 });
 
 test('the returned outcome record states the residual the confirmation does not close', () => {
-  const gate = source('src/tools/merge-gate.md');
-  const record = returnedRecord(gate, 'merge-gate');
+  const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
 
   // The honest floor: an attacker who can steer the delegated run forges nothing, because the
   // review body is the input to the classification that produces the value.
@@ -12348,7 +12516,7 @@ const returnedRecord = (text, label) => {
 };
 
 test('both ends of the iterate return declare one closed outcome vocabulary', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = configuredReviewerRoute();
   const iterate = source('src/tools/iterate.md');
 
   // Extracted rather than pattern-matched, so a fifth value or a renamed one fails instead of
@@ -12429,7 +12597,7 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
 });
 
 test('the gate consumes the iterate return only through identifiers it recorded before delegating', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = configuredReviewerRoute();
   const record = returnedRecord(gate, 'merge-gate');
 
   // The sentence the whole section exists for. Its absence was the defect: the gate consumed "the
@@ -12554,7 +12722,7 @@ test('the gate consumes the iterate return only through identifiers it recorded 
   );
   assert.match(record, near('at most', 'ten', 120), 'the inert report must state a concrete bound');
   assert.match(
-    prose(section(gate, '### Phase 6')),
+    prose(section(source('src/tools/merge-gate.md'), '### Phase 6')),
     near('inert returned outcome', '(?:count|identifier)', 300),
     'Phase 6 must be where the inert outcomes reach the user',
   );
@@ -12580,7 +12748,8 @@ test('the gate consumes the iterate return only through identifiers it recorded 
 
 test('the Phase 3 assessment record is written from the validated return and two gate-internal writers', () => {
   const gate = source('src/tools/merge-gate.md');
-  const record = returnedRecord(gate, 'merge-gate');
+  const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
+  const runWideRecord = returnedRecord(gate, 'merge-gate core');
 
   assert.match(
     record,
@@ -12603,12 +12772,12 @@ test('the Phase 3 assessment record is written from the validated return and two
   // The identifier-free delegation. Its return is consumed, so a rule that only spoke about
   // identified items would leave it undescribed rather than out of scope.
   assert.match(
-    record,
+    runWideRecord,
     near('CI repair', '(?:free-text-only|no manifest)', 400),
     'the identifier-free CI repair must be covered explicitly',
   );
   assert.match(
-    record,
+    runWideRecord,
     near('CI repair', '(?:fresh check read|whole-run abort)', 600),
     'the CI repair outcome must be consumed through the check read and the whole-run abort',
   );
@@ -12618,11 +12787,13 @@ test('no side of the iterate channel still claims a per-item ABORT', () => {
   const gate = source('src/tools/merge-gate.md');
   const iterate = source('src/tools/iterate.md');
 
-  assert.doesNotMatch(
-    prose(gate),
-    /On `ABORT` for an item/i,
-    'the gate must no longer presume a per-item ABORT that iterate never emits',
-  );
+  for (const text of [gate, configuredReviewerRoute()]) {
+    assert.doesNotMatch(
+      prose(text),
+      /On `ABORT` for an item/i,
+      'neither side of the gate seam may presume a per-item ABORT that iterate never emits',
+    );
+  }
   for (const [text, label] of [
     [gate, 'merge-gate'],
     [iterate, 'iterate'],
@@ -12746,6 +12917,7 @@ test('no site presents a forge thread ID as a valid return key', () => {
   const sites = [
     [prose(source('src/tools/iterate.md')), 'iterate'],
     [prose(source('src/tools/merge-gate.md')), 'merge-gate'],
+    [prose(configuredReviewerRoute()), 'merge-gate configured-reviewer route'],
     [prose(source('docs/user-guide/tools-deliver.md')), 'the user guide'],
   ];
 
@@ -12768,7 +12940,7 @@ test('no site presents a forge thread ID as a valid return key', () => {
 
   // The positive half, so a deletion cannot pass as a correction: each site states the exclusion
   // rather than merely omitting the retired claim.
-  for (const [text, label] of sites) {
+  for (const [text, label] of [sites[0], sites[2], sites[3]]) {
     assert.match(
       text,
       near('thread ID', '(?:not one of those identifiers|not a key|not part of that list)', 400),
@@ -12783,9 +12955,7 @@ test('both ends record the identifier a thread item travels under beside its thr
   // threads went out and nothing about the identifiers they went out under, and iterate's recorded
   // the received thread-ID list alone — both correct while the thread ID was the key, and both
   // silent about the value that replaced it.
-  const gateWisdom = prose(
-    section(source('src/tools/merge-gate.md'), '## Wisdom accumulation', '\n## '),
-  );
+  const gateWisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
   const iterateWisdom = prose(
     section(source('src/tools/iterate.md'), '## Wisdom Accumulation', '\n## '),
   );
@@ -12925,7 +13095,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
 
 test('the return is declared in its own section and adds no fifth control line', () => {
   const gate = source('src/tools/merge-gate.md');
-  const record = returnedRecord(gate, 'merge-gate');
+  const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
 
   // The four control lines are counted by the delimiter test above. A return announced as a fifth
@@ -13021,7 +13191,7 @@ test('every site stating the pending discriminator is true on both providers', (
   const sites = [
     ['src/shared/review-bot-state.md', /A review with no `submittedAt` is a pending/],
     ['src/shared/pr-review-comments.md', /A review with no submission time is a pending/],
-    ['src/tools/merge-gate.md', /A pending review the caller owns/],
+    ['src/shared/merge-gate-configured-reviewer.md', /A pending review the caller owns/],
     ['docs/user-guide/remote-tracker.md', /A review with no submission time is a pending draft/],
     ['src/scripts/remote-tracker-core.mjs', /`submittedAt` is absent for a pending review/],
   ];
@@ -13287,7 +13457,7 @@ test('the reviewer advisory conservatively classifies and retains candidates wit
 test('every fresh review read accumulates advisory candidates before evaluation', () => {
   const gate = source('src/tools/merge-gate.md');
   const phase1 = flat(section(gate, '### Phase 1', '\n### Phase 2'));
-  const phase3 = section(gate, '### Phase 3', '\n### Phase 4');
+  const phase3 = configuredReviewerSection('## Phase 3: Automatic reviewer round');
   const postWait = flat(
     section(
       phase3,

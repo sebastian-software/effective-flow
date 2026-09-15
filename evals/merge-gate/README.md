@@ -11,11 +11,13 @@ The plan behind it is
 
 ## The design in one paragraph
 
-**The stub's call log is the evidence.** A gate run's whole forge input surface passes through one
-subprocess, so a fake `remote-tracker.mjs` on a scaffolded skill root sees everything the gate asks
-for and writes one JSON line per call. What that run _did_ is therefore already on disk, and the
-assertions are ordinary `node:test` cases over that file. There is no harness, no grader, no scoring
-and no trace parsing — three of those exist only because a trace is the evidence, and here it is not.
+**The stub's call log is the forge-facing evidence.** A gate run's whole forge input surface passes
+through one subprocess, so a fake `remote-tracker.mjs` on a scaffolded skill root sees everything the
+gate asks for and writes one JSON line per call. What that run _did_ at that boundary is therefore
+already on disk, and the assertions are ordinary `node:test` cases over that file. The configured-
+reviewer scenario adds one narrower instrument: its sandbox replaces `iterate` with a deterministic
+echo that validates the real Phase-3 handoff and records a bounded second trace. That trace is not a
+model trace, grader, or score; it proves only the delegation boundary the tracker log cannot see.
 **A run is started by handing a scenario's prompt to a fresh agent**, not by a script: the isolation
 requirement is epistemic rather than technical, since a run started from a session that already knows
 the expected outcome tests that session's memory instead of the instruction.
@@ -27,11 +29,14 @@ the expected outcome tests that session's memory instead of the instruction.
 | `scenarios/<name>.md`               | One scenario: the prompt handed to a fresh agent, plus its expected outcome as prose           |
 | `prepare.mjs`                       | Archives the previous run's log, re-scaffolds, prints the prompt. Starts nothing               |
 | `_scaffold/scaffold.mjs`            | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository        |
+| `_scaffold/configured-reviewer-scaffold.mjs` | Adds the configured-reviewer rows and scenario-local `iterate` echo after the base scaffold |
 | `_scaffold/remote-tracker.mjs`      | The canned-envelope stub standing in for the shipped helper, and the writer of the call log    |
+| `_scaffold/iterate-trace.mjs`       | The configured-reviewer echo receiver and writer of its bounded handoff trace                  |
 | `_scaffold/sandbox.mjs`             | The sandbox layout, shared by the scaffold and the preparation step                            |
 | `fixtures/<name>.json`              | The scenario's envelope set, the provider payload each came from, and its merge opt-in         |
 | `results/<name>/run-<n>.jsonl`      | Archived call logs — the evidence the assertions read. Created by `prepare.mjs`                |
 | `results/<name>/run-<n>.build.json` | The run's build stamp: per-file hashes of what that scenario loads, binding the log to a build |
+| `results/<name>/run-<n>.iterate.jsonl` | Configured-reviewer handoff trace, paired with that scenario's call log and build stamp      |
 
 Two test files in the ordinary `pnpm test` suite belong to this layer:
 
@@ -47,6 +52,7 @@ suite.
 ## Running a scenario
 
 ```sh
+pnpm prepare:merge-gate-eval configured-reviewer-set-aside-blocks # configured reviewer, deferred findings
 pnpm prepare:merge-gate-eval guard-blocks-merge        # build, archive, re-scaffold, print the prompt
 pnpm prepare:merge-gate-eval merge-proceeds            # the merging counterpart, sandboxed separately
 pnpm prepare:merge-gate-eval linked-issue-open-points  # the observer-only post-merge observation
@@ -63,6 +69,11 @@ this repository's expectations and no sight of the scenario file's expected outc
 previous run left behind, so **run `prepare` once more after the last run** before asserting; that
 final call also re-scaffolds and reprints the prompt, which costs nothing.
 
+Every scenario prompt states the sandbox project twice: as the execution root and as the literal
+`cwd` field required in every helper request. The second form is deliberate. Merely running a shell
+from that directory does not populate the JSON contract, and a missing field makes the resulting
+record invalid even when the inherited process directory happened to be correct.
+
 ```sh
 node --test test/merge-gate-eval.test.mjs         # or just pnpm test
 ```
@@ -70,18 +81,26 @@ node --test test/merge-gate-eval.test.mjs         # or just pnpm test
 The archived logs are the layer's evidence and are committed with it. They are what makes a claim
 about the gate's behaviour checkable by someone who did not perform the runs.
 
+The configured-reviewer scenario modifies only its own sandbox. Its wrapper appends the current
+`mergeGate.bots`, `mergeGate.bots.<login>.trigger`, and `mergeGate.bots.<login>.check` rows to that
+sandbox's project-setup ADR, then replaces the built `tools/iterate.md` with the echo. The other five
+scenarios retain the base scaffold and production `iterate`. The echo accepts only the expected
+delimiter, minted boundary token, two-item attribution manifest, item filter, and suppression and
+review-guard controls. It retains reviewer text only as byte count and SHA-256 digest, then returns
+one controlled `deferred` outcome for each caller-minted identifier.
+
 ### Cost is quota and wall-clock time
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-runs of one scenario is therefore about half an hour of wall clock, and the five scenarios that
-exist today are about two and a half hours between them — a scheduling question rather than a budget
-one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
+runs of one scenario is therefore about half an hour of wall clock. The final round is five valid
+runs for each of six scenarios — thirty runs, or roughly three hours — a scheduling question rather
+than a budget one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
 requirement, because for a fail-closed rule a single deviating run is a finding. The one scenario
 that never gives way is the merging counterpart: without it the refusals prove less than they
 appear to.
 
-That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
+That cost comes due less often than the wall-clock figure suggests. A round is invalidated only by a
 change to what the gate loads — the router, `tools/merge-gate.md`, the artifacts the gate delegates
 into (`tools/iterate.md` and the `merge-conflict-resolver` and `code-validator` worker contracts),
 and the fragments any of those reach through their own load pointers — rather than by any change
@@ -129,6 +148,26 @@ Also within one round: never run `prepare` for a scenario while that scenario's 
 It archives whatever is in the sandbox and then deletes the sandbox, so it captures a partial log
 and strands the running agent. Archive a scenario only after its run has finished; the scenarios
 remain independent of each other.
+
+### Evidence units and invalid runs
+
+An ordinary archived run is the pair `run-<n>.jsonl` plus `run-<n>.build.json`. A configured-
+reviewer run is the indivisible trio formed by that pair and `run-<n>.iterate.jsonl`. `prepare.mjs`
+stages the complete unit before publishing its final names and rolls back the final names if that
+archive fails. Before it archives or scaffolds anything, it rejects a missing companion, an echo
+trace orphaned under another scenario, or a configured-reviewer call log without its trace. The
+focused evidence tests pin that pairing rule, while the scenario assertions require each call log's
+build stamp and, on the configured-reviewer route, its trace.
+
+Pairing is necessary, not sufficient. A run must also match the current scenario build identity,
+carry a readable and correctly rooted tracker log, request no operation the production helper
+supports but the fixture leaves undefined, and satisfy any scenario-specific validity rule. The
+configured-reviewer trace must contain exactly one validated echo record whose identifiers,
+attribution, controls, and controlled outcomes match the handoff. The sequenced Phase-4 scenario
+must have received its deciding status element before its fresh evaluation. An invalid run is
+discarded and rerun as its whole pair or trio; if it remains under `results/`, the suite fails it
+rather than omitting it from the five-valid-run bar. A run that merged after a deciding fail-closed
+input is always a valid failure and is never discarded as variance.
 
 ### Seven failure modes the assertions handle by name
 
@@ -198,10 +237,11 @@ remain independent of each other.
 
 ## What this deliberately does not cover
 
-- **Five scenarios exist: one pair, one observer and two unreported-check-list refusals.**
-  `guard-blocks-merge` and `merge-proceeds` are the pair, and a green result from them proves that
-  one refusal path holds and that the harness can reach a merge, and nothing about the breadth of
-  the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
+- **Six scenarios exist: one pair, one observer, two unreported-check-list refusals, and one
+  configured-reviewer refusal.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+  result from them proves that one refusal path holds and that the harness can reach a merge, and
+  nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than
+  inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`
   stands beside them too, and makes no merge decision either: its status read carries no check
   rollup, which Phase 2 refuses to leave its loop on and merge precondition 2 refuses to pass unless
@@ -209,7 +249,11 @@ remain independent of each other.
   no scenario here is. `unreported-checks-at-phase-four` is the refusal that reaches that decision
   point: its status read is sequenced to report a green list through Phase 2 and none at Phase 4, so
   a valid run blocks at Phase 4 on condition 2. Its log cannot tell whether the waiver's own text was
-  loaded, because condition 2 blocks either way. WP3 to WP6 of the plan — the guard's three ordered rules across its three
+  loaded, because condition 2 blocks either way. `configured-reviewer-set-aside-blocks` reaches the
+  configured-reviewer route, delegates one thread and one review-body finding through the scenario-
+  local echo, and reaches the Phase-4 set-aside decision without an interactive operator. Its two
+  traces prove those boundaries and the absence of a merge request, not the text of the gate's final
+  report. WP3 to WP6 of the plan — the guard's three ordered rules across its three
   counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
   bound — are still to come. Read a green result as a proven mechanism, not as a net.
 - **No single log can prove a refusal was a decision.** A refusal is defined by absence, and a call
@@ -263,7 +307,7 @@ remain independent of each other.
 | `skill/`          | A copy of `dist/portable/effective-flow/`, with `scripts/remote-tracker.mjs` replaced   |
 | `project/`        | A temp Git repository with the AGENTS.md marker, the project-setup ADR and a .gitignore |
 | `fixture.json`    | The scenario's envelope set, where the stub looks for it                                |
-| `trace/`          | Where the stub appends `tracker-calls.jsonl`                                            |
+| `trace/`          | The tracker call log and, for the configured-reviewer scenario, its `iterate-calls.jsonl` handoff trace |
 
 The path is a fixed absolute location because a scenario prompt has to name the skill root and the
 project checkout literally and cannot know where the agent it is handed to was rooted. The scaffold

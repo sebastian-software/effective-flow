@@ -1,0 +1,49 @@
+{
+  "scenario": "linked-issue-open-points",
+  "digest": "sha256:13dd7ab924928b1843415cb1f7d19321362e90ada2686708889008b1b2b7e79d",
+  "skill": {
+    "digest": "sha256:231e0a5ee3bedaf82498c9511e38a980d3724882e9cbcb6242bc7b101048b59c",
+    "files": {
+      "SKILL.md": "sha256:1c0b0c49473f385bda509a0226791a7e654c76d3a032942b8d3c6afb86c5c28c",
+      "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
+      "shared/config-migration.md": "sha256:fe6944a9a6b8230fd658593cc95f3f6fbe30ec5c544bc69c30b1de648084ebf2",
+      "shared/effective-flow-dir-migration.md": "sha256:331328198efd38ad4541449aec9e346ad4ab673cc1c15657915f9912d92952c0",
+      "shared/issue-post-merge-observation.md": "sha256:53b300a64c629366c3b2404627eef215b7977ea1200498c9492546d4517fa06f",
+      "shared/issue-tracker-forge.md": "sha256:1fe23582e3bd10190ff6152fdecf2211350f7bc07557eaa1b1c30a1c764317f7",
+      "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
+      "shared/merge-gate-check-list-waiver.md": "sha256:30c255294e9da26c6654d7e9bb8bdd2bcc112c9649cb161ee34b29db1f97601d",
+      "shared/merge-gate-checkout-boundary.md": "sha256:2cec54fc23be7e1f2f373a5c7a832095103f13744513a85db5953315e038782b",
+      "shared/merge-gate-configured-reviewer.md": "sha256:962990fe10219a524b45e03ba8bc81f0ef0599bfda487115a7c104895f67642d",
+      "shared/merge-gate-conflict-resolution.md": "sha256:b222e6d4dab1ab511986462ed10f2332b00de2ed365c8a680352ce07e43e6fc8",
+      "shared/merge-gate-issue-observation.md": "sha256:dd3c4bb7b21b38b0d4f90cade4945937be35102d5796b4af3ff13ee6f23940dd",
+      "shared/next-steps.md": "sha256:4290691291c74e4c5d026f08c75ecd52f9f72e9bfa5a934037343502512d745f",
+      "shared/pr-merge-completion.md": "sha256:abdb3731a62bdccfac7468bc9410db08989c25ced58299b8b17b0eff18afa9fe",
+      "shared/pr-review-integration.md": "sha256:6ff2cf8b8780f6e2ecc84f665068bb587818187794236aa938f14990df57e7c0",
+      "shared/runtime-state-safety.md": "sha256:900f75b1ff616225785671fb9828b3ad33abe6b68ee184b08920abd53a6f6cc8",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
+      "shared/tracker-target.md": "sha256:4164086fbc2e6562c52d2da4fdfd8bf7a4b1982aeb0eaa548c24c811a700dd99",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
+      "tools/iterate.md": "sha256:9752926d5b9d2af26050f3b3bba1db7f45f897c64b349c15ba1703dfc4df1b32",
+      "tools/merge-gate.md": "sha256:3c6bcd1ea48a5c2d8417c0e8f9d72a7b50efae385ee7658e11b857628603bd8d",
+      "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "files": {
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:b9567a039e952dca7a0745d4e2adf87a0777d952b21c153a448b3936047451ab",
+    "files": {
+      "evals/merge-gate/fixtures/linked-issue-open-points.json": "sha256:f4443361ef671ab7e1088562805469824a454bf6fdb04d8f12a6f7b22915ac7b",
+      "evals/merge-gate/scenarios/linked-issue-open-points.md": "sha256:8ead3e63d67918eb2bb8bd97975cf130fe0adeab10a98c81bc876c13ea0c8996"
+    }
+  }
+}
