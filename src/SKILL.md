@@ -7,7 +7,10 @@ description: "Effective Flow — software engineering workflows as tools, invoke
 
 Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `{{FLOW}} <tool>` (version {{VERSION}}).
 
-This router skill is deliberately **thin**. Beyond the tool catalog and the dispatch rule it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
+This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
+the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
+tool-specific instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the
+session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
@@ -44,4 +47,5 @@ clarification instead of a guess.
 ## Rules
 
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
-- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `{{FLOW}}` tools. Tools invoke them internally through {{WORKER_RESOLUTION}}. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.
+- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `{{FLOW}}` tools. Only the workflow/tool orchestrator may start worker roles or analysis fan-out, using {{WORKER_RESOLUTION}}; workers are leaf executors and never delegate further. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.
+- Start each worker with zero inherited turns when supported, otherwise the smallest host-supported history, and give it a compact self-contained handoff: objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. A worker returns missing essential context to the orchestrator instead of starting a child.

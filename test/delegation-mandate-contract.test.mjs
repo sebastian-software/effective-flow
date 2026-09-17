@@ -41,11 +41,6 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'concept-review',
 ]);
 
-// A tool whose whole purpose is to produce changes. Holding one of these marks the agent as a
-// producing role, which is what earns the sub-agent grant; an agent holding neither is an
-// observation role whose output is judgment, and it withholds the grant. `Bash` is deliberately
-// not on this list: it is not harmless, it just does not make an agent a producing role.
-const CHANGE_PRODUCING_TOOLS = ['Write', 'Edit'];
 const SUB_AGENT_TOOLS = ['Agent', 'Task'];
 
 // Enumerate src/agents/ rather than hard-coding the roster, so a newly added agent is in scope
@@ -92,6 +87,76 @@ function assertClauses(text, clauses) {
   }
 }
 
+function assertLeafWorkerHandoff(text, context) {
+  assertClauses(text, [
+    [
+      /only the (?:workflow\/tool )?orchestrator (?:may )?(?:start|starts) worker(?: roles|s) or analysis fan-out/i,
+      `${context} must reserve worker starts and analysis fan-out for the orchestrator`,
+    ],
+    [
+      /worker(?: is|s are) (?:a )?(?:\*\*)?leaf executor/i,
+      `${context} must classify every worker as a leaf executor`,
+    ],
+    [
+      /(?:starts no (?:sub-agent|child)|never delegate(?:s)? further)/i,
+      `${context} must prohibit a worker from starting a child`,
+    ],
+    [
+      /return(?:s)? missing essential context to the orchestrator/i,
+      `${context} must send missing essential context back to the orchestrator`,
+    ],
+    [
+      /zero inherited turns(?:\*\*)? when supported/i,
+      `${context} must prefer zero inherited turns for a worker`,
+    ],
+    [
+      /otherwise (?:its|the) smallest (?:host-)?supported history/i,
+      `${context} must fall back to the smallest supported history`,
+    ],
+    [
+      /compact,? self-contained handoff/i,
+      `${context} must require a compact, self-contained worker handoff`,
+    ],
+  ]);
+
+  for (const [pattern, field] of [
+    [/objective/i, 'objective'],
+    [/relevant artifact paths/i, 'relevant artifact paths'],
+    [/scoped paths and ownership/i, 'scoped paths and ownership'],
+    [
+      /execution and runtime-state roots when writes are allowed/i,
+      'execution and runtime-state roots when writes are allowed',
+    ],
+    [/resolved language/i, 'resolved language'],
+    [/authority and write limits/i, 'authority and write limits'],
+    [/completion protocol/i, 'completion protocol'],
+  ]) {
+    assert.match(text, pattern, `${context} worker handoff must include ${field}`);
+  }
+}
+
+function findProseBlock(body, trigger, context) {
+  const block = body.split(/\n\s*\n/).find((candidate) => trigger.test(candidate));
+  assert.ok(block, `${context} must retain the missing/ambiguous-context decision point`);
+  return block;
+}
+
+function assertDelegatedQuestionBoundary(body, trigger, context) {
+  const block = findProseBlock(body, trigger, context);
+
+  assert.match(
+    block,
+    /only\s+(?:on\s+)?a\s+direct invocation[^\n]{0,100}\b(?:asks?|requests?)\b/i,
+    `${context} must allow a user question only on direct invocation`,
+  );
+  assert.match(
+    block,
+    /delegated worker[\s\S]{0,100}\breturns?\b[\s\S]{0,40}\bABORT\b[\s\S]{0,120}\b(?:missing context|prerequisite)\b[\s\S]{0,80}\borchestrator\b/i,
+    `${context} must return ABORT with the missing context or prerequisite to the orchestrator ` +
+      'instead of asking the user when delegated',
+  );
+}
+
 test('delegation-mandate.md exists and stays within the always-loaded context budget', () => {
   const lineCount = delegationMandate.split('\n').length;
   assert.ok(
@@ -104,7 +169,7 @@ test('delegation-mandate.md exists and stays within the always-loaded context bu
   );
 });
 
-test('delegation-mandate.md states all six mandate points and carries no unresolved placeholder', () => {
+test('delegation-mandate.md preserves tool-level delegation and workflow handoff boundaries', () => {
   assertClauses(delegationMandate, [
     [
       /standing request/i,
@@ -136,14 +201,9 @@ test('delegation-mandate.md states all six mandate points and carries no unresol
       'missing: the binding that every site naming the triviality exception means exactly this ' +
         'definition — the four delegation sites reference the term instead of restating it',
     ],
-    [/fan out\s+\*\*read-only\*\*/i, 'missing: a worker may fan out read-only analysis sub-agents'],
     [
-      /never re-delegates[\s\S]{0,80}never delegates a write/i,
-      'missing: no re-delegation of the assignment and no delegated write',
-    ],
-    [
-      /declined at runtime[\s\S]{0,80}work inline and say so/i,
-      'missing: disclosed inline fallback that is never silent',
+      /declined at runtime[\s\S]{0,100}orchestrator works inline and says so/i,
+      'missing: disclosed orchestrator-level inline fallback that is never silent',
     ],
     [/never silently/i, 'missing: the fallback must never be silent'],
     [
@@ -159,49 +219,18 @@ test('delegation-mandate.md states all six mandate points and carries no unresol
   );
 });
 
-test('delegation-mandate.md bounds what a worker may itself start', () => {
-  assertClauses(delegationMandate, [
-    [
-      /A worker that \*\*has\*\* a sub-agent tool may fan out \*\*read-only\*\* analysis sub-agents/,
-      'missing: a worker that has a sub-agent tool may fan out read-only analysis sub-agents',
-    ],
-    [
-      /never\s+re-delegates\s+its\s+own\s+assignment/i,
-      'missing: a worker never re-delegates its own assignment',
-    ],
-    [/never\s+delegates\s+a\s+write/i, 'missing: a worker never delegates a write'],
-    [
-      /never\s+selects\s+or\s+sequences\s+another\s+worker\s+role/i,
-      'missing: a worker never selects or sequences another worker role — role selection and ' +
-        'sequencing stay with the orchestrating tool',
-    ],
-    [
-      /A worker whose tool list carries no sub-agent tool does not delegate at all/i,
-      'missing: a worker whose tool list carries no sub-agent tool does not delegate at all. ' +
-        'This is the only statement of where the read-only guarantee actually lives — the ' +
-        'withheld tool grant, not prose.',
-    ],
-  ]);
-  // The fragment used to promise that a worker "never starts a general-purpose or otherwise
-  // write-capable agent". That promise was empirically disproven: an agent granted the sub-agent
-  // tool can start a general-purpose child regardless of what the prose says, so restating it
-  // would advertise an enforcement that does not exist.
-  assert.doesNotMatch(
-    delegationMandate,
-    /never\s+starts\s+a\s+general-purpose/i,
-    'delegation-mandate.md must not promise that a worker never starts a general-purpose agent: ' +
-      'nothing enforces that at runtime. A worker granted Agent/Task can start any agent type, ' +
-      'which is why the read-only guarantee is now carried by withholding the grant instead.',
-  );
+test('delegation-mandate.md defines the self-contained leaf-worker handoff', () => {
+  assertLeafWorkerHandoff(delegationMandate, 'src/shared/delegation-mandate.md');
 });
 
-test('SKILL.md states invoking a tool is the standing request for internal delegation', () => {
+test('SKILL.md keeps delegation at the router and repeats the leaf-worker handoff', () => {
   assert.match(
     skill,
     /Invoking a tool is the user['’]s standing request for exactly that internal delegation/,
     'SKILL.md must state that invoking a tool is the standing request for exactly that internal ' +
       'delegation; without it the worker-resolution section reads as an optional offer',
   );
+  assertLeafWorkerHandoff(skill, 'src/SKILL.md');
 });
 
 test('exactly the expected tool sources carry the eager delegation-mandate include', () => {
@@ -328,12 +357,8 @@ test('the old optional-delegation phrasing does not regress anywhere under src/'
   }
 });
 
-test('every agent source carries the eager include and pairs the sub-agent grant with the producing roles', () => {
+test('every agent source carries the eager mandate and prohibits all sub-agent grants', () => {
   const agents = readAgentSources();
-  const producingAgents = [];
-  const observationAgents = [];
-  // Collected instead of asserted per file, so one offender cannot mask another: the roster is
-  // edited by several hands and a failure report that stops at the first file hides the rest.
   const violations = [];
 
   for (const { file, body, tools } of agents) {
@@ -342,61 +367,64 @@ test('every agent source carries the eager include and pairs the sub-agent grant
       `src/agents/${file} must eagerly include delegation-mandate`,
     );
 
-    const producing = CHANGE_PRODUCING_TOOLS.filter((tool) => tools.includes(tool));
-    // This reads the `Agent` and `Task` strings out of the source; it does not prove the grant
-    // works at runtime. A mistyped tool name is silently dropped by the harness, and only the
-    // manual smoke check can catch that.
     const subAgent = SUB_AGENT_TOOLS.filter((tool) => tools.includes(tool));
-
-    if (producing.length > 0) {
-      producingAgents.push(file);
-      const missing = SUB_AGENT_TOOLS.filter((tool) => !subAgent.includes(tool));
-      if (missing.length > 0) {
-        violations.push(
-          `src/agents/${file} is a producing role (lists ${producing.join(', ')}) but does not ` +
-            `list ${missing.join(' and ')} — tools: [${tools.join(', ')}]`,
-        );
-      }
-    } else {
-      observationAgents.push(file);
-      if (subAgent.length > 0) {
-        violations.push(
-          `src/agents/${file} is an observation role (lists neither ` +
-            `${CHANGE_PRODUCING_TOOLS.join(' nor ')}) but lists ${subAgent.join(' and ')} — ` +
-            `tools: [${tools.join(', ')}]`,
-        );
-      }
+    if (subAgent.length > 0) {
+      violations.push(
+        `src/agents/${file} lists prohibited ${subAgent.join(' and ')} in claude.tools — ` +
+          `tools: [${tools.join(', ')}]`,
+      );
     }
   }
 
   assert.deepEqual(
     violations,
     [],
-    'claude.tools drifted from the grant pairing:\n' +
+    'named workers are leaf executors, but claude.tools grants them sub-agent tools:\n' +
       `${violations.join('\n')}\n\n` +
-      `An agent that lists ${CHANGE_PRODUCING_TOOLS.join(' or ')} produces changes and must list ` +
-      'both Agent and Task, because the delegation mandate makes read-only analysis fan-out its ' +
-      'default. An agent that lists neither is an observation role and must list neither, ' +
-      'regardless of Bash. It withholds the grant because its output is judgment rather than ' +
-      'changes, and withholding keeps the easy path to a write-capable child closed: a sub-agent ' +
-      "tool starts a child with the child's own tool set, which neither prose nor the " +
-      'Agent(<type>) form constrains. For the reviewers that grant is the entire read-only ' +
-      'guarantee; for an observation role that also holds Bash — which is not harmless and can ' +
-      'reach a write on its own — it is defence in depth rather than a guarantee.',
+      'Every src/agents role must omit Agent and Task regardless of its read/write authority. ' +
+      'Only the workflow/tool orchestrator may start workers or analysis fan-out.',
   );
+});
 
-  // Without these, a bug that made every agent land on one side of the branch — an empty
-  // CHANGE_PRODUCING_TOOLS match, a broken tool split — would satisfy the rule vacuously.
-  assert.ok(
-    producingAgents.length > 0,
-    'expected at least one producing agent under src/agents/ carrying the Agent/Task grant; ' +
-      'finding none means the tool lists are no longer being read',
-  );
-  assert.ok(
-    observationAgents.length > 0,
-    'expected at least one observation agent under src/agents/ with the Agent/Task grant ' +
-      'withheld; finding none means the boundary this contract pins has been dropped everywhere',
-  );
+test('generic fallback workers return missing context upstream and ask only when invoked directly', () => {
+  for (const { file, decision, trigger } of [
+    {
+      file: 'generic-product-implementer.md',
+      decision: 'reduced-depth routing ambiguity',
+      trigger: /role or a safe native command remains ambiguous/i,
+    },
+    {
+      file: 'generic-product-implementer.md',
+      decision: 'repository-native discovery gap',
+      trigger: /evidence does not establish the product\/tooling role/i,
+    },
+    {
+      file: 'generic-product-implementer.md',
+      decision: 'missing dependency or toolchain approval',
+      trigger: /introduce a dependency, test framework, task runner/i,
+    },
+    {
+      file: 'generic-product-implementer.md',
+      decision: 'missing command prerequisite or approval',
+      trigger: /command requires a missing runtime, network access, secrets/i,
+    },
+    {
+      file: 'generic-implementer.md',
+      decision: 'product/tooling boundary ambiguity',
+      trigger: /product\/tooling boundary remains ambiguous/i,
+    },
+    {
+      file: 'marketing-writer.md',
+      decision: 'essential missing marketing context',
+      trigger: /missing context is essential/i,
+    },
+  ]) {
+    assertDelegatedQuestionBoundary(
+      readSource('agents', file),
+      trigger,
+      `src/agents/${file} (${decision})`,
+    );
+  }
 });
 
 test('no agent narrows a sub-agent grant with the disproven Agent(<type>) form', () => {
@@ -408,8 +436,7 @@ test('no agent narrows a sub-agent grant with the disproven Agent(<type>) form',
         `form (found: ${rawTools}). It was empirically disproven as a restriction: a probe agent ` +
         'declared with `tools: Read, Glob, Grep, Agent(Explore)` still spawned a general-purpose ' +
         'subagent. The harness reads the parenthesised form as a plain grant and applies no type ' +
-        'restriction, so using it on an observation role silently reopens the path it was meant ' +
-        'to close. An observation role must omit Agent and Task entirely.',
+        'restriction, so every named worker must omit Agent and Task entirely.',
     );
   }
 });

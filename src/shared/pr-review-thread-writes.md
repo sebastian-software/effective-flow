@@ -4,10 +4,10 @@ This shared building block holds the three **write** operations on a pull reques
 replying to a thread, resolving a thread, and submitting a review with inline comments. The shared
 read surface they are performed against — PR resolution, the fresh thread and comment reads, the
 authenticated identity, the summary comment, the marker contract, the `language.forge` and
-"No AI attribution" rules, and through them the "Remote helper" reference to the helper contract in
-`issue-tracker-forge.md` — stays in the "PR review comment integration" building block, which every
-consumer of this fragment loads as well. `{{SKILL:merge-gate}}` loads that read surface too, but
-not this fragment: it writes no reply, resolves no thread, and submits no review.
+"No AI attribution" rules, and through them the eagerly included `remote-helper-contract` — stays
+in the "PR review comment integration" building block, which every consumer of this fragment loads
+as well. `{{SKILL:merge-gate}}` loads that read surface too, but not this fragment: it writes no
+reply, resolves no thread, and submits no review.
 
 ### Reply to a thread
 

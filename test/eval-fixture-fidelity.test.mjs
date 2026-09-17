@@ -162,6 +162,14 @@ function readCallLog(path) {
     .map((line) => JSON.parse(line));
 }
 
+function startEvents(records) {
+  return records.filter((record) => record.event === 'start' || !Object.hasOwn(record, 'event'));
+}
+
+function completionEvents(records) {
+  return records.filter((record) => record.event === 'complete');
+}
+
 // Synthetic sequences for the stub's own mechanics, written to a temporary directory and never to
 // `fixtures/`, so the fidelity corpus is untouched by them. Each element is the positive control's
 // real status envelope with its title marked, which is enough to tell the elements apart and is all
@@ -276,6 +284,7 @@ test('every fixture covers the operations a gate run performs', () => {
     'reference-parse',
     'probe',
     'pr-read',
+    'body-hash',
     'viewer-read',
     'pr-status-read',
     'pr-checks-wait',
@@ -297,6 +306,28 @@ test('every fixture covers the operations a gate run performs', () => {
         `${file}: fixture defines no envelope for the required operation "${operation}"`,
       );
     }
+  }
+});
+
+// Phase 0 retains the hash of the normalized PR body it just read. Merely requiring both
+// operations above is insufficient: a fixture can state a perfectly faithful `body-hash` envelope
+// for a different body, and the normalizer replay will validate both entries independently while
+// the scenario exercises a state no real gate run can produce. Bind the local helper input to the
+// normalized `pr-read` output so the two individually faithful envelopes also form one faithful
+// Phase-0 observation.
+test('every fixture hashes the body returned by its normalized PR read', () => {
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    const bodyHash = fixture.operations['body-hash'];
+    assert.ok(bodyHash, `${file}: fixture defines no body-hash operation`);
+
+    const prRead = fixture.operations['pr-read'];
+    assert.ok(prRead, `${file}: fixture defines no pr-read operation`);
+    assert.equal(
+      bodyHash.input?.body,
+      prRead.envelope?.data?.result?.body,
+      `${file}: body-hash must receive exactly the normalized body returned by pr-read`,
+    );
   }
 });
 
@@ -331,7 +362,7 @@ test('the stub hands out exactly the fixture envelope for every defined operatio
         .split('\n')
         .map((line) => JSON.parse(line));
       assert.deepEqual(
-        log.map((record) => record.operation),
+        startEvents(log).map((record) => record.operation),
         asked,
         `${file}: the stub's call log does not record every operation`,
       );
@@ -392,8 +423,8 @@ test('the stub walks every element of a sequenced fixture entry in order', () =>
           }
 
           assert.deepEqual(
-            readCallLog(logPath).map((record) => [record.seq, record.operation]),
-            Array.from({ length: elements.length + 1 }, (_, index) => [index + 1, operation]),
+            startEvents(readCallLog(logPath)).map((record) => record.operation),
+            Array.from({ length: elements.length + 1 }, () => operation),
             `${file}: the stub's call log does not record every call of the sequenced "${operation}"`,
           );
         } finally {
@@ -433,10 +464,10 @@ test('a fixture that does not opt in has its pr-merge recorded and refused', () 
       // say why the merge did not happen. The assertion that no merge was requested is made against
       // the call log below, never against this string.
       assert.match(envelope.error.message, /EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED/);
-      const log = JSON.parse(readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8').trim());
-      assert.equal(log.seq, 1);
-      assert.equal(log.operation, 'pr-merge');
-      assert.equal(log.apply, argv.includes('--apply'));
+      const [start] = startEvents(readCallLog(join(logDir, 'tracker-calls.jsonl')));
+      assert.equal(start.seq, 1);
+      assert.equal(start.operation, 'pr-merge');
+      assert.equal(start.apply, argv.includes('--apply'));
     } finally {
       rmSync(logDir, { recursive: true, force: true });
     }
@@ -464,10 +495,10 @@ test('a fixture that opts in has its pr-merge recorded and served', () => {
         /EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED/,
         `${file}: the opt-in fixture still received the refusal envelope`,
       );
-      const log = JSON.parse(readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8').trim());
-      assert.equal(log.seq, 1);
-      assert.equal(log.operation, 'pr-merge');
-      assert.equal(log.apply, apply);
+      const [start] = startEvents(readCallLog(join(logDir, 'tracker-calls.jsonl')));
+      assert.equal(start.seq, 1);
+      assert.equal(start.operation, 'pr-merge');
+      assert.equal(start.apply, apply);
     } finally {
       rmSync(logDir, { recursive: true, force: true });
     }
@@ -534,6 +565,112 @@ test("the stub's error envelope has the shape the real helper produces", () => {
   }
 });
 
+test('a sequenced fixture records correlated start and completion evidence for each call', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+  const logPath = join(logDir, 'tracker-calls.jsonl');
+  try {
+    const fixturePath = writeSequencedFixture(logDir, markedStatusElements(1), {
+      repeatLast: true,
+    });
+    const { status } = runStub('viewer-read', [], {
+      EVAL_TRACKER_FIXTURE: fixturePath,
+      EVAL_TRACKER_LOG: logPath,
+    });
+    assert.equal(status, 0);
+
+    const records = readCallLog(logPath);
+    assert.equal(records.length, 2, 'one completed call must emit one start and one completion');
+    assert.deepEqual(
+      records.map((record) => record.event),
+      ['start', 'complete'],
+      'the lifecycle events do not bracket the call',
+    );
+    assert.equal(typeof records[0].callId, 'string');
+    assert.notEqual(records[0].callId, '');
+    assert.equal(
+      records[1].callId,
+      records[0].callId,
+      'the completion is not correlated to its start',
+    );
+    assert.ok(records[0].seq < records[1].seq, 'the completion does not follow the start');
+    assert.deepEqual(Object.keys(records[0]).sort(), [
+      'apply',
+      'at',
+      'callId',
+      'cwd',
+      'event',
+      'operation',
+      'seq',
+    ]);
+    assert.deepEqual(Object.keys(records[1]).sort(), ['at', 'callId', 'event', 'seq']);
+  } finally {
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
+test('a sequenced call records completion only after stdout delivery completes', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+  const logPath = join(logDir, 'tracker-calls.jsonl');
+  const fixturePath = writeSequencedFixture(logDir, markedStatusElements(1), {
+    repeatLast: true,
+  });
+  const previousFixture = process.env.EVAL_TRACKER_FIXTURE;
+  const previousLog = process.env.EVAL_TRACKER_LOG;
+  process.env.EVAL_TRACKER_FIXTURE = fixturePath;
+  process.env.EVAL_TRACKER_LOG = logPath;
+  try {
+    const moduleUrl = new URL('../evals/merge-gate/_scaffold/remote-tracker.mjs', import.meta.url);
+    moduleUrl.searchParams.set('stdout-order-test', `${Date.now()}`);
+    const { main } = await import(moduleUrl.href);
+
+    let releaseWrite;
+    let written = '';
+    let deliveryComplete = false;
+    const writeStarted = Promise.withResolvers();
+    const stdout = {
+      write(chunk, callback) {
+        written += chunk;
+        releaseWrite = () => {
+          deliveryComplete = true;
+          callback();
+        };
+        writeStarted.resolve();
+      },
+    };
+
+    const call = main(['viewer-read'], {
+      input: { cwd: '/tmp/effective-flow-merge-gate-eval/unit' },
+      stdout,
+      setExitCode: () => assert.fail('viewer-read unexpectedly returned an error envelope'),
+    });
+    await writeStarted.promise;
+
+    const whileDeliveryPending = readCallLog(logPath);
+    assert.deepEqual(
+      whileDeliveryPending.map((record) => record.event),
+      ['start'],
+      'the call was marked complete before stdout acknowledged the envelope',
+    );
+
+    releaseWrite();
+    const envelope = await call;
+    assert.equal(deliveryComplete, true);
+    assert.deepEqual(JSON.parse(written), envelope);
+    const afterDelivery = readCallLog(logPath);
+    assert.deepEqual(
+      afterDelivery.map((record) => record.event),
+      ['start', 'complete'],
+    );
+    assert.equal(afterDelivery[1].callId, afterDelivery[0].callId);
+  } finally {
+    if (previousFixture === undefined) delete process.env.EVAL_TRACKER_FIXTURE;
+    else process.env.EVAL_TRACKER_FIXTURE = previousFixture;
+    if (previousLog === undefined) delete process.env.EVAL_TRACKER_LOG;
+    else process.env.EVAL_TRACKER_LOG = previousLog;
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+
 // The pinned call-log schema. Everything `test/merge-gate-eval.test.mjs` asserts about a gate run
 // it reads out of this file, which makes the record shape a contract rather than a convenience: a
 // stub change that dropped a key, renamed one, or broke the ordering would not fail any assertion
@@ -543,8 +680,8 @@ test("the stub's error envelope has the shape the real helper produces", () => {
 // share one, so ordering cannot rest on it; and the stub is a fresh process per call, so the
 // counter cannot live in memory either. It is derived from the lines already in the log, which is
 // what the multi-call assertion below actually exercises.
-test('the call log records the pinned schema, numbered from one without gaps', () => {
-  const fixturePath = join(FIXTURE_DIR, fixtureFiles()[0]);
+test('a nonsequenced fixture keeps the pinned legacy call schema', () => {
+  const fixturePath = join(FIXTURE_DIR, 'guard-blocks-merge.json');
   const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
   const logPath = join(logDir, 'tracker-calls.jsonl');
   try {
@@ -564,7 +701,7 @@ test('the call log records the pinned schema, numbered from one without gaps', (
       .split('\n')
       .filter((line) => line.trim() !== '')
       .map((line) => JSON.parse(line));
-    assert.equal(records.length, asked.length, 'the stub recorded one line per call');
+    assert.equal(records.length, asked.length, 'the legacy schema records one line per call');
 
     records.forEach((record, index) => {
       const [operation, argv] = asked[index];
@@ -576,9 +713,7 @@ test('the call log records the pinned schema, numbered from one without gaps', (
         `record ${index} does not carry exactly the pinned keys`,
       );
       assert.equal(record.seq, index + 1, `record ${index} is not numbered ${index + 1}`);
-      assert.equal(typeof record.operation, 'string');
       assert.equal(record.operation, operation);
-      assert.equal(typeof record.apply, 'boolean');
       assert.equal(record.apply, argv.includes('--apply'));
       // An unparseable instant is a broken record rather than a stylistic difference.
       assert.equal(typeof record.at, 'string');
@@ -613,7 +748,7 @@ test('the call log records the pinned schema, numbered from one without gaps', (
 // the reasoned argument is what let this stand through two review rounds. Sixteen is well past the
 // number of calls the gate actually overlaps; the point is to lose the race reliably if the
 // serialisation is ever removed, and without the lock this collides on every attempt.
-test('concurrent stub processes never assign the same sequence number', async () => {
+test('concurrent legacy calls never assign the same sequence number', async () => {
   const logDir = mkdtempSync(join(tmpdir(), 'effective-flow-eval-race-'));
   const logPath = join(logDir, 'tracker-calls.jsonl');
   const CONCURRENT_CALLS = 16;
@@ -643,11 +778,7 @@ test('concurrent stub processes never assign the same sequence number', async ()
       .filter((line) => line.trim() !== '')
       .map((line) => JSON.parse(line));
 
-    assert.equal(
-      records.length,
-      CONCURRENT_CALLS,
-      'a concurrent call went unrecorded; a dropped record is worse than a duplicated one, because it can turn a merge that happened into a log that shows none',
-    );
+    assert.equal(records.length, CONCURRENT_CALLS, 'a concurrent legacy call went unrecorded');
     assert.deepEqual(
       records.map((record) => record.seq),
       Array.from({ length: CONCURRENT_CALLS }, (_, index) => index + 1),
@@ -696,7 +827,11 @@ test('a sequenced entry fails loudly past its last element unless it declares re
         }
       }
       // A call past the end is still a call the run made, so it is recorded like any other.
-      assert.equal(readCallLog(logPath).length, 4, `${label}: not every call was recorded`);
+      assert.equal(
+        startEvents(readCallLog(logPath)).length,
+        4,
+        `${label}: not every call was recorded`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -755,14 +890,15 @@ test('concurrent calls of a sequenced operation are served each element exactly 
     const records = readCallLog(logPath);
     assert.deepEqual(
       records.map((record) => record.seq),
-      Array.from({ length: CONCURRENT_CALLS }, (_, index) => index + 1),
+      Array.from({ length: CONCURRENT_CALLS * 2 }, (_, index) => index + 1),
     );
-    for (const record of records) {
+    const starts = startEvents(records);
+    for (const [position, record] of starts.entries()) {
       const index = Number(record.cwd.match(/call-(\d+)$/)[1]);
       assert.deepEqual(
         served.get(index),
-        elements[record.seq - 1].envelope,
-        `call-${index} was recorded at position ${record.seq} and served a different element; selection did not use the position computed under the lock`,
+        elements[position].envelope,
+        `call-${index} was recorded at start position ${position + 1} and served a different element; selection did not use the position computed under the lock`,
       );
     }
   } finally {
@@ -799,7 +935,7 @@ test('a sequenced entry fails closed when the call-log lock cannot be obtained',
     assert.equal(plain.status, 0, 'a plain entry lost its unlocked-append fallback');
     assert.equal(plain.envelope.ok, true);
     assert.deepEqual(
-      readCallLog(logPath).map((record) => record.operation),
+      startEvents(readCallLog(logPath)).map((record) => record.operation),
       ['viewer-read'],
     );
   } finally {
@@ -879,7 +1015,11 @@ test('a sequenced entry fails closed when its call-log append fails', (t) => {
     const first = runStub(SEQUENCED_OPERATION, [], env);
     assert.equal(first.status, 0, 'the setup call of the sequenced operation was not served');
     const before = readFileSync(logPath, 'utf8');
-    assert.equal(readCallLog(logPath).length, 1, 'the setup call did not write one log line');
+    assert.equal(
+      readCallLog(logPath).length,
+      2,
+      'the setup call did not write two lifecycle events',
+    );
     chmodSync(logPath, 0o444);
 
     const sequenced = runStub(SEQUENCED_OPERATION, [], env);

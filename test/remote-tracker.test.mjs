@@ -6937,6 +6937,41 @@ test('an absent cwd leaves every process invocation unrooted', async () => {
   for (const call of runner.calls) assert.equal(call.cwd, undefined);
 });
 
+test('local deterministic operations reject a supplied nonexistent working directory', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'effective-flow-local-cwd-'));
+  const cwd = join(root, 'removed');
+  try {
+    for (const [operation, input] of [
+      ['reference-parse', { reference: '#17', expectedKind: 'issue' }],
+      ['body-hash', { body: 'Adds the eval skeleton.' }],
+      ['issue-lifecycle-receipt-parse', { body: '' }],
+    ]) {
+      const envelope = await executeOperation(operation, { ...input, cwd });
+      assert.equal(envelope.ok, false, operation);
+      assert.equal(envelope.error.code, 'INVALID_PAYLOAD', operation);
+      assert.equal(
+        envelope.error.message,
+        'working directory is not an existing directory',
+        operation,
+      );
+      assert.equal(envelope.error.details.cwd, cwd, operation);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local deterministic operations keep cwd optional', async () => {
+  for (const [operation, input] of [
+    ['reference-parse', { reference: '#17', expectedKind: 'issue' }],
+    ['body-hash', { body: 'Adds the eval skeleton.' }],
+    ['issue-lifecycle-receipt-parse', { body: '' }],
+  ]) {
+    const envelope = await executeOperation(operation, input);
+    assert.equal(envelope.ok, true, operation);
+  }
+});
+
 test('a non-string cwd is rejected as an invalid payload', async () => {
   const envelope = await executeOperation(
     'issue-list',

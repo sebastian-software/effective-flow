@@ -63,29 +63,29 @@ The delegation rules a new tool or agent must satisfy are in "Delegation" below,
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation
 through an available sub-agent mechanism; a host default that discourages unrequested sub-agents
 does not apply inside a tool run. Delegating to a named worker role is **mandatory**; delegating
-an analysis, exploration, or research step is the **default**, with a narrow exception for a
-step whose whole cost is smaller than briefing a worker. A worker whose tool list carries a
-sub-agent tool (`Agent, Task`) may fan out **read-only** analysis sub-agents but never
-re-delegates its own assignment and never delegates a write; a worker whose tool list carries no
-sub-agent tool does not delegate at all, and that limit rests on the tool list, not on prose. A
-new `src/agents/<name>.md` therefore lists `Agent, Task` **only if** its `claude.tools` also lists
-`Write` or `Edit`, and never uses the parenthesised form `Agent(<type>)` to fake a read-only
-allowlist: a probe agent declared `tools: Read, Glob, Grep, Agent(Explore)` successfully spawned a
-`general-purpose` subagent, so the parentheses are read as an unrestricted grant, not a type
-filter. Inline execution stays legitimate only as a **disclosed** fallback — a harness without a
-sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full contract is
-[`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included in every
-delegating tool and in every `src/agents/*.md` worker. Today eleven workers whose `claude.tools`
-lists `Write` or `Edit` also carry `Agent, Task`; the five observation roles that list neither
-(`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
-`code-validator`) do not. For the four reviewers among those five, whose tool list genuinely
-cannot write, that omission is their entire read-only guarantee; `code-validator` also lists
-`Bash`, so withholding the grant there is defence in depth rather than the source of its
-read-only property — it only keeps the easy path to a write-capable child closed. It covers
-worker roles and analysis fan-out only; delegation from one workflow to another (`apply-plan`,
-`merge-gate` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path. A
-tool can be on both sides of that line: `merge-gate` carries the eager include for its worker-role
-delegations while its handoff to `iterate` stays exempt.
+an analysis, exploration, or research step is the **default at the workflow/tool orchestration
+level**, with a narrow exception for a step whose whole cost is smaller than briefing a worker.
+Only that orchestrator starts workers or analysis fan-out. Every named worker is a **leaf
+executor**: it starts no child, never re-delegates its assignment or a write, and returns missing
+essential context to the orchestrator. Start it with zero inherited turns when the harness
+supports that, otherwise the smallest supported history, and pass a compact, self-contained
+handoff: objective, relevant artifact paths, scoped paths and ownership, execution and
+runtime-state roots for write-capable work, resolved language, authority and write limits, and
+the completion protocol.
+
+Every `src/agents/<name>.md` therefore omits `Agent` and `Task` from `claude.tools`, regardless of
+whether the worker can write. Withholding those tools is the enforceable Claude boundary: once a
+worker receives a sub-agent tool, neither prose nor a parenthesised form such as `Agent(<type>)`
+can constrain the child it starts. Codex and portable workers carry the same leaf contract in
+their instructions even though their worker metadata has no equivalent per-role tool list.
+Inline execution stays legitimate only as a **disclosed orchestrator fallback** — a harness
+without a sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full
+contract is [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included
+in every delegating tool and in every `src/agents/*.md` worker. It covers worker roles and analysis
+fan-out only; delegation from one workflow to another (`apply-plan`, `merge-gate` → `iterate`)
+keeps that tool's own mechanics, including its interactive/gated path. A tool can be on both sides
+of that line: `merge-gate` carries the eager include for its worker-role delegations while its
+handoff to `iterate` stays exempt.
 
 ## Skill discovery
 

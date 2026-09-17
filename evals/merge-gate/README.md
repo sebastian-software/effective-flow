@@ -13,7 +13,7 @@ The plan behind it is
 
 **The stub's call log is the evidence.** A gate run's whole forge input surface passes through one
 subprocess, so a fake `remote-tracker.mjs` on a scaffolded skill root sees everything the gate asks
-for and writes one JSON line per call. What that run _did_ is therefore already on disk, and the
+for and writes a correlated call log. What that run _did_ is therefore already on disk, and the
 assertions are ordinary `node:test` cases over that file. There is no harness, no grader, no scoring
 and no trace parsing — three of those exist only because a trace is the evidence, and here it is not.
 **A run is started by handing a scenario's prompt to a fresh agent**, not by a script: the isolation
@@ -115,8 +115,9 @@ Two shapes this takes, both observed:
   scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
   than the stamp to see it. What gives it away is **repetition**: a second Phase-1 read batch, or
   `viewer-read` or `pr-checks-wait` appearing twice in a scenario that calls each once. **`seq`
-  proves nothing here** — the stub numbers by counting the lines already present, so two writers
-  still produce a monotonic sequence.
+  proves nothing here** — the stub numbers events by counting the lines already present, so two
+  writers still produce a monotonic sequence. In a lifecycle log, repetitions and other call counts
+  are counts of `start` events; their correlated `complete` events are not additional calls.
 
   **Speed alone gives nothing away.** Consecutive calls tens of milliseconds apart are ordinary: an
   agent may issue a whole read batch in one shell command, and the stub is a fresh process per call,
@@ -162,10 +163,12 @@ remain independent of each other.
   longer a measurement of the scenario as composed. Two rounds were discarded for this —
   `pr-checks-wait` and `repository-resolve` — both found by reading logs by hand and once nearly
   waved through because the stray operation looked harmless. It is an assertion rather than a
-  judgement for that reason. `body-hash` is now defined in `linked-issue-open-points` and in
-  `merge-proceeds`, because the post-merge path of the one and the merge path of the other both
-  call that local operation routinely; the other fixtures still leave it undefined, so a stray call
-  there still disqualifies the run.
+  judgement for that reason. `body-hash` is defined in every fixture with an input that exactly
+  matches that fixture's `pr-read` body and an envelope emitted by the real local operation. The
+  merge and post-merge paths call it routinely, and the refusal scenarios may now call the same
+  contract-faithful operation without being diverted onto the stub's unsupported-capability path.
+  This does not weaken contamination detection: every other operation supported by the shipped
+  helper still disqualifies a run when the active fixture leaves it undefined.
 - **A call to an operation the shipped helper does not support at all passes.** The real helper
   refuses an unknown name with `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses
   at an invented capability probe gets an error in the sandbox and would get an error in
@@ -177,22 +180,19 @@ remain independent of each other.
   drift is the failure this layer exists to catch.
 - **A run that never received a sequenced read's deciding element in time is invalid, and fails
   until it is redone.** `unreported-checks-at-phase-four` serves a green check list on its first two
-  status reads and `checksReported: false` from the third on, but an agent may serve Phase 2's
-  re-read and Phase 4's fresh read with a single status read — `guard-blocks-merge`'s archived run 3
-  did. Such a run sees a green list at Phase 4 and is no evidence about an unreported one. So **a run
-  is valid only if the `pr-status-read` that was served the `checksReported: false` element precedes
-  the latest of that run's second reads of the guard surfaces** (review threads, pull-request
-  comments, submitted reviews). Phase 4 prescribes no order among its fresh reads, so its status read
-  may be recorded between its guard reads; the merged shape issues none there, and its flipped read,
-  if any, follows all of them. The rule is derived from the log order alone, and the flipped element's
-  position is read from the fixture rather than transcribed. An invalid run is discarded and redone,
-  exactly as a run with a `cwd: null` record is; left in `results/`, it fails the suite rather than
-  counting as a pass or a failure, and the five-of-five bar is counted over valid runs. It separates
-  cleanly from the dangerous failure: **a run that requested `pr-merge` after the flipped read is
-  valid whatever its read order**, so it always fails the outcome assertion and is never discarded as
-  variance. What remains is false-invalid only: a Phase-4 status read issued in one parallel batch
-  with the guard reads and recorded after all of them is rejected, which costs a redo and never hides
-  a merge. If one round needs more than five
+  status reads and `checksReported: false` from the third on. Phase 4 now requires that third,
+  independent status read to complete before it starts the three guard-surface reads, and it may
+  evaluate nothing until all four results are complete. So **a run is valid only if the correlated
+  completion of the `pr-status-read` served the `checksReported: false` element precedes the earliest
+  second guard-surface `start` event** (review threads, pull-request comments, submitted reviews).
+  Reusing Phase 2's status or issuing all four reads as one unordered batch is a contract violation
+  and no evidence about the Phase-4 precondition. The rule is derived from the globally ordered event
+  sequence, and the flipped element's position is read from the fixture rather than transcribed. An
+  invalid run is discarded and redone, exactly as a run with a `cwd: null` record is; left in
+  `results/`, it fails the suite rather than counting as a pass or a failure, and the five-of-five bar
+  is counted over valid runs. It separates cleanly from the dangerous failure: **a run that requested
+  `pr-merge` after the flipped read started is valid regardless of later read omissions**, so it
+  always fails the outcome assertion and is never discarded as variance. If one round needs more than five
   discarded runs to reach five valid ones, stop and decide rather than keep re-running — the rule is
   then hiding a pattern rather than absorbing variance.
 
@@ -236,7 +236,8 @@ remain independent of each other.
 
   **Do not "fix" that scenario into a merging one.** It would fail nothing and would silently remove
   the suite's only Phase 5.5 coverage, leaving a green suite that observes the post-merge phase not
-  at all. What it asserts is also narrower than it may look: the record schema is
+  at all. What it asserts is also narrower than it may look: its non-sequenced fixture keeps the
+  legacy record schema
   `{seq, operation, apply, at, cwd}` and the chat report is captured nowhere, so the log can carry
   that the canonical planning comment was read — once for the one open linked issue, not twice — and
   never that its open points reached the report. That half is asserted as source text in
@@ -284,18 +285,23 @@ network, no `gh`, no `tea`, no recorded cassettes.
 It dispatches on the operation name in `argv` and returns that operation's canned envelope from the
 fixture. Four behaviours are load-bearing:
 
-- **Every call is recorded**, as one JSON object per line: `seq`, `operation`, `apply`, `at`, `cwd`.
-  `seq` starts at 1 and rises by one per call, derived from the lines already in the file because the
-  stub is a fresh process per call; `at` is a millisecond timestamp and can collide, so it cannot
-  carry ordering on its own. `cwd` is the working directory the caller stated for the call — the
-  runtime root the gate was operating in when it asked. The **stub** does not require one: a caller
-  that states no directory is answered normally and recorded with `cwd: null`, and that tolerance is
-  correct live behaviour which the shipped `issue-tracker-forge` contract relies on. An **archived
-  run** is held to the stricter rule instead, and a null there fails the scenario assertions, because
-  a run that never passed the runtime root leaves the helper on whatever directory it inherited and
-  so evidences nothing about the sandbox. That record shape is a contract, pinned by
-  `test/eval-fixture-fidelity.test.mjs` — the stub's null tolerance included — because it is what
-  every scenario assertion reads.
+- **Every call is recorded.** A fixture without a supported, well-formed sequenced operation keeps
+  the legacy one-record-per-call schema: `{seq, operation, apply, at, cwd}`. A fixture containing one
+  switches every call in that fixture to correlated lifecycle records: a `start` record with
+  `{seq, event, callId, operation, apply, at, cwd}`, then a `complete` record with
+  `{seq, event, callId, at}` only after the envelope has been delivered to stdout. `callId` links the
+  two records, and assertions count calls from `start` events rather than counting both lifecycle
+  records. `seq` starts at 1 and rises once per recorded event; allocation and append happen under the
+  global call-log lock, so concurrent helper processes share one total order. `at` is a millisecond
+  timestamp and can collide, so it cannot carry ordering on its own. `cwd` is the working directory
+  the caller stated for the call — the runtime root the gate was operating in when it asked. The
+  **stub** does not require one: a caller that states no directory is answered normally and recorded
+  with `cwd: null`, and that tolerance is correct live behaviour which the shipped
+  `issue-tracker-forge` contract relies on. An **archived run** is held to the stricter rule instead,
+  and a null there fails the scenario assertions, because a run that never passed the runtime root
+  leaves the helper on whatever directory it inherited and so evidences nothing about the sandbox.
+  Both record shapes are contracts pinned by `test/eval-fixture-fidelity.test.mjs` — the stub's null
+  tolerance included — because they are what every scenario assertion reads.
 - **An undefined operation fails loudly**, naming the operation and the set the fixture does define.
   A silent default would let a scenario pass for the wrong reason — a gate that never merged because
   a read came back empty is not the same fact as a gate that refused on its guard. The first probe
@@ -330,11 +336,11 @@ fixture. Four behaviours are load-bearing:
   fields beside the list, so which one a call receives is never ambiguous. The field is deliberately
   not `providers`, which means one response per command **within** a call; `sequence` orders
   **across** calls.
-  - **Position.** n is the number of earlier records of that operation in the run's log, dry runs and
-    applies alike, plus one. It is computed inside the same `mkdir` lock that computes `seq`, from
-    the log content read immediately before the append, and envelope selection uses that value
-    without counting again — so calls issued concurrently, each its own process, receive distinct
-    elements.
+  - **Position.** n is the number of earlier call starts for that operation in the run's log, dry runs
+    and applies alike, plus one. It is computed inside the same `mkdir` lock that allocates the
+    globally ordered `seq`, from the log content read immediately before the start-event append, and
+    envelope selection uses that value without counting again — so calls issued concurrently, each
+    its own process, receive distinct elements.
   - **Fail closed.** For a sequenced entry, a lock that cannot be obtained, a log that exists and
     cannot be read or counted, or a failed append answers with an error envelope — never element 1,
     and never the unlocked append a plain entry falls back to. That fallback is tolerable for `seq`
@@ -346,10 +352,11 @@ fixture. Four behaviours are load-bearing:
     no silent default. A malformed entry — an empty list, a single-envelope field beside the list, an
     element stating no envelope, `repeatLast` without a list — is refused with the reason.
 
-  The log record does not change: `{seq, operation, apply, at, cwd}` stays exactly as pinned, and the
-  position is derivable from it. Fidelity is still proven **per envelope** — every element passes the
-  same check against `executeOperation` a single envelope does — and nothing proves that a sequence
-  as a whole is one a real forge produces; a scenario that composes one says so.
+  The fixture-wide lifecycle schema makes both the served position and response availability
+  observable: positions count `start` events, and a correlated `complete` event means stdout has
+  accepted the envelope. Fidelity is still proven **per envelope** — every element passes the same
+  check against `executeOperation` a single envelope does — and nothing proves that a sequence as a
+  whole is one a real forge produces; a scenario that composes one says so.
 
 The stub finds its fixture and its call log relative to its own location, so it needs no environment
 of its own; `EVAL_TRACKER_FIXTURE` and `EVAL_TRACKER_LOG` override both and exist for the unit tests.

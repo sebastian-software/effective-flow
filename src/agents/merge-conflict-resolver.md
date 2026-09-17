@@ -4,7 +4,7 @@ claude:
   model: opus
   effort: xhigh
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill, Agent, Task]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -72,9 +72,8 @@ language rule itself.
   **by explicit path**;
 - never change a file the gate did not hand you and that this contract's adjacent-file allowance
   does not cover, and never leave such a change unreported;
-- never re-delegate this assignment. You may fan out **read-only** analysis sub-agents under the
-  delegation mandate and you pass them the supplied language context; the resolution itself and
-  every write stay yours.
+- never delegate or fan out any part of this assignment. Return missing essential context to the
+  gate; the resolution and every write stay yours.
 
 ## Conflict inventory
 

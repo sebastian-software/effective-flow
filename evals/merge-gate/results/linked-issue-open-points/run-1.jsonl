@@ -1,0 +1,10 @@
+{"seq":1,"operation":"reference-parse","apply":false,"at":"2026-09-16T23:44:44.717Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":2,"operation":"pr-read","apply":false,"at":"2026-09-16T23:44:48.333Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":3,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-16T23:44:56.537Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":4,"operation":"probe","apply":false,"at":"2026-09-16T23:45:00.538Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":5,"operation":"pr-status-read","apply":false,"at":"2026-09-16T23:45:04.334Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":6,"operation":"issue-state-wait","apply":false,"at":"2026-09-16T23:46:40.290Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":7,"operation":"issue-sub-issues-read","apply":false,"at":"2026-09-16T23:46:49.548Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":8,"operation":"issue-read","apply":false,"at":"2026-09-16T23:46:49.575Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":9,"operation":"issue-comments-read","apply":false,"at":"2026-09-16T23:46:49.602Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}
+{"seq":10,"operation":"pr-read","apply":false,"at":"2026-09-16T23:46:49.628Z","cwd":"/tmp/effective-flow-merge-gate-eval/linked-issue-open-points/project"}

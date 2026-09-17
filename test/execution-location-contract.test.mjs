@@ -361,15 +361,22 @@ test('the completion action and the pr tool root their forge work in the runtime
 });
 
 test('the remote helper contract documents the working directory it runs in', () => {
-  const issueTracker = readShared('issue-tracker-forge');
+  const remoteHelper = readShared('remote-helper-contract');
+  const mergeGate = extractBody(readSource('tools', 'merge-gate.md'));
   assert.match(
-    issueTracker,
-    /Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`/,
+    remoteHelper,
+    /top-level `cwd` on \*\*every helper\s+operation\*\*/,
     'the helper contract must document the cwd input',
   );
+  assert.match(remoteHelper, /`issue-lifecycle-receipt-parse`/);
   assert.match(
-    issueTracker,
-    /A `cwd` that is not an existing directory fails with\s+a structured error naming the path, never as a missing-CLI error/,
+    mergeGate,
+    /input object's top-level `cwd`; setting only the process or tool working directory is not a substitute/,
+    'merge-gate must keep the payload cwd invariant next to its workflow entry',
+  );
+  assert.match(
+    remoteHelper,
+    /A `cwd` that is not an existing directory fails with\s+a structured error naming the path,\s+never as a missing-CLI error/,
     'the helper contract must document the unusable-directory error',
   );
 });

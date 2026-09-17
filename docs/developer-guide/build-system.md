@@ -298,20 +298,17 @@ The build aborts with an error message if any of these guards is violated:
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
-  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
-  `plan` share **700 lines**; `merge-gate` carries **2741**; every other `src/tools/*.md`
-  carries its measured size plus **up to** ten lines. The build prints each
-  measured size next to the budget it was measured against and aborts if a tool exceeds **its
-  own** limit, naming the tool, its size and that limit. That printed size is the number to
-  measure a new entry against — the guard counts `split('\n').length`, one line more than
-  `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
-  orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Every number other than the five above is a measured
-  backlog rather than a target – it records what a tool costs today with its mode-gated
-  fragments still inlined, so each later deferral lowers the entries it touches and a large
-  number reads as work outstanding, never as room to fill. The map and the built tool set are
-  reconciled two-sidedly: a tool with no entry fails the build, and so does an entry naming no
-  tool, so a newly added tool cannot ship unmeasured.
+  without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
+  **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
+  **2796** lines against its **2800** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
+  own measured limits. The build prints each measured size next to its budget and aborts if a tool
+  exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
+  measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
+  on a newline-terminated file. Every entry is a measured backlog rather than a target: it records
+  what a tool costs today, so each later deferral lowers the entries it touches and a large number
+  reads as work outstanding, never as room to fill. The map and the built tool set are reconciled
+  two-sidedly: a tool with no entry fails the build, and so does an entry naming no tool, so a newly
+  added tool cannot ship unmeasured.
 - **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
   one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
   The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
@@ -337,13 +334,16 @@ The build aborts with an error message if any of these guards is violated:
   unnoticed. The pure check logic lives as `missingCategoryReadmes` in `build-lib.mjs` and is
   covered in `test/build-lib.test.mjs`.
 - **Self-contained-agent-contract guard (#100):** Every agent description and every agent body
-  is the complete runtime metadata and instruction basis of the subagent – it receives no
-  sibling or history context at runtime. The guard therefore aborts the build if an agent source
+  is the complete runtime metadata and instruction basis of the subagent. Workers are launched
+  with zero inherited turns when supported, otherwise the smallest supported history, so their
+  contract and compact handoff cannot depend on sibling or ambient conversation context. The
+  guard therefore aborts the build if an agent source
   (frontmatter **and** body) offloads its meaning onto another agent: history comparisons
   ("original agent", "same depth as the …"), relative-to-sibling scope ("… like the `<X>`
   reviewer/implementer/…"), or a cross-agent shorthand as a contract substitute ("As with
-  `{{AGENT:…}}`"). A **legitimate** delegation reference such as "delegate to
-  `{{AGENT:code-validator}}`" stays allowed – only the "As with `{{AGENT:…}}`" form is blocked.
+  `{{AGENT:…}}`"). A legitimate downstream handoff reference such as "tell
+  `{{AGENT:code-validator}}` what to validate" stays allowed – only the "As with
+  `{{AGENT:…}}`" form is blocked.
   The pure check logic lives as `findSelfReferentialContractPhrases` (with the blocklist
   `SELF_CONTAINED_CONTRACT_PATTERNS`) in `build-lib.mjs` and is covered in
   `test/build-lib.test.mjs`.
@@ -385,8 +385,11 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    than handing the rest of the run to the receiving tool, carries the literal payload line
    `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
 6. If the new tool delegates to a worker or performs its own analysis or exploration, embed the
-   eager `delegation-mandate` include. The delegation rules themselves — including which agents
-   may carry `Agent, Task` and why the parenthesised form is banned — are canonical in
+   eager `delegation-mandate` include; every new agent embeds it as well. Only workflow/tool
+   orchestrators start workers or analysis fan-out. Every agent is a leaf, and its Claude tool
+   list must omit `Agent` and `Task` regardless of read/write authority. The parenthesised form
+   cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
+   the smallest supported history, plus the compact, self-contained handoff defined in
    [`AGENTS.md`](../../AGENTS.md), section "Delegation".
 7. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, a Claude agent without `effort`, unsupported Codex sandbox modes, a missing or
@@ -430,16 +433,16 @@ and directive syntax").
 
 - **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
   `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`, `goal-completion`,
-  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, and the status markers in
-  `plan-status`. `goal-completion` governs every remaining phase rather than one decision point,
-  and `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
-  nobody notices. Neither is deferred, however tempting their size. `delegation-mandate` is eager
-  for the same reason: a lazy pointer at the delegation decision point would let the very host
-  default this fragment corrects skip the pointer's own trigger, so the mandate must be present
-  before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
-  narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
-  decision point at which a pointer could sit. `chat-language` is eager in every tool that speaks
-  for both of those reasons at once: every emitted line is its decision point, so no pointer has
+  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, `remote-helper-contract`, and the
+  status markers in `plan-status`. `goal-completion` governs every remaining phase rather than one
+  decision point, and `apply-clarity-gate` is a safety gate whose failure mode — silently not
+  running — is the one nobody notices. Neither is deferred, however tempting their size.
+  `delegation-mandate` is eager for the same reason: a lazy pointer at the delegation decision point
+  would let the very host default this fragment corrects skip the pointer's own trigger, so the
+  mandate must be present before the model plans the run. `base-branch-resolution` is eager in both
+  of its hosts for a narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so
+  there is no single decision point at which a pointer could sit. `chat-language` is eager in every
+  tool that speaks for both of those reasons at once: every emitted line is its decision point, so no pointer has
   anywhere to sit, and its failure mode is silently not running — a run that never loads it simply
   keeps mirroring the user and nothing reports the configured value was ignored. It carries its
   own lazy pointer to `typography-rules`, which is a genuine branch (only a resolved `de` reaches
@@ -517,10 +520,17 @@ and directive syntax").
   `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
   every branch that poses **no** question is decided inside the moved text as well; a pointer firing
   only where the question is posed would leave those runs deciding from text they have not loaded.
-  `config-migration` is the live proof that a fragment may be
-  eager in one file and lazy in another: twelve tools that read configuration on every run inline
-  its always-read core, while seven others defer the whole fragment behind their own first
-  configuration read.
+  `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
+  twelve tools that read configuration on every run inline its always-read core, while seven others
+  defer the whole fragment behind their own first configuration read.
+
+  `remote-helper-contract` is eager in both `issue-tracker-forge` and `pr-review-comments`. A lazy
+  pointer beside the first PR helper invocation proved nondeterministic: a run could invoke the
+  helper before loading the pointer and omit the required `cwd`. The invocation, envelope, error and
+  working-directory rules therefore stay inline wherever forge helper operations are available.
+  PR review publication still retains its later `issue-tracker-forge` pointer because that distinct
+  decision point needs the canonical finding `Signature`; PR plumbing does not carry the rest of
+  the forge fragment merely to learn how to invoke the helper.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
@@ -553,9 +563,18 @@ Each `src/agents/<name>.md` body remains the only worker contract. The native re
 it with harness-specific frontmatter to produce registered `effective-flow-<name>` sidecars.
 The portable renderer writes the same body to `workers/effective-flow-<name>.md`; instructions
 that reference a worker receive a short delegation protocol telling the harness to load only
-the selected contract and pass it to a built-in general-purpose subagent. This is orchestration
-metadata, not a duplicate domain playbook: centrally discovered skills remain authoritative
-for their declared domains.
+the selected contract and pass it to a built-in general-purpose subagent with zero inherited
+turns when supported, otherwise the smallest supported history. The protocol adds a compact,
+self-contained handoff and reserves worker starts and analysis fan-out for the workflow/tool
+orchestrator; the selected worker is always a leaf. This is orchestration metadata, not a
+duplicate domain playbook: centrally discovered skills remain authoritative for their declared
+domains.
+
+Every native Claude worker tool list omits `Agent` and `Task`. That withholding is the
+enforceable Claude boundary because a granted sub-agent tool can start a child whose capabilities
+prose and `Agent(<type>)` cannot restrict. Native Codex and portable worker metadata do not expose
+an equivalent per-role tool list, so their rendered instructions carry the same leaf-worker
+contract explicitly.
 
 The native frontmatter also owns role-based model selection. Implementers and reviewers use
 Claude `opus`/`xhigh` and Codex `gpt-5.6-sol`/`high`; support roles use Claude
@@ -580,10 +599,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2746/2750, `setup` 1722/1723, `iterate` 1664/1669,
-`apply-review` 1335/1340, `apply-issues` 1184/1187, and `cleanup` 1017/1022.
+`merge-gate` is 2796/2800, `setup` 1723/1723, `iterate` 1706/1711,
+`apply-review` 1338/1340, `apply-issues` 1187/1187, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 655/665, `docs` 607/617, `build` 575/585, and `fix` 471/481. Read every
+`plan` 655/665, `docs` 607/617, `build` 583/585, and `fix` 479/481. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.

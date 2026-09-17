@@ -4,7 +4,7 @@ claude:
   model: sonnet
   effort: medium
   color: blue
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill, Agent, Task]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium

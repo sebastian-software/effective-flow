@@ -67,14 +67,17 @@ under `src/` and generates two harness-native artifacts plus one portable manage
 
 ## Thin router with lazy loading
 
-`src/SKILL.md` is the router: a tool catalog and a dispatch rule, and nothing else. It never loads
-all tools up front but references, on the call `/effective-flow <tool>` (Claude) or
-`$effective-flow <tool>` (Codex), exactly the one matching `tools/<tool>.md`. This lazy loading
-keeps the session lean and avoids token exhaustion from unnecessarily preloaded tool instructions.
+`src/SKILL.md` is the router: a tool catalog, a dispatch rule, and the minimal universal
+worker-resolution and leaf-handoff bootstrap. It never loads all tools up front but references,
+on the call `/effective-flow <tool>` (Claude) or `$effective-flow <tool>` (Codex), exactly the one
+matching `tools/<tool>.md`. Tool-specific behavior stays in that lazily loaded file. This keeps the
+session lean and avoids token exhaustion from unnecessarily preloaded tool instructions.
 
 With no `<tool>` or an unknown one, the router only prints the tool list and does nothing else.
 
-**The router carries no behavioral contract of its own.** It used to hold one exception, the
+The worker-resolution and leaf-handoff bootstrap is the router's one universal behavioral
+contract: it establishes how any selected tool starts a named worker without preloading any worker
+contract. Tool-specific behavior remains outside the router. The router formerly also carried the
 eagerly included `session-title` fragment, on two grounds: the fragment's trigger fires in nearly
 every work-subject run, and the context-budget guard left no room anywhere else — `build` and
 `plan` sat at exactly the 700-line limit, where a `lazy-include` pointer per tool was assumed to
@@ -93,8 +96,9 @@ explicit path.
 
 The router resolves only **eager** includes, so nothing lazy can live there: a `lazy-include` fence
 in `src/SKILL.md` registers no fragment and fails the build on the unresolved pointer. That is the
-mechanical reason the router is now free of cross-tool behavior rather than merely light on it —
-anything the router would carry, it would carry in every session.
+mechanical reason mode- and tool-specific behavior stays out of the router. The inline worker
+bootstrap is intentionally minimal and universal; anything else the router carried would be paid
+for in every session.
 
 The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
 worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on
@@ -119,23 +123,26 @@ of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`,
 `concept-review` carry
 it for read-only analysis fan-out only, restating their existing ban on starting implementers,
 test writers, validators, and reviewers next to the include. Delegating to a named worker role is
-mandatory; analysis and exploration delegation is the default, with a narrow triviality
-exception; a worker whose `claude.tools` carries `Agent, Task` may fan out read-only analysis
-sub-agents but never re-delegates its own assignment or a write. That grant tracks whether the
-worker's own tool list already lists `Write` or `Edit` — a role that produces changes: today eleven
-workers qualify and carry `Agent, Task`, while the five observation roles that list neither
-(`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
-`code-validator`) omit it and do not delegate at all. For the four reviewers, whose tool list
-genuinely cannot write, that omission is the whole read-only guarantee; `code-validator` also
-lists `Bash`, so withholding the grant there is defence in depth, not the source of its
-read-only property — it only keeps the easy path to a write-capable child closed. The
-parenthesised allowlist form `Agent(<type>)` cannot narrow that grant to read-only sub-agents —
-it is read as an unrestricted grant, not a type filter, and must not be used in its place. Inline
-execution stays legitimate only as a disclosed fallback —
-never silent. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own
-mechanics and is out of scope for this mandate — which is why `merge-gate` carries the include for
-its worker-role delegations (`merge-conflict-resolver`, `code-validator`) while that one handoff
-stays exempt. Delegation mechanics are Effective Flow's own
+mandatory; analysis and exploration delegation is the default at the workflow/tool orchestration
+level, with a narrow triviality exception. Only the orchestrator starts workers or analysis
+fan-out. Each worker is a leaf executor: it starts no child, never re-delegates its assignment or
+a write, and returns missing essential context to the orchestrator. The orchestrator launches a
+worker with zero inherited turns when supported, otherwise the smallest supported history, and
+provides a compact, self-contained handoff containing the objective, relevant artifact paths,
+scoped paths and ownership, execution and runtime-state roots for write-capable work, resolved
+language, authority and write limits, and the completion protocol.
+
+Every Claude worker omits `Agent` and `Task` from `claude.tools`, regardless of its own read/write
+authority. Withholding the capability is the enforceable Claude boundary: if a worker receives a
+sub-agent tool, prose cannot prevent it from starting a child with that child's own capabilities,
+and the parenthesised `Agent(<type>)` form is an unrestricted grant rather than a type filter.
+Codex and portable workers carry the same leaf contract in their instructions; their worker
+metadata does not expose an equivalent per-role tool-list boundary. Inline execution stays
+legitimate only as a disclosed orchestrator fallback — never silent. Workflow-to-workflow
+delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own mechanics and is out of scope for
+this mandate — which is why `merge-gate` carries the include for its worker-role delegations
+(`merge-conflict-resolver`, `code-validator`) while that one handoff stays exempt. Delegation
+mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract — canonical for the classification and the ownership-check mechanics in
 [`skill-ownership.md`](skill-ownership.md), summarized in
@@ -145,7 +152,7 @@ ownership contract — canonical for the classification and the ownership-check 
 
 ```text
 src/
-├── SKILL.md      # Router: tool catalog + dispatch, no tool contents
+├── SKILL.md      # Router: catalog + dispatch + universal worker bootstrap
 ├── tools/        # one .md per tool → every consumer target's tools/<name>.md
 ├── agents/       # one .md contract per worker → native sidecars + portable resources
 └── shared/       # include fragments, embedded via `include` fence
@@ -169,7 +176,8 @@ src/
   them internally as subagents. The frontmatter carries native per-harness configuration under
   `claude:` and `codex:`; the body is also the single contract rendered into the portable target.
   Each Claude block requires `model` and `effort`, while each Codex block defines `model` and
-  `model_reasoning_effort`. These source fields are the canonical worker-profile assignments.
+  `model_reasoning_effort`. Claude tool lists omit `Agent` and `Task` because every worker is a
+  leaf. These source fields are the canonical worker-profile assignments.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
   or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
@@ -307,7 +315,9 @@ All outputs use the same `effective-flow-<name>` worker namespace and carry the 
 stamp. Rendered-reference guards ensure every native reference has an exact sidecar and every
 portable reference has an exact worker contract. Portable instructions never request those
 identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
-of pretending that a worker ran.
+of pretending that a worker ran. In every target, the caller starts a worker with zero inherited
+turns when supported, otherwise the smallest supported history, and supplies the compact,
+self-contained handoff defined by the delegation mandate. The worker remains a leaf.
 
 The release archive retains all three targets for verification and release maintenance; it is
 not a supported end-user installation interface. The default branch publishes only the portable

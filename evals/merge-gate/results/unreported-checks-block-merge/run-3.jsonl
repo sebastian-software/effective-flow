@@ -1,0 +1,11 @@
+{"seq":1,"operation":"repository-resolve","apply":false,"at":"2026-09-17T00:24:45.914Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":2,"operation":"reference-parse","apply":false,"at":"2026-09-17T00:24:51.175Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":3,"operation":"pr-read","apply":false,"at":"2026-09-17T00:25:02.511Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":4,"operation":"body-hash","apply":false,"at":"2026-09-17T00:25:07.236Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":5,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-17T00:25:11.415Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":6,"operation":"probe","apply":false,"at":"2026-09-17T00:25:15.377Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":7,"operation":"review-threads-read","apply":false,"at":"2026-09-17T00:26:16.082Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":8,"operation":"pr-status-read","apply":false,"at":"2026-09-17T00:26:16.108Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":9,"operation":"pr-comments-read","apply":false,"at":"2026-09-17T00:26:16.138Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":10,"operation":"viewer-read","apply":false,"at":"2026-09-17T00:26:16.164Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":11,"operation":"pr-reviews-read","apply":false,"at":"2026-09-17T00:26:16.189Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}

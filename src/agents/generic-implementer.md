@@ -4,7 +4,7 @@ claude:
   model: opus
   effort: xhigh
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill, Agent, Task]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -66,7 +66,7 @@ Not responsible for:
 - pure documentation → `{{AGENT:docs-writer}}` or `{{AGENT:code-documenter}}`
 - generated and vendored files → excluded from direct editing unless the task explicitly targets the documented generator or vendor-update mechanism
 
-An unknown extension or missing specialized language match does **not** establish a tooling role. If the product/tooling boundary remains ambiguous after applying `Project routing`, stop and request focused clarification; never choose this agent merely because no specialist matched.
+An unknown extension or missing specialized language match does **not** establish a tooling role. If the product/tooling boundary remains ambiguous after applying `Project routing`, stop: only a direct invocation requests focused clarification; a delegated worker returns `ABORT` with the missing context to the orchestrator. Never choose this agent merely because no specialist matched.
 
 ## Base rules
 
