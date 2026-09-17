@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66",
+  "scenario": "unreported-checks-block-merge",
+  "slot": 1,
+  "attempt": 2,
+  "sourceRevision": "2874b848651d040fa5efbd79abccbcbccaa79dad",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-1/attempt-2/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "reportedVersion": "codex-cli 0.154.0",
+    "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config"
+  },
+  "promptDigest": "sha256:812cb52c5dad9799af76f7a1008e7ee57b3ccf78ee8348c12413b0cbb9e7a2ed",
+  "fixtureDigest": "sha256:a5bc63c6de597e064cac8c7284e25d5340006c9ce43bf66bb948fb778cf378d0",
+  "buildDigest": "sha256:c0497dff5411814ca7356af3683c030036e0ccc0a232e4e583ab277e50a94498",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-1/attempt-2/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high",
+      "reportedVersion": "codex-cli 0.154.0",
+      "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config"
+    }
+  }
+}

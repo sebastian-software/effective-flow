@@ -1,0 +1,13 @@
+Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-5/attempt-3/skill
+by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
+
+Resolve the paths the tool asks for as follows and use no others:
+
+- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-5/attempt-3/skill,
+  so every remote-tracker invocation runs
+  `node /tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-5/attempt-3/skill/scripts/remote-tracker.mjs <operation>`;
+- the target project checkout, the execution root and the runtime state root are all
+  /tmp/effective-flow-merge-gate-eval/rounds/mu5c8ae6-a70138c2-46ca-407f-9bd5-617c98e53e66/slots/unreported-checks-block-merge/slot-5/attempt-3/project.
+
+This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
+path, take it. Finish with the tool's own report of what it did and why.
