@@ -11,8 +11,8 @@ the expected outcome tests that session's memory rather than the instruction.
 
 ## The prompt
 
-Everything between the markers, and nothing else, is what the agent receives. `prepare.mjs` prints
-exactly this text, so copy it from there rather than from here if the two ever look different.
+Everything between the markers, and nothing else, is what the agent receives. `prepare.mjs` prints the generated prompt path.
+Read and copy the prompt from that file rather than from here if the two ever look different.
 
 <!-- prompt:start -->
 
