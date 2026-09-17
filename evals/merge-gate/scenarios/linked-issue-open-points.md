@@ -28,8 +28,8 @@ stateless sandbox through this branch and through no other.
 
 ## The prompt
 
-Everything between the markers, and nothing else, is what the agent receives. `prepare.mjs` prints the generated prompt path.
-Read and copy the prompt from that file rather than from here if the two ever look different. It is
+Everything between the markers, and nothing else, is what the agent receives. `prepare.mjs` prints
+exactly this text, so copy it from there rather than from here if the two ever look different. It is
 the `guard-blocks-merge` prompt with the sandbox path changed and nothing else: the three runs have
 to differ in the fixture, never in what the agent was told.
 
