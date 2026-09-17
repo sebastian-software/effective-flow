@@ -1,6 +1,6 @@
 {
   "scenario": "merge-proceeds",
-  "digest": "sha256:3c4364efed2b531f019830d2ef99b34384be5263b3136599db66c7a45ad8dc42",
+  "digest": "sha256:6eda3af09a54643a3abf486345f55b196fb2e2ae7c4ddb9112a5286c5f1507db",
   "skill": {
     "digest": "sha256:7fb8b7258c71083d57a247eb9a36ff38191efd3cf1d2171e8e16dc8383e007be",
     "files": {
@@ -31,18 +31,20 @@
     }
   },
   "instrument": {
-    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "digest": "sha256:52cd5c3aacecd524f77a02294e704c70a4de18953273d082c48e2ae3f9f17aaa",
     "files": {
-      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
-      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
-      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:bcb6dd3cf64d9b87b2edd25b2cadd14fb0e370bf1439555aeb6bd3eaa24b93d7",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:7b40177f4a9ed8fa444ab580a3af104ad9df841bcb70d0f4297cd2b91cfd6d4c",
+      "evals/merge-gate/_scaffold/prompt.mjs": "sha256:75fa06a521bbea2b97a03c49ee20cd0f253d5a0d7ebae2e7779e8d21ab7fb2a9",
+      "evals/merge-gate/_scaffold/suite.mjs": "sha256:56426d718789f6dd4c4361048bc75b45a6cb13054a6e504c42f111d525f78498"
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:33e7159f6c68b2d39876bf25b9e4529d59f480bde4a2437b526ee08ddb5cb441",
+    "digest": "sha256:698dc004f5c4b3e692bd159742004aa8cfedd1a1bffc6a82c22e197dfaff405f",
     "files": {
       "evals/merge-gate/fixtures/merge-proceeds.json": "sha256:49b90815d6490af495319e89aa296af16a53a90ec50d4e1c9b06658361e0bf94",
-      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:72b239ea27f0be3bafba123f8155f0d77891951ce6e989843d1650ea971341ec"
+      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:a61346a4986c4d1dd96b6ac68e1fca2f4e53acaf9ad4305edcd26270391628f0"
     }
   }
 }

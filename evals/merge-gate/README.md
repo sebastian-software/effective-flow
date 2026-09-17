@@ -14,72 +14,245 @@ The plan behind it is
 **The stub's call log is the evidence.** A gate run's whole forge input surface passes through one
 subprocess, so a fake `remote-tracker.mjs` on a scaffolded skill root sees everything the gate asks
 for and writes a correlated call log. What that run _did_ is therefore already on disk, and the
-assertions are ordinary `node:test` cases over that file. There is no harness, no grader, no scoring
-and no trace parsing — three of those exist only because a trace is the evidence, and here it is not.
-**A run is started by handing a scenario's prompt to a fresh agent**, not by a script: the isolation
-requirement is epistemic rather than technical, since a run started from a session that already knows
-the expected outcome tests that session's memory instead of the instruction.
+assertions are ordinary `node:test` cases over that file. There is no grader, scoring, or trace
+parser. A round builds the portable skill once, provisions five isolated slots for every selected
+scenario, and renders one prompt per slot. The repository does not launch a model: the host hands
+each rendered prompt to a fresh, non-forked session rooted in that slot's project, then supplies a
+safe receipt so the finished attempt can be sealed. Slots and rounds may run concurrently; only the
+final publication of canonical results is serialized.
 
 ## What is here
 
-| Path                                | What it is                                                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `scenarios/<name>.md`               | One scenario: the prompt handed to a fresh agent, plus its expected outcome as prose           |
-| `prepare.mjs`                       | Archives the previous run's log, re-scaffolds, prints the prompt. Starts nothing               |
-| `_scaffold/scaffold.mjs`            | Provisions the sandbox: skill root, stub helper, project-setup ADR, temp Git repository        |
-| `_scaffold/remote-tracker.mjs`      | The canned-envelope stub standing in for the shipped helper, and the writer of the call log    |
-| `_scaffold/sandbox.mjs`             | The sandbox layout, shared by the scaffold and the preparation step                            |
-| `fixtures/<name>.json`              | The scenario's envelope set, the provider payload each came from, and its merge opt-in         |
-| `results/<name>/run-<n>.jsonl`      | Archived call logs — the evidence the assertions read. Created by `prepare.mjs`                |
-| `results/<name>/run-<n>.build.json` | The run's build stamp: per-file hashes of what that scenario loads, binding the log to a build |
+| Path                                   | What it is                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| `scenarios/<name>.md`                  | One scenario: a prompt template plus its expected outcome as prose                      |
+| `round.mjs`                            | The round lifecycle CLI; it prepares and validates evidence but never launches a model  |
+| `prepare.mjs`                          | Deprecated compatibility wrapper for preparing one scenario as a five-slot round        |
+| `_scaffold/round-core.mjs`             | Importable round, slot, sealing, retry, publication, and recovery logic                 |
+| `_scaffold/scaffold.mjs`               | Provisions an isolated slot from the round's shared build                               |
+| `_scaffold/remote-tracker.mjs`         | The canned-envelope stub standing in for the shipped helper, and writer of the call log |
+| `_scaffold/sandbox.mjs`                | The round, scenario, slot, and attempt sandbox layout                                   |
+| `fixtures/<name>.json`                 | The scenario's envelope set, the provider payload each came from, and its merge opt-in  |
+| `results/<name>/run-<n>.jsonl`         | Published call logs — the evidence the assertions read                                  |
+| `results/<name>/run-<n>.build.json`    | Per-file hashes of what that scenario loads, binding the log to a build                 |
+| `results/<name>/run-<n>.prompt.txt`    | The exact rendered prompt supplied to the fresh session                                 |
+| `results/<name>/run-<n>.metadata.json` | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata     |
 
-Two test files in the ordinary `pnpm test` suite belong to this layer:
+Three test files in the ordinary `pnpm test` suite belong to this layer:
 
 - [`test/eval-fixture-fidelity.test.mjs`](../../test/eval-fixture-fidelity.test.mjs) proves every
   canned envelope is one the real `executeOperation` normalizer emits for the same provider payload,
   and pins the call log's record schema.
 - [`test/merge-gate-eval.test.mjs`](../../test/merge-gate-eval.test.mjs) holds the scenario
   assertions over the archived logs.
+- [`test/merge-gate-eval-round.test.mjs`](../../test/merge-gate-eval-round.test.mjs) exercises the
+  round lifecycle, isolation, receipt validation, retries, publication locking, and crash recovery.
 
-Neither runs a model, and neither starts a gate run. `pnpm test` stays a pure file-and-transform
+None runs a model, and none starts a gate run. `pnpm test` stays a pure file-and-transform
 suite.
 
-## Running a scenario
+## Running a round
+
+### 1. Prepare every slot from one build
+
+Replace the uppercase values below with the non-sensitive execution profile the host will use for
+every slot in this round:
 
 ```sh
-pnpm prepare:merge-gate-eval guard-blocks-merge        # build, archive, re-scaffold, print the prompt
-pnpm prepare:merge-gate-eval merge-proceeds            # the merging counterpart, sandboxed separately
-pnpm prepare:merge-gate-eval linked-issue-open-points  # the observer-only post-merge observation
-pnpm prepare:merge-gate-eval unreported-checks-block-merge  # the unreported check list, refused
-pnpm prepare:merge-gate-eval unreported-checks-at-phase-four  # a check list unreported only at Phase 4
+pnpm merge-gate-eval prepare \
+  --harness HARNESS_NAME \
+  --model MODEL_NAME \
+  --reasoning-effort REASONING_EFFORT \
+  --reported-version MODEL_VERSION \
+  --tool-policy HOST_TOOL_POLICY
 ```
 
-There is no separate build step: the scaffold runs `node build.mjs` itself, so the skill root it
-copies is always the one the current sources produce.
+With no `--scenario`, `prepare` discovers the complete scenario corpus. To prepare a subset, repeat
+the option; each selected scenario still receives all five canonical slots:
 
-Then hand the printed prompt — verbatim — to a **fresh agent**: a new session, with no knowledge of
-this repository's expectations and no sight of the scenario file's expected outcome. Repeat
-`prepare` and the run for as many runs as the scenario needs. Each `prepare` archives the log the
-previous run left behind, so **run `prepare` once more after the last run** before asserting; that
-final call also re-scaffolds and reprints the prompt, which costs nothing.
+```sh
+pnpm merge-gate-eval prepare \
+  --scenario guard-blocks-merge \
+  --scenario merge-proceeds \
+  --harness HARNESS_NAME \
+  --model MODEL_NAME \
+  --reasoning-effort REASONING_EFFORT \
+  --reported-version MODEL_VERSION \
+  --tool-policy HOST_TOOL_POLICY
+```
+
+The command builds once for the whole round, records one execution profile in an immutable manifest,
+and prints the manifest path followed by one tab-separated row per slot. The last column is the
+rendered prompt path. Omitted profile values are recorded explicitly as `"unknown"`; they are not
+inferred later. Preserve the manifest path: every later command accepts either it or the printed
+round identifier through `--round`.
+
+Preparation may run concurrently in different checkouts or for different rounds. Every round has
+its own collision-resistant directory under `/tmp/effective-flow-merge-gate-eval/rounds/`, and every
+`(scenario, slot, attempt)` owns its own skill copy, project checkout, fixture, trace, and locks.
+
+### 2. Launch fresh sessions at the host boundary
+
+For every row, the calling host must start a **new, non-forked session** with:
+
+- the slot's `project/` directory as its initial working root;
+- the contents of that slot's `prompt.txt` as its only task input; and
+- the same harness, model, reasoning effort, reported version, and tool policy recorded for the
+  round.
+
+Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
+the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
+model launcher and cannot independently prove what the host supplied. It validates and archives the
+host's attestation of that boundary instead.
+
+Run any number of slots concurrently. Hosts with less capacity can process the same fixed slots in
+waves; no preparation or slot identity changes. Use `status` at any time to inspect the current
+attempt and prompt path:
+
+```sh
+pnpm merge-gate-eval status --round ROUND_ID_OR_MANIFEST
+```
+
+The status values are `prepared`, `unsealed`, `sealed`, `invalid`, `changed-after-seal`, and
+`retry-pending`. `unsealed` means a non-empty log exists; it does not mean the host task is still
+running. `retry-pending` means an interrupted retry left a journaled transition to its already
+prepared replacement attempt.
+
+### 3. Seal each finished attempt
+
+After a session finishes, create a host receipt with exactly these fields:
+
+```json
+{
+  "schemaVersion": 1,
+  "nonForked": true,
+  "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/ROUND_ID/slots/SCENARIO/slot-1/attempt-1/project",
+  "taskInput": "rendered-prompt-only",
+  "completed": true,
+  "profile": {
+    "harness": "HARNESS_NAME",
+    "model": "MODEL_NAME",
+    "reasoningEffort": "REASONING_EFFORT",
+    "reportedVersion": "MODEL_VERSION",
+    "toolPolicy": "HOST_TOOL_POLICY"
+  }
+}
+```
+
+The working root and profile must exactly match that attempt and its round. Do not add task, thread,
+or session IDs, account or email values, or links. Seal only after the host task has ended:
+
+```sh
+pnpm merge-gate-eval seal \
+  --round ROUND_ID_OR_MANIFEST \
+  --scenario guard-blocks-merge \
+  --slot 1 \
+  --receipt HOST_RECEIPT_JSON
+```
+
+Sealing refuses an empty log or a live call-log lock, then recomputes the actual slot's fixture,
+project configuration, prompt, metadata, stub, and loaded-build identity before writing an atomic
+receipt. Publication recomputes the sealed digests, so a later write becomes
+`changed-after-seal` and cannot be published.
+
+### 4. Retry only non-evidence or invalid evidence
+
+If a stopped host task produced no non-empty log, attest that fact in a separate stop receipt:
+
+```json
+{ "schemaVersion": 1, "stopped": true, "reason": "host cancelled the task" }
+```
+
+Then reprovision the same slot:
+
+```sh
+pnpm merge-gate-eval retry-aborted \
+  --round ROUND_ID_OR_MANIFEST \
+  --scenario guard-blocks-merge \
+  --slot 1 \
+  --receipt STOP_RECEIPT_JSON
+```
+
+`retry-aborted` refuses a sealed attempt and any non-empty log. A log that exists must be sealed and
+evaluated even if the host calls the task aborted.
+
+Use `retry-invalid` only for a sealed attempt that `status` classifies as invalid, or one that
+changed after sealing:
+
+```sh
+pnpm merge-gate-eval retry-invalid \
+  --round ROUND_ID_OR_MANIFEST \
+  --scenario guard-blocks-merge \
+  --slot 1 \
+  --reason "wrong runtime root"
+```
+
+Both commands retain the old attempt and its reason under the slot's quarantine directory before
+creating `attempt-<n+1>`. They never replace a structurally valid run. In particular, a valid
+behavioural deviation is a finding and cannot be retried away. The sequenced Phase-4 scenario stops
+after five discarded attempts for one slot and requires investigation; the other scenarios have no
+invented global retry ceiling.
+
+If `status` reports `retry-pending`, repeat the corresponding `retry-aborted` or `retry-invalid`
+command for the same round, scenario, and slot, including the same stop receipt for
+`retry-aborted`. The command completes the journaled transition and returns the replacement prompt;
+it does not discard another attempt. Do not move quarantine or attempt directories by hand.
+
+### 5. Publish one complete generation
+
+When every selected slot is sealed and valid, publish the round:
+
+```sh
+pnpm merge-gate-eval publish --round ROUND_ID_OR_MANIFEST
+```
+
+Publication builds the current source once more to reject drift, carries forward unselected
+scenarios, stages the complete candidate, and validates exact five-slot coverage and every archived
+artifact before replacing `results/`. The candidate contains logs, build stamps, rendered prompts,
+and safe metadata. A valid behavioural finding is still published, is printed to stderr, and makes
+the command exit nonzero; the ordinary eval test then reports the same red outcome. Structurally
+invalid or incomplete evidence replaces nothing.
+
+A single checkout-scoped publication lock covers recovery of an earlier journal, candidate staging
+and revalidation, generation marking, promotion, and cleanup. Competing publishers and an explicit
+recovery therefore cannot inspect or change the candidate, current results, or backup concurrently.
+Promotion uses same-filesystem renames, a generation marker with a content digest, and a journal for
+the three rename phases. After an abruptly interrupted publish, run:
+
+```sh
+pnpm merge-gate-eval recover
+```
+
+Recovery compares the observed candidate, current, and backup generation identifiers and content
+digests, then deterministically finishes or rolls back the interrupted promotion. Contradictory or
+tampered generations fail closed. `publish` performs the same recovery after acquiring the lock and
+before staging its candidate; `recover` is the explicit operator entry point and acquires that same
+lock.
 
 ```sh
 node --test test/merge-gate-eval.test.mjs         # or just pnpm test
 ```
 
-The archived logs are the layer's evidence and are committed with it. They are what makes a claim
-about the gate's behaviour checkable by someone who did not perform the runs.
+The published logs and their binding artifacts are committed evidence. They make a behavioural
+claim checkable by someone who did not perform the runs.
+
+### Compatibility command
+
+`pnpm prepare:merge-gate-eval <scenario>` remains temporarily available. It prints a deprecation
+notice and forwards to `pnpm merge-gate-eval prepare --scenario <scenario>`, producing a complete
+five-slot round. It no longer archives a previous log or owns any lifecycle logic.
 
 ### Cost is quota and wall-clock time
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-runs of one scenario is therefore about half an hour of wall clock, and the five scenarios that
-exist today are about two and a half hours between them — a scheduling question rather than a budget
-one. Where the suite has to be shortened, the scenario count gives way — never the five-of-five
-requirement, because for a fail-closed rule a single deviating run is a finding. The one scenario
-that never gives way is the merging counterpart: without it the refusals prove less than they
-appear to.
+serial runs of one scenario are therefore about half an hour, and twenty-five serial runs for the
+five scenarios that exist today are about two and a half hours. The round layout makes those runs
+independent, so elapsed time now depends primarily on how many fresh sessions the host can run at
+once; it does not promise a particular speedup. Where the suite has to be shortened, the scenario
+count gives way — never the five-of-five requirement, because for a fail-closed rule a single
+deviating run is a finding. The one scenario that never gives way is the merging counterpart:
+without it the refusals prove less than they appear to.
 
 That hour comes due less often than the wall-clock figure suggests. A round is invalidated only by a
 change to what the gate loads — the router, `tools/merge-gate.md`, the artifacts the gate delegates
@@ -95,41 +268,20 @@ because `chat-language` points at it under `when: the resolved chat language is 
 neither scenario reaches. That widening is a recorded decision rather than an accident, and its
 reasoning sits beside `LOAD_POINTER_RE` in `_scaffold/build-identity.mjs`.
 
-### One round at a time, across the whole machine
+### Parallelism and evidence isolation
 
-The sandbox path is fixed — `/tmp/effective-flow-merge-gate-eval/<scenario>/` — and belongs to no
-checkout. Two sessions running a round from two worktrees share it, and `prepare` rebuilds and
-re-scaffolds it from **its own** sources, so the second one silently replaces the first one's skill
-tree and call log. **Run a round from one checkout at a time**, and check for a foreign log before
-starting one where several worktrees are open.
+Round and slot identities remove the old machine-global collision. Two slots of the same scenario,
+different scenarios, and separately prepared rounds — including rounds from different worktrees —
+do not share a project, skill copy, log, call-log lock, or sequence allocation. `prepare` never
+archives or deletes a running slot. Parallelism is therefore a host-capacity choice rather than an
+evidence-format exception.
 
-Two shapes this takes, both observed:
-
-- **A run loads the other checkout's build.** Its archived stamp then carries that build's digest,
-  and the assertion catches it — the failure is loud and the run is simply redone. The stamp hashes
-  only the files a run loads, so this catches the swap only where the two checkouts differ in those
-  files: two worktrees whose router, gate tool, delegation targets and reachable fragments are
-  byte-identical produce the same digest, and a run that borrowed the other one's build passes
-  unremarked. Checking for a foreign log before starting is what covers the remainder.
-- **A log holds two executions.** This one is quiet. The stamp is right, because the sandbox was
-  scaffolded from this checkout; only the log has a second run's calls in it. Read the log rather
-  than the stamp to see it. What gives it away is **repetition**: a second Phase-1 read batch, or
-  `viewer-read` or `pr-checks-wait` appearing twice in a scenario that calls each once. **`seq`
-  proves nothing here** — the stub numbers events by counting the lines already present, so two
-  writers still produce a monotonic sequence. In a lifecycle log, repetitions and other call counts
-  are counts of `start` events; their correlated `complete` events are not additional calls.
-
-  **Speed alone gives nothing away.** Consecutive calls tens of milliseconds apart are ordinary: an
-  agent may issue a whole read batch in one shell command, and the stub is a fresh process per call,
-  so a Phase-1 batch routinely lands within 150 ms end to end. Runs 3 and 4 of the 2026-09-07 round
-  looked exactly like the contamination pattern by that measure and were single runs by every other
-  one. Judge a suspicious log by whether an operation the scenario performs once appears twice, not
-  by the gaps.
-
-Also within one round: never run `prepare` for a scenario while that scenario's run is still going.
-It archives whatever is in the sandbox and then deletes the sandbox, so it captures a partial log
-and strands the running agent. Archive a scenario only after its run has finished; the scenarios
-remain independent of each other.
+This does not make timing evidence. Calls tens of milliseconds apart are ordinary because an agent
+may issue a read batch together and the stub is a fresh process per call. Independence comes from
+the round/slot path and host receipt, not from elapsed time. Within one slot, repetitions remain a
+useful contamination signal: a second Phase-1 read batch or an operation that the scenario performs
+once appearing twice can invalidate the evidence. In a lifecycle log, count `start` events; their
+correlated `complete` events are not additional calls.
 
 ### Seven failure modes the assertions handle by name
 
@@ -256,24 +408,40 @@ remain independent of each other.
 
 ## The sandbox
 
-`prepare.mjs` calls `_scaffold/scaffold.mjs`, which wipes and re-provisions
-`/tmp/effective-flow-merge-gate-eval/<scenario>/`:
+`round prepare` creates this hierarchy under the system temporary directory:
 
-| Under the sandbox | What it holds                                                                           |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `skill/`          | A copy of `dist/portable/effective-flow/`, with `scripts/remote-tracker.mjs` replaced   |
-| `project/`        | A temp Git repository with the AGENTS.md marker, the project-setup ADR and a .gitignore |
-| `fixture.json`    | The scenario's envelope set, where the stub looks for it                                |
-| `trace/`          | Where the stub appends `tracker-calls.jsonl`                                            |
+```text
+/tmp/effective-flow-merge-gate-eval/rounds/ROUND_ID/
+├── manifest.json
+├── build/dist/portable/effective-flow/
+└── slots/<scenario>/slot-<n>/
+    ├── state.json
+    ├── attempt-1/
+    │   ├── skill/
+    │   ├── project/
+    │   ├── fixture.json
+    │   ├── prompt.txt
+    │   ├── run-metadata.json
+    │   └── trace/
+    └── quarantine/
+```
 
-The path is a fixed absolute location because a scenario prompt has to name the skill root and the
-project checkout literally and cannot know where the agent it is handed to was rooted. The scaffold
-runs `node build.mjs` before it copies anything, and fails outright if the build does: a stale build
-would scaffold a skill root that does not match the source under test, which is the one way this
-suite could report a green result about code nobody is running. Building rather than checking is
-deliberate — `dist/` is gitignored, so its presence proves only that somebody built at some point on
-some revision, and a staleness check would have to model every input `build.mjs` reads and would be
-wrong the moment one moved.
+The round build is made once and copied into each attempt's `skill/`, where the shipped tracker is
+replaced by the eval stub. `project/` is a temporary Git repository with the AGENTS.md marker,
+project-setup ADR, and `.gitignore`; `trace/` receives the call log, build identity, host receipt, and
+seal receipt. A retry moves the complete prior attempt into `quarantine/` and provisions the next
+attempt from the same round build.
+
+The manifest is read-only and binds the source revision, selected scenarios, execution profile,
+build identities, prompt digests, and canonical slot paths. Mutating commands accept only a round
+created by the same physical checkout; another checkout may inspect its status but cannot seal,
+retry, or publish it. Path resolution rejects traversal and symlink escapes below the physical
+round base.
+
+There is no separate build step. `prepare` runs `build.mjs` once into the round tree and fails
+outright if the build fails; each slot is therefore provisioned from the source under test rather
+than a possibly stale, gitignored `dist/`. Publication rebuilds independently to prove that source
+and instrument identity have not drifted since preparation.
 
 ## How the stub works
 
@@ -399,9 +567,12 @@ held lock.
    `<!-- prompt:end -->` markers as a single fenced block, and the expected outcome below it, marked
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
    that is what makes the run a test rather than a recitation.
-4. Add the scenario's name to `SCENARIOS` in `test/merge-gate-eval.test.mjs`, which is what applies
-   the shared assertions — the pinned log schema, the runtime-root check over every record, the
-   undefined-operation check and the five-of-five bar — to it. Then add its own outcome assertion. A
+4. Register the scenario's name in `OUTCOME_EVALUATORS` in `_scaffold/suite.mjs`, then implement its
+   outcome evaluation in `_scaffold/evaluate.mjs`. Discovery requires the scenario template,
+   fixture, and evaluator registration to match in both directions; `test/merge-gate-eval.test.mjs`
+   applies the shared assertions — the pinned log schema, the runtime-root check over every record,
+   the undefined-operation check, and the five-of-five bar — to the discovered corpus. Add the
+   scenario-specific test assertion as well. A
    refusal scenario asserts both that no `pr-merge` record exists **and** that the run reached
    Phase 4, so a crashed run cannot pass; a scenario in which the gate should merge asserts that a
    `pr-merge` record exists and that exactly one of them carries `apply: true`, since Phase 5

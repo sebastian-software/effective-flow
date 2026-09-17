@@ -1,6 +1,6 @@
 {
   "scenario": "unreported-checks-block-merge",
-  "digest": "sha256:38aab8ec912a83e74f1791c0b12d07db33dc4e655327bcaf15739ce5a86853e5",
+  "digest": "sha256:c0497dff5411814ca7356af3683c030036e0ccc0a232e4e583ab277e50a94498",
   "skill": {
     "digest": "sha256:7fb8b7258c71083d57a247eb9a36ff38191efd3cf1d2171e8e16dc8383e007be",
     "files": {
@@ -31,18 +31,20 @@
     }
   },
   "instrument": {
-    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "digest": "sha256:52cd5c3aacecd524f77a02294e704c70a4de18953273d082c48e2ae3f9f17aaa",
     "files": {
-      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
-      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
-      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:bcb6dd3cf64d9b87b2edd25b2cadd14fb0e370bf1439555aeb6bd3eaa24b93d7",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:7b40177f4a9ed8fa444ab580a3af104ad9df841bcb70d0f4297cd2b91cfd6d4c",
+      "evals/merge-gate/_scaffold/prompt.mjs": "sha256:75fa06a521bbea2b97a03c49ee20cd0f253d5a0d7ebae2e7779e8d21ab7fb2a9",
+      "evals/merge-gate/_scaffold/suite.mjs": "sha256:56426d718789f6dd4c4361048bc75b45a6cb13054a6e504c42f111d525f78498"
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:bd23ec60351013395b7e72bce22436928e4240b1626301682f15e7100980c76d",
+    "digest": "sha256:11bd1ce3ab7fbc4f4a9ce8a2b07485b6d3d79c17fcc05722a72d2430247203f4",
     "files": {
       "evals/merge-gate/fixtures/unreported-checks-block-merge.json": "sha256:a5bc63c6de597e064cac8c7284e25d5340006c9ce43bf66bb948fb778cf378d0",
-      "evals/merge-gate/scenarios/unreported-checks-block-merge.md": "sha256:ec62c14a1b37dfadf87452753f99ebfaa5a77db326afd49940e76ae177684061"
+      "evals/merge-gate/scenarios/unreported-checks-block-merge.md": "sha256:6ee8180b23d97b8febfcb5d5a668259f3ce096d074305a062ef13e00016b0ad5"
     }
   }
 }
