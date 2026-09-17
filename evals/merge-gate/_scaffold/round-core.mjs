@@ -887,7 +887,9 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
   }
   for (const scenario of scenarios) {
     const directory = resolve(candidate, scenario);
-    if (!existsSync(directory)) continue;
+    if (!existsSync(directory)) {
+      throw new Error(`candidate is missing discovered scenario directory: ${scenario}`);
+    }
     if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
       throw new Error(`${scenario} candidate entry is not a regular directory`);
     }

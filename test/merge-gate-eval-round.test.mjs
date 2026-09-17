@@ -807,12 +807,47 @@ test(
         /valid behavioural findings/,
       );
 
-      const published = publishRound({
+      const publicationArguments = {
         handle: prepared.manifestPath,
         base,
         resultsDir,
         publicationRoot,
-      });
+      };
+      const repositoryResults = resolve(
+        import.meta.dirname,
+        '..',
+        'evals',
+        'merge-gate',
+        'results',
+      );
+      mkdirSync(resultsDir, { recursive: true });
+      cpSync(
+        resolve(repositoryResults, 'guard-blocks-merge'),
+        resolve(resultsDir, 'guard-blocks-merge'),
+        { recursive: true },
+      );
+      const incompleteLegacyEvidence = readFileSync(
+        resolve(resultsDir, 'guard-blocks-merge', 'run-1.jsonl'),
+      );
+      assert.throws(
+        () => publishRound(publicationArguments),
+        /candidate is missing discovered scenario/,
+      );
+      assert.equal(existsSync(resolve(resultsDir, '.generation.json')), false);
+      assert.deepEqual(readdirSync(resultsDir), ['guard-blocks-merge']);
+      assert.deepEqual(
+        readFileSync(resolve(resultsDir, 'guard-blocks-merge', 'run-1.jsonl')),
+        incompleteLegacyEvidence,
+      );
+
+      rmSync(resultsDir, { recursive: true, force: true });
+      cpSync(repositoryResults, resultsDir, { recursive: true });
+      const unselectedDirectory = resolve(resultsDir, 'linked-issue-open-points');
+      const unselectedBefore = readdirSync(unselectedDirectory)
+        .sort()
+        .map((name) => [name, readFileSync(resolve(unselectedDirectory, name))]);
+
+      const published = publishRound(publicationArguments);
       assert.equal(published.findings.length, 1);
       assert.match(published.findings[0].finding, /active guard/);
       assert.deepEqual(
@@ -831,13 +866,13 @@ test(
         'utf8',
       );
       assert.match(publishedFindingLog, /"operation":"pr-merge"/);
+      assert.deepEqual(
+        readdirSync(unselectedDirectory)
+          .sort()
+          .map((name) => [name, readFileSync(resolve(unselectedDirectory, name))]),
+        unselectedBefore,
+      );
 
-      const publicationArguments = {
-        handle: prepared.manifestPath,
-        base,
-        resultsDir,
-        publicationRoot,
-      };
       const publicationLock = publicationLockPath(publicationRoot);
       const beforeWaitingMutation = readFileSync(resolve(resultsDir, '.generation.json'), 'utf8');
       const blockingRecoveryMarker = resolve(temporary, 'blocking-recovery-holds-lock');
