@@ -4066,6 +4066,20 @@ test('next-step apply edges require a concrete admitted artifact', () => {
   );
 });
 
+test('local review emits next steps for admitted findings but not a closed-only appendix', () => {
+  const localMode = flat(
+    boundedSlice(source('src/tools/review.md'), '#### Local mode', '\n#### Publishing target'),
+  );
+
+  ordered(
+    localMode,
+    'If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.',
+    'Delete the wisdom file.',
+    'If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.',
+    'If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.',
+  );
+});
+
 test('every source embedding issue-tracker also loads the tracker-target fragment', () => {
   const fence =
     '```lazy-include\ntracker-target\nwhen: the resolved tracker target is `external`\n```';

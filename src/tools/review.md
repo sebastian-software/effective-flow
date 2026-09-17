@@ -579,7 +579,8 @@ numbering from `.effective-flow/memory.json` applies to admitted findings only.
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present the most important findings to the user and point to the saved report file.
 7. Delete the wisdom file.
-8. Emit the next-step block per `next-steps` as the last element of the report.
+8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.
+9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.
 
 #### Publishing target (forge or external tool)
 
