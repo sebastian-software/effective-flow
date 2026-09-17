@@ -790,6 +790,191 @@ export function parseFindingSignature(body) {
   return { value: values[0], normalized: [...normalized][0], legacy: canonical.length === 0 };
 }
 
+function parseFindingDedupSignature(body) {
+  const rootCauses = bodyFieldValues(body, ['Root-cause signature']);
+  if (rootCauses.length > 0) {
+    const normalized = new Set(rootCauses.map(normalizeSignature));
+    if (normalized.size > 1) {
+      fail('INVALID_PAYLOAD', 'finding body contains conflicting Root-cause signature fields', {
+        fields: rootCauses,
+      });
+    }
+    return { value: rootCauses[0], normalized: [...normalized][0], legacy: false };
+  }
+  const legacy = parseFindingSignature(body);
+  return legacy ? { ...legacy, legacy: true } : undefined;
+}
+
+export const FOLLOW_UP_ADMISSION_MARKER = 'effective-flow-follow-up-admission:v1';
+export const FOLLOW_UP_ADMISSION_VERSION = 'v1';
+
+const ADMISSION_REASONS = new Set(['material-harm', 'irreversible-commitment']);
+const ADMISSION_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'evidenceType',
+  'evidenceReference',
+  'evidenceDigest',
+  'reachability',
+  'reachabilityAnchor',
+  'rootCauseSignature',
+  'scopeAndContainment',
+  'whyNow',
+  'completionCondition',
+]);
+const CLOSURE_RECEIPT_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'signature',
+  'evidenceDigest',
+  'reachabilityAnchor',
+  'date',
+]);
+
+function sha256Digest(value, field) {
+  const digest = requireString(value, field).trim().toLowerCase();
+  if (!/^[a-f\d]{64}$/.test(digest)) {
+    fail('INVALID_PAYLOAD', `${field} must be a lowercase SHA-256 digest`, { field });
+  }
+  return digest;
+}
+
+function admissionText(value, field) {
+  return lifecycleSafeString(assertPublishable(value, field), field);
+}
+
+function normalizeAdmission(value) {
+  exactObjectKeys(value, ADMISSION_KEYS, 'finding.admission');
+  if (value.outcome !== 'admitted') {
+    fail('INVALID_PAYLOAD', 'finding.admission.outcome must be admitted', {
+      field: 'finding.admission.outcome',
+    });
+  }
+  if (!ADMISSION_REASONS.has(value.reason)) {
+    fail('INVALID_PAYLOAD', 'finding.admission.reason is unsupported', {
+      field: 'finding.admission.reason',
+      supported: [...ADMISSION_REASONS],
+    });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'finding.admission.gateVersion is unsupported', {
+      field: 'finding.admission.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  return {
+    outcome: 'admitted',
+    reason: value.reason,
+    gateVersion: value.gateVersion,
+    evidenceType: admissionText(value.evidenceType, 'finding.admission.evidenceType'),
+    evidenceReference: admissionText(
+      value.evidenceReference,
+      'finding.admission.evidenceReference',
+    ),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'finding.admission.evidenceDigest'),
+    reachability: admissionText(value.reachability, 'finding.admission.reachability'),
+    reachabilityAnchor: admissionText(
+      value.reachabilityAnchor,
+      'finding.admission.reachabilityAnchor',
+    ),
+    rootCauseSignature: admissionText(
+      value.rootCauseSignature,
+      'finding.admission.rootCauseSignature',
+    ),
+    scopeAndContainment: admissionText(
+      value.scopeAndContainment,
+      'finding.admission.scopeAndContainment',
+    ),
+    whyNow: admissionText(value.whyNow, 'finding.admission.whyNow'),
+    completionCondition: admissionText(
+      value.completionCondition,
+      'finding.admission.completionCondition',
+    ),
+  };
+}
+
+function normalizeClosureReceipt(value) {
+  exactObjectKeys(value, CLOSURE_RECEIPT_KEYS, 'receipt');
+  if (value.outcome !== 'closed') {
+    fail('INVALID_PAYLOAD', 'receipt.outcome must be closed', { field: 'receipt.outcome' });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'receipt.gateVersion is unsupported', {
+      field: 'receipt.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  const date = requireString(value.date, 'receipt.date').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    fail('INVALID_PAYLOAD', 'receipt.date must be YYYY-MM-DD', { field: 'receipt.date' });
+  }
+  return {
+    outcome: 'closed',
+    reason: admissionText(value.reason, 'receipt.reason'),
+    gateVersion: value.gateVersion,
+    signature: normalizeSignature(value.signature),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'receipt.evidenceDigest'),
+    reachabilityAnchor: admissionText(value.reachabilityAnchor, 'receipt.reachabilityAnchor'),
+    date,
+  };
+}
+
+function closureDataMarker(receipt) {
+  return `<!-- effective-flow-follow-up-admission-data:v1 ${JSON.stringify(receipt)} -->`;
+}
+
+export function buildFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  const receipt = normalizeClosureReceipt(input.receipt ?? input);
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  return { marker, receipt, body: `${marker}\n${closureDataMarker(receipt)}` };
+}
+
+export function parseFollowUpAdmissionReceipt(body, current) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  if (!text.startsWith(marker)) return { found: false, receipt: null, current: false };
+  const lines = text.split(/\r?\n/);
+  if (lines[0] !== marker) {
+    fail('INVALID_PAYLOAD', 'follow-up admission marker must be the opening complete line');
+  }
+  const dataLines = lines.filter((line) =>
+    line.startsWith('<!-- effective-flow-follow-up-admission-data:'),
+  );
+  if (dataLines.length !== 1) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt must contain exactly one data marker', {
+      count: dataLines.length,
+    });
+  }
+  const match = dataLines[0].match(
+    /^<!-- effective-flow-follow-up-admission-data:([^\s]+) (\{.*\}) -->$/,
+  );
+  if (!match || match[1] !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt data marker is malformed or unsupported', {
+      version: match?.[1],
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  let raw;
+  try {
+    raw = JSON.parse(match[2]);
+  } catch {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt contains malformed JSON');
+  }
+  const receipt = normalizeClosureReceipt(raw);
+  let isCurrent = false;
+  if (current !== undefined) {
+    requireObject(current, 'current');
+    const expected = normalizeClosureReceipt({ ...receipt, ...current, date: receipt.date });
+    isCurrent = ['gateVersion', 'signature', 'evidenceDigest', 'reachabilityAnchor'].every(
+      (field) => receipt[field] === expected[field],
+    );
+  }
+  return { found: true, receipt, current: isCurrent };
+}
+
 function validateFinding(input) {
   requireObject(input, 'finding');
   const allowedSeverity = new Set(['Critical', 'Important', 'Note']);
@@ -807,6 +992,7 @@ function validateFinding(input) {
   if (!allowedComplexity.has(input.complexity))
     fail('INVALID_PAYLOAD', 'invalid finding complexity');
   if (!allowedAction.has(input.action)) fail('INVALID_PAYLOAD', 'invalid finding action');
+  input.admission = normalizeAdmission(input.admission);
   return input;
 }
 
@@ -816,7 +1002,8 @@ export function buildFindingPayload(input, options = {}) {
   requireString(finding.id, 'finding.id');
   if (!/^R-\d{7}$/.test(finding.id)) fail('INVALID_PAYLOAD', 'finding.id must match R-XXXXXXX');
   const signature = finding.signature ?? `${finding.file} · ${finding.area} · ${finding.problem}`;
-  const body = [
+  const admission = finding.admission;
+  const lines = [
     `- **${strings.findingFields.severity}**: ${strings.severity[finding.severity]}`,
     `- **${strings.findingFields.complexity}**: ${strings.complexity[finding.complexity]}`,
     `- **${strings.findingFields.area}**: ${finding.area}`,
@@ -825,9 +1012,26 @@ export function buildFindingPayload(input, options = {}) {
     `- **${strings.findingFields.recommendation}**: ${finding.recommendation}`,
     `- **Action**: ${finding.action}`,
     `- **${strings.findingFields.promptSuggestion}**: ${finding.promptSuggestion}`,
-    `- **Epic**: ${finding.epic ? `#${requireNumber(finding.epic, 'finding.epic')}` : ''}`,
+    `- **Admission outcome**: ${admission.outcome}`,
+    `- **Admission reason**: ${admission.reason}`,
+    `- **Admission gate**: ${admission.gateVersion}`,
+    `- **Evidence**: ${admission.evidenceType} · ${admission.evidenceReference}`,
+    `- **Evidence digest**: ${admission.evidenceDigest}`,
+    `- **Current reachability**: ${admission.reachability} · ${admission.reachabilityAnchor}`,
+    `- **Root-cause signature**: ${admission.rootCauseSignature}`,
+    `- **Scope and containment**: ${admission.scopeAndContainment}`,
+    `- **Why now**: ${admission.whyNow}`,
+    `- **Completion condition**: ${admission.completionCondition}`,
     `- **Signature**: ${signature}`,
-  ].join('\n');
+  ];
+  if (finding.epic !== undefined && finding.epic !== null && finding.epic !== '') {
+    lines.splice(
+      lines.length - 1,
+      0,
+      `- **Epic**: #${requireNumber(finding.epic, 'finding.epic')}`,
+    );
+  }
+  const body = lines.join('\n');
   return {
     title: `[${finding.id}] ${finding.title}`,
     body,
@@ -1047,16 +1251,26 @@ export function deduplicateFindings(existingIssues, findings) {
     const number = requireNumber(issue.number, 'existing issue number');
     if (!issuesByNumber.has(number)) issuesByNumber.set(number, issue);
   }
-  const signatures = new Map();
+  const modernSignatures = new Map();
+  const legacySignatures = new Map();
   for (const issue of issuesByNumber.values()) {
-    const parsed = parseFindingSignature(issue.body ?? '');
-    if (parsed && !signatures.has(parsed.normalized)) signatures.set(parsed.normalized, issue);
+    const parsed = parseFindingDedupSignature(issue.body ?? '');
+    if (!parsed) continue;
+    const index = parsed.legacy ? legacySignatures : modernSignatures;
+    if (!index.has(parsed.normalized)) index.set(parsed.normalized, issue);
   }
   const duplicate = [];
   const fresh = [];
   for (const finding of findings) {
-    const signature = normalizeSignature(finding.signature);
-    const issue = signatures.get(signature);
+    requireObject(finding, 'finding');
+    const rootCause = finding.admission?.rootCauseSignature;
+    let issue;
+    if (rootCause !== undefined && rootCause !== null) {
+      issue = modernSignatures.get(normalizeSignature(rootCause));
+    }
+    if (!issue) {
+      issue = legacySignatures.get(normalizeSignature(finding.signature));
+    }
     if (issue) duplicate.push({ finding, issueNumber: issue.number });
     else fresh.push(finding);
   }
@@ -5129,6 +5343,10 @@ function localOperation(operation, input) {
       return () => parseFindingSignature(input.body);
     case 'finding-build':
       return () => buildFindingPayload(input.finding ?? input, { language: input.language });
+    case 'follow-up-admission-build':
+      return () => buildFollowUpAdmissionReceipt(input);
+    case 'follow-up-admission-parse':
+      return () => parseFollowUpAdmissionReceipt(input.body, input.current);
     case 'epic-build':
       return () => buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':

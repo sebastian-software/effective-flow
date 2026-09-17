@@ -130,6 +130,13 @@ name a fragment no tool references directly, the build walks the fragment set as
 every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
 cycle the walk would otherwise not terminate on.
 
+`durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
+implementation, investigation, planning, or decomposition run. Common implementation workflows
+reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
+because re-entry or mutation always needs the conservative default; `review`, `investigate`, and
+PR-review integration load it at their admission decision. Keep admission before ID reservation and
+artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
+
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the

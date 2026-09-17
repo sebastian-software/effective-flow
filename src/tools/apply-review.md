@@ -55,6 +55,11 @@ when: the run's subject is fixed and a session title is about to be applied or e
 config-migration
 ```
 
+```lazy-include
+durable-follow-up-gate
+when: a local or legacy review finding is re-evaluated before task creation or delegation
+```
+
 ```include
 adr-convention
 ```
@@ -237,6 +242,8 @@ First determine the tracker target via the "apply-source detection" (report file
    - `Prompt suggestion`
    - `Developer note` (if present)
    - `Status` (if present) and already present implementation hints (✅)
+   - the admission outcome, reason, gate version, evidence digest/reference, current-reachability
+     anchor, and root-cause signature (when present)
 
    When reading an existing local report, also accept the historical German field aliases
    `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Empfehlung`, `Aktion`,
@@ -247,13 +254,21 @@ First determine the tracker target via the "apply-source detection" (report file
    finding IDs, paths, and other machine tokens remain stable. A mixed/unclear report is not
    rewritten automatically. Remote issues independently use `language.forge`.
 
-7. Classify each finding:
+7. After freshness and exact-signature deduplication, validate admission before task creation or
+   delegation. An explicit current `Admission outcome: admitted` record with all stable gate fields
+   is implementable. Re-evaluate a legacy finding that lacks the record; open status or Importance
+   is insufficient. A credible qualifying path with incomplete evidence is `uncertain` and blocks
+   for the one bounded evidence/containment check. A finding without a credible qualifying
+   consequence is `closed`: append one dated gate note carrying outcome, reason, gate version,
+   normalized signature, evidence digest, and reachability anchor, then skip it idempotently while
+   those inputs remain unchanged. Gate rejection never becomes an ADR candidate.
+8. Classify each admitted or separately rejected finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
    - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report, because the local report and the issue would otherwise be implemented twice. Collect these findings with their issue numbers for the handover in step 9; the local flow never processes them silently. If a note is present but its issue number is unreadable or ambiguous, ask instead of guessing, and do not treat the finding as implementable in the meantime.
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `effective-product` as a decision candidate (ADR only for a permanent decision)
    - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
-8. Give the user an overview:
+9. Give the user an overview:
 
 ```markdown
 **Report:** [filename]
@@ -265,11 +280,14 @@ First determine the tracker target via the "apply-source detection" (report file
 | Do not implement (→ effective-product) | Y |
 | Already implemented | Z |
 | Already published (→ issue) | P |
+| Closed by admission gate | C |
 | Total | N |
 ```
 
-9. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `{{SKILL:apply}} #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
-10. If no implementable findings and no rejected findings remain: report that briefly. If published findings exist, the message is the handover from step 9 rather than a bare abort, so a report consisting only of published findings ends with an executable next step instead of an apparent dead end. Then end the workflow.
+10. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `{{SKILL:apply}} #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
+11. If no implementable findings and no rejected findings remain, report that briefly and end. A
+    report containing only closed findings emits no substitute workflow recommendation. Published
+    findings use the concrete handover from step 10.
 
 ### Phase 2: Commit and stash strategy
 

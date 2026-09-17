@@ -94,9 +94,16 @@ investigation-method
 wisdom-accumulation
 ```
 
+```lazy-include
+durable-follow-up-gate
+when: the diagnosis is about to persist or emit a fix, refactor, build, or docs recommendation derived from the investigation
+```
+
 ## Routing outward
 
-At the end, `investigate` recommends exactly one follow-up step:
+At the end, `investigate` classifies exactly one potential follow-up step, then sends that
+diagnosis-derived candidate through “Durable derived-work gate”. The explicitly requested diagnosis
+report remains the primary output regardless of the result:
 
 - Defect with a clear cause → `{{SKILL:fix}}`
 - Structural problem without a behavior change → `{{SKILL:refactor}}`
@@ -149,9 +156,19 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
 3. Apply the guard again to the exact diagnosis-report path immediately before writing
    `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`, then write it per the
    report template below.
-4. State exactly one follow-up classification with its rationale (see "Routing outward"). Do not spell out an invocation here; step 6 carries the copy-paste-ready form once.
-5. Optionally offer to hand over directly to the recommended follow-up workflow; do not start it unprompted.
-6. Emit the next-step block per `next-steps` as the last element of the report. The classification of step 4 selects the row, so the recommendation it already named stays the first option. The fifth class — no bug, deliberately no action, or a product decision needed — matches no row and emits nothing, because it is not a documentation gap. The persisted `## Recommendation` section of the report is unaffected and keeps its single follow-up including its invocation suggestion.
+4. State exactly one diagnosis classification with its rationale (see “Routing outward”), then gate
+   the derived workflow recommendation before rendering an invocation:
+   - `current-scope`: refer back to the already authorized source artifact; do not create a second
+     implementation source
+   - `admitted`: persist exactly one workflow and invocation suggestion in the report
+   - `closed`: persist `No action` and no invocation
+   - `uncertain`: run the one bounded evidence/containment check; if unresolved, stop with the open
+     evidence need and no executable recommendation
+5. Only for `admitted`, optionally offer to hand over directly to the recommended follow-up workflow;
+   do not start it unprompted.
+6. Emit the next-step block per `next-steps` only for an `admitted` recommendation, using the concrete
+   report path. `current-scope`, `closed`, and unresolved `uncertain` produce no substitute planning
+   or review invocation.
 
 ## Report template
 
@@ -191,6 +208,7 @@ references, and machine tokens remain stable. Do not mix template languages.
 
 ## Recommendation
 
+**Admission outcome:** admitted | current-scope | closed | uncertain
 **Follow-up workflow:** {{FLOW}} fix | {{FLOW}} refactor | {{FLOW}} build | {{FLOW}} docs | further investigation needed | No action
 **Rationale:** [brief]
 **Invocation suggestion:** [e.g. `{{FLOW}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`]
