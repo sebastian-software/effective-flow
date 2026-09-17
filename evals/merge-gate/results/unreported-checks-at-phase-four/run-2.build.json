@@ -1,6 +1,6 @@
 {
   "scenario": "unreported-checks-at-phase-four",
-  "digest": "sha256:f14e2d2729cca6645c5167eb727e83341f21d1743b868e82d39803cdd5f50381",
+  "digest": "sha256:bc3ffd7714403a974238d86a0dc388ef8ec85491a603ef67623ba76c5558ede5",
   "skill": {
     "digest": "sha256:7fb8b7258c71083d57a247eb9a36ff38191efd3cf1d2171e8e16dc8383e007be",
     "files": {
@@ -31,9 +31,9 @@
     }
   },
   "instrument": {
-    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "digest": "sha256:edbce6a149f1fe5f09cba452b1260683b468a4c9d1f50ad7f140dd640f41808b",
     "files": {
-      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
       "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
       "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
     }
