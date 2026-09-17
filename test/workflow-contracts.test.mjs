@@ -3983,6 +3983,37 @@ test('remote review discovery checks closure freshness before terminal suppressi
   );
 });
 
+test('an admitted stale closure is cleared only for an already non-terminal issue', () => {
+  const remote = prose(
+    section(
+      source('src/tools/apply-review-remote.md'),
+      '### Phase 1 remote: Read findings from issues',
+      '\n### Phase 2 remote',
+    ),
+  );
+
+  ordered(
+    remote,
+    'a stale receipt re-enters admission',
+    'stale closure re-evaluated to `admitted`',
+    'Read the issue state fresh',
+    'Proceed only when it is already non-terminal',
+    '`issue-comment-update`',
+    '`issue-label-remove`',
+    '`effective-flow-follow-up-closed`',
+    'Only after both mutations succeed',
+    'Create the per-finding tasks',
+  );
+  assert.match(
+    remote,
+    /`issue-comment-update`.*exact comment ID.*fresh `expectedBodyHash`.*same payload.*must not fall back to `issue-comment`/,
+  );
+  assert.match(
+    remote,
+    /Any terminal state, including one proven cancelled\/not planned, stops.*closure comment and classification intact.*manual tracker restoration.*fresh run.*create no task/,
+  );
+});
+
 test('needs_evidence receives one bounded uncertain check before either workflow maps it', () => {
   const contracts = [
     {

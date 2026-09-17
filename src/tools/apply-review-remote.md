@@ -96,6 +96,25 @@ stable labels, IDs, action values, references, and markers are never translated.
   cancelled/not-planned state only when the target exposes exactly those semantics; otherwise leave
   the issue open but excluded by the receipt. Never call completed `issue-close`, never add
   `wontfix`, and reconcile an optional legacy epic entry.
+- **A stale closure re-evaluated to `admitted`:** reverse only the closure owned by the exact stale
+  receipt before this finding becomes implementable. Read the issue state fresh. Proceed only when
+  it is already non-terminal, and preserve that state unchanged during this reversal; an open issue
+  that admission closure never terminalized keeps its normal started transition in Phase 4. Any
+  terminal state, including one proven cancelled/not planned, stops before cleanup or task creation,
+  leaves the closure comment and classification intact, and reports that manual tracker restoration
+  plus a fresh run is required; create no task.
+
+  For the eligible non-terminal issue, read comments fresh and require exactly one comment whose
+  opening marker and parsed stale receipt are the closure being reversed. Use `body-hash`, then call
+  `issue-comment-update` for the exact comment ID with the fresh `expectedBodyHash`: preview and
+  apply the same payload that supersedes the active closure marker while retaining its receipt as
+  non-active history. It must not fall back to `issue-comment` or create a competing comment. Only
+  after that guarded update succeeds, read classifications fresh and preview then apply
+  `issue-label-remove` for `effective-flow-follow-up-closed`. Re-read the exact comment and
+  classifications fresh and prove that the marker is superseded and the classification absent.
+  Any missing, ambiguous, stale, failed, or mismatched step stops this finding with no task. Only
+  after both mutations succeed may it enter the implementable set.
+
 - **Sub-issue without target action or prompt** (manually altered) → report as not implementable, do not guess.
 - **Developer comment (non-Effective Flow) present** → implement **with context**: pass the comment text as additional context to the delegation skill. This is the remote equivalent of the local "developer note" in the "Implement with context" case. Deliberate rejection in remote mode still runs **exclusively** via the label `wontfix`, not via comment text; Effective Flow comments (e.g. `<!-- … -->`-marked status or PR-link comments) do not count as a developer note.
 - **otherwise** → implement only with a complete current `admitted` record.
