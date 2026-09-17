@@ -519,6 +519,21 @@
         "dryRun": false
       }
     },
+    "body-hash": {
+      "input": {
+        "body": "Adds the eval skeleton."
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "body-hash",
+        "provider": null,
+        "data": {
+          "hash": "df8ff84b4403d431d25bca3989a5c1eebc97b37b0496144abdf90fa284d84746"
+        },
+        "dryRun": false
+      }
+    },
     "issue-lifecycle-receipt-parse": {
       "input": {
         "body": "Adds the eval skeleton."

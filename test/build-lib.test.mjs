@@ -2179,6 +2179,27 @@ test('renderBody gives portable worker refs an explicit one-contract delegation 
   assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
   assert.match(rendered, /read only its matching `workers\/effective-flow-<worker>\.md` file/);
   assert.match(rendered, /built-in general-purpose subagent mechanism/);
+  assert.match(
+    rendered,
+    /only the workflow\/tool orchestrator starts workers or analysis fan-out/i,
+  );
+  assert.match(rendered, /zero inherited turns when supported/i);
+  assert.match(rendered, /otherwise its smallest supported history/i);
+  assert.match(rendered, /compact, self-contained handoff/i);
+  for (const field of [
+    'objective',
+    'relevant artifact paths',
+    'scoped paths and ownership',
+    'execution and runtime-state roots when writes are allowed',
+    'resolved language',
+    'authority and write limits',
+    'completion protocol',
+  ]) {
+    assert.match(rendered, new RegExp(field), `portable worker handoff must include ${field}`);
+  }
+  assert.match(rendered, /worker is a leaf executor/i);
+  assert.match(rendered, /starts no child/i);
+  assert.match(rendered, /returns missing essential context to the orchestrator/i);
   assert.match(rendered, /Start `effective-flow-code-validator`\./);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
 });

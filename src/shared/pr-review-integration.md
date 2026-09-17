@@ -25,10 +25,10 @@ security-disclosure-gate
 The loaded "PR review comment integration" owns PR resolution, the fresh thread and comment reads,
 the review submission with its marker and its provider fallbacks, the summary comment, the
 `language.forge` rule, and the "No AI attribution" rule — and through it the host detection, CLI
-probing, envelope, dry-run, redaction, and error contract of the "Remote helper contract" in
-`issue-tracker-forge.md`. The loaded "Security disclosure gate" owns the security classification, the
-local-first persistence, and the per-run publication offer. None of that is restated here. Pull
-requests stay on the forge behind `origin` regardless of `tracker.mode`.
+probing, envelope, dry-run, redaction, and error contract eagerly included from
+`remote-helper-contract.md`. The loaded "Security disclosure gate" owns the security
+classification, the local-first persistence, and the per-run publication offer. None of that is
+restated here. Pull requests stay on the forge behind `origin` regardless of `tracker.mode`.
 
 ### Inputs
 

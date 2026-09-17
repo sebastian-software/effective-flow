@@ -276,6 +276,7 @@ test('every fixture covers the operations a gate run performs', () => {
     'reference-parse',
     'probe',
     'pr-read',
+    'body-hash',
     'viewer-read',
     'pr-status-read',
     'pr-checks-wait',
@@ -297,6 +298,28 @@ test('every fixture covers the operations a gate run performs', () => {
         `${file}: fixture defines no envelope for the required operation "${operation}"`,
       );
     }
+  }
+});
+
+// Phase 0 retains the hash of the normalized PR body it just read. Merely requiring both
+// operations above is insufficient: a fixture can state a perfectly faithful `body-hash` envelope
+// for a different body, and the normalizer replay will validate both entries independently while
+// the scenario exercises a state no real gate run can produce. Bind the local helper input to the
+// normalized `pr-read` output so the two individually faithful envelopes also form one faithful
+// Phase-0 observation.
+test('every fixture hashes the body returned by its normalized PR read', () => {
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    const bodyHash = fixture.operations['body-hash'];
+    assert.ok(bodyHash, `${file}: fixture defines no body-hash operation`);
+
+    const prRead = fixture.operations['pr-read'];
+    assert.ok(prRead, `${file}: fixture defines no pr-read operation`);
+    assert.equal(
+      bodyHash.input?.body,
+      prRead.envelope?.data?.result?.body,
+      `${file}: body-hash must receive exactly the normalized body returned by pr-read`,
+    );
   }
 });
 

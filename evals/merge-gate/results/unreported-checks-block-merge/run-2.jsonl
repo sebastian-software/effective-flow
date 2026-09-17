@@ -1,0 +1,13 @@
+{"seq":1,"operation":"reference-parse","apply":false,"at":"2026-09-17T00:21:35.620Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":2,"operation":"repository-resolve","apply":false,"at":"2026-09-17T00:21:35.734Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":3,"operation":"probe","apply":false,"at":"2026-09-17T00:21:35.844Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":4,"operation":"pr-read","apply":false,"at":"2026-09-17T00:21:35.954Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":5,"operation":"body-hash","apply":false,"at":"2026-09-17T00:21:36.063Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":6,"operation":"issue-lifecycle-receipt-parse","apply":false,"at":"2026-09-17T00:21:36.170Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":7,"operation":"pr-status-read","apply":false,"at":"2026-09-17T00:21:45.565Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":8,"operation":"pr-reviews-read","apply":false,"at":"2026-09-17T00:21:45.588Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":9,"operation":"pr-comments-read","apply":false,"at":"2026-09-17T00:21:45.609Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":10,"operation":"review-threads-read","apply":false,"at":"2026-09-17T00:21:45.636Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":11,"operation":"viewer-read","apply":false,"at":"2026-09-17T00:21:45.661Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":12,"operation":"pr-checks-wait","apply":false,"at":"2026-09-17T00:21:55.175Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}
+{"seq":13,"operation":"pr-status-read","apply":false,"at":"2026-09-17T00:21:55.281Z","cwd":"/tmp/effective-flow-merge-gate-eval/unreported-checks-block-merge/project"}

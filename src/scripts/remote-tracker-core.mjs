@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 
 export const ERROR_CODES = Object.freeze([
   'NOT_GIT_REPOSITORY',
@@ -5121,57 +5122,67 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
 function localOperation(operation, input) {
   switch (operation) {
     case 'remote-parse':
-      return parseRemote(input.remote, input);
+      return () => parseRemote(input.remote, input);
     case 'reference-parse':
-      return parseReferences(input.references ?? input.reference, input);
+      return () => parseReferences(input.references ?? input.reference, input);
     case 'signature-parse':
-      return parseFindingSignature(input.body);
+      return () => parseFindingSignature(input.body);
     case 'finding-build':
-      return buildFindingPayload(input.finding ?? input, { language: input.language });
+      return () => buildFindingPayload(input.finding ?? input, { language: input.language });
     case 'epic-build':
-      return buildEpicPayload(input.epic ?? input, { language: input.language });
+      return () => buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':
-      return buildCommentPayload('planning', input.comment ?? input);
+      return () => buildCommentPayload('planning', input.comment ?? input);
     case 'decomposition-records-build':
-      return buildDecompositionRecords(input.decomposition ?? input);
+      return () => buildDecompositionRecords(input.decomposition ?? input);
     case 'decomposition-records-parse':
-      return parseDecompositionRecords(input.body);
+      return () => parseDecompositionRecords(input.body);
     case 'decomposition-key-build':
-      return buildDecompositionKey(input);
+      return () => buildDecompositionKey(input);
     case 'decomposition-key-parse':
-      return parseDecompositionKey(input.body, input.context ?? input);
+      return () => parseDecompositionKey(input.body, input.context ?? input);
     case 'decomposition-container-compare':
-      return compareDecompositionContainer(input.container ?? input);
+      return () => compareDecompositionContainer(input.container ?? input);
     case 'decomposition-child-workflow-parse':
-      return parseDecompositionChildWorkflow(input.workflow ?? input);
+      return () => parseDecompositionChildWorkflow(input.workflow ?? input);
     case 'apply-comment-build':
-      return buildCommentPayload('apply', input.comment ?? input);
+      return () => buildCommentPayload('apply', input.comment ?? input);
     case 'pr-comment-build':
-      return buildCommentPayload('pr', input.comment ?? input);
+      return () => buildCommentPayload('pr', input.comment ?? input);
     // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
     // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
     // completed work, so the fallback would feed the tool its own findings back.
     case 'pr-review-comment-build':
-      return buildCommentPayload('pr-review', input.comment ?? input);
+      return () => buildCommentPayload('pr-review', input.comment ?? input);
     case 'finding-deduplicate':
-      return deduplicateFindings(input.existingIssues, input.findings);
+      return () => deduplicateFindings(input.existingIssues, input.findings);
     case 'label-query-variants':
-      return labelQueryVariants(input.labels);
+      return () => labelQueryVariants(input.labels);
     case 'sf-label-migration-plan':
-      return planSfLabelMigration(input.issues, input.marker);
+      return () => planSfLabelMigration(input.issues, input.marker);
     case 'marker-patch':
-      return patchMarkedBlock(input.body, input.patch ?? input);
+      return () => patchMarkedBlock(input.body, input.patch ?? input);
     case 'checklist-patch':
-      return patchChecklistEntry(input.body, input.patch ?? input);
+      return () => patchChecklistEntry(input.body, input.patch ?? input);
     case 'body-hash':
-      return { hash: bodyHash(input.body) };
+      return () => ({ hash: bodyHash(input.body) });
     case 'issue-lifecycle-receipt-build':
-      return buildIssueLifecycleReceipt(input, input.context ?? input);
+      return () => buildIssueLifecycleReceipt(input, input.context ?? input);
     case 'issue-lifecycle-receipt-parse':
-      return parseIssueLifecycleReceipt(input.body, input.context ?? input);
+      return () => parseIssueLifecycleReceipt(input.body, input.context ?? input);
     default:
       return undefined;
   }
+}
+
+function requireExistingDirectory(value) {
+  const cwd = requireString(value, 'cwd');
+  try {
+    if (statSync(cwd).isDirectory()) return cwd;
+  } catch {
+    // The public failure deliberately does not expose platform-specific filesystem errors.
+  }
+  fail('INVALID_PAYLOAD', 'working directory is not an existing directory', { cwd });
 }
 
 function issueStateWaitClock(clock) {
@@ -5728,9 +5739,10 @@ export async function executeOperation(operation, input = {}, options = {}) {
   requireObject(input);
   const dryRun = MUTATIONS.has(operation) && options.apply !== true;
   try {
-    const local = localOperation(operation, input);
-    if (local !== undefined) {
-      return { ok: true, operation, provider: null, data: local, dryRun: false };
+    const runLocal = localOperation(operation, input);
+    if (runLocal !== undefined) {
+      if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
+      return { ok: true, operation, provider: null, data: runLocal(), dryRun: false };
     }
     if (!REMOTE_OPERATIONS.has(operation)) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });

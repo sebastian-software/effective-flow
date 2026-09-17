@@ -4,7 +4,7 @@ claude:
   model: sonnet
   effort: medium
   color: magenta
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill, Agent, Task]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -120,7 +120,7 @@ and do not count toward the invariant.
   `language.documentation.user`, while an existing README keeps its clear language unless the
   user requested translation; only a direct invocation resolves the shared language rule itself
 - change only the root `README.md`; no files under `docs/` and no product logic
-- invent no facts, claims, numbers, or references; when in doubt, omit or ask
+- invent no facts, claims, numbers, or references; when in doubt, omit anything nonessential, but if missing context is essential, only a direct invocation asks the user and a delegated worker returns `ABORT` with the missing context to the orchestrator
 - no internal architecture or implementation details on the marketing page; the linked
   technical documentation is there for that
 - stay within the write boundary and the standard doc structure per `Doc categories`

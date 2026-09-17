@@ -3743,6 +3743,42 @@ test('plan files stay committed and pull requests stay on the forge in every tra
   );
 });
 
+test('both forge adapters load the shared remote-helper invocation contract', () => {
+  const prComments = source('src/shared/pr-review-comments.md');
+  const issueTracker = source('src/shared/issue-tracker-forge.md');
+
+  // A prose reference to the helper contract does not load anything. Runtime evidence showed that
+  // leaving the first invocation to a deferred trigger is insufficient, so PR work carries a real
+  // eager edge before any PR resolution or helper operation begins.
+  const prIncludes = collectIncludeNames(prComments);
+  assert.ok(
+    prIncludes.eager.has('remote-helper-contract'),
+    'pr-review-comments must eagerly include remote-helper-contract',
+  );
+  assert.equal(
+    prIncludes.lazy.has('remote-helper-contract'),
+    false,
+    'pr-review-comments must not defer remote-helper-contract to a runtime trigger',
+  );
+  const prFence = prComments.indexOf('```include\nremote-helper-contract\n```');
+  assert.notEqual(prFence, -1, 'pr-review-comments must carry the raw eager include fence');
+  const prResolution = prComments.indexOf('### PR resolution');
+  assert.notEqual(prResolution, -1, 'pr-review-comments must retain its PR resolution section');
+  assert.ok(
+    prFence < prResolution,
+    'the remote-helper-contract include must appear before the first PR helper operation',
+  );
+
+  // Issue-backed workflows already load this adapter before using the helper, so the small contract
+  // is part of its eager include closure. Pin the actual include edge, not a prose mention of the
+  // fragment name.
+  const trackerIncludes = collectIncludeNames(issueTracker);
+  assert.ok(
+    trackerIncludes.eager.has('remote-helper-contract'),
+    'issue-tracker-forge must eagerly include remote-helper-contract',
+  );
+});
+
 test('the security disclosure gate binds every publisher on every tracker target', () => {
   const tracker = source('src/shared/issue-tracker-forge.md');
   const gate = flat(section(tracker, '### Security disclosure gate'));
@@ -13284,6 +13320,23 @@ test('the reviewer advisory conservatively classifies and retains candidates wit
   }
 });
 
+test('Phase 4 completes a new status read before its guard reads and evaluates only the full snapshot', () => {
+  const phase4 = flat(section(source('src/tools/merge-gate.md'), '### Phase 4', '\n### Phase 5'));
+
+  // The order is the concurrency contract: Phase 2's status result cannot stand in for Phase 4's,
+  // and none of the advisory or merge conditions may observe a partial mix of the four responses.
+  ordered(
+    phase4,
+    'Start the Phase-4 observation with a new `pr-status-read` and wait for it to complete.',
+    'Never reuse or reinterpret any status result from Phase 2 as this read.',
+    'Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together.',
+    'Wait for all three to complete.',
+    'Only then apply "Unconfigured automatic-reviewer advisory"',
+    'evaluate every condition from all four results; never evaluate a partial batch.',
+    '1. the resolved completion mode is `merge`',
+  );
+});
+
 test('every fresh review read accumulates advisory candidates before evaluation', () => {
   const gate = source('src/tools/merge-gate.md');
   const phase1 = flat(section(gate, '### Phase 1', '\n### Phase 2'));
@@ -13313,10 +13366,10 @@ test('every fresh review read accumulates advisory candidates before evaluation'
   );
   ordered(
     phase4,
-    'against a **fresh** read',
-    'Apply "Unconfigured automatic-reviewer advisory"',
+    'Wait for all three to complete',
+    'Only then apply "Unconfigured automatic-reviewer advisory"',
     'merge its candidates into the wisdom record',
-    'before evaluating any condition',
+    'evaluate every condition from all four results',
     '1. the resolved completion mode is `merge`',
   );
 });
