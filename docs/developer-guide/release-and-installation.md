@@ -312,10 +312,13 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes `scripts/remote-tracker.mjs` beside its importable
-core sibling, next to the router, tools, and shared resources. Installed skills therefore require
-Node.js 22 or newer at runtime. The pair has no third-party runtime dependencies; existing `gh` or
-`tea` installations remain its credential and transport boundary. Session titles add no shipped
+Every target's minimal skill payload includes `scripts/remote-tracker.mjs`,
+`scripts/delivery-selection.mjs`, and `scripts/delegation-envelope.mjs`, each beside its importable
+`-core.mjs` sibling, next to the router, tools, and shared resources. Installed skills therefore
+require Node.js 22 or newer at runtime. None of the pairs has third-party runtime dependencies;
+existing `gh` or `tea` installations remain the remote-tracker's credential and transport boundary.
+The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
+messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. Session titles add no shipped
 runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
 current-task capability, Claude Code renames its own session through the host's session-management
 tool, and Codex CLI has no automatic title path in this scope.

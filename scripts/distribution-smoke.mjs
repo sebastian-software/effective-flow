@@ -135,6 +135,61 @@ function assertWorkerResolution(root, workerDir, extension, metadataPrefix, work
   }
 }
 
+// Runs one build and one validate through the shipped copy of the helper against a throwaway cwd,
+// which proves the CLI resolves its core beside it inside the target.
+function assertDelegationEnvelopeRoundTrip(target, helper) {
+  const cwd = mkdtempSync(join(tmpdir(), 'effective-flow-envelope-smoke-'));
+  const call = (operation, input) => {
+    const result = spawnSync(process.execPath, [helper, operation], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, CI: '1', NO_COLOR: '1' },
+      input: JSON.stringify(input),
+    });
+    const envelope = parseJson(result.stdout.trim(), `${target} delegation envelope ${operation}`);
+    if (result.status !== 0 || envelope.ok !== true || envelope.operation !== operation) {
+      fail(`${target} delegation envelope ${operation} failed\n${result.stdout}${result.stderr}`);
+    }
+    return envelope.result;
+  };
+  try {
+    const built = call('build', {
+      cwd,
+      pr: 1,
+      round: 1,
+      summaryComment: 'suppressed',
+      reviewGuard: 'established',
+      nextSteps: 'suppressed',
+      runState: 'non-interactive',
+      languageContext: {
+        source: 'en',
+        'documentation.user': 'en',
+        'documentation.technical': 'en',
+        workflow: 'en',
+        forge: 'en',
+        git: 'en',
+      },
+      threadItems: [{ durableKey: 'thread-1', threadId: 'PRRT_smoke' }],
+      bodyItems: [
+        {
+          durableKey: 'review-1#1',
+          reviewId: 'review-1',
+          author: 'smoke',
+          url: 'https://example.test/pr/1#review-1',
+          text: 'distribution-smoke',
+        },
+      ],
+    });
+    if (built.status !== 'written') fail(`${target} delegation envelope build did not write`);
+    const validated = call('validate', { cwd, path: built.path, digest: built.digest });
+    if (validated.digest !== built.digest || validated.items !== 1 || validated.threadItems !== 1) {
+      fail(`${target} delegation envelope validate returned an unexpected result`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
   assertCanonicalLicense();
 
@@ -178,7 +233,12 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       `${target} license`,
     );
     const scripts = join(distRoot, target, 'effective-flow', 'scripts');
-    for (const file of ['remote-tracker.mjs', 'remote-tracker-core.mjs']) {
+    for (const file of [
+      'remote-tracker.mjs',
+      'remote-tracker-core.mjs',
+      'delegation-envelope.mjs',
+      'delegation-envelope-core.mjs',
+    ]) {
       if (!lstatSync(join(scripts, file)).isFile()) fail(`${target} is missing scripts/${file}`);
     }
     for (const file of ['session-title.mjs', 'session-title-core.mjs']) {
@@ -198,6 +258,26 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     if (!envelope.ok || envelope.operation !== 'body-hash' || envelope.dryRun !== false) {
       fail(`${target} remote tracker returned an invalid envelope`);
     }
+    const envelopeHelper = spawnSync(
+      process.execPath,
+      [join(scripts, 'delegation-envelope.mjs'), 'validate'],
+      {
+        cwd: ROOT_DIR,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: JSON.stringify({ cwd: ROOT_DIR }),
+      },
+    );
+    const refusal = parseJson(envelopeHelper.stdout.trim(), `${target} delegation envelope`);
+    if (
+      envelopeHelper.status === 0 ||
+      refusal.ok !== false ||
+      refusal.operation !== 'validate' ||
+      refusal.error?.code !== 'INVALID_PAYLOAD'
+    ) {
+      fail(`${target} delegation envelope did not refuse an invalid payload with a JSON envelope`);
+    }
+    assertDelegationEnvelopeRoundTrip(target, join(scripts, 'delegation-envelope.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>

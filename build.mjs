@@ -74,6 +74,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'delegation-envelope.mjs',
+  'delegation-envelope-core.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
   'remote-tracker.mjs',
@@ -1454,8 +1456,8 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2800,
-    iterate: 1711,
+    'merge-gate': 2865,
+    iterate: 1753,
     setup: 1723,
     'apply-review': 1340,
     'apply-issues': 1187,

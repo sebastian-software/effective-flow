@@ -56,16 +56,19 @@ records that outcome; it never manufactures documentation work to look busy.
 
 The gate's completion condition is: no surface is `blocked` and none is unassessed. Treat a
 `blocked` surface like an open critical review finding — bounded correction rounds per
-"Goal-driven completion control", then:
+"Goal-driven completion control", then by run state. An explicit `Run state: gated` or
+`Run state: non-interactive` line the run received from its caller decides which branch applies;
+only when that line is absent does the chain rule of the second branch decide (a gated
+`{{SKILL:iterate}}` forwards no line to its item runs, so the chain rule decides for them):
 
 - **interactive:** escalate to the user with the concrete options (implement it now, record an
   explicit justified downgrade to `no impact`, or accept it as an explicitly deferred follow-up),
   record that decision, and run no completion, plan-status switch or delivery action while a
   surface is still `blocked`;
-- **non-interactive delegation** (a run anywhere below `{{SKILL:apply-review}}`,
-  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}` in the delegation chain,
-  not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates through `{{SKILL:iterate}}`
-  and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
+- **non-interactive delegation** (without a `Run state:` line: a run anywhere below
+  `{{SKILL:apply-review}}`, `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}`
+  in the delegation chain, not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates
+  through `{{SKILL:iterate}}` and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
   finding with `Action: {{SKILL:docs}}` in the run's review report per "Open review-finding
   reports", including its prompt suggestion, and name it in the completion summary. The run
   completes and the gap is carried forward, never dropped.
