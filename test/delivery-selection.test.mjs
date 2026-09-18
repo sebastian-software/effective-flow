@@ -14,6 +14,7 @@ import {
   diagnosticText,
   isDryRun,
   NON_INTERACTIVE_FETCH_ENV,
+  DISABLED_FETCH_TRACE_ENV,
   nonInteractiveFetchEnv,
   parsePorcelainV2Z,
   snapshotScope,
@@ -260,7 +261,19 @@ test('the upstream fetch environment cannot prompt for credentials or host keys'
 });
 
 test('the default ssh of the upstream fetch runs in batch mode', () => {
-  const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+  const base = {
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'never',
+    GIT_TRACE: '0',
+    GIT_TRACE_PACKET: '0',
+    GIT_TRACE_CURL: '0',
+    GIT_TRACE2: '0',
+    GIT_TRACE2_EVENT: '0',
+    GIT_TRACE2_PERF: '0',
+    GIT_TRACE_SETUP: '0',
+    GIT_TRACE_PERFORMANCE: '0',
+    GIT_CURL_VERBOSE: undefined,
+  };
   assert.deepEqual(nonInteractiveFetchEnv(), { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' });
   assert.deepEqual(nonInteractiveFetchEnv({ environment: { PATH: '/usr/bin' } }), {
     ...base,
@@ -278,7 +291,19 @@ test('the default ssh of the upstream fetch runs in batch mode', () => {
 });
 
 test('a user-configured SSH command, program, or variant is left untouched by the fetch', () => {
-  const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+  const base = {
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'never',
+    GIT_TRACE: '0',
+    GIT_TRACE_PACKET: '0',
+    GIT_TRACE_CURL: '0',
+    GIT_TRACE2: '0',
+    GIT_TRACE2_EVENT: '0',
+    GIT_TRACE2_PERF: '0',
+    GIT_TRACE_SETUP: '0',
+    GIT_TRACE_PERFORMANCE: '0',
+    GIT_CURL_VERBOSE: undefined,
+  };
   const setups = [
     { environment: { GIT_SSH_COMMAND: 'ssh -o BatchMode=no -i ~/.ssh/deploy' } },
     { configuredSshCommand: 'ssh -i ~/.ssh/config-key' },
@@ -291,6 +316,46 @@ test('a user-configured SSH command, program, or variant is left untouched by th
     assert.deepEqual(env, base, JSON.stringify(setup));
     assert.equal('GIT_SSH_COMMAND' in env, false, JSON.stringify(setup));
   }
+});
+
+test('the upstream fetch disables every inherited Git trace in both SSH branches', () => {
+  const traced = {
+    GIT_TRACE: '1',
+    GIT_TRACE_PACKET: '1',
+    GIT_TRACE_CURL: '1',
+    GIT_TRACE2: '1',
+    GIT_TRACE2_EVENT: '/tmp/trace2-event',
+    GIT_TRACE2_PERF: '2',
+    GIT_TRACE_SETUP: 'true',
+    GIT_TRACE_PERFORMANCE: '1',
+    GIT_CURL_VERBOSE: '1',
+  };
+  assert.deepEqual(Object.keys(DISABLED_FETCH_TRACE_ENV).sort(), Object.keys(traced).sort());
+  assert.ok(Object.isFrozen(DISABLED_FETCH_TRACE_ENV));
+  for (const setup of [
+    { environment: traced },
+    { environment: { ...traced, GIT_SSH_COMMAND: 'sshpass -p SECRET ssh' } },
+  ]) {
+    const env = nonInteractiveFetchEnv(setup);
+    for (const key of Object.keys(traced)) {
+      assert.ok(Object.hasOwn(env, key), key);
+      assert.equal(env[key], key === 'GIT_CURL_VERBOSE' ? undefined : '0', key);
+    }
+    assert.equal(env.GIT_TERMINAL_PROMPT, '0');
+    assert.equal(env.GCM_INTERACTIVE, 'never');
+  }
+  // The trace variables are no SSH setup: the default ssh keeps its batch mode.
+  assert.equal(
+    nonInteractiveFetchEnv({ environment: traced }).GIT_SSH_COMMAND,
+    'ssh -o BatchMode=yes',
+  );
+  assert.equal(
+    'GIT_SSH_COMMAND' in
+      nonInteractiveFetchEnv({
+        environment: { ...traced, GIT_SSH_COMMAND: 'sshpass -p SECRET ssh' },
+      }),
+    false,
+  );
 });
 
 test('diagnostics are trimmed, capped, and never carry URL or token credentials', () => {

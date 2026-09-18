@@ -909,6 +909,12 @@ test('the upstream fetch leaves a user-configured SSH setup untouched', async (t
 
   // With every setting gone again, the default ssh is back in batch mode.
   assert.equal((await fetchEnv()).GIT_SSH_COMMAND, 'ssh -o BatchMode=yes');
+
+  // An inherited Git trace is disabled for the fetch, so it cannot echo the SSH command.
+  const traced = await fetchEnv({ GIT_TRACE: '1', GIT_CURL_VERBOSE: '1' });
+  assert.equal(traced.GIT_TRACE, '0');
+  assert.ok(Object.hasOwn(traced, 'GIT_CURL_VERBOSE'));
+  assert.equal(traced.GIT_CURL_VERBOSE, undefined);
 });
 
 test('the ssh program Git runs receives the configured command unchanged', async (t) => {

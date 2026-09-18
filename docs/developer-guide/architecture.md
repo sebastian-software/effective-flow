@@ -238,7 +238,8 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`) or an SSH variant setting
   (`GIT_SSH_VARIANT`, `ssh.variant`) is used unchanged, because rewriting a user's command cannot
   be done safely across wrappers, quoting, and variants, so only the timeout bounds a host-key or
-  passphrase prompt there. Its `fetch.error`, like a
+  passphrase prompt there. Inherited Git tracing (`GIT_TRACE*`, `GIT_CURL_VERBOSE`) is disabled
+  for the fetch, so its stderr cannot echo the SSH command or credentials. Its `fetch.error`, like a
   refused merge's `stderr`, redacts URL userinfo, query and fragment, and obvious token forms. It
   skips the fetch for a local upstream or an invalid remote or merge ref, and classifies the
   branch as `detached`,

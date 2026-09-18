@@ -1378,6 +1378,23 @@ export const NON_INTERACTIVE_FETCH_ENV = Object.freeze({
   GCM_INTERACTIVE: 'never',
 });
 
+// Inherited Git tracing is disabled for the fetch: trace output would echo the SSH command, and
+// any credential in it, into the stderr that becomes `fetch.error`. `0` disables every GIT_TRACE*
+// target. GIT_CURL_VERBOSE is honoured whenever it is present, even as `0`, so it is removed
+// instead: the runner spreads this env over `process.env`, and a child process omits a variable
+// whose value is `undefined`.
+export const DISABLED_FETCH_TRACE_ENV = Object.freeze({
+  GIT_TRACE: '0',
+  GIT_TRACE_PACKET: '0',
+  GIT_TRACE_CURL: '0',
+  GIT_TRACE2: '0',
+  GIT_TRACE2_EVENT: '0',
+  GIT_TRACE2_PERF: '0',
+  GIT_TRACE_SETUP: '0',
+  GIT_TRACE_PERFORMANCE: '0',
+  GIT_CURL_VERBOSE: undefined,
+});
+
 // The fetch is the only upstream command that talks to the network; it is bounded so an
 // unresponsive remote cannot hang the delivery run.
 export const UPSTREAM_FETCH_TIMEOUT_MS = 60_000;
@@ -1400,7 +1417,7 @@ export function nonInteractiveFetchEnv({
   configuredSshCommand = null,
   configuredSshVariant = null,
 } = {}) {
-  const env = { ...NON_INTERACTIVE_FETCH_ENV };
+  const env = { ...NON_INTERACTIVE_FETCH_ENV, ...DISABLED_FETCH_TRACE_ENV };
   const userSshSetup = [
     environment.GIT_SSH_COMMAND,
     configuredSshCommand,
