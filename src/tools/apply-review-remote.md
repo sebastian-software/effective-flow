@@ -105,12 +105,13 @@ stable labels, IDs, action values, references, and markers are never translated.
   plus a fresh run is required; create no task.
 
   For the eligible non-terminal issue, read comments fresh and require exactly one comment whose
-  opening marker and parsed stale receipt are the closure being reversed. Use `body-hash`, then call
-  `issue-comment-update` for the exact comment ID with the fresh `expectedBodyHash`: preview and
-  apply the same payload that supersedes the active closure marker while retaining its receipt as
-  non-active history. It must not fall back to `issue-comment` or create a competing comment. Only
-  after that guarded update succeeds, read classifications fresh and preview then apply
-  `issue-label-remove` for `effective-flow-follow-up-closed`. Re-read the exact comment and
+  helper-parsed active or superseded stale receipt is the closure being reversed. Pass its body and
+  the current freshness keys to `follow-up-admission-supersede`; use only its deterministic body. If
+  it is not already superseded, use `body-hash`, then call `issue-comment-update` for the exact
+  comment ID with the fresh `expectedBodyHash`, previewing and applying the same payload. It must not
+  fall back to `issue-comment` or create a competing comment. Only after the guarded update succeeds
+  or the helper proves an idempotent prior supersession, read classifications fresh and preview then
+  apply `issue-label-remove` for `effective-flow-follow-up-closed`. Re-read the exact comment and
   classifications fresh and prove that the marker is superseded and the classification absent.
   Any missing, ambiguous, stale, failed, or mismatched step stops this finding with no task. Only
   after both mutations succeed may it enter the implementable set.

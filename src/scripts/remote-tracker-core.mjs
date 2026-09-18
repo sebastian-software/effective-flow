@@ -806,6 +806,8 @@ function parseFindingDedupSignature(body) {
 }
 
 export const FOLLOW_UP_ADMISSION_MARKER = 'effective-flow-follow-up-admission:v1';
+export const FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER =
+  'effective-flow-follow-up-admission-superseded:v1';
 export const FOLLOW_UP_ADMISSION_VERSION = 'v1';
 
 const ADMISSION_REASONS = new Set(['material-harm', 'irreversible-commitment']);
@@ -935,9 +937,18 @@ export function buildFollowUpAdmissionReceipt(input) {
 export function parseFollowUpAdmissionReceipt(body, current) {
   const text = requireString(body, 'body', { allowEmpty: true });
   const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
-  if (!text.startsWith(marker)) return { found: false, receipt: null, current: false };
+  const supersededMarker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const state = text.startsWith(marker)
+    ? 'active'
+    : text.startsWith(supersededMarker)
+      ? 'superseded'
+      : 'absent';
+  if (state === 'absent') {
+    return { found: false, receipt: null, current: false, state };
+  }
   const lines = text.split(/\r?\n/);
-  if (lines[0] !== marker) {
+  const openingMarker = state === 'active' ? marker : supersededMarker;
+  if (lines[0] !== openingMarker) {
     fail('INVALID_PAYLOAD', 'follow-up admission marker must be the opening complete line');
   }
   const dataLines = lines.filter((line) =>
@@ -972,7 +983,33 @@ export function parseFollowUpAdmissionReceipt(body, current) {
       (field) => receipt[field] === expected[field],
     );
   }
-  return { found: true, receipt, current: isCurrent };
+  return { found: state === 'active', receipt, current: isCurrent, state };
+}
+
+export function supersedeFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  if (input.current === undefined) {
+    fail('INVALID_PAYLOAD', 'current freshness keys are required to supersede a receipt', {
+      field: 'current',
+    });
+  }
+  const text = requireString(input.body, 'body', { allowEmpty: true });
+  const parsed = parseFollowUpAdmissionReceipt(text, input.current);
+  if (parsed.state === 'absent') {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt is absent');
+  }
+  if (parsed.current) {
+    fail('INVALID_PAYLOAD', 'a current follow-up admission receipt cannot be superseded');
+  }
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const activeMarker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  const unchanged = parsed.state === 'superseded';
+  return {
+    marker,
+    receipt: parsed.receipt,
+    body: unchanged ? text : `${marker}${text.slice(activeMarker.length)}`,
+    unchanged,
+  };
 }
 
 function validateFinding(input) {
@@ -5347,6 +5384,8 @@ function localOperation(operation, input) {
       return () => buildFollowUpAdmissionReceipt(input);
     case 'follow-up-admission-parse':
       return () => parseFollowUpAdmissionReceipt(input.body, input.current);
+    case 'follow-up-admission-supersede':
+      return () => supersedeFollowUpAdmissionReceipt(input);
     case 'epic-build':
       return () => buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':

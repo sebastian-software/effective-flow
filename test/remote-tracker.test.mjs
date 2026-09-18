@@ -35,9 +35,11 @@ import {
   probeProvider,
   redact,
   FOLLOW_UP_ADMISSION_MARKER,
+  FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER,
   FOLLOW_UP_ADMISSION_VERSION,
   ISSUE_STATE_READ_TIMEOUT_MS,
   ISSUE_STATE_WAIT_MS,
+  supersedeFollowUpAdmissionReceipt,
 } from '../src/scripts/remote-tracker-core.mjs';
 
 const githubRepository = {
@@ -593,6 +595,7 @@ test('follow-up admission receipts round-trip idempotently and reopen on stale e
   const parsed = parseFollowUpAdmissionReceipt(built.body, current);
   assert.equal(parsed.found, true);
   assert.equal(parsed.current, true);
+  assert.equal(parsed.state, 'active');
   assert.equal(parsed.receipt.outcome, 'closed');
   assert.equal(
     parseFollowUpAdmissionReceipt(built.body, {
@@ -612,7 +615,36 @@ test('follow-up admission receipts round-trip idempotently and reopen on stale e
     found: false,
     receipt: null,
     current: false,
+    state: 'absent',
   });
+
+  const staleCurrent = { ...current, evidenceDigest: 'b'.repeat(64) };
+  const superseded = supersedeFollowUpAdmissionReceipt({
+    body: built.body,
+    current: staleCurrent,
+  });
+  assert.equal(
+    FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER,
+    'effective-flow-follow-up-admission-superseded:v1',
+  );
+  assert.equal(superseded.marker, '<!-- effective-flow-follow-up-admission-superseded:v1 -->');
+  assert.equal(superseded.unchanged, false);
+  assert.equal(superseded.receipt.evidenceDigest, admissionDigest);
+  assert.equal(superseded.body, built.body.replace(built.marker, superseded.marker));
+  assert.deepEqual(parseFollowUpAdmissionReceipt(superseded.body, staleCurrent), {
+    found: false,
+    receipt: built.receipt,
+    current: false,
+    state: 'superseded',
+  });
+  assert.deepEqual(
+    supersedeFollowUpAdmissionReceipt({ body: superseded.body, current: staleCurrent }),
+    { ...superseded, unchanged: true },
+  );
+  assert.throws(
+    () => supersedeFollowUpAdmissionReceipt({ body: built.body, current }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
 
   const builtEnvelope = await executeOperation('follow-up-admission-build', {
     cwd: process.cwd(),
@@ -626,6 +658,14 @@ test('follow-up admission receipts round-trip idempotently and reopen on stale e
   assert.equal(parsedEnvelope.ok, true);
   assert.equal(parsedEnvelope.data.current, true);
   assert.equal(parsedEnvelope.provider, null);
+  const supersededEnvelope = await executeOperation('follow-up-admission-supersede', {
+    cwd: process.cwd(),
+    body: builtEnvelope.data.body,
+    current: staleCurrent,
+  });
+  assert.equal(supersededEnvelope.ok, true);
+  assert.equal(supersededEnvelope.data.body, superseded.body);
+  assert.equal(supersededEnvelope.provider, null);
 });
 
 test('label compatibility emits separate prefix and legacy severity queries', () => {

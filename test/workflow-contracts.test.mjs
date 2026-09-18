@@ -3998,6 +3998,7 @@ test('an admitted stale closure is cleared only for an already non-terminal issu
     'stale closure re-evaluated to `admitted`',
     'Read the issue state fresh',
     'Proceed only when it is already non-terminal',
+    '`follow-up-admission-supersede`',
     '`issue-comment-update`',
     '`issue-label-remove`',
     '`effective-flow-follow-up-closed`',
@@ -4007,6 +4008,14 @@ test('an admitted stale closure is cleared only for an already non-terminal issu
   assert.match(
     remote,
     /`issue-comment-update`.*exact comment ID.*fresh `expectedBodyHash`.*same payload.*must not fall back to `issue-comment`/,
+  );
+  assert.match(
+    remote,
+    /helper-parsed active or superseded stale receipt.*body.*current freshness keys.*`follow-up-admission-supersede`.*only its deterministic body/,
+  );
+  assert.match(
+    remote,
+    /guarded update succeeds.*helper proves an idempotent prior supersession.*`issue-label-remove`/,
   );
   assert.match(
     remote,
