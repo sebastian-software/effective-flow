@@ -106,8 +106,9 @@ and a branch that is only ahead. Two states ask:
   path, then asks whether to **Continue without update** or **Abort**.
 
 An unanswered or skipped question, and a non-interactive run, continue without an update: a
-fast-forward only ever runs after an explicit **Fast-forward first**. **Abort** ends the run before
-anything changes. Continuing without an update is safe, because the confirmed states are still
+fast-forward only ever runs after an explicit **Fast-forward first**. **Abort** ends the run without
+touching your working tree, index, or local branch; the upstream fetch before the question may
+already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch. Continuing without an update is safe, because the confirmed states are still
 transferred onto the refreshed base with conflict detection.
 
 A confirmed update is a fast-forward and nothing else. `deliver` never stashes, rebases, creates a

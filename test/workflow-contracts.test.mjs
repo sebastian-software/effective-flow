@@ -13526,7 +13526,29 @@ test('deliver checks the upstream before recording source evidence and defers th
   assert.match(asks[1].when, fetchGate);
   assert.match(asks[1].when, /mutationMayHaveSucceeded false/);
 
+  // The fetch that precedes either question has already written to the repository, so Abort
+  // promises only an untouched working tree, index, and local branch, never "nothing changed".
+  for (const [index, ask] of asks.entries()) {
+    const abort = ask.options.find(({ label }) => label === 'Abort');
+    assert.match(
+      abort.description,
+      /working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref/,
+      `upstream question ${index + 1}: Abort must scope its guarantee and disclose the preceding fetch`,
+    );
+  }
+
   const text = prose(sync);
+  assert.match(
+    text,
+    /Abort ends the run without changing the working tree, the index, or the local branch: no fast-forward, no evidence, no selection, and no delivery branch or worktree\. The upstream fetch that preceded the question may already have written fetched objects, `FETCH_HEAD`, and the remote-tracking ref/,
+  );
+  assert.doesNotMatch(text, /Abort ends the run before any mutation/);
+  const guide = prose(source('docs/user-guide/tools-deliver.md'));
+  assert.match(
+    guide,
+    /Abort ends the run without touching your working tree, index, or local branch; the upstream fetch before the question may already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch/,
+  );
+  assert.doesNotMatch(guide, /Abort ends the run before anything changes/);
   assert.match(
     text,
     /`fetch\.ok` is true and `fetch\.stale` is false\. A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,

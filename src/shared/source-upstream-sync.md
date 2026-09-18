@@ -28,7 +28,7 @@ options:
   - label: Continue without update
     description: Keep the local branch as it is; the refreshed base still reaches the delivery branch through the existing three-way transfer
   - label: Abort
-    description: End the run before any change to the source checkout and before any delivery artifact exists
+    description: End the run with the working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref
 ```
 
 In state `diverged` or `behind-overlap`, and after a fast-forward failure that wrote nothing, first
@@ -43,13 +43,15 @@ options:
   - label: Continue without update
     description: Keep the local branch as it is and continue with the selection; the existing three-way transfer onto the refreshed base still applies
   - label: Abort
-    description: End the run before any further change to the source checkout and before any delivery artifact exists
+    description: End the run with the working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref
 ```
 
 An unanswered question, a skipped question, or a non-interactive run resolves to **Continue without
 update** and the report says so. No fast-forward ever runs without an explicit **Fast-forward
-first** answer. **Abort** ends the run before any mutation: no fast-forward, no evidence, no
-selection, and no delivery branch or worktree.
+first** answer. **Abort** ends the run without changing the working tree, the index, or the local
+branch: no fast-forward, no evidence, no selection, and no delivery branch or worktree. The upstream
+fetch that preceded the question may already have written fetched objects, `FETCH_HEAD`, and the
+remote-tracking ref; Abort does not undo it.
 
 ### Fast-forward
 
