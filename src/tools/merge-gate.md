@@ -450,8 +450,8 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    delimiter-carrying or `missing-provenance` body as `unassessed` – because a sender stop before this point records no
    outcome from that build.
 
-Delete the message file and its snapshot once `{{SKILL:iterate}}` has returned, or in the run's final
-cleanup after a sender stop.
+Delete the message file and its snapshot once `{{SKILL:iterate}}` has returned for good (after any
+resume below), or in the run's final cleanup after a sender stop.
 
 **What `build` refuses, and what each refusal costs.** A refusal is an outcome of the round, never a
 fault of the channel:
@@ -605,6 +605,16 @@ channel – an item whose own implementation delegation aborted comes back marke
 is the mapped non-assessment above rather than a fault of the channel. `DONE`/`ABORT` is the
 completion protocol for **internal sub-agents**; across a workflow handoff it carries the whole run
 and nothing smaller.
+
+**A return with neither `DONE` nor `ABORT` gets exactly one resume, and never Retry 1–3.** At both
+delegation sites – the Phase 2 step 3 CI repair and the Phase 3 step 5 bot round – a keyword-less
+`{{SKILL:iterate}}` return is continued once as a separate turn of the same run: no envelope is
+rebuilt or re-sent, and that turn carries no control keyword, no `Item:` line or item text, and no
+return-protocol instruction – only a plain request to await pending work and finish, in place of the
+completion protocol's continuation hint. The resume does not advance the round counter. A return
+still keyword-less after it, or one the harness cannot continue, is handled as a whole-run `ABORT`:
+the round ends unsuccessfully, nothing is merged, and the report names it. The completion protocol's
+reduced-scope retries do not fit a run bound to a fixed `Item filter`.
 
 ## Conflict-resolution boundary
 

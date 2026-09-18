@@ -223,6 +223,66 @@ test('delegation-mandate.md defines the self-contained leaf-worker handoff', () 
   assertLeafWorkerHandoff(delegationMandate, 'src/shared/delegation-mandate.md');
 });
 
+// A delegated run is not reliably resumed when a background child finishes, so its caller receives
+// an interim result with neither DONE nor ABORT. The orchestrator-as-sub-agent rule closes that at
+// the source; it binds only the run's own fan-out, so the workflow-to-workflow carve-out that
+// follows it must stay intact and after it.
+test('delegation-mandate.md forbids a delegated orchestrator from ending its turn with a pending child', () => {
+  const bullet = delegationMandate
+    .split('\n')
+    .find((line) => /orchestrator that itself runs as a sub-agent/i.test(line));
+  assert.ok(
+    bullet,
+    'missing: the rule for an orchestrator that itself runs as a sub-agent (a workflow delegated ' +
+      'by another workflow)',
+  );
+  assertClauses(bullet, [
+    [
+      /workflow delegated by another workflow/i,
+      'missing: the orchestrator-as-sub-agent case is a workflow delegated by another workflow',
+    ],
+    [
+      /in the foreground or awaits each one['’]s result/i,
+      'missing: its own sub-agents start in the foreground or each result is awaited',
+    ],
+    [
+      /never ends its turn while a child is still pending/i,
+      'missing: a delegated orchestrator never ends its turn while a child is still pending',
+    ],
+    [
+      /not reliably resumed when a background child finishes/i,
+      'missing: the rationale that a delegated run is not reliably resumed by a finished child',
+    ],
+    [
+      /binds its own fan-out only/i,
+      'missing: the rule binds only the delegated orchestrator’s own fan-out',
+    ],
+    [
+      /handoff that started it keeps the mechanics below/i,
+      'missing: the handoff that started the delegated run keeps the workflow-to-workflow mechanics',
+    ],
+  ]);
+  const ruleIndex = delegationMandate.indexOf(bullet);
+  const carveOutIndex = delegationMandate.search(/This mandate covers worker roles/);
+  assert.notEqual(carveOutIndex, -1, 'missing: the workflow-to-workflow carve-out bullet');
+  assert.ok(
+    ruleIndex < carveOutIndex,
+    'the pending-child rule must precede the carve-out it defers to ("the mechanics below")',
+  );
+  // The fragment ships to Codex and portable targets as well; the Claude Code specifics live in
+  // docs/developer-guide/architecture.md, never here.
+  assert.doesNotMatch(
+    delegationMandate,
+    /run_in_background/,
+    'delegation-mandate.md must stay harness-neutral and not name run_in_background',
+  );
+  assert.doesNotMatch(
+    delegationMandate,
+    /SendMessage/,
+    'delegation-mandate.md must stay harness-neutral and not name SendMessage',
+  );
+});
+
 test('SKILL.md keeps delegation at the router and repeats the leaf-worker handoff', () => {
   assert.match(
     skill,
