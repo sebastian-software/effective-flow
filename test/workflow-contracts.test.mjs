@@ -13472,6 +13472,216 @@ test('no side of the iterate channel still claims a per-item ABORT', () => {
   );
 });
 
+// One `assert.match` per [pattern, message] pair, so a failure names the exact missing clause.
+function assertClauses(text, clauses) {
+  for (const [pattern, message] of clauses) {
+    assert.match(text, pattern, message);
+  }
+}
+
+// A sub-agent that ends while a background child is still pending returns an interim result with
+// neither keyword. That result is unfinished, not failed: the completion protocol resumes the same
+// sub-agent once before any retry, and only falls through to Retry 1 when that resume is impossible
+// or comes back keyword-less again.
+test('the completion protocol resumes a keyword-less sub-agent once before retry escalation', () => {
+  const protocol = source('src/shared/completion-protocol.md');
+  const text = prose(protocol);
+
+  assert.match(
+    text,
+    /No keyword: resume once, then retry with escalation/i,
+    'the orchestrator check must resume once before escalating a keyword-less result',
+  );
+  const escalation = prose(section(protocol, '### Retry escalation', '\n## '));
+  assertClauses(escalation, [
+    [
+      /ends without `DONE` or `ABORT`[\s\S]{0,80}not finished rather than (?:as )?a failed attempt/i,
+      'a keyword-less result must be classified as unfinished rather than failed',
+    ],
+    [/resume the same sub-agent once/i, 'the protocol must resume the same sub-agent exactly once'],
+    [
+      /context intact where the harness allows/i,
+      'the resume must keep the sub-agent context where the harness allows it',
+    ],
+    [
+      /continuation hint to await any pending children and end with `DONE` or `ABORT`/i,
+      'the resume must carry a hint to await pending children and end with a keyword',
+    ],
+    [/That resume is not a retry/i, 'the resume must not count as a retry'],
+    [
+      near(
+        'cannot resume that sub-agent',
+        'again ends without a keyword[\\s\\S]{0,40}escalate',
+        200,
+      ),
+      'an impossible resume or a second keyword-less end must fall through to the escalation',
+    ],
+  ]);
+  const resumeAt = escalation.search(/resume the same sub-agent once/i);
+  const retryAt = escalation.search(/1\. Retry 1:/);
+  assert.notEqual(retryAt, -1, 'the retry escalation must still start with Retry 1');
+  assert.ok(resumeAt < retryAt, 'the one resume must precede Retry 1 in the retry escalation');
+  for (const token of ['run_in_background', 'SendMessage']) {
+    assert.ok(
+      !protocol.includes(token),
+      `the eagerly included completion protocol must stay harness-neutral and not name ${token}`,
+    );
+  }
+});
+
+// The merge-gate side of a keyword-less iterate return. The completion protocol's Retry 2 and 3
+// shrink the task, which a run bound to a fixed `Item filter` cannot do, so the gate allows one
+// plain resume of the same run and otherwise reads the return as a whole-run ABORT.
+test('merge-gate resumes a keyword-less iterate return once and never retries it', () => {
+  const gate = source('src/tools/merge-gate.md');
+  returnedRecord(gate, 'merge-gate');
+  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+    .split(/\n\s*\n/)
+    .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
+  assert.ok(
+    paragraph,
+    'the returned outcome record must grant a keyword-less iterate return exactly one resume',
+  );
+  const rule = prose(paragraph);
+
+  assertClauses(rule, [
+    [
+      /exactly one resume, and never Retry 1[–—-]3/i,
+      'a keyword-less return must get exactly one resume and never Retry 1-3',
+    ],
+    [/Phase 2 step 3 CI repair/i, 'the resume must apply at the Phase 2 step 3 CI repair'],
+    [/Phase 3 step 5 bot round/i, 'the resume must apply at the Phase 3 step 5 bot round'],
+    [
+      /continued once as a separate turn of the same run/i,
+      'the resume must continue the same run once rather than start a new one',
+    ],
+    [
+      /no envelope is rebuilt or re-sent/i,
+      'the resume must neither rebuild nor re-send the delegation envelope',
+    ],
+    [/no control keyword/i, 'the resume turn must carry no control keyword'],
+    [/no `Item:` line or item text/i, 'the resume turn must carry no `Item:` line or item text'],
+    [
+      /no return-protocol instruction/i,
+      'the resume turn must carry no return-protocol instruction',
+    ],
+    [
+      /plain request to await pending work and finish/i,
+      'the resume turn must be only a plain request to await pending work and finish',
+    ],
+    [/does not advance the round counter/i, 'the resume must not advance the round counter'],
+    [
+      near('still keyword-less', 'whole-run `ABORT`', 120),
+      'a return still keyword-less after the resume must be handled as a whole-run ABORT',
+    ],
+    [
+      near('harness cannot continue', 'whole-run `ABORT`', 80),
+      'a return the harness cannot continue must be handled as a whole-run ABORT, never Retry 1-3',
+    ],
+    [
+      /in place of the\s+completion protocol's continuation hint/i,
+      'the plain resume request must replace the shared continuation hint on this channel',
+    ],
+    [/round ends unsuccessfully/i, 'the fallback ABORT must end the round unsuccessfully'],
+    [/nothing is merged/i, 'the fallback ABORT must merge nothing'],
+    [/report names it/i, 'the fallback ABORT must be named in the report'],
+    [
+      near('reduced-scope retries do not fit', 'fixed `Item filter`', 80),
+      'the rule must state why reduced-scope retries do not fit a fixed Item filter',
+    ],
+  ]);
+});
+
+// The resumed run answers after an interim keyword-less text. Reading that interim text beside the
+// final return would turn a provisional `unassessed` there plus a final `implemented` into a
+// conflicting-outcome mismatch and fail a round that actually succeeded, so the receiver rule reads
+// only the resumed turn's final return and nothing in the interim text counts.
+test('merge-gate reads outcomes only from the resumed final return, never the interim text', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+    .split(/\n\s*\n/)
+    .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
+  assert.ok(
+    paragraph,
+    'the returned outcome record must grant a keyword-less iterate return exactly one resume',
+  );
+  const rule = prose(paragraph);
+
+  assertClauses(rule, [
+    [
+      /The interim keyword-less text is not a return/i,
+      'the interim keyword-less text of a resumed run must not count as a return',
+    ],
+    [
+      /receiver rule reads only the resumed turn's final return/i,
+      "the receiver rule must read only the resumed turn's final return",
+    ],
+    [
+      /every recorded identifier must be answered there/i,
+      'every recorded identifier must be answered in the final return',
+    ],
+    [
+      near('stated only in the interim text', 'absent', 20),
+      'an outcome stated only in the interim text must count as absent',
+    ],
+    [
+      /absent [–—-] the same mismatch/i,
+      'an outcome only in the interim text must be the same identifier mismatch',
+    ],
+    [
+      /Nothing in the interim text counts, conflicts with the final return, is recorded, or is reported as an inert outcome/i,
+      'nothing in the interim text may count, conflict, be recorded, or be reported as inert',
+    ],
+  ]);
+
+  const counterAt = rule.search(/does not advance the round counter/i);
+  const interimAt = rule.search(/The interim keyword-less text is not a return/i);
+  const stillAt = rule.search(/still keyword-less/i);
+  assert.ok(
+    counterAt !== -1 && interimAt > counterAt,
+    'the interim-text rule must follow the round-counter sentence inside the resume rule',
+  );
+  assert.ok(
+    stillAt !== -1 && interimAt < stillAt,
+    'the interim-text rule must precede the still-keyword-less fallback inside the resume rule',
+  );
+
+  const mandateSection = prose(
+    section(source('docs/developer-guide/architecture.md'), '## Delegation mandate', '\n## '),
+  );
+  assert.match(
+    mandateSection,
+    /receiver rule reads outcomes only from the resumed turn's final return/i,
+    "the architecture guide must state that the receiver rule reads only the resumed turn's final return",
+  );
+});
+
+// The harness mechanics behind the pending-child rule are Claude Code specifics. They belong in the
+// developer guide; the shipped fragments reach Codex and portable targets too, and the build's
+// harness leak guard fails those targets on `run_in_background`.
+test('the Claude Code pending-child specifics live in the architecture guide, not in shipped text', () => {
+  const mandateSection = prose(
+    section(source('docs/developer-guide/architecture.md'), '## Delegation mandate', '\n## '),
+  );
+  assert.match(
+    mandateSection,
+    /`run_in_background: true`/,
+    'the architecture guide must name the run_in_background mechanism behind the rule',
+  );
+  assert.match(
+    mandateSection,
+    /`SendMessage`/,
+    'the architecture guide must name SendMessage as the Claude Code resume',
+  );
+  for (const path of [
+    'src/shared/delegation-mandate.md',
+    'src/shared/completion-protocol.md',
+    'src/tools/merge-gate.md',
+  ]) {
+    assert.ok(!source(path).includes('SendMessage'), `${path} must not name SendMessage`);
+  }
+});
+
 test('iterate returns exactly one outcome per caller-supplied item identifier', () => {
   const iterate = source('src/tools/iterate.md');
   const record = returnedRecord(iterate, 'iterate');

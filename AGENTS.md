@@ -71,7 +71,9 @@ essential context to the orchestrator. Start it with zero inherited turns when t
 supports that, otherwise the smallest supported history, and pass a compact, self-contained
 handoff: objective, relevant artifact paths, scoped paths and ownership, execution and
 runtime-state roots for write-capable work, resolved language, authority and write limits, and
-the completion protocol.
+the completion protocol. An orchestrator that itself runs as a sub-agent (for example `iterate` under
+`merge-gate`) starts its children in the foreground or awaits each result and never ends its turn
+with one pending; its caller resumes a keyword-less return once before any retry.
 
 Every `src/agents/<name>.md` therefore omits `Agent` and `Task` from `claude.tools`, regardless of
 whether the worker can write. Withholding those tools is the enforceable Claude boundary: once a

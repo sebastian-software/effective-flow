@@ -132,6 +132,19 @@ provides a compact, self-contained handoff containing the objective, relevant ar
 scoped paths and ownership, execution and runtime-state roots for write-capable work, resolved
 language, authority and write limits, and the completion protocol.
 
+An orchestrator that itself runs as a sub-agent — `iterate` delegated by `merge-gate`, or any tool
+run delegated non-interactively — starts its own workers and analysis fan-out in the foreground or
+awaits every result, and never ends its turn with a child pending. The rule comes from Claude Code:
+children that a sub-agent starts with `run_in_background: true` do not reliably wake that sub-agent
+when they finish, so its caller receives a "completed" notification carrying an interim result with
+neither `DONE` nor `ABORT`. The caller side is defined as well. The completion protocol
+(`src/shared/completion-protocol.md`) first resumes the same delegate once — on Claude Code by
+continuing that agent with `SendMessage` — and that resume is not a retry; `merge-gate` treats an
+`iterate` return that is still keyword-less after its one resume as a whole-run `ABORT` instead of
+Retry 1–3. Its receiver rule reads outcomes only from the resumed turn's final return, never from
+the interim keyword-less text. The shipped fragments name no harness tool or parameter: the build's
+harness leak guard fails the Codex and portable targets on `run_in_background`.
+
 Every Claude worker omits `Agent` and `Task` from `claude.tools`, regardless of its own read/write
 authority. Withholding the capability is the enforceable Claude boundary: if a worker receives a
 sub-agent tool, prose cannot prevent it from starting a child with that child's own capabilities,

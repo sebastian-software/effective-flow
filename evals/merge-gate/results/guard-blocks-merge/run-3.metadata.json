@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "roundId": "mu72k0a7-14ced82e-1232-4b50-8fc3-0c31ebf53e0e",
+  "roundId": "mu7e0x7k-d02c9b40-84ad-4184-8ff9-d4ce9e620d2e",
   "scenario": "guard-blocks-merge",
   "slot": 3,
   "attempt": 1,
-  "sourceRevision": "68b8baccd0b3c448a2f9a2e9fa500152af45c1f2",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu72k0a7-14ced82e-1232-4b50-8fc3-0c31ebf53e0e/slots/guard-blocks-merge/slot-3/attempt-1/project",
+  "sourceRevision": "31cd3ecbb9b6880d566790b353ac22edbbd16c87",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu7e0x7k-d02c9b40-84ad-4184-8ff9-d4ce9e620d2e/slots/guard-blocks-merge/slot-3/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-5.6-sol",
@@ -13,13 +13,13 @@
     "reportedVersion": "codex-cli 0.154.0",
     "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config"
   },
-  "promptDigest": "sha256:2dd9bdcee7cd725fb376e2f2a8bef3374816d454afe29329ba886cf5bc6d099b",
+  "promptDigest": "sha256:cc393943806791d611b54371fdd98f3f809d83d6abd1aebddf929fad90bd7045",
   "fixtureDigest": "sha256:444ba08c5876e6643f104fed7d754c97b906f81a085e615fb462734090fcb9c8",
-  "buildDigest": "sha256:ac10bba5542a9f97f8b62f5577303813b7f8e17eddd0a296982cd6014c6a40d7",
+  "buildDigest": "sha256:07c2c7fc91b0e2c2bdee130ec31f90604b014f88a27f74b3f8132160cedf5d04",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu72k0a7-14ced82e-1232-4b50-8fc3-0c31ebf53e0e/slots/guard-blocks-merge/slot-3/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu7e0x7k-d02c9b40-84ad-4184-8ff9-d4ce9e620d2e/slots/guard-blocks-merge/slot-3/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {

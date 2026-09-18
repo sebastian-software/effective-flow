@@ -1,8 +1,8 @@
 {
   "scenario": "linked-issue-open-points",
-  "digest": "sha256:d3ed58433e03a87f25344f44b2e3d2c53572ff6992bd447828721ba97df84ed5",
+  "digest": "sha256:82bd01c4ef220ab6259494938dfea739397259ae770066aac45ecb4bcd00888d",
   "skill": {
-    "digest": "sha256:afbd453e95ccb1dd987fb3ab7c7739eaf26efbbd751dc6a2a87dff3e3ff1d288",
+    "digest": "sha256:2329f1d9e7da403c5986e9e501e77f5b62d914f7e8c4d42b64dec48c3fd27d05",
     "files": {
       "SKILL.md": "sha256:5c1bde9dfb8ad4c8e51bd81126d10f85cb2671d326ee0b5d1f41301437196a3a",
       "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
@@ -26,10 +26,10 @@
       "shared/tracker-target.md": "sha256:41adc7e385b0abb4daecc2048e745faef9829f8a04adf5874d2a6431df711f31",
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
-      "tools/iterate.md": "sha256:bb9e14fcede32179b8401c07c08b3d3425012004fd8bafa37e914dbbb30f2d58",
-      "tools/merge-gate.md": "sha256:9c276a501b3f277dd9af9cb1afe1b9014de69768c257e5a817e3037ed48362f4",
-      "workers/effective-flow-code-validator.md": "sha256:e72e912d2665114e2e43939c221887375e50ab4ab999375b31905298a27aefca",
-      "workers/effective-flow-merge-conflict-resolver.md": "sha256:15508c91e3e051d34dd253f8a5931bec40c89ba4a0a1b9adf94df814086bcde7"
+      "tools/iterate.md": "sha256:d29c89fd94a7e6952504fa4de069ca707faf685cf8b2cb6d938409312ce44faf",
+      "tools/merge-gate.md": "sha256:243f06f8c07d8f8e8534f0d1c8080f42771d5faf09a8b7ebfd7e8cafff7b4741",
+      "workers/effective-flow-code-validator.md": "sha256:4614e4702fc374c6d31ede74dcf971ab44a1118cde575a78ebc09abe0e87b723",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:c05fe119d3700d2c597852e2efa258dd551669afea5b1d737dfe8520bcc5bd7d"
     }
   },
   "instrument": {
