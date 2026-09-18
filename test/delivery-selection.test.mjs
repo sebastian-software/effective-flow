@@ -259,169 +259,38 @@ test('the upstream fetch environment cannot prompt for credentials or host keys'
   assert.equal(UPSTREAM_FETCH_TIMEOUT_MS, 60000);
 });
 
-test('the fetch SSH command extends the user setup in Git precedence order', () => {
+test('the default ssh of the upstream fetch runs in batch mode', () => {
   const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
-  assert.deepEqual(nonInteractiveFetchEnv(), {
+  assert.deepEqual(nonInteractiveFetchEnv(), { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' });
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { PATH: '/usr/bin' } }), {
     ...base,
     GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
   });
+  // Empty and whitespace-only values count as unset.
   assert.deepEqual(
     nonInteractiveFetchEnv({
-      environment: { GIT_SSH_COMMAND: 'ssh -i ~/.ssh/deploy', GIT_SSH: '/usr/bin/plink' },
-      configuredSshCommand: 'ssh -i ~/.ssh/config-key',
+      environment: { GIT_SSH_COMMAND: ' ', GIT_SSH: '', GIT_SSH_VARIANT: '\t' },
+      configuredSshCommand: '',
+      configuredSshVariant: '  ',
     }),
-    { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -i ~/.ssh/deploy' },
-  );
-  // core.sshCommand outranks GIT_SSH, exactly as in Git.
-  assert.deepEqual(
-    nonInteractiveFetchEnv({
-      environment: { GIT_SSH: '/usr/bin/plink' },
-      configuredSshCommand: 'ssh -i ~/.ssh/config-key',
-    }),
-    { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -i ~/.ssh/config-key' },
-  );
-  // A bare GIT_SSH program of a known variant is re-expressed as a quoted command with that
-  // variant's batch option.
-  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/plink' } }), {
-    ...base,
-    GIT_SSH_COMMAND: "'/usr/bin/plink' -batch",
-  });
-  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: "/opt/o'ssh/bin/ssh" } }), {
-    ...base,
-    GIT_SSH_COMMAND: "'/opt/o'\\''ssh/bin/ssh' -o BatchMode=yes",
-  });
-  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: 'C:\\Tools\\SSH.EXE' } }), {
-    ...base,
-    GIT_SSH_COMMAND: "'C:\\Tools\\SSH.EXE' -o BatchMode=yes",
-  });
-  // An explicit variant decides for a program whose name Git would otherwise probe.
-  assert.deepEqual(
-    nonInteractiveFetchEnv({
-      environment: { GIT_SSH: '/usr/local/bin/wrap', GIT_SSH_VARIANT: 'ssh' },
-    }),
-    { ...base, GIT_SSH_COMMAND: "'/usr/local/bin/wrap' -o BatchMode=yes" },
-  );
-  assert.deepEqual(
-    nonInteractiveFetchEnv({
-      environment: { GIT_SSH: '/usr/local/bin/wrap' },
-      configuredSshVariant: 'putty',
-    }),
-    { ...base, GIT_SSH_COMMAND: "'/usr/local/bin/wrap' -batch" },
-  );
-  // An unrecognized program, the simple variant, and TortoisePlink (which Git already passes
-  // -batch) are left in charge.
-  assert.deepEqual(
-    nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/local/bin/wrap' } }),
-    base,
-  );
-  assert.deepEqual(
-    nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/ssh', GIT_SSH_VARIANT: 'simple' } }),
-    base,
-  );
-  assert.deepEqual(
-    nonInteractiveFetchEnv({ environment: { GIT_SSH: 'C:\\TortoisePlink.exe' } }),
-    base,
-  );
-  // A plink command gets plink's batch flag, not an OpenSSH option it would reject.
-  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: 'plink -P 2222' } }), {
-    ...base,
-    GIT_SSH_COMMAND: 'plink -P 2222 -batch',
-  });
-  assert.deepEqual(
-    nonInteractiveFetchEnv({
-      environment: { GIT_SSH_COMMAND: '"/c/Program Files/PuTTY/plink.exe"' },
-    }),
-    { ...base, GIT_SSH_COMMAND: '"/c/Program Files/PuTTY/plink.exe" -batch' },
-  );
-  assert.deepEqual(
-    nonInteractiveFetchEnv({ configuredSshCommand: 'ssh -p 2222', configuredSshVariant: 'simple' }),
-    base,
-  );
-  // A command Git would probe keeps the OpenSSH option.
-  assert.deepEqual(nonInteractiveFetchEnv({ configuredSshCommand: '/usr/local/bin/wrap -v' }), {
-    ...base,
-    GIT_SSH_COMMAND: '/usr/local/bin/wrap -v -o BatchMode=yes',
-  });
-  // Empty values count as unset.
-  assert.deepEqual(
-    nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: ' ' }, configuredSshCommand: '' }),
     { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' },
   );
 });
 
-test('the OpenSSH batch option precedes every user option of a program named ssh', () => {
+test('a user-configured SSH command, program, or variant is left untouched by the fetch', () => {
   const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
-  const fetchCommand = (command, extra = {}) =>
-    nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: command, ...extra } }).GIT_SSH_COMMAND;
-  // OpenSSH keeps the first value per option, so the enforced one has to come first.
-  assert.equal(fetchCommand('ssh -o BatchMode=no'), 'ssh -o BatchMode=yes -o BatchMode=no');
-  assert.equal(
-    fetchCommand('ssh -oBatchMode=no -p 2222'),
-    'ssh -o BatchMode=yes -oBatchMode=no -p 2222',
-  );
-  assert.equal(fetchCommand('  ssh\t-p 22'), '  ssh -o BatchMode=yes\t-p 22');
-  // A quoted program word is kept byte-for-byte, and the option follows its closing quote.
-  assert.equal(
-    fetchCommand("'/opt/my ssh/bin/ssh' -i key"),
-    "'/opt/my ssh/bin/ssh' -o BatchMode=yes -i key",
-  );
-  assert.equal(
-    fetchCommand('"/opt/my ssh/bin/ssh" -i key'),
-    '"/opt/my ssh/bin/ssh" -o BatchMode=yes -i key',
-  );
-  assert.equal(
-    fetchCommand('"/opt/my \\"ssh\\"/ssh" -i key'),
-    '"/opt/my \\"ssh\\"/ssh" -o BatchMode=yes -i key',
-  );
-  assert.equal(
-    fetchCommand("'C:\\Tools\\SSH.EXE' -p 22"),
-    "'C:\\Tools\\SSH.EXE' -o BatchMode=yes -p 22",
-  );
-  // A program word Git would join with what follows it cannot be split; the option is appended.
-  assert.equal(fetchCommand("'ssh'-v"), "'ssh'-v -o BatchMode=yes");
-  assert.equal(fetchCommand('"ssh"-v'), '"ssh"-v -o BatchMode=yes');
-  // An unquoted program word with a backslash may hold a shell escape, so its end is not trusted
-  // and the option is appended.
-  assert.equal(
-    fetchCommand('/opt/ssh\\ 9/bin/ssh -i k'),
-    '/opt/ssh\\ 9/bin/ssh -i k -o BatchMode=yes',
-  );
-  assert.equal(
-    fetchCommand('C:\\Tools\\SSH.EXE -p 22'),
-    'C:\\Tools\\SSH.EXE -p 22 -o BatchMode=yes',
-  );
-  // An explicit ssh variant on a program named ssh still inserts.
-  assert.equal(
-    fetchCommand('ssh -o BatchMode=no', { GIT_SSH_VARIANT: 'ssh' }),
-    'ssh -o BatchMode=yes -o BatchMode=no',
-  );
-  // plink and putty keep their appended -batch flag, which has no opposite.
-  assert.equal(fetchCommand('plink -P 2222'), 'plink -P 2222 -batch');
-  assert.equal(
-    fetchCommand('/usr/bin/putty -P 22', { GIT_SSH_VARIANT: 'putty' }),
-    '/usr/bin/putty -P 22 -batch',
-  );
-  // Wrappers and programs that are OpenSSH only by an explicit variant get the option appended,
-  // because inserting after their first word would break the wrapper's own arguments.
-  assert.equal(
-    fetchCommand('sshpass -p x ssh -o BatchMode=no'),
-    'sshpass -p x ssh -o BatchMode=no -o BatchMode=yes',
-  );
-  assert.equal(fetchCommand('env FOO=1 ssh'), 'env FOO=1 ssh -o BatchMode=yes');
-  assert.equal(
-    fetchCommand('/usr/local/bin/wrap -v', { GIT_SSH_VARIANT: 'ssh' }),
-    '/usr/local/bin/wrap -v -o BatchMode=yes',
-  );
-  assert.deepEqual(
-    nonInteractiveFetchEnv({
-      configuredSshCommand: '/usr/local/bin/wrap -v',
-      configuredSshVariant: 'ssh',
-    }),
-    { ...base, GIT_SSH_COMMAND: '/usr/local/bin/wrap -v -o BatchMode=yes' },
-  );
-  // TortoisePlink and the simple variant still get nothing.
-  assert.equal(fetchCommand('TortoisePlink.exe -P 22'), undefined);
-  assert.equal(fetchCommand('ssh -p 22', { GIT_SSH_VARIANT: 'simple' }), undefined);
+  const setups = [
+    { environment: { GIT_SSH_COMMAND: 'ssh -o BatchMode=no -i ~/.ssh/deploy' } },
+    { configuredSshCommand: 'ssh -i ~/.ssh/config-key' },
+    { environment: { GIT_SSH: '/usr/bin/plink' } },
+    { environment: { GIT_SSH_VARIANT: 'simple' } },
+    { configuredSshVariant: 'putty' },
+  ];
+  for (const setup of setups) {
+    const env = nonInteractiveFetchEnv(setup);
+    assert.deepEqual(env, base, JSON.stringify(setup));
+    assert.equal('GIT_SSH_COMMAND' in env, false, JSON.stringify(setup));
+  }
 });
 
 test('diagnostics are trimmed, capped, and never carry URL or token credentials', () => {

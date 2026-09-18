@@ -1371,9 +1371,8 @@ export async function transferSelection(input, options = {}) {
   return { ...preview, applied: true, reconciliation };
 }
 
-// Non-interactive environment for the upstream fetch: a credential or host-key prompt must fail
-// instead of hanging the delivery run. The SSH part is added by `nonInteractiveFetchEnv`, because
-// it has to extend the user's own SSH command rather than replace it.
+// Non-interactive environment for the upstream fetch: a credential prompt must fail instead of
+// hanging the delivery run. The SSH part is decided by `nonInteractiveFetchEnv`.
 export const NON_INTERACTIVE_FETCH_ENV = Object.freeze({
   GIT_TERMINAL_PROMPT: '0',
   GCM_INTERACTIVE: 'never',
@@ -1387,105 +1386,29 @@ export const UPSTREAM_FETCH_TIMEOUT_MS = 60_000;
 // machine envelope.
 export const DIAGNOSTIC_MAX_LENGTH = 2000;
 
-// The option that makes each SSH variant fail instead of prompting for a host key or passphrase.
-// TortoisePlink needs none, because Git passes it `-batch` itself; the `simple` variant accepts no
-// options at all, so nothing can be added to it.
-const SSH_BATCH_OPTIONS = Object.freeze({
-  ssh: '-o BatchMode=yes',
-  plink: '-batch',
-  putty: '-batch',
-  tortoiseplink: null,
-  simple: null,
-});
-
-const SSH_VARIANTS = new Set(['auto', ...Object.keys(SSH_BATCH_OPTIONS)]);
-
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
-// The first word of an SSH command, unquoted the way Git's `split_cmdline` reads a leading
-// single- or double-quoted word, plus the offset where that word ends in the original command.
-// The offset is `-1` when the word runs straight into further characters (`'ssh'-v`), because
-// Git would join those into one word and nothing can be inserted between them. It is also `-1`
-// for an unquoted word that contains a backslash: the shell may read it as an escape
-// (`/opt/ssh\ 9/bin/ssh`), so this cut at the first whitespace is not trusted as the word's end.
-// Escape parsing is deliberately not attempted; such a command keeps the appended option.
-function commandProgram(command) {
-  const match = /^\s*(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+))/.exec(command);
-  if (!match) return { program: '', end: -1 };
-  const program = match[1] ?? match[2]?.replace(/\\(.)/g, '$1') ?? match[3];
-  const end = match[0].length;
-  if (match[3]?.includes('\\')) return { program, end: -1 };
-  return { program, end: end === command.length || /\s/.test(command[end]) ? end : -1 };
-}
-
-// Git's own variant resolution: `GIT_SSH_VARIANT`, then `ssh.variant`, then the program's
-// basename. Returns `null` for a program Git would have to probe (`auto` with an unknown name).
-function sshVariant(program, override) {
-  const explicit = nonEmpty(override)?.trim().toLowerCase() ?? null;
-  if (explicit !== null && explicit !== 'auto' && SSH_VARIANTS.has(explicit)) return explicit;
-  const base = path
-    .basename(program.replace(/\\/g, '/'))
-    .toLowerCase()
-    .replace(/\.exe$/, '');
-  return ['ssh', 'plink', 'tortoiseplink'].includes(base) ? base : null;
-}
-
-function shellQuote(value) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-// Mirrors Git's own SSH command precedence (`GIT_SSH_COMMAND`, then `core.sshCommand`, then
-// `GIT_SSH`, then `ssh`) and adds the variant's batch option to whichever program Git would run.
-//
-// Ordering matters for OpenSSH, which keeps the first value it sees for each option: a command
-// that already says `-o BatchMode=no` would win over an appended `-o BatchMode=yes`. When the
-// command's own program is OpenSSH by name (basename `ssh`, case-insensitive, `.exe` stripped),
-// the option is therefore inserted directly after that program word, byte-for-byte as written,
-// ahead of every user option. Plink's `-batch` is a flag with no opposite, so it is appended.
-// A program word whose end `commandProgram` cannot trust (an unquoted word with a backslash, or a
-// quoted word joined to further characters) also gets the option appended.
-//
-// A program that is OpenSSH only by an explicit `GIT_SSH_VARIANT`/`ssh.variant`, or one Git would
-// probe (a wrapper such as `sshpass -p x ssh` or `env FOO=1 ssh`, which keeps the OpenSSH option
-// it always received), gets the option appended instead: inserting after the first word could
-// break the wrapper's own argument grammar. That carries the narrower guarantee — a `BatchMode`
-// set earlier inside the command still wins — and the fetch timeout remains the bound.
-//
-// A bare `GIT_SSH` program is re-expressed as a quoted `GIT_SSH_COMMAND` only when its variant is
-// known; it carries no user options, so the option simply follows it. An unrecognized `GIT_SSH`
-// program, the `simple` variant, and TortoisePlink are left in charge, and only the prompt
-// variables and the fetch timeout bound them.
+// The default `ssh` gets `BatchMode=yes`, so a host-key or passphrase prompt fails at once. A
+// user-configured SSH command or program (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`) or an
+// SSH variant override (`GIT_SSH_VARIANT`, `ssh.variant`) is left completely untouched: a
+// user's command cannot be rewritten safely across wrappers, shell quoting, and SSH variants, so
+// it runs unchanged and only the prompt variables and the fetch timeout bound a prompt there.
 export function nonInteractiveFetchEnv({
   environment = {},
   configuredSshCommand = null,
   configuredSshVariant = null,
 } = {}) {
   const env = { ...NON_INTERACTIVE_FETCH_ENV };
-  const override = nonEmpty(environment.GIT_SSH_VARIANT) ?? nonEmpty(configuredSshVariant);
-  const command = nonEmpty(environment.GIT_SSH_COMMAND) ?? nonEmpty(configuredSshCommand);
-  if (command !== null) {
-    const { program, end } = commandProgram(command);
-    const variant = sshVariant(program, override) ?? 'ssh';
-    const option = SSH_BATCH_OPTIONS[variant];
-    if (option === null) return env;
-    const namedSsh = variant === 'ssh' && sshVariant(program, null) === 'ssh';
-    env.GIT_SSH_COMMAND =
-      namedSsh && end !== -1
-        ? `${command.slice(0, end)} ${option}${command.slice(end)}`
-        : `${command} ${option}`;
-    return env;
-  }
-  const program = nonEmpty(environment.GIT_SSH);
-  if (program === null) {
-    const option = SSH_BATCH_OPTIONS[sshVariant('ssh', override)];
-    if (option !== null) env.GIT_SSH_COMMAND = `ssh ${option}`;
-    return env;
-  }
-  const variant = sshVariant(program, override);
-  const option = variant === null ? null : SSH_BATCH_OPTIONS[variant];
-  if (option !== null) env.GIT_SSH_COMMAND = `${shellQuote(program)} ${option}`;
+  const userSshSetup = [
+    environment.GIT_SSH_COMMAND,
+    configuredSshCommand,
+    environment.GIT_SSH,
+    environment.GIT_SSH_VARIANT,
+    configuredSshVariant,
+  ].some((value) => nonEmpty(value) !== null);
+  if (!userSshSetup) env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
   return env;
 }
 
@@ -1611,14 +1534,8 @@ async function fetchUpstream(root, remote, mergeRef, runner, environment) {
   }
   const env = nonInteractiveFetchEnv({
     environment,
-    configuredSshCommand:
-      nonEmpty(environment.GIT_SSH_COMMAND) === null
-        ? await gitConfigValue(root, 'core.sshCommand', runner)
-        : null,
-    configuredSshVariant:
-      nonEmpty(environment.GIT_SSH_VARIANT) === null
-        ? await gitConfigValue(root, 'ssh.variant', runner)
-        : null,
+    configuredSshCommand: await gitConfigValue(root, 'core.sshCommand', runner),
+    configuredSshVariant: await gitConfigValue(root, 'ssh.variant', runner),
   });
   const result = await runner({
     executable: 'git',

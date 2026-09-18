@@ -232,15 +232,13 @@ Delivery is split across one orchestrator and two narrow leaf tools:
 
   Before any of that, and after the source execution-location receipt is verified, `deliver` runs
   one pre-evidence upstream step. The helper's `upstream-status` operation fetches the current
-  branch's own upstream (`@{u}`) non-interactively, with a 60-second timeout and the user's
-  configured SSH command extended by its variant's batch option (resolved as Git does, from
-  `GIT_SSH_VARIANT`, `ssh.variant`, or the program name). For a command whose program is named
-  `ssh`, `-o BatchMode=yes` is inserted directly after the program word, ahead of the user's
-  options, because OpenSSH keeps the first value per option; a wrapper or a program that is
-  OpenSSH only by an explicit variant gets it appended, where an earlier `BatchMode` still wins;
-  so does an unquoted program word containing a backslash (such as a Windows path), whose end
-  is not parsed. A `GIT_SSH` program of unknown variant, and any program of the `simple`
-  variant, cannot take one and is bounded by the timeout alone. Its `fetch.error`, like a
+  branch's own upstream (`@{u}`) non-interactively (`GIT_TERMINAL_PROMPT=0`,
+  `GCM_INTERACTIVE=never`) with a 60-second timeout. Only the default `ssh` gets
+  `GIT_SSH_COMMAND=ssh -o BatchMode=yes`; a user-configured SSH command or program
+  (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`) or an SSH variant setting
+  (`GIT_SSH_VARIANT`, `ssh.variant`) is used unchanged, because rewriting a user's command cannot
+  be done safely across wrappers, quoting, and variants, so only the timeout bounds a host-key or
+  passphrase prompt there. Its `fetch.error`, like a
   refused merge's `stderr`, redacts URL userinfo, query and fragment, and obvious token forms. It
   skips the fetch for a local upstream or an invalid remote or merge ref, and classifies the
   branch as `detached`,

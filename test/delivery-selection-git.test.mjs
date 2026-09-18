@@ -735,8 +735,8 @@ function localCommit(root, relativePath, content) {
   return ugit(root, 'rev-parse', 'HEAD');
 }
 
-// The status helper pins an empty inherited environment so a developer's own GIT_SSH_COMMAND or
-// GIT_SSH cannot change the fetch environment under test.
+// The status helper pins an empty inherited environment so a developer's own GIT_SSH_COMMAND,
+// GIT_SSH, or GIT_SSH_VARIANT cannot change the fetch environment under test.
 async function status(root, fetch = true, runner = upstreamRunner, env = {}) {
   return await upstreamStatus({ root, fetch }, { runner, env });
 }
@@ -877,58 +877,41 @@ test('upstream status fetches only on request, with hooks disabled and a non-int
   assert.equal(fetchCall.timeout, 60000);
 });
 
-test('the upstream fetch keeps the configured SSH command and adds only its batch option', async (t) => {
+test('the upstream fetch leaves a user-configured SSH setup untouched', async (t) => {
   const { local } = createUpstreamFixture(t);
-  ugit(local, 'config', 'core.sshCommand', 'ssh -i /nonexistent/deploy-key -F /dev/null');
   const calls = [];
   const recording = (call) => {
     calls.push(call);
     return upstreamRunner(call);
   };
+  const fetchEnv = async (env) => {
+    calls.length = 0;
+    await status(local, true, recording, env);
+    return calls.find((call) => call.args.includes('fetch')).env;
+  };
+  const assertUntouched = (env, label) => {
+    assert.equal('GIT_SSH_COMMAND' in env, false, label);
+    assert.equal(env.GIT_TERMINAL_PROMPT, '0', label);
+    assert.equal(env.GCM_INTERACTIVE, 'never', label);
+  };
 
-  await status(local, true, recording);
-  const fetchCall = calls.find((call) => call.args.includes('fetch'));
-  assert.equal(
-    fetchCall.env.GIT_SSH_COMMAND,
-    'ssh -o BatchMode=yes -i /nonexistent/deploy-key -F /dev/null',
-  );
-  assert.equal(fetchCall.env.GIT_TERMINAL_PROMPT, '0');
-
-  // An inherited GIT_SSH_COMMAND outranks the configured command, as it does in Git.
-  calls.length = 0;
-  await status(local, true, recording, { GIT_SSH_COMMAND: 'ssh -p 2222' });
-  assert.equal(
-    calls.find((call) => call.args.includes('fetch')).env.GIT_SSH_COMMAND,
-    'ssh -o BatchMode=yes -p 2222',
-  );
-
-  // With only GIT_SSH inherited, a known variant is re-expressed with its own batch option.
+  ugit(local, 'config', 'core.sshCommand', 'ssh -i /nonexistent/deploy-key -F /dev/null');
+  assertUntouched(await fetchEnv(), 'core.sshCommand');
   ugit(local, 'config', '--unset', 'core.sshCommand');
-  calls.length = 0;
-  await status(local, true, recording, { GIT_SSH: '/usr/bin/plink' });
-  const plinkFetch = calls.find((call) => call.args.includes('fetch'));
-  assert.equal(plinkFetch.env.GIT_SSH_COMMAND, "'/usr/bin/plink' -batch");
-  assert.equal(plinkFetch.env.GIT_TERMINAL_PROMPT, '0');
 
-  // A configured ssh.variant decides for a program Git would otherwise probe.
   ugit(local, 'config', 'ssh.variant', 'ssh');
-  calls.length = 0;
-  await status(local, true, recording, { GIT_SSH: '/usr/local/bin/ssh-wrapper' });
-  assert.equal(
-    calls.find((call) => call.args.includes('fetch')).env.GIT_SSH_COMMAND,
-    "'/usr/local/bin/ssh-wrapper' -o BatchMode=yes",
-  );
-
-  // An unrecognized GIT_SSH program without a variant is left in charge.
+  assertUntouched(await fetchEnv(), 'ssh.variant');
   ugit(local, 'config', '--unset', 'ssh.variant');
-  calls.length = 0;
-  await status(local, true, recording, { GIT_SSH: '/usr/local/bin/ssh-wrapper' });
-  const wrapperFetch = calls.find((call) => call.args.includes('fetch'));
-  assert.equal('GIT_SSH_COMMAND' in wrapperFetch.env, false);
-  assert.equal(wrapperFetch.env.GIT_TERMINAL_PROMPT, '0');
+
+  assertUntouched(await fetchEnv({ GIT_SSH_COMMAND: 'ssh -p 2222' }), 'GIT_SSH_COMMAND');
+  assertUntouched(await fetchEnv({ GIT_SSH: '/usr/bin/plink' }), 'GIT_SSH');
+  assertUntouched(await fetchEnv({ GIT_SSH_VARIANT: 'ssh' }), 'GIT_SSH_VARIANT');
+
+  // With every setting gone again, the default ssh is back in batch mode.
+  assert.equal((await fetchEnv()).GIT_SSH_COMMAND, 'ssh -o BatchMode=yes');
 });
 
-test('the ssh program Git runs sees the enforced BatchMode before the user one', async (t) => {
+test('the ssh program Git runs receives the configured command unchanged', async (t) => {
   const { container, local } = createUpstreamFixture(t);
   // A stub named ssh, under a directory with a space, records its argv and refuses the connection.
   const binDir = join(container, 'stub bin');
@@ -947,10 +930,8 @@ test('the ssh program Git runs sees the enforced BatchMode before the user one',
   assert.equal(result.fetch.attempted, true);
   assert.equal(result.fetch.ok, false);
   const argv = readFileSync(argvLog, 'utf8').split('\n');
-  const enforced = argv.indexOf('BatchMode=yes');
-  assert.ok(enforced > 0 && argv[enforced - 1] === '-o', argv.join(' '));
-  assert.ok(enforced < argv.indexOf('BatchMode=no'), argv.join(' '));
-  assert.ok(argv.includes('2222'));
+  assert.deepEqual(argv.slice(0, 4), ['-o', 'BatchMode=no', '-p', '2222'], argv.join(' '));
+  assert.equal(argv.includes('BatchMode=yes'), false, argv.join(' '));
 });
 
 test('a fetch that times out is reported as fetch.error timeout without failing the status', async (t) => {
