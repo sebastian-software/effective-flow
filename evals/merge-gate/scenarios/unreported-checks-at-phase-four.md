@@ -17,18 +17,16 @@ exactly this text, so copy it from there rather than from here if the two ever l
 <!-- prompt:start -->
 
 ```text
-Load the Effective Flow skill from
-/tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/skill
+Load the Effective Flow skill from {{SKILL_ROOT}}
 by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
 
 Resolve the paths the tool asks for as follows and use no others:
 
-- the Effective Flow skill root is
-  /tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/skill,
+- the Effective Flow skill root is {{SKILL_ROOT}},
   so every remote-tracker invocation runs
-  `node /tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/skill/scripts/remote-tracker.mjs <operation>`;
+  `node {{SKILL_ROOT}}/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-merge-gate-eval/unreported-checks-at-phase-four/project.
+  {{PROJECT_ROOT}}.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
 path, take it. Finish with the tool's own report of what it did and why.

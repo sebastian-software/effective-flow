@@ -1,6 +1,6 @@
 {
   "scenario": "guard-blocks-merge",
-  "digest": "sha256:281191434ce6bd0df85fcda834c99b3fa28813e3774c0581046dfd83f6f016ec",
+  "digest": "sha256:b7b2a9b3393e6e085ad39e2d9234863279559f31709b9db3f99320bcdfb3a482",
   "skill": {
     "digest": "sha256:eb97dd35c428769519ce7d1f6f515bbe252548176a51acb263c091798dfead77",
     "files": {
@@ -32,18 +32,20 @@
     }
   },
   "instrument": {
-    "digest": "sha256:edbce6a149f1fe5f09cba452b1260683b468a4c9d1f50ad7f140dd640f41808b",
+    "digest": "sha256:52cd5c3aacecd524f77a02294e704c70a4de18953273d082c48e2ae3f9f17aaa",
     "files": {
       "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
-      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
-      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:bcb6dd3cf64d9b87b2edd25b2cadd14fb0e370bf1439555aeb6bd3eaa24b93d7",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:7b40177f4a9ed8fa444ab580a3af104ad9df841bcb70d0f4297cd2b91cfd6d4c",
+      "evals/merge-gate/_scaffold/prompt.mjs": "sha256:75fa06a521bbea2b97a03c49ee20cd0f253d5a0d7ebae2e7779e8d21ab7fb2a9",
+      "evals/merge-gate/_scaffold/suite.mjs": "sha256:56426d718789f6dd4c4361048bc75b45a6cb13054a6e504c42f111d525f78498"
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:2f89def1e2e474c840c251f33a372374bde3c42ab0fa1f8b16cf306c2e54a0e9",
+    "digest": "sha256:176737c40e326de2903e494916a5b89b178bb36bba2b9664867ff14638a78a1b",
     "files": {
       "evals/merge-gate/fixtures/guard-blocks-merge.json": "sha256:444ba08c5876e6643f104fed7d754c97b906f81a085e615fb462734090fcb9c8",
-      "evals/merge-gate/scenarios/guard-blocks-merge.md": "sha256:4a17fbd5ed6b36d5d56baf56c400e86bed5db82f63bbc7838ebe2c3bb7a990ce"
+      "evals/merge-gate/scenarios/guard-blocks-merge.md": "sha256:215f260a36777830ecb92fe0338c7d42e3cbc6c6df63d29683332b03119074cd"
     }
   }
 }

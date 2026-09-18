@@ -411,7 +411,8 @@ I/O boundary and a pure, unit-testable core:
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
-  unless `--apply` is present. The core module is pure except for an injected process runner;
+  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
+  that flag. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,

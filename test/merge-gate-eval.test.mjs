@@ -7,7 +7,11 @@ import {
   buildPortableSkill,
   scenarioBuildIdentity,
 } from '../evals/merge-gate/_scaffold/build-identity.mjs';
-import { sandboxPaths } from '../evals/merge-gate/_scaffold/sandbox.mjs';
+import {
+  evaluateEvidence,
+  mutatingTrackerOperations,
+} from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import { discoverSuite, REQUIRED_RUNS } from '../evals/merge-gate/_scaffold/suite.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
@@ -75,10 +79,6 @@ const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
 const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
 
-// The bar the plan sets for a fail-closed rule: below five of five is a finding, never variance to
-// be accommodated.
-const REQUIRED_RUNS = 5;
-
 const LEGACY_KEYS = ['apply', 'at', 'cwd', 'operation', 'seq'];
 const START_KEYS = ['apply', 'at', 'callId', 'cwd', 'event', 'operation', 'seq'];
 const COMPLETE_KEYS = ['at', 'callId', 'event', 'seq'];
@@ -111,13 +111,7 @@ function operationStarts(records, operation) {
 // assertion answers, and it is answered in both directions below.
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
-const SCENARIOS = [
-  'guard-blocks-merge',
-  'merge-proceeds',
-  'linked-issue-open-points',
-  'unreported-checks-block-merge',
-  'unreported-checks-at-phase-four',
-];
+const SCENARIOS = discoverSuite().scenarios;
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -270,6 +264,7 @@ function archivedRuns(scenario) {
       path: join(dir, name),
       stampName: name.replace(/\.jsonl$/, '.build.json'),
       stampPath: join(dir, name.replace(/\.jsonl$/, '.build.json')),
+      metadataPath: join(dir, name.replace(/\.jsonl$/, '.metadata.json')),
     }));
 }
 
@@ -562,7 +557,10 @@ function normalizePath(path) {
 // descendants: a nested directory can change repository and configuration discovery, so it is a
 // different execution context rather than equivalent evidence about the provisioned root.
 function assertRuntimeRoot(scenario, run, records) {
-  const declared = sandboxPaths(scenario).projectRoot;
+  const declared =
+    typeof run.metadataPath === 'string' && existsSync(run.metadataPath)
+      ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
+      : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
   const projectRoot = normalizePath(declared);
   startRecords(records).forEach((record, index) => {
     assert.ok(
@@ -580,7 +578,7 @@ function assertRuntimeRoot(scenario, run, records) {
 
 test('archived runtime roots must be the exact scenario project root', () => {
   const scenario = SCENARIOS[0];
-  const projectRoot = sandboxPaths(scenario).projectRoot;
+  const projectRoot = `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
   assert.doesNotThrow(() =>
     assertRuntimeRoot(scenario, { name: 'synthetic' }, [
       { event: 'start', operation: 'pr-read', cwd: projectRoot },
@@ -652,6 +650,29 @@ for (const scenario of SCENARIOS) {
       assertSchema(scenario, run, records);
       assertRuntimeRoot(scenario, run, records);
 
+      const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+      const projectRoot = existsSync(run.metadataPath)
+        ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
+        : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
+      const evaluated = evaluateEvidence({
+        scenario,
+        logText: readFileSync(run.path, 'utf8'),
+        fixture,
+        projectRoot,
+        buildIdentity: JSON.parse(readFileSync(run.stampPath, 'utf8')),
+        expectedBuildIdentity: identity,
+      });
+      assert.deepEqual(
+        evaluated.validityProblems,
+        [],
+        `${run.name}: shared evaluator rejected the archived evidence`,
+      );
+      assert.deepEqual(
+        evaluated.findings,
+        [],
+        `${run.name}: shared evaluator found a behavioural deviation`,
+      );
+
       // Contamination is a **divergence between the sandbox and production**, and that is narrower
       // than "the fixture did not define it". An operation the shipped helper supports, left
       // undefined by the fixture, is answered `UNSUPPORTED_CAPABILITY` here and would have been
@@ -692,9 +713,10 @@ for (const scenario of SCENARIOS) {
     `${scenario}: the archived runs meet the plan's ${REQUIRED_RUNS}-of-${REQUIRED_RUNS} bar`,
     { skip },
     () => {
-      assert.ok(
-        runs.length >= REQUIRED_RUNS,
-        `${scenario} has ${runs.length} archived run(s) and the plan's bar for a fail-closed rule is ${REQUIRED_RUNS}. The evidence is real and incomplete: finish the round with pnpm prepare:merge-gate-eval ${scenario} rather than reading a partial round as a result.`,
+      assert.equal(
+        runs.length,
+        REQUIRED_RUNS,
+        `${scenario} has ${runs.length} archived run(s), but a canonical generation must contain exactly slots 1 through ${REQUIRED_RUNS}. Finish or republish the round rather than reading partial or surplus evidence as one generation.`,
       );
     },
   );
@@ -833,10 +855,14 @@ test(
 
       // The whole phase is read-and-report for this fixture: the completion verdict cannot be
       // `complete` while issue #17 has an open native sub-issue, so no terminal transition is
-      // eligible, and a non-interactive run poses no offer regardless. `apply: true` is what
-      // separates a performed mutation from the dry-run preview that precedes one, so this is the
-      // log's own statement that nothing was written.
-      const applied = startRecords(records).filter((record) => record.apply === true);
+      // eligible, and a non-interactive run poses no offer regardless. The log's `apply` bit is the
+      // raw CLI flag, while the shipped helper gives it write semantics only for operations in its
+      // MUTATIONS registry. Intersect both facts: `--apply` on a read stays a read, but an applied
+      // mutation is still direct evidence that this supposedly observer-only run wrote.
+      const mutations = mutatingTrackerOperations();
+      const applied = startRecords(records).filter(
+        (record) => record.apply === true && mutations.has(record.operation),
+      );
       assert.deepEqual(
         applied.map((record) => `${record.seq}:${record.operation}`),
         [],

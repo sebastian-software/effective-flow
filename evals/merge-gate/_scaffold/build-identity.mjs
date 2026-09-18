@@ -125,18 +125,24 @@ const EVAL_GIT_HASH = 'eval';
 // tree they determine the sandbox exactly, so they are hashed beside it rather than folded into it:
 // a mismatch should be able to say whether the gate moved or the bench did.
 //
-// The membership rule is "would a change here change what the run did", which is why `prepare.mjs`
-// and this file are absent. Neither is read during a run — one archives afterwards, the other only
-// computes this digest, and changing what it hashes already shows up as a changed digest without
-// hashing itself.
+// The membership rule is "would a change here change what the run did", which is why the round
+// coordinator and this file are absent. Neither is read during a run — one prepares and seals the
+// isolated attempts, the other only computes this digest — and changing what this file hashes
+// already shows up as a changed digest without hashing the hasher itself.
 const INSTRUMENT_FILES = [
   resolve(import.meta.dirname, 'remote-tracker.mjs'),
   resolve(import.meta.dirname, 'sandbox.mjs'),
   resolve(import.meta.dirname, 'scaffold.mjs'),
+  resolve(import.meta.dirname, 'prompt.mjs'),
+  resolve(import.meta.dirname, 'suite.mjs'),
 ];
 
-function digestOf(content) {
+export function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+export function digestFile(path) {
+  return digestOf(readFileSync(path));
 }
 
 // The seeds of the load set: the router that dispatches the invocation, the tool body that is the
@@ -235,6 +241,15 @@ function hashFiles(paths, root) {
   return { digest: digestOf(canonical), files };
 }
 
+export function builtSkillIdentity(skillRoot) {
+  if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
+  return hashFiles(deriveLoadSet(skillRoot), skillRoot);
+}
+
+export function instrumentIdentity() {
+  return hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
+}
+
 export function portableSkillRoot(outputRoot) {
   return resolve(outputRoot, 'dist', 'portable', 'effective-flow');
 }
@@ -264,8 +279,8 @@ export function buildPortableSkill(outputRoot) {
 // so a mismatch can name which one moved before naming the files.
 export function scenarioBuildIdentity(scenario, skillRoot) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const skill = hashFiles(deriveLoadSet(skillRoot), skillRoot);
-  const instrument = hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
+  const skill = builtSkillIdentity(skillRoot);
+  const instrument = instrumentIdentity();
   const scenarioInputs = hashFiles(
     [
       resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`),

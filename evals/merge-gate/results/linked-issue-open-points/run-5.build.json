@@ -1,6 +1,6 @@
 {
-  "scenario": "merge-proceeds",
-  "digest": "sha256:32a1d640fe4894385688ba24be74bced8b09c74543a694c0a47257719a70bba7",
+  "scenario": "linked-issue-open-points",
+  "digest": "sha256:7e06eb6ac6397630828274c61b22f3114f5d488d38c20001620b7d14baac70cc",
   "skill": {
     "digest": "sha256:eb97dd35c428769519ce7d1f6f515bbe252548176a51acb263c091798dfead77",
     "files": {
@@ -32,18 +32,20 @@
     }
   },
   "instrument": {
-    "digest": "sha256:edbce6a149f1fe5f09cba452b1260683b468a4c9d1f50ad7f140dd640f41808b",
+    "digest": "sha256:52cd5c3aacecd524f77a02294e704c70a4de18953273d082c48e2ae3f9f17aaa",
     "files": {
       "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
-      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
-      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:bcb6dd3cf64d9b87b2edd25b2cadd14fb0e370bf1439555aeb6bd3eaa24b93d7",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:7b40177f4a9ed8fa444ab580a3af104ad9df841bcb70d0f4297cd2b91cfd6d4c",
+      "evals/merge-gate/_scaffold/prompt.mjs": "sha256:75fa06a521bbea2b97a03c49ee20cd0f253d5a0d7ebae2e7779e8d21ab7fb2a9",
+      "evals/merge-gate/_scaffold/suite.mjs": "sha256:56426d718789f6dd4c4361048bc75b45a6cb13054a6e504c42f111d525f78498"
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:33e7159f6c68b2d39876bf25b9e4529d59f480bde4a2437b526ee08ddb5cb441",
+    "digest": "sha256:c094c3db1099f8a7ffb0a44e2d3457c6ba2e44dc29a6859ed1f9ddeab563ffac",
     "files": {
-      "evals/merge-gate/fixtures/merge-proceeds.json": "sha256:49b90815d6490af495319e89aa296af16a53a90ec50d4e1c9b06658361e0bf94",
-      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:72b239ea27f0be3bafba123f8155f0d77891951ce6e989843d1650ea971341ec"
+      "evals/merge-gate/fixtures/linked-issue-open-points.json": "sha256:f4443361ef671ab7e1088562805469824a454bf6fdb04d8f12a6f7b22915ac7b",
+      "evals/merge-gate/scenarios/linked-issue-open-points.md": "sha256:e1028af12791de399df65b7f5a96d26a73ad0c4208ec68d2017786e150c05da8"
     }
   }
 }
