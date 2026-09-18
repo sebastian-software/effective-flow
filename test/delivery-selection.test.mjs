@@ -14,7 +14,6 @@ import {
   diagnosticText,
   isDryRun,
   NON_INTERACTIVE_FETCH_ENV,
-  DISABLED_FETCH_TRACE_ENV,
   nonInteractiveFetchEnv,
   parsePorcelainV2Z,
   snapshotScope,
@@ -261,19 +260,7 @@ test('the upstream fetch environment cannot prompt for credentials or host keys'
 });
 
 test('the default ssh of the upstream fetch runs in batch mode', () => {
-  const base = {
-    GIT_TERMINAL_PROMPT: '0',
-    GCM_INTERACTIVE: 'never',
-    GIT_TRACE: '0',
-    GIT_TRACE_PACKET: '0',
-    GIT_TRACE_CURL: '0',
-    GIT_TRACE2: '0',
-    GIT_TRACE2_EVENT: '0',
-    GIT_TRACE2_PERF: '0',
-    GIT_TRACE_SETUP: '0',
-    GIT_TRACE_PERFORMANCE: '0',
-    GIT_CURL_VERBOSE: undefined,
-  };
+  const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
   assert.deepEqual(nonInteractiveFetchEnv(), { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' });
   assert.deepEqual(nonInteractiveFetchEnv({ environment: { PATH: '/usr/bin' } }), {
     ...base,
@@ -291,19 +278,7 @@ test('the default ssh of the upstream fetch runs in batch mode', () => {
 });
 
 test('a user-configured SSH command, program, or variant is left untouched by the fetch', () => {
-  const base = {
-    GIT_TERMINAL_PROMPT: '0',
-    GCM_INTERACTIVE: 'never',
-    GIT_TRACE: '0',
-    GIT_TRACE_PACKET: '0',
-    GIT_TRACE_CURL: '0',
-    GIT_TRACE2: '0',
-    GIT_TRACE2_EVENT: '0',
-    GIT_TRACE2_PERF: '0',
-    GIT_TRACE_SETUP: '0',
-    GIT_TRACE_PERFORMANCE: '0',
-    GIT_CURL_VERBOSE: undefined,
-  };
+  const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
   const setups = [
     { environment: { GIT_SSH_COMMAND: 'ssh -o BatchMode=no -i ~/.ssh/deploy' } },
     { configuredSshCommand: 'ssh -i ~/.ssh/config-key' },
@@ -318,35 +293,55 @@ test('a user-configured SSH command, program, or variant is left untouched by th
   }
 });
 
-test('the upstream fetch disables every inherited Git trace in both SSH branches', () => {
+test('the upstream fetch removes every inherited Git trace in both SSH branches', () => {
   const traced = {
     GIT_TRACE: '1',
     GIT_TRACE_PACKET: '1',
+    GIT_TRACE_PACKFILE: '2',
+    GIT_TRACE_REFS: '1',
     GIT_TRACE_CURL: '1',
+    GIT_TRACE_CURL_NO_DATA: '1',
     GIT_TRACE2: '1',
-    GIT_TRACE2_EVENT: '/tmp/trace2-event',
+    GIT_TRACE2_EVENT: '/tmp/x',
     GIT_TRACE2_PERF: '2',
     GIT_TRACE_SETUP: 'true',
     GIT_TRACE_PERFORMANCE: '1',
-    GIT_CURL_VERBOSE: '1',
+    GIT_TRACE_SOME_FUTURE_TARGET: '1',
+    GIT_CURL_VERBOSE: '0',
   };
-  assert.deepEqual(Object.keys(DISABLED_FETCH_TRACE_ENV).sort(), Object.keys(traced).sort());
-  assert.ok(Object.isFrozen(DISABLED_FETCH_TRACE_ENV));
-  for (const setup of [
-    { environment: traced },
-    { environment: { ...traced, GIT_SSH_COMMAND: 'sshpass -p SECRET ssh' } },
-  ]) {
-    const env = nonInteractiveFetchEnv(setup);
-    for (const key of Object.keys(traced)) {
-      assert.ok(Object.hasOwn(env, key), key);
-      assert.equal(env[key], key === 'GIT_CURL_VERBOSE' ? undefined : '0', key);
+  const unrelated = { PATH: '/usr/bin', GIT_DIR: '/repo/.git', GIT_CURL_VERBOSE_X: '1' };
+  const expectRemoved = (env, keys, label) => {
+    for (const key of keys) {
+      assert.ok(Object.hasOwn(env, key), `${label}: ${key}`);
+      assert.equal(env[key], undefined, `${label}: ${key}`);
     }
-    assert.equal(env.GIT_TERMINAL_PROMPT, '0');
-    assert.equal(env.GCM_INTERACTIVE, 'never');
+    for (const key of Object.keys(unrelated)) {
+      assert.equal(Object.hasOwn(env, key), false, `${label}: ${key}`);
+    }
+    assert.equal(env.GIT_TERMINAL_PROMPT, '0', label);
+    assert.equal(env.GCM_INTERACTIVE, 'never', label);
+  };
+  for (const sshCommand of [undefined, 'sshpass -p SECRET ssh']) {
+    const ssh = sshCommand === undefined ? {} : { GIT_SSH_COMMAND: sshCommand };
+    // From the environment the SSH decision reads.
+    expectRemoved(
+      nonInteractiveFetchEnv({ environment: { ...traced, ...unrelated, ...ssh } }),
+      Object.keys(traced),
+      `environment ${sshCommand}`,
+    );
+    // From the environment the runner spreads the fetch env over, when it differs.
+    expectRemoved(
+      nonInteractiveFetchEnv({
+        environment: ssh,
+        inheritedEnvironment: { ...traced, ...unrelated },
+      }),
+      Object.keys(traced),
+      `inherited ${sshCommand}`,
+    );
   }
   // The trace variables are no SSH setup: the default ssh keeps its batch mode.
   assert.equal(
-    nonInteractiveFetchEnv({ environment: traced }).GIT_SSH_COMMAND,
+    nonInteractiveFetchEnv({ environment: traced, inheritedEnvironment: traced }).GIT_SSH_COMMAND,
     'ssh -o BatchMode=yes',
   );
   assert.equal(

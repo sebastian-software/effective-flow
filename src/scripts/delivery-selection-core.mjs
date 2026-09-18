@@ -1378,22 +1378,12 @@ export const NON_INTERACTIVE_FETCH_ENV = Object.freeze({
   GCM_INTERACTIVE: 'never',
 });
 
-// Inherited Git tracing is disabled for the fetch: trace output would echo the SSH command, and
-// any credential in it, into the stderr that becomes `fetch.error`. `0` disables every GIT_TRACE*
-// target. GIT_CURL_VERBOSE is honoured whenever it is present, even as `0`, so it is removed
-// instead: the runner spreads this env over `process.env`, and a child process omits a variable
-// whose value is `undefined`.
-export const DISABLED_FETCH_TRACE_ENV = Object.freeze({
-  GIT_TRACE: '0',
-  GIT_TRACE_PACKET: '0',
-  GIT_TRACE_CURL: '0',
-  GIT_TRACE2: '0',
-  GIT_TRACE2_EVENT: '0',
-  GIT_TRACE2_PERF: '0',
-  GIT_TRACE_SETUP: '0',
-  GIT_TRACE_PERFORMANCE: '0',
-  GIT_CURL_VERBOSE: undefined,
-});
+// Every inherited Git trace variable (any `GIT_TRACE*` name, plus `GIT_CURL_VERBOSE`) is removed
+// for the fetch: trace output would echo the SSH command, any credential, or the received pack
+// into the stderr that becomes `fetch.error`. Removed rather than set to `0`, because Git honours
+// some of them whenever they are present; a child process omits a variable whose value is
+// `undefined`.
+const FETCH_TRACE_VARIABLE = /^(?:GIT_TRACE|GIT_CURL_VERBOSE$)/i;
 
 // The fetch is the only upstream command that talks to the network; it is bounded so an
 // unresponsive remote cannot hang the delivery run.
@@ -1412,12 +1402,21 @@ function nonEmpty(value) {
 // SSH variant override (`GIT_SSH_VARIANT`, `ssh.variant`) is left completely untouched: a
 // user's command cannot be rewritten safely across wrappers, shell quoting, and SSH variants, so
 // it runs unchanged and only the prompt variables and the fetch timeout bound a prompt there.
+//
+// Trace variables are stripped from both `environment` (the one the SSH decision reads) and
+// `inheritedEnvironment` (the one the runner spreads the result over), so neither can leak one.
 export function nonInteractiveFetchEnv({
   environment = {},
+  inheritedEnvironment = {},
   configuredSshCommand = null,
   configuredSshVariant = null,
 } = {}) {
-  const env = { ...NON_INTERACTIVE_FETCH_ENV, ...DISABLED_FETCH_TRACE_ENV };
+  const env = { ...NON_INTERACTIVE_FETCH_ENV };
+  for (const source of [environment, inheritedEnvironment]) {
+    for (const key of Object.keys(source)) {
+      if (FETCH_TRACE_VARIABLE.test(key)) env[key] = undefined;
+    }
+  }
   const userSshSetup = [
     environment.GIT_SSH_COMMAND,
     configuredSshCommand,
@@ -1551,6 +1550,9 @@ async function fetchUpstream(root, remote, mergeRef, runner, environment) {
   }
   const env = nonInteractiveFetchEnv({
     environment,
+    // The shipped runner spreads the fetch env over `process.env`, even when `options.env`
+    // replaced the environment the SSH decision reads.
+    inheritedEnvironment: process.env,
     configuredSshCommand: await gitConfigValue(root, 'core.sshCommand', runner),
     configuredSshVariant: await gitConfigValue(root, 'ssh.variant', runner),
   });

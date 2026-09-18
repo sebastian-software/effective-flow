@@ -872,7 +872,7 @@ test('upstream status fetches only on request, with hooks disabled and a non-int
   const fetchCall = calls.find((call) => call.args.includes('fetch'));
   assert.ok(fetchCall.args.includes('core.hooksPath=/dev/null'));
   assert.deepEqual(fetchCall.args.slice(-3), ['--', 'origin', 'refs/heads/main']);
-  assert.deepEqual(fetchCall.env, nonInteractiveFetchEnv());
+  assert.deepEqual(fetchCall.env, nonInteractiveFetchEnv({ inheritedEnvironment: process.env }));
   assert.equal(fetchCall.env.GIT_SSH_COMMAND, 'ssh -o BatchMode=yes');
   assert.equal(fetchCall.timeout, 60000);
 });
@@ -910,11 +910,52 @@ test('the upstream fetch leaves a user-configured SSH setup untouched', async (t
   // With every setting gone again, the default ssh is back in batch mode.
   assert.equal((await fetchEnv()).GIT_SSH_COMMAND, 'ssh -o BatchMode=yes');
 
-  // An inherited Git trace is disabled for the fetch, so it cannot echo the SSH command.
-  const traced = await fetchEnv({ GIT_TRACE: '1', GIT_CURL_VERBOSE: '1' });
-  assert.equal(traced.GIT_TRACE, '0');
-  assert.ok(Object.hasOwn(traced, 'GIT_CURL_VERBOSE'));
-  assert.equal(traced.GIT_CURL_VERBOSE, undefined);
+  // An inherited Git trace is removed for the fetch, so it cannot echo the SSH command.
+  const traced = await fetchEnv({ GIT_TRACE: '1', GIT_TRACE_PACKFILE: '2', GIT_CURL_VERBOSE: '1' });
+  for (const key of ['GIT_TRACE', 'GIT_TRACE_PACKFILE', 'GIT_CURL_VERBOSE']) {
+    assert.ok(Object.hasOwn(traced, key), key);
+    assert.equal(traced[key], undefined, key);
+  }
+});
+
+test('an inherited GIT_TRACE_PACKFILE never writes the fetched pack to the fetch stderr', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const inherited = { GIT_TRACE_PACKFILE: '2', GIT_TRACE: '2' };
+  // The runner inherits the trace the way the shipped one inherits `process.env`.
+  const fetchStderr = [];
+  const runner = async ({ executable, args = [], stdin, cwd, env, timeout }) => {
+    const result = spawnSync(executable, args, {
+      cwd,
+      env: { ...UPSTREAM_GIT_ENV, ...inherited, ...env },
+      input: stdin,
+      timeout,
+      encoding: null,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    if (args.includes('fetch')) fetchStderr.push(result.stderr);
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      error: result.error,
+    };
+  };
+
+  // Control: the same inherited trace makes a plain fetch write the pack to stderr.
+  publish(seed, 'control', (root) => write(root, 'control.txt', 'control\n'));
+  const control = spawnSync('git', ['-C', local, 'fetch', '--quiet', 'origin'], {
+    env: { ...UPSTREAM_GIT_ENV, ...inherited },
+    encoding: null,
+  });
+  assert.equal(control.status, 0, control.stderr?.toString('utf8'));
+  assert.ok(control.stderr.includes('PACK'));
+
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const result = await status(local, true, runner, inherited);
+  assert.deepEqual(result.fetch, FETCHED);
+  assert.equal(result.upstreamOid, upstreamOid);
+  assert.equal(fetchStderr.length, 1);
+  assert.equal(fetchStderr[0].length, 0, fetchStderr[0].toString('latin1').slice(0, 200));
 });
 
 test('the ssh program Git runs receives the configured command unchanged', async (t) => {

@@ -84,8 +84,9 @@ waiting for input, and gives up after 60 seconds. When you have no SSH setup of 
 default `ssh` runs with `BatchMode=yes`, so a host-key or passphrase prompt fails at once. An SSH
 command or program you configured yourself (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`, or
 an SSH variant setting such as `GIT_SSH_VARIANT` or `ssh.variant`) is used unchanged, so there
-only the 60-second limit ends a host-key or passphrase prompt. Git tracing is turned off for the
-fetch, so its diagnostic output cannot echo your SSH command or credentials. A failed fetch is reported
+only the 60-second limit ends a host-key or passphrase prompt. Every inherited `GIT_TRACE*`
+variable and `GIT_CURL_VERBOSE` is removed for the fetch, so its diagnostic output cannot echo your
+SSH command, credentials, or fetched data. A failed fetch is reported
 without the user name, password, query string, or fragment of the remote URL. A local
 upstream, one that tracks another branch of the same repository, is compared without fetching. The comparison target is the branch's
 own upstream, not `delivery.baseBranch`; the configured base is still refreshed later, as described
