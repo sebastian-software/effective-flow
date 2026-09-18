@@ -1,5 +1,5 @@
 ---
-description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout."
+description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout beyond an optional, user-confirmed upstream fast-forward before selection."
 catalogHint: "Delivers confirmed local changes as coherent commits in a clean pull request."
 ---
 
@@ -7,7 +7,8 @@ catalogHint: "Delivers confirmed local changes as coherent commits in a clean pu
 
 You turn an exact, user-confirmed selection of local changes into one or more coherent commits on a
 fresh delivery branch, then open a pull request. You leave the source checkout and its index
-unchanged.
+unchanged from the moment the source evidence is captured; the only earlier write is an upstream
+fast-forward the user confirmed.
 
 ```include
 task-tracking
@@ -76,7 +77,7 @@ when: the run reaches its completion report
 - transfer only those states to a fresh branch/worktree based on the refreshed configured base
 - stage and commit one derived coherent group at a time through `{{SKILL:commit}}`
 - call commit-only `{{SKILL:pr}}` only after every group is a verified commit
-- preserve the source checkout byte-for-byte and index-for-index
+- preserve the source checkout byte-for-byte and index-for-index once its evidence is captured
 
 This tool always targets a pull request. Its invocation is itself affirmative current-run PR intent,
 so it does not inherit `delivery.completion`. Existing pull-request updates belong to
@@ -95,14 +96,16 @@ skill-discovery
 Read the project's `AGENTS.md` before any mutation. Use the repository's configured base, branch
 prefix, setup, validation, language, and forge conventions. No external dependency is required: use
 the shipped dependency-free `scripts/delivery-selection.mjs` helper for its `inventory`,
-`bind-manifest`, `verify-source`, `transfer`, and `reconcile` operations.
+`upstream-status`, `fast-forward`, `bind-manifest`, `verify-source`, `transfer`, and `reconcile`
+operations.
 
 ## Selection contract
 
-There is no structured public path argument. Reconstruct the candidate from the current session's
-known output set and concrete file-operation evidence, then reconcile it with the helper's NUL-safe
-`inventory {root}` result for staged, unstaged, untracked, deleted, renamed, and partially staged
-paths. Recency or repository dirt alone is never evidence that a path belongs to this session.
+There is no structured public path argument. Only after step 1.1's upstream check, reconstruct the
+candidate from the current session's known output set and concrete file-operation evidence, then
+reconcile it with the helper's NUL-safe `inventory {root}` result for staged, unstaged, untracked,
+deleted, renamed, and partially staged paths. Recency or repository dirt alone is never evidence
+that a path belongs to this session.
 
 For every candidate, show the exact repository-relative literal path, state, and selection origin in
 a stable order. A partially staged path exposes its staged state and full working-tree state as two
@@ -134,7 +137,8 @@ blob and mode without dereferencing it. Bind each selected state to source `HEAD
 absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
 file contents.
 
-This manifest confirmation is the sole routine approval. An affirmative answer authorizes automatic
+This manifest confirmation is the sole routine approval; the conditional pre-selection upstream
+questions of step 1.1 are the only questions that can precede it. An affirmative answer authorizes automatic
 derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
 subject to every drift check, invariant, verification step, and abort boundary below.
 
@@ -142,9 +146,25 @@ subject to every drift check, invariant, verification step, and abort boundary b
 
 ### 1. Establish immutable source evidence
 
-1. Issue and verify a source execution-location receipt before any operation that may write. Record
-   the source `HEAD`, branch or detached OID, complete index state, worktree state, repository
-   identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`.
+1. Issue and verify a source execution-location receipt before any operation that may write, with
+   repository identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`. Then, before any candidate is
+   reconstructed, call `upstream-status {root: sourceRoot, fetch: true}`. A failed `upstream-status`
+   envelope (`ok: false`) ends this check with one notice line naming its error code; continue
+   without an update. A failed or stale fetch, or one reported as `fetch.skipped`, ends this check
+   with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`,
+   `up-to-date`, and `ahead`, with no question. Only `behind`, `behind-overlap`, and `diverged`
+   proceed to the fragment below, and only when the fetch was not attempted, or `fetch.ok` is true
+   and `fetch.stale` is false. A local upstream (`branch.<name>.remote = .`) is compared without
+   fetching, so its fetch is not attempted.
+
+```lazy-include
+source-upstream-sync
+when: upstream-status reports behind, behind-overlap, or diverged
+```
+
+Only after this check, record the source `HEAD`, branch or detached OID, complete index state, and
+worktree state.
+
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
    `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
    contract. `deliver` reports that its explicit PR intent replaces any different configured
@@ -186,7 +206,7 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 
 The source may be detached, on the configured base, dirty, or harness-managed. Those states are why
 this tool creates its own verified delivery worktree; they never authorize switching or committing
-in the source checkout.
+in the source checkout, or writing to it after its evidence is captured.
 
 ### 4. Transfer and validate the confirmed selection
 
@@ -254,7 +274,8 @@ its exact state.
 ### 7. Report
 
 Report the confirmed selected paths/states, ordered groups, created commit OIDs, delivery branch,
-base, pull-request URL, lifecycle result, explicit-PR override when configuration differed, and the
+base, pull-request URL, lifecycle result, upstream outcome (state, fast-forward done or skipped, and
+skipped `post-merge` hooks when it ran), explicit-PR override when configuration differed, and the
 final source-checkout/index comparison. Never report file content or claim that `delivery.completion`
 was changed. Emit the `deliver` next-step block last unless this run itself received
 `Next steps: suppressed`.

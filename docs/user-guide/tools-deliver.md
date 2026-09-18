@@ -20,7 +20,7 @@ by `/effective-flow iterate`. The one thing it has verified locally – a merge 
 
 **Purpose:** Delivers an exact, user-confirmed selection of local changes as one or more coherent
 commits on a fresh delivery branch, then opens a pull request without changing the source checkout
-or its index.
+or its index. The one exception is an upstream fast-forward that you confirm before selection.
 
 **When to use:** After work was completed locally and the relevant files are not yet all staged or
 committed, especially when the checkout also contains unrelated changes. Use `commit` instead when
@@ -40,7 +40,9 @@ the complete working-tree state as separate choices instead of choosing one for 
 There is no path-list argument to prepare. If session evidence is missing, contradictory, or admits
 more than one plausible scope, `deliver` asks you to refine the selection in normal conversation.
 If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
-This manifest confirmation is the workflow's sole routine approval. If source state drifts after
+This manifest confirmation is the workflow's sole routine approval; the conditional upstream
+questions described under [When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream)
+are the only questions that can come before it. If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -61,8 +63,10 @@ created; successful commits are never amended, reordered, squashed, or retried.
 **Isolation and result:** `deliver` refreshes `delivery.baseBranch` and creates a collision-safe
 `<delivery.branchPrefix>/deliver/<slug>` branch in a new Effective Flow-owned worktree. Only the
 confirmed states are transferred, and any conflict with newer base content stops instead of
-overwriting it. The dirty, detached, base-branch, or harness-managed source checkout remains the
-immutable source of evidence: `deliver` never switches, stages, commits in, or removes it.
+overwriting it. From the moment `deliver` records its evidence, the dirty, detached, base-branch, or
+harness-managed source checkout remains the immutable source of evidence: `deliver` never switches,
+stages, commits in, or removes it. The only earlier write is an upstream fast-forward you
+confirmed.
 
 After every group is a verified commit and the delivery checkout is clean, `deliver` removes only
 its verified clean worktree, retains the local branch, and hands the exact branch, base, and head
@@ -70,6 +74,60 @@ commit to `pr`. The invocation itself is an affirmative request for a pull reque
 does not inherit a different `delivery.completion`; when the configured value differs, the result
 reports both values without changing the configuration. Updating an existing pull request belongs
 to `/effective-flow iterate`, not this fresh-branch workflow.
+
+#### When your branch is behind its upstream
+
+Before it reconstructs the candidate, `deliver` compares your current branch with its upstream
+(`@{u}`), for example `develop` with `origin/develop`. It fetches that upstream non-interactively
+(`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`), so a credential prompt fails instead of
+waiting for input, and gives up after 60 seconds. When you have no SSH setup of your own, the
+default `ssh` runs with `BatchMode=yes`, so a host-key or passphrase prompt fails at once. An SSH
+command or program you configured yourself (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`, or
+an SSH variant setting such as `GIT_SSH_VARIANT` or `ssh.variant`) is used unchanged, so there
+only the 60-second limit ends a host-key or passphrase prompt. Every inherited `GIT_TRACE*`
+variable and `GIT_CURL_VERBOSE` is removed for the fetch, so its diagnostic output cannot echo your
+SSH command, credentials, or fetched data. A failed fetch is reported
+without the user name, password, query string, or fragment of the remote URL. A local
+upstream, one that tracks another branch of the same repository, is compared without fetching. The comparison target is the branch's
+own upstream, not `delivery.baseBranch`; the configured base is still refreshed later, as described
+above.
+
+Most states end with one notice line and no question, and `deliver` goes on to the selection: a
+detached checkout, a branch without an upstream, an upstream that no longer exists, a fetch that
+failed, timed out, could not refresh the upstream, or was skipped because the upstream
+configuration is invalid, a comparison that could not be completed, a branch that is up to date,
+and a branch that is only ahead. Two states ask:
+
+- **Behind:** `deliver` names the upstream and how many commits your branch is behind, then asks
+  whether to **Fast-forward first**, **Continue without update**, or **Abort**.
+- **Diverged, or local changes in the way:** when your branch also has its own commits, or when an
+  incoming change touches a path that is staged, modified, untracked, or ignored in your checkout,
+  no fast-forward is offered. `deliver` reports the ahead and behind counts and every overlapping
+  path, then asks whether to **Continue without update** or **Abort**.
+
+An unanswered or skipped question, and a non-interactive run, continue without an update: a
+fast-forward only ever runs after an explicit **Fast-forward first**. **Abort** ends the run without
+touching your working tree, index, or local branch; the upstream fetch before the question may
+already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch. Continuing without an update is safe, because the confirmed states are still
+transferred onto the refreshed base with conflict detection.
+
+A confirmed update is a fast-forward and nothing else. `deliver` never stashes, rebases, creates a
+merge commit, forces, or retries it. Uncommitted changes stay in place, locally ignored files are
+never overwritten, and Git hooks are disabled for the update, so the report says that `post-merge`
+hooks were skipped. Afterwards `deliver` verifies the new `HEAD` and every path that was staged,
+modified, untracked, or ignored before the update. If the update fails without writing anything,
+you see the diagnostic, including Git's own error output when there is any, and the
+continue-or-abort question. If it fails after `HEAD` has already
+moved, `deliver` stops before the selection and reports the old and new `HEAD` and every differing
+path.
+
+This fast-forward is the only write `deliver` makes to your source checkout, and it happens before
+the source evidence is recorded. The final report names the upstream outcome.
+
+The update only brings your branch current with its own upstream. On a feature branch that tracks
+its own remote branch, newer content on the configured base is not pulled in, so a conflict with the
+base can still stop `deliver` later, when it transfers the confirmed states to the delivery
+worktree.
 
 ## `/effective-flow commit`
 

@@ -13442,6 +13442,141 @@ test('deliver is exposed with its shipped helper and continues automatically aft
   );
 });
 
+// The confirmed upstream fast-forward is the only write deliver may perform in the source checkout, so its place is
+// pinned: after the receipt, before the source evidence is recorded and before any candidate is
+// reconstructed. The deferred decision flow is pinned by its trigger states, its two questions, the
+// fail-safe resolution of an unanswered question, and the mutation mapping that decides between
+// the second question and a hard stop.
+test('deliver checks the upstream before recording source evidence and defers the sync flow', () => {
+  const deliver = source('src/tools/deliver.md');
+  const sync = source('src/shared/source-upstream-sync.md');
+
+  assert.match(deliver, /`upstream-status`, `fast-forward`, `bind-manifest`/);
+  assert.equal(
+    deliver.match(/^```ask$/gm)?.length,
+    1,
+    'deliver must still contain exactly one ask',
+  );
+
+  const step1 = boundedSlice(
+    deliver,
+    '### 1. Establish immutable source evidence',
+    '\n2. Resolve `language.git`',
+  );
+  ordered(
+    step1,
+    'Issue and verify a source execution-location receipt',
+    'call `upstream-status {root: sourceRoot, fetch: true}`',
+    '```lazy-include\nsource-upstream-sync\n',
+    'Only after this check, record the source `HEAD`',
+  );
+  const step1Text = prose(step1);
+  assert.match(
+    step1Text,
+    /A failed `upstream-status` envelope \(`ok: false`\) ends this check with one notice line naming its error code; continue without an update/,
+  );
+  assert.match(
+    step1Text,
+    /A failed or stale fetch, or one reported as `fetch\.skipped`, ends this check with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`, `up-to-date`, and `ahead`, with no question/,
+  );
+  assert.match(
+    step1Text,
+    /only when the fetch was not attempted, or `fetch\.ok` is true and `fetch\.stale` is false/,
+  );
+  assert.match(
+    step1Text,
+    /A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,
+  );
+  assert.match(
+    prose(section(deliver, '## Selection contract', '\n## ')),
+    /Only after step 1\.1's upstream check, reconstruct the candidate/,
+  );
+
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('source-upstream-sync'),
+    'upstream-status reports behind, behind-overlap, or diverged',
+    'the source-upstream-sync pointer must fire on exactly the three states that pose a question',
+  );
+
+  const asks = askContracts(sync, 'src/shared/source-upstream-sync.md');
+  assert.equal(asks.length, 2, 'the upstream sync fragment must contain exactly two ask fences');
+  assert.equal(asks[0].question, 'Update the local branch from its upstream before selecting?');
+  assert.deepEqual(
+    asks[0].options.map(({ label }) => label),
+    ['Fast-forward first', 'Continue without update', 'Abort'],
+  );
+  const fetchGate = /the fetch was not attempted, or fetch\.ok is true and fetch\.stale is false/;
+  assert.match(asks[0].when, /behind and the fetch was not attempted/);
+  assert.match(asks[0].when, fetchGate);
+  assert.equal(
+    asks[1].question,
+    'The local branch cannot be fast-forwarded. Continue without an update?',
+  );
+  assert.deepEqual(
+    asks[1].options.map(({ label }) => label),
+    ['Continue without update', 'Abort'],
+  );
+  assert.match(asks[1].when, /diverged or behind-overlap/);
+  assert.match(asks[1].when, fetchGate);
+  assert.match(asks[1].when, /mutationMayHaveSucceeded false/);
+
+  // The fetch that precedes either question has already written to the repository, so Abort
+  // promises only an untouched working tree, index, and local branch, never "nothing changed".
+  for (const [index, ask] of asks.entries()) {
+    const abort = ask.options.find(({ label }) => label === 'Abort');
+    assert.match(
+      abort.description,
+      /working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref/,
+      `upstream question ${index + 1}: Abort must scope its guarantee and disclose the preceding fetch`,
+    );
+  }
+
+  const text = prose(sync);
+  assert.match(
+    text,
+    /Abort ends the run without changing the working tree, the index, or the local branch: no fast-forward, no evidence, no selection, and no delivery branch or worktree\. The upstream fetch that preceded the question may already have written fetched objects, `FETCH_HEAD`, and the remote-tracking ref/,
+  );
+  assert.doesNotMatch(text, /Abort ends the run before any mutation/);
+  const guide = prose(source('docs/user-guide/tools-deliver.md'));
+  assert.match(
+    guide,
+    /Abort ends the run without touching your working tree, index, or local branch; the upstream fetch before the question may already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch/,
+  );
+  assert.doesNotMatch(guide, /Abort ends the run before anything changes/);
+  assert.match(
+    text,
+    /`fetch\.ok` is true and `fetch\.stale` is false\. A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,
+  );
+  assert.match(text, /including Git's `stderr` diagnostic when present/);
+  assert.match(text, /After Fast-forward first:/);
+  assert.match(text, /`toOid` equals the status `upstreamOid` and `applied` is false/);
+  assert.match(text, /a failure without that field is treated as `true`/);
+  assert.match(
+    text,
+    /An unanswered question, a skipped question, or a non-interactive run resolves to Continue without update/,
+  );
+  assert.match(text, /No fast-forward ever runs without an explicit Fast-forward first answer/);
+  assert.match(text, /hooks disabled through `core\.hooksPath=\/dev\/null`/);
+  assert.match(text, /`post-merge` hooks were skipped/);
+  assert.match(text, /`merge --ff-only --no-overwrite-ignore`/);
+  assert.match(text, /does not re-read `@\{u\}`/);
+  assert.match(
+    text,
+    /`false`, whether the code is `SOURCE_DRIFT` or `COMMAND_FAILED`: nothing was written; report the diagnostic and pose the second question/,
+  );
+  assert.match(text, /`true`: stop hard before selection[\s\S]*offer no continue option/);
+  assert.match(
+    text,
+    /Never stash, rebase, create a merge commit, force, or retry the fast-forward, and never offer any of them as an alternative/,
+  );
+});
+
 test('deliver commits derived groups in order and stops after a later-group failure', () => {
   const deliver = source('src/tools/deliver.md');
 
