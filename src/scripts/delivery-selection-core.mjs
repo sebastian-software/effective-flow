@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 
 export const DELIVERY_SELECTION_VERSION = 1;
 
@@ -24,7 +25,12 @@ export const DELIVERY_SELECTION_OPERATIONS = Object.freeze([
   'verify-source',
   'transfer',
   'reconcile',
+  'upstream-status',
+  'fast-forward',
 ]);
+
+// Operations that only preview their write unless the caller passes `apply: true`.
+export const DELIVERY_SELECTION_DRY_RUN_OPERATIONS = Object.freeze(['transfer', 'fast-forward']);
 
 export const DELIVERY_SELECTION_ERROR_CODES = Object.freeze([
   'INVALID_PAYLOAD',
@@ -306,6 +312,7 @@ async function git(runner, cwd, args, options = {}) {
       executable: 'git',
       args: ['-C', cwd, ...args],
       ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+      ...(options.env === undefined ? {} : { env: options.env }),
     },
     options.allowedStatus ?? [0],
   );
@@ -1364,6 +1371,651 @@ export async function transferSelection(input, options = {}) {
   return { ...preview, applied: true, reconciliation };
 }
 
+// Non-interactive environment for the upstream fetch: a credential or host-key prompt must fail
+// instead of hanging the delivery run. The SSH part is added by `nonInteractiveFetchEnv`, because
+// it has to extend the user's own SSH command rather than replace it.
+export const NON_INTERACTIVE_FETCH_ENV = Object.freeze({
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+});
+
+// The fetch is the only upstream command that talks to the network; it is bounded so an
+// unresponsive remote cannot hang the delivery run.
+export const UPSTREAM_FETCH_TIMEOUT_MS = 60_000;
+
+// Diagnostics copied from Git's stderr are trimmed and capped so a noisy remote cannot flood the
+// machine envelope.
+export const DIAGNOSTIC_MAX_LENGTH = 2000;
+
+const SSH_BATCH_MODE = '-o BatchMode=yes';
+
+function nonEmpty(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+// Mirrors Git's own SSH command precedence (`GIT_SSH_COMMAND`, then `core.sshCommand`, then
+// `GIT_SSH`, then `ssh`) and appends `BatchMode=yes` to whichever command Git would run. A bare
+// `GIT_SSH` program cannot take extra options, so it is left alone and only the prompt variables
+// keep the fetch non-interactive.
+export function nonInteractiveFetchEnv({ environment = {}, configuredSshCommand = null } = {}) {
+  const env = { ...NON_INTERACTIVE_FETCH_ENV };
+  const sshCommand =
+    nonEmpty(environment.GIT_SSH_COMMAND) ??
+    nonEmpty(configuredSshCommand) ??
+    (nonEmpty(environment.GIT_SSH) === null ? 'ssh' : null);
+  if (sshCommand !== null) env.GIT_SSH_COMMAND = `${sshCommand} ${SSH_BATCH_MODE}`;
+  return env;
+}
+
+// Credentials embedded in a remote URL never reach the envelope.
+export function diagnosticText(value) {
+  const text = asText(value)
+    .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@')
+    .trim();
+  return text.length > DIAGNOSTIC_MAX_LENGTH ? text.slice(0, DIAGNOSTIC_MAX_LENGTH) : text;
+}
+
+// Hooks are repository code that could write into the source checkout; the upstream step runs
+// every mutating Git command with them disabled.
+const HOOKS_DISABLED = ['-c', 'core.hooksPath=/dev/null'];
+
+const GITLINK_MODE = '160000';
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+function requireObjectId(value, label) {
+  if (typeof value !== 'string' || !OBJECT_ID.test(value)) {
+    fail('INVALID_PAYLOAD', `${label} must be a lowercase Git object id`, { field: label });
+  }
+  return value;
+}
+
+// An object id Git printed itself; a malformed one is a command failure, not a payload error.
+function gitObjectId(value, label) {
+  if (typeof value !== 'string' || !OBJECT_ID.test(value)) {
+    fail('COMMAND_FAILED', `git returned an invalid ${label}`, { field: label });
+  }
+  return value;
+}
+
+async function currentBranch(root, runner) {
+  const result = await git(runner, root, ['symbolic-ref', '-q', 'HEAD'], {
+    allowedStatus: [0, 1],
+  });
+  if (result.status !== 0) return null;
+  const ref = asText(result.stdout).trim();
+  return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null;
+}
+
+async function gitConfigValue(root, key, runner) {
+  const result = await git(runner, root, ['config', '--get', key], { allowedStatus: [0, 1] });
+  if (result.status !== 0) return null;
+  const value = asText(result.stdout).trim();
+  return value === '' ? null : value;
+}
+
+async function resolveCommit(root, revision, runner) {
+  const result = await git(runner, root, ['rev-parse', '--verify', '-q', `${revision}^{commit}`], {
+    allowedStatus: [0, 1, 128],
+  });
+  if (result.status !== 0) return null;
+  const oid = asText(result.stdout).trim();
+  return OBJECT_ID.test(oid) ? oid : null;
+}
+
+async function trackingRef(root, branch, runner) {
+  const result = await git(runner, root, [
+    'for-each-ref',
+    '--format=%(refname)%00%(upstream)%00%(upstream:short)',
+    `refs/heads/${branch}`,
+  ]);
+  for (const line of asText(result.stdout).split('\n')) {
+    const [refname, upstream, upstreamShort] = line.split('\0');
+    if (refname === `refs/heads/${branch}`) {
+      return upstream ? { ref: upstream, short: upstreamShort || upstream } : null;
+    }
+  }
+  return null;
+}
+
+// A remote name or URL and a merge ref taken from Git configuration are only passed to `git fetch`
+// when neither can be read as an option or as anything but one full ref name.
+async function fetchableUpstream(root, remote, mergeRef, runner) {
+  if (remote.startsWith('-') || /[\0-\x1f\x7f]/.test(remote)) return false;
+  if (!mergeRef.startsWith('refs/') || /[:+*^\s\0-\x1f\x7f]/.test(mergeRef)) return false;
+  const result = await git(runner, root, ['check-ref-format', mergeRef], {
+    allowedStatus: [0, 1],
+  });
+  return result.status === 0;
+}
+
+function timedOut(result) {
+  return result?.timedOut === true || result?.error?.code === 'ETIMEDOUT';
+}
+
+// Returns `{ok, error}`: a failed fetch never fails the status, it is reported with a short reason.
+async function fetchUpstream(root, remote, mergeRef, runner, environment) {
+  if (typeof runner !== 'function') {
+    fail('INVALID_PAYLOAD', 'operation requires an injected process runner');
+  }
+  const env = nonInteractiveFetchEnv({
+    environment,
+    configuredSshCommand:
+      nonEmpty(environment.GIT_SSH_COMMAND) === null
+        ? await gitConfigValue(root, 'core.sshCommand', runner)
+        : null,
+  });
+  const result = await runner({
+    executable: 'git',
+    args: ['-C', root, ...HOOKS_DISABLED, 'fetch', '--no-tags', '--quiet', '--', remote, mergeRef],
+    env,
+    timeout: UPSTREAM_FETCH_TIMEOUT_MS,
+  });
+  if (timedOut(result)) return { ok: false, error: 'timeout' };
+  if (result?.error) {
+    return {
+      ok: false,
+      error: diagnosticText(result.error.code ?? 'command could not be started'),
+    };
+  }
+  if (result?.status !== 0) {
+    return {
+      ok: false,
+      error: diagnosticText(result?.stderr) || `exit status ${result?.status ?? 'unknown'}`,
+    };
+  }
+  return { ok: true, error: null };
+}
+
+function parseDiffTreeRaw(value) {
+  const records = asText(value).split('\0');
+  if (records.at(-1) === '') records.pop();
+  const changes = [];
+  for (let index = 0; index < records.length; index += 2) {
+    const metadata = records[index];
+    const repoPath = records[index + 1];
+    if (!metadata?.startsWith(':') || repoPath === undefined) {
+      fail('COMMAND_FAILED', 'git returned an invalid raw diff record');
+    }
+    const [oldMode, newMode] = metadata.slice(1).split(' ');
+    changes.push({ path: repoPath, oldMode, newMode });
+  }
+  return changes;
+}
+
+// Every path that differs between the two commits, without rename detection so that both
+// endpoints of an upstream rename count, plus the subset that is a gitlink on either side.
+async function incomingChanges(root, fromOid, toOid, runner) {
+  const result = await git(runner, root, [
+    'diff-tree',
+    '-r',
+    '-z',
+    '--no-renames',
+    '--no-commit-id',
+    '--ignore-submodules=none',
+    fromOid,
+    toOid,
+  ]);
+  const changes = parseDiffTreeRaw(result.stdout);
+  return {
+    paths: [...new Set(changes.map((change) => change.path))].sort(),
+    gitlinks: [
+      ...new Set(
+        changes
+          .filter((change) => change.oldMode === GITLINK_MODE || change.newMode === GITLINK_MODE)
+          .map((change) => change.path),
+      ),
+    ].sort(),
+  };
+}
+
+function stripDirectorySlash(repoPath) {
+  return repoPath.endsWith('/') ? repoPath.slice(0, -1) : repoPath;
+}
+
+// Every staged, unstaged, untracked and ignored local path, rename sources included.
+function localDirtyPaths(inventory) {
+  return {
+    dirty: [
+      ...new Set(
+        inventory.entries.flatMap((entry) =>
+          entry.renameFrom ? [entry.renameFrom, entry.path] : [entry.path],
+        ),
+      ),
+    ].sort(),
+    ignored: [...new Set(inventory.ignored)].sort(),
+  };
+}
+
+function pathsOverlap(left, right) {
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
+export function computeOverlap(localPaths, incoming, { ignoreCase = false } = {}) {
+  const fold = ignoreCase ? (value) => value.toLowerCase() : (value) => value;
+  const incomingFolded = incoming.paths.map(fold);
+  const overlapping = new Set(incoming.gitlinks);
+  for (const localPath of localPaths) {
+    const candidate = fold(stripDirectorySlash(localPath));
+    if (incomingFolded.some((incomingPath) => pathsOverlap(candidate, incomingPath))) {
+      overlapping.add(localPath);
+    }
+  }
+  return [...overlapping].sort();
+}
+
+async function repositoryIgnoresCase(root, runner) {
+  const result = await git(runner, root, ['config', '--bool', '--get', 'core.ignorecase'], {
+    allowedStatus: [0, 1],
+  });
+  return result.status === 0 && asText(result.stdout).trim() === 'true';
+}
+
+async function overlapFor(root, fromOid, toOid, runner) {
+  const incoming = await incomingChanges(root, fromOid, toOid, runner);
+  const inventory = await statusInventory(root, runner, true);
+  const local = localDirtyPaths(inventory);
+  const ignoreCase = await repositoryIgnoresCase(root, runner);
+  const overlappingPaths = computeOverlap([...local.dirty, ...local.ignored], incoming, {
+    ignoreCase,
+  });
+  return { incoming, inventory, local, overlappingPaths, ignoreCase };
+}
+
+function idleFetch() {
+  return { attempted: false, ok: null, stale: null, error: null, skipped: null };
+}
+
+function emptyUpstreamStatus(state, fields = {}) {
+  return {
+    state,
+    branch: null,
+    upstream: null,
+    headOid: null,
+    upstreamOid: null,
+    mergeBaseOid: null,
+    ahead: null,
+    behind: null,
+    incomingPaths: [],
+    overlappingPaths: [],
+    fetch: idleFetch(),
+    ...fields,
+  };
+}
+
+export async function upstreamStatus(input, options = {}) {
+  requireObject(input);
+  if (input.fetch !== undefined && typeof input.fetch !== 'boolean') {
+    fail('INVALID_PAYLOAD', 'fetch must be a boolean', { field: 'fetch' });
+  }
+  const runner = options.runner;
+  const context = await repositoryContext(input.root, runner);
+  const root = context.root;
+  const headOid = gitObjectId(context.headOid, 'HEAD');
+  const branch = await currentBranch(root, runner);
+  if (branch === null) return emptyUpstreamStatus('detached', { headOid });
+
+  const remote = await gitConfigValue(root, `branch.${branch}.remote`, runner);
+  const mergeRef = await gitConfigValue(root, `branch.${branch}.merge`, runner);
+  if (remote === null || mergeRef === null) {
+    return emptyUpstreamStatus('no-upstream', { branch, headOid });
+  }
+
+  const fetch = idleFetch();
+  let fetchHeadOid = null;
+  if (input.fetch === true && remote !== '.') {
+    if (await fetchableUpstream(root, remote, mergeRef, runner)) {
+      fetch.attempted = true;
+      const outcome = await fetchUpstream(
+        root,
+        remote,
+        mergeRef,
+        runner,
+        options.env ?? process.env,
+      );
+      fetch.ok = outcome.ok;
+      fetch.error = outcome.error;
+      if (fetch.ok) fetchHeadOid = await resolveCommit(root, 'FETCH_HEAD', runner);
+    } else {
+      // An option-like or malformed remote or merge ref is never fetched; the status still
+      // classifies against whatever tracking ref Git already resolves.
+      fetch.skipped = 'invalid-config';
+    }
+  }
+
+  const tracking = await trackingRef(root, branch, runner);
+  const upstreamOid = tracking === null ? null : await resolveCommit(root, tracking.ref, runner);
+  if (fetch.ok) fetch.stale = fetchHeadOid === null || fetchHeadOid !== upstreamOid;
+  if (upstreamOid === null) {
+    return emptyUpstreamStatus('upstream-gone', {
+      branch,
+      upstream: tracking?.short ?? null,
+      headOid,
+      fetch,
+    });
+  }
+
+  const counts = (
+    await gitText(runner, root, [
+      'rev-list',
+      '--left-right',
+      '--count',
+      `${headOid}...${upstreamOid}`,
+    ])
+  ).split(/\s+/);
+  const ahead = Number.parseInt(counts[0], 10);
+  const behind = Number.parseInt(counts[1], 10);
+  if (!Number.isInteger(ahead) || !Number.isInteger(behind)) {
+    fail('COMMAND_FAILED', 'git returned invalid ahead/behind counts');
+  }
+  const mergeBaseResult = await git(runner, root, ['merge-base', headOid, upstreamOid], {
+    allowedStatus: [0, 1],
+  });
+  const mergeBaseOid =
+    mergeBaseResult.status === 0
+      ? gitObjectId(asText(mergeBaseResult.stdout).trim(), 'merge base')
+      : null;
+
+  let incomingPaths = [];
+  let overlappingPaths = [];
+  if (behind > 0 && mergeBaseOid !== null) {
+    const overlap = await overlapFor(root, mergeBaseOid, upstreamOid, runner);
+    incomingPaths = overlap.incoming.paths;
+    overlappingPaths = overlap.overlappingPaths;
+  }
+
+  let state;
+  if (ahead === 0 && behind === 0) state = 'up-to-date';
+  else if (behind === 0) state = 'ahead';
+  else if (ahead > 0 || mergeBaseOid === null) state = 'diverged';
+  else state = overlappingPaths.length === 0 ? 'behind' : 'behind-overlap';
+
+  return {
+    state,
+    branch,
+    upstream: tracking.short,
+    headOid,
+    upstreamOid,
+    mergeBaseOid,
+    ahead,
+    behind,
+    incomingPaths,
+    overlappingPaths,
+    fetch,
+  };
+}
+
+function parentDirectory(repoPath) {
+  const slash = repoPath.lastIndexOf('/');
+  return slash === -1 ? '' : repoPath.slice(0, slash);
+}
+
+// Every directory a fast-forward can write into: the parent of each incoming path and all of its
+// ancestors, the repository root (`''`) included.
+function incomingDirectories(incomingPaths, fold) {
+  const directories = new Set();
+  for (const incomingPath of incomingPaths) {
+    let current = parentDirectory(fold(incomingPath));
+    while (!directories.has(current)) {
+      directories.add(current);
+      if (current === '') break;
+      current = parentDirectory(current);
+    }
+  }
+  return directories;
+}
+
+// A fast-forward only writes incoming paths and creates or removes their parent directories, so
+// only local entries that live directly in one of those directories can be touched by it. Every
+// other dirty, untracked or ignored entry (for example a dependency tree elsewhere) is out of scope
+// and never read.
+export function snapshotScope(local, incomingPaths, { ignoreCase = false } = {}) {
+  const fold = ignoreCase ? (value) => value.toLowerCase() : (value) => value;
+  const directories = incomingDirectories(incomingPaths, fold);
+  const inScope = (repoPath) => directories.has(parentDirectory(fold(repoPath)));
+  return {
+    dirty: local.dirty.filter(inScope),
+    ignored: [...new Set(local.ignored.map(stripDirectorySlash))].filter(inScope).sort(),
+  };
+}
+
+function entryType(stats) {
+  if (stats.isSymbolicLink()) return 'symlink';
+  if (stats.isFile()) return 'file';
+  if (stats.isDirectory()) return 'directory';
+  return 'other';
+}
+
+// Dirty and untracked entries are compared by content and mode. Ignored entries are compared by
+// the lstat metadata of the listed entry only, without descending into an ignored directory.
+async function snapshotFilesystemEntry(root, repoPath, { metadataOnly }) {
+  const absolutePath = path.join(root, ...repoPath.split('/'));
+  const stats = await safeLstat(absolutePath);
+  if (stats === null) return 'absent';
+  if (metadataOnly) {
+    return `stat:${entryType(stats)}:${stats.mode}:${stats.size}:${stats.mtimeMs}:${stats.ino}`;
+  }
+  if (stats.isSymbolicLink()) {
+    return `symlink:${sha256(Buffer.from(await readlink(absolutePath), 'utf8'))}`;
+  }
+  if (stats.isFile()) {
+    const mode = stats.mode & 0o111 ? '100755' : '100644';
+    return `file:${mode}:${sha256(await readFile(absolutePath))}`;
+  }
+  if (stats.isDirectory()) return 'directory';
+  return `other:${stats.mode}`;
+}
+
+async function indexSnapshot(root, repoPaths, runner) {
+  const wanted = new Set(repoPaths);
+  const result = await git(runner, root, ['ls-files', '--stage', '-z']);
+  const entries = new Map(repoPaths.map((repoPath) => [repoPath, []]));
+  for (const record of asText(result.stdout).split('\0').filter(Boolean)) {
+    const tab = record.indexOf('\t');
+    if (tab === -1) fail('COMMAND_FAILED', 'git returned an invalid index entry');
+    const repoPath = record.slice(tab + 1);
+    if (wanted.has(repoPath)) entries.get(repoPath).push(record.slice(0, tab));
+  }
+  return new Map([...entries].map(([repoPath, stages]) => [repoPath, stages.sort().join('|')]));
+}
+
+// Index and working-tree state of every in-scope dirty and ignored path, captured before the merge
+// and compared after it to prove the fast-forward left that local state untouched.
+async function localStateSnapshot(root, scope, runner) {
+  const worktree = new Map();
+  for (const repoPath of scope.dirty) {
+    await rejectSymlinkParents(root, repoPath);
+    worktree.set(repoPath, await snapshotFilesystemEntry(root, repoPath, { metadataOnly: false }));
+  }
+  for (const repoPath of scope.ignored) {
+    await rejectSymlinkParents(root, repoPath);
+    worktree.set(repoPath, await snapshotFilesystemEntry(root, repoPath, { metadataOnly: true }));
+  }
+  const index = await indexSnapshot(root, [...scope.dirty, ...scope.ignored], runner);
+  return { worktree, index };
+}
+
+function snapshotDifferences(before, after) {
+  const differing = new Set();
+  for (const kind of ['worktree', 'index']) {
+    for (const [repoPath, state] of before[kind]) {
+      if (after[kind].get(repoPath) !== state) differing.add(repoPath);
+    }
+    for (const repoPath of after[kind].keys()) {
+      if (!before[kind].has(repoPath)) differing.add(repoPath);
+    }
+  }
+  return [...differing].sort();
+}
+
+// Anything that fails before the merge runs cannot have changed the checkout. An unexpected
+// exception (for example from the process runner) becomes a COMMAND_FAILED that says so.
+function withNoMutation(error) {
+  if (!(error instanceof DeliverySelectionError)) {
+    return new DeliverySelectionError('COMMAND_FAILED', 'fast-forward precheck failed', {
+      mutationMayHaveSucceeded: false,
+      cause: error?.code ?? null,
+    });
+  }
+  if (error.details?.mutationMayHaveSucceeded !== true) {
+    error.details = { ...error.details, mutationMayHaveSucceeded: false };
+  }
+  return error;
+}
+
+async function fastForwardPrecheck(input, runner) {
+  requireObject(input);
+  const expectedBranch = requireString(input.expectedBranch, 'expectedBranch');
+  const expectedHeadOid = requireObjectId(input.expectedHeadOid, 'expectedHeadOid');
+  const expectedUpstreamOid = requireObjectId(input.expectedUpstreamOid, 'expectedUpstreamOid');
+  const context = await repositoryContext(input.root, runner);
+  const root = context.root;
+  const branch = await currentBranch(root, runner);
+  if (branch !== expectedBranch) {
+    fail('SOURCE_DRIFT', 'source branch changed after the upstream status was read', {
+      expected: expectedBranch,
+      actual: branch,
+    });
+  }
+  if (context.headOid !== expectedHeadOid) {
+    fail('SOURCE_DRIFT', 'source HEAD changed after the upstream status was read', {
+      expected: expectedHeadOid,
+      actual: context.headOid,
+    });
+  }
+  const upstreamOid = await resolveCommit(root, expectedUpstreamOid, runner);
+  if (upstreamOid !== expectedUpstreamOid) {
+    fail('SOURCE_DRIFT', 'expected upstream commit does not resolve to a commit', {
+      expected: expectedUpstreamOid,
+      actual: upstreamOid,
+    });
+  }
+  const ancestor = await git(
+    runner,
+    root,
+    ['merge-base', '--is-ancestor', context.headOid, expectedUpstreamOid],
+    { allowedStatus: [0, 1] },
+  );
+  if (ancestor.status !== 0) {
+    fail('SOURCE_DRIFT', 'source HEAD is not an ancestor of the expected upstream commit', {
+      headOid: context.headOid,
+      upstreamOid: expectedUpstreamOid,
+    });
+  }
+  const overlap = await overlapFor(root, context.headOid, expectedUpstreamOid, runner);
+  if (overlap.overlappingPaths.length !== 0) {
+    fail('SOURCE_DRIFT', 'local paths overlap the incoming upstream change', {
+      overlappingPaths: overlap.overlappingPaths,
+    });
+  }
+  return { root, branch, headOid: context.headOid, upstreamOid: expectedUpstreamOid, overlap };
+}
+
+export async function fastForwardUpstream(input, options = {}) {
+  const runner = options.runner;
+  let precheck;
+  let scope;
+  let before;
+  try {
+    precheck = await fastForwardPrecheck(input, runner);
+    if (options.apply === true) {
+      scope = snapshotScope(precheck.overlap.local, precheck.overlap.incoming.paths, {
+        ignoreCase: precheck.overlap.ignoreCase,
+      });
+      before = await localStateSnapshot(precheck.root, scope, runner);
+    }
+  } catch (error) {
+    throw withNoMutation(error);
+  }
+  const preview = {
+    branch: precheck.branch,
+    fromOid: precheck.headOid,
+    toOid: precheck.upstreamOid,
+    incomingPaths: precheck.overlap.incoming.paths,
+    hooksSkipped: true,
+  };
+  if (options.apply !== true) return { ...preview, applied: false };
+
+  const { root } = precheck;
+  const mergeResult = await Promise.resolve()
+    .then(() =>
+      runner({
+        executable: 'git',
+        args: [
+          '-C',
+          root,
+          ...HOOKS_DISABLED,
+          'merge',
+          '--ff-only',
+          '--no-overwrite-ignore',
+          '--no-autostash',
+          '--quiet',
+          precheck.upstreamOid,
+        ],
+      }),
+    )
+    .catch((error) => ({ status: null, error }));
+
+  let newHeadOid = null;
+  let differingPaths = null;
+  try {
+    newHeadOid = gitObjectId(await gitText(runner, root, ['rev-parse', 'HEAD']), 'HEAD');
+    const after = await localStateSnapshot(root, scope, runner);
+    differingPaths = snapshotDifferences(before, after);
+    const mergeSucceeded = !mergeResult?.error && mergeResult?.status === 0;
+    if (!mergeSucceeded) {
+      const inventoryAfter = await statusInventory(root, runner, true);
+      const dirtyAfter = localDirtyPaths(inventoryAfter).dirty;
+      const dirtyBefore = precheck.overlap.local.dirty;
+      const untouched =
+        newHeadOid === precheck.headOid &&
+        differingPaths.length === 0 &&
+        dirtyAfter.length === dirtyBefore.length &&
+        dirtyAfter.every((repoPath, index) => repoPath === dirtyBefore[index]);
+      fail('COMMAND_FAILED', 'git refused the fast-forward', {
+        status: mergeResult?.status ?? null,
+        code: mergeResult?.error?.code,
+        stderr: diagnosticText(mergeResult?.stderr),
+        mutationMayHaveSucceeded: !untouched,
+        oldHeadOid: precheck.headOid,
+        newHeadOid,
+        differingPaths,
+      });
+    }
+    const branchAfter = await currentBranch(root, runner);
+    if (
+      newHeadOid !== precheck.upstreamOid ||
+      branchAfter !== precheck.branch ||
+      differingPaths.length !== 0
+    ) {
+      fail('COMMAND_FAILED', 'fast-forward result does not match the expected source state', {
+        mutationMayHaveSucceeded: true,
+        oldHeadOid: precheck.headOid,
+        newHeadOid,
+        expectedHeadOid: precheck.upstreamOid,
+        branch: branchAfter,
+        differingPaths,
+      });
+    }
+  } catch (error) {
+    if (error instanceof DeliverySelectionError && 'mutationMayHaveSucceeded' in error.details) {
+      throw error;
+    }
+    fail('COMMAND_FAILED', 'fast-forward outcome could not be verified', {
+      mutationMayHaveSucceeded: true,
+      oldHeadOid: precheck.headOid,
+      newHeadOid,
+      differingPaths,
+      cause: error instanceof DeliverySelectionError ? error.code : (error?.code ?? null),
+    });
+  }
+  return {
+    ...preview,
+    applied: true,
+    newHeadOid,
+    verifiedPathCount: before.worktree.size,
+  };
+}
+
 export async function executeOperation(operation, input = {}, options = {}) {
   try {
     if (!DELIVERY_SELECTION_OPERATIONS.includes(operation)) {
@@ -1374,12 +2026,17 @@ export async function executeOperation(operation, input = {}, options = {}) {
     else if (operation === 'bind-manifest') data = await bindSelectionManifest(input, options);
     else if (operation === 'verify-source') data = await verifySourceManifest(input, options);
     else if (operation === 'transfer') data = await transferSelection(input, options);
+    else if (operation === 'upstream-status') data = await upstreamStatus(input, options);
+    else if (operation === 'fast-forward') data = await fastForwardUpstream(input, options);
     else data = await reconcileDelivery(input, options);
-    const dryRun = operation === 'transfer' && options.apply !== true;
-    return { ok: true, operation, data, dryRun };
+    return { ok: true, operation, data, dryRun: isDryRun(operation, options.apply) };
   } catch (error) {
-    return errorEnvelope(operation, error, operation === 'transfer' && options.apply !== true);
+    return errorEnvelope(operation, error, isDryRun(operation, options.apply));
   }
+}
+
+export function isDryRun(operation, apply) {
+  return DELIVERY_SELECTION_DRY_RUN_OPERATIONS.includes(operation) && apply !== true;
 }
 
 function redactDetails(value) {

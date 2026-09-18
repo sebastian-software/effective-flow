@@ -461,7 +461,7 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`, `setup-profiles`.
+  `merge-gate-check-list-waiver`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -520,6 +520,12 @@ and directive syntax").
   `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
   every branch that poses **no** question is decided inside the moved text as well; a pointer firing
   only where the question is posed would leave those runs deciding from text they have not loaded.
+  `source-upstream-sync` is the single-consumer `deliver` fragment for step 1.1's upstream decision
+  flow, and it takes the same cut: the `upstream-status` call and the notice for every state that
+  poses no question stay in the always-loaded core, and the pointer fires on all three question
+  states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
+  fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
+  the merge-gate eval identity.
   `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
   twelve tools that read configuration on every run inline its always-read core, while seven others
   defer the whole fragment behind their own first configuration read.

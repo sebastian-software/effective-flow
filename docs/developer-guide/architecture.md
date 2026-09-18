@@ -207,9 +207,9 @@ worktrees have different roots.
 Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be used
 or reused where appropriate, and Effective Flow never removes one. Normal implementation does not
 nest another delivery worktree around an existing native checkout. The standalone `deliver`
-partial-diff lifecycle is the narrow exception: it treats the dirty or detached harness checkout as
-immutable source evidence and creates a separate Effective Flow-owned delivery worktree from the
-refreshed configured base. The source and delivery receipts remain distinct, and neither may be
+partial-diff lifecycle is the narrow exception: once it has recorded the source evidence, it treats
+the dirty or detached harness checkout as immutable and creates a separate Effective Flow-owned
+delivery worktree from the refreshed configured base. The source and delivery receipts remain distinct, and neither may be
 substituted for the other.
 
 Effective Flow-created delivery, partial-diff and review-component worktrees have distinct receipts
@@ -229,6 +229,32 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   grouping stops before staging. The dependency-free `delivery-selection` runtime binds the selected
   staged or working-tree states to source `HEAD`, applies them to the refreshed base with conflict
   detection, and reconciles the exact resulting diff without emitting file content.
+
+  Before any of that, and after the source execution-location receipt is verified, `deliver` runs
+  one pre-evidence upstream step. The helper's `upstream-status` operation fetches the current
+  branch's own upstream (`@{u}`) non-interactively, with a 60-second timeout and the user's
+  configured SSH command, skips the fetch for a local upstream or an invalid remote or merge ref,
+  and classifies the branch as `detached`,
+  `no-upstream`, `upstream-gone`, `up-to-date`, `ahead`, `behind`, `behind-overlap`, or
+  `diverged`, where `behind-overlap` means an incoming path overlaps a staged, unstaged,
+  untracked, or ignored local path or an incoming gitlink. A failed status call, a failed, stale, or
+  skipped fetch, and every state without a possible update end the step with a notice. Only `behind`, `behind-overlap`, and
+  `diverged` load the lazy `source-upstream-sync` fragment, which asks the user and, on an explicit
+  confirmation, calls the helper's `fast-forward` operation: a dry run, then `--apply` against the
+  pinned branch, `HEAD`, and upstream OIDs, running `merge --ff-only --no-overwrite-ignore` with
+  hooks disabled and post-verifying the new `HEAD` and every previously dirty or ignored path. A
+  failure reports `mutationMayHaveSucceeded` and Git's capped `stderr` where available; `true`, or
+  a missing field, is a hard stop before selection. Unanswered
+  and non-interactive runs continue without an update.
+
+  The step sits before evidence capture, and therefore before `bind-manifest`, because the manifest
+  binds the selected states to source `HEAD` and `verify-source` reports any later `HEAD` change as
+  `SOURCE_DRIFT`; an update after binding would force a fresh confirmation. The source-checkout
+  invariant therefore reads "unchanged from the moment the source evidence is captured", with the
+  confirmed fast-forward as its only earlier write. It compares against `@{u}`, not
+  `delivery.baseBranch`, so on a feature branch a conflict with newer base content can still stop
+  `transfer` later.
+
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to

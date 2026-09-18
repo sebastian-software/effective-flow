@@ -1461,7 +1461,7 @@ try {
     'apply-issues': 1187,
     cleanup: 1022,
     refactor: 864,
-    deliver: 775,
+    deliver: 790,
     'plan-issue': 734,
     review: 728,
     plan: 665,

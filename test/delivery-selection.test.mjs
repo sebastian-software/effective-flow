@@ -4,10 +4,20 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
+  computeOverlap,
+  DELIVERY_SELECTION_DRY_RUN_OPERATIONS,
+  DELIVERY_SELECTION_OPERATIONS,
   DeliverySelectionError,
   errorEnvelope,
   executeOperation,
+  DIAGNOSTIC_MAX_LENGTH,
+  diagnosticText,
+  isDryRun,
+  NON_INTERACTIVE_FETCH_ENV,
+  nonInteractiveFetchEnv,
   parsePorcelainV2Z,
+  snapshotScope,
+  UPSTREAM_FETCH_TIMEOUT_MS,
   validateLiteralPath,
   validateSelectionManifest,
 } from '../src/scripts/delivery-selection-core.mjs';
@@ -222,4 +232,193 @@ test('the CLI emits one machine envelope, one diagnostic, and the stable exit st
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(envelope.error.exitCode, 2);
   assert.equal(result.stderr, 'INVALID_PAYLOAD: unknown operation: unknown\n');
+});
+
+test('upstream operations are dispatched and only fast-forward previews by default', () => {
+  assert.ok(DELIVERY_SELECTION_OPERATIONS.includes('upstream-status'));
+  assert.ok(DELIVERY_SELECTION_OPERATIONS.includes('fast-forward'));
+  assert.deepEqual([...DELIVERY_SELECTION_DRY_RUN_OPERATIONS], ['transfer', 'fast-forward']);
+
+  assert.equal(isDryRun('fast-forward', undefined), true);
+  assert.equal(isDryRun('fast-forward', false), true);
+  assert.equal(isDryRun('fast-forward', true), false);
+  assert.equal(isDryRun('transfer', undefined), true);
+  assert.equal(isDryRun('transfer', true), false);
+  for (const operation of ['upstream-status', 'inventory', 'reconcile', 'unknown']) {
+    assert.equal(isDryRun(operation, undefined), false, operation);
+    assert.equal(isDryRun(operation, true), false, operation);
+  }
+});
+
+test('the upstream fetch environment cannot prompt for credentials or host keys', () => {
+  assert.deepEqual(NON_INTERACTIVE_FETCH_ENV, {
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'never',
+  });
+  assert.ok(Object.isFrozen(NON_INTERACTIVE_FETCH_ENV));
+  assert.equal(UPSTREAM_FETCH_TIMEOUT_MS, 60000);
+});
+
+test('the fetch SSH command extends the user setup in Git precedence order', () => {
+  const base = { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+  assert.deepEqual(nonInteractiveFetchEnv(), {
+    ...base,
+    GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+  });
+  assert.deepEqual(
+    nonInteractiveFetchEnv({
+      environment: { GIT_SSH_COMMAND: 'ssh -i ~/.ssh/deploy', GIT_SSH: '/usr/bin/plink' },
+      configuredSshCommand: 'ssh -i ~/.ssh/config-key',
+    }),
+    { ...base, GIT_SSH_COMMAND: 'ssh -i ~/.ssh/deploy -o BatchMode=yes' },
+  );
+  // core.sshCommand outranks GIT_SSH, exactly as in Git.
+  assert.deepEqual(
+    nonInteractiveFetchEnv({
+      environment: { GIT_SSH: '/usr/bin/plink' },
+      configuredSshCommand: 'ssh -i ~/.ssh/config-key',
+    }),
+    { ...base, GIT_SSH_COMMAND: 'ssh -i ~/.ssh/config-key -o BatchMode=yes' },
+  );
+  // A bare GIT_SSH program takes no options, so no GIT_SSH_COMMAND overrides it.
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/plink' } }), base);
+  // Empty values count as unset.
+  assert.deepEqual(
+    nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: ' ' }, configuredSshCommand: '' }),
+    { ...base, GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' },
+  );
+});
+
+test('diagnostics are trimmed, capped, and never carry URL credentials', () => {
+  assert.equal(diagnosticText(Buffer.from('  fatal: refused \n')), 'fatal: refused');
+  assert.equal(diagnosticText(undefined), '');
+  assert.equal(
+    diagnosticText("fatal: unable to access 'https://user:tok3n@example.invalid/repo.git/'"),
+    "fatal: unable to access 'https://***@example.invalid/repo.git/'",
+  );
+  const long = diagnosticText('x'.repeat(DIAGNOSTIC_MAX_LENGTH + 500));
+  assert.equal(long.length, DIAGNOSTIC_MAX_LENGTH);
+});
+
+test('the fast-forward snapshot covers only entries in directories the merge can write', () => {
+  const local = {
+    dirty: ['README.md', 'src/app/edit.js', 'src/other/edit.js', 'web/app.js'],
+    ignored: ['build.log', 'src/app/cache/', 'src/node_modules/', 'web/node_modules/', 'dist/'],
+  };
+  assert.deepEqual(snapshotScope(local, ['src/app/incoming.js']), {
+    // The root and `src/` are ancestors of the incoming path, `src/app/` is its parent.
+    dirty: ['README.md', 'src/app/edit.js'],
+    ignored: ['build.log', 'dist', 'src/app/cache', 'src/node_modules'],
+  });
+  assert.deepEqual(snapshotScope(local, []), { dirty: [], ignored: [] });
+  assert.deepEqual(snapshotScope({ dirty: ['SRC/App/Edit.js'], ignored: [] }, ['src/app/x.js']), {
+    dirty: [],
+    ignored: [],
+  });
+  assert.deepEqual(
+    snapshotScope({ dirty: ['SRC/App/Edit.js'], ignored: [] }, ['src/app/x.js'], {
+      ignoreCase: true,
+    }),
+    { dirty: ['SRC/App/Edit.js'], ignored: [] },
+  );
+});
+
+test('upstream-status rejects a non-boolean fetch before touching the repository', async () => {
+  for (const fetch of ['true', 1, null, {}]) {
+    const envelope = await executeOperation('upstream-status', { root: '/nonexistent', fetch });
+    assert.equal(envelope.ok, false, String(fetch));
+    assert.equal(envelope.operation, 'upstream-status');
+    assert.equal(envelope.dryRun, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.deepEqual(envelope.error.details, { field: 'fetch' });
+  }
+  const notObject = await executeOperation('upstream-status', []);
+  assert.equal(notObject.error.code, 'INVALID_PAYLOAD');
+});
+
+test('fast-forward validates its pinned expectations and reports no mutation', async () => {
+  const valid = {
+    root: '/nonexistent',
+    expectedBranch: 'main',
+    expectedHeadOid: OID,
+    expectedUpstreamOid: OTHER_OID,
+  };
+  const cases = [
+    [{ ...valid, expectedBranch: undefined }, 'expectedBranch'],
+    [{ ...valid, expectedBranch: '  ' }, 'expectedBranch'],
+    [{ ...valid, expectedHeadOid: undefined }, 'expectedHeadOid'],
+    [{ ...valid, expectedHeadOid: 'A'.repeat(40) }, 'expectedHeadOid'],
+    [{ ...valid, expectedHeadOid: '1'.repeat(39) }, 'expectedHeadOid'],
+    [{ ...valid, expectedHeadOid: '1'.repeat(50) }, 'expectedHeadOid'],
+    [{ ...valid, expectedHeadOid: '1'.repeat(65) }, 'expectedHeadOid'],
+    [{ ...valid, expectedUpstreamOid: undefined }, 'expectedUpstreamOid'],
+    [{ ...valid, expectedUpstreamOid: 'HEAD' }, 'expectedUpstreamOid'],
+    [{ ...valid, expectedUpstreamOid: `-${'1'.repeat(40)}` }, 'expectedUpstreamOid'],
+  ];
+  for (const [input, field] of cases) {
+    for (const apply of [false, true]) {
+      const envelope = await executeOperation('fast-forward', input, { apply });
+      assert.equal(envelope.ok, false, field);
+      assert.equal(envelope.operation, 'fast-forward');
+      assert.equal(envelope.dryRun, !apply, field);
+      assert.equal(envelope.error.code, 'INVALID_PAYLOAD', field);
+      assert.equal(envelope.error.details.field, field);
+      assert.equal(envelope.error.details.mutationMayHaveSucceeded, false, field);
+    }
+  }
+});
+
+test('overlap covers equal, parent, child, and gitlink paths only', () => {
+  const incoming = { paths: ['docs/guide.md', 'src/lib', 'vendor/sub'], gitlinks: ['vendor/sub'] };
+
+  assert.deepEqual(computeOverlap([], { paths: [], gitlinks: [] }), []);
+  assert.deepEqual(computeOverlap(['docs/guide.md'], incoming), ['docs/guide.md', 'vendor/sub']);
+  // A local file where the upstream adds a directory, and a local directory entry above it.
+  assert.deepEqual(computeOverlap(['docs'], incoming), ['docs', 'vendor/sub']);
+  assert.deepEqual(computeOverlap(['docs/'], incoming), ['docs/', 'vendor/sub']);
+  // A local path below an incoming file that becomes a directory locally.
+  assert.deepEqual(computeOverlap(['src/lib/index.js'], incoming), [
+    'src/lib/index.js',
+    'vendor/sub',
+  ]);
+  // Shared prefixes that are not path ancestors never overlap.
+  assert.deepEqual(
+    computeOverlap(['docs/guide.md.bak', 'src/library', 'doc'], {
+      paths: incoming.paths,
+      gitlinks: [],
+    }),
+    [],
+  );
+  // An incoming gitlink always overlaps, even with no local path at all.
+  assert.deepEqual(computeOverlap([], incoming), ['vendor/sub']);
+});
+
+test('overlap folds case only when the repository ignores case', () => {
+  const incoming = { paths: ['Docs/Guide.md'], gitlinks: [] };
+
+  assert.deepEqual(computeOverlap(['docs/guide.md'], incoming), []);
+  assert.deepEqual(computeOverlap(['docs/guide.md'], incoming, { ignoreCase: false }), []);
+  assert.deepEqual(computeOverlap(['docs/guide.md'], incoming, { ignoreCase: true }), [
+    'docs/guide.md',
+  ]);
+  assert.deepEqual(computeOverlap(['DOCS'], incoming, { ignoreCase: true }), ['DOCS']);
+});
+
+test('an unexpected runner exception before the merge is a COMMAND_FAILED without mutation', async () => {
+  const runner = () => {
+    throw Object.assign(new Error('runner exploded'), { code: 'EBOOM' });
+  };
+  const envelope = await executeOperation(
+    'fast-forward',
+    {
+      root: process.cwd(),
+      expectedBranch: 'main',
+      expectedHeadOid: OID,
+      expectedUpstreamOid: OTHER_OID,
+    },
+    { runner, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.deepEqual(envelope.error.details, { mutationMayHaveSucceeded: false, cause: 'EBOOM' });
 });

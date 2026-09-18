@@ -243,22 +243,27 @@ When the implementation is already present as local changes, use:
 /effective-flow deliver
 ```
 
-You do not need to prepare a structured path list. `deliver` derives a candidate from concrete file
-changes made in the current session, shows the complete ordered file/state selection, and asks you
-to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
+You do not need to prepare a structured path list. First, `deliver` compares your branch with its
+upstream. If the branch is behind, it offers to fast-forward it; if the branch has diverged or
+local changes are in the way, it asks whether to continue without an update; otherwise it only
+notes the state. It then derives a candidate from concrete file changes made in the current
+session, shows the complete ordered file/state selection, and asks you to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
 partially staged, choose either its staged state or its complete working-tree state. If session and
 Git evidence do not identify one exact scope, the tool asks for clarification and aborts without
 mutation if the scope remains ambiguous.
 
-That manifest confirmation is the only routine approval. `deliver` then derives and displays the
+That manifest confirmation is the only routine approval; the upstream questions are the only ones
+that can come before it, and they come up only when your branch is behind its upstream, either
+cleanly or with its own commits or local changes in the way. `deliver` then derives and displays the
 ordered commit groups, validates their exact partition, and continues automatically without a
 commit-group confirmation. If grouping is ambiguous, it aborts before staging; if the manifest
 drifts, it displays the changed selection and asks you to confirm it again. It transfers only the
 confirmed states to a fresh branch and worktree based on the refreshed configured base, commits
 each coherent group in order, and opens a pull request only after every commit and the final clean
-branch are verified. Your source checkout and its unrelated changes remain untouched. If a later
-commit group fails, the delivery branch and worktree remain available with earlier commits and the
-uncommitted groups; nothing is pushed and no PR is opened.
+branch are verified. Apart from that optional fast-forward, which runs only if you confirm it,
+your source checkout and its unrelated changes remain untouched. If a later commit group fails, the
+delivery branch and worktree remain available with earlier commits and the uncommitted groups;
+nothing is pushed and no PR is opened.
 
 Use `/effective-flow commit` instead when the exact intended diff is already staged. Use
 `/effective-flow pr` only when all intended content is already committed on a clean, attached,

@@ -167,8 +167,11 @@ After selection, `deliver` proposes an ordered partition into coherent commits a
 confirm the exact paths, order, and tentative commit effect for every group. It then refreshes the
 configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch in an
 Effective Flow-owned worktree. Only the confirmed states are transferred. The source checkout may
-be dirty, detached, on the base branch, or harness-managed; it remains unchanged, including its
-index and all non-selected files.
+be dirty, detached, on the base branch, or harness-managed; once `deliver` has recorded its
+evidence, it remains unchanged, including its index and all non-selected files. The only earlier
+write is an optional fast-forward to the branch's upstream, which runs only when you confirm it
+before the selection (see
+[When your branch is behind its upstream](tools-deliver.md#when-your-branch-is-behind-its-upstream)).
 
 Each group is staged separately in the delivery worktree and committed through the staged-only
 `commit` tool. The pull request is opened through the commit-only `pr` tool only after all groups

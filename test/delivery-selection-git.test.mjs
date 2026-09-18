@@ -10,19 +10,24 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
   bindSelectionManifest,
+  fastForwardUpstream,
   inventoryRepository,
+  nonInteractiveFetchEnv,
   reconcileDelivery,
   transferSelection,
+  upstreamStatus,
   verifySourceManifest,
 } from '../src/scripts/delivery-selection-core.mjs';
 
@@ -640,4 +645,834 @@ test('mixed already-applied file-to-directory selection reconciles after an acti
   );
   assert.equal(reconciled.exact, true);
   assert.deepEqual(sourceSnapshot(sourceRoot), sourceBefore);
+});
+
+// --- Pre-selection upstream status and fast-forward ---
+//
+// These fixtures run with no global or XDG Git configuration, so a developer's global
+// `core.hooksPath`, excludes file, or `pull.rebase` cannot leak into the source checkout under test.
+
+const UPSTREAM_GIT_ENV = {
+  ...GIT_ENV,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  XDG_CONFIG_HOME: join(tmpdir(), 'effective-flow-upstream-no-xdg-config'),
+};
+
+// Asynchronous like the shipped CLI runner: the fast-forward merge call chains on the promise.
+async function upstreamRunner({ executable, args = [], stdin, cwd, env, timeout }) {
+  const result = spawnSync(executable, args, {
+    cwd,
+    env: env === undefined ? UPSTREAM_GIT_ENV : { ...UPSTREAM_GIT_ENV, ...env },
+    input: stdin,
+    timeout,
+    encoding: null,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout ?? Buffer.alloc(0),
+    stderr: result.stderr ?? Buffer.alloc(0),
+    error: result.error,
+  };
+}
+
+function ugit(root, ...args) {
+  const result = spawnSync('git', ['-C', root, ...args], {
+    env: UPSTREAM_GIT_ENV,
+    encoding: null,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr?.toString('utf8'));
+  return result.stdout.toString('utf8').trim();
+}
+
+function configureClone(root) {
+  ugit(root, 'config', 'user.name', 'Effective Flow Test');
+  ugit(root, 'config', 'user.email', 'effective-flow@example.invalid');
+  ugit(root, 'config', 'core.hooksPath', join(root, '.git', 'hooks'));
+}
+
+// A bare remote plus two clones: `seed` publishes upstream commits, `local` is the source checkout.
+function createUpstreamFixture(t) {
+  const container = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-upstream-')));
+  t.after(() => rmSync(container, { recursive: true, force: true }));
+  const remote = join(container, 'remote.git');
+  const seed = join(container, 'seed');
+  const local = join(container, 'local');
+  mkdirSync(remote);
+  ugit(remote, 'init', '--bare', '--initial-branch=main');
+  mkdirSync(seed);
+  ugit(seed, 'init', '--initial-branch=main');
+  configureClone(seed);
+  ugit(seed, 'remote', 'add', 'origin', remote);
+  write(seed, '.gitignore', '*.log\nignored-dir/\n');
+  write(seed, 'shared.txt', 'shared base\n');
+  write(seed, 'staged.txt', 'staged base\n');
+  write(seed, 'working.txt', 'working base\n');
+  write(seed, 'old.txt', 'rename source\n');
+  ugit(seed, 'add', '.');
+  ugit(seed, 'commit', '-m', 'seed');
+  ugit(seed, 'push', '-u', 'origin', 'main');
+  ugit(container, 'clone', '--quiet', remote, local);
+  configureClone(local);
+  return { container, remote, seed, local };
+}
+
+// Publishes one upstream commit from `seed` and returns its object id. A change that stages its
+// own index entries returns `'staged'`, so `add -A` cannot undo an entry with no worktree file.
+function publish(seed, message, change) {
+  if (change(seed) !== 'staged') ugit(seed, 'add', '-A');
+  ugit(seed, 'commit', '-m', message);
+  ugit(seed, 'push', '--quiet', 'origin', 'HEAD');
+  return ugit(seed, 'rev-parse', 'HEAD');
+}
+
+function localCommit(root, relativePath, content) {
+  write(root, relativePath, content);
+  ugit(root, 'add', '--', relativePath);
+  ugit(root, 'commit', '-m', `local ${relativePath}`);
+  return ugit(root, 'rev-parse', 'HEAD');
+}
+
+// The status helper pins an empty inherited environment so a developer's own GIT_SSH_COMMAND or
+// GIT_SSH cannot change the fetch environment under test.
+async function status(root, fetch = true, runner = upstreamRunner, env = {}) {
+  return await upstreamStatus({ root, fetch }, { runner, env });
+}
+
+const IDLE_FETCH = { attempted: false, ok: null, stale: null, error: null, skipped: null };
+const FETCHED = { attempted: true, ok: true, stale: false, error: null, skipped: null };
+
+function fastForwardPayload(root, result) {
+  return {
+    root,
+    expectedBranch: result.branch,
+    expectedHeadOid: result.headOid,
+    expectedUpstreamOid: result.upstreamOid,
+  };
+}
+
+async function rejection(promise) {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  assert.fail('expected the operation to be rejected');
+}
+
+function checkoutSnapshot(root, paths) {
+  const run = (...args) =>
+    spawnSync('git', ['-C', root, ...args], { env: UPSTREAM_GIT_ENV, encoding: null }).stdout;
+  return {
+    head: ugit(root, 'rev-parse', 'HEAD'),
+    branch: ugit(root, 'symbolic-ref', '-q', 'HEAD'),
+    index: run('ls-files', '--stage', '-z'),
+    stagedDiff: run('diff', '--cached', '--binary'),
+    workingDiff: run('diff', '--binary'),
+    files: Object.fromEntries(
+      paths.map((relativePath) => {
+        const target = join(root, relativePath);
+        if (!existsSync(target)) return [relativePath, null];
+        return [
+          relativePath,
+          { bytes: readFileSync(target).toString('base64'), mode: statSync(target).mode },
+        ];
+      }),
+    ),
+  };
+}
+
+test('upstream status reports detached, no-upstream, upstream-gone, and up-to-date states', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  const head = ugit(local, 'rev-parse', 'HEAD');
+
+  const upToDate = await status(local);
+  assert.equal(upToDate.state, 'up-to-date');
+  assert.equal(upToDate.branch, 'main');
+  assert.equal(upToDate.upstream, 'origin/main');
+  assert.equal(upToDate.headOid, head);
+  assert.equal(upToDate.upstreamOid, head);
+  assert.equal(upToDate.mergeBaseOid, head);
+  assert.deepEqual([upToDate.ahead, upToDate.behind], [0, 0]);
+  assert.deepEqual(upToDate.fetch, FETCHED);
+
+  ugit(local, 'checkout', '--quiet', '-b', 'feature');
+  const noUpstream = await status(local);
+  assert.equal(noUpstream.state, 'no-upstream');
+  assert.equal(noUpstream.branch, 'feature');
+  assert.equal(noUpstream.fetch.attempted, false);
+
+  ugit(local, 'config', 'branch.feature.remote', 'origin');
+  ugit(local, 'config', 'branch.feature.merge', 'refs/heads/missing');
+  const gone = await status(local, false);
+  assert.equal(gone.state, 'upstream-gone');
+  assert.equal(gone.upstreamOid, null);
+  assert.equal(gone.fetch.attempted, false);
+
+  ugit(local, 'checkout', '--quiet', '--detach');
+  const detached = await status(local);
+  assert.equal(detached.state, 'detached');
+  assert.equal(detached.branch, null);
+  assert.equal(detached.headOid, head);
+  assert.equal(detached.fetch.attempted, false);
+});
+
+test('upstream status reports ahead, behind, behind-overlap, and diverged states', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+
+  localCommit(local, 'local-only.txt', 'ahead\n');
+  const ahead = await status(local);
+  assert.equal(ahead.state, 'ahead');
+  assert.deepEqual([ahead.ahead, ahead.behind], [1, 0]);
+  ugit(local, 'reset', '--quiet', '--hard', 'origin/main');
+
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const behind = await status(local);
+  assert.equal(behind.state, 'behind');
+  assert.deepEqual([behind.ahead, behind.behind], [0, 1]);
+  assert.equal(behind.upstreamOid, upstreamOid);
+  assert.deepEqual(behind.incomingPaths, ['incoming.txt']);
+  assert.deepEqual(behind.overlappingPaths, []);
+
+  write(local, 'incoming.txt', 'local untracked copy\n');
+  const overlap = await status(local);
+  assert.equal(overlap.state, 'behind-overlap');
+  assert.deepEqual(overlap.overlappingPaths, ['incoming.txt']);
+  rmSync(join(local, 'incoming.txt'));
+
+  localCommit(local, 'local-only.txt', 'diverged\n');
+  const diverged = await status(local);
+  assert.equal(diverged.state, 'diverged');
+  assert.deepEqual([diverged.ahead, diverged.behind], [1, 1]);
+});
+
+test('upstream status fetches only on request, with hooks disabled and a non-interactive environment', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const calls = [];
+  const recording = (call) => {
+    calls.push(call);
+    return upstreamRunner(call);
+  };
+
+  const unfetched = await status(local, false, recording);
+  assert.equal(unfetched.state, 'up-to-date');
+  assert.deepEqual(unfetched.fetch, IDLE_FETCH);
+  assert.equal(
+    calls.some((call) => call.args.includes('fetch')),
+    false,
+  );
+
+  const fetched = await status(local, true, recording);
+  assert.equal(fetched.state, 'behind');
+  assert.equal(fetched.upstreamOid, upstreamOid);
+  assert.deepEqual(fetched.fetch, FETCHED);
+  const fetchCall = calls.find((call) => call.args.includes('fetch'));
+  assert.ok(fetchCall.args.includes('core.hooksPath=/dev/null'));
+  assert.deepEqual(fetchCall.args.slice(-3), ['--', 'origin', 'refs/heads/main']);
+  assert.deepEqual(fetchCall.env, nonInteractiveFetchEnv());
+  assert.equal(fetchCall.env.GIT_SSH_COMMAND, 'ssh -o BatchMode=yes');
+  assert.equal(fetchCall.timeout, 60000);
+});
+
+test('the upstream fetch keeps a configured core.sshCommand and adds only BatchMode', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  ugit(local, 'config', 'core.sshCommand', 'ssh -i /nonexistent/deploy-key -F /dev/null');
+  const calls = [];
+  const recording = (call) => {
+    calls.push(call);
+    return upstreamRunner(call);
+  };
+
+  await status(local, true, recording);
+  const fetchCall = calls.find((call) => call.args.includes('fetch'));
+  assert.equal(
+    fetchCall.env.GIT_SSH_COMMAND,
+    'ssh -i /nonexistent/deploy-key -F /dev/null -o BatchMode=yes',
+  );
+  assert.equal(fetchCall.env.GIT_TERMINAL_PROMPT, '0');
+
+  // An inherited GIT_SSH_COMMAND outranks the configured command, as it does in Git.
+  calls.length = 0;
+  await status(local, true, recording, { GIT_SSH_COMMAND: 'ssh -p 2222' });
+  assert.equal(
+    calls.find((call) => call.args.includes('fetch')).env.GIT_SSH_COMMAND,
+    'ssh -p 2222 -o BatchMode=yes',
+  );
+
+  // With only GIT_SSH inherited and no configured command, the program is left in charge.
+  ugit(local, 'config', '--unset', 'core.sshCommand');
+  calls.length = 0;
+  await status(local, true, recording, { GIT_SSH: '/usr/bin/plink' });
+  const plinkFetch = calls.find((call) => call.args.includes('fetch'));
+  assert.equal('GIT_SSH_COMMAND' in plinkFetch.env, false);
+  assert.equal(plinkFetch.env.GIT_TERMINAL_PROMPT, '0');
+});
+
+test('a fetch that times out is reported as fetch.error timeout without failing the status', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  const runner = (call) =>
+    call.args.includes('fetch')
+      ? {
+          status: null,
+          signal: 'SIGKILL',
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.alloc(0),
+          error: { code: 'ETIMEDOUT' },
+        }
+      : upstreamRunner(call);
+
+  const result = await status(local, true, runner);
+  assert.equal(result.state, 'up-to-date');
+  assert.deepEqual(result.fetch, {
+    attempted: true,
+    ok: false,
+    stale: null,
+    error: 'timeout',
+    skipped: null,
+  });
+});
+
+test('unrelated histories are reported as diverged with no merge base', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  ugit(seed, 'checkout', '--quiet', '--orphan', 'replacement');
+  ugit(seed, 'rm', '-r', '-q', '--cached', '.');
+  write(seed, 'unrelated.txt', 'unrelated history\n');
+  ugit(seed, 'add', '--', 'unrelated.txt');
+  ugit(seed, 'commit', '-q', '-m', 'unrelated root');
+  ugit(seed, 'push', '--quiet', '--force', 'origin', 'replacement:main');
+
+  const result = await status(local);
+  assert.equal(result.state, 'diverged');
+  assert.equal(result.mergeBaseOid, null);
+  assert.ok(result.ahead > 0);
+  assert.ok(result.behind > 0);
+  assert.deepEqual(result.incomingPaths, []);
+  assert.deepEqual(result.fetch, FETCHED);
+});
+
+test('upstream status reports a failed fetch without failing the operation', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  ugit(local, 'remote', 'set-url', 'origin', join(local, 'no-such-remote.git'));
+
+  const result = await status(local);
+  assert.equal(result.state, 'up-to-date');
+  assert.equal(result.fetch.attempted, true);
+  assert.equal(result.fetch.ok, false);
+  assert.equal(result.fetch.stale, null);
+  assert.equal(result.fetch.skipped, null);
+  assert.equal(typeof result.fetch.error, 'string');
+  assert.ok(result.fetch.error.length > 0);
+  assert.ok(result.fetch.error.length <= 2000);
+});
+
+test('a local-dot upstream is compared without any fetch', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  ugit(local, 'checkout', '--quiet', '-b', 'topic');
+  ugit(local, 'branch', '--quiet', '--set-upstream-to=main');
+  assert.equal(ugit(local, 'config', 'branch.topic.remote'), '.');
+  ugit(local, 'checkout', '--quiet', 'main');
+  const mainOid = localCommit(local, 'main-only.txt', 'moved main\n');
+  ugit(local, 'checkout', '--quiet', 'topic');
+  const calls = [];
+
+  const result = await status(local, true, (call) => {
+    calls.push(call);
+    return upstreamRunner(call);
+  });
+  assert.equal(result.state, 'behind');
+  assert.equal(result.upstreamOid, mainOid);
+  assert.equal(result.upstream, 'main');
+  assert.deepEqual(result.fetch, IDLE_FETCH);
+  assert.equal(
+    calls.some((call) => call.args.includes('fetch')),
+    false,
+  );
+});
+
+test('a merge ref that differs from the branch name is fetched and compared', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  ugit(local, 'checkout', '--quiet', '-b', 'work', '--track', 'origin/main');
+  assert.equal(ugit(local, 'config', 'branch.work.merge'), 'refs/heads/main');
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  assert.equal(result.branch, 'work');
+  assert.equal(result.upstream, 'origin/main');
+  assert.equal(result.upstreamOid, upstreamOid);
+  assert.deepEqual(result.fetch, FETCHED);
+});
+
+test('a narrowed fetch refspec that leaves the tracking ref behind reports a stale fetch', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  ugit(local, 'config', 'remote.origin.fetch', '+refs/heads/other:refs/remotes/origin/other');
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+
+  const result = await status(local);
+  assert.equal(result.fetch.attempted, true);
+  assert.equal(result.fetch.ok, true);
+  assert.equal(result.fetch.stale, true);
+  // The narrowed refspec maps no tracking ref for `main`, so the fetched commit never becomes
+  // `@{u}` and the status cannot claim `behind` from it.
+  assert.equal(result.state, 'upstream-gone');
+  assert.equal(result.upstreamOid, null);
+});
+
+test('core.ignorecase makes the overlap check case-insensitive', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'Notes.txt', 'upstream\n'));
+  write(local, 'NOTES.txt', 'local untracked\n');
+
+  ugit(local, 'config', 'core.ignorecase', 'true');
+  const folded = await status(local);
+  assert.equal(folded.state, 'behind-overlap');
+  assert.deepEqual(folded.overlappingPaths, ['NOTES.txt']);
+});
+
+test('an option-like or malformed remote or merge ref skips the fetch and still classifies', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  const head = ugit(local, 'rev-parse', 'HEAD');
+  for (const [key, value] of [
+    ['branch.main.remote', '--upload-pack=touch pwned'],
+    ['branch.main.merge', '--upload-pack=touch pwned'],
+    ['branch.main.merge', 'main'],
+    ['branch.main.merge', 'refs/heads/main:refs/heads/other'],
+    ['branch.main.merge', '+refs/heads/main'],
+    ['branch.main.merge', 'refs/heads/*'],
+    ['branch.main.merge', 'refs/heads/ma^in'],
+    ['branch.main.merge', 'refs/heads/ma in'],
+    ['branch.main.merge', 'refs/heads/main..x'],
+  ]) {
+    const label = `${key}=${value}`;
+    const original = ugit(local, 'config', key);
+    ugit(local, 'config', key, value);
+    const calls = [];
+    const result = await status(local, true, (call) => {
+      calls.push(call);
+      return upstreamRunner(call);
+    });
+    assert.deepEqual(
+      result.fetch,
+      { attempted: false, ok: null, stale: null, error: null, skipped: 'invalid-config' },
+      label,
+    );
+    assert.equal(result.headOid, head, label);
+    assert.ok(['upstream-gone', 'up-to-date'].includes(result.state), label);
+    assert.equal(
+      calls.some((call) => call.args.includes('fetch')),
+      false,
+      label,
+    );
+    ugit(local, 'config', key, original);
+  }
+  assert.equal(existsSync(join(local, 'pwned')), false);
+});
+
+test('a fast-forward dry run previews the update without changing the checkout', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  write(local, 'working.txt', 'unstaged edit\n');
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  const before = checkoutSnapshot(local, ['working.txt', 'incoming.txt']);
+
+  const preview = await fastForwardUpstream(fastForwardPayload(local, result), {
+    runner: upstreamRunner,
+  });
+  assert.deepEqual(preview, {
+    branch: 'main',
+    fromOid: result.headOid,
+    toOid: result.upstreamOid,
+    incomingPaths: ['incoming.txt'],
+    hooksSkipped: true,
+    applied: false,
+  });
+  assert.deepEqual(checkoutSnapshot(local, ['working.txt', 'incoming.txt']), before);
+});
+
+test('an applied fast-forward preserves unrelated staged, unstaged, untracked, and ignored state', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const upstreamOid = publish(seed, 'incoming', (root) => {
+    write(root, 'incoming.txt', 'new\n');
+    write(root, 'shared.txt', 'shared upstream\n');
+  });
+  write(local, 'staged.txt', 'staged local edit\n');
+  ugit(local, 'add', '--', 'staged.txt');
+  write(local, 'working.txt', 'unstaged local edit\n');
+  write(local, 'untracked.sh', '#!/bin/sh\nexit 0\n');
+  chmodSync(join(local, 'untracked.sh'), 0o755);
+  write(local, 'build.log', 'ignored local bytes\n');
+  write(local, 'ignored-dir/nested.bin', Buffer.from([0, 1, 2, 3]));
+  const localPaths = [
+    'staged.txt',
+    'working.txt',
+    'untracked.sh',
+    'build.log',
+    'ignored-dir/nested.bin',
+  ];
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  const before = checkoutSnapshot(local, localPaths);
+
+  const applied = await fastForwardUpstream(fastForwardPayload(local, result), {
+    runner: upstreamRunner,
+    apply: true,
+  });
+  assert.equal(applied.applied, true);
+  assert.equal(applied.newHeadOid, upstreamOid);
+  assert.equal(applied.fromOid, result.headOid);
+  assert.equal(applied.hooksSkipped, true);
+  assert.ok(applied.verifiedPathCount >= localPaths.length);
+
+  const after = checkoutSnapshot(local, localPaths);
+  assert.equal(after.head, upstreamOid);
+  assert.equal(after.branch, 'refs/heads/main');
+  assert.deepEqual(after.files, before.files);
+  assert.deepEqual(after.stagedDiff, before.stagedDiff);
+  assert.deepEqual(after.workingDiff, before.workingDiff);
+  assert.equal(readFileSync(join(local, 'incoming.txt'), 'utf8'), 'new\n');
+  assert.equal(readFileSync(join(local, 'shared.txt'), 'utf8'), 'shared upstream\n');
+  assert.equal(statSync(join(local, 'untracked.sh')).mode & 0o777, 0o755);
+});
+
+const OVERLAP_CASES = [
+  {
+    name: 'a modified tracked file the upstream also changes',
+    upstream: (root) => write(root, 'shared.txt', 'shared upstream\n'),
+    local: (root) => write(root, 'shared.txt', 'shared local edit\n'),
+    overlapping: ['shared.txt'],
+    preserved: ['shared.txt'],
+  },
+  {
+    name: 'an untracked file the upstream adds',
+    upstream: (root) => write(root, 'added.txt', 'upstream added\n'),
+    local: (root) => write(root, 'added.txt', 'local untracked\n'),
+    overlapping: ['added.txt'],
+    preserved: ['added.txt'],
+  },
+  {
+    name: 'an ignored local file the upstream adds',
+    upstream: (root) => {
+      write(root, 'release.log', 'upstream tracked log\n');
+      ugit(root, 'add', '-f', '--', 'release.log');
+    },
+    local: (root) => write(root, 'release.log', 'local ignored log\n'),
+    overlapping: ['release.log'],
+    preserved: ['release.log'],
+  },
+  {
+    name: "a local change to an upstream rename's source path",
+    upstream: (root) => renameSync(join(root, 'old.txt'), join(root, 'renamed.txt')),
+    local: (root) => write(root, 'old.txt', 'rename source local edit\n'),
+    overlapping: ['old.txt'],
+    preserved: ['old.txt', 'renamed.txt'],
+  },
+  {
+    name: 'a local rename whose source the upstream modifies',
+    upstream: (root) => write(root, 'old.txt', 'rename source upstream edit\n'),
+    local: (root) => ugit(root, 'mv', 'old.txt', 'local-renamed.txt'),
+    overlapping: ['old.txt'],
+    preserved: ['old.txt', 'local-renamed.txt'],
+  },
+  {
+    name: 'a local untracked file where the upstream adds a directory',
+    upstream: (root) => write(root, 'clash/child.txt', 'upstream child\n'),
+    local: (root) => write(root, 'clash', 'local file\n'),
+    overlapping: ['clash'],
+    preserved: ['clash'],
+  },
+  {
+    name: 'an incoming gitlink',
+    upstream: (root) => {
+      const oid = ugit(root, 'rev-parse', 'HEAD');
+      ugit(root, 'update-index', '--add', '--cacheinfo', `160000,${oid},vendor/sub`);
+      return 'staged';
+    },
+    local: () => {},
+    overlapping: ['vendor/sub'],
+    preserved: ['vendor/sub'],
+  },
+];
+
+for (const overlapCase of OVERLAP_CASES) {
+  test(`fast-forward is refused without mutation for ${overlapCase.name}`, async (t) => {
+    const { seed, local } = createUpstreamFixture(t);
+    publish(seed, overlapCase.name, overlapCase.upstream);
+    overlapCase.local(local);
+    const result = await status(local);
+    assert.equal(result.state, 'behind-overlap');
+    assert.deepEqual(result.overlappingPaths, overlapCase.overlapping);
+    const before = checkoutSnapshot(local, overlapCase.preserved);
+
+    const error = await rejection(
+      fastForwardUpstream(fastForwardPayload(local, result), {
+        runner: upstreamRunner,
+        apply: true,
+      }),
+    );
+    assert.equal(error.code, 'SOURCE_DRIFT');
+    assert.equal(error.details.mutationMayHaveSucceeded, false);
+    assert.deepEqual(error.details.overlappingPaths, overlapCase.overlapping);
+    assert.deepEqual(checkoutSnapshot(local, overlapCase.preserved), before);
+  });
+}
+
+test('an applied fast-forward does not run the post-merge hook', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const hook = join(local, '.git', 'hooks', 'post-merge');
+  write(local, '.git/hooks/post-merge', '#!/bin/sh\necho ran > hook-ran.txt\n');
+  chmodSync(hook, 0o755);
+  publish(seed, 'first', (root) => write(root, 'first.txt', 'first\n'));
+  const result = await status(local);
+
+  await fastForwardUpstream(fastForwardPayload(local, result), {
+    runner: upstreamRunner,
+    apply: true,
+  });
+  assert.equal(ugit(local, 'rev-parse', 'HEAD'), result.upstreamOid);
+  assert.equal(existsSync(join(local, 'hook-ran.txt')), false);
+
+  // Control: the same hook does run on an ordinary fast-forward merge, so its absence above is the
+  // helper's doing and not a hook that could never fire.
+  publish(seed, 'second', (root) => write(root, 'second.txt', 'second\n'));
+  ugit(local, 'fetch', '--quiet', 'origin');
+  ugit(local, 'merge', '--ff-only', '--quiet', 'origin/main');
+  assert.equal(existsSync(join(local, 'hook-ran.txt')), true);
+});
+
+test('HEAD drift between status and apply fails as SOURCE_DRIFT without mutation', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  const driftedHead = localCommit(local, 'drift.txt', 'drift\n');
+
+  const error = await rejection(
+    fastForwardUpstream(fastForwardPayload(local, result), {
+      runner: upstreamRunner,
+      apply: true,
+    }),
+  );
+  assert.equal(error.code, 'SOURCE_DRIFT');
+  assert.equal(error.details.mutationMayHaveSucceeded, false);
+  assert.equal(ugit(local, 'rev-parse', 'HEAD'), driftedHead);
+});
+
+test('fast-forward targets the pinned upstream commit even after the tracking ref moves', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const pinned = publish(seed, 'first', (root) => write(root, 'first.txt', 'first\n'));
+  const result = await status(local);
+  assert.equal(result.upstreamOid, pinned);
+  const moved = publish(seed, 'second', (root) => write(root, 'second.txt', 'second\n'));
+  ugit(local, 'fetch', '--quiet', 'origin');
+  assert.equal(ugit(local, 'rev-parse', 'origin/main'), moved);
+
+  const applied = await fastForwardUpstream(fastForwardPayload(local, result), {
+    runner: upstreamRunner,
+    apply: true,
+  });
+  assert.equal(applied.newHeadOid, pinned);
+  assert.equal(ugit(local, 'rev-parse', 'HEAD'), pinned);
+  assert.equal(existsSync(join(local, 'second.txt')), false);
+});
+
+function isMergeCall(call) {
+  return call.args.includes('merge') && call.args.includes('--ff-only');
+}
+
+test('a local change after the merge fails verification with mutationMayHaveSucceeded true', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  write(local, 'working.txt', 'unstaged local edit\n');
+  const result = await status(local);
+  const runner = async (call) => {
+    const outcome = await upstreamRunner(call);
+    if (isMergeCall(call)) write(local, 'working.txt', 'changed during the merge\n');
+    return outcome;
+  };
+
+  const error = await rejection(
+    fastForwardUpstream(fastForwardPayload(local, result), { runner, apply: true }),
+  );
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.equal(error.details.mutationMayHaveSucceeded, true);
+  assert.equal(error.details.oldHeadOid, result.headOid);
+  assert.equal(error.details.newHeadOid, upstreamOid);
+  assert.deepEqual(error.details.differingPaths, ['working.txt']);
+});
+
+test('a merge Git refuses without writing reports mutationMayHaveSucceeded false', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  write(local, 'working.txt', 'unstaged local edit\n');
+  const result = await status(local);
+  const before = checkoutSnapshot(local, ['working.txt', 'incoming.txt']);
+  const runner = async (call) =>
+    isMergeCall(call)
+      ? { status: 128, stdout: Buffer.alloc(0), stderr: Buffer.from('refused'), error: undefined }
+      : upstreamRunner(call);
+
+  const error = await rejection(
+    fastForwardUpstream(fastForwardPayload(local, result), { runner, apply: true }),
+  );
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.equal(error.details.mutationMayHaveSucceeded, false);
+  assert.equal(error.details.status, 128);
+  assert.equal(error.details.stderr, 'refused');
+  assert.deepEqual(checkoutSnapshot(local, ['working.txt', 'incoming.txt']), before);
+});
+
+test('a real Git refusal on a held index lock reports no mutation and its stderr', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  write(local, 'working.txt', 'unstaged local edit\n');
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  const lock = join(local, '.git', 'index.lock');
+  writeFileSync(lock, '');
+  t.after(() => rmSync(lock, { force: true }));
+  const before = checkoutSnapshot(local, ['working.txt', 'incoming.txt']);
+
+  const error = await rejection(
+    fastForwardUpstream(fastForwardPayload(local, result), {
+      runner: upstreamRunner,
+      apply: true,
+    }),
+  );
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.equal(error.message, 'git refused the fast-forward');
+  assert.equal(error.details.mutationMayHaveSucceeded, false);
+  assert.notEqual(error.details.status, 0);
+  assert.match(error.details.stderr, /index\.lock/);
+  assert.ok(error.details.stderr.length <= 2000);
+  assert.deepEqual(checkoutSnapshot(local, ['working.txt', 'incoming.txt']), before);
+});
+
+test('a runner exception on the post-merge HEAD read reports mutationMayHaveSucceeded true', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const result = await status(local);
+  let merged = false;
+  const runner = async (call) => {
+    if (isMergeCall(call)) {
+      merged = true;
+      return upstreamRunner(call);
+    }
+    if (merged && call.args.at(-2) === 'rev-parse' && call.args.at(-1) === 'HEAD') {
+      throw Object.assign(new Error('runner lost'), { code: 'EPIPE' });
+    }
+    return upstreamRunner(call);
+  };
+
+  const error = await rejection(
+    fastForwardUpstream(fastForwardPayload(local, result), { runner, apply: true }),
+  );
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.equal(error.message, 'fast-forward outcome could not be verified');
+  assert.equal(error.details.mutationMayHaveSucceeded, true);
+  assert.equal(error.details.cause, 'EPIPE');
+  assert.equal(error.details.oldHeadOid, result.headOid);
+});
+
+for (const [name, drift] of [
+  ['a different branch at the same commit', (root) => ugit(root, 'checkout', '-q', '-b', 'other')],
+  ['a detached HEAD at the same commit', (root) => ugit(root, 'checkout', '-q', '--detach')],
+]) {
+  test(`branch drift to ${name} fails as SOURCE_DRIFT without mutation`, async (t) => {
+    const { seed, local } = createUpstreamFixture(t);
+    publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+    const result = await status(local);
+    assert.equal(result.state, 'behind');
+    drift(local);
+    const headBefore = ugit(local, 'rev-parse', 'HEAD');
+    const merges = [];
+
+    const error = await rejection(
+      fastForwardUpstream(fastForwardPayload(local, result), {
+        runner: (call) => {
+          if (isMergeCall(call)) merges.push(call);
+          return upstreamRunner(call);
+        },
+        apply: true,
+      }),
+    );
+    assert.equal(error.code, 'SOURCE_DRIFT');
+    assert.equal(error.details.mutationMayHaveSucceeded, false);
+    assert.equal(error.details.expected, 'main');
+    assert.deepEqual(merges, []);
+    assert.equal(ugit(local, 'rev-parse', 'HEAD'), headBefore);
+    assert.equal(existsSync(join(local, 'incoming.txt')), false);
+  });
+}
+
+test('an ignored tree outside the directories the merge writes is neither read nor verified', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const upstreamOid = publish(seed, 'incoming', (root) =>
+    write(root, 'src/app/incoming.txt', 'new\n'),
+  );
+  write(local, '.git/info/exclude', 'node_modules/\n');
+  for (const name of ['a.js', 'b.js', 'nested/c.js']) {
+    write(local, `packages/tool/node_modules/${name}`, `${name}\n`);
+  }
+  write(local, 'src/app/draft.txt', 'untracked sibling\n');
+  write(local, 'working.txt', 'unstaged local edit\n');
+  const result = await status(local);
+  assert.equal(result.state, 'behind');
+  assert.deepEqual(result.incomingPaths, ['src/app/incoming.txt']);
+  const runner = async (call) => {
+    const outcome = await upstreamRunner(call);
+    if (isMergeCall(call)) {
+      write(local, 'packages/tool/node_modules/written-during-merge.js', 'late\n');
+      writeFileSync(join(local, 'packages/tool/node_modules/a.js'), 'rewritten\n');
+    }
+    return outcome;
+  };
+
+  const applied = await fastForwardUpstream(fastForwardPayload(local, result), {
+    runner,
+    apply: true,
+  });
+  assert.equal(applied.applied, true);
+  assert.equal(applied.newHeadOid, upstreamOid);
+  // Only `working.txt` (in the root, an ancestor) and `src/app/draft.txt` (in the incoming parent)
+  // are verified. The ignored `packages/tool/node_modules/` lives in `packages/tool/`, which is
+  // neither an incoming parent nor an ancestor of one, so the write into it during the merge is
+  // outside the verified scope and does not turn the success into a possible mutation.
+  assert.equal(applied.verifiedPathCount, 2);
+  assert.equal(readFileSync(join(local, 'src/app/draft.txt'), 'utf8'), 'untracked sibling\n');
+});
+
+test('the CLI previews fast-forward by default and applies it only with --apply', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  const upstreamOid = publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  const script = fileURLToPath(new URL('../src/scripts/delivery-selection.mjs', import.meta.url));
+  const cli = (args, input) => {
+    const outcome = spawnSync(process.execPath, [script, ...args], {
+      input: JSON.stringify(input),
+      env: UPSTREAM_GIT_ENV,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    assert.equal(outcome.status, 0, outcome.stderr);
+    return JSON.parse(outcome.stdout);
+  };
+
+  const statusEnvelope = cli(['upstream-status'], { root: local, fetch: true });
+  assert.equal(statusEnvelope.ok, true);
+  assert.equal(statusEnvelope.dryRun, false);
+  assert.equal(statusEnvelope.data.state, 'behind');
+  const payload = fastForwardPayload(local, statusEnvelope.data);
+
+  const preview = cli(['fast-forward'], payload);
+  assert.equal(preview.dryRun, true);
+  assert.equal(preview.data.applied, false);
+  assert.equal(ugit(local, 'rev-parse', 'HEAD'), statusEnvelope.data.headOid);
+
+  const applied = cli(['fast-forward', '--apply'], payload);
+  assert.equal(applied.dryRun, false);
+  assert.equal(applied.data.applied, true);
+  assert.equal(ugit(local, 'rev-parse', 'HEAD'), upstreamOid);
 });
