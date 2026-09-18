@@ -42,9 +42,11 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   documents, repository convention files — the run records one verdict. Either the surface was
   updated, or it demonstrably has no impact (a bare "not relevant" does not count), or it is
   blocked. A blocked surface is current-scope and stops completion the same way an active-slice
-  defect does. In a non-interactive sub-run of `apply-review`, `apply-issues`, or `iterate`, it is
-  returned to the owner for correction; it is never exported as an `/effective-flow docs` finding.
-  Most small
+  defect does. When the tool runs non-interactively — its caller announced a non-interactive run
+  state, or, without that announcement, it runs as a sub-run of `apply-review`, `apply-issues`, or
+  `iterate` (a gated `iterate` announces nothing to its items, so this sub-run rule decides for
+  them) — it is returned to the owner for correction; it is never exported as an
+  `/effective-flow docs` finding. Most small
   changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
   manufacture busywork.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,

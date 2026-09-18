@@ -56,16 +56,19 @@ records that outcome; it never manufactures documentation work to look busy.
 
 The gate's completion condition is: no surface is `blocked` and none is unassessed. Treat a
 `blocked` surface like an open critical review finding — bounded correction rounds per
-"Goal-driven completion control", then:
+"Goal-driven completion control", then by run state. An explicit `Run state: gated` or
+`Run state: non-interactive` line the run received from its caller decides which branch applies;
+only when that line is absent does the chain rule of the second branch decide (a gated
+`{{SKILL:iterate}}` forwards no line to its item runs, so the chain rule decides for them):
 
 - **interactive:** correct it now, or escalate with the concrete evidence and let only the user or
   authorized owner explicitly reduce the active slice. A justified `no impact` verdict is valid
   only when the surface is in fact unaffected. Run no completion, plan-status switch, delivery
   action, or derived-work materialization while a surface is still `blocked`;
-- **non-interactive delegation** (a run anywhere below `{{SKILL:apply-review}}`,
-  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}` in the delegation chain,
-  not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates through `{{SKILL:iterate}}`
-  and runs this gate in no phase of its own): return every remaining blocked surface to the owning
+- **non-interactive delegation** (without a `Run state:` line: a run anywhere below
+  `{{SKILL:apply-review}}`, `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}`
+  in the delegation chain, not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates
+  through `{{SKILL:iterate}}` and runs this gate in no phase of its own): return every remaining blocked surface to the owning
   orchestrator as `current-scope`. The owner performs its bounded documentation correction in the
   current execution context. If path ownership or authorized scope prevents correction, keep the
   run blocked and return that state to the parent; create no `Action: {{SKILL:docs}}` finding.

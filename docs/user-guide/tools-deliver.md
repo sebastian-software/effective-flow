@@ -591,9 +591,8 @@ finding was _assessed_, so the mapping between the two is written down in both t
 guessed; "deferred" in particular does not mean the same thing on each side until it is pinned.
 
 **The gate counts an outcome only for an item it recorded before delegating.** Before a round goes
-out, the run has already written down every item identifier it is about to hand over – and it mints
-one itself for every item it hands over, findings carried in a review body and reviewer threads
-alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
+out, the run has already written down every item identifier it is about to hand over – and one is
+minted for every item it hands over, findings carried in a review body and reviewer threads alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
 so the delegated run can address the thread, and an outcome quoting one back states nothing.
 On the way back it matches the report against exactly that list: the same outcome stated
 twice for one item is the same outcome, two _different_ outcomes for one item end the round without
@@ -608,6 +607,20 @@ Ignoring an unrecognized identifier rather than aborting on it is
 deliberate: aborting would let a review body cost the run a round just by naming something. Those
 ignored entries are listed in the run's chat summary by identifier and count, up to a bound, and
 never by quoting their text back at you.
+
+**The outgoing message is built and checked by a shipped helper, never by hand.** The
+`delegation-envelope` script in the installed skill assembles every message the gate sends to
+`iterate`: it mints the item identifiers, states the run state (`gated` or `non-interactive`) and
+the resolved languages on their own control lines above the item texts, and checks the finished
+message before it goes out. A review finding whose text contains the message's delimiter line, a
+finding whose review carries no URL or no author (refused as `missing-provenance` rather than given
+an invented link), or an empty review body, is not handed over; the first two count as unassessed
+and keep the merge blocked. A CI-repair instruction that looks like part of the message format is
+refused: the run ends right there with a report naming that check as not auto-repairable, merges
+nothing, and starts no further round that would only refuse the same instruction again. If the helper itself fails or cannot be run – missing from the installed build, or no
+suitable `node` – the gate stops before `iterate` runs, writes nothing further to the pull request,
+and names the helper's error code. That stop
+costs no round.
 
 #### Recognizing its own writes across runs
 

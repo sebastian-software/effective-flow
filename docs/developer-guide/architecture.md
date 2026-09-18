@@ -141,7 +141,14 @@ metadata does not expose an equivalent per-role tool-list boundary. Inline execu
 legitimate only as a disclosed orchestrator fallback — never silent. Workflow-to-workflow
 delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own mechanics and is out of scope for
 this mandate — which is why `merge-gate` carries the include for its worker-role delegations
-(`merge-conflict-resolver`, `code-validator`) while that one handoff stays exempt. Delegation
+(`merge-conflict-resolver`, `code-validator`) while that one handoff stays exempt. That handoff's
+message is never written by hand: the shipped `delegation-envelope` runtime helper builds it from
+structured input and then validates it against a digest and a manifest snapshot before dispatch.
+Above the delimiter it carries six control lines (`Item filter:`, `Summary comment:`,
+`Review guard:`, `Next steps:`, `Run state:`, `Language context:`), the boundary token, and the item
+manifest; `iterate` reads every switch from that region only. A `build` or `validate` failure, or a
+helper missing from the installed build, is a sender-side contract error: the gate stops before
+`iterate` is invoked, makes no remote write, and consumes no round. Delegation
 mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract — canonical for the classification and the ownership-check mechanics in

@@ -74,6 +74,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'delegation-envelope.mjs',
+  'delegation-envelope-core.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
   'remote-tracker.mjs',
@@ -1411,7 +1413,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
   // of one allowance: its measured always-loaded size plus at most ten lines of
-  // headroom. `merge-gate` currently measures 2797 lines against its 2801 limit.
+  // headroom. `merge-gate` currently measures 2868 lines against its 2870 limit.
   //
   // Every number here is a **measured backlog, not a target**. It records what a
   // tool's always-loaded core costs today; it is not a size anyone argued for.
@@ -1454,8 +1456,8 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2801,
-    iterate: 1723,
+    'merge-gate': 2870,
+    iterate: 1775,
     setup: 1723,
     'apply-review': 1360,
     'apply-issues': 1190,

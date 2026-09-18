@@ -18,8 +18,8 @@ project declares no ADR file-naming convention of its own; see
 language: `# Effective Flow project setup` with `## Configuration`, or
 `# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
 envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
-runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, and
-`worktree-runs/`; the entire directory is gitignored with one `.effective-flow/` line.
+runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `worktree-runs/`,
+and `merge-gate/` (the gate's delegation messages); the entire directory is gitignored with one `.effective-flow/` line.
 
 This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.

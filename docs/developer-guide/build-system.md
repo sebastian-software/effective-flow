@@ -226,9 +226,10 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. One script pair carries this today: `remote-tracker.mjs`/
-  `remote-tracker-core.mjs`. Its runtime prompts are additionally scanned with the unit-tested
-  `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
+  misread as one. Three script pairs carry this today: `delegation-envelope.mjs`/
+  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
+  `remote-tracker.mjs`/`remote-tracker-core.mjs`. The remote-tracker's runtime prompts are
+  additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
@@ -307,7 +308,7 @@ The build aborts with an error message if any of these guards is violated:
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
   **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
-  **2796** lines against its **2800** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
+  **2868** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
   own measured limits. The build prints each measured size next to its budget and aborts if a tool
   exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
@@ -405,9 +406,30 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-One dependency-free script pair ships as consumer runtime code in the skill payload, split into an
-I/O boundary and a pure, unit-testable core:
+Three dependency-free script pairs ship as consumer runtime code in the skill payload, each split
+into an I/O boundary and a pure, unit-testable core:
 
+- **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
+<build|validate>` with one JSON object on standard input whose `cwd` is the verified
+  `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
+  every delegation to `iterate`. `build` takes the control values, the ordered thread and body
+  items, and an optional CI-repair instruction; `reviewId` and `threadId` may be JSON integers or
+  strings and are normalized to strings. It mints the item identifiers and the boundary token,
+  derives the item filter, and refuses a body carrying the delimiter, a body item whose review
+  `url` or `author` is absent (`missing-provenance`, never a synthesized value), an empty body, or
+  a protocol-shaped instruction. A present value the manifest cannot carry safely is not a refusal
+  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines, the manifest, the delimiter,
+  and the body spans in one canonical order, checks its own output, and writes the message plus a
+  manifest snapshot exclusively under `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/`. It
+  returns the path, a `sha256:` digest, and the identifier → durable-key map. `validate` recomputes
+  that digest before re-checking the structure against the snapshot, so text added to the file
+  after `build` fails. It never scans the region below the delimiter for keywords. Failures come
+  back as stable error codes with a nonzero exit code. The canonical envelope shapes, and the
+  rationale for the minting order, the absence-check scope, the token and the helper itself, live
+  in the lazily loaded `delegation-envelope-examples` fragment.
+- **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
+  source `HEAD`, apply them to the refreshed base with conflict detection, and reconcile the exact
+  resulting diff without emitting file content.
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
@@ -469,7 +491,7 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`, `source-upstream-sync`, `setup-profiles`.
+  `merge-gate-check-list-waiver`, `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -613,10 +635,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2796/2800, `setup` 1723/1723, `iterate` 1706/1711,
-`apply-review` 1338/1340, `apply-issues` 1187/1187, and `cleanup` 1020/1022.
+`merge-gate` is 2868/2870, `setup` 1723/1723, `iterate` 1765/1775,
+`apply-review` 1356/1360, `apply-issues` 1190/1190, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 655/665, `docs` 607/617, `build` 583/585, and `fix` 479/481. Read every
+`plan` 655/665, `docs` 607/617, `build` 591/595, and `fix` 483/488. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
