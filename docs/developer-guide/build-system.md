@@ -130,6 +130,13 @@ name a fragment no tool references directly, the build walks the fragment set as
 every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
 cycle the walk would otherwise not terminate on.
 
+`durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
+implementation, investigation, planning, or decomposition run. Common implementation workflows
+reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
+because re-entry or mutation always needs the conservative default; `review`, `investigate`, and
+PR-review integration load it at their admission decision. Keep admission before ID reservation and
+artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
+
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
@@ -404,7 +411,8 @@ I/O boundary and a pure, unit-testable core:
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
-  unless `--apply` is present. The core module is pure except for an injected process runner;
+  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
+  that flag. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,

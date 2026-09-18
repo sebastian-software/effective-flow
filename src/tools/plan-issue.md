@@ -74,6 +74,11 @@ when: the run reaches its completion report
 config-migration
 ```
 
+```lazy-include
+durable-follow-up-gate
+when: planning is about to propose a derived child issue
+```
+
 ## Project conventions
 
 If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning and user follow-up questions.
@@ -236,22 +241,28 @@ For each chosen issue in turn:
 2. Apply the clarification methodology from `{{SKILL:plan}}` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
 3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
 4. Determine the recommended implementation (Feature / Bugfix / Refactoring / Documentation) according to the classification definitions from `{{SKILL:plan}}`.
-5. Decide proactively whether the active issue is too broad for one coherent implementation or
-   combines independently implementable outcomes. If so, prepare a concrete decomposition only
-   when the forge helper proves its parent-aware operations or the external target proves the full
-   native-container contract plus atomic create-under-parent. Give each
-   child its own derived workflow and a complete body containing its refined requirement,
+5. Keep routine technical decomposition, implementation steps, and substructure inside the
+   parent's canonical planning comment. A broad issue or independently implementable outcomes do
+   not by themselves authorize child issues. Only propose a native child when that root cause is
+   independently `admitted` through “Durable derived-work gate” and the caller already holds the
+   tracker-write authority below; `current-scope`, `closed`, and `uncertain` create no child. For
+   each admitted proposal, first require the forge helper's parent-aware operations or the external
+   target's full native-container contract plus atomic create-under-parent. Give the child its own
+   derived workflow and a complete body containing its stable admission record, refined requirement,
    measurable acceptance criteria, affected areas/files, edge cases, assumptions, and a plain
    parent reference. Give every body exactly one language-matching canonical workflow field:
    `**Recommended workflow:** <value>` in English or
    `**Empfohlener Workflow:** <value>` in German. Its stable value must equal the child's record
    workflow and must be a top-level field; blockquoted or fenced examples do not count. Require
-   every Markdown fence in the child body to close before preview so the helper-appended final key
+   Put the canonical admission fields in the proposed child body **before**
+   `decomposition-records-build`; the existing `draftHash` binds them without any new record key.
+   Require every Markdown fence in the child body to close before preview so the helper-appended final key
    marker remains readable. Do not copy credentials, secrets, session identifiers, or generation attribution;
    let the helper redact complete sensitive values and fail closed on a form it cannot transform
    safely. Labels pass through the same secret boundary and are rejected rather than redacted when
    sensitive. Do not attach `effective-flow-needs-planning`: every proposed child must already pass
-   the implementation clarity gate. Allocate stable keys such as
+   the implementation clarity gate. Admission alone does not make an unclear child implementable.
+   Allocate stable keys such as
    `child-01` once per parent and preserve existing keys on re-entry. If the target lacks any
    applicable guarantee, report decomposition as unavailable without creating a checklist or
    blocking the ordinary single-issue planning path.

@@ -7,7 +7,10 @@ import {
   buildPortableSkill,
   scenarioBuildIdentity,
 } from '../evals/merge-gate/_scaffold/build-identity.mjs';
-import { evaluateEvidence } from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import {
+  evaluateEvidence,
+  mutatingTrackerOperations,
+} from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/merge-gate/_scaffold/suite.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -852,10 +855,14 @@ test(
 
       // The whole phase is read-and-report for this fixture: the completion verdict cannot be
       // `complete` while issue #17 has an open native sub-issue, so no terminal transition is
-      // eligible, and a non-interactive run poses no offer regardless. `apply: true` is what
-      // separates a performed mutation from the dry-run preview that precedes one, so this is the
-      // log's own statement that nothing was written.
-      const applied = startRecords(records).filter((record) => record.apply === true);
+      // eligible, and a non-interactive run poses no offer regardless. The log's `apply` bit is the
+      // raw CLI flag, while the shipped helper gives it write semantics only for operations in its
+      // MUTATIONS registry. Intersect both facts: `--apply` on a read stays a read, but an applied
+      // mutation is still direct evidence that this supposedly observer-only run wrote.
+      const mutations = mutatingTrackerOperations();
+      const applied = startRecords(records).filter(
+        (record) => record.apply === true && mutations.has(record.operation),
+      );
       assert.deepEqual(
         applied.map((record) => `${record.seq}:${record.operation}`),
         [],

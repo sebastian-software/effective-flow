@@ -1411,7 +1411,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
   // of one allowance: its measured always-loaded size plus at most ten lines of
-  // headroom. `merge-gate` currently measures 2796 lines against its 2800 limit.
+  // headroom. `merge-gate` currently measures 2797 lines against its 2801 limit.
   //
   // Every number here is a **measured backlog, not a target**. It records what a
   // tool's always-loaded core costs today; it is not a size anyone argued for.
@@ -1454,29 +1454,29 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2800,
-    iterate: 1711,
+    'merge-gate': 2801,
+    iterate: 1723,
     setup: 1723,
-    'apply-review': 1340,
-    'apply-issues': 1187,
+    'apply-review': 1360,
+    'apply-issues': 1190,
     cleanup: 1022,
-    refactor: 864,
+    refactor: 885,
     deliver: 775,
-    'plan-issue': 734,
-    review: 728,
+    'plan-issue': 745,
+    review: 770,
     plan: 665,
     'apply-review-commit-mechanics': 656,
-    maintain: 660,
+    maintain: 685,
     docs: 617,
-    build: 585,
-    apply: 572,
-    'apply-plan': 576,
-    investigate: 529,
-    fix: 481,
+    build: 595,
+    apply: 580,
+    'apply-plan': 580,
+    investigate: 545,
+    fix: 488,
     'plan-review': 446,
     pr: 440,
     'concept-review': 344,
-    'apply-review-remote': 333,
+    'apply-review-remote': 382,
     concept: 332,
     commit: 239,
     'open-plans': 147,
