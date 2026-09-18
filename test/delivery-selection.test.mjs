@@ -280,8 +280,68 @@ test('the fetch SSH command extends the user setup in Git precedence order', () 
     }),
     { ...base, GIT_SSH_COMMAND: 'ssh -i ~/.ssh/config-key -o BatchMode=yes' },
   );
-  // A bare GIT_SSH program takes no options, so no GIT_SSH_COMMAND overrides it.
-  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/plink' } }), base);
+  // A bare GIT_SSH program of a known variant is re-expressed as a quoted command with that
+  // variant's batch option.
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/plink' } }), {
+    ...base,
+    GIT_SSH_COMMAND: "'/usr/bin/plink' -batch",
+  });
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: "/opt/o'ssh/bin/ssh" } }), {
+    ...base,
+    GIT_SSH_COMMAND: "'/opt/o'\\''ssh/bin/ssh' -o BatchMode=yes",
+  });
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH: 'C:\\Tools\\SSH.EXE' } }), {
+    ...base,
+    GIT_SSH_COMMAND: "'C:\\Tools\\SSH.EXE' -o BatchMode=yes",
+  });
+  // An explicit variant decides for a program whose name Git would otherwise probe.
+  assert.deepEqual(
+    nonInteractiveFetchEnv({
+      environment: { GIT_SSH: '/usr/local/bin/wrap', GIT_SSH_VARIANT: 'ssh' },
+    }),
+    { ...base, GIT_SSH_COMMAND: "'/usr/local/bin/wrap' -o BatchMode=yes" },
+  );
+  assert.deepEqual(
+    nonInteractiveFetchEnv({
+      environment: { GIT_SSH: '/usr/local/bin/wrap' },
+      configuredSshVariant: 'putty',
+    }),
+    { ...base, GIT_SSH_COMMAND: "'/usr/local/bin/wrap' -batch" },
+  );
+  // An unrecognized program, the simple variant, and TortoisePlink (which Git already passes
+  // -batch) are left in charge.
+  assert.deepEqual(
+    nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/local/bin/wrap' } }),
+    base,
+  );
+  assert.deepEqual(
+    nonInteractiveFetchEnv({ environment: { GIT_SSH: '/usr/bin/ssh', GIT_SSH_VARIANT: 'simple' } }),
+    base,
+  );
+  assert.deepEqual(
+    nonInteractiveFetchEnv({ environment: { GIT_SSH: 'C:\\TortoisePlink.exe' } }),
+    base,
+  );
+  // A plink command gets plink's batch flag, not an OpenSSH option it would reject.
+  assert.deepEqual(nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: 'plink -P 2222' } }), {
+    ...base,
+    GIT_SSH_COMMAND: 'plink -P 2222 -batch',
+  });
+  assert.deepEqual(
+    nonInteractiveFetchEnv({
+      environment: { GIT_SSH_COMMAND: '"/c/Program Files/PuTTY/plink.exe"' },
+    }),
+    { ...base, GIT_SSH_COMMAND: '"/c/Program Files/PuTTY/plink.exe" -batch' },
+  );
+  assert.deepEqual(
+    nonInteractiveFetchEnv({ configuredSshCommand: 'ssh -p 2222', configuredSshVariant: 'simple' }),
+    base,
+  );
+  // A command Git would probe keeps the OpenSSH option.
+  assert.deepEqual(nonInteractiveFetchEnv({ configuredSshCommand: '/usr/local/bin/wrap -v' }), {
+    ...base,
+    GIT_SSH_COMMAND: '/usr/local/bin/wrap -v -o BatchMode=yes',
+  });
   // Empty values count as unset.
   assert.deepEqual(
     nonInteractiveFetchEnv({ environment: { GIT_SSH_COMMAND: ' ' }, configuredSshCommand: '' }),

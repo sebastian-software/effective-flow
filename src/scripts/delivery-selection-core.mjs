@@ -1387,23 +1387,76 @@ export const UPSTREAM_FETCH_TIMEOUT_MS = 60_000;
 // machine envelope.
 export const DIAGNOSTIC_MAX_LENGTH = 2000;
 
-const SSH_BATCH_MODE = '-o BatchMode=yes';
+// The option that makes each SSH variant fail instead of prompting for a host key or passphrase.
+// TortoisePlink needs none, because Git passes it `-batch` itself; the `simple` variant accepts no
+// options at all, so nothing can be added to it.
+const SSH_BATCH_OPTIONS = Object.freeze({
+  ssh: '-o BatchMode=yes',
+  plink: '-batch',
+  putty: '-batch',
+  tortoiseplink: null,
+  simple: null,
+});
+
+const SSH_VARIANTS = new Set(['auto', ...Object.keys(SSH_BATCH_OPTIONS)]);
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
+// The first word of an SSH command, unquoted the way Git's `split_cmdline` reads a leading
+// single- or double-quoted word.
+function commandProgram(command) {
+  const match = /^\s*(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+))/.exec(command);
+  if (!match) return '';
+  return match[1] ?? match[2]?.replace(/\\(.)/g, '$1') ?? match[3];
+}
+
+// Git's own variant resolution: `GIT_SSH_VARIANT`, then `ssh.variant`, then the program's
+// basename. Returns `null` for a program Git would have to probe (`auto` with an unknown name).
+function sshVariant(program, override) {
+  const explicit = nonEmpty(override)?.trim().toLowerCase() ?? null;
+  if (explicit !== null && explicit !== 'auto' && SSH_VARIANTS.has(explicit)) return explicit;
+  const base = path
+    .basename(program.replace(/\\/g, '/'))
+    .toLowerCase()
+    .replace(/\.exe$/, '');
+  return ['ssh', 'plink', 'tortoiseplink'].includes(base) ? base : null;
+}
+
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 // Mirrors Git's own SSH command precedence (`GIT_SSH_COMMAND`, then `core.sshCommand`, then
-// `GIT_SSH`, then `ssh`) and appends `BatchMode=yes` to whichever command Git would run. A bare
-// `GIT_SSH` program cannot take extra options, so it is left alone and only the prompt variables
-// keep the fetch non-interactive.
-export function nonInteractiveFetchEnv({ environment = {}, configuredSshCommand = null } = {}) {
+// `GIT_SSH`, then `ssh`) and adds the variant's batch option to whichever program Git would run.
+// A command whose program Git would probe keeps the OpenSSH option it always received. A bare
+// `GIT_SSH` program is re-expressed as a quoted `GIT_SSH_COMMAND` only when its variant is known;
+// an unrecognized `GIT_SSH` program, the `simple` variant, and TortoisePlink are left in charge,
+// and only the prompt variables and the fetch timeout bound them.
+export function nonInteractiveFetchEnv({
+  environment = {},
+  configuredSshCommand = null,
+  configuredSshVariant = null,
+} = {}) {
   const env = { ...NON_INTERACTIVE_FETCH_ENV };
-  const sshCommand =
-    nonEmpty(environment.GIT_SSH_COMMAND) ??
-    nonEmpty(configuredSshCommand) ??
-    (nonEmpty(environment.GIT_SSH) === null ? 'ssh' : null);
-  if (sshCommand !== null) env.GIT_SSH_COMMAND = `${sshCommand} ${SSH_BATCH_MODE}`;
+  const override = nonEmpty(environment.GIT_SSH_VARIANT) ?? nonEmpty(configuredSshVariant);
+  const command = nonEmpty(environment.GIT_SSH_COMMAND) ?? nonEmpty(configuredSshCommand);
+  if (command !== null) {
+    const variant = sshVariant(commandProgram(command), override) ?? 'ssh';
+    const option = SSH_BATCH_OPTIONS[variant];
+    if (option !== null) env.GIT_SSH_COMMAND = `${command} ${option}`;
+    return env;
+  }
+  const program = nonEmpty(environment.GIT_SSH);
+  if (program === null) {
+    const option = SSH_BATCH_OPTIONS[sshVariant('ssh', override)];
+    if (option !== null) env.GIT_SSH_COMMAND = `ssh ${option}`;
+    return env;
+  }
+  const variant = sshVariant(program, override);
+  const option = variant === null ? null : SSH_BATCH_OPTIONS[variant];
+  if (option !== null) env.GIT_SSH_COMMAND = `${shellQuote(program)} ${option}`;
   return env;
 }
 
@@ -1532,6 +1585,10 @@ async function fetchUpstream(root, remote, mergeRef, runner, environment) {
     configuredSshCommand:
       nonEmpty(environment.GIT_SSH_COMMAND) === null
         ? await gitConfigValue(root, 'core.sshCommand', runner)
+        : null,
+    configuredSshVariant:
+      nonEmpty(environment.GIT_SSH_VARIANT) === null
+        ? await gitConfigValue(root, 'ssh.variant', runner)
         : null,
   });
   const result = await runner({

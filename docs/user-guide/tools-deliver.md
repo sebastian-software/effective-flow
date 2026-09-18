@@ -79,8 +79,13 @@ to `/effective-flow iterate`, not this fresh-branch workflow.
 
 Before it reconstructs the candidate, `deliver` compares your current branch with its upstream
 (`@{u}`), for example `develop` with `origin/develop`. It fetches that upstream non-interactively,
-so a credential prompt fails instead of waiting for input, and gives up after 60 seconds. A failed
-fetch is reported without the user name, password, query string, or fragment of the remote URL. A local
+so a credential prompt fails instead of waiting for input, and gives up after 60 seconds. Your SSH
+program gets its own batch option: `BatchMode=yes` for OpenSSH and `-batch` for PuTTY's plink.
+One setup cannot take that option: an SSH program set through `GIT_SSH` that Git cannot identify
+by name, or one declared as the `simple` variant. Such a program can still show a host-key or
+passphrase prompt, and only the 60-second limit ends it; set `GIT_SSH_VARIANT` or `ssh.variant`
+to `ssh` or `plink` when your wrapper accepts that variant's options. A failed fetch is reported
+without the user name, password, query string, or fragment of the remote URL. A local
 upstream, one that tracks another branch of the same repository, is compared without fetching. The comparison target is the branch's
 own upstream, not `delivery.baseBranch`; the configured base is still refreshed later, as described
 above.

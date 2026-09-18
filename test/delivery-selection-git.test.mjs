@@ -877,7 +877,7 @@ test('upstream status fetches only on request, with hooks disabled and a non-int
   assert.equal(fetchCall.timeout, 60000);
 });
 
-test('the upstream fetch keeps a configured core.sshCommand and adds only BatchMode', async (t) => {
+test('the upstream fetch keeps the configured SSH command and adds only its batch option', async (t) => {
   const { local } = createUpstreamFixture(t);
   ugit(local, 'config', 'core.sshCommand', 'ssh -i /nonexistent/deploy-key -F /dev/null');
   const calls = [];
@@ -902,13 +902,30 @@ test('the upstream fetch keeps a configured core.sshCommand and adds only BatchM
     'ssh -p 2222 -o BatchMode=yes',
   );
 
-  // With only GIT_SSH inherited and no configured command, the program is left in charge.
+  // With only GIT_SSH inherited, a known variant is re-expressed with its own batch option.
   ugit(local, 'config', '--unset', 'core.sshCommand');
   calls.length = 0;
   await status(local, true, recording, { GIT_SSH: '/usr/bin/plink' });
   const plinkFetch = calls.find((call) => call.args.includes('fetch'));
-  assert.equal('GIT_SSH_COMMAND' in plinkFetch.env, false);
+  assert.equal(plinkFetch.env.GIT_SSH_COMMAND, "'/usr/bin/plink' -batch");
   assert.equal(plinkFetch.env.GIT_TERMINAL_PROMPT, '0');
+
+  // A configured ssh.variant decides for a program Git would otherwise probe.
+  ugit(local, 'config', 'ssh.variant', 'ssh');
+  calls.length = 0;
+  await status(local, true, recording, { GIT_SSH: '/usr/local/bin/ssh-wrapper' });
+  assert.equal(
+    calls.find((call) => call.args.includes('fetch')).env.GIT_SSH_COMMAND,
+    "'/usr/local/bin/ssh-wrapper' -o BatchMode=yes",
+  );
+
+  // An unrecognized GIT_SSH program without a variant is left in charge.
+  ugit(local, 'config', '--unset', 'ssh.variant');
+  calls.length = 0;
+  await status(local, true, recording, { GIT_SSH: '/usr/local/bin/ssh-wrapper' });
+  const wrapperFetch = calls.find((call) => call.args.includes('fetch'));
+  assert.equal('GIT_SSH_COMMAND' in wrapperFetch.env, false);
+  assert.equal(wrapperFetch.env.GIT_TERMINAL_PROMPT, '0');
 });
 
 test('a fetch that times out is reported as fetch.error timeout without failing the status', async (t) => {
