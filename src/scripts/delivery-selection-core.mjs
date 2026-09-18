@@ -1407,11 +1407,41 @@ export function nonInteractiveFetchEnv({ environment = {}, configuredSshCommand 
   return env;
 }
 
-// Credentials embedded in a remote URL never reach the envelope.
+const URL_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s'"<>`]*)/gi;
+
+// Userinfo, query, and fragment are the parts of a URL that carry credentials; the scheme, host,
+// and path stay readable.
+function redactUrl(scheme, rest) {
+  const authorityEnd = rest.search(/[/?#]/);
+  let authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  let tail = authorityEnd === -1 ? '' : rest.slice(authorityEnd);
+  const at = authority.lastIndexOf('@');
+  if (at !== -1) authority = `***${authority.slice(at)}`;
+  const query = tail.search(/[?#]/);
+  if (query !== -1) tail = `${tail.slice(0, query + 1)}***`;
+  return `${scheme}${authority}${tail}`;
+}
+
+const CREDENTIAL_PATTERNS = [
+  // `key=value` pairs with a credential-like key, outside a URL as well.
+  [
+    /\b((?:access[_-]?|auth[_-]?|private[_-]?|api[_-]?|refresh[_-]?)?(?:token|key|secret|password|passwd|pwd|signature|sig|credentials?))=[^\s&'";#]+/gi,
+    '$1=***',
+  ],
+  // An HTTP authorization value that Git echoes with tracing enabled.
+  [/\b(authorization:\s*)\S+(?:\s+[^\s'"]+)?/gi, '$1***'],
+  [/\b(bearer\s+)[a-z0-9._~+/=-]+/gi, '$1***'],
+  // Well-known forge token formats.
+  [/\b(?:gh[pousr]_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|glpat-[a-z0-9_-]{20,})/gi, '***'],
+];
+
+// Credentials embedded in a remote URL, or in any obvious token form, never reach the envelope.
 export function diagnosticText(value) {
-  const text = asText(value)
-    .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@')
-    .trim();
+  let text = asText(value).replace(URL_PATTERN, (_, scheme, rest) => redactUrl(scheme, rest));
+  for (const [pattern, replacement] of CREDENTIAL_PATTERNS) {
+    text = text.replace(pattern, replacement);
+  }
+  text = text.trim();
   return text.length > DIAGNOSTIC_MAX_LENGTH ? text.slice(0, DIAGNOSTIC_MAX_LENGTH) : text;
 }
 

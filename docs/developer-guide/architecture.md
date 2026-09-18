@@ -233,7 +233,8 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   Before any of that, and after the source execution-location receipt is verified, `deliver` runs
   one pre-evidence upstream step. The helper's `upstream-status` operation fetches the current
   branch's own upstream (`@{u}`) non-interactively, with a 60-second timeout and the user's
-  configured SSH command, skips the fetch for a local upstream or an invalid remote or merge ref,
+  configured SSH command. Its `fetch.error`, like a refused merge's `stderr`, redacts URL
+  userinfo, query and fragment, and obvious token forms. It skips the fetch for a local upstream or an invalid remote or merge ref,
   and classifies the branch as `detached`,
   `no-upstream`, `upstream-gone`, `up-to-date`, `ahead`, `behind`, `behind-overlap`, or
   `diverged`, where `behind-overlap` means an incoming path overlaps a staged, unstaged,

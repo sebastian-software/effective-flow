@@ -968,6 +968,33 @@ test('upstream status reports a failed fetch without failing the operation', asy
   assert.ok(result.fetch.error.length <= 2000);
 });
 
+test('a failed fetch reports no credential from the remote URL', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  const missing = join(local, 'no-such-remote.git');
+  const runner = async (call) =>
+    call.args.includes('fetch')
+      ? {
+          status: 128,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from(
+            `fatal: unable to access 'https://user:pa55@example.invalid/r.git/?private_token=q5ecret#t0ken': 401\n`,
+          ),
+          error: undefined,
+        }
+      : upstreamRunner(call);
+  ugit(local, 'remote', 'set-url', 'origin', missing);
+
+  const result = await status(local, true, runner);
+  assert.equal(result.fetch.ok, false);
+  assert.equal(
+    result.fetch.error,
+    "fatal: unable to access 'https://***@example.invalid/r.git/?***': 401",
+  );
+  for (const secret of ['pa55', 'q5ecret', 't0ken']) {
+    assert.equal(result.fetch.error.includes(secret), false);
+  }
+});
+
 test('a local-dot upstream is compared without any fetch', async (t) => {
   const { local } = createUpstreamFixture(t);
   ugit(local, 'checkout', '--quiet', '-b', 'topic');
@@ -1312,7 +1339,12 @@ test('a merge Git refuses without writing reports mutationMayHaveSucceeded false
   const before = checkoutSnapshot(local, ['working.txt', 'incoming.txt']);
   const runner = async (call) =>
     isMergeCall(call)
-      ? { status: 128, stdout: Buffer.alloc(0), stderr: Buffer.from('refused'), error: undefined }
+      ? {
+          status: 128,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from('refused https://u:tok@example.invalid/r.git?token=x'),
+          error: undefined,
+        }
       : upstreamRunner(call);
 
   const error = await rejection(
@@ -1321,7 +1353,7 @@ test('a merge Git refuses without writing reports mutationMayHaveSucceeded false
   assert.equal(error.code, 'COMMAND_FAILED');
   assert.equal(error.details.mutationMayHaveSucceeded, false);
   assert.equal(error.details.status, 128);
-  assert.equal(error.details.stderr, 'refused');
+  assert.equal(error.details.stderr, 'refused https://***@example.invalid/r.git?***');
   assert.deepEqual(checkoutSnapshot(local, ['working.txt', 'incoming.txt']), before);
 });
 

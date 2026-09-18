@@ -289,12 +289,43 @@ test('the fetch SSH command extends the user setup in Git precedence order', () 
   );
 });
 
-test('diagnostics are trimmed, capped, and never carry URL credentials', () => {
+test('diagnostics are trimmed, capped, and never carry URL or token credentials', () => {
   assert.equal(diagnosticText(Buffer.from('  fatal: refused \n')), 'fatal: refused');
   assert.equal(diagnosticText(undefined), '');
   assert.equal(
     diagnosticText("fatal: unable to access 'https://user:tok3n@example.invalid/repo.git/'"),
     "fatal: unable to access 'https://***@example.invalid/repo.git/'",
+  );
+  // A password containing @ is redacted up to the last @ of the authority.
+  assert.equal(
+    diagnosticText('fatal: https://user:p@ss@example.invalid/repo.git'),
+    'fatal: https://***@example.invalid/repo.git',
+  );
+  // Query strings and fragments carry tokens as often as userinfo does.
+  assert.equal(
+    diagnosticText(
+      "fatal: unable to access 'https://example.invalid/repo.git/?access_token=s3cr3t&x=1': 403",
+    ),
+    "fatal: unable to access 'https://example.invalid/repo.git/?***': 403",
+  );
+  assert.equal(
+    diagnosticText('fatal: repository https://example.invalid/repo.git#token=s3cr3t not found'),
+    'fatal: repository https://example.invalid/repo.git#*** not found',
+  );
+  assert.equal(
+    diagnosticText('fatal: https://u:pw@example.invalid:8443/r.git?sig=abc#frag'),
+    'fatal: https://***@example.invalid:8443/r.git?***',
+  );
+  // Obvious token forms outside a URL are scrubbed too.
+  assert.equal(diagnosticText('error: password=hunter2 rejected'), 'error: password=*** rejected');
+  assert.equal(diagnosticText('> Authorization: Basic dXNlcjpzM2NyM3Q='), '> Authorization: ***');
+  assert.equal(diagnosticText('header Bearer abc.def-ghi'), 'header Bearer ***');
+  const pat = `ghp_${'A'.repeat(36)}`;
+  assert.equal(diagnosticText(`fatal: token ${pat} expired`), 'fatal: token *** expired');
+  // Ordinary diagnostics stay readable.
+  assert.equal(
+    diagnosticText("fatal: 'origin' does not appear to be a git repository"),
+    "fatal: 'origin' does not appear to be a git repository",
   );
   const long = diagnosticText('x'.repeat(DIAGNOSTIC_MAX_LENGTH + 500));
   assert.equal(long.length, DIAGNOSTIC_MAX_LENGTH);
