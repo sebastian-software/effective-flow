@@ -141,8 +141,9 @@ neither `DONE` nor `ABORT`. The caller side is defined as well. The completion p
 (`src/shared/completion-protocol.md`) first resumes the same delegate once — on Claude Code by
 continuing that agent with `SendMessage` — and that resume is not a retry; `merge-gate` treats an
 `iterate` return that is still keyword-less after its one resume as a whole-run `ABORT` instead of
-Retry 1–3. The shipped fragments name no harness tool or parameter: the build's harness leak guard
-fails the Codex and portable targets on `run_in_background`.
+Retry 1–3. Its receiver rule reads outcomes only from the resumed turn's final return, never from
+the interim keyword-less text. The shipped fragments name no harness tool or parameter: the build's
+harness leak guard fails the Codex and portable targets on `run_in_background`.
 
 Every Claude worker omits `Agent` and `Task` from `claude.tools`, regardless of its own read/write
 authority. Withholding the capability is the enforceable Claude boundary: if a worker receives a

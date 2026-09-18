@@ -1,8 +1,8 @@
 {
   "scenario": "linked-issue-open-points",
-  "digest": "sha256:774267675b064922c7b2212ceb15bcb431e021129884e9715036957a1c0f7461",
+  "digest": "sha256:82bd01c4ef220ab6259494938dfea739397259ae770066aac45ecb4bcd00888d",
   "skill": {
-    "digest": "sha256:9b8c7694dce77c17af1d2d9bfbab4ee9036041d6a57c41ef2391c7150e8a939a",
+    "digest": "sha256:2329f1d9e7da403c5986e9e501e77f5b62d914f7e8c4d42b64dec48c3fd27d05",
     "files": {
       "SKILL.md": "sha256:5c1bde9dfb8ad4c8e51bd81126d10f85cb2671d326ee0b5d1f41301437196a3a",
       "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
@@ -27,7 +27,7 @@
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
       "tools/iterate.md": "sha256:d29c89fd94a7e6952504fa4de069ca707faf685cf8b2cb6d938409312ce44faf",
-      "tools/merge-gate.md": "sha256:c6e3aa412138e170a2e7e169a3f03e27ebcea41c086b480ec2dbbe07b03ab7c4",
+      "tools/merge-gate.md": "sha256:243f06f8c07d8f8e8534f0d1c8080f42771d5faf09a8b7ebfd7e8cafff7b4741",
       "workers/effective-flow-code-validator.md": "sha256:4614e4702fc374c6d31ede74dcf971ab44a1118cde575a78ebc09abe0e87b723",
       "workers/effective-flow-merge-conflict-resolver.md": "sha256:c05fe119d3700d2c597852e2efa258dd551669afea5b1d737dfe8520bcc5bd7d"
     }

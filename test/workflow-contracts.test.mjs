@@ -13592,6 +13592,70 @@ test('merge-gate resumes a keyword-less iterate return once and never retries it
   ]);
 });
 
+// The resumed run answers after an interim keyword-less text. Reading that interim text beside the
+// final return would turn a provisional `unassessed` there plus a final `implemented` into a
+// conflicting-outcome mismatch and fail a round that actually succeeded, so the receiver rule reads
+// only the resumed turn's final return and nothing in the interim text counts.
+test('merge-gate reads outcomes only from the resumed final return, never the interim text', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+    .split(/\n\s*\n/)
+    .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
+  assert.ok(
+    paragraph,
+    'the returned outcome record must grant a keyword-less iterate return exactly one resume',
+  );
+  const rule = prose(paragraph);
+
+  assertClauses(rule, [
+    [
+      /The interim keyword-less text is not a return/i,
+      'the interim keyword-less text of a resumed run must not count as a return',
+    ],
+    [
+      /receiver rule reads only the resumed turn's final return/i,
+      "the receiver rule must read only the resumed turn's final return",
+    ],
+    [
+      /every recorded identifier must be answered there/i,
+      'every recorded identifier must be answered in the final return',
+    ],
+    [
+      near('stated only in the interim text', 'absent', 20),
+      'an outcome stated only in the interim text must count as absent',
+    ],
+    [
+      /absent [–—-] the same mismatch/i,
+      'an outcome only in the interim text must be the same identifier mismatch',
+    ],
+    [
+      /Nothing in the interim text counts, conflicts with the final return, is recorded, or is reported as an inert outcome/i,
+      'nothing in the interim text may count, conflict, be recorded, or be reported as inert',
+    ],
+  ]);
+
+  const counterAt = rule.search(/does not advance the round counter/i);
+  const interimAt = rule.search(/The interim keyword-less text is not a return/i);
+  const stillAt = rule.search(/still keyword-less/i);
+  assert.ok(
+    counterAt !== -1 && interimAt > counterAt,
+    'the interim-text rule must follow the round-counter sentence inside the resume rule',
+  );
+  assert.ok(
+    stillAt !== -1 && interimAt < stillAt,
+    'the interim-text rule must precede the still-keyword-less fallback inside the resume rule',
+  );
+
+  const mandateSection = prose(
+    section(source('docs/developer-guide/architecture.md'), '## Delegation mandate', '\n## '),
+  );
+  assert.match(
+    mandateSection,
+    /receiver rule reads outcomes only from the resumed turn's final return/i,
+    "the architecture guide must state that the receiver rule reads only the resumed turn's final return",
+  );
+});
+
 // The harness mechanics behind the pending-child rule are Claude Code specifics. They belong in the
 // developer guide; the shipped fragments reach Codex and portable targets too, and the build's
 // harness leak guard fails those targets on `run_in_background`.

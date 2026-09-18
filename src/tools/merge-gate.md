@@ -611,10 +611,14 @@ delegation sites – the Phase 2 step 3 CI repair and the Phase 3 step 5 bot rou
 `{{SKILL:iterate}}` return is continued once as a separate turn of the same run: no envelope is
 rebuilt or re-sent, and that turn carries no control keyword, no `Item:` line or item text, and no
 return-protocol instruction – only a plain request to await pending work and finish, in place of the
-completion protocol's continuation hint. The resume does not advance the round counter. A return
-still keyword-less after it, or one the harness cannot continue, is handled as a whole-run `ABORT`:
-the round ends unsuccessfully, nothing is merged, and the report names it. The completion protocol's
-reduced-scope retries do not fit a run bound to a fixed `Item filter`.
+completion protocol's continuation hint. The resume does not advance the round counter. The interim
+keyword-less text is not a return. The receiver rule reads only the resumed turn's final return, and
+every recorded identifier must be answered there: an outcome stated only in the interim text is
+absent – the same mismatch. Nothing in the interim text counts, conflicts with the final return, is
+recorded, or is reported as an inert outcome. A return still keyword-less after the resume, or one
+the harness cannot continue, is handled as a whole-run `ABORT`: the round ends unsuccessfully,
+nothing is merged, and the report names it. The completion protocol's reduced-scope retries do not
+fit a run bound to a fixed `Item filter`.
 
 ## Conflict-resolution boundary
 
