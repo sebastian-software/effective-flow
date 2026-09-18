@@ -83,6 +83,7 @@ comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
+On Forgejo only, a thread also carries an optional `reviewId`: the id of the review it was read under.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read

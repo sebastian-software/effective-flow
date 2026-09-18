@@ -21,7 +21,9 @@ second time.
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
-leave the thread unresolved, and note that manual resolution is needed; do not improvise.
+leave the thread unresolved, and note that manual resolution is needed; do not improvise. Where the
+reply is unsupported as well, write nothing into the thread, leave it unresolved, and report reply
+and resolution as manual; a gate-delegated run carries that in its return, not in a summary comment.
 
 ### Submit a review with inline comments
 

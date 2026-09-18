@@ -221,7 +221,9 @@ the run may merge at the end or only report merge-readiness, then drives an orde
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers only the ones that have not started, waits, and then delegates their findings to
-   `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
+   `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. On
+   Forgejo, which supports neither thread write, the reviewer's own later approval settles a thread
+   instead; see the Forgejo note under **Input/output**. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
    review**, was written by an account that is
@@ -463,6 +465,9 @@ delegated run's own approval gate, come back as `unassessed` and block exactly a
 saw does. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
 finding does; see
 [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside).
+On a forge that can neither reply to nor resolve review threads, such as Forgejo, a thread the
+reviewer's own later approval has settled is left out of this check; see the Forgejo note under
+**Input/output**.
 
 What you will see when a late thread turns up:
 
@@ -748,6 +753,18 @@ Two further things worth knowing about what the gate writes:
   would have been anyway.
   On Forgejo that read rides `tea`'s issue and issue-comment support rather than the `tea api`
   transport the issue close needs, so a `tea` built without `--include` still reads the comment.
+- On Forgejo the gate can neither answer nor resolve a review thread, so an unresolved thread from
+  a configured bot counts as **provider-settled** once that same reviewer's latest submitted review
+  for the verified head is an approval – a different review from the one that opened the thread,
+  submitted after it. A dismissal alone settles nothing. A settled thread is no longer handed to
+  `iterate` and no longer blocks the merge, and the report lists it with its URL as "left
+  unresolved – the provider cannot resolve review threads". A thread that still blocks is named
+  with its URL. If the gate's run implemented that thread, resolve it in the Forgejo web UI, where
+  it may appear collapsed as "outdated" in the conversation tab, and re-run the gate, or re-run
+  after the bot's next verdict. A thread that is still unassessed is cleared by a re-run, and one
+  the run set aside by the same confirmation a set-aside finding takes; see
+  [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside). Do not reply
+  in the thread, because your reply would make it appear as a human-authored thread.
 
 **Interplay:** Configured entirely under `mergeGate.*` in the project-setup ADR (completion mode,
 conflict-resolution mode, check-wait timeout, round budget, bot registry) plus

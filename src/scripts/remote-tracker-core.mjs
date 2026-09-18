@@ -5339,8 +5339,11 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         // `HTMLURL json:"html_url"` per the struct comment above - the tag, never the Go field name.
         const rawUrl = thread.html_url ?? thread.url;
         const url = typeof rawUrl === 'string' && rawUrl.trim() !== '' ? rawUrl.trim() : undefined;
+        // Set by `readForgejoReviewThreads`; absent when the comments did not come from that walk.
+        const reviewId = thread[FORGEJO_REVIEW_ID];
         return {
           id: String(thread.id),
+          ...(reviewId === undefined ? {} : { reviewId: String(reviewId) }),
           // `resolver` is `null` while a thread is open and an object once someone resolved it, so
           // truthiness is the whole test. `Boolean(null)` is false and `Boolean({})` is true.
           isResolved: Boolean(thread.resolver),
@@ -5657,6 +5660,11 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
   };
 }
 
+// The id of the review a Forgejo comment was read under. The walk addresses every comment through
+// `reviews/{id}/comments`, so it knows the parent review without trusting a payload field; the key
+// is a module-private symbol so it can never collide with, or be spoofed by, a key the forge sends.
+const FORGEJO_REVIEW_ID = Symbol('forgejoReviewId');
+
 // The two-step walk both forges force. Forgejo's router declares `GET …/pulls/{index}/reviews` and
 // `GET …/pulls/{index}/reviews/{id}/comments`; there is no flat review-comment listing at any
 // nesting level on either forge, so the reviews have to be enumerated before their comments can be
@@ -5693,7 +5701,8 @@ async function readForgejoReviewThreads(input, repository, runner) {
       `review-threads-read review ${id} comments`,
     );
     commands.push(...page.commands);
-    comments.push(...page.items);
+    // Pair each comment with the review it was read under, so the thread can name its parent.
+    comments.push(...page.items.map((item) => ({ ...item, [FORGEJO_REVIEW_ID]: id })));
   }
   return {
     result: normalizeRemoteData('review-threads-read', comments, repository, input),

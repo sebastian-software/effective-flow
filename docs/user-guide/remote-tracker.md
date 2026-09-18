@@ -487,9 +487,13 @@ one of them matches `…/pulls/comments/…`; an authenticated `POST …/pulls/c
 rejected by the router with the same status a deliberately nonsense path draws, while the
 neighbouring `…/reviews/{id}/dismissals` reaches its handler. The capability is therefore stated as a
 provider fact, exactly as `pullRequestStatus` and `pullRequestMerge` are, rather than derived from a
-`--help` probe that could only ever attest the client subcommand. `iterate` keeps its reply, leaves
-the thread unresolved and says so; `merge-gate` reads the same refusal as workflow input rather than
-as a failure.
+`--help` probe that could only ever attest the client subcommand. `review-thread-reply` is
+unsupported as well, so `iterate` writes nothing into the thread: it neither replies nor resolves,
+and reports both as manual steps. `merge-gate` instead treats a configured bot's thread as settled
+once that same reviewer's latest submitted review for the verified head is an approval – a different
+review from the one that opened the thread, submitted after it. A dismissal alone settles nothing.
+The gate stops handing a settled thread to `iterate`, no longer lets it block the merge, and lists it
+in the report with its URL as left unresolved because the provider cannot resolve review threads.
 
 **Reading review threads costs one request per review, plus one.** Forgejo exposes no flat
 review-comment listing at any nesting level, so the read enumerates `…/pulls/{index}/reviews` and

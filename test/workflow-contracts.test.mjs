@@ -2694,6 +2694,17 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       trigger: /(?=[\s\S]*Phase-4)(?=[\s\S]*`checksReported: false`)/,
       decision: "a Phase-4 evaluation's fresh read stating `checksReported: false`",
     },
+    {
+      // The provider-settled rule is for a forge that can do *neither* thread write. A clause naming
+      // only one capability would load it on a forge that can still reply or resolve, where the
+      // normal answered-and-resolved path is the right one; both names and the unsupported state
+      // are required.
+      fragment: 'merge-gate-provider-settled-threads',
+      trigger:
+        /(?=[\s\S]*`?reviewThreadReplies`?)(?=[\s\S]*`?reviewThreadResolution`?)(?=[\s\S]*(?:unsupported|not supported))/,
+      decision:
+        'the forge preflight reporting both reviewThreadReplies and reviewThreadResolution unsupported',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -12198,6 +12209,281 @@ test('the retired rejected-merges sentence is gone and condition 6 is disambigua
     condition,
     near('empty-bodied review would deadlock', 'only `implemented` clears', 300),
     'the scoping must state the deadlock it prevents',
+  );
+});
+
+// On a forge that can neither reply to nor resolve a review thread (Forgejo), condition 6 could
+// never hold for an implemented bot thread, condition 7 saw the still-open thread as unassessed on
+// every fresh run, and Phase 3 re-delegated it round after round (issue #434). The repair is a
+// provider-settled thread: the same reviewer's later approval, read from forge state, settles it.
+// The rule lives in one lazy fragment so a run on a forge that can write threads never loads it.
+const providerSettledFragmentPath = 'src/shared/merge-gate-provider-settled-threads.md';
+
+function providerSettledFragment() {
+  assert.ok(
+    existsSync(new URL(providerSettledFragmentPath, repositoryRoot)),
+    `${providerSettledFragmentPath} must exist`,
+  );
+  return prose(source(providerSettledFragmentPath));
+}
+
+test('merge-gate loads the provider-settled rule lazily, after the Phase 0 list', () => {
+  const gate = source('src/tools/merge-gate.md');
+  providerSettledFragment();
+
+  // Lazy only: an eager include would charge the rule to every GitHub run, whose threads never
+  // enter this branch.
+  const { eager, lazy } = collectIncludeNames(gate);
+  assert.ok(lazy.has('merge-gate-provider-settled-threads'), 'merge-gate must point at the rule');
+  assert.ok(
+    !eager.has('merge-gate-provider-settled-threads'),
+    'the rule must never be an eager include',
+  );
+
+  // Column 0: `LAZY_INCLUDE_RE` would still match an indented fence inside the Phase 0 list, but a
+  // fence there ends the list, so the pointer has to sit after it, flush left.
+  const fence = gate.search(/^```lazy-include\nmerge-gate-provider-settled-threads\n/m);
+  assert.notEqual(fence, -1, 'the pointer must be a column-0 lazy-include fence');
+  const phase0 = gate.indexOf('### Phase 0');
+  const lastPhase0Item = gate.indexOf('\n3. In observer-only mode', phase0);
+  const phase1 = gate.indexOf('### Phase 1', phase0);
+  assert.notEqual(lastPhase0Item, -1, 'Phase 0 must keep its numbered list');
+  assert.ok(
+    fence > lastPhase0Item && fence < phase1,
+    'the pointer must sit after the Phase 0 list and before Phase 1',
+  );
+
+  // Phase 0 reads the two capabilities the pointer's condition names.
+  const phase0Text = prose(section(gate, '### Phase 0'));
+  assert.match(phase0Text, /reviewThreadReplies/, 'Phase 0 must read reviewThreadReplies');
+  assert.match(phase0Text, /reviewThreadResolution/, 'Phase 0 must read reviewThreadResolution');
+});
+
+test('a provider-settled thread needs a later approval by the same reviewer at the verified head', () => {
+  const fragment = providerSettledFragment();
+
+  // Scope: only a forge that can do neither thread write.
+  assert.match(
+    fragment,
+    near('reviewThreadReplies', 'reviewThreadResolution', 200),
+    'the rule must be scoped to both thread-write capabilities',
+  );
+  assert.match(
+    fragment,
+    near('(?:unsupported|not supported)', 'reviewThread(?:Replies|Resolution)', 200),
+    'the scope must be the two capabilities reported unsupported',
+  );
+
+  // Same reviewer, under the one matching contract rather than a literal login comparison.
+  assert.match(fragment, /Matching a configured login/, 'the same reviewer must be matched there');
+
+  // The time-order predicate, with each half.
+  assert.match(
+    fragment,
+    near('`?APPROVED`?', '`?VERIFIED_HEAD_SHA`?', 300),
+    'only an approval for the verified head settles',
+  );
+  assert.match(
+    fragment,
+    near('latest', 'submitted', 200),
+    'the approval must be the latest submitted review',
+  );
+  assert.match(
+    fragment,
+    /Automatic reviewer state/,
+    '"latest" must reuse the supersession rule of "Automatic reviewer state", not a second copy',
+  );
+  assert.match(
+    fragment,
+    near('different review', 'parent', 200),
+    'the approval must be a different review from the thread parent',
+  );
+  assert.match(
+    fragment,
+    near('strictly later', '`?submittedAt`?', 200),
+    "the approval's submittedAt must be strictly later than the parent's",
+  );
+  assert.match(fragment, /reviewId/, "the parent review must be read from the thread's reviewId");
+});
+
+test('a dismissal, a commented review, and unsubmitted rows settle no thread', () => {
+  const fragment = providerSettledFragment();
+  const settlesNothing =
+    '(?:settles? nothing|never settles?|does not settle|not settled|settles? no)';
+
+  // The adapter folds every dismissed review into DISMISSED, so a stale approval dismissed on push
+  // cannot be told apart from a dismissed change request.
+  assert.match(
+    fragment,
+    near('dismiss', settlesNothing, 250),
+    'a dismissal alone must settle nothing',
+  );
+  assert.match(
+    fragment,
+    near('(?:`?COMMENTED`?|commented)', '`?UNKNOWN`?', 150),
+    'a commented or UNKNOWN latest review must be named',
+  );
+  assert.match(
+    fragment,
+    near('`?UNKNOWN`?', settlesNothing, 250),
+    'a commented or UNKNOWN latest review must settle nothing',
+  );
+  assert.match(
+    fragment,
+    near('`?PENDING`?', '`?REVIEW_REQUESTED`?', 100),
+    'PENDING and REVIEW_REQUESTED rows must be named together',
+  );
+  assert.match(
+    fragment,
+    near('`?REVIEW_REQUESTED`?', '(?:ignored|never compete|do not compete|only submitted)', 250),
+    'PENDING and REVIEW_REQUESTED rows must not compete for the latest review',
+  );
+});
+
+test('the provider-settled rule fails closed on every missing link', () => {
+  const fragment = providerSettledFragment();
+
+  assert.match(fragment, /fails? closed/i, 'the rule must fail closed');
+  const missing = '(?:missing|absent|without|no |lacks|unavailable|unsupported)';
+  assert.match(
+    fragment,
+    near('reviewId', missing, 150),
+    'a thread without a parent review id must stay unsettled',
+  );
+  assert.match(
+    fragment,
+    near('`?submittedAt`?', missing, 150),
+    'a review without submittedAt must leave the thread unsettled',
+  );
+  assert.match(
+    fragment,
+    near('`?prReviewsRead`?', missing, 150),
+    'prReviewsRead being unavailable must settle nothing',
+  );
+  assert.match(
+    fragment,
+    /undecidable|identical (?:timestamps|`?submittedAt`?)|same `?submittedAt`?/i,
+    'an undecidable latest review must leave the thread unsettled',
+  );
+});
+
+test('the provider-settled rule names its read batch and skips this run’s implemented threads', () => {
+  const fragment = providerSettledFragment();
+
+  // One batch of threads and reviews read together, never a mix across restarts.
+  assert.match(
+    fragment,
+    near('Phase 3', '(?:step[- ]4|re-read|fresh (?:thread|read))', 250),
+    'Phase 3 must evaluate on the step-4 re-read or a fresh thread-and-review read',
+  );
+  assert.match(
+    fragment,
+    near('Phase 4', 'batch', 250),
+    'conditions 6 and 7 must re-evaluate on the Phase 4 batch',
+  );
+
+  // In-run evidence closes the window between iterate's push and the bot's visible approval.
+  assert.match(
+    fragment,
+    near('`?implemented`?', '(?:this run|in-run)', 200),
+    "this run's implemented threads must be named",
+  );
+  assert.match(
+    fragment,
+    near('`?implemented`?', 'Phase 3', 300),
+    "Phase 3 must skip this run's implemented threads on such a forge",
+  );
+});
+
+test('the provider-settled report names each thread, its URL and the manual next step', () => {
+  const fragment = providerSettledFragment();
+
+  assert.match(
+    fragment,
+    /left unresolved\s*[–—-]+\s*the provider cannot resolve review threads/i,
+    'a settled thread must be reported as left unresolved because the provider cannot resolve it',
+  );
+  assert.match(fragment, near('URL', 'thread', 150), 'each reported thread must carry its URL');
+  assert.match(
+    fragment,
+    near('web UI', 're-run', 300),
+    'a still-blocking thread must point at the web UI and a re-run',
+  );
+  assert.match(
+    fragment,
+    near("(?:do not|don't|never|not to) reply", 'thread', 200),
+    'the report must warn against replying in the thread',
+  );
+});
+
+test('merge-gate names provider-settled threads in Phase 3, conditions 6 and 7, and Phase 6', () => {
+  const gate = source('src/tools/merge-gate.md');
+
+  const phase3 = section(gate, '### Phase 3');
+  const step5 = prose(boundedSlice(phase3, '5. **When the bot has run', '\n6. '));
+  assert.match(step5, /provider-settled/, 'Phase 3 step 5 must exclude provider-settled threads');
+
+  const conditions = mergeConditions(gate);
+  assert.match(
+    prose(mergeCondition(conditions, 6)),
+    /provider-settled/,
+    'condition 6 must leave provider-settled threads out of the threads it considers',
+  );
+  // In the thread-set sentence, so every "assessed by this run" sentence of condition 7 stays true.
+  assert.match(
+    prose(mergeCondition(conditions, 7)),
+    near('Take every unresolved thread', 'provider-settled', 400),
+    "condition 7's thread-set sentence must leave provider-settled threads out",
+  );
+
+  assert.match(
+    prose(section(gate, '### Phase 6', '\n## ')),
+    /provider-settled/,
+    'Phase 6 must report provider-settled threads',
+  );
+});
+
+test('iterate writes nothing into a thread on a provider that cannot reply', () => {
+  const phase5 = section(source('src/tools/iterate.md'), '### Phase 5');
+  const step2 = prose(boundedSlice(phase5, '\n2. ', '\n3. '));
+
+  // Today's step covers only an unsupported resolution and says to "keep the reply" — on a forge
+  // that refuses the reply as well there is no reply to keep.
+  assert.match(
+    step2,
+    /(?:\brepl(?:y|ies|ying)\b|reviewThreadReplies|`review-thread-reply`)[^.]{0,80}\b(?:unsupported|not supported|unavailable)|\bneither\b[^.]{0,40}\brepl|\bcannot\s+(?:post\s+a\s+)?repl/i,
+    'Phase 5 must cover a provider on which the reply is unsupported',
+  );
+  assert.match(
+    step2,
+    near('(?:writes? nothing|nothing is written|no reply)', 'thread', 120),
+    'Phase 5 must write nothing into the thread when the reply is unsupported',
+  );
+});
+
+test('the thread-write fragment writes nothing on a provider that cannot reply either', () => {
+  const resolve = prose(
+    section(source('src/shared/pr-review-thread-writes.md'), '### Resolve a thread'),
+  );
+
+  // The resolve step used to say only "keep the reply" — on a forge that refuses the reply too
+  // there is none to keep, so the shared rule every thread writer loads must name that case. The
+  // reply itself must be the unsupported subject: the old text already set `UNSUPPORTED_CAPABILITY`
+  // beside "keep the reply", which a mere proximity check would accept.
+  assert.match(
+    resolve,
+    /\brepl(?:y|ies)\b[^.,;]{0,40}\b(?:unsupported|not supported|unavailable)\b/i,
+    'the resolve step must cover a provider on which the reply is unsupported',
+  );
+  assert.match(
+    resolve,
+    near('(?:writes? nothing|nothing is written|no reply)', 'thread', 120),
+    'the resolve step must write nothing into the thread when the reply is unsupported',
+  );
+  assert.match(
+    resolve,
+    near('repl(?:y|ies) and resolution', 'manual', 80),
+    'the resolve step must report both reply and resolution as manual',
   );
 });
 

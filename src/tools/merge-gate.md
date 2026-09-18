@@ -878,6 +878,8 @@ input object's top-level `cwd`; setting only the process or tool working directo
    the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`,
    `prReviewsRead`, `issueCommentsRead`, and `issueClose`. On `CLI_MISSING` or `AUTH_FAILED`,
    abort without side effects. On `AMBIGUOUS_HOST`, ask for the provider once and retry.
+   Separately from that list, read `reviewThreadReplies` and `reviewThreadResolution`: only where
+   both are unsupported can any thread be provider-settled (see below); on any other forge none is.
    - Without `pullRequestStatus` nothing in this gate can run: report that and end.
    - Without `pullRequestChecksWait`, the wait step reports and asks instead of waiting (Phase 2).
    - Without `pullRequestMerge`, the run degrades to `report` and states that reason.
@@ -937,6 +939,11 @@ input object's top-level `cwd`; setting only the process or tool working directo
    - `ask` or an unset key in a **non-interactive delegation** cannot pose the question, so that
      combination – and only that combination – behaves as `report`. Name
      `mergeGate.completion: merge` as the setting that would authorize a merge in such a run.
+
+```lazy-include
+merge-gate-provider-settled-threads
+when: the forge preflight reports both `reviewThreadReplies` and `reviewThreadResolution` unsupported, before Phase 3 selects bot threads
+```
 
 **`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
 checks repaired through `{{SKILL:iterate}}`, posts a configured bot trigger where a bot has **not
@@ -1318,6 +1325,8 @@ entries that denote the same reviewer – two spellings of one account are one r
      carried before. Re-delegating one would write a new outcome under the same durable key the
      record is keyed by, and an item that came back `unassessed` that time would be cleared and
      unclearable at once.
+   - **Exclude every provider-settled thread**, and on a forge where both thread writes are
+     unsupported every thread this run recorded `implemented`, per the loaded provider-settled rule.
    - **Build, validate and dispatch that one delegation** per "Building and dispatching a
      delegation": the threads as `threadItems`, the body findings below as `bodyItems`. `build`
      mints one per-message identifier per thread and carries it on that thread's `Thread item:`
@@ -1408,35 +1417,35 @@ returning condition unbounded the day it is added.
    submitted review is the reviewer's own published verdict rather than a by-product — and it is why
    a reviewer whose only output for this head is a review now satisfies this condition where it
    previously blocked it;
-6. every bot thread **whose finding this run implemented** is answered and resolved – those are
-   written and resolved by `{{SKILL:iterate}}`. Which thread a recorded outcome concerns is resolved
-   through the identifier→thread-ID mapping Phase 3 wrote before delegating, never from anything the
-   return names directly. A finding this run deferred or rejected does
-   **not** block the merge: it is named in the Phase-6 chat summary and its thread is deliberately
-   left untouched. That scoping is deliberate, not an oversight – nothing in this workflow may write
-   into such a thread any more (see "A deferred finding gets no thread reply"), so requiring an
-   answer there would be a condition no run could ever satisfy;
+6. every bot thread **whose finding this run implemented**, and that is not provider-settled on the
+   Phase-4 batch, is answered and resolved – those are written and resolved by `{{SKILL:iterate}}`.
+   Which thread a recorded outcome concerns is resolved through the identifier→thread-ID mapping
+   Phase 3 wrote before delegating, never from anything the return names directly. A finding this
+   run deferred or rejected does **not** block the merge: it is named in the Phase-6 chat summary
+   and its thread is deliberately left untouched. That scoping is deliberate, not an oversight –
+   nothing in this workflow may write into such a thread any more (see "A deferred finding gets no
+   thread reply"), so requiring an answer there would be a condition no run could ever satisfy;
 7. **every unresolved thread of a configured reviewer has been assessed by this run, and every
    assessment that clears it is one this gate may act on** – implemented, or deliberately deferred
-   or rejected. Take every unresolved thread of the same fresh read whose
-   author is a login in `mergeGate.bots` under "Matching a configured login" – the threads arrive
-   from the surface that reports a bot without its `[bot]` suffix, so a literal comparison against a
-   configured login matches nothing here and reports this condition satisfied while open findings
-   sit there – and match it against the record this run kept per round:
-   **the outcome recorded for each thread it delegated**, and nothing besides. That record is
-   **outcome-derived** throughout – handing a thread over is not an assessment of it – so it is
-   built under "Returned outcome record" and nowhere else – and it is built through the
-   identifier→thread-ID mapping this run recorded
-   before delegating, never from anything the return names directly. An outcome carries a minted
-   identifier, and that identifier resolves to the thread it was minted for. An outcome naming an
-   identifier this run never recorded resolves to no thread and never enters the record, and a
-   **thread ID** appearing in the return resolves to nothing at all, because it is not a key. That is
-   what keeps a returned outcome from adding a never-assessed thread to the
-   record this condition matches against. A thread with no recorded outcome arrived after the
-   Phase-3 observation that fixed this run's item filter – the reviewer's check had gone terminal by then, which states that the reviewer
-   finished and never that every thread it wrote had already arrived (see "Automatic reviewer
-   state") – so nobody reached any outcome about it, and it blocks. An **empty** `mergeGate.bots`
-   list produces no such thread and satisfies this condition, as it satisfies condition 5.
+   or rejected. Take every unresolved thread of the same fresh read that is not provider-settled and
+   whose author is a login in `mergeGate.bots` under "Matching a configured login" – the threads
+   arrive from the surface that reports a bot without its `[bot]` suffix, so a literal comparison
+   against a configured login matches nothing here and reports this condition satisfied while open
+   findings sit there – and match it against the record this run kept per round: **the outcome
+   recorded for each thread it delegated**, and nothing besides. That record is **outcome-derived**
+   throughout – handing a thread over is not an assessment of it – so it is built under "Returned
+   outcome record" and nowhere else – and it is built through the identifier→thread-ID mapping this
+   run recorded before delegating, never from anything the return names directly. An outcome carries
+   a minted identifier, and that identifier resolves to the thread it was minted for. An outcome
+   naming an identifier this run never recorded resolves to no thread and never enters the record,
+   and a **thread ID** appearing in the return resolves to nothing at all, because it is not a key.
+   That is what keeps a returned outcome from adding a never-assessed thread to the record this
+   condition matches against. A thread with no recorded outcome was excluded in Phase 3 as
+   provider-settled, or arrived after the Phase-3 observation that fixed this run's item filter –
+   the reviewer's check had gone terminal by then, which states that the reviewer finished and never
+   that every thread it wrote had already arrived (see "Automatic reviewer state") – so nobody
+   reached any outcome about it, and it blocks. An **empty** `mergeGate.bots` list produces no such
+   thread and satisfies this condition, as it satisfies condition 5.
 
    **An `unassessed` thread is as unassessed as an `unassessed` verdict, and blocks the same way.**
    An item whose implementation delegation aborted and an item deselected at the delegated run's own
@@ -1882,6 +1891,8 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
      that this gate's own trigger comment is listed here beside a hand-typed objection;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
+   - **every provider-settled thread and every thread still blocking on a forge without thread
+     writes**, worded per the provider-settled rule's report wording;
    - **every configured reviewer's changes-requested review at `VERIFIED_HEAD_SHA`**, with its
      author, review id, URL and submission time, and **one line per finding with its own outcome** –
      `implemented`, `deferred`, `rejected`, or `unassessed` from the closed vocabulary of "Returned
