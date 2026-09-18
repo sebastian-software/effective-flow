@@ -81,6 +81,11 @@ Before it reconstructs the candidate, `deliver` compares your current branch wit
 (`@{u}`), for example `develop` with `origin/develop`. It fetches that upstream non-interactively,
 so a credential prompt fails instead of waiting for input, and gives up after 60 seconds. Your SSH
 program gets its own batch option: `BatchMode=yes` for OpenSSH and `-batch` for PuTTY's plink.
+For a command whose program is named `ssh`, `BatchMode=yes` goes right after the program, so it
+overrides a `BatchMode` set in your own command. A wrapper command such as `sshpass -f pw ssh`
+gets it appended instead, where an earlier `BatchMode` in the command still wins. So does an
+unquoted program path containing a backslash, such as a Windows path; single-quote the path or use
+forward slashes to keep the stronger ordering.
 One setup cannot take that option: an SSH program set through `GIT_SSH` that Git cannot identify
 by name, or one declared as the `simple` variant. Such a program can still show a host-key or
 passphrase prompt, and only the 60-second limit ends it; set `GIT_SSH_VARIANT` or `ssh.variant`

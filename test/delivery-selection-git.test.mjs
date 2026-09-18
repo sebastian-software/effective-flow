@@ -890,7 +890,7 @@ test('the upstream fetch keeps the configured SSH command and adds only its batc
   const fetchCall = calls.find((call) => call.args.includes('fetch'));
   assert.equal(
     fetchCall.env.GIT_SSH_COMMAND,
-    'ssh -i /nonexistent/deploy-key -F /dev/null -o BatchMode=yes',
+    'ssh -o BatchMode=yes -i /nonexistent/deploy-key -F /dev/null',
   );
   assert.equal(fetchCall.env.GIT_TERMINAL_PROMPT, '0');
 
@@ -899,7 +899,7 @@ test('the upstream fetch keeps the configured SSH command and adds only its batc
   await status(local, true, recording, { GIT_SSH_COMMAND: 'ssh -p 2222' });
   assert.equal(
     calls.find((call) => call.args.includes('fetch')).env.GIT_SSH_COMMAND,
-    'ssh -p 2222 -o BatchMode=yes',
+    'ssh -o BatchMode=yes -p 2222',
   );
 
   // With only GIT_SSH inherited, a known variant is re-expressed with its own batch option.
@@ -926,6 +926,31 @@ test('the upstream fetch keeps the configured SSH command and adds only its batc
   const wrapperFetch = calls.find((call) => call.args.includes('fetch'));
   assert.equal('GIT_SSH_COMMAND' in wrapperFetch.env, false);
   assert.equal(wrapperFetch.env.GIT_TERMINAL_PROMPT, '0');
+});
+
+test('the ssh program Git runs sees the enforced BatchMode before the user one', async (t) => {
+  const { container, local } = createUpstreamFixture(t);
+  // A stub named ssh, under a directory with a space, records its argv and refuses the connection.
+  const binDir = join(container, 'stub bin');
+  mkdirSync(binDir);
+  const argvLog = join(container, 'ssh-argv.log');
+  const stub = join(binDir, 'ssh');
+  writeFileSync(
+    stub,
+    `#!/bin/sh\nfor arg in "$@"; do printf '%s\\n' "$arg"; done > '${argvLog}'\nexit 1\n`,
+  );
+  chmodSync(stub, 0o755);
+  ugit(local, 'remote', 'set-url', 'origin', 'ssh://git@example.invalid/repo.git');
+  ugit(local, 'config', 'core.sshCommand', `'${stub}' -o BatchMode=no -p 2222`);
+
+  const result = await status(local);
+  assert.equal(result.fetch.attempted, true);
+  assert.equal(result.fetch.ok, false);
+  const argv = readFileSync(argvLog, 'utf8').split('\n');
+  const enforced = argv.indexOf('BatchMode=yes');
+  assert.ok(enforced > 0 && argv[enforced - 1] === '-o', argv.join(' '));
+  assert.ok(enforced < argv.indexOf('BatchMode=no'), argv.join(' '));
+  assert.ok(argv.includes('2222'));
 });
 
 test('a fetch that times out is reported as fetch.error timeout without failing the status', async (t) => {
