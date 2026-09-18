@@ -130,6 +130,13 @@ name a fragment no tool references directly, the build walks the fragment set as
 every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
 cycle the walk would otherwise not terminate on.
 
+`durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
+implementation, investigation, planning, or decomposition run. Common implementation workflows
+reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
+because re-entry or mutation always needs the conservative default; `review`, `investigate`, and
+PR-review integration load it at their admission decision. Keep admission before ID reservation and
+artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
+
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
@@ -301,7 +308,7 @@ The build aborts with an error message if any of these guards is violated:
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
   **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
-  **2865** lines against its **2865** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
+  **2866** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
   own measured limits. The build prints each measured size next to its budget and aborts if a tool
   exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
@@ -426,7 +433,8 @@ into an I/O boundary and a pure, unit-testable core:
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
-  unless `--apply` is present. The core module is pure except for an injected process runner;
+  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
+  that flag. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
@@ -483,7 +491,7 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`, `delegation-envelope-examples`, `setup-profiles`.
+  `merge-gate-check-list-waiver`, `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -542,6 +550,12 @@ and directive syntax").
   `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
   every branch that poses **no** question is decided inside the moved text as well; a pointer firing
   only where the question is posed would leave those runs deciding from text they have not loaded.
+  `source-upstream-sync` is the single-consumer `deliver` fragment for step 1.1's upstream decision
+  flow, and it takes the same cut: the `upstream-status` call and the notice for every state that
+  poses no question stay in the always-loaded core, and the pointer fires on all three question
+  states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
+  fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
+  the merge-gate eval identity.
   `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
   twelve tools that read configuration on every run inline its always-read core, while seven others
   defer the whole fragment behind their own first configuration read.
@@ -621,10 +635,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2865/2865, `setup` 1723/1723, `iterate` 1752/1753,
-`apply-review` 1338/1340, `apply-issues` 1187/1187, and `cleanup` 1020/1022.
+`merge-gate` is 2866/2870, `setup` 1723/1723, `iterate` 1765/1775,
+`apply-review` 1356/1360, `apply-issues` 1190/1190, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 655/665, `docs` 607/617, `build` 583/585, and `fix` 479/481. Read every
+`plan` 655/665, `docs` 607/617, `build` 591/595, and `fix` 483/488. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.

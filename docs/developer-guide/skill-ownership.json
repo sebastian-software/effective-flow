@@ -18,6 +18,7 @@
         { "consumer": "docs-writer", "classification": "delegate" },
         { "consumer": "code-documenter", "classification": "delegate" },
         { "consumer": "documentation-sync-contract", "classification": "delegate" },
+        { "consumer": "durable-follow-up-gate", "classification": "delegate" },
         { "consumer": "review", "classification": "delegate" },
         { "consumer": "refactor", "classification": "delegate" },
         { "consumer": "plan", "classification": "route-when-relevant" },
@@ -91,7 +92,8 @@
         { "consumer": "concept-review", "classification": "delegate" },
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
-        { "consumer": "concept", "classification": "delegate" }
+        { "consumer": "concept", "classification": "delegate" },
+        { "consumer": "durable-follow-up-gate", "classification": "delegate" }
       ]
     },
     {

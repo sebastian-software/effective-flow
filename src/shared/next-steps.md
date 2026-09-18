@@ -32,6 +32,10 @@ instead of relying on the receiving tool to notice.
   copy-paste input and is never translated.
 - Never name an invocation whose argument this run does not have. If an edge cannot be filled, drop
   that option; if neither can be filled, emit nothing rather than a generic suggestion.
+- A finding/review `apply` option exists only when this run actually created an admitted durable
+  report or direct finding issue and can name its concrete path/reference. `current-scope`,
+  `closed`, `uncertain`, a merely eligible result without write authority, or an empty/deduplicated
+  result emits no substitute planning or review invocation.
 - When one run opened several pull requests, name the first one and state in that same line that the
   remaining ones follow the same way. Never exceed two options to cover them.
 - **Never start the follow-up tool.** This is a recommendation, not a handoff; the existing
@@ -62,10 +66,10 @@ backstop for one that carries open points.
 | concept     | deep review declined                                         | {{SKILL:review}} <concept-file>      | —                                       |
 | concept     | deep review done, ready                                      | {{SKILL:plan}} <work package>        | {{SKILL:review}} <concept-file>         |
 | concept     | deep review done, open points remain                         | {{SKILL:review}} <concept-file>      | —                                       |
-| investigate | defect with a clear cause                                    | {{SKILL:fix}} <report>               | {{SKILL:plan}} <report>                 |
-| investigate | structural problem                                           | {{SKILL:refactor}} <report>          | {{SKILL:plan}} <report>                 |
-| investigate | missing functionality                                        | {{SKILL:build}} <report>             | {{SKILL:plan}} <report>                 |
-| investigate | pure documentation gap or behavior to be documented          | {{SKILL:docs}} <report>              | —                                       |
+| investigate | admitted defect with a clear cause                           | {{SKILL:fix}} <report>               | —                                       |
+| investigate | admitted structural problem                                  | {{SKILL:refactor}} <report>          | —                                       |
+| investigate | admitted missing functionality                               | {{SKILL:build}} <report>             | —                                       |
+| investigate | admitted pure documentation gap or behavior to be documented | {{SKILL:docs}} <report>              | —                                       |
 | plan        | deep review declined                                         | {{SKILL:apply}} <plan-file>          | {{SKILL:review}} <plan-file>            |
 | plan        | deep review done, ready                                      | {{SKILL:apply}} <plan-file>          | {{SKILL:plan}} <plan-file>              |
 | plan        | deep review done, open points remain                         | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
@@ -90,7 +94,7 @@ backstop for one that carries open points.
 | iterate     | PR mode                                                      | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
 | iterate     | local mode, delivery branch retained                         | {{SKILL:pr}}                         | —                                       |
 | review      | local report written                                         | {{SKILL:apply}} <report>             | —                                       |
-| review      | published to a tracker                                       | {{SKILL:apply}} #<epic>              | {{SKILL:apply}} <local security report> |
+| review      | direct admitted findings published to a tracker              | {{SKILL:apply}} #<finding>…          | {{SKILL:apply}} <local security report> |
 | review      | plan file mode, ready                                        | {{SKILL:apply}} <plan-file>          | —                                       |
 | review      | plan file mode, open points remain                           | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
 | review      | concept file mode, ready                                     | {{SKILL:plan}} <work package>        | —                                       |

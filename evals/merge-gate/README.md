@@ -587,8 +587,10 @@ held lock.
    An **observer-only** scenario is the third shape, and it asserts neither of those. It makes no
    merge decision, so it asserts the absence of any `pr-merge` record — observer-only mode skips
    Phase 5 by construction, dry-run preview included — plus the count of the one read its subject is
-   about, and the absence of any record carrying `apply: true` where the phase is meant to write
-   nothing. Say in the assertion's own comment what the count does **not** show: the chat report is
+   about, and the absence of any mutating operation carrying `apply: true` where the phase is meant
+   to write nothing. The log records the raw flag, but the shipped helper gives it write semantics
+   only to operations in its `MUTATIONS` registry; a redundantly applied read remains a read. Say in
+   the assertion's own comment what the count does **not** show: the chat report is
    captured nowhere, so a log can carry that a read happened and never what the run said about it.
 
    A scenario that ends **before any merge decision is made** is the fourth shape, and it fits

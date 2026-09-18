@@ -8,6 +8,7 @@ const START_KEYS = ['apply', 'at', 'callId', 'cwd', 'event', 'operation', 'seq']
 const COMPLETE_KEYS = ['at', 'callId', 'event', 'seq'];
 const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
 let supportedOperationsCache = null;
+let mutatingOperationsCache = null;
 
 function quotedValues(source) {
   return [...source.matchAll(/'([^']+)'/g)].map((match) => match[1]);
@@ -48,6 +49,20 @@ export function supportedTrackerOperations() {
   for (const match of functionBody(helper, 'localOperation').matchAll(/case '([^']+)':/g))
     supportedOperationsCache.add(match[1]);
   return supportedOperationsCache;
+}
+
+// `apply` in the call log records the raw presence of the CLI flag. The shipped helper gives that
+// flag write semantics only for operations in MUTATIONS; reads run immediately in either spelling.
+// Derive the same set here so an agent that redundantly passes `--apply` to a read does not turn a
+// read-only observation into a mutation in the evaluator's evidence model.
+export function mutatingTrackerOperations() {
+  if (mutatingOperationsCache !== null) return mutatingOperationsCache;
+  const helper = readFileSync(
+    resolve(import.meta.dirname, '..', '..', '..', 'src', 'scripts', 'remote-tracker-core.mjs'),
+    'utf8',
+  );
+  mutatingOperationsCache = new Set(declaredSet(helper, 'MUTATIONS'));
+  return mutatingOperationsCache;
 }
 
 export function parseCallLog(raw) {
@@ -217,7 +232,10 @@ function outcomeFindings(scenario, records, fixture) {
     const reads = operationStarts(records, 'issue-comments-read').length;
     if (reads !== 1) findings.push(`issue-comments-read appears ${reads} time(s), expected one`);
     if (merges.length > 0) findings.push('the observer-only run requested pr-merge');
-    const applied = startRecords(records).filter((record) => record.apply === true);
+    const mutations = mutatingTrackerOperations();
+    const applied = startRecords(records).filter(
+      (record) => record.apply === true && mutations.has(record.operation),
+    );
     if (applied.length > 0) findings.push('the observer-only run performed an applied mutation');
   } else if (scenario === 'unreported-checks-block-merge') {
     if (merges.length > 0) findings.push('the gate merged with no reported check list');

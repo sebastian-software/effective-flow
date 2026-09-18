@@ -23,9 +23,22 @@ under `.effective-flow/` – local and untracked.
 
 ## Remote mode (Git forge)
 
-With `tracker.mode: remote`, `/effective-flow review` instead creates an issue for each finding
-on your Git hosting service, bundled under an epic/tracking issue. `/effective-flow apply` then
-reads these issues back in and works through them.
+With `tracker.mode: remote`, `/effective-flow review` creates one direct issue for each admitted
+root cause on your Git hosting service. It creates no new review epic. `/effective-flow apply`
+discovers these direct findings and still reads legacy epics created by older versions.
+
+Admission requires concrete current reachability and exactly one reason: `material-harm` or
+`irreversible-commitment`. Current-scope problems are corrected in the active delivery; ordinary
+maintainability, optional completeness, polish, and convenience create no durable issue.
+Each direct issue carries the admission reason, evidence and digest, reachability anchor,
+root-cause signature, scope/containment rationale, why-now, and objective completion condition.
+Missing metadata never implies admission.
+
+When re-entry closes a legacy or stale finding below that threshold, Effective Flow writes one
+versioned admission receipt and adds `effective-flow-follow-up-closed`. Repeated runs reuse it only
+while the signature, evidence digest, reachability anchor, and gate version still match. This is
+not `wontfix` and not completed work. A native transition is used only when the tracker proves it
+means cancelled/not planned; otherwise the issue remains open but excluded from discovery.
 
 Local Markdown reports use `language.workflow`. Issue bodies, epic prose, issue comments, remote
 review content, and review-thread replies use `language.forge`; existing German and English
@@ -67,7 +80,8 @@ creates only the ones that are genuinely missing:
 | Label                                                                                             | Meaning                                                                                          |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `effective-flow-review-finding`                                                                   | single finding issue                                                                             |
-| `effective-flow-review-epic`                                                                      | epic/tracking issue                                                                              |
+| `effective-flow-review-epic`                                                                      | legacy epic/tracking issue (read and reconciliation only)                                        |
+| `effective-flow-follow-up-closed`                                                                 | admission gate closed the finding; exclude it from implementation discovery                      |
 | `effective-flow-fix` / `effective-flow-refactor` / `effective-flow-build` / `effective-flow-docs` | target action of the finding (exactly one per finding issue)                                     |
 | `critical` / `important` / `note`                                                                 | severity (exactly one per finding issue; German `kritisch`/`wichtig`/`hinweis` still recognized) |
 | `wontfix`                                                                                         | deliberately not implemented (ADR instead of code)                                               |
@@ -118,10 +132,12 @@ color or description keeps it.
 
 ### Native sub-issues created during planning
 
-`/effective-flow plan-issue` may propose splitting a broad issue into independently implementable
-children, but only when the resolved tracker proves that it can both list native children and
-create an issue under the current parent as one operation. These capabilities are deliberately
-stricter than generic issue creation:
+`/effective-flow plan-issue` keeps routine technical decomposition inside the parent's planning
+comment. A broad issue or independently implementable outcome does not by itself justify another
+issue. It may propose a native child only for an independently admitted `material-harm` or
+`irreversible-commitment` root cause, and only when the resolved tracker proves that it can both
+list native children and create an issue under the current parent as one operation. These
+capabilities are deliberately stricter than generic issue creation:
 
 - **GitHub:** the tracker helper owns the provider-specific mapping for native child reads and
   atomic parent-aware creation. It probes that capability before the first creation preview or
@@ -232,13 +248,13 @@ cannot record the tool identifier this mode requires.
 
 ### What sends its content to the external tool
 
-| Artifact                                             | Where it lives on an external target                    |
-| ---------------------------------------------------- | ------------------------------------------------------- |
-| Review findings, their container, and their comments | the external tool                                       |
-| Issue-driven work (`apply`, `plan-issue`)            | the external tool                                       |
-| Pull requests, PR comments, PR review threads        | always the Git forge behind `origin`                    |
-| Plan files                                           | always committed under `plan.dir` (default `docs/plan`) |
-| Investigations                                       | always local under `.effective-flow/investigation/`     |
+| Artifact                                                      | Where it lives on an external target                    |
+| ------------------------------------------------------------- | ------------------------------------------------------- |
+| Direct review findings, legacy containers, and their comments | the external tool                                       |
+| Issue-driven work (`apply`, `plan-issue`)                     | the external tool                                       |
+| Pull requests, PR comments, PR review threads                 | always the Git forge behind `origin`                    |
+| Plan files                                                    | always committed under `plan.dir` (default `docs/plan`) |
+| Investigations                                                | always local under `.effective-flow/investigation/`     |
 
 Both issue-carrying flows follow the same target; one run never splits them across two systems.
 Prose written to the external tool uses `language.forge`, exactly as forge issue prose does.
@@ -280,7 +296,8 @@ intact, so the run is resumable once the connection is fixed. See
 Effective Flow's classification strings stay canonical on an external target:
 `effective-flow-review-finding`,
 `effective-flow-review-epic`, the action labels, the severity labels, `wontfix`,
-`effective-flow-issue-done`, and `effective-flow-needs-planning` keep exactly the spellings listed
+`effective-flow-follow-up-closed`, `effective-flow-issue-done`, and
+`effective-flow-needs-planning` keep exactly the spellings listed
 under [Labels](#labels). A run stores them in whichever classification primitive your tool offers –
 labels, tags, workflow states, or a custom field – and reports which one it used. If the connection
 exposes no such primitive, the run aborts rather than creating findings without severity and action
@@ -297,21 +314,20 @@ may propose its display name and stable value for that run. Only `/effective-flo
 the value. Zero or several candidates, a stale value, or a non-interactive run without a configured
 value stops before implementation rather than guessing.
 
-The container that groups a review run's findings uses the tool's native parent/sub-issue relation
-only when the connection both exposes it and can write the sub-item's completion state; otherwise
-it uses the Markdown checklist. Which mechanism was used is reported per run. Either way, every
-finding stays reachable from its container and its completion stays visible. Creating the pull
-request does not complete the native sub-item or tick its checklist entry. That happens only after
-`merge-gate` observes the linked work item in a terminal state after merge.
+New review runs publish direct finding issues and use no container. The native/checklist mechanism
+remains available only to read and reconcile legacy review epics and to support the separate
+issue-driven flow. Creating a pull request does not complete a legacy native sub-item or tick its
+checklist entry; `merge-gate` performs that reconciliation after merge.
 
-That checklist fallback applies to containers that group review findings; it does **not** authorize
-issue decomposition by `plan-issue`. An external connection can offer decomposition only when it
-proves the complete native-container mechanism—native child listing plus writable native sub-item
-completion—and atomic create-under-parent. When any guarantee is missing, the parent can still
-follow the ordinary canonical-comment planning path, but no child issue is created and Effective
-Flow does not fall back to the forge or a checklist. When all three are proven, the same exact-set
-approval, stable-key reconciliation, and no-blind-retry behavior described for the forge applies
-through that one external connection.
+That checklist fallback applies to legacy containers that group review findings; it does **not**
+authorize issue decomposition by `plan-issue`. An external connection can offer decomposition only
+for an independently admitted child and only when it proves the complete native-container
+mechanism—native child listing plus writable native sub-item completion—and atomic
+create-under-parent. When any guarantee is missing, the parent can still follow the ordinary
+canonical-comment planning path, but no child issue is created and Effective Flow does not fall
+back to the forge or a checklist. When all three are proven, the same exact-set approval,
+stable-key reconciliation, and no-blind-retry behavior described for the forge applies through that
+one external connection.
 
 **Deduplication does not span targets.** A run only sees the target it currently resolves, so if
 you switch targets, findings that already exist in the old one are published again in the new one.
@@ -363,20 +379,22 @@ disclosure with the same consequences, so the gate binds that target too.
 
 Therefore `/effective-flow review` does this whenever it publishes to a tracker:
 
-1. The findings of the run are classified. Anything security relevant – above all anything
-   reachable from outside through untrusted input, a network boundary, or an auth boundary –
-   becomes `local-only`. An uncertain assessment counts as security relevant.
-2. The withheld findings are written first to a local report
+1. After durable-work admission, every admitted finding is classified for disclosure. Anything
+   security relevant – above all anything reachable from outside through untrusted input, a
+   network boundary, or an auth boundary – becomes `local-only`. An uncertain security assessment
+   counts as security relevant; it does not change the finding's admission outcome.
+2. The withheld admitted findings are written first to a local report
    `.effective-flow/review/review-report-YYYY-MM-DD-security[-N].md`, with a notice that the file
    must not be pasted into public issues, pull requests, or chats. Like all runtime state it stays
    local and untracked.
-3. The remaining findings become issues plus a container, exactly as before. The container and
-   every issue body stay silent about the withheld findings – even a bare "3 security findings
+3. The remaining admitted findings become direct issues. Every public issue body stays silent
+   about withheld findings – even a bare "3 security findings
    withheld" would tell an attacker that unfixed vulnerabilities exist.
 4. Only then does Effective Flow offer to publish the withheld findings as issues as well, naming
    the disclosure consequence. Keeping them local is the default; an unanswered or non-interactive
-   run publishes nothing. If you accept, the findings land in the same container and their report
-   entry records the issue number.
+   run publishes nothing. If you accept, each finding becomes a direct issue and its report entry
+   records the issue number. That publication receipt transfers execution authority to the remote
+   issue, so local `apply` skips the report copy.
 
 This gate overrides `tracker.mode` and every other configuration value; there is no config key
 that switches it off. Process the withheld findings with

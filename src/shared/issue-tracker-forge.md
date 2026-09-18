@@ -22,6 +22,7 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
 | `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
 | `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
+| `effective-flow-follow-up-closed`                                                              | admission gate terminalized a finding; not an implementation source               |
 | `effective-flow-issue-done`                                                                    | issue implemented by `{{SKILL:apply-issues}}` (PR created)                        |
 | `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
 | `effective-flow-needs-planning`                                                                | skipped by `{{SKILL:apply-issues}}`; planning via `{{SKILL:plan-issue}}` needed   |
@@ -69,7 +70,8 @@ Rules for every publisher, on whichever tracker target the run resolved:
   commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
   delivering workflow and its user.
 
-The gate governs only the destination of a finding. It never removes a finding, changes its
+Durable-work admission runs before this disclosure gate. The gate governs only the destination of
+an already admitted finding. It never removes a finding, changes its
 severity, or narrows the active finding scope.
 
 ### No AI attribution in issue bodies and comments
@@ -116,7 +118,17 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Recommendation**: [...]
 - **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
 - **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
-- **Epic**: #<epic number> (empty if no epic)
+- **Admission outcome**: admitted
+- **Admission reason**: material-harm | irreversible-commitment
+- **Admission gate**: v1
+- **Evidence**: [type + concrete reference]
+- **Evidence digest**: [stable digest]
+- **Current reachability**: [role/input/configuration/state + anchor/digest]
+- **Root-cause signature**: [normalized root-cause identity]
+- **Scope and containment**: [why not current-scope; why containment is insufficient]
+- **Why now**: [deadline or current consequence]
+- **Completion condition**: [one objective condition]
+- **Epic**: #<legacy epic number> (optional; empty/omitted for direct findings)
 - **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
@@ -126,7 +138,11 @@ instead of carrying an empty `none`.
 
 The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
 
-### Epic body format (tracking issue)
+### Direct finding lifecycle and legacy epic format
+
+New review runs create direct admitted finding issues and no review epic. `apply` discovers those
+open issues by `effective-flow-review-finding`. The epic field and the format below remain readable
+only for review epics created by earlier versions; new publication never calls `epic-build`.
 
 - **Title:** `Code review YYYY-MM-DD[-N]` for English or
   `Code-Review YYYY-MM-DD[-N]` for German
@@ -160,6 +176,23 @@ create/change, PR review-thread read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
+
+Admission re-entry uses the dependency-free local operations
+`follow-up-admission-build` and `follow-up-admission-parse`. The writer returns a deterministic
+comment that begins exactly `<!-- effective-flow-follow-up-admission:v1 -->` and carries the gate
+version, `closed` outcome, normalized root-cause/finding signature, evidence digest, reachability
+anchor/digest, short reason, and date. The parser accepts the marker only as the opening line,
+validates the exact schema, and exposes whether every freshness key matches the current candidate.
+Callers never hand-write or parse this payload. Comment and classification mutations still use the
+remote helper with verified `RUNTIME_STATE_ROOT` as `cwd`, dry-run before apply, fresh reads, and
+stale-write failure.
+
+Terminal admission closure is distinct from completion and `wontfix`. Add
+`effective-flow-follow-up-closed`; use a provider state only when it unambiguously means
+cancelled/not planned. Never call `issue-close`, whose fixed meaning is completed. When the forge
+or target cannot prove a cancelled/not-planned transition, leave the issue open and let the marker
+plus classification exclude it from discovery. Repeat runs add no second comment or classification
+while gate version, signature, evidence digest, and reachability anchor/digest still match.
 
 The two native-containment operations are deliberately separate from generic issue creation:
 

@@ -13,6 +13,7 @@ import {
   buildDecompositionRecords,
   buildEpicPayload,
   buildFindingPayload,
+  buildFollowUpAdmissionReceipt,
   buildIssueLifecycleReceipt,
   buildReviewPayload,
   compareDecompositionContainer,
@@ -24,6 +25,7 @@ import {
   parseDecompositionKey,
   parseDecompositionRecords,
   parseFindingSignature,
+  parseFollowUpAdmissionReceipt,
   parseReference,
   parseReferences,
   parseRemote,
@@ -32,8 +34,12 @@ import {
   planSfLabelMigration,
   probeProvider,
   redact,
+  FOLLOW_UP_ADMISSION_MARKER,
+  FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER,
+  FOLLOW_UP_ADMISSION_VERSION,
   ISSUE_STATE_READ_TIMEOUT_MS,
   ISSUE_STATE_WAIT_MS,
+  supersedeFollowUpAdmissionReceipt,
 } from '../src/scripts/remote-tracker-core.mjs';
 
 const githubRepository = {
@@ -51,6 +57,26 @@ const forgejoRepository = {
   provider: 'forgejo',
   login: 'work',
 };
+
+const admissionDigest = 'a'.repeat(64);
+
+function admittedFinding(overrides = {}) {
+  return {
+    outcome: 'admitted',
+    reason: 'material-harm',
+    gateVersion: 'v1',
+    evidenceType: 'targeted test',
+    evidenceReference: 'test/core.test.mjs:42',
+    evidenceDigest: admissionDigest,
+    reachability: 'Supported request reports durable success without storing the record',
+    reachabilityAnchor: 'src/core.mjs:42',
+    rootCauseSignature: 'src/core.mjs:42 · Core · false durable success',
+    scopeAndContainment: 'Pre-existing behavior outside the active delta; rollback is insufficient',
+    whyNow: 'The supported core path is currently reachable',
+    completionCondition: 'The targeted regression test passes with durable state present',
+    ...overrides,
+  };
+}
 
 function buildGithubDecomposition(records, overrides = {}) {
   return buildDecompositionRecords({
@@ -200,6 +226,7 @@ test('English finding writes remain canonical and use stable helper tokens', () 
     recommendation: 'Normalize the field',
     action: 'effective-flow-fix',
     promptSuggestion: 'Normalize the signature field.',
+    admission: admittedFinding(),
   });
   assert.match(payload.body, /- \*\*Severity\*\*: Important/);
   assert.match(payload.body, /- \*\*Complexity\*\*: Low/);
@@ -225,6 +252,7 @@ test('German finding writes localize display fields while preserving stable help
     recommendation: 'Feld normalisieren',
     action: 'effective-flow-fix',
     promptSuggestion: 'Normalisiere das Signaturfeld.',
+    admission: admittedFinding({ reason: 'irreversible-commitment' }),
     epic: 12,
   });
 
@@ -236,6 +264,8 @@ test('German finding writes localize display fields while preserving stable help
   assert.match(payload.body, /- \*\*Empfehlung\*\*: Feld normalisieren/);
   assert.match(payload.body, /- \*\*Prompt-Vorschlag\*\*: Normalisiere/);
   assert.match(payload.body, /- \*\*Action\*\*: effective-flow-fix/);
+  assert.match(payload.body, /- \*\*Admission outcome\*\*: admitted/);
+  assert.match(payload.body, /- \*\*Admission reason\*\*: irreversible-commitment/);
   assert.match(payload.body, /- \*\*Epic\*\*: #12/);
   assert.match(payload.body, /- \*\*Signature\*\*: src\/a\.mjs:2 · Tracker · Doppelter Befund/);
   assert.doesNotMatch(
@@ -299,6 +329,66 @@ test('dedup unions issue numbers before comparing canonical and legacy signature
     [5],
   );
   assert.equal(result.fresh.length, 1);
+});
+
+test('finding dedup prefers normalized root causes and falls back only for legacy bodies', () => {
+  const result = deduplicateFindings(
+    [
+      {
+        number: 5,
+        body: [
+          '- **Root-cause signature**: Core · acknowledge before persistence',
+          '- **Signature**: src/core.mjs:42 · Core · false durable success',
+        ].join('\n'),
+      },
+      {
+        number: 6,
+        body: '- **Signature**: Legacy only · Tracker · missing lock',
+      },
+    ],
+    [
+      {
+        title: 'same root at a rewritten location',
+        signature: 'src/new-core.mjs:108 · Persistence · renamed symptom',
+        admission: admittedFinding({
+          rootCauseSignature: '  core   · ACKNOWLEDGE before persistence  ',
+        }),
+      },
+      {
+        title: 'legacy fallback',
+        signature: 'Legacy only · Tracker · missing lock',
+        admission: admittedFinding({
+          rootCauseSignature: 'Tracker · stale lock survives a failed update',
+        }),
+      },
+      {
+        title: 'different root at the same location',
+        signature: 'src/core.mjs:42 · Core · false durable success',
+        admission: admittedFinding({
+          rootCauseSignature: 'Core · retry duplicates the durable record',
+        }),
+      },
+      {
+        title: 'root field shadows legacy signature',
+        signature: 'src/core.mjs:42 · Core · false durable success',
+        admission: admittedFinding({
+          rootCauseSignature: 'src/core.mjs:42 · Core · false durable success',
+        }),
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    result.duplicate.map(({ finding, issueNumber }) => [finding.title, issueNumber]),
+    [
+      ['same root at a rewritten location', 5],
+      ['legacy fallback', 6],
+    ],
+  );
+  assert.deepEqual(
+    result.fresh.map(({ title }) => title),
+    ['different root at the same location', 'root field shadows legacy signature'],
+  );
 });
 
 test('English epic writes remain canonical and skipped findings carry no ID', () => {
@@ -402,6 +492,7 @@ test('review body builders reject unsupported languages and route envelope langu
         recommendation: 'Recommendation',
         action: 'effective-flow-docs',
         promptSuggestion: 'Document it.',
+        admission: admittedFinding(),
       }),
     (error) => error.code === 'INVALID_PAYLOAD' && error.details.value === 'fr',
   );
@@ -429,12 +520,152 @@ test('review body builders reject unsupported languages and route envelope langu
       recommendation: 'Vollständig lokalisieren',
       action: 'effective-flow-docs',
       promptSuggestion: 'Dokumentiere die Zuordnung.',
+      admission: admittedFinding(),
     },
   });
   assert.equal(envelope.ok, true);
   assert.match(envelope.data.body, /\*\*Schweregrad\*\*: Hinweis/);
   assert.match(envelope.data.body, /\*\*Komplexität\*\*: Mittel/);
   assert.match(envelope.data.body, /\*\*Action\*\*: effective-flow-docs/);
+});
+
+test('direct finding payloads require one exact admitted record and no epic', () => {
+  const base = {
+    id: 'R-0000010',
+    title: 'Keep durable success honest',
+    severity: 'Critical',
+    complexity: 'Medium',
+    area: 'Core',
+    file: 'src/core.mjs:42',
+    problem: 'The core path reports success before persistence',
+    recommendation: 'Persist before reporting success',
+    action: 'effective-flow-fix',
+    promptSuggestion: 'Persist the record before returning success.',
+  };
+  const payload = buildFindingPayload({ ...base, admission: admittedFinding() });
+
+  assert.match(payload.body, /- \*\*Admission gate\*\*: v1/);
+  assert.match(payload.body, new RegExp(`- \\*\\*Evidence digest\\*\\*: ${admissionDigest}`));
+  assert.match(payload.body, /- \*\*Root-cause signature\*\*:/);
+  assert.match(payload.body, /- \*\*Completion condition\*\*:/);
+  assert.doesNotMatch(payload.body, /- \*\*Epic\*\*:/);
+  assert.equal(parseFindingSignature(payload.body).normalized, payload.normalizedSignature);
+
+  for (const admission of [
+    undefined,
+    admittedFinding({ outcome: 'closed' }),
+    admittedFinding({ reason: 'maintainability' }),
+    admittedFinding({ gateVersion: 'v2' }),
+    { ...admittedFinding(), extra: true },
+  ]) {
+    assert.throws(
+      () => buildFindingPayload({ ...base, admission }),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+
+  const legacy = buildFindingPayload({ ...base, admission: admittedFinding(), epic: 12 });
+  assert.match(legacy.body, /- \*\*Epic\*\*: #12/);
+});
+
+test('follow-up admission receipts round-trip idempotently and reopen on stale evidence', async () => {
+  const receipt = {
+    outcome: 'closed',
+    reason: 'No qualifying material consequence',
+    gateVersion: FOLLOW_UP_ADMISSION_VERSION,
+    signature: 'src/core.mjs:42 · Core · Optional cleanup',
+    evidenceDigest: admissionDigest,
+    reachabilityAnchor: 'commit:abc123',
+    date: '2026-09-17',
+  };
+  const built = buildFollowUpAdmissionReceipt({ receipt });
+
+  assert.equal(FOLLOW_UP_ADMISSION_MARKER, 'effective-flow-follow-up-admission:v1');
+  assert.equal(FOLLOW_UP_ADMISSION_VERSION, 'v1');
+  assert.equal(built.marker, '<!-- effective-flow-follow-up-admission:v1 -->');
+  assert.equal(buildFollowUpAdmissionReceipt({ receipt }).body, built.body);
+  assert.equal(built.body.split(built.marker).length - 1, 1);
+
+  const current = {
+    gateVersion: 'v1',
+    signature: receipt.signature,
+    evidenceDigest: receipt.evidenceDigest,
+    reachabilityAnchor: receipt.reachabilityAnchor,
+  };
+  const parsed = parseFollowUpAdmissionReceipt(built.body, current);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.current, true);
+  assert.equal(parsed.state, 'active');
+  assert.equal(parsed.receipt.outcome, 'closed');
+  assert.equal(
+    parseFollowUpAdmissionReceipt(built.body, {
+      ...current,
+      evidenceDigest: 'b'.repeat(64),
+    }).current,
+    false,
+  );
+  assert.equal(
+    parseFollowUpAdmissionReceipt(built.body, {
+      ...current,
+      reachabilityAnchor: 'commit:def456',
+    }).current,
+    false,
+  );
+  assert.deepEqual(parseFollowUpAdmissionReceipt(`quoted\n${built.body}`, current), {
+    found: false,
+    receipt: null,
+    current: false,
+    state: 'absent',
+  });
+
+  const staleCurrent = { ...current, evidenceDigest: 'b'.repeat(64) };
+  const superseded = supersedeFollowUpAdmissionReceipt({
+    body: built.body,
+    current: staleCurrent,
+  });
+  assert.equal(
+    FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER,
+    'effective-flow-follow-up-admission-superseded:v1',
+  );
+  assert.equal(superseded.marker, '<!-- effective-flow-follow-up-admission-superseded:v1 -->');
+  assert.equal(superseded.unchanged, false);
+  assert.equal(superseded.receipt.evidenceDigest, admissionDigest);
+  assert.equal(superseded.body, built.body.replace(built.marker, superseded.marker));
+  assert.deepEqual(parseFollowUpAdmissionReceipt(superseded.body, staleCurrent), {
+    found: false,
+    receipt: built.receipt,
+    current: false,
+    state: 'superseded',
+  });
+  assert.deepEqual(
+    supersedeFollowUpAdmissionReceipt({ body: superseded.body, current: staleCurrent }),
+    { ...superseded, unchanged: true },
+  );
+  assert.throws(
+    () => supersedeFollowUpAdmissionReceipt({ body: built.body, current }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+
+  const builtEnvelope = await executeOperation('follow-up-admission-build', {
+    cwd: process.cwd(),
+    receipt,
+  });
+  const parsedEnvelope = await executeOperation('follow-up-admission-parse', {
+    cwd: process.cwd(),
+    body: builtEnvelope.data.body,
+    current,
+  });
+  assert.equal(parsedEnvelope.ok, true);
+  assert.equal(parsedEnvelope.data.current, true);
+  assert.equal(parsedEnvelope.provider, null);
+  const supersededEnvelope = await executeOperation('follow-up-admission-supersede', {
+    cwd: process.cwd(),
+    body: builtEnvelope.data.body,
+    current: staleCurrent,
+  });
+  assert.equal(supersededEnvelope.ok, true);
+  assert.equal(supersededEnvelope.data.body, superseded.body);
+  assert.equal(supersededEnvelope.provider, null);
 });
 
 test('label compatibility emits separate prefix and legacy severity queries', () => {
@@ -2577,6 +2808,23 @@ test('decomposition proposals enforce exact schema, status pairs, and unique ide
     'issue',
     'draftHash',
   ]);
+  const admittedBody = [
+    '**Recommended workflow:** Feature',
+    '',
+    'Admission outcome: admitted',
+    'Admission gate: v1',
+    `Evidence digest: ${admissionDigest}`,
+  ].join('\n');
+  const admittedDraft = buildGithubDecomposition([{ ...statusRecords[0], body: admittedBody }]);
+  const changedAdmission = buildGithubDecomposition([
+    { ...statusRecords[0], body: `${admittedBody}\nWhy now: today` },
+  ]);
+  assert.deepEqual(Object.keys(admittedDraft.records[0]), Object.keys(built.records[0]));
+  assert.notEqual(
+    admittedDraft.records[0].draftHash,
+    changedAdmission.records[0].draftHash,
+    'the existing draftHash must bind admission fields carried in the child body',
+  );
   const parsed = parseDecompositionRecords(built.section);
   assert.equal(parsed.found, true);
   assert.equal(parsed.active, true);

@@ -160,9 +160,12 @@ argument type; report which target the argument selected.
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
   lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
   `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the resolved
-  tracker target is the forge or an external tool, it additionally lists open review epics (label
-  `effective-flow-review-epic`, incl. old `firmo-review-epic`, or the target's equivalent
-  container) as candidates, since on those targets no local report files exist.
+  tracker target is the forge or an external tool, it additionally lists open direct
+  `review-finding` issues and legacy review epics (including old `firmo-review-epic`). Exclude the
+  known children of each listed legacy epic from the direct list. A valid admission-closure receipt
+  excludes a direct finding while its gate/signature/evidence/reachability inputs remain current.
+  On the forge, build and parse that receipt only through the shipped helper with the verified
+  `RUNTIME_STATE_ROOT` supplied as `cwd`.
 - **`ambiguous`:** name the competing interpretations and ask, instead of
   guessing.
 - **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
