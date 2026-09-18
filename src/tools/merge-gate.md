@@ -465,8 +465,9 @@ fault of the channel:
   "Returned outcome record" assigns an empty-bodied review;
 - a CI-repair instruction with a line that, after trimming, equals the delimiter or begins with one of
   the six control keywords, `Item:`, `Thread item:` or `Boundary token:` (status
-  `instruction-refused`): no message is written, the failing check is reported as **not
-  auto-repairable** and is not delegated, and it still blocks the merge;
+  `instruction-refused`): no message is written and nothing is delegated, and the run ends at
+  Phase 2 step 3 with a report naming the failing check as **not auto-repairable** – it still blocks
+  the merge, and no further round rebuilds the same refused instruction;
 - nothing left to delegate once the refusals are applied (status `nothing-to-delegate`): the helper
   writes no file, and this run does not delegate. Its refusals are recorded at once, because this
   path has no `validate` step to wait for.
@@ -1162,8 +1163,9 @@ run can push an unbounded number of commits onto someone's pull request.
    check names and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
    dispatch it per "Building and dispatching a delegation", with no thread and no body item, so the
    message ends at the delimiter line. Where `build` refuses the instruction because a line of it
-   could state protocol, delegate nothing: report the failing checks it covered as not
-   auto-repairable, and each of them still fails the check criterion of step 4.
+   could state protocol, delegate nothing and **end the run here**: the report names the failing
+   checks it covered as not auto-repairable, nothing is merged, no further round starts – the next
+   round would rebuild and refuse the same instruction – and the round counter stays unchanged.
 4. **Re-read the status** and evaluate the check criterion:
    - `mergeGate.requireAllChecks: true` (default) – **every** reported check must have completed
      successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends

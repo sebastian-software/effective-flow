@@ -12966,10 +12966,33 @@ test('a sender-side helper failure stops the gate before iterate and costs nothi
     assert.ok(source(doc).includes('`missing-provenance`'), `${doc} must name the refusal`);
   }
 
+  // A refused CI repair is terminal: the next round would rebuild and refuse the same instruction,
+  // so the run ends at that step instead of looping until mergeGate.maxRounds is exhausted.
+  const phase2 = prose(section(gate, '### Phase 2', '#### Round accounting'));
   assert.match(
-    prose(section(gate, '### Phase 2')),
+    phase2,
+    near('end the run here', 'not auto-repairable', 200),
+    'a refused CI repair must end the run with the not-auto-repairable report',
+  );
+  assert.match(
+    phase2,
+    near('not auto-repairable', 'nothing is merged, no further round starts', 200),
+    'a refused CI repair must neither merge nor loop into another round',
+  );
+  assert.match(
+    phase2,
+    near('no further round starts', 'round counter stays unchanged', 200),
+    'ending on a refused CI repair must leave the round counter unchanged',
+  );
+  assert.doesNotMatch(
+    phase2,
     near('not auto-repairable', 'still fails the check criterion', 200),
-    'Phase 2 must keep a refused CI repair blocking',
+    'a refused CI repair must not fall through to the failed-check loop',
+  );
+  assert.match(
+    refusals,
+    near('`instruction-refused`', 'the run ends at Phase 2 step 3', 200),
+    'the refusal list must agree that a refused CI repair ends the run',
   );
 });
 

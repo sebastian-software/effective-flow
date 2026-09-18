@@ -616,8 +616,8 @@ message before it goes out. A review finding whose text contains the message's d
 finding whose review carries no URL or no author (refused as `missing-provenance` rather than given
 an invented link), or an empty review body, is not handed over; the first two count as unassessed
 and keep the merge blocked. A CI-repair instruction that looks like part of the message format is
-refused, and that check is reported as not auto-repairable and still blocks the
-merge. If the helper itself fails or cannot be run – missing from the installed build, or no
+refused: the run ends right there with a report naming that check as not auto-repairable, merges
+nothing, and starts no further round that would only refuse the same instruction again. If the helper itself fails or cannot be run – missing from the installed build, or no
 suitable `node` – the gate stops before `iterate` runs, writes nothing further to the pull request,
 and names the helper's error code. That stop
 costs no round.

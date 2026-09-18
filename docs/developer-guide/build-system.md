@@ -308,7 +308,7 @@ The build aborts with an error message if any of these guards is violated:
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
   **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
-  **2866** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
+  **2868** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
   own measured limits. The build prints each measured size next to its budget and aborts if a tool
   exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
@@ -635,7 +635,7 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2866/2870, `setup` 1723/1723, `iterate` 1765/1775,
+`merge-gate` is 2868/2870, `setup` 1723/1723, `iterate` 1765/1775,
 `apply-review` 1356/1360, `apply-issues` 1190/1190, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
 `plan` 655/665, `docs` 607/617, `build` 591/595, and `fix` 483/488. Read every
