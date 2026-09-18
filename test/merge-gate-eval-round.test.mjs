@@ -384,6 +384,44 @@ test('the pure evaluator separates invalid evidence from a behavioural finding',
   assert.ok(finding.findings.some((problem) => /active guard/.test(problem)));
 });
 
+test('observer-only evidence distinguishes a redundant apply flag on reads from a mutation', () => {
+  const projectRoot = '/tmp/round/project';
+  const log = (operations) =>
+    `${operations
+      .map(([operation, apply], index) =>
+        JSON.stringify({
+          seq: index + 1,
+          operation,
+          apply,
+          at: '2026-09-17T00:00:00.000Z',
+          cwd: projectRoot,
+        }),
+      )
+      .join('\n')}\n`;
+  const reads = [
+    ['pr-read', true],
+    ['issue-comments-read', true],
+  ];
+
+  const readOnly = evaluateEvidence({
+    scenario: 'linked-issue-open-points',
+    logText: log(reads),
+    fixture: {},
+    projectRoot,
+  });
+  assert.deepEqual(readOnly.validityProblems, []);
+  assert.deepEqual(readOnly.findings, []);
+
+  const wrote = evaluateEvidence({
+    scenario: 'linked-issue-open-points',
+    logText: log([...reads, ['issue-close', true]]),
+    fixture: {},
+    projectRoot,
+  });
+  assert.deepEqual(wrote.validityProblems, []);
+  assert.deepEqual(wrote.findings, ['the observer-only run performed an applied mutation']);
+});
+
 test('lifecycle evidence validates timestamps and operation, apply, and cwd value types', () => {
   const projectRoot = '/tmp/round/project';
   const fixture = {

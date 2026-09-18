@@ -2874,7 +2874,7 @@ test('plan-issue persists and approves an exact native-child set before sequenti
 
   assert.match(
     phase2,
-    /external target proves the full native-container contract plus atomic create-under-parent/,
+    /external target(?:'s)? full native-container contract plus atomic create-under-parent/,
   );
   assert.match(
     target,
@@ -3022,13 +3022,13 @@ test('security findings stay local until the review publication gate is confirme
     '**Dedup withheld findings:**',
     '**Reserve IDs:**',
     '**Run the security disclosure gate:**',
-    '**Create finding issues:**',
+    '**Create direct finding issues:**',
   );
   assert.match(review, /must finish before the reservation, so a finding already recorded/);
   assert.match(review, /in that order and before any tracker mutation/);
   assert.match(
     review,
-    /plus the withheld findings only when the gate returned an explicit publication confirmation/,
+    /plus the withheld\s+findings only when the disclosure gate returned an explicit publication confirmation/,
   );
 
   // The gate classifies conservatively and never weakens the reviewer signal.
@@ -3053,13 +3053,21 @@ test('security findings stay local until the review publication gate is confirme
   assert.match(gate, /an unanswered, skipped, or\nnon-interactive run publishes nothing/);
   assert.match(
     gate,
-    /epic body and every issue body contain no count, title, signature, ID, or other reference/,
+    /Every public issue body contains no count, title, signature, ID, or other reference/,
   );
 
   // A blocked report never blocks the unrelated findings, and never silently publishes.
   assert.match(
     gate,
     /\*\*If the report cannot be written\*\*, publish the `publishable` findings as usual, publish\n\s*nothing from the withheld set/,
+  );
+  assert.match(
+    gate,
+    /create each as an admitted direct finding issue;\ncreate no epic or container/,
+  );
+  assert.match(
+    gate,
+    /After explicit publication the direct remote finding is the executable source/,
   );
 
   // The gate binds every publisher and cannot be configured away. That it binds an
@@ -3099,10 +3107,7 @@ test('security findings stay local until the review publication gate is confirme
     /\*\*Hand over published findings:\*\*[\s\S]*`\{\{SKILL:apply\}\} #<nr> \[#<nr> …\]`/,
   );
   assert.match(applyReview, /Never drop them silently/);
-  assert.match(
-    applyReview,
-    /a report consisting only of published findings ends with an executable next step/,
-  );
+  assert.match(applyReview, /Published\s+findings use the concrete handover from step 10/);
 });
 
 test('release exposes verified delivery state to the disabled catalog job', () => {
@@ -3797,6 +3802,321 @@ test('the security disclosure gate binds every publisher on every tracker target
   assert.match(
     flat(section(tracker, '### No AI attribution in issue bodies and comments')),
     /This binds every publisher on every tracker target, the forge and an external tool alike/,
+  );
+});
+
+test('every durable derived-work materializer reaches one gate before mutation', () => {
+  const directConsumers = [
+    'src/shared/unresolved-review-report.md',
+    'src/tools/apply-review.md',
+    'src/tools/investigate.md',
+    'src/tools/iterate.md',
+    'src/tools/plan-issue.md',
+    'src/tools/review.md',
+    'src/shared/pr-review-integration.md',
+  ];
+  for (const path of directConsumers) {
+    const { eager, lazy } = collectIncludeNames(source(path));
+    assert.equal(eager.has('durable-follow-up-gate'), false, `${path} must defer the gate`);
+    assert.equal(lazy.has('durable-follow-up-gate'), true, `${path} bypasses the central gate`);
+  }
+
+  for (const tool of ['build', 'fix', 'refactor', 'maintain']) {
+    const includes = collectIncludeNames(source(`src/tools/${tool}.md`));
+    assert.equal(
+      includes.eager.has('unresolved-review-report') ||
+        includes.lazy.has('unresolved-review-report'),
+      true,
+      `${tool} must share the gated residual-report materializer`,
+    );
+  }
+
+  const gate = flat(source('src/shared/durable-follow-up-gate.md'));
+  const outcomeSection = section(
+    source('src/shared/durable-follow-up-gate.md'),
+    '### Four outcomes',
+    '\n### Stable admitted record and re-entry',
+  );
+  assert.deepEqual(
+    bullets(outcomeSection)
+      .map((line) => line.match(/^\s*- `([^`]+)`/u)?.[1])
+      .filter(Boolean),
+    ['current-scope', 'admitted', 'closed', 'uncertain'],
+    'the gate outcome vocabulary must stay closed and ordered',
+  );
+  assert.match(
+    gate,
+    /apply this gate before reserving a finding ID, writing a report or issue, proposing a child issue, or emitting an executable outward handoff/,
+  );
+  assert.match(gate, /Missing admission metadata never implies `admitted`/);
+  assert.match(
+    gate,
+    /`current-scope`.*never creates a report, issue, child, plan, or executable follow-up/,
+  );
+  assert.match(
+    gate,
+    /`uncertain`.*Never loop it into another workflow or create a precautionary artifact/,
+  );
+
+  const unresolved = flat(source('src/shared/unresolved-review-report.md'));
+  ordered(
+    unresolved,
+    'classify them through the loaded “Durable derived-work gate”',
+    'before any ID reservation, directory creation, or report write',
+  );
+  assert.match(unresolved, /Only `admitted` residual root causes may enter a review-report file/);
+  assert.match(unresolved, /`current-scope`, `closed`, or `uncertain` candidates/);
+
+  const planIssue = flat(source('src/tools/plan-issue.md'));
+  assert.match(
+    planIssue,
+    /Only propose a native child when that root cause is independently `admitted`/,
+  );
+  assert.match(planIssue, /`current-scope`, `closed`, and `uncertain` create no child/);
+
+  const investigate = flat(source('src/tools/investigate.md'));
+  assert.match(investigate, /`admitted`: persist exactly one workflow and invocation suggestion/);
+  assert.match(investigate, /`closed`: persist `No action` and no invocation/);
+
+  const iterate = flat(source('src/tools/iterate.md'));
+  assert.match(
+    iterate,
+    /`closed` is terminal with no artifact, invocation, or unspecified follow-up/,
+  );
+  assert.match(iterate, /Create no task for a non-admitted out-of-scope item/);
+
+  const prReview = flat(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    prReview,
+    /run the loaded “Durable derived-work gate” before disclosure or publication/,
+  );
+  assert.match(
+    prReview,
+    /`closed` terminates, and unresolved `uncertain` blocks\/escalates without an artifact/,
+  );
+});
+
+test('legacy findings fail closed and direct findings replace new epics without breaking reads', () => {
+  const local = flat(source('src/tools/apply-review.md'));
+  assert.match(local, /Re-evaluate a legacy finding that lacks the record/);
+  assert.match(local, /open status or Importance is insufficient/);
+  assert.match(local, /Gate rejection never becomes an ADR candidate/);
+
+  const remote = flat(source('src/tools/apply-review-remote.md'));
+  assert.match(
+    remote,
+    /Missing or stale admission record.*re-evaluate through “Durable derived-work gate”/,
+  );
+  assert.match(remote, /candidate with no credible qualifying consequence becomes `closed`/);
+  assert.match(remote, /otherwise.*implement only with a complete current `admitted` record/);
+
+  const review = flat(source('src/tools/review.md'));
+  assert.match(
+    review,
+    /one direct issue is created per admitted root cause; no new review epic\/container is created/,
+  );
+  assert.match(
+    review,
+    /Keep `effective-flow-review-epic` and `wontfix` readable for legacy lifecycle paths/,
+  );
+
+  const detection = flat(source('src/shared/apply-source-detection.md'));
+  assert.match(detection, /lists open direct `review-finding` issues and legacy review epics/);
+  assert.match(
+    detection,
+    /Exclude the known children of each listed legacy epic from the direct list/,
+  );
+});
+
+test('remote admission closure preserves helper cwd, preview, freshness, and terminal semantics', () => {
+  const helper = flat(source('src/shared/remote-helper-contract.md'));
+  assert.match(
+    helper,
+    /verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd` on \*\*every helper operation\*\*/,
+  );
+  assert.match(helper, /Mutations are dry runs by default/);
+  assert.match(helper, /`STALE_WRITE`: abort that write without retrying, merging, or overwriting/);
+
+  const forge = flat(source('src/shared/issue-tracker-forge.md'));
+  assert.match(forge, /Callers never hand-write or parse this payload/);
+  assert.match(
+    forge,
+    /verified `RUNTIME_STATE_ROOT` as `cwd`, dry-run before apply, fresh reads, and stale-write failure/,
+  );
+  assert.match(forge, /Never call `issue-close`, whose fixed meaning is completed/);
+  assert.match(forge, /Repeat runs add no second comment or classification/);
+
+  const remote = flat(source('src/tools/apply-review-remote.md'));
+  assert.match(remote, /preview and apply the unchanged comment\/classification mutations/);
+  assert.match(remote, /Never call completed `issue-close`, never add `wontfix`/);
+});
+
+test('remote review discovery checks closure freshness before terminal suppression', () => {
+  const remote = source('src/tools/apply-review-remote.md');
+  const discovery = prose(
+    section(remote, '### Argument detection and mode determination', '\n### Phase 1 remote'),
+  );
+  ordered(
+    discovery,
+    '`remote` without argument',
+    'closure-marked direct findings across states',
+    'suppress those whose receipts remain current',
+    'list stale ones for reclassification',
+    'also list legacy review epics',
+    'Exclude children of a listed legacy epic from the direct list',
+  );
+
+  const classification = prose(
+    section(remote, '### Phase 1 remote: Read findings from issues', '\n### Phase 2 remote'),
+  );
+  ordered(
+    classification,
+    'Admission closure receipt:',
+    'Skip it only while gate version, normalized signature, evidence digest, and reachability anchor/digest still match',
+    'Perform this comparison before any generic checked-off or terminal-state handling',
+    'already checked off/closed without a stale admission closure receipt',
+    'Missing or stale admission record:',
+  );
+  assert.match(
+    classification,
+    /a stale receipt re-enters admission even when the issue is closed or its legacy epic entry is checked/,
+  );
+});
+
+test('an admitted stale closure is cleared only for an already non-terminal issue', () => {
+  const remote = prose(
+    section(
+      source('src/tools/apply-review-remote.md'),
+      '### Phase 1 remote: Read findings from issues',
+      '\n### Phase 2 remote',
+    ),
+  );
+
+  ordered(
+    remote,
+    'a stale receipt re-enters admission',
+    'stale closure re-evaluated to `admitted`',
+    'Read the issue state fresh',
+    'Proceed only when it is already non-terminal',
+    '`follow-up-admission-supersede`',
+    '`issue-comment-update`',
+    '`issue-label-remove`',
+    '`effective-flow-follow-up-closed`',
+    'Only after both mutations succeed',
+    'Create the per-finding tasks',
+  );
+  assert.match(
+    remote,
+    /`issue-comment-update`.*exact comment ID.*fresh `expectedBodyHash`.*same payload.*must not fall back to `issue-comment`/,
+  );
+  assert.match(
+    remote,
+    /helper-parsed active or superseded stale receipt.*body.*current freshness keys.*`follow-up-admission-supersede`.*only its deterministic body/,
+  );
+  assert.match(
+    remote,
+    /guarded update succeeds.*helper proves an idempotent prior supersession.*`issue-label-remove`/,
+  );
+  assert.match(
+    remote,
+    /Any terminal state, including one proven cancelled\/not planned, stops.*closure comment and classification intact.*manual tracker restoration.*fresh run.*create no task/,
+  );
+});
+
+test('needs_evidence receives one bounded uncertain check before either workflow maps it', () => {
+  const contracts = [
+    {
+      label: 'iterate',
+      text: prose(
+        section(source('src/tools/iterate.md'), '### Phase 2: Classification', '\n### Phase 2.5'),
+      ),
+      before: 'Before switching on its returned classification',
+      unresolved: /never defer it as unspecified follow-up/,
+    },
+    {
+      label: 'PR-review integration',
+      text: prose(
+        section(
+          source('src/shared/pr-review-integration.md'),
+          '### Judgment handoff to effective-delivery',
+          '\n### Security binding',
+        ),
+      ),
+      before: 'Before switching on a returned classification',
+      unresolved: /never publish or export it unresolved/,
+    },
+  ];
+
+  for (const { label, text, before, unresolved } of contracts) {
+    ordered(
+      text,
+      before,
+      'preliminary current-scope/high-risk triage',
+      'credible qualifying `needs_evidence` path becomes `uncertain`',
+      'exactly one bounded read-only question/check with an explicit completion criterion',
+      'then resolve it or block/escalate',
+      'Then map the remaining classifications',
+      '`needs_evidence` → only the triage outcome above applies; do not start a second evidence round',
+    );
+    assert.equal(
+      [...text.matchAll(/exactly one bounded read-only question\/check/g)].length,
+      1,
+      `${label} must permit exactly one bounded check`,
+    );
+    assert.match(text, unresolved, `${label} must block unresolved credible risk`);
+  }
+});
+
+test('fix always declares incomplete review coverage and withholds partial residual evidence', () => {
+  const completion = prose(
+    boundedSlice(source('src/tools/fix.md'), '### Phase 5: Completion', '\n## Rules'),
+  );
+  ordered(
+    completion,
+    'For automatic PR-review integration',
+    'declare `no-review-capability` unconditionally',
+    'never supplies complete specialist review coverage',
+    'Keep any local residual-report evidence in its existing report path',
+    'do not pass that partial set as `finding-set`',
+  );
+});
+
+test('next-step apply edges require a concrete admitted artifact', () => {
+  const nextSteps = flat(source('src/shared/next-steps.md'));
+  assert.match(
+    nextSteps,
+    /finding\/review `apply` option exists only when this run actually created an admitted durable report or direct finding issue and can name its concrete path\/reference/,
+  );
+  assert.match(
+    nextSteps,
+    /`current-scope`, `closed`, `uncertain`, a merely eligible result without write authority, or an empty\/deduplicated result emits no substitute planning or review invocation/,
+  );
+  const edges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  });
+  const reviewApply = edges.filter(
+    (edge) =>
+      edge.tool === 'review' &&
+      edge.then.startsWith('{{SKILL:apply}}') &&
+      (edge.condition.includes('report') || edge.condition.includes('direct admitted')),
+  );
+  assert.deepEqual(
+    reviewApply.map((edge) => edge.condition),
+    ['local report written', 'direct admitted findings published to a tracker'],
+  );
+});
+
+test('local review emits next steps for admitted findings but not a closed-only appendix', () => {
+  const localMode = flat(
+    boundedSlice(source('src/tools/review.md'), '#### Local mode', '\n#### Publishing target'),
+  );
+
+  ordered(
+    localMode,
+    'If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.',
+    'Delete the wisdom file.',
+    'If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.',
+    'If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.',
   );
 });
 
@@ -4495,11 +4815,13 @@ test('the documentation sync gate is a fixed, blocking part of every implementat
   // A bare "not relevant" must not satisfy the gate, otherwise `no impact`
   // degrades into the skip clause this change removes.
   assert.match(flat(contract), /not relevant.{0,80}does not satisfy/i);
-  // Both blocking branches: escalate interactively, hand off as a finding when
-  // delegated non-interactively.
+  // Both blocking branches keep the gap in the active slice; neither exports follow-up work.
   ordered(flat(contract), 'interactive', 'non-interactive delegation');
-  assert.match(flat(contract), /non-interactive delegation.{0,400}do not abort/i);
-  assert.match(contract, /Action: \{\{SKILL:docs\}\}/);
+  assert.match(
+    flat(contract),
+    /non-interactive delegation.{0,500}return every remaining blocked surface.{0,200}`current-scope`/i,
+  );
+  assert.match(contract, /create no `Action: \{\{SKILL:docs\}\}` finding/);
 
   // The clauses that made documentation optional are gone.
   assert.doesNotMatch(source('src/tools/build.md'), /Skip user docs only with a short/);

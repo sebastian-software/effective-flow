@@ -444,14 +444,15 @@ assumed, and "deferred" is the word that most needs it, because it does not mean
 each side unless it is pinned. The table is `{{SKILL:iterate}}`'s own and is restated here word for
 word, because a mapping only one end holds is a mapping that drifts:
 
-| processing outcome                                                   | returned value |
-| -------------------------------------------------------------------- | -------------- |
-| implemented as a commit                                              | `implemented`  |
-| `skipped` as a false positive (`unsupported`)                        | `rejected`     |
-| `skipped` as out of scope (`valid_out_of_scope`)                     | `deferred`     |
-| deferred question (`question_or_information`, `needs_evidence`)      | `deferred`     |
-| `failed` – the item's own implementation delegation returned `ABORT` | `unassessed`   |
-| deselected at the approval gate (Phase 2.5)                          | `unassessed`   |
+| processing outcome                                                                                | returned value |
+| ------------------------------------------------------------------------------------------------- | -------------- |
+| implemented as a commit                                                                           | `implemented`  |
+| `skipped` as a false positive (`unsupported`)                                                     | `rejected`     |
+| `skipped` as out of scope (`valid_out_of_scope`): admitted work reported without widening this PR | `deferred`     |
+| `skipped` as out of scope (`valid_out_of_scope`): non-admitted work closed by the gate            | `deferred`     |
+| deferred question (`question_or_information`, `needs_evidence`)                                   | `deferred`     |
+| `failed` – the item's own implementation delegation returned `ABORT`                              | `unassessed`   |
+| deselected at the approval gate (Phase 2.5)                                                       | `unassessed`   |
 
 The last two rows are the ones this gate must not read as an assessment: nobody judged the finding,
 so the item is `unassessed` and condition 10 blocks on it.

@@ -235,7 +235,10 @@ Start in parallel if possible:
    - performs a read-only qualitative review with the reduced-depth limitation
    - reports all severities; critical findings must be fixed before completion
 
-If open findings or residual risks arise in the process, document them in a structured way so Phase 5 can write them as a review report:
+If findings or residual risks arise, make one automatic incorporation pass for new current-scope
+items, then pass the residual batch through “Gated residual review-finding reports”. Document only
+`admitted` residuals in the structured form below; a remaining `current-scope` or unresolved
+`uncertain` item blocks completion, and `closed` items produce no artifact:
 
 - Title
 - Severity (Critical / Important / Note)
@@ -249,11 +252,12 @@ If open findings or residual risks arise in the process, document them in a stru
 - Status in the complete report language (English: Fixed / Open / Not implemented; German:
   Behoben / Offen / Nicht umgesetzt)
 - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
+- the complete stable admitted record from “Durable derived-work gate”
 
 ### Phase 5: Completion
 
 1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
-2. If findings or residual risks with a canonical open or unimplemented status in the complete
+2. If admitted findings or residual risks with a canonical open or unimplemented status in the complete
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
@@ -263,7 +267,7 @@ If open findings or residual risks arise in the process, document them in a stru
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
 4. Delete the wisdom file.
-5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Declare to that handback that this workflow supplies **no** complete finding set — Phase 4 routes only `{{AGENT:generic-product-reviewer}}` for degraded buckets, so a specialist bucket carries no reviewer findings — so an automatic PR review reviews the pull request itself. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Summarize:
    - root cause
    - changes

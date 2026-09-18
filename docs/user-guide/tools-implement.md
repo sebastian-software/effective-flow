@@ -41,9 +41,10 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   change could invalidate — in-code documentation and CLI help, user-facing documents, technical
   documents, repository convention files — the run records one verdict. Either the surface was
   updated, or it demonstrably has no impact (a bare "not relevant" does not count), or it is
-  blocked. A blocked surface stops completion the same way an open critical review finding does;
-  when the tool runs as a non-interactive sub-run of `apply-review`, `apply-issues`, or `iterate`,
-  the gap is instead carried out as an open finding with action `/effective-flow docs`. Most small
+  blocked. A blocked surface is current-scope and stops completion the same way an active-slice
+  defect does. In a non-interactive sub-run of `apply-review`, `apply-issues`, or `iterate`, it is
+  returned to the owner for correction; it is never exported as an `/effective-flow docs` finding.
+  Most small
   changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
   manufacture busywork.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
@@ -57,7 +58,7 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
 ## `/effective-flow apply`
 
 **Purpose:** Pure entry router. Takes any apply source – plan file,
-local review report, review epic/finding, or any tracker issue –, classifies
+local review report, direct review finding, legacy review epic, or any tracker issue –, classifies
 it via the shared apply-source detection, and delegates to the responsible internal tool
 (internally `apply-plan`, `apply-review`, or `apply-issues`; these are not directly callable via
 `/effective-flow`). `apply` implements nothing itself.
@@ -69,13 +70,19 @@ decide yourself which tool is responsible.
 
 **Input/output:** Without an argument, `apply` lists local candidates (open plans from
 `<plan.dir>/`, report files under `.effective-flow/review/`) and, on a tracker target, additionally
-open review epics, and then asks for the concrete source. The output consists of the
+open direct review findings plus legacy review epics without listing their children twice, and then
+asks for the concrete source. The output consists of the
 detected source type, the resolved handle, and the started target tool. For an issue or remote
 review finding that will be implemented, the owning internal workflow first passes clarification
 and approval, then advances the work item at least to started immediately before it delegates the
 first code change. Forge issues use `effective-flow-issue-in-progress`; external issues use the
 freshly validated native state from `tracker.externalStartedState`. A failed transition stops that
 item before code changes.
+
+Review re-entry is fail-closed: only a fresh explicit `admitted` record is implementable. A legacy
+open or Important finding is re-evaluated. Credible incomplete high risk is `uncertain` and blocks
+for evidence/containment; a sub-threshold finding is terminally `closed` with an idempotent receipt,
+not converted into an ADR.
 
 **Interplay:** Pure classification and routing layer; implementation, validation,
 review, and commit preparation lie entirely with the respective target tool. With an
@@ -108,8 +115,10 @@ delivery branch with PR, merge, or left-standing branch.
 
 **Interplay:** Delegates internally per affected file/domain to specialized or reduced-depth
 implementer and reviewer workers, plus repository-native test, validation, and documentation
-workers. Mixed repositories keep each route separate. Open, not-implemented review findings land as an external report under
-`.effective-flow/review/`, which can later be worked off via `/effective-flow apply` or the appropriate implementation workflow.
+workers. Mixed repositories keep each route separate. Current-scope findings must be corrected in
+the active run or keep it blocked. Only an independent admitted residual may be written to a report
+under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
+appropriate implementation workflow.
 
 ## `/effective-flow fix`
 

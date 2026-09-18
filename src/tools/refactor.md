@@ -243,15 +243,15 @@ documentation-sync
 
 1. Start every reviewer selected by project routing for the changed files, including
    `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
-2. Aggregate findings:
-   - Critical: fix before completion
-   - Important: should be fixed
-   - Note: optional
+2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
+   items. Run the affected review checks once after the pass, then classify the residual batch via
+   “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
+   item blocks completion; only `admitted` residuals may become a report, and `closed` items do not.
 3. Present the review results in detail, including status per finding. Treat the results as
    provisional until Phase 6 confirms that no regression remains. On every Phase 4 run, replace
    the previous provisional review set in full with the newest results; do not carry findings
    from superseded runs forward.
-4. Document each provisional finding in a structured way so open or unimplemented findings can
+4. Document each admitted provisional finding in a structured way so open or unimplemented findings can
    be written as a review report after successful validation:
    - Title
    - Severity (Critical / Important / Note)
@@ -265,6 +265,7 @@ documentation-sync
    - Status in the complete report language (English: Fixed / Open / Not implemented; German:
      Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
+   - the complete stable admitted record from “Durable derived-work gate”
 5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
 6. Do not create an open-findings report or append an implementation backlink in this phase.
    Both are external finalization state and are persisted only after Phase 6 succeeds.
@@ -291,7 +292,7 @@ Start in parallel:
 3. If no regressions:
    - finalize external review state from the latest provisional review only:
      - use the session ID as the stable finalization marker for this workflow run; in a generated report, include it after the reviewer or phase in the existing `Source review` field, for example `Phase 4 (run <SESSION_ID>)`
-     - if findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
+     - if admitted findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
      - if exactly one matching report exists, reuse that report and its path; complete or validate its contents and memory update as needed, and do not create a collision-suffixed report
      - if more than one matching report exists, stop before writing and escalate the ambiguity to the user
      - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
@@ -304,7 +305,7 @@ Start in parallel:
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
    - delete the wisdom file
-   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** finding set of the latest Phase-4 review to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** finding set of the latest Phase-4 review to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
    - confirm that the behavior stayed unchanged
    - emit the next-step block per `next-steps` as the last element of the report
