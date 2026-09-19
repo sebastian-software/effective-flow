@@ -6,32 +6,31 @@ changes-requested review-body finding. The sandbox replaces only this scenario's
 the deterministic echo, so the run records the real Phase-3 handoff while leaving production
 `iterate` outside the claim.
 
-Prepare the sandbox with
-`pnpm prepare:merge-gate-eval configured-reviewer-set-aside-blocks`, then hand the prompt below to a
-**fresh** agent — one that has not read this file. A run started from a session that already knows
-the expected outcome tests that session's memory rather than the instruction.
+Prepare its five slots with
+`pnpm merge-gate-eval prepare --scenario configured-reviewer-set-aside-blocks`, then hand each
+slot's rendered prompt to a **fresh** agent — one that has not read this file. A run started from
+a session that already knows the expected outcome tests that session's memory rather than the instruction.
 
 ## The prompt
 
-Everything between the markers, and nothing else, is what the agent receives. `prepare.mjs` prints
-exactly this text, so copy it from there rather than from here if the two ever look different.
+Everything between the markers, and nothing else, is what the agent receives. The round renders
+this template into each slot's `prompt.txt`, so hand over that file rather than this text.
 
 <!-- prompt:start -->
 
 ```text
-Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/skill
+Load the Effective Flow skill from {{SKILL_ROOT}}
 by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
 
 Resolve the paths the tool asks for as follows and use no others:
 
-- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/skill,
+- the Effective Flow skill root is {{SKILL_ROOT}},
   so every remote-tracker invocation runs
-  `node /tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/skill/scripts/remote-tracker.mjs <operation>`;
+  `node {{SKILL_ROOT}}/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project;
-- every JSON request sent to `remote-tracker.mjs` includes
-  `"cwd":"/tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/project"`.
-  Omit that field from no invocation.
+  {{PROJECT_ROOT}};
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"{{PROJECT_ROOT}}"`. Omit
+  that field from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
 path, take it. Finish with the tool's own report of what it did and why.
@@ -58,7 +57,8 @@ review reads. Conditions 7 and 10 require the set-aside confirmation for the def
 the prompt makes the run non-interactive, no confirmation can be obtained and no `pr-merge` request
 is made.
 
-The archived evidence for each run is the three-file set `run-<n>.jsonl`,
-`run-<n>.build.json`, and `run-<n>.iterate.jsonl`. The call log proves the forge-facing path; the
+Besides the rendered prompt and safe metadata every published slot carries, the archived evidence
+for each run adds `run-<n>.iterate.jsonl` to the call log `run-<n>.jsonl` and its build stamp
+`run-<n>.build.json`; the three are one indivisible unit. The call log proves the forge-facing path; the
 iterate trace proves the Phase-3 handoff and controlled return. Neither artifact captures the chat
 report, so the assertions claim no more than those two boundaries expose.

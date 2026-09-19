@@ -42,8 +42,8 @@
 //
 // **What the narrowing still costs has since been measured, and it does not argue for narrowing
 // further.** Of the 12 non-merge commits that reached `origin/develop` since this layer landed in
-// `364f4d0` (#399), 8 touched at least one of the 43 source files that fed the then-current 23 built
-// paths,
+// `364f4d0` (#399), 8 touched at least one of the 43 source files that fed the then-current 23
+// built paths,
 // and 6 of those 8 changed what a gate run does: the checkout inapplicability list, the
 // conflict-resolution contract, the post-merge observation body, the completion invariants that
 // bound the correction rounds, the base-branch derivation that decides the merge target, and a
@@ -110,7 +110,8 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import process from 'node:process';
 import { relative, resolve } from 'node:path';
 import { scenarioSetup } from './configured-reviewer-scenario.mjs';
@@ -128,23 +129,31 @@ const EVAL_GIT_HASH = 'eval';
 // tree they determine the sandbox exactly, so they are hashed beside it rather than folded into it:
 // a mismatch should be able to say whether the gate moved or the bench did.
 //
-// The membership rule is "would a change here change what the run did", which is why `prepare.mjs`
-// and this file are absent. Neither is read during a run — one archives afterwards, the other only
-// computes this digest, and changing what it hashes already shows up as a changed digest without
-// hashing itself.
+// The membership rule is "would a change here change what the run did", which is why the round
+// coordinator and this file are absent. Neither is read during a run — one prepares and seals the
+// isolated attempts, the other only computes this digest — and changing what this file hashes
+// already shows up as a changed digest without hashing the hasher itself.
+//
+// `configured-reviewer-scenario.mjs` is a member for every scenario, not only the one it configures:
+// the scaffold asks it which project-setup rows and which `iterate` overlay each slot receives, so a
+// change there can change what any run sees. The echo it selects — `iterate-echo.md` and
+// `iterate-trace.mjs` — is deliberately not an instrument file: it is copied into the slot's skill
+// tree and hashed there, at the paths the run executes, as part of `skill`.
 const INSTRUMENT_FILES = [
   resolve(import.meta.dirname, 'remote-tracker.mjs'),
   resolve(import.meta.dirname, 'sandbox.mjs'),
   resolve(import.meta.dirname, 'scaffold.mjs'),
-];
-
-const CONFIGURED_REVIEWER_INSTRUMENT_FILES = [
+  resolve(import.meta.dirname, 'prompt.mjs'),
+  resolve(import.meta.dirname, 'suite.mjs'),
   resolve(import.meta.dirname, 'configured-reviewer-scenario.mjs'),
-  resolve(import.meta.dirname, 'configured-reviewer-scaffold.mjs'),
 ];
 
-function digestOf(content) {
+export function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+export function digestFile(path) {
+  return digestOf(readFileSync(path));
 }
 
 // The seeds of the load set: the router that dispatches the invocation, the tool body that is the
@@ -165,11 +174,15 @@ const ITERATE_ECHO_SOURCE = resolve(import.meta.dirname, 'iterate-echo.md');
 const ITERATE_TRACE_SOURCE = resolve(import.meta.dirname, 'iterate-trace.mjs');
 const ITERATE_TRACE_SKILL_PATH = 'scripts/iterate-trace.mjs';
 
-// Apply the exact overlay a scenario executes before deriving its load set. The echo replaces the
+// Apply the exact overlay a scenario executes to a copied skill tree. The echo replaces the
 // production `tools/iterate.md` seed rather than being hashed beside it, and its trace helper is an
 // additional seed because the replacement explicitly executes it. Both files therefore appear
 // once in `skill.files`, at their sandbox paths, and never again under `instrument.files`.
-function applyScenarioSkillOverlay(scenario, skillRoot) {
+//
+// It mutates the tree it is given, so it is applied only to a slot's own skill copy (by
+// `scaffold.mjs`) or to a throwaway copy (by `pristineScenarioBuildIdentity`) — never to a round's
+// shared build, which every other scenario's slots are copied from.
+export function applyScenarioSkillOverlay(scenario, skillRoot) {
   const setup = scenarioSetup(scenario);
   if (!setup.iterateEcho) return setup;
   for (const source of [ITERATE_ECHO_SOURCE, ITERATE_TRACE_SOURCE]) {
@@ -225,7 +238,7 @@ const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 // the affected rounds have been re-stamped against it, nothing downstream can tell it from a
 // legitimately narrower one — the dropped fragment is then free to drift uncovered. Failing here is
 // the only place the difference is still visible.
-function deriveLoadSet(skillRoot, iterateEcho) {
+function deriveLoadSet(skillRoot, iterateEcho = false) {
   const seeds = iterateEcho ? [...LOAD_SET_SEEDS, ITERATE_TRACE_SKILL_PATH] : LOAD_SET_SEEDS;
   const set = new Set(seeds);
   for (const seed of seeds) {
@@ -264,6 +277,15 @@ function hashFiles(paths, root) {
   return { digest: digestOf(canonical), files };
 }
 
+export function builtSkillIdentity(skillRoot, { iterateEcho = false } = {}) {
+  if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
+  return hashFiles(deriveLoadSet(skillRoot, iterateEcho), skillRoot);
+}
+
+export function instrumentIdentity() {
+  return hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
+}
+
 export function portableSkillRoot(outputRoot) {
   return resolve(outputRoot, 'dist', 'portable', 'effective-flow');
 }
@@ -291,16 +313,18 @@ export function buildPortableSkill(outputRoot) {
 // Takes the built tree to hash rather than finding one, so a caller cannot accidentally describe a
 // run with a stale `dist/` it never built. Returns the three parts separately as well as combined,
 // so a mismatch can name which one moved before naming the files.
+//
+// It hashes the tree exactly as it finds it and never applies an overlay itself: sealing and
+// publication recompute a slot's identity from that slot's skill copy, and re-applying the echo
+// there would overwrite whatever a run changed and hide it. A scenario whose setup requires the
+// echo therefore fails on a tree without one — the trace helper is a load-set seed — rather than
+// describing the production `iterate` it never ran. Use `pristineScenarioBuildIdentity` for a
+// round build or a fresh build that has not been overlaid.
 export function scenarioBuildIdentity(scenario, skillRoot) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const setup = applyScenarioSkillOverlay(scenario, skillRoot);
-  const skill = hashFiles(deriveLoadSet(skillRoot, setup.iterateEcho), skillRoot);
-  const instrument = hashFiles(
-    setup.iterateEcho
-      ? [...INSTRUMENT_FILES, ...CONFIGURED_REVIEWER_INSTRUMENT_FILES]
-      : INSTRUMENT_FILES,
-    REPOSITORY_ROOT,
-  );
+  const setup = scenarioSetup(scenario);
+  const skill = builtSkillIdentity(skillRoot, { iterateEcho: setup.iterateEcho });
+  const instrument = instrumentIdentity();
   const scenarioInputs = hashFiles(
     [
       resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`),
@@ -315,4 +339,22 @@ export function scenarioBuildIdentity(scenario, skillRoot) {
     instrument,
     scenario_inputs: scenarioInputs,
   };
+}
+
+// The identity a slot of `scenario` will have once provisioned from the pristine build at
+// `builtSkillRoot`. Scenarios without an overlay hash the build directly; the configured-reviewer
+// scenario hashes a throwaway overlaid copy, so asking for its identity never leaks the echo into
+// the shared build every other scenario is provisioned from.
+export function pristineScenarioBuildIdentity(scenario, builtSkillRoot) {
+  if (!existsSync(builtSkillRoot)) throw new Error(`no built skill at ${builtSkillRoot}`);
+  if (!scenarioSetup(scenario).iterateEcho) return scenarioBuildIdentity(scenario, builtSkillRoot);
+  const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-identity-'));
+  try {
+    const skillRoot = resolve(scratch, 'skill');
+    cpSync(builtSkillRoot, skillRoot, { recursive: true });
+    applyScenarioSkillOverlay(scenario, skillRoot);
+    return scenarioBuildIdentity(scenario, skillRoot);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }

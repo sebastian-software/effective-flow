@@ -74,6 +74,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'delegation-envelope.mjs',
+  'delegation-envelope-core.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
   'remote-tracker.mjs',
@@ -1409,15 +1411,15 @@ try {
   //
   // Every file in src/tools is measured, and the reconciliation below keeps this
   // map and the built tool set in exact correspondence, so a newly added tool
-  // cannot ship unmeasured. Each tool gets its own limit rather than a share of
-  // one number. Only four of these numbers are a judgement: the implementation
-  // tools agree on 700 lines.
+  // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
+  // of one allowance: its measured always-loaded size plus at most ten lines of
+  // headroom. `merge-gate` currently measures 2262 lines against its 2270 limit.
   //
-  // Every other number here is a **measured backlog, not a target**. It records
-  // what a tool costs today, with its mode-gated fragments still inlined eagerly;
-  // it is not a size anyone argued for. Each later conversion of an eager include
-  // to a `lazy-include` lowers the entries it touches, so a large number reads as
-  // work outstanding and never as room to fill.
+  // Every number here is a **measured backlog, not a target**. It records what a
+  // tool's always-loaded core costs today; it is not a size anyone argued for.
+  // Each later conversion of an eager include to a `lazy-include` lowers the
+  // entries it touches, so a large number reads as work outstanding and never as
+  // room to fill.
   //
   // The allowance above the measured size is a flat line count rather than a
   // percentage, deliberately: a percentage hands the largest tools the most room,
@@ -1427,18 +1429,16 @@ try {
   // most entries carry less, because a deferral that shrank a tool was recorded
   // by lowering its entry to the new measurement rather than by re-adding the
   // full ten. Read an entry's actual headroom off the report below, never as
-  // "ten"; only the four judgement entries sit further above
-  // their measured size, and they do so on purpose.
+  // "ten".
   //
   // Measure with `node build.mjs` and read the `Always-loaded core (lines/budget)`
   // line it prints — that is the exact number this guard compares. It counts
   // `split('\n').length`, one more than `wc -l` reports for a newline-terminated
   // file, so a limit derived from `wc -l` is a line short of what it looks like.
   //
-  // Entries run largest first by **measured** size, not by the limit written down,
-  // so `fix: 700` sitting between 501 and 420 is the ordering working rather than
-  // a sort violation to be "fixed" by limit. The order is a reading aid that makes
-  // the map itself the backlog, and it is deliberately not asserted: enforcing it
+  // Entries generally run largest first by **measured** size, not by the limit
+  // written down. Later growth or a successful deferral can temporarily disturb
+  // that order; it is a reading aid and deliberately not asserted. Enforcing it
   // would turn a successful deferral — a tool shrinking, which is the whole point
   // of this map — into a build failure until someone re-sorts. Re-sort when
   // convenient instead.
@@ -1451,34 +1451,34 @@ try {
   // from 4 413 to 3 036 characters while adding six lines, so every eager consumer grew by exactly
   // six lines and shrank in tokens. Each marker was that measured delta and nothing more, applied
   // so the entry kept the headroom it had; the four other eager consumers (`merge-gate`, `docs`,
-  // `build`, `fix`) are judgement entries with room to absorb it and were left alone. A later
+  // `build`, `fix`) already had enough individual headroom and were left alone. A later
   // re-measurement folded those six deltas into the fresh measurements below, so the markers are
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2134,
-    iterate: 1669,
+    'merge-gate': 2270,
+    iterate: 1775,
     setup: 1723,
-    'apply-review': 1340,
-    'apply-issues': 1187,
+    'apply-review': 1360,
+    'apply-issues': 1191,
     cleanup: 1022,
-    refactor: 864,
-    deliver: 775,
-    'plan-issue': 734,
-    review: 728,
+    refactor: 885,
+    deliver: 790,
+    'plan-issue': 745,
+    review: 770,
     plan: 665,
     'apply-review-commit-mechanics': 656,
-    maintain: 660,
+    maintain: 685,
     docs: 617,
-    build: 585,
-    apply: 572,
-    'apply-plan': 576,
-    investigate: 529,
-    fix: 481,
+    build: 595,
+    apply: 580,
+    'apply-plan': 580,
+    investigate: 545,
+    fix: 488,
     'plan-review': 446,
     pr: 440,
     'concept-review': 344,
-    'apply-review-remote': 333,
+    'apply-review-remote': 382,
     concept: 332,
     commit: 239,
     'open-plans': 147,

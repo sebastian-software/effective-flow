@@ -1,10 +1,10 @@
 ## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
 Effective Flow keeps project-local runtime data under `.effective-flow/` (`memory.json`,
-`cache.json`, `review/`, `investigation/`, `.worktrees/`, and wisdom files; a legacy
-`config.json` may still be present as transitional input, but configuration migration to the
-project-setup ADR is owned by `{{SKILL:setup}}`). Earlier versions used `.firmo/`, and still older
-ones used `.sf-plugin/`.
+`cache.json`, `review/`, `investigation/`, `merge-gate/` delegation messages, `.worktrees/`, and
+wisdom files; a legacy `config.json` may still be present as transitional input, but configuration
+migration to the project-setup ADR is owned by `{{SKILL:setup}}`). Earlier versions used `.firmo/`,
+and still older ones used `.sf-plugin/`.
 
 Every workflow that can mutate `.effective-flow/` must load this fragment after
 “Runtime-state write safety” and run the following prerequisite before its **first** runtime

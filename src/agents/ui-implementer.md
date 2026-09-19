@@ -4,7 +4,7 @@ claude:
   model: opus
   effort: xhigh
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill, Agent, Task]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high

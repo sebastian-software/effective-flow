@@ -7,6 +7,7 @@ import {
   DeliverySelectionError,
   errorEnvelope,
   executeOperation,
+  isDryRun,
 } from './delivery-selection-core.mjs';
 
 function isUsableDirectory(value) {
@@ -17,8 +18,10 @@ function isUsableDirectory(value) {
   }
 }
 
+const TIMEOUT_KILL_SIGNAL = 'SIGKILL';
+
 function createProcessRunner() {
-  return ({ executable, args = [], stdin, cwd }) =>
+  return ({ executable, args = [], stdin, cwd, env, timeout }) =>
     new Promise((resolve) => {
       if (cwd !== undefined && !isUsableDirectory(cwd)) {
         resolve({
@@ -29,10 +32,15 @@ function createProcessRunner() {
         });
         return;
       }
+      const startedAt = Date.now();
       const child = spawn(executable, args, {
         cwd,
+        // Extra variables extend the inherited environment so Git keeps HOME, PATH and friends.
+        env: env === undefined ? process.env : { ...process.env, ...env },
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // A bounded call (the upstream fetch) is killed outright once its budget is spent.
+        ...(timeout === undefined ? {} : { timeout, killSignal: TIMEOUT_KILL_SIGNAL }),
       });
       const stdout = [];
       const stderr = [];
@@ -53,6 +61,12 @@ function createProcessRunner() {
           signal,
           stdout: Buffer.concat(stdout),
           stderr: Buffer.concat(stderr),
+          // Same shape as `spawnSync`: a call killed by its own timeout reports `ETIMEDOUT`.
+          ...(timeout !== undefined &&
+          signal === TIMEOUT_KILL_SIGNAL &&
+          Date.now() - startedAt >= timeout
+            ? { timedOut: true, error: { code: 'ETIMEDOUT' } }
+            : {}),
         }),
       );
       child.stdin.end(stdin);
@@ -85,7 +99,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     if (!operation) {
       throw new DeliverySelectionError(
         'INVALID_PAYLOAD',
-        'usage: delivery-selection.mjs <inventory|bind-manifest|verify-source|transfer|reconcile> [--apply]',
+        'usage: delivery-selection.mjs <inventory|bind-manifest|verify-source|transfer|reconcile|upstream-status|fast-forward> [--apply]',
       );
     }
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
@@ -94,7 +108,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       apply,
     });
   } catch (error) {
-    envelope = errorEnvelope(operation, error, operation === 'transfer' && !apply);
+    envelope = errorEnvelope(operation, error, isDryRun(operation, apply));
   }
   stdout.write(`${JSON.stringify(envelope)}\n`);
   if (!envelope.ok) {

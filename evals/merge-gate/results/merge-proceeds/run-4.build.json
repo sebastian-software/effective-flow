@@ -1,49 +1,53 @@
 {
   "scenario": "merge-proceeds",
-  "digest": "sha256:913b4c34f06cf6b40f0ff088d510e44eda4cfb8aa306932d8f54fce4eedd5803",
+  "digest": "sha256:e2c5dbc2efe295fd82d520c3375517deaf14a8320dff18cd7ce51a2d0923bcd9",
   "skill": {
-    "digest": "sha256:231e0a5ee3bedaf82498c9511e38a980d3724882e9cbcb6242bc7b101048b59c",
+    "digest": "sha256:f6f811ac1beb957f903c9699d67e728a017dda4bf8b8cb37e5daf438aa21544a",
     "files": {
-      "SKILL.md": "sha256:1c0b0c49473f385bda509a0226791a7e654c76d3a032942b8d3c6afb86c5c28c",
+      "SKILL.md": "sha256:5c1bde9dfb8ad4c8e51bd81126d10f85cb2671d326ee0b5d1f41301437196a3a",
       "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",
       "shared/config-migration.md": "sha256:fe6944a9a6b8230fd658593cc95f3f6fbe30ec5c544bc69c30b1de648084ebf2",
-      "shared/effective-flow-dir-migration.md": "sha256:331328198efd38ad4541449aec9e346ad4ab673cc1c15657915f9912d92952c0",
+      "shared/delegation-envelope-examples.md": "sha256:42e614a52ddc5a430a833cd6d0187c01f7026a4a85db7d6fd9d5ebbd2483e167",
+      "shared/durable-follow-up-gate.md": "sha256:fc9a5485a9567890bab1462a0c46a5d204b2e26edd1a39b0a5b205c55a1bd3b0",
+      "shared/effective-flow-dir-migration.md": "sha256:138441ccb26b75dd4ea6c540b0d05ba27fa2cf73aa640489f1f1b5111edeb567",
       "shared/issue-post-merge-observation.md": "sha256:53b300a64c629366c3b2404627eef215b7977ea1200498c9492546d4517fa06f",
-      "shared/issue-tracker-forge.md": "sha256:1fe23582e3bd10190ff6152fdecf2211350f7bc07557eaa1b1c30a1c764317f7",
+      "shared/issue-tracker-forge.md": "sha256:dcd35663fb972f0b2aa3b67a4f754ed8a05471d426887d0d8d633a8e198e64ab",
       "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
       "shared/merge-gate-check-list-waiver.md": "sha256:30c255294e9da26c6654d7e9bb8bdd2bcc112c9649cb161ee34b29db1f97601d",
       "shared/merge-gate-checkout-boundary.md": "sha256:2cec54fc23be7e1f2f373a5c7a832095103f13744513a85db5953315e038782b",
-      "shared/merge-gate-configured-reviewer.md": "sha256:962990fe10219a524b45e03ba8bc81f0ef0599bfda487115a7c104895f67642d",
-      "shared/merge-gate-conflict-resolution.md": "sha256:b222e6d4dab1ab511986462ed10f2332b00de2ed365c8a680352ce07e43e6fc8",
+      "shared/merge-gate-conflict-resolution.md": "sha256:b3600b962e1a5b0e23029414b3a0cd0bb417a2ce92ae48467802616379675bac",
       "shared/merge-gate-issue-observation.md": "sha256:dd3c4bb7b21b38b0d4f90cade4945937be35102d5796b4af3ff13ee6f23940dd",
-      "shared/next-steps.md": "sha256:4290691291c74e4c5d026f08c75ecd52f9f72e9bfa5a934037343502512d745f",
-      "shared/pr-merge-completion.md": "sha256:abdb3731a62bdccfac7468bc9410db08989c25ced58299b8b17b0eff18afa9fe",
-      "shared/pr-review-integration.md": "sha256:6ff2cf8b8780f6e2ecc84f665068bb587818187794236aa938f14990df57e7c0",
+      "shared/merge-gate-provider-settled-threads.md": "sha256:a7deaa67843aa28c8059cd1696b8d74e2bcba2d9c51a0b64bcf26066ada0c5db",
+      "shared/next-steps.md": "sha256:d40d38a38c2f3b5160def55752e31180197010c6615d264d84ede407c16d212b",
+      "shared/pr-merge-completion.md": "sha256:fb9654e7f68003ccda0d560c937fd2fde973f82a7443b523ee563016bdd6794e",
+      "shared/pr-review-integration.md": "sha256:f1c6f5d7a24fb0e861e355f73d09b297584f5e2a6e9c12cc16776810a1bb47dc",
       "shared/runtime-state-safety.md": "sha256:900f75b1ff616225785671fb9828b3ad33abe6b68ee184b08920abd53a6f6cc8",
       "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
       "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
-      "shared/tracker-target.md": "sha256:4164086fbc2e6562c52d2da4fdfd8bf7a4b1982aeb0eaa548c24c811a700dd99",
+      "shared/tracker-target.md": "sha256:41adc7e385b0abb4daecc2048e745faef9829f8a04adf5874d2a6431df711f31",
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:334de994d5a7faf5b91128156aeb00d9394e9b9e5b750791dae06b447100497a",
-      "tools/iterate.md": "sha256:9752926d5b9d2af26050f3b3bba1db7f45f897c64b349c15ba1703dfc4df1b32",
-      "tools/merge-gate.md": "sha256:3c6bcd1ea48a5c2d8417c0e8f9d72a7b50efae385ee7658e11b857628603bd8d",
-      "workers/effective-flow-code-validator.md": "sha256:23e83c4de8979e6f62cd7b2f6f206188a687a82515ae2b80d83fabd643c66968",
-      "workers/effective-flow-merge-conflict-resolver.md": "sha256:fa7140a242449b21f06824c646cdc2d2ed969ca19c242bf09b42bc7f0045156a"
+      "tools/iterate.md": "sha256:4fb9d8b05320aedf13c9998226026f773f60a153bb65132b46081854d6fd353d",
+      "tools/merge-gate.md": "sha256:ccefdd7b7b9f05b4a28c78e6564fba0acc507377143569951d3a18cdb028a49d",
+      "workers/effective-flow-code-validator.md": "sha256:4614e4702fc374c6d31ede74dcf971ab44a1118cde575a78ebc09abe0e87b723",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:c05fe119d3700d2c597852e2efa258dd551669afea5b1d737dfe8520bcc5bd7d"
     }
   },
   "instrument": {
-    "digest": "sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040",
+    "digest": "sha256:52cd5c3aacecd524f77a02294e704c70a4de18953273d082c48e2ae3f9f17aaa",
     "files": {
-      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:4c9e5491e1b296e56e415193ae839316b1d6f45f1b030e4738a7fb89bfcffa63",
-      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:96f97f5a01437d0e8dc3ea75cca75cc68c7aab297c741334f38d1d489f61a23b",
-      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:b348ccb19d2ae3af5a0b8cef59bbe53fdc4b640b803361187075f6df93406301"
+      "evals/merge-gate/_scaffold/remote-tracker.mjs": "sha256:e08c88f1172e6a7485f3f85ef41bf2c1e62ae4cdd4347b5e29af176db6ad19db",
+      "evals/merge-gate/_scaffold/sandbox.mjs": "sha256:bcb6dd3cf64d9b87b2edd25b2cadd14fb0e370bf1439555aeb6bd3eaa24b93d7",
+      "evals/merge-gate/_scaffold/scaffold.mjs": "sha256:7b40177f4a9ed8fa444ab580a3af104ad9df841bcb70d0f4297cd2b91cfd6d4c",
+      "evals/merge-gate/_scaffold/prompt.mjs": "sha256:75fa06a521bbea2b97a03c49ee20cd0f253d5a0d7ebae2e7779e8d21ab7fb2a9",
+      "evals/merge-gate/_scaffold/suite.mjs": "sha256:56426d718789f6dd4c4361048bc75b45a6cb13054a6e504c42f111d525f78498"
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:6e74c47b657c16b456ab970308bda670e90b332ce808c777095c7764662c23ef",
+    "digest": "sha256:698dc004f5c4b3e692bd159742004aa8cfedd1a1bffc6a82c22e197dfaff405f",
     "files": {
-      "evals/merge-gate/fixtures/merge-proceeds.json": "sha256:db4526761f9167504aa564e94dd9fe3ab3a9898119dc0b8ca5b77074e1ac455c",
-      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:3db7abed24d95e4b72b5dc642cb776f2957bb8a931c161b32f90c30a87549d11"
+      "evals/merge-gate/fixtures/merge-proceeds.json": "sha256:49b90815d6490af495319e89aa296af16a53a90ec50d4e1c9b06658361e0bf94",
+      "evals/merge-gate/scenarios/merge-proceeds.md": "sha256:a61346a4986c4d1dd96b6ac68e1fca2f4e53acaf9ad4305edcd26270391628f0"
     }
   }
 }

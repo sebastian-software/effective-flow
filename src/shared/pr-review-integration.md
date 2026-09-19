@@ -22,13 +22,18 @@ pr-review-thread-writes
 security-disclosure-gate
 ```
 
+```lazy-include
+durable-follow-up-gate
+when: a PR-review finding is about to be admitted for publication or closed as non-admitted
+```
+
 The loaded "PR review comment integration" owns PR resolution, the fresh thread and comment reads,
 the review submission with its marker and its provider fallbacks, the summary comment, the
 `language.forge` rule, and the "No AI attribution" rule — and through it the host detection, CLI
-probing, envelope, dry-run, redaction, and error contract of the "Remote helper contract" in
-`issue-tracker-forge.md`. The loaded "Security disclosure gate" owns the security classification, the
-local-first persistence, and the per-run publication offer. None of that is restated here. Pull
-requests stay on the forge behind `origin` regardless of `tracker.mode`.
+probing, envelope, dry-run, redaction, and error contract eagerly included from
+`remote-helper-contract.md`. The loaded "Security disclosure gate" owns the security
+classification, the local-first persistence, and the per-run publication offer. None of that is
+restated here. Pull requests stay on the forge behind `origin` regardless of `tracker.mode`.
 
 ### Inputs
 
@@ -96,8 +101,13 @@ Regardless of entry point, run exactly this order and publish nothing before it 
    directories, the plan directory, and the repository convention files for documented decisions and
    drop every finding one of them covers, recording the source reference in the run summary. Do not
    assume `{{SKILL:review}}` Phase 3 is loaded here; at the automatic call sites it is not.
-4. **Security classification and the loaded "Security disclosure gate".**
-5. **Publication.**
+4. **Durable-work admission.** First triage possible current-scope or credible high-risk paths, then
+   group by root-cause signature, apply bounded deduplication, and run the loaded “Durable
+   derived-work gate” before disclosure or publication. `valid_in_scope` remains part of the active
+   PR. A `valid_out_of_scope` item creates a publication candidate only when `admitted`; `closed`
+   terminates, and unresolved `uncertain` blocks/escalates without an artifact.
+5. **Security classification and the loaded “Security disclosure gate”.**
+6. **Publication.**
 
 ### Judgment handoff to effective-delivery
 
@@ -108,13 +118,18 @@ publication, and delivery; the analysis performs no discovery, implementation, G
 action and may only classify the supplied context.
 
 Consume the returned `pr-review-handoff/v1` object and require exactly one returned item per
-supplied ID. Map its classifications:
+supplied ID. Before switching on a returned classification, run the loaded gate's preliminary
+current-scope/high-risk triage across the complete returned set. Keep possible `current-scope`
+items in the active PR. A credible qualifying `needs_evidence` path becomes `uncertain`: perform
+exactly one bounded read-only question/check with an explicit completion criterion, then resolve it
+or block/escalate; never publish or export it unresolved. A non-credible `needs_evidence` item is
+`closed` without durable work. Then map the remaining classifications:
 
 - `valid_in_scope` + `caller_fix` → earns a comment on this pull request.
-- `valid_out_of_scope` → a noted follow-up in the run summary, never a comment.
+- `valid_out_of_scope` → gate it; publish nothing unless it is `admitted`, and never widen the PR.
 - `unsupported` → a rejected false positive; record the returned rationale and publish nothing.
 - `question_or_information` → reported to the user, never posted as a defect.
-- `needs_evidence` → dropped, with the exact missing proof recorded.
+- `needs_evidence` → only the triage outcome above applies; do not start a second evidence round.
 
 **These five are `effective-delivery`'s judgment vocabulary, and no workflow returns them as an
 outcome.** They sit **behind** the outcome vocabularies of the workflows that consume this handoff
@@ -136,7 +151,7 @@ unavailable. Never invent the missing classification.
 
 ### Security binding
 
-Step 4 runs the loaded "Security disclosure gate" on every finding still standing. A finding set
+Step 5 runs the loaded “Security disclosure gate” on every admitted finding still standing. A finding set
 that arrives **without a recorded security classification** is classified there before anything is
 published: `build`, `refactor`, and `maintain` hand over residual findings that never passed through
 that classification, and an unclassified finding is never treated as publishable. A finding that

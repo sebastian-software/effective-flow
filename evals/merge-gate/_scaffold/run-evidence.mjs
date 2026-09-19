@@ -1,9 +1,10 @@
-// Run-evidence transaction shared by the preparation CLI and its focused tests. A configured
-// reviewer run is one three-file unit; every other run remains the established call-log/build pair.
+// Run-evidence pairing shared by round publication and its focused tests. A configured-reviewer
+// run is one three-file unit — call log, build stamp, and `iterate` echo trace; every other run
+// remains the established call-log/build pair. Publication additionally requires each slot's
+// rendered prompt and metadata, and checks the exact file set itself; this check runs first so a
+// broken unit is reported as the pairing it breaks.
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
-import process from 'node:process';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
 
 export function validateArchivedPairing(scenarioResults, requiresIterateTrace) {
   if (!existsSync(scenarioResults)) return;
@@ -35,33 +36,5 @@ export function validateArchivedPairing(scenarioResults, requiresIterateTrace) {
         `${scenarioResults}: run ${run} has incomplete evidence; missing ${missing.join(', ')}`,
       );
     }
-  }
-}
-
-// Stage a run's complete evidence first, then publish the final names under one synchronous archive
-// transaction. If a rename fails, every final file from this attempt is rolled back and the sandbox
-// originals remain intact. A process crash is detected on the next invocation by the pairing check.
-export function archiveEvidence(scenarioResults, runNumber, sources) {
-  const staging = resolve(scenarioResults, `.run-${runNumber}.staging-${process.pid}`);
-  const finals = [];
-  mkdirSync(staging);
-  try {
-    for (const [suffix, source] of sources) {
-      const name = `run-${runNumber}.${suffix}`;
-      copyFileSync(source, resolve(staging, name));
-      finals.push([resolve(staging, name), resolve(scenarioResults, name)]);
-    }
-    const published = [];
-    try {
-      for (const [from, to] of finals) {
-        renameSync(from, to);
-        published.push(to);
-      }
-    } catch (error) {
-      for (const path of published) rmSync(path, { force: true });
-      throw error;
-    }
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
   }
 }

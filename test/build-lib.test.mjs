@@ -2179,6 +2179,27 @@ test('renderBody gives portable worker refs an explicit one-contract delegation 
   assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
   assert.match(rendered, /read only its matching `workers\/effective-flow-<worker>\.md` file/);
   assert.match(rendered, /built-in general-purpose subagent mechanism/);
+  assert.match(
+    rendered,
+    /only the workflow\/tool orchestrator starts workers or analysis fan-out/i,
+  );
+  assert.match(rendered, /zero inherited turns when supported/i);
+  assert.match(rendered, /otherwise its smallest supported history/i);
+  assert.match(rendered, /compact, self-contained handoff/i);
+  for (const field of [
+    'objective',
+    'relevant artifact paths',
+    'scoped paths and ownership',
+    'execution and runtime-state roots when writes are allowed',
+    'resolved language',
+    'authority and write limits',
+    'completion protocol',
+  ]) {
+    assert.match(rendered, new RegExp(field), `portable worker handoff must include ${field}`);
+  }
+  assert.match(rendered, /worker is a leaf executor/i);
+  assert.match(rendered, /starts no child/i);
+  assert.match(rendered, /returns missing essential context to the orchestrator/i);
   assert.match(rendered, /Start `effective-flow-code-validator`\./);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
 });
@@ -3652,7 +3673,7 @@ test('the chat-language fragment pins its domain, its mirror default and its exc
   assert.deepEqual([...lazy].sort(), ['config-migration', 'typography-rules']);
 });
 
-test('workflow report consumers retain bilingual status and remote epic prose', () => {
+test('workflow report consumers retain bilingual status and direct-finding prose', () => {
   const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
   const localReviewStatusConsumers = [
     'shared/unresolved-review-report.md',
@@ -3676,14 +3697,54 @@ test('workflow report consumers retain bilingual status and remote epic prose', 
   assert.doesNotMatch(build, /status tokens used by report readers remain unchanged/);
 
   const review = readSource('tools/review.md');
-  for (const epicText of [
-    'Code review YYYY-MM-DD[-N]',
-    'Skipped (design decisions)',
-    'Code-Review YYYY-MM-DD[-N]',
-    'Übersprungen (Architekturentscheidungen)',
+  for (const directFindingText of [
+    'direct issue is created per admitted root cause',
+    'no new review epic/container is created',
+    '**Create direct finding issues:**',
+    '**No new container:**',
   ]) {
-    assert.ok(review.includes(epicText), `review is missing localized epic prose: ${epicText}`);
+    assert.ok(
+      review.includes(directFindingText),
+      `review is missing direct-finding prose: ${directFindingText}`,
+    );
   }
+});
+
+test('durable follow-up gate ownership and include documentation reconcile', () => {
+  const manifest = parseSkillOwnershipManifest(
+    readFileSync(new URL('../docs/developer-guide/skill-ownership.json', import.meta.url), 'utf8'),
+  );
+  const relationship = (skill) =>
+    manifest.relationships
+      .find((entry) => entry.skill === skill)
+      .consumers.find((entry) => entry.consumer === 'durable-follow-up-gate');
+  assert.deepEqual(relationship('effective-product'), {
+    consumer: 'durable-follow-up-gate',
+    classification: 'delegate',
+  });
+  assert.deepEqual(relationship('effective-delivery'), {
+    consumer: 'durable-follow-up-gate',
+    classification: 'delegate',
+  });
+
+  const guide = readFileSync(
+    new URL('../docs/developer-guide/skill-ownership.md', import.meta.url),
+    'utf8',
+  );
+  const table = parseSkillOwnershipTable(guide);
+  for (const skill of ['effective-product', 'effective-delivery']) {
+    assert.ok(
+      table.find((row) => row.skill === skill).consumers.includes('durable-follow-up-gate'),
+      `${skill} guide row must name durable-follow-up-gate`,
+    );
+  }
+
+  const buildGuide = readFileSync(
+    new URL('../docs/developer-guide/build-system.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(buildGuide, /`durable-follow-up-gate` is the single semantic source/);
+  assert.match(buildGuide, /Keep admission before ID reservation and\s+artifact writes/);
 });
 
 // --- ADR ownership-contract consistency ---

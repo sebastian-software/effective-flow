@@ -11,7 +11,9 @@ lifecycle stays with the calling workflow.
 
 ### Classification
 
-Classify every finding that survives confidence, scope, and design-decision filtering:
+Classify every `admitted` finding after confidence, scope, design-decision, deduplication, and
+durable-work admission. Disclosure never admits work and never reclassifies a non-admitted
+observation:
 
 - `local-only` for every security-relevant finding, `publishable` for every other finding.
 - Use the `Security relevance` value reported by the reviewer as a signal and check it against the
@@ -40,7 +42,8 @@ report file.
 
 ### Local-first persistence
 
-After reservation and before any tracker mutation, persist the `local-only` findings, so a
+After admission and reservation and before any tracker mutation, persist the `local-only`
+findings, so a
 declined offer, a CLI failure, or an interrupted session cannot lose them:
 
 1. **Write the report.** Use the calling workflow's report path, guard, and collision mechanics,
@@ -75,12 +78,12 @@ options:
   - label: Keep local
     description: Default — the findings stay solely in the local report; no issue is created for them
   - label: Publish as issues
-    description: The withheld findings are additionally created as issues in this run's epic, with the disclosure accepted
+    description: Each withheld finding is additionally created as a direct issue, with the disclosure accepted
 ```
 
 On `Keep local`, publish only the `publishable` findings. On `Publish as issues`, treat the
-withheld findings as publishable for this run, so a single epic covers both groups and the epic
-invariant "an existing epic is never extended" holds. Afterwards append to each affected finding
+withheld findings as publishable for this run and create each as an admitted direct finding issue;
+create no epic or container. Afterwards append to each affected finding
 block of the just-written report a publication note as its last entry, in the preserved report
 language and analogous to the review-report backlinks; guard the report path again immediately
 before that write. The note is machine-recognizable so the local apply route can skip an
@@ -89,9 +92,14 @@ already-published finding:
 - English: `🔓 Published as #<issue number> on YYYY-MM-DD`
 - German: `🔓 Veröffentlicht als #<issue number> am YYYY-MM-DD`
 
+Until that publication note is persisted, the required local security report is the sole executable
+representation. After explicit publication the direct remote finding is the executable source and
+the note makes local `apply` skip its copy. The safety report remains local, but the two
+representations are never simultaneously active implementation sources.
+
 ### Silence in public artifacts
 
-The epic body and every issue body contain no count, title, signature, ID, or other reference to a
+Every public issue body contains no count, title, signature, ID, or other reference to a
 finding that stayed local. A public "N security findings withheld" line is itself an exploitable
 signal. The withheld count belongs solely in the local report and the chat summary.
 

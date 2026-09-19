@@ -13,9 +13,10 @@
 // `executeOperation` normalizer emits for the same provider payload, and proves this file's error
 // envelope has the shape the real `errorEnvelope` produces.
 
-import process from 'node:process';
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import process from 'node:process';
 
 // Resolved from this file's own location rather than from an environment variable, because the gate
 // invokes the helper as an ordinary subprocess and passes nothing of its own. The scaffold lays the
@@ -74,19 +75,24 @@ function errorEnvelope(operation, code, message, details = {}, dryRun = false) {
 // therefore a contract, pinned by `test/eval-fixture-fidelity.test.mjs` so a change here cannot
 // silently reshape what those assertions consume.
 //
-// One JSON object per line, in this key set:
+// Fixtures without a well-formed sequenced operation keep the legacy contract: one record per call
+// with `seq`, `operation`, `apply`, `at` and `cwd`. A sequenced fixture needs stronger ordering
+// evidence, so every call under that fixture writes a full start record followed, after its
+// envelope has been flushed to stdout, by a correlated completion record:
 //
-//   seq        1 for the first call in a log file, then one higher per recorded call
-//   operation  the operation name as it arrived in argv
-//   apply      whether `--apply` was passed, so a dry run and a write stay distinguishable
+//   seq        1 for the first event in a log file, then one higher per recorded event
+//   event      `start` or `complete`
+//   callId     one stable non-empty identity shared by both events of a call
+//   operation  the operation name as it arrived in argv (start only)
+//   apply      whether `--apply` was passed, so a dry run and a write stay distinguishable (start)
 //   at         an ISO-8601 instant, for a human reading the sandbox; millisecond collisions make it
 //              unusable for ordering, which is exactly why `seq` exists beside it
-//   cwd        the working directory the caller stated, or null when it stated none
+//   cwd        the working directory the caller stated, or null when it stated none (start only)
 //
 // The stub is a fresh process per call, so the counter cannot live in memory. It is derived from
-// the lines already in the log instead: every recorded call appends exactly one line, so the count
-// of lines already present is the number of the previous call, and one more is this call's. A log
-// file that does not exist yet is the first call's normal case, not an error.
+// the lines already in the log instead: every recorded event appends exactly one line, so the count
+// of lines already present is the number of the previous event, and one more is this event's. A log
+// file that does not exist yet is the first event's normal case, not an error.
 function nextSequenceNumber() {
   let existing;
   try {
@@ -156,7 +162,7 @@ function acquireLock(deadline) {
 // envelope the gate is waiting for, so a failure here is swallowed rather than turned into a
 // protocol violation. That is not a licence to read a missing log as "nothing was called" — the
 // assertions treat an absent or empty log as a run that never started, and fail on it.
-function recordCall(record) {
+function recordEvent(record) {
   try {
     mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
     const locked = acquireLock(Date.now() + LOCK_WAIT_MS);
@@ -169,29 +175,32 @@ function recordCall(record) {
         CALL_LOG_PATH,
         `${JSON.stringify({ seq: nextSequenceNumber(), ...record })}\n`,
       );
+      return true;
     } finally {
       if (locked) rmSync(LOCK_PATH, { recursive: true, force: true });
     }
   } catch {
     // deliberately ignored — see above
+    return false;
   }
 }
 
-// The strict counterpart of `recordCall`, used only for an operation whose fixture entry is
-// sequenced. It returns the call's **position** within its operation — 1 for the first record of
-// that operation in the log, dry runs and applies alike — counted from the very log content `seq` is
-// counted from, under the same lock, immediately before the append. Envelope selection uses that
-// value and never counts again: a second count outside the lock would see whatever concurrent
-// callers had appended in between, and two processes could be served the same element.
+// The strict counterpart of `recordEvent`, used only for the start of an operation whose fixture
+// entry is sequenced. It returns the call's **position** within its operation — 1 for the first
+// start of that operation in the log, dry runs and applies alike — by counting only start events
+// for that operation. It uses the very log content `seq` is counted from, under the same lock,
+// immediately before the append. Envelope selection uses that value and never counts again: a
+// second count outside the lock would see whatever concurrent callers had appended in between,
+// and two processes could be served the same element.
 //
-// None of `recordCall`'s leniency survives here, because the trade that justifies it does not hold.
+// None of `recordEvent`'s leniency survives here, because the trade that justifies it does not hold.
 // Appending without the lock is tolerable for `seq` only because a duplicate `seq` fails the schema
 // assertion loudly; a duplicated sequence **position** fails nothing — two calls silently receive
 // the same element, and a scenario whose whole subject is which element a call received measures
 // nothing. So an unobtainable lock, a log that exists and cannot be read or parsed, and a failed
 // append all throw, and the caller answers with an error envelope: never element 1, and never an
 // unlocked append.
-function recordSequencedCall(record) {
+function recordSequencedStart(record, lifecycleEvents) {
   mkdirSync(dirname(CALL_LOG_PATH), { recursive: true });
   if (!acquireLock(Date.now() + LOCK_WAIT_MS)) {
     throw new Error(
@@ -209,7 +218,13 @@ function recordSequencedCall(record) {
     const lines = existing.split('\n').filter((line) => line.trim() !== '');
     let prior = 0;
     for (const line of lines) {
-      if (JSON.parse(line).operation === record.operation) prior += 1;
+      const event = JSON.parse(line);
+      if (
+        event.operation === record.operation &&
+        (lifecycleEvents ? event.event === 'start' : !Object.hasOwn(event, 'event'))
+      ) {
+        prior += 1;
+      }
     }
     appendFileSync(CALL_LOG_PATH, `${JSON.stringify({ seq: lines.length + 1, ...record })}\n`);
     return prior + 1;
@@ -222,6 +237,27 @@ function recordSequencedCall(record) {
       // deliberately ignored — see above
     }
   }
+}
+
+// A Writable's callback runs only after its chunk has been handled. Waiting for it keeps a
+// completion event from claiming success while the envelope is still buffered, and a write error
+// leaves the start deliberately unmatched for the validity reader to reject.
+function writeEnvelope(stdout, envelope) {
+  const output = `${JSON.stringify(envelope)}\n`;
+  return new Promise((resolveWrite, rejectWrite) => {
+    const callbackSupported = stdout.write.length >= 2;
+    try {
+      stdout.write(output, (error) => {
+        if (error) rejectWrite(error);
+        else resolveWrite();
+      });
+      // A small injected writer may expose only `write(chunk)`. Its successful return is the only
+      // completion signal that interface provides; real Node writable streams take the callback.
+      if (!callbackSupported) resolveWrite();
+    } catch (error) {
+      rejectWrite(error);
+    }
+  });
 }
 
 async function readStdin(stream = process.stdin) {
@@ -310,6 +346,15 @@ export function sequencedEntryProblem(entry) {
   return null;
 }
 
+function usesLifecycleEvents(fixture) {
+  return Object.entries(fixture.operations).some(
+    ([operation, entry]) =>
+      !REFUSABLE_OPERATIONS.has(operation) &&
+      isSequenced(entry) &&
+      sequencedEntryProblem(entry) === null,
+  );
+}
+
 function malformedEntry(operation, problem) {
   return errorEnvelope(
     operation,
@@ -324,7 +369,7 @@ function malformedEntry(operation, problem) {
 // pass for the wrong reason — a gate that never merges because a read it needed came back as a
 // silent default is not the same fact as a gate that refused on its guard.
 //
-// `position` is the call's position within its operation, as `recordSequencedCall` computed it under
+// `position` is the call's position within its operation, as `recordSequencedStart` computed it under
 // the lock. It is required for a sequenced entry and ignored for every other one.
 export function resolveEnvelope(fixture, operation, apply, position = null) {
   const entry = fixture.operations[operation];
@@ -398,6 +443,9 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   const operation = argv.find((argument) => !argument.startsWith('-')) ?? null;
   const apply = argv.includes('--apply');
   let envelope;
+  let callId = null;
+  let lifecycleEvents = false;
+  let startRecorded = false;
   try {
     if (operation === null) {
       envelope = errorEnvelope(
@@ -409,7 +457,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       // Read stdin before anything else, so the caller's write always finds a reader and a refused
       // operation cannot turn into an EPIPE on the gate's side.
       const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
-      const record = {
+      const callRecord = {
         operation,
         apply,
         at: new Date().toISOString(),
@@ -425,6 +473,9 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       } catch (error) {
         fixtureError = error;
       }
+      lifecycleEvents = fixture !== null && usesLifecycleEvents(fixture);
+      if (lifecycleEvents) callId = randomUUID();
+      const record = lifecycleEvents ? { event: 'start', callId, ...callRecord } : callRecord;
       let position = null;
       let allocationError = null;
       if (
@@ -433,12 +484,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
         isSequenced(fixture.operations[operation])
       ) {
         try {
-          position = recordSequencedCall(record);
+          position = recordSequencedStart(record, lifecycleEvents);
+          startRecorded = true;
         } catch (error) {
           allocationError = error;
         }
       } else {
-        recordCall(record);
+        startRecorded = recordEvent(record);
       }
       // The fixture is loaded before the refusal decision, because the refusal is now the
       // fixture's to waive. A fixture that cannot be read throws out of here into the catch below,
@@ -466,7 +518,14 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   } catch (error) {
     envelope = errorEnvelope(operation, 'INVALID_PAYLOAD', error?.message ?? 'unexpected failure');
   }
-  stdout.write(`${JSON.stringify(envelope)}\n`);
+  await writeEnvelope(stdout, envelope);
+  if (lifecycleEvents && startRecorded) {
+    recordEvent({
+      event: 'complete',
+      callId,
+      at: new Date().toISOString(),
+    });
+  }
   if (!envelope.ok) {
     if (io.setExitCode) io.setExitCode(1);
     else process.exitCode = 1;

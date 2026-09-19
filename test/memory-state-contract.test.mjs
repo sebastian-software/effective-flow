@@ -101,10 +101,21 @@ test('finding producers reserve only after filtering and before publication', ()
   const review = readSource('tools', 'review.md');
   const unresolved = readSource('shared', 'unresolved-review-report.md');
 
-  const reviewFilter = review.indexOf('Finish all confidence filtering');
-  const reviewReserve = review.indexOf('reserve one contiguous range', reviewFilter);
+  const reviewTriage = review.indexOf('Finish scope/high-risk triage');
+  const reviewFilter = review.indexOf('confidence and design-decision filtering', reviewTriage);
+  const reviewExactList = review.indexOf(
+    'For the exact ordered list of `admitted` findings',
+    reviewFilter,
+  );
+  const reviewReserve = review.indexOf('reserve one contiguous range', reviewExactList);
   const reviewPublish = review.indexOf('before any report, finding', reviewReserve);
-  assert.ok(reviewFilter >= 0 && reviewFilter < reviewReserve && reviewReserve < reviewPublish);
+  assert.ok(
+    reviewTriage >= 0 &&
+      reviewTriage < reviewFilter &&
+      reviewFilter < reviewExactList &&
+      reviewExactList < reviewReserve &&
+      reviewReserve < reviewPublish,
+  );
 
   const unresolvedFilter = unresolved.indexOf('Finish confidence and design-decision filtering');
   const unresolvedReserve = unresolved.indexOf('reserve the exact range', unresolvedFilter);

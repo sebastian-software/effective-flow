@@ -2,38 +2,14 @@
 
 These are the forge mechanics of the tracker integration: the target, mode resolution, and configuration schema they operate under live in the "Issue-tracker integration (remote mode)" building block (`issue-tracker.md`), which every source that loads this one carries.
 
-### Remote helper contract (remote mode only)
-
-All deterministic remote mechanics of the forge target run through the shipped helper:
-
-```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+```include
+remote-helper-contract
 ```
-
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea` probing, capability normalization, command construction, JSON normalization, payload validation, compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens a shell and never prompts.
-
-Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`. The helper runs `git`, `gh`
-and `tea` in that directory, and every provider CLI resolves its repository context from it. The
-runtime root is the one checkout guaranteed to exist for the whole run, whereas an execution
-worktree may already have been withdrawn by the time a completion action runs. The field is
-optional for compatibility — when it is absent the helper inherits the process working directory —
-but an Effective Flow workflow always sets it. A `cwd` that is not an existing directory fails with
-a structured error naming the path, never as a missing-CLI error.
 
 For `finding-build` and `epic-build`, pass the already-resolved `language.forge` as the top-level
 `language: en|de`; this applies equally when the finding or epic data is nested under its named
 key. The optional field defaults to `en`, and unsupported values are rejected. The helper returns
 the same language-stable payload keys in either language.
-
-Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`, and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API requests, read CLI credentials, or invent a fallback. In particular:
-
-- `AMBIGUOUS_HOST`: obtain an explicit `github`/`forgejo` choice from configuration or the user, then retry with that override.
-- `CLI_MISSING`/`AUTH_FAILED`: abort without side effects; offer local mode only with explicit user consent.
-- `UNSUPPORTED_CAPABILITY`: report the unsupported provider capability and preserve the surrounding workflow state.
-- `STALE_WRITE`: abort that write without retrying, merging, or overwriting; re-enter the workflow from a fresh read.
-- all other structured errors: preserve scope and let the owning workflow decide whether a retry is safe.
-
-Reads execute immediately. Mutations are dry runs by default: inspect the returned executable, argument vector, and redacted input preview, obtain every workflow-specific approval that still applies, and only then repeat the same operation with `--apply`. A dry run never changes Git, tracker state, memory, labels, issues, pull requests, comments, or review threads.
 
 ### Label convention
 
@@ -46,6 +22,7 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
 | `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
 | `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
+| `effective-flow-follow-up-closed`                                                              | admission gate terminalized a finding; not an implementation source               |
 | `effective-flow-issue-done`                                                                    | issue implemented by `{{SKILL:apply-issues}}` (PR created)                        |
 | `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
 | `effective-flow-needs-planning`                                                                | skipped by `{{SKILL:apply-issues}}`; planning via `{{SKILL:plan-issue}}` needed   |
@@ -93,7 +70,8 @@ Rules for every publisher, on whichever tracker target the run resolved:
   commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
   delivering workflow and its user.
 
-The gate governs only the destination of a finding. It never removes a finding, changes its
+Durable-work admission runs before this disclosure gate. The gate governs only the destination of
+an already admitted finding. It never removes a finding, changes its
 severity, or narrows the active finding scope.
 
 ### No AI attribution in issue bodies and comments
@@ -140,7 +118,17 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Recommendation**: [...]
 - **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
 - **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
-- **Epic**: #<epic number> (empty if no epic)
+- **Admission outcome**: admitted
+- **Admission reason**: material-harm | irreversible-commitment
+- **Admission gate**: v1
+- **Evidence**: [type + concrete reference]
+- **Evidence digest**: [stable digest]
+- **Current reachability**: [role/input/configuration/state + anchor/digest]
+- **Root-cause signature**: [normalized root-cause identity]
+- **Scope and containment**: [why not current-scope; why containment is insufficient]
+- **Why now**: [deadline or current consequence]
+- **Completion condition**: [one objective condition]
+- **Epic**: #<legacy epic number> (optional; empty/omitted for direct findings)
 - **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
@@ -150,7 +138,11 @@ instead of carrying an empty `none`.
 
 The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
 
-### Epic body format (tracking issue)
+### Direct finding lifecycle and legacy epic format
+
+New review runs create direct admitted finding issues and no review epic. `apply` discovers those
+open issues by `effective-flow-review-finding`. The epic field and the format below remain readable
+only for review epics created by earlier versions; new publication never calls `epic-build`.
 
 - **Title:** `Code review YYYY-MM-DD[-N]` for English or
   `Code-Review YYYY-MM-DD[-N]` for German
@@ -184,6 +176,23 @@ create/change, PR review-thread read/reply/resolve, PR submitted-review read,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
+
+Admission re-entry uses the dependency-free local operations
+`follow-up-admission-build` and `follow-up-admission-parse`. The writer returns a deterministic
+comment that begins exactly `<!-- effective-flow-follow-up-admission:v1 -->` and carries the gate
+version, `closed` outcome, normalized root-cause/finding signature, evidence digest, reachability
+anchor/digest, short reason, and date. The parser accepts the marker only as the opening line,
+validates the exact schema, and exposes whether every freshness key matches the current candidate.
+Callers never hand-write or parse this payload. Comment and classification mutations still use the
+remote helper with verified `RUNTIME_STATE_ROOT` as `cwd`, dry-run before apply, fresh reads, and
+stale-write failure.
+
+Terminal admission closure is distinct from completion and `wontfix`. Add
+`effective-flow-follow-up-closed`; use a provider state only when it unambiguously means
+cancelled/not planned. Never call `issue-close`, whose fixed meaning is completed. When the forge
+or target cannot prove a cancelled/not-planned transition, leave the issue open and let the marker
+plus classification exclude it from discovery. Repeat runs add no second comment or classification
+while gate version, signature, evidence digest, and reachability anchor/digest still match.
 
 The two native-containment operations are deliberately separate from generic issue creation:
 

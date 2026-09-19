@@ -5,10 +5,12 @@ handoff and returns controlled outcomes; it does not classify findings, edit the
 forge, or stand in for production `iterate` behavior.
 
 The calling `merge-gate` gives this tool a resolved pull request and one complete handoff message.
-From the scenario project root, run exactly one command:
+The Effective Flow skill root is the directory that holds the `tools/` directory this file was read
+from — the same skill root the calling gate resolved. From the scenario project root, run exactly
+one command, with `<skill-root>` replaced by that absolute path:
 
 ```sh
-node /tmp/effective-flow-merge-gate-eval/configured-reviewer-set-aside-blocks/skill/scripts/iterate-trace.mjs 42
+node <skill-root>/scripts/iterate-trace.mjs 42
 ```
 
 Give that command the caller's complete handoff message as standard input, byte for byte. Use the

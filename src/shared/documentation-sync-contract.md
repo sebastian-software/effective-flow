@@ -46,8 +46,8 @@ Every enumerated surface ends in exactly one state:
 - `updated` — name the concrete path and what changed;
 - `no impact` — name the concrete surface and the concrete reason the change cannot reach it. A
   bare "not relevant" does not satisfy the gate;
-- `blocked` — a real gap this run cannot close inside the write boundary below, recorded with a
-  prompt suggestion for a follow-up `{{SKILL:docs}}` run.
+- `blocked` — a real gap invalidated by the active delta that this run has not yet closed inside
+  the write boundary below. This is `current-scope`, not a follow-up candidate.
 
 A change with no documentation effect is expected to produce `no impact` verdicts. The gate
 records that outcome; it never manufactures documentation work to look busy.
@@ -56,22 +56,22 @@ records that outcome; it never manufactures documentation work to look busy.
 
 The gate's completion condition is: no surface is `blocked` and none is unassessed. Treat a
 `blocked` surface like an open critical review finding — bounded correction rounds per
-"Goal-driven completion control", then:
+"Goal-driven completion control", then by run state. An explicit `Run state: gated` or
+`Run state: non-interactive` line the run received from its caller decides which branch applies;
+only when that line is absent does the chain rule of the second branch decide (a gated
+`{{SKILL:iterate}}` forwards no line to its item runs, so the chain rule decides for them):
 
-- **interactive:** escalate to the user with the concrete options (implement it now, record an
-  explicit justified downgrade to `no impact`, or accept it as an explicitly deferred follow-up),
-  record that decision, and run no completion, plan-status switch or delivery action while a
-  surface is still `blocked`;
-- **non-interactive delegation** (a run anywhere below `{{SKILL:apply-review}}`,
-  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}` in the delegation chain,
-  not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates through `{{SKILL:iterate}}`
-  and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
-  finding with `Action: {{SKILL:docs}}` in the run's review report per "Open review-finding
-  reports", including its prompt suggestion, and name it in the completion summary. The run
-  completes and the gap is carried forward, never dropped.
-
-An abort would mark an otherwise successful delegated run as failed and hand its working tree to
-the parent's cleanup policy; the finding hand-off keeps the gap visible without that cost.
+- **interactive:** correct it now, or escalate with the concrete evidence and let only the user or
+  authorized owner explicitly reduce the active slice. A justified `no impact` verdict is valid
+  only when the surface is in fact unaffected. Run no completion, plan-status switch, delivery
+  action, or derived-work materialization while a surface is still `blocked`;
+- **non-interactive delegation** (without a `Run state:` line: a run anywhere below
+  `{{SKILL:apply-review}}`, `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}`
+  in the delegation chain, not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates
+  through `{{SKILL:iterate}}` and runs this gate in no phase of its own): return every remaining blocked surface to the owning
+  orchestrator as `current-scope`. The owner performs its bounded documentation correction in the
+  current execution context. If path ownership or authorized scope prevents correction, keep the
+  run blocked and return that state to the parent; create no `Action: {{SKILL:docs}}` finding.
 
 ### Write boundary
 
@@ -79,9 +79,9 @@ Documentation only: product logic must not change. Documentation-adjacent code c
 JSDoc/TSDoc, rustdoc, CLI help text — are allowed.
 
 In a non-interactive delegation the gate additionally writes only inside files the run already
-owns. Separate documentation files are recorded as `Action: {{SKILL:docs}}` findings instead of
-being written, so the path-ownership and commit-integrity contracts of `{{SKILL:apply-review}}`
-and `{{SKILL:iterate}}` stay intact.
+owns. When a separate documentation file is required, return the blocked `current-scope` surface
+to the owner rather than violating the path-ownership and commit-integrity contracts of
+`{{SKILL:apply-review}}` and `{{SKILL:iterate}}`.
 
 ### Reporting
 

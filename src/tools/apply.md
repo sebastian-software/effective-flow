@@ -108,12 +108,16 @@ when: the run's subject is fixed and a session title is about to be applied or e
      `<plan.dir>/` (status `**Planungsstatus:** Nicht umgesetzt` or
      `**Plan status:** Not implemented`) and report files under the verified absolute
      `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory.
-     If the resolved tracker target is the forge or an external tool (see "Issue-tracker
-     integration (remote mode)"), additionally list open review epics (label
-     `effective-flow-review-epic`, on the forge including legacy `firmo-review-epic`, or the
-     target's equivalent container) as candidates — on those targets no local report files are
-     written, so otherwise no source would be offered. Then ask the user for the specific source.
-     Do not pick anything heuristically.
+     If the resolved tracker target is the forge or an external tool (see “Issue-tracker
+     integration (remote mode)”), additionally list direct findings with
+     `effective-flow-review-finding`: open findings without a closure receipt, plus closure-marked
+     findings across tracker states long enough to parse and compare the helper-owned receipt's gate
+     version, normalized signature, evidence digest, and reachability anchor/digest. Suppress a
+     still-current receipt; list a stale one so `apply-review` re-enters admission even if the issue
+     is terminal. Also list legacy review epics (`effective-flow-review-epic`, on the forge including
+     `firmo-review-epic`). Exclude every child of a listed legacy epic from the direct-finding list
+     so no candidate appears twice.
+     Then ask the user for the specific source. Do not pick heuristically.
    - **`ambiguous`:** name the competing interpretations and ask.
    - **Mixed issue list:** if the passed issue references lead to different
      responsibilities (e.g. `review-finding` **and** `plain-issue`), ask the user to

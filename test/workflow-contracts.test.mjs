@@ -2718,6 +2718,17 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       trigger: /(?=[\s\S]*`mergeGate\.bots` row)(?=[\s\S]*(?:regardless|presence|contains))/i,
       decision: 'presence of the current configured-reviewer row',
     },
+    {
+      // The provider-settled rule is for a forge that can do *neither* thread write. A clause naming
+      // only one capability would load it on a forge that can still reply or resolve, where the
+      // normal answered-and-resolved path is the right one; both names and the unsupported state
+      // are required.
+      fragment: 'merge-gate-provider-settled-threads',
+      trigger:
+        /(?=[\s\S]*`?reviewThreadReplies`?)(?=[\s\S]*`?reviewThreadResolution`?)(?=[\s\S]*(?:unsupported|not supported))/,
+      decision:
+        'the forge preflight reporting both reviewThreadReplies and reviewThreadResolution unsupported',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -2864,7 +2875,7 @@ test('the configured-reviewer route stays reachable through exact retained workf
   }
   assert.match(
     mergeCondition(conditions, 6),
-    /every bot thread \*\*whose finding this run implemented\*\* is answered and resolved/,
+    /every bot thread \*\*whose finding this run implemented\*\*, and that is not provider-settled on the\s+Phase-4 batch, is answered and resolved/,
     'condition 6 must remain an executable inline condition rather than move with reviewer-only bodies',
   );
 
@@ -3042,7 +3053,7 @@ test('plan-issue persists and approves an exact native-child set before sequenti
 
   assert.match(
     phase2,
-    /external target proves the full native-container contract plus atomic create-under-parent/,
+    /external target(?:'s)? full native-container contract plus atomic create-under-parent/,
   );
   assert.match(
     target,
@@ -3190,13 +3201,13 @@ test('security findings stay local until the review publication gate is confirme
     '**Dedup withheld findings:**',
     '**Reserve IDs:**',
     '**Run the security disclosure gate:**',
-    '**Create finding issues:**',
+    '**Create direct finding issues:**',
   );
   assert.match(review, /must finish before the reservation, so a finding already recorded/);
   assert.match(review, /in that order and before any tracker mutation/);
   assert.match(
     review,
-    /plus the withheld findings only when the gate returned an explicit publication confirmation/,
+    /plus the withheld\s+findings only when the disclosure gate returned an explicit publication confirmation/,
   );
 
   // The gate classifies conservatively and never weakens the reviewer signal.
@@ -3221,13 +3232,21 @@ test('security findings stay local until the review publication gate is confirme
   assert.match(gate, /an unanswered, skipped, or\nnon-interactive run publishes nothing/);
   assert.match(
     gate,
-    /epic body and every issue body contain no count, title, signature, ID, or other reference/,
+    /Every public issue body contains no count, title, signature, ID, or other reference/,
   );
 
   // A blocked report never blocks the unrelated findings, and never silently publishes.
   assert.match(
     gate,
     /\*\*If the report cannot be written\*\*, publish the `publishable` findings as usual, publish\n\s*nothing from the withheld set/,
+  );
+  assert.match(
+    gate,
+    /create each as an admitted direct finding issue;\ncreate no epic or container/,
+  );
+  assert.match(
+    gate,
+    /After explicit publication the direct remote finding is the executable source/,
   );
 
   // The gate binds every publisher and cannot be configured away. That it binds an
@@ -3267,10 +3286,7 @@ test('security findings stay local until the review publication gate is confirme
     /\*\*Hand over published findings:\*\*[\s\S]*`\{\{SKILL:apply\}\} #<nr> \[#<nr> …\]`/,
   );
   assert.match(applyReview, /Never drop them silently/);
-  assert.match(
-    applyReview,
-    /a report consisting only of published findings ends with an executable next step/,
-  );
+  assert.match(applyReview, /Published\s+findings use the concrete handover from step 10/);
 });
 
 test('release exposes verified delivery state to the disabled catalog job', () => {
@@ -3911,6 +3927,42 @@ test('plan files stay committed and pull requests stay on the forge in every tra
   );
 });
 
+test('both forge adapters load the shared remote-helper invocation contract', () => {
+  const prComments = source('src/shared/pr-review-comments.md');
+  const issueTracker = source('src/shared/issue-tracker-forge.md');
+
+  // A prose reference to the helper contract does not load anything. Runtime evidence showed that
+  // leaving the first invocation to a deferred trigger is insufficient, so PR work carries a real
+  // eager edge before any PR resolution or helper operation begins.
+  const prIncludes = collectIncludeNames(prComments);
+  assert.ok(
+    prIncludes.eager.has('remote-helper-contract'),
+    'pr-review-comments must eagerly include remote-helper-contract',
+  );
+  assert.equal(
+    prIncludes.lazy.has('remote-helper-contract'),
+    false,
+    'pr-review-comments must not defer remote-helper-contract to a runtime trigger',
+  );
+  const prFence = prComments.indexOf('```include\nremote-helper-contract\n```');
+  assert.notEqual(prFence, -1, 'pr-review-comments must carry the raw eager include fence');
+  const prResolution = prComments.indexOf('### PR resolution');
+  assert.notEqual(prResolution, -1, 'pr-review-comments must retain its PR resolution section');
+  assert.ok(
+    prFence < prResolution,
+    'the remote-helper-contract include must appear before the first PR helper operation',
+  );
+
+  // Issue-backed workflows already load this adapter before using the helper, so the small contract
+  // is part of its eager include closure. Pin the actual include edge, not a prose mention of the
+  // fragment name.
+  const trackerIncludes = collectIncludeNames(issueTracker);
+  assert.ok(
+    trackerIncludes.eager.has('remote-helper-contract'),
+    'issue-tracker-forge must eagerly include remote-helper-contract',
+  );
+});
+
 test('the security disclosure gate binds every publisher on every tracker target', () => {
   const tracker = source('src/shared/issue-tracker-forge.md');
   const gate = flat(section(tracker, '### Security disclosure gate'));
@@ -3929,6 +3981,321 @@ test('the security disclosure gate binds every publisher on every tracker target
   assert.match(
     flat(section(tracker, '### No AI attribution in issue bodies and comments')),
     /This binds every publisher on every tracker target, the forge and an external tool alike/,
+  );
+});
+
+test('every durable derived-work materializer reaches one gate before mutation', () => {
+  const directConsumers = [
+    'src/shared/unresolved-review-report.md',
+    'src/tools/apply-review.md',
+    'src/tools/investigate.md',
+    'src/tools/iterate.md',
+    'src/tools/plan-issue.md',
+    'src/tools/review.md',
+    'src/shared/pr-review-integration.md',
+  ];
+  for (const path of directConsumers) {
+    const { eager, lazy } = collectIncludeNames(source(path));
+    assert.equal(eager.has('durable-follow-up-gate'), false, `${path} must defer the gate`);
+    assert.equal(lazy.has('durable-follow-up-gate'), true, `${path} bypasses the central gate`);
+  }
+
+  for (const tool of ['build', 'fix', 'refactor', 'maintain']) {
+    const includes = collectIncludeNames(source(`src/tools/${tool}.md`));
+    assert.equal(
+      includes.eager.has('unresolved-review-report') ||
+        includes.lazy.has('unresolved-review-report'),
+      true,
+      `${tool} must share the gated residual-report materializer`,
+    );
+  }
+
+  const gate = flat(source('src/shared/durable-follow-up-gate.md'));
+  const outcomeSection = section(
+    source('src/shared/durable-follow-up-gate.md'),
+    '### Four outcomes',
+    '\n### Stable admitted record and re-entry',
+  );
+  assert.deepEqual(
+    bullets(outcomeSection)
+      .map((line) => line.match(/^\s*- `([^`]+)`/u)?.[1])
+      .filter(Boolean),
+    ['current-scope', 'admitted', 'closed', 'uncertain'],
+    'the gate outcome vocabulary must stay closed and ordered',
+  );
+  assert.match(
+    gate,
+    /apply this gate before reserving a finding ID, writing a report or issue, proposing a child issue, or emitting an executable outward handoff/,
+  );
+  assert.match(gate, /Missing admission metadata never implies `admitted`/);
+  assert.match(
+    gate,
+    /`current-scope`.*never creates a report, issue, child, plan, or executable follow-up/,
+  );
+  assert.match(
+    gate,
+    /`uncertain`.*Never loop it into another workflow or create a precautionary artifact/,
+  );
+
+  const unresolved = flat(source('src/shared/unresolved-review-report.md'));
+  ordered(
+    unresolved,
+    'classify them through the loaded “Durable derived-work gate”',
+    'before any ID reservation, directory creation, or report write',
+  );
+  assert.match(unresolved, /Only `admitted` residual root causes may enter a review-report file/);
+  assert.match(unresolved, /`current-scope`, `closed`, or `uncertain` candidates/);
+
+  const planIssue = flat(source('src/tools/plan-issue.md'));
+  assert.match(
+    planIssue,
+    /Only propose a native child when that root cause is independently `admitted`/,
+  );
+  assert.match(planIssue, /`current-scope`, `closed`, and `uncertain` create no child/);
+
+  const investigate = flat(source('src/tools/investigate.md'));
+  assert.match(investigate, /`admitted`: persist exactly one workflow and invocation suggestion/);
+  assert.match(investigate, /`closed`: persist `No action` and no invocation/);
+
+  const iterate = flat(source('src/tools/iterate.md'));
+  assert.match(
+    iterate,
+    /`closed` is terminal with no artifact, invocation, or unspecified follow-up/,
+  );
+  assert.match(iterate, /Create no task for a non-admitted out-of-scope item/);
+
+  const prReview = flat(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    prReview,
+    /run the loaded “Durable derived-work gate” before disclosure or publication/,
+  );
+  assert.match(
+    prReview,
+    /`closed` terminates, and unresolved `uncertain` blocks\/escalates without an artifact/,
+  );
+});
+
+test('legacy findings fail closed and direct findings replace new epics without breaking reads', () => {
+  const local = flat(source('src/tools/apply-review.md'));
+  assert.match(local, /Re-evaluate a legacy finding that lacks the record/);
+  assert.match(local, /open status or Importance is insufficient/);
+  assert.match(local, /Gate rejection never becomes an ADR candidate/);
+
+  const remote = flat(source('src/tools/apply-review-remote.md'));
+  assert.match(
+    remote,
+    /Missing or stale admission record.*re-evaluate through “Durable derived-work gate”/,
+  );
+  assert.match(remote, /candidate with no credible qualifying consequence becomes `closed`/);
+  assert.match(remote, /otherwise.*implement only with a complete current `admitted` record/);
+
+  const review = flat(source('src/tools/review.md'));
+  assert.match(
+    review,
+    /one direct issue is created per admitted root cause; no new review epic\/container is created/,
+  );
+  assert.match(
+    review,
+    /Keep `effective-flow-review-epic` and `wontfix` readable for legacy lifecycle paths/,
+  );
+
+  const detection = flat(source('src/shared/apply-source-detection.md'));
+  assert.match(detection, /lists open direct `review-finding` issues and legacy review epics/);
+  assert.match(
+    detection,
+    /Exclude the known children of each listed legacy epic from the direct list/,
+  );
+});
+
+test('remote admission closure preserves helper cwd, preview, freshness, and terminal semantics', () => {
+  const helper = flat(source('src/shared/remote-helper-contract.md'));
+  assert.match(
+    helper,
+    /verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd` on \*\*every helper operation\*\*/,
+  );
+  assert.match(helper, /Mutations are dry runs by default/);
+  assert.match(helper, /`STALE_WRITE`: abort that write without retrying, merging, or overwriting/);
+
+  const forge = flat(source('src/shared/issue-tracker-forge.md'));
+  assert.match(forge, /Callers never hand-write or parse this payload/);
+  assert.match(
+    forge,
+    /verified `RUNTIME_STATE_ROOT` as `cwd`, dry-run before apply, fresh reads, and stale-write failure/,
+  );
+  assert.match(forge, /Never call `issue-close`, whose fixed meaning is completed/);
+  assert.match(forge, /Repeat runs add no second comment or classification/);
+
+  const remote = flat(source('src/tools/apply-review-remote.md'));
+  assert.match(remote, /preview and apply the unchanged comment\/classification mutations/);
+  assert.match(remote, /Never call completed `issue-close`, never add `wontfix`/);
+});
+
+test('remote review discovery checks closure freshness before terminal suppression', () => {
+  const remote = source('src/tools/apply-review-remote.md');
+  const discovery = prose(
+    section(remote, '### Argument detection and mode determination', '\n### Phase 1 remote'),
+  );
+  ordered(
+    discovery,
+    '`remote` without argument',
+    'closure-marked direct findings across states',
+    'suppress those whose receipts remain current',
+    'list stale ones for reclassification',
+    'also list legacy review epics',
+    'Exclude children of a listed legacy epic from the direct list',
+  );
+
+  const classification = prose(
+    section(remote, '### Phase 1 remote: Read findings from issues', '\n### Phase 2 remote'),
+  );
+  ordered(
+    classification,
+    'Admission closure receipt:',
+    'Skip it only while gate version, normalized signature, evidence digest, and reachability anchor/digest still match',
+    'Perform this comparison before any generic checked-off or terminal-state handling',
+    'already checked off/closed without a stale admission closure receipt',
+    'Missing or stale admission record:',
+  );
+  assert.match(
+    classification,
+    /a stale receipt re-enters admission even when the issue is closed or its legacy epic entry is checked/,
+  );
+});
+
+test('an admitted stale closure is cleared only for an already non-terminal issue', () => {
+  const remote = prose(
+    section(
+      source('src/tools/apply-review-remote.md'),
+      '### Phase 1 remote: Read findings from issues',
+      '\n### Phase 2 remote',
+    ),
+  );
+
+  ordered(
+    remote,
+    'a stale receipt re-enters admission',
+    'stale closure re-evaluated to `admitted`',
+    'Read the issue state fresh',
+    'Proceed only when it is already non-terminal',
+    '`follow-up-admission-supersede`',
+    '`issue-comment-update`',
+    '`issue-label-remove`',
+    '`effective-flow-follow-up-closed`',
+    'Only after both mutations succeed',
+    'Create the per-finding tasks',
+  );
+  assert.match(
+    remote,
+    /`issue-comment-update`.*exact comment ID.*fresh `expectedBodyHash`.*same payload.*must not fall back to `issue-comment`/,
+  );
+  assert.match(
+    remote,
+    /helper-parsed active or superseded stale receipt.*body.*current freshness keys.*`follow-up-admission-supersede`.*only its deterministic body/,
+  );
+  assert.match(
+    remote,
+    /guarded update succeeds.*helper proves an idempotent prior supersession.*`issue-label-remove`/,
+  );
+  assert.match(
+    remote,
+    /Any terminal state, including one proven cancelled\/not planned, stops.*closure comment and classification intact.*manual tracker restoration.*fresh run.*create no task/,
+  );
+});
+
+test('needs_evidence receives one bounded uncertain check before either workflow maps it', () => {
+  const contracts = [
+    {
+      label: 'iterate',
+      text: prose(
+        section(source('src/tools/iterate.md'), '### Phase 2: Classification', '\n### Phase 2.5'),
+      ),
+      before: 'Before switching on its returned classification',
+      unresolved: /never defer it as unspecified follow-up/,
+    },
+    {
+      label: 'PR-review integration',
+      text: prose(
+        section(
+          source('src/shared/pr-review-integration.md'),
+          '### Judgment handoff to effective-delivery',
+          '\n### Security binding',
+        ),
+      ),
+      before: 'Before switching on a returned classification',
+      unresolved: /never publish or export it unresolved/,
+    },
+  ];
+
+  for (const { label, text, before, unresolved } of contracts) {
+    ordered(
+      text,
+      before,
+      'preliminary current-scope/high-risk triage',
+      'credible qualifying `needs_evidence` path becomes `uncertain`',
+      'exactly one bounded read-only question/check with an explicit completion criterion',
+      'then resolve it or block/escalate',
+      'Then map the remaining classifications',
+      '`needs_evidence` → only the triage outcome above applies; do not start a second evidence round',
+    );
+    assert.equal(
+      [...text.matchAll(/exactly one bounded read-only question\/check/g)].length,
+      1,
+      `${label} must permit exactly one bounded check`,
+    );
+    assert.match(text, unresolved, `${label} must block unresolved credible risk`);
+  }
+});
+
+test('fix always declares incomplete review coverage and withholds partial residual evidence', () => {
+  const completion = prose(
+    boundedSlice(source('src/tools/fix.md'), '### Phase 5: Completion', '\n## Rules'),
+  );
+  ordered(
+    completion,
+    'For automatic PR-review integration',
+    'declare `no-review-capability` unconditionally',
+    'never supplies complete specialist review coverage',
+    'Keep any local residual-report evidence in its existing report path',
+    'do not pass that partial set as `finding-set`',
+  );
+});
+
+test('next-step apply edges require a concrete admitted artifact', () => {
+  const nextSteps = flat(source('src/shared/next-steps.md'));
+  assert.match(
+    nextSteps,
+    /finding\/review `apply` option exists only when this run actually created an admitted durable report or direct finding issue and can name its concrete path\/reference/,
+  );
+  assert.match(
+    nextSteps,
+    /`current-scope`, `closed`, `uncertain`, a merely eligible result without write authority, or an empty\/deduplicated result emits no substitute planning or review invocation/,
+  );
+  const edges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  });
+  const reviewApply = edges.filter(
+    (edge) =>
+      edge.tool === 'review' &&
+      edge.then.startsWith('{{SKILL:apply}}') &&
+      (edge.condition.includes('report') || edge.condition.includes('direct admitted')),
+  );
+  assert.deepEqual(
+    reviewApply.map((edge) => edge.condition),
+    ['local report written', 'direct admitted findings published to a tracker'],
+  );
+});
+
+test('local review emits next steps for admitted findings but not a closed-only appendix', () => {
+  const localMode = flat(
+    boundedSlice(source('src/tools/review.md'), '#### Local mode', '\n#### Publishing target'),
+  );
+
+  ordered(
+    localMode,
+    'If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.',
+    'Delete the wisdom file.',
+    'If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.',
+    'If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.',
   );
 });
 
@@ -4627,11 +4994,13 @@ test('the documentation sync gate is a fixed, blocking part of every implementat
   // A bare "not relevant" must not satisfy the gate, otherwise `no impact`
   // degrades into the skip clause this change removes.
   assert.match(flat(contract), /not relevant.{0,80}does not satisfy/i);
-  // Both blocking branches: escalate interactively, hand off as a finding when
-  // delegated non-interactively.
+  // Both blocking branches keep the gap in the active slice; neither exports follow-up work.
   ordered(flat(contract), 'interactive', 'non-interactive delegation');
-  assert.match(flat(contract), /non-interactive delegation.{0,400}do not abort/i);
-  assert.match(contract, /Action: \{\{SKILL:docs\}\}/);
+  assert.match(
+    flat(contract),
+    /non-interactive delegation.{0,500}return every remaining blocked surface.{0,200}`current-scope`/i,
+  );
+  assert.match(contract, /create no `Action: \{\{SKILL:docs\}\}` finding/);
 
   // The clauses that made documentation optional are gone.
   assert.doesNotMatch(source('src/tools/build.md'), /Skip user docs only with a short/);
@@ -5554,7 +5923,7 @@ test('iterate lets a caller suppress its summary comment and posts it by default
   // identically shaped contract with its own `ABORT` and its own additive invariant — cannot
   // satisfy a single assertion below.
   // Selected by the item's own title, not by the bare word "summary": the delimiter item above it
-  // names all four control lines, so a first match on "summary" would retarget every assertion
+  // names all six control lines, so a first match on "summary" would retarget every assertion
   // below onto the item that merely lists the switch.
   const suppression = flat(
     section(iterate, '### Phase 0')
@@ -12013,6 +12382,289 @@ test('the retired rejected-merges sentence is gone and condition 6 is disambigua
   );
 });
 
+// On a forge that can neither reply to nor resolve a review thread (Forgejo), condition 6 could
+// never hold for an implemented bot thread, condition 7 saw the still-open thread as unassessed on
+// every fresh run, and Phase 3 re-delegated it round after round (issue #434). The repair is a
+// provider-settled thread: the same reviewer's later approval, read from forge state, settles it.
+// The rule lives in one lazy fragment so a run on a forge that can write threads never loads it.
+const providerSettledFragmentPath = 'src/shared/merge-gate-provider-settled-threads.md';
+
+function providerSettledFragment() {
+  assert.ok(
+    existsSync(new URL(providerSettledFragmentPath, repositoryRoot)),
+    `${providerSettledFragmentPath} must exist`,
+  );
+  return prose(source(providerSettledFragmentPath));
+}
+
+test('merge-gate loads the provider-settled rule lazily, after the Phase 0 list', () => {
+  const gate = source('src/tools/merge-gate.md');
+  providerSettledFragment();
+
+  // Lazy only: an eager include would charge the rule to every GitHub run, whose threads never
+  // enter this branch.
+  const { eager, lazy } = collectIncludeNames(gate);
+  assert.ok(lazy.has('merge-gate-provider-settled-threads'), 'merge-gate must point at the rule');
+  assert.ok(
+    !eager.has('merge-gate-provider-settled-threads'),
+    'the rule must never be an eager include',
+  );
+
+  // Column 0: `LAZY_INCLUDE_RE` would still match an indented fence inside the Phase 0 list, but a
+  // fence there ends the list, so the pointer has to sit after it, flush left.
+  const fence = gate.search(/^```lazy-include\nmerge-gate-provider-settled-threads\n/m);
+  assert.notEqual(fence, -1, 'the pointer must be a column-0 lazy-include fence');
+  const phase0 = gate.indexOf('### Phase 0');
+  const lastPhase0Item = gate.indexOf('\n3. In observer-only mode', phase0);
+  const phase1 = gate.indexOf('### Phase 1', phase0);
+  assert.notEqual(lastPhase0Item, -1, 'Phase 0 must keep its numbered list');
+  assert.ok(
+    fence > lastPhase0Item && fence < phase1,
+    'the pointer must sit after the Phase 0 list and before Phase 1',
+  );
+
+  // Phase 0 reads the two capabilities the pointer's condition names.
+  const phase0Text = prose(section(gate, '### Phase 0'));
+  assert.match(phase0Text, /reviewThreadReplies/, 'Phase 0 must read reviewThreadReplies');
+  assert.match(phase0Text, /reviewThreadResolution/, 'Phase 0 must read reviewThreadResolution');
+});
+
+test('a provider-settled thread needs a later approval by the same reviewer at the verified head', () => {
+  const fragment = providerSettledFragment();
+
+  // Scope: only a forge that can do neither thread write.
+  assert.match(
+    fragment,
+    near('reviewThreadReplies', 'reviewThreadResolution', 200),
+    'the rule must be scoped to both thread-write capabilities',
+  );
+  assert.match(
+    fragment,
+    near('(?:unsupported|not supported)', 'reviewThread(?:Replies|Resolution)', 200),
+    'the scope must be the two capabilities reported unsupported',
+  );
+
+  // Same reviewer, under the one matching contract rather than a literal login comparison.
+  assert.match(fragment, /Matching a configured login/, 'the same reviewer must be matched there');
+
+  // The time-order predicate, with each half.
+  assert.match(
+    fragment,
+    near('`?APPROVED`?', '`?VERIFIED_HEAD_SHA`?', 300),
+    'only an approval for the verified head settles',
+  );
+  assert.match(
+    fragment,
+    near('latest', 'submitted', 200),
+    'the approval must be the latest submitted review',
+  );
+  assert.match(
+    fragment,
+    /Automatic reviewer state/,
+    '"latest" must reuse the supersession rule of "Automatic reviewer state", not a second copy',
+  );
+  assert.match(
+    fragment,
+    near('different review', 'parent', 200),
+    'the approval must be a different review from the thread parent',
+  );
+  assert.match(
+    fragment,
+    near('strictly later', '`?submittedAt`?', 200),
+    "the approval's submittedAt must be strictly later than the parent's",
+  );
+  assert.match(fragment, /reviewId/, "the parent review must be read from the thread's reviewId");
+});
+
+test('a dismissal, a commented review, and unsubmitted rows settle no thread', () => {
+  const fragment = providerSettledFragment();
+  const settlesNothing =
+    '(?:settles? nothing|never settles?|does not settle|not settled|settles? no)';
+
+  // The adapter folds every dismissed review into DISMISSED, so a stale approval dismissed on push
+  // cannot be told apart from a dismissed change request.
+  assert.match(
+    fragment,
+    near('dismiss', settlesNothing, 250),
+    'a dismissal alone must settle nothing',
+  );
+  assert.match(
+    fragment,
+    near('(?:`?COMMENTED`?|commented)', '`?UNKNOWN`?', 150),
+    'a commented or UNKNOWN latest review must be named',
+  );
+  assert.match(
+    fragment,
+    near('`?UNKNOWN`?', settlesNothing, 250),
+    'a commented or UNKNOWN latest review must settle nothing',
+  );
+  assert.match(
+    fragment,
+    near('`?PENDING`?', '`?REVIEW_REQUESTED`?', 100),
+    'PENDING and REVIEW_REQUESTED rows must be named together',
+  );
+  assert.match(
+    fragment,
+    near('`?REVIEW_REQUESTED`?', '(?:ignored|never compete|do not compete|only submitted)', 250),
+    'PENDING and REVIEW_REQUESTED rows must not compete for the latest review',
+  );
+});
+
+test('the provider-settled rule fails closed on every missing link', () => {
+  const fragment = providerSettledFragment();
+
+  assert.match(fragment, /fails? closed/i, 'the rule must fail closed');
+  const missing = '(?:missing|absent|without|no |lacks|unavailable|unsupported)';
+  assert.match(
+    fragment,
+    near('reviewId', missing, 150),
+    'a thread without a parent review id must stay unsettled',
+  );
+  assert.match(
+    fragment,
+    near('`?submittedAt`?', missing, 150),
+    'a review without submittedAt must leave the thread unsettled',
+  );
+  assert.match(
+    fragment,
+    near('`?prReviewsRead`?', missing, 150),
+    'prReviewsRead being unavailable must settle nothing',
+  );
+  assert.match(
+    fragment,
+    /undecidable|identical (?:timestamps|`?submittedAt`?)|same `?submittedAt`?/i,
+    'an undecidable latest review must leave the thread unsettled',
+  );
+});
+
+test('the provider-settled rule names its read batch and skips this run’s implemented threads', () => {
+  const fragment = providerSettledFragment();
+
+  // One batch of threads and reviews read together, never a mix across restarts.
+  assert.match(
+    fragment,
+    near('Phase 3', '(?:step[- ]4|re-read|fresh (?:thread|read))', 250),
+    'Phase 3 must evaluate on the step-4 re-read or a fresh thread-and-review read',
+  );
+  assert.match(
+    fragment,
+    near('Phase 4', 'batch', 250),
+    'conditions 6 and 7 must re-evaluate on the Phase 4 batch',
+  );
+
+  // In-run evidence closes the window between iterate's push and the bot's visible approval.
+  assert.match(
+    fragment,
+    near('`?implemented`?', '(?:this run|in-run)', 200),
+    "this run's implemented threads must be named",
+  );
+  assert.match(
+    fragment,
+    near('`?implemented`?', 'Phase 3', 300),
+    "Phase 3 must skip this run's implemented threads on such a forge",
+  );
+});
+
+test('the provider-settled report names each thread, its URL and the manual next step', () => {
+  const fragment = providerSettledFragment();
+
+  assert.match(
+    fragment,
+    /left unresolved\s*[–—-]+\s*the provider cannot resolve review threads/i,
+    'a settled thread must be reported as left unresolved because the provider cannot resolve it',
+  );
+  assert.match(fragment, near('URL', 'thread', 150), 'each reported thread must carry its URL');
+  assert.match(
+    fragment,
+    near('web UI', 're-run', 300),
+    'a still-blocking thread must point at the web UI and a re-run',
+  );
+  assert.match(
+    fragment,
+    near("(?:do not|don't|never|not to) reply", 'thread', 200),
+    'the report must warn against replying in the thread',
+  );
+});
+
+// Phase 3 step 5, the body of condition 7, and the bot-thread Phase-6 items live in the lazily loaded
+// configured-reviewer route; condition 6 stays inline in the gate. Each is read where it lives, and
+// the gate's own Phase 6 must still reach the route's report items.
+test('merge-gate names provider-settled threads in Phase 3, conditions 6 and 7, and Phase 6', () => {
+  const gate = source('src/tools/merge-gate.md');
+
+  const phase3 = configuredReviewerSection('## Phase 3: Automatic reviewer round');
+  const step5 = prose(boundedSlice(phase3, '5. **When the bot has run', '\n6. '));
+  assert.match(step5, /provider-settled/, 'Phase 3 step 5 must exclude provider-settled threads');
+
+  const conditions = mergeConditions(gate);
+  assert.match(
+    prose(mergeCondition(conditions, 6)),
+    /provider-settled/,
+    'condition 6 must leave provider-settled threads out of the threads it considers',
+  );
+  // In the thread-set sentence, so every "assessed by this run" sentence of condition 7 stays true.
+  assert.match(
+    prose(configuredReviewerCondition(7)),
+    near('Take every unresolved thread', 'provider-settled', 400),
+    "condition 7's thread-set sentence must leave provider-settled threads out",
+  );
+
+  assert.match(
+    prose(section(gate, '### Phase 6', '\n## ')),
+    /apply\s+`## Phase 6 configured-reviewer report items`/,
+    "Phase 6 must reach the configured-reviewer route's report items",
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Phase 6 configured-reviewer report items')),
+    /provider-settled/,
+    'Phase 6 must report provider-settled threads',
+  );
+});
+
+test('iterate writes nothing into a thread on a provider that cannot reply', () => {
+  const phase5 = section(source('src/tools/iterate.md'), '### Phase 5');
+  const step2 = prose(boundedSlice(phase5, '\n2. ', '\n3. '));
+
+  // Today's step covers only an unsupported resolution and says to "keep the reply" — on a forge
+  // that refuses the reply as well there is no reply to keep.
+  assert.match(
+    step2,
+    /(?:\brepl(?:y|ies|ying)\b|reviewThreadReplies|`review-thread-reply`)[^.]{0,80}\b(?:unsupported|not supported|unavailable)|\bneither\b[^.]{0,40}\brepl|\bcannot\s+(?:post\s+a\s+)?repl/i,
+    'Phase 5 must cover a provider on which the reply is unsupported',
+  );
+  assert.match(
+    step2,
+    near('(?:writes? nothing|nothing is written|no reply)', 'thread', 120),
+    'Phase 5 must write nothing into the thread when the reply is unsupported',
+  );
+});
+
+test('the thread-write fragment writes nothing on a provider that cannot reply either', () => {
+  const resolve = prose(
+    section(source('src/shared/pr-review-thread-writes.md'), '### Resolve a thread'),
+  );
+
+  // The resolve step used to say only "keep the reply" — on a forge that refuses the reply too
+  // there is none to keep, so the shared rule every thread writer loads must name that case. The
+  // reply itself must be the unsupported subject: the old text already set `UNSUPPORTED_CAPABILITY`
+  // beside "keep the reply", which a mere proximity check would accept.
+  assert.match(
+    resolve,
+    /\brepl(?:y|ies)\b[^.,;]{0,40}\b(?:unsupported|not supported|unavailable)\b/i,
+    'the resolve step must cover a provider on which the reply is unsupported',
+  );
+  assert.match(
+    resolve,
+    near('(?:writes? nothing|nothing is written|no reply)', 'thread', 120),
+    'the resolve step must write nothing into the thread when the reply is unsupported',
+  );
+  assert.match(
+    resolve,
+    near('repl(?:y|ies) and resolution', 'manual', 80),
+    'the resolve step must report both reply and resolution as manual',
+  );
+});
+
 test('the confirmation is recorded as a per-round fact and adds no fifth outcome value', () => {
   const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
   const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
@@ -12140,8 +12792,8 @@ test('the gate delimits caller-supplied item text from the control lines it anno
   assert.ok(contract.includes(DELIMITER), 'the contract must name one literal body delimiter');
   assert.match(
     contract,
-    /all four control lines/i,
-    'all four control lines must sit above the delimiter, not three of them',
+    /all six control lines/i,
+    'all six control lines must sit above the delimiter, not five of them',
   );
   // The manifest is the whole point of the boundary: identifiers left inline would let one body
   // forge another finding's provenance exactly where condition 10 keys its assessment record.
@@ -12164,7 +12816,7 @@ test('the gate delimits caller-supplied item text from the control lines it anno
   );
 
   // The refusal is scoped to the delimiter, and that scope is the decision rather than an omission:
-  // the four control lines are quoted throughout this repository's own contracts, so a sender that
+  // the six control lines are quoted throughout this repository's own contracts, so a sender that
   // also refused a body merely stating one would report ordinary prose about this protocol as an
   // unassessed finding and block the merge on it.
   assert.match(
@@ -12201,7 +12853,7 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   ordered(prose(phase0), 'Split the message at the body delimiter', 'Optional item filter');
 
   // Below the delimiter is data, and data is all it is. An abort there fires on the ordinary prose
-  // of a reviewer discussing this protocol — the four lines are quoted throughout these contracts —
+  // of a reviewer discussing this protocol — the six lines are quoted throughout these contracts —
   // so it would report that reviewer's finding as unassessed and block the merge on it, and it would
   // hand a pull request able to induce one such line a reliable way to stop the gate.
   assert.match(
@@ -12260,8 +12912,11 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   );
 
   // Both positional rules cover `Next steps:` too, while its malformed-line tolerance survives: a
-  // repeated line is a fault of the channel, a malformed one costs a chat block.
-  assert.match(split, /`Next steps:`/, 'the positional rules must cover all four control lines');
+  // repeated line is a fault of the channel, a malformed one costs a chat block. The two lines the
+  // gate added for the run state and the language context are covered the same way.
+  for (const keyword of ['`Next steps:`', '`Run state:`', '`Language context:`']) {
+    assert.ok(split.includes(keyword), `the positional rules must cover ${keyword}`);
+  }
   const nextSteps = prose(items.find((item) => /next-step suppression/i.test(item)) ?? '');
   assert.ok(nextSteps, 'Phase 0 must keep its next-step suppression item');
   assert.match(
@@ -12275,6 +12930,12 @@ test('the item framing below the delimiter is a minted token no item text can fo
   const gate = source('src/tools/merge-gate.md');
   const iterate = source('src/tools/iterate.md');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  // The minting order, the absence-check scope and the token rationale live in the lazily loaded
+  // fragment: the helper performs them, so the always-loaded contract keeps only what the receiver
+  // relies on and points there.
+  const rationale = prose(
+    section(source('src/shared/delegation-envelope-examples.md'), '### Rationale', '\n## '),
+  );
   const manifest = prose(
     section(iterate, '### Phase 0')
       .split(/(?=\n\d+\.\s)/)
@@ -12316,24 +12977,29 @@ test('the item framing below the delimiter is a minted token no item text can fo
   // is only probably absent, and "probably" is what the untrusted text gets to attack.
   assert.match(
     contract,
-    near('Mint it freshly for every message', 'at random', 300),
+    near('mints? it freshly for every message', 'at random', 300),
     'the sender must mint an unpredictable token per message',
   );
   assert.match(
     contract,
-    near('search every body', 'plain substring', 300),
+    near('search(?:es)? every body', 'plain substring', 300),
     'the sender must verify the token is absent by substring search',
+  );
+  assert.match(
+    contract,
+    /minted by this run's helper/i,
+    'the contract must name the helper as the one that mints',
   );
   // Scope is the whole of it. The check covers what the caller supplied — the bodies plus the
   // provenance values the manifest carries on their behalf — and stops there.
   assert.match(
     contract,
-    near('search every body', 'caller-supplied value the manifest carries', 200),
+    near('search(?:es)? every body', 'caller-supplied value the manifest carries', 200),
     'the absence check must cover every body plus the caller-supplied manifest values',
   );
   assert.match(
-    contract,
-    near('occurs in any of them', 'mint another one and search again', 200),
+    rationale,
+    near('occurs in any of them', 'mints? another one and search(?:es)? again', 200),
     'a token colliding with caller-supplied content must be re-minted and re-checked',
   );
   // And it must stop there, explicitly. The token stands in its own declaration line and in every
@@ -12341,22 +13007,23 @@ test('the item framing below the delimiter is a minted token no item text can fo
   // sender's own framing on every candidate and re-mint forever: no delegation would ever be sent
   // and every finding would come back unassessed with the merge blocked on it.
   assert.match(
-    contract,
+    rationale,
     near('`Boundary token:` declaration line', 'separator line', 200),
     'the sender must name the two places its own framing carries the token by construction',
   );
   assert.match(
-    contract,
+    rationale,
     near("sender's own occurrences are not a collision", 'they are the framing', 200),
     "the contract must state that the sender's own occurrences are the framing, not a collision",
   );
   assert.match(
-    contract,
+    rationale,
     near('mint,', 'then write the declaration and the separator lines', 300),
     'the contract must order the mint and the absence check before the framing is written',
   );
   for (const [text, label] of [
     [contract, 'merge-gate'],
+    [rationale, 'the envelope rationale'],
     [manifest, 'iterate'],
   ]) {
     assert.doesNotMatch(
@@ -12439,12 +13106,12 @@ test('the item framing below the delimiter is a minted token no item text can fo
   );
   // Why the swap keeps what it replaced, and what it stops asking of a language-model operator.
   assert.match(
-    contract,
+    rationale,
     near('unforgeability', 'fixed from outside the span', 400),
     'the sender must say why the token keeps the unforgeability the declared length had',
   );
   assert.match(
-    contract,
+    rationale,
     near('multibyte Unicode', '(?:substring search and a split|unreliably)', 600),
     'the sender must say why byte arithmetic was the part worth removing',
   );
@@ -12463,7 +13130,7 @@ test('the item framing below the delimiter is a minted token no item text can fo
   );
   assert.match(
     manifest,
-    near('all four control lines', 'delivered whole', 500),
+    near('all six control lines', 'delivered whole', 500),
     'an item containing a control line must still be delivered whole',
   );
   assert.match(
@@ -12505,8 +13172,454 @@ test('the item framing below the delimiter is a minted token no item text can fo
   );
 });
 
+// The delegation envelope helper (#429). The gate used to write its delegation message by hand, and
+// a thread-only round put gate-authored run-state, language and return text below the delimiter,
+// where iterate rightly aborted on the mismatch. These tests pin the sender side of the fix: two
+// explicit control lines, one canonical order, a build-then-validate pair at both delegation sites,
+// and a stop — never a fallback — when the helper fails.
+const LANGUAGE_CONTEXT_LINE =
+  'Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>';
+
+test('the gate states the run state and language context above the delimiter in every delegation', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const raw = section(gate, '## Delegation contract', '\n## ');
+  const contract = prose(raw);
+  const bullets = raw.split(/\n-\s/);
+
+  // Each line has its own bullet, and each binds every delegation rather than a subset of them.
+  for (const [literal, label] of [
+    ['Run state: gated', 'run state'],
+    [LANGUAGE_CONTEXT_LINE, 'language context'],
+  ]) {
+    const item = prose(bullets.find((entry) => flat(entry).includes(literal)) ?? '');
+    assert.ok(item, `the delegation contract must announce the literal ${label} line`);
+    assert.match(
+      item,
+      /mandatory in every delegation/i,
+      `the ${label} line must bind every delegation, not an unspecified subset`,
+    );
+  }
+  assert.ok(contract.includes('Run state: non-interactive'), 'both run-state forms must be named');
+  assert.match(
+    contract,
+    near('keys in exactly that order', 'Language context', 400),
+    'the language keys must have one fixed order',
+  );
+  // All six artifact surfaces and no chat key, with the reason the chat key is absent.
+  assert.match(
+    contract,
+    near('no chat key', '`language.chat` is not handed down', 200),
+    'the language context must say why it carries no chat key',
+  );
+
+  // The two loose bullets they replace are gone, so nothing is left to write in free form.
+  assert.doesNotMatch(contract, /this run's own run state – gated or non-interactive delegation/i);
+  assert.doesNotMatch(contract, /the resolved language values, so the delegated run/i);
+
+  // One canonical order, six parts, and the two new lines are the fifth and sixth control lines.
+  const order = prose(section(raw, 'The canonical order.', '```lazy-include'));
+  ordered(
+    order,
+    '`Item filter:`',
+    '`Summary comment:`',
+    '`Review guard:`',
+    '`Next steps:`',
+    '`Run state:`',
+    '`Language context:`',
+    'the CI-repair instruction, only when there is one',
+    '`Boundary token: <token>`',
+    '`Thread item:`',
+    '`Item:`',
+    'the delimiter line',
+    'the body spans',
+  );
+  assert.match(
+    order,
+    near('no `Item:` line', 'ends at the delimiter line', 200),
+    'a message without a body item must end at the delimiter line',
+  );
+});
+
+test('both gate delegation sites go through build, then validate, then an unchanged dispatch', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const building = prose(
+    section(gate, '**Building and dispatching a delegation.**', '**What `build` refuses'),
+  );
+
+  assert.match(
+    building,
+    near('Both delegation sites', 'Phase 2 step 3 and Phase 3 step 5', 100),
+    'the procedure must name both delegation sites',
+  );
+  ordered(
+    building,
+    'delegation-envelope.mjs build',
+    'Record that map in the wisdom file before anything is dispatched',
+    'delegation-envelope.mjs validate',
+    'Dispatch exactly `{{SKILL:iterate}} <PR>`',
+  );
+  assert.match(
+    building,
+    near(
+      'Dispatch exactly `\\{\\{SKILL:iterate\\}\\} <PR>`, a line break',
+      "validated file's content verbatim",
+      100,
+    ),
+    'the dispatch must be the invocation, a line break, and the validated content verbatim',
+  );
+  assert.match(
+    building,
+    near(
+      'one of three statuses',
+      '`written`[\\s\\S]{0,200}`nothing-to-delegate`[\\s\\S]{0,200}`instruction-refused`',
+      100,
+    ),
+    'build must name its three successful statuses',
+  );
+  assert.match(building, /never as command-line arguments/i, 'input must travel on stdin only');
+  assert.match(
+    building,
+    near('`cwd`', 'verified `RUNTIME_STATE_ROOT`', 100),
+    'the helper must run against the verified runtime root',
+  );
+  assert.match(
+    building,
+    near('runtime-state write safety', 'first', 120),
+    'the runtime-state write safety must apply before the helper writes',
+  );
+  assert.match(
+    building,
+    near('recomputes the digest', 'after `build` fails here', 200),
+    'validate must bind the dispatched file to the digest build returned',
+  );
+  assert.match(
+    building,
+    near("validated file's content", 'nothing added before it or after it', 200),
+    'the dispatched argument must be the validated content with nothing added',
+  );
+  assert.match(
+    building,
+    /No return-protocol text goes with it/i,
+    'no return-protocol text may ride along with the envelope',
+  );
+  assert.match(
+    building,
+    near('Delete the message file and its snapshot', 'has returned', 100),
+    'the message file must be deleted once iterate has returned',
+  );
+  assert.match(
+    building,
+    /final cleanup after a sender stop/i,
+    'the message file must be deleted in final cleanup after a sender stop',
+  );
+
+  // Both sites name the procedure rather than a second copy of it. Phase 3's delegation step lives
+  // in the configured-reviewer route, the only place a Phase-3 delegation can happen.
+  for (const [heading, body] of [
+    ['### Phase 2', section(gate, '### Phase 2')],
+    ['### Phase 3', configuredReviewerSection('## Phase 3: Automatic reviewer round')],
+  ]) {
+    assert.match(
+      prose(body),
+      /per "Building and dispatching a delegation"/,
+      `${heading} must build its delegation through the helper`,
+    );
+  }
+
+  // The helper mints; the gate records what it returns.
+  assert.match(
+    contract,
+    near('identifier → durable-key map `build` returns', 'wisdom file', 300),
+    'the gate must record the identifier map the helper returns',
+  );
+});
+
+test('a sender-side helper failure stops the gate before iterate and costs nothing else', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const failure = prose(
+    section(gate, '**A sender-side failure stops the run', '\n## Returned outcome record'),
+  );
+
+  for (const [pattern, why] of [
+    [/missing from the installed build/i, 'a missing helper must be a sender-contract error'],
+    [/Stop the run before `\{\{SKILL:iterate\}\}` is invoked/, 'the stop must precede iterate'],
+    [/error code/i, "the stop must report the helper's error code"],
+    [/Make no remote write/i, 'a sender stop must make no remote write'],
+    [/record no `unassessed` outcome/i, 'a sender stop must classify nothing unassessed'],
+    [/leave the round counter unchanged/i, 'a sender stop must not consume a round'],
+    [/Never fall back to assembling the message by hand/i, 'no hand-assembly fallback'],
+    [/do not retry/i, 'no retry of a deterministic failure'],
+    [
+      /`ok: false`[^.]{0,80}any error code/i,
+      'every ok:false result must be a sender-contract error',
+    ],
+    [
+      /`node` unavailable or too old/i,
+      'a helper that cannot be run must be a sender-contract error',
+    ],
+  ]) {
+    assert.match(failure, pattern, why);
+  }
+
+  // Refusal outcomes of a written build are recorded only once the delegation is dispatched, so a
+  // sender stop records none; the nothing-to-delegate path has no validate step and records at once.
+  const building = prose(
+    section(gate, '**Building and dispatching a delegation.**', '**What `build` refuses'),
+  );
+  assert.match(
+    building,
+    near('Only now record the outcomes', 'sender stop before this point records no outcome', 300),
+    'refusal outcomes must be recorded only after dispatch',
+  );
+  assert.match(
+    prose(section(gate, '**What `build` refuses', '**A sender-side failure')),
+    near('`nothing-to-delegate`', 'no `validate` step', 300),
+    'a nothing-to-delegate build must record its refusals at once',
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Phase 3: Automatic reviewer round')),
+    near('once the delegation is dispatched', 'records no outcome from that build', 300),
+    'Phase 3 must agree on when refusal outcomes are recorded',
+  );
+
+  // The refusals are outcomes, not failures, and each keeps its own consequence.
+  const refusals = prose(section(gate, '**What `build` refuses', '**A sender-side failure'));
+  assert.match(refusals, near('carrying the delimiter', '`unassessed`', 200));
+  assert.match(refusals, near('empty or whitespace-only body', 'gate-internal outcome', 200));
+  assert.match(
+    refusals,
+    near('CI-repair instruction', 'not auto-repairable', 400),
+    'a protocol-shaped CI-repair instruction must be reported not auto-repairable',
+  );
+  assert.match(
+    refusals,
+    /still blocks the merge/i,
+    'a refused CI repair must still block the merge',
+  );
+  assert.match(refusals, near('nothing left to delegate', 'does not delegate', 200));
+
+  // A body item without a review URL or author is refused as missing-provenance, recorded unassessed
+  // like the delimiter refusal, and never given a synthesized value.
+  assert.match(
+    refusals,
+    near('`url` or `author` is absent', '`missing-provenance`', 100),
+    'an absent review URL or author must be a named refusal',
+  );
+  assert.match(refusals, near('`missing-provenance`', 'recorded `unassessed`', 200));
+  assert.match(refusals, near('`missing-provenance`', 'never synthesizes', 300));
+  assert.match(
+    prose(section(gate, '## Delegation contract', '\n## ')),
+    near('never\\s+synthesize a link', '`missing-provenance`', 300),
+    'the thread-URL absence rule must name the body-item provenance refusal beside it',
+  );
+  assert.match(
+    building,
+    near('delimiter-carrying or `missing-provenance` body', '`unassessed`', 100),
+    'a missing-provenance refusal must be recorded with the delimiter refusal timing',
+  );
+  assert.match(
+    prose(configuredReviewerSection('## Phase 3: Automatic reviewer round')),
+    near('`missing-provenance`', 'recorded `unassessed` once the', 200),
+    'Phase 3 must record a missing-provenance body as unassessed',
+  );
+  assert.match(
+    building,
+    near('`reviewId` and `threadId`', 'integers or strings', 100),
+    'the helper input must accept ids as integers or strings',
+  );
+  for (const doc of ['docs/user-guide/tools-deliver.md', 'docs/developer-guide/build-system.md']) {
+    assert.ok(source(doc).includes('`missing-provenance`'), `${doc} must name the refusal`);
+  }
+
+  // A refused CI repair is terminal: the next round would rebuild and refuse the same instruction,
+  // so the run ends at that step instead of looping until mergeGate.maxRounds is exhausted.
+  const phase2 = prose(section(gate, '### Phase 2', '#### Round accounting'));
+  assert.match(
+    phase2,
+    near('end the run here', 'not auto-repairable', 200),
+    'a refused CI repair must end the run with the not-auto-repairable report',
+  );
+  assert.match(
+    phase2,
+    near('not auto-repairable', 'nothing is merged, no further round starts', 200),
+    'a refused CI repair must neither merge nor loop into another round',
+  );
+  assert.match(
+    phase2,
+    near('no further round starts', 'round counter stays unchanged', 200),
+    'ending on a refused CI repair must leave the round counter unchanged',
+  );
+  assert.doesNotMatch(
+    phase2,
+    near('not auto-repairable', 'still fails the check criterion', 200),
+    'a refused CI repair must not fall through to the failed-check loop',
+  );
+  assert.match(
+    refusals,
+    near('`instruction-refused`', 'the run ends at Phase 2 step 3', 200),
+    'the refusal list must agree that a refused CI repair ends the run',
+  );
+});
+
+test('iterate reads the run state and language context only from above the first delimiter', () => {
+  const iterate = source('src/tools/iterate.md');
+  const phase0 = section(iterate, '### Phase 0');
+  const items = phase0.split(/(?=\n\d+\.\s)/);
+  const item = prose(items.find((entry) => /Run state and language context/.test(entry)) ?? '');
+  assert.ok(item, 'Phase 0 must parse the run state and the language context');
+
+  assert.ok(item.includes('Run state: gated') && item.includes('Run state: non-interactive'));
+  assert.ok(item.includes(LANGUAGE_CONTEXT_LINE), 'iterate must parse the literal language line');
+  assert.match(item, /read only from above the first delimiter/i);
+  assert.match(item, /ABORT: duplicated control line/);
+  assert.match(item, /ABORT: unparseable run-state switch/);
+  assert.match(item, /ABORT: unparseable language-context switch/);
+  assert.match(
+    item,
+    near('No `Run state:` line', 'invoked with a body delimiter is non-interactive', 100),
+    'a missing run-state line must fall back by the delimiter',
+  );
+  assert.match(
+    item,
+    near('No `Language context:` line', 'resolve the languages yourself', 100),
+    'a missing language line must fall back to resolving the languages',
+  );
+  assert.match(
+    item,
+    near('do not re-read the project setup ADR', 'these are this run', 300),
+    'a present language line must be the resolved language context',
+  );
+
+  // The run state governs every interactivity decision named in the plan.
+  const guard = prose(
+    section(iterate, '### Phase 1.5')
+      .split(/(?=\n\d+\.\s)/)
+      .find((entry) => /Fail closed when the question cannot be asked/.test(entry)) ?? '',
+  );
+  assert.match(guard, near('Phase 0 step 10', 'Run state: non-interactive', 200));
+  const approval = prose(section(iterate, '### Phase 2.5'));
+  assert.match(approval, near('Phase 0 step 10', 'Run state: non-interactive', 200));
+  assert.doesNotMatch(approval, /apply-review/, 'the stale apply-review inference must be gone');
+  assert.match(
+    prose(section(iterate, '### Phase 3')),
+    near('`Run state:` line', 'documentation-sync gate', 200),
+    'iterate must hand its run state to the documentation-sync gate of its delegations',
+  );
+  // Only a non-interactive run state is forwarded: a gated run's items may be sub-agents nobody can
+  // answer, so they fall to the documentation-sync chain rule rather than to a gated escalation.
+  const phase3 = prose(section(iterate, '### Phase 3'));
+  assert.match(
+    phase3,
+    near(
+      'effective run state',
+      'is non-interactive, every one\\s+of them also carries `Run state: non-interactive`',
+      200,
+    ),
+    'iterate must forward the non-interactive run state to its item delegations',
+  );
+  assert.match(
+    phase3,
+    near('A gated run forwards no `Run state:`\\s+line', 'chain rule', 300),
+    'a gated iterate must forward no run-state line to its item delegations',
+  );
+  assert.doesNotMatch(
+    phase3,
+    /carries `Run state: gated`|fallback taken — as a `Run state:` line/,
+    'iterate must never forward a gated run state to its item delegations',
+  );
+  assert.match(
+    prose(section(iterate, '### Phase 3')),
+    near('`language.git`', '`Language context:`', 100),
+    'iterate must take language.git from the language line when present',
+  );
+
+  const docSync = prose(source('src/shared/documentation-sync-contract.md'));
+  assert.match(
+    docSync,
+    near(
+      'explicit `Run state: gated` or `Run state: non-interactive` line',
+      'only when that line is absent',
+      300,
+    ),
+    'the documentation-sync gate must defer to an explicit run state before its chain rule',
+  );
+  assert.match(
+    docSync,
+    near(
+      'a gated\\s+`[^`]*iterate[^`]*` forwards no line to its item runs',
+      'the chain rule decides for them',
+      100,
+    ),
+    'the documentation-sync contract must state that a gated iterate leaves its items to the chain rule',
+  );
+  assert.match(
+    prose(source('docs/user-guide/tools-implement.md')),
+    near('gated `iterate` announces nothing to its items', 'sub-run rule decides', 100),
+  );
+});
+
+test('iterate reads a whitespace-only body region as zero spans and nothing else', () => {
+  const split = prose(
+    section(source('src/tools/iterate.md'), '### Phase 0')
+      .split(/(?=\n\d+\.\s)/)
+      .find((entry) => /body delimiter/i.test(entry)) ?? '',
+  );
+  assert.match(split, near('nothing but whitespace', 'zero spans', 100));
+  assert.match(
+    split,
+    near(
+      'any other content below the delimiter with zero `Item:` entries',
+      'ABORT: manifest and body mismatch',
+      100,
+    ),
+    'every non-whitespace region must still be counted against the Item entries',
+  );
+});
+
+test('the canonical envelope examples load lazily and show all three kinds in order', () => {
+  const gate = source('src/tools/merge-gate.md');
+  assert.ok(
+    collectIncludeNames(gate).lazy.has('delegation-envelope-examples'),
+    'merge-gate must point to the examples lazily',
+  );
+  const examples = source('src/shared/delegation-envelope-examples.md');
+  assert.match(prose(examples), /illustrative/i, 'the example values must be marked illustrative');
+
+  const DELIMITER = '--- caller-supplied item text follows ---';
+  const block = (heading) => {
+    const text = section(examples, `### ${heading}`);
+    const match = text.match(/```text\n([\s\S]*?)\n```/);
+    assert.ok(match, `the ${heading} example must carry a text block`);
+    return match[1];
+  };
+  for (const heading of ['Thread-only', 'Body-only', 'Mixed']) {
+    const message = block(heading);
+    ordered(
+      message,
+      'Item filter: ',
+      'Summary comment: suppressed',
+      'Review guard: established',
+      'Next steps: suppressed',
+      'Run state: ',
+      'Language context: source=',
+      'Boundary token: ',
+      DELIMITER,
+    );
+  }
+  const threadOnly = block('Thread-only');
+  assert.ok(
+    threadOnly.endsWith(DELIMITER),
+    'the thread-only example must end at the delimiter line',
+  );
+  assert.ok(!threadOnly.includes('Item: '), 'the thread-only example must carry no body item');
+  assert.match(block('Body-only'), /^Item filter: free-text-only$/m);
+  assert.ok(!block('Body-only').includes('Thread item:'));
+  ordered(block('Mixed'), 'Item filter: threads=', 'Thread item: ', 'Item: ', DELIMITER);
+});
+
 // The return direction of the merge-gate -> iterate delegation. The forward direction is framed by
-// the four control lines above; the way back is framed by nothing, and is instead made safe by a key
+// the six control lines above; the way back is framed by nothing, and is instead made safe by a key
 // set the receiver pre-commits. These assertions pin that rule, the closed vocabulary both ends
 // speak, and the identifier requirement the rule rests on.
 const returnedRecord = (text, label) => {
@@ -12828,6 +13941,216 @@ test('no side of the iterate channel still claims a per-item ABORT', () => {
   );
 });
 
+// One `assert.match` per [pattern, message] pair, so a failure names the exact missing clause.
+function assertClauses(text, clauses) {
+  for (const [pattern, message] of clauses) {
+    assert.match(text, pattern, message);
+  }
+}
+
+// A sub-agent that ends while a background child is still pending returns an interim result with
+// neither keyword. That result is unfinished, not failed: the completion protocol resumes the same
+// sub-agent once before any retry, and only falls through to Retry 1 when that resume is impossible
+// or comes back keyword-less again.
+test('the completion protocol resumes a keyword-less sub-agent once before retry escalation', () => {
+  const protocol = source('src/shared/completion-protocol.md');
+  const text = prose(protocol);
+
+  assert.match(
+    text,
+    /No keyword: resume once, then retry with escalation/i,
+    'the orchestrator check must resume once before escalating a keyword-less result',
+  );
+  const escalation = prose(section(protocol, '### Retry escalation', '\n## '));
+  assertClauses(escalation, [
+    [
+      /ends without `DONE` or `ABORT`[\s\S]{0,80}not finished rather than (?:as )?a failed attempt/i,
+      'a keyword-less result must be classified as unfinished rather than failed',
+    ],
+    [/resume the same sub-agent once/i, 'the protocol must resume the same sub-agent exactly once'],
+    [
+      /context intact where the harness allows/i,
+      'the resume must keep the sub-agent context where the harness allows it',
+    ],
+    [
+      /continuation hint to await any pending children and end with `DONE` or `ABORT`/i,
+      'the resume must carry a hint to await pending children and end with a keyword',
+    ],
+    [/That resume is not a retry/i, 'the resume must not count as a retry'],
+    [
+      near(
+        'cannot resume that sub-agent',
+        'again ends without a keyword[\\s\\S]{0,40}escalate',
+        200,
+      ),
+      'an impossible resume or a second keyword-less end must fall through to the escalation',
+    ],
+  ]);
+  const resumeAt = escalation.search(/resume the same sub-agent once/i);
+  const retryAt = escalation.search(/1\. Retry 1:/);
+  assert.notEqual(retryAt, -1, 'the retry escalation must still start with Retry 1');
+  assert.ok(resumeAt < retryAt, 'the one resume must precede Retry 1 in the retry escalation');
+  for (const token of ['run_in_background', 'SendMessage']) {
+    assert.ok(
+      !protocol.includes(token),
+      `the eagerly included completion protocol must stay harness-neutral and not name ${token}`,
+    );
+  }
+});
+
+// The merge-gate side of a keyword-less iterate return. The completion protocol's Retry 2 and 3
+// shrink the task, which a run bound to a fixed `Item filter` cannot do, so the gate allows one
+// plain resume of the same run and otherwise reads the return as a whole-run ABORT.
+test('merge-gate resumes a keyword-less iterate return once and never retries it', () => {
+  const gate = source('src/tools/merge-gate.md');
+  returnedRecord(gate, 'merge-gate');
+  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+    .split(/\n\s*\n/)
+    .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
+  assert.ok(
+    paragraph,
+    'the returned outcome record must grant a keyword-less iterate return exactly one resume',
+  );
+  const rule = prose(paragraph);
+
+  assertClauses(rule, [
+    [
+      /exactly one resume, and never Retry 1[–—-]3/i,
+      'a keyword-less return must get exactly one resume and never Retry 1-3',
+    ],
+    [/Phase 2 step 3 CI repair/i, 'the resume must apply at the Phase 2 step 3 CI repair'],
+    [/Phase 3 step 5 bot round/i, 'the resume must apply at the Phase 3 step 5 bot round'],
+    [
+      /continued once as a separate turn of the same run/i,
+      'the resume must continue the same run once rather than start a new one',
+    ],
+    [
+      /no envelope is rebuilt or re-sent/i,
+      'the resume must neither rebuild nor re-send the delegation envelope',
+    ],
+    [/no control keyword/i, 'the resume turn must carry no control keyword'],
+    [/no `Item:` line or item text/i, 'the resume turn must carry no `Item:` line or item text'],
+    [
+      /no return-protocol instruction/i,
+      'the resume turn must carry no return-protocol instruction',
+    ],
+    [
+      /plain request to await pending work and finish/i,
+      'the resume turn must be only a plain request to await pending work and finish',
+    ],
+    [/does not advance the round counter/i, 'the resume must not advance the round counter'],
+    [
+      near('still keyword-less', 'whole-run `ABORT`', 120),
+      'a return still keyword-less after the resume must be handled as a whole-run ABORT',
+    ],
+    [
+      near('harness cannot continue', 'whole-run `ABORT`', 80),
+      'a return the harness cannot continue must be handled as a whole-run ABORT, never Retry 1-3',
+    ],
+    [
+      /in place of the\s+completion protocol's continuation hint/i,
+      'the plain resume request must replace the shared continuation hint on this channel',
+    ],
+    [/round ends unsuccessfully/i, 'the fallback ABORT must end the round unsuccessfully'],
+    [/nothing is merged/i, 'the fallback ABORT must merge nothing'],
+    [/report names it/i, 'the fallback ABORT must be named in the report'],
+    [
+      near('reduced-scope retries do not fit', 'fixed `Item filter`', 80),
+      'the rule must state why reduced-scope retries do not fit a fixed Item filter',
+    ],
+  ]);
+});
+
+// The resumed run answers after an interim keyword-less text. Reading that interim text beside the
+// final return would turn a provisional `unassessed` there plus a final `implemented` into a
+// conflicting-outcome mismatch and fail a round that actually succeeded, so the receiver rule reads
+// only the resumed turn's final return and nothing in the interim text counts.
+test('merge-gate reads outcomes only from the resumed final return, never the interim text', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+    .split(/\n\s*\n/)
+    .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
+  assert.ok(
+    paragraph,
+    'the returned outcome record must grant a keyword-less iterate return exactly one resume',
+  );
+  const rule = prose(paragraph);
+
+  assertClauses(rule, [
+    [
+      /The interim keyword-less text is not a return/i,
+      'the interim keyword-less text of a resumed run must not count as a return',
+    ],
+    [
+      /receiver rule reads only the resumed turn's final return/i,
+      "the receiver rule must read only the resumed turn's final return",
+    ],
+    [
+      /every recorded identifier must be answered there/i,
+      'every recorded identifier must be answered in the final return',
+    ],
+    [
+      near('stated only in the interim text', 'absent', 20),
+      'an outcome stated only in the interim text must count as absent',
+    ],
+    [
+      /absent [–—-] the same mismatch/i,
+      'an outcome only in the interim text must be the same identifier mismatch',
+    ],
+    [
+      /Nothing in the interim text counts, conflicts with the final return, is recorded, or is reported as an inert outcome/i,
+      'nothing in the interim text may count, conflict, be recorded, or be reported as inert',
+    ],
+  ]);
+
+  const counterAt = rule.search(/does not advance the round counter/i);
+  const interimAt = rule.search(/The interim keyword-less text is not a return/i);
+  const stillAt = rule.search(/still keyword-less/i);
+  assert.ok(
+    counterAt !== -1 && interimAt > counterAt,
+    'the interim-text rule must follow the round-counter sentence inside the resume rule',
+  );
+  assert.ok(
+    stillAt !== -1 && interimAt < stillAt,
+    'the interim-text rule must precede the still-keyword-less fallback inside the resume rule',
+  );
+
+  const mandateSection = prose(
+    section(source('docs/developer-guide/architecture.md'), '## Delegation mandate', '\n## '),
+  );
+  assert.match(
+    mandateSection,
+    /receiver rule reads outcomes only from the resumed turn's final return/i,
+    "the architecture guide must state that the receiver rule reads only the resumed turn's final return",
+  );
+});
+
+// The harness mechanics behind the pending-child rule are Claude Code specifics. They belong in the
+// developer guide; the shipped fragments reach Codex and portable targets too, and the build's
+// harness leak guard fails those targets on `run_in_background`.
+test('the Claude Code pending-child specifics live in the architecture guide, not in shipped text', () => {
+  const mandateSection = prose(
+    section(source('docs/developer-guide/architecture.md'), '## Delegation mandate', '\n## '),
+  );
+  assert.match(
+    mandateSection,
+    /`run_in_background: true`/,
+    'the architecture guide must name the run_in_background mechanism behind the rule',
+  );
+  assert.match(
+    mandateSection,
+    /`SendMessage`/,
+    'the architecture guide must name SendMessage as the Claude Code resume',
+  );
+  for (const path of [
+    'src/shared/delegation-mandate.md',
+    'src/shared/completion-protocol.md',
+    'src/tools/merge-gate.md',
+  ]) {
+    assert.ok(!source(path).includes('SendMessage'), `${path} must not name SendMessage`);
+  }
+});
+
 test('iterate returns exactly one outcome per caller-supplied item identifier', () => {
   const iterate = source('src/tools/iterate.md');
   const record = returnedRecord(iterate, 'iterate');
@@ -12996,7 +14319,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
   // unmeasurable requirement is one no reader and no test can check.
   assert.match(
     contract,
-    near('Mint that identifier', 'at least 32 characters', 300),
+    near("minted by this run's helper", 'at least 32 characters', 300),
     'the identifier requirement must state the token concrete length',
   );
   assert.match(
@@ -13044,7 +14367,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
   assert.match(
     contract,
     near(
-      'Mint that identifier',
+      "minted by this run's helper",
       "a thread item's identifier is minted exactly as a body-carried finding's is",
       300,
     ),
@@ -13055,7 +14378,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
     /Thread item: <stable identifier> \| thread=<thread ID>/,
     'a thread item must travel under its minted identifier on its own manifest line',
   );
-  // That line is manifest, not a fifth control line, and it carries no body span — so the span
+  // That line is manifest, not a seventh control line, and it carries no body span — so the span
   // comparison the framing test pins stays a count of `Item:` entries against the bodies.
   assert.match(
     contract,
@@ -13068,24 +14391,43 @@ test('the gate mints its item identifier per message, to the token concrete requ
     'a `Thread item:` line must never enter the manifest/body count',
   );
 
-  // The absence check keeps the identifiers in scope and drops only the wrong label. The scope
-  // itself is pinned by the framing test; what this asserts is that the correction did not narrow
-  // it while removing the contradiction.
+  // The absence check covers every caller-supplied value — the durable keys and a CI repair's
+  // instruction included — plus the identifiers drawn earlier, which are not caller-supplied and are
+  // named as such. The scope itself is pinned by the framing test; the rationale fragment states it
+  // in full, and nothing may claim the check deliberately excludes content the sender wrote.
+  const rationale = prose(
+    section(source('src/shared/delegation-envelope-examples.md'), '### Rationale', '\n## '),
+  );
   assert.match(
     contract,
-    near('search every body', 'caller-supplied value the manifest carries', 200),
+    near('search(?:es)? every body', 'caller-supplied value the manifest carries', 200),
     'the absence check must still cover the manifest values',
   );
   assert.match(
     contract,
-    /the stable identifiers, which do not/i,
-    'the identifiers must be named as content this gate did write',
+    /absent from every caller-supplied value/i,
+    'every identifier must be absent from every caller-supplied value',
   );
   assert.match(
-    contract,
-    near('identifiers stay inside the check', 'lose that label', 300),
-    'the identifiers must stay in the absence-check scope while losing the wrong label',
+    rationale,
+    near('the durable keys', "a CI repair's instruction", 100),
+    'the absence check must cover the durable keys and the gate-authored instruction',
   );
+  assert.match(
+    rationale,
+    near('identifiers drawn earlier are not caller-supplied', 'distinct from the token', 300),
+    'the earlier identifiers must stay in the check without being called caller-supplied',
+  );
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [rationale, 'the envelope rationale'],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /deliberately excludes the content it did/i,
+      `${label} must not claim the absence check excludes content the sender wrote`,
+    );
+  }
   assert.doesNotMatch(
     contract,
     /the stable identifiers, the review ids, the author logins and the review URLs/i,
@@ -13093,18 +14435,18 @@ test('the gate mints its item identifier per message, to the token concrete requ
   );
 });
 
-test('the return is declared in its own section and adds no fifth control line', () => {
+test('the return is declared in its own section and adds no seventh control line', () => {
   const gate = source('src/tools/merge-gate.md');
   const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
 
-  // The four control lines are counted by the delimiter test above. A return announced as a fifth
+  // The six control lines are counted by the delimiter test above. A return announced as a seventh
   // one would move a boundary that test guards, so the return gets a section instead.
-  assert.match(contract, /all four control lines/i, 'the forward direction must still carry four');
+  assert.match(contract, /all six control lines/i, 'the forward direction must still carry six');
   assert.match(
     record,
-    near('not', 'fifth control line', 200),
-    'the return must state that it is not a fifth control line',
+    near('not', 'seventh control line', 200),
+    'the return must state that it is not a seventh control line',
   );
   ordered(gate, '## Delegation contract', '## Returned outcome record');
 
@@ -13251,6 +14593,141 @@ test('deliver is exposed with its shipped helper and continues automatically aft
   assert.match(
     deliver,
     /reports that its explicit PR intent replaces any different configured\s+`delivery\.completion`[\s\S]*does not change the stored value/,
+  );
+});
+
+// The confirmed upstream fast-forward is the only write deliver may perform in the source checkout, so its place is
+// pinned: after the receipt, before the source evidence is recorded and before any candidate is
+// reconstructed. The deferred decision flow is pinned by its trigger states, its two questions, the
+// fail-safe resolution of an unanswered question, and the mutation mapping that decides between
+// the second question and a hard stop.
+test('deliver checks the upstream before recording source evidence and defers the sync flow', () => {
+  const deliver = source('src/tools/deliver.md');
+  const sync = source('src/shared/source-upstream-sync.md');
+
+  assert.match(deliver, /`upstream-status`, `fast-forward`, `bind-manifest`/);
+  assert.equal(
+    deliver.match(/^```ask$/gm)?.length,
+    1,
+    'deliver must still contain exactly one ask',
+  );
+
+  const step1 = boundedSlice(
+    deliver,
+    '### 1. Establish immutable source evidence',
+    '\n2. Resolve `language.git`',
+  );
+  ordered(
+    step1,
+    'Issue and verify a source execution-location receipt',
+    'call `upstream-status {root: sourceRoot, fetch: true}`',
+    '```lazy-include\nsource-upstream-sync\n',
+    'Only after this check, record the source `HEAD`',
+  );
+  const step1Text = prose(step1);
+  assert.match(
+    step1Text,
+    /A failed `upstream-status` envelope \(`ok: false`\) ends this check with one notice line naming its error code; continue without an update/,
+  );
+  assert.match(
+    step1Text,
+    /A failed or stale fetch, or one reported as `fetch\.skipped`, ends this check with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`, `up-to-date`, and `ahead`, with no question/,
+  );
+  assert.match(
+    step1Text,
+    /only when the fetch was not attempted, or `fetch\.ok` is true and `fetch\.stale` is false/,
+  );
+  assert.match(
+    step1Text,
+    /A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,
+  );
+  assert.match(
+    prose(section(deliver, '## Selection contract', '\n## ')),
+    /Only after step 1\.1's upstream check, reconstruct the candidate/,
+  );
+
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('source-upstream-sync'),
+    'upstream-status reports behind, behind-overlap, or diverged',
+    'the source-upstream-sync pointer must fire on exactly the three states that pose a question',
+  );
+
+  const asks = askContracts(sync, 'src/shared/source-upstream-sync.md');
+  assert.equal(asks.length, 2, 'the upstream sync fragment must contain exactly two ask fences');
+  assert.equal(asks[0].question, 'Update the local branch from its upstream before selecting?');
+  assert.deepEqual(
+    asks[0].options.map(({ label }) => label),
+    ['Fast-forward first', 'Continue without update', 'Abort'],
+  );
+  const fetchGate = /the fetch was not attempted, or fetch\.ok is true and fetch\.stale is false/;
+  assert.match(asks[0].when, /behind and the fetch was not attempted/);
+  assert.match(asks[0].when, fetchGate);
+  assert.equal(
+    asks[1].question,
+    'The local branch cannot be fast-forwarded. Continue without an update?',
+  );
+  assert.deepEqual(
+    asks[1].options.map(({ label }) => label),
+    ['Continue without update', 'Abort'],
+  );
+  assert.match(asks[1].when, /diverged or behind-overlap/);
+  assert.match(asks[1].when, fetchGate);
+  assert.match(asks[1].when, /mutationMayHaveSucceeded false/);
+
+  // The fetch that precedes either question has already written to the repository, so Abort
+  // promises only an untouched working tree, index, and local branch, never "nothing changed".
+  for (const [index, ask] of asks.entries()) {
+    const abort = ask.options.find(({ label }) => label === 'Abort');
+    assert.match(
+      abort.description,
+      /working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref/,
+      `upstream question ${index + 1}: Abort must scope its guarantee and disclose the preceding fetch`,
+    );
+  }
+
+  const text = prose(sync);
+  assert.match(
+    text,
+    /Abort ends the run without changing the working tree, the index, or the local branch: no fast-forward, no evidence, no selection, and no delivery branch or worktree\. The upstream fetch that preceded the question may already have written fetched objects, `FETCH_HEAD`, and the remote-tracking ref/,
+  );
+  assert.doesNotMatch(text, /Abort ends the run before any mutation/);
+  const guide = prose(source('docs/user-guide/tools-deliver.md'));
+  assert.match(
+    guide,
+    /Abort ends the run without touching your working tree, index, or local branch; the upstream fetch before the question may already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch/,
+  );
+  assert.doesNotMatch(guide, /Abort ends the run before anything changes/);
+  assert.match(
+    text,
+    /`fetch\.ok` is true and `fetch\.stale` is false\. A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,
+  );
+  assert.match(text, /including Git's `stderr` diagnostic when present/);
+  assert.match(text, /After Fast-forward first:/);
+  assert.match(text, /`toOid` equals the status `upstreamOid` and `applied` is false/);
+  assert.match(text, /a failure without that field is treated as `true`/);
+  assert.match(
+    text,
+    /An unanswered question, a skipped question, or a non-interactive run resolves to Continue without update/,
+  );
+  assert.match(text, /No fast-forward ever runs without an explicit Fast-forward first answer/);
+  assert.match(text, /hooks disabled through `core\.hooksPath=\/dev\/null`/);
+  assert.match(text, /`post-merge` hooks were skipped/);
+  assert.match(text, /`merge --ff-only --no-overwrite-ignore`/);
+  assert.match(text, /does not re-read `@\{u\}`/);
+  assert.match(
+    text,
+    /`false`, whether the code is `SOURCE_DRIFT` or `COMMAND_FAILED`: nothing was written; report the diagnostic and pose the second question/,
+  );
+  assert.match(text, /`true`: stop hard before selection[\s\S]*offer no continue option/);
+  assert.match(
+    text,
+    /Never stash, rebase, create a merge commit, force, or retry the fast-forward, and never offer any of them as an alternative/,
   );
 });
 
@@ -13454,6 +14931,23 @@ test('the reviewer advisory conservatively classifies and retains candidates wit
   }
 });
 
+test('Phase 4 completes a new status read before its guard reads and evaluates only the full snapshot', () => {
+  const phase4 = flat(section(source('src/tools/merge-gate.md'), '### Phase 4', '\n### Phase 5'));
+
+  // The order is the concurrency contract: Phase 2's status result cannot stand in for Phase 4's,
+  // and none of the advisory or merge conditions may observe a partial mix of the four responses.
+  ordered(
+    phase4,
+    'Start the Phase-4 observation with a new `pr-status-read` and wait for it to complete.',
+    'Never reuse or reinterpret any status result from Phase 2 as this read.',
+    'Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together.',
+    'Wait for all three to complete.',
+    'Only then apply "Unconfigured automatic-reviewer advisory"',
+    'evaluate every condition from all four results; never evaluate a partial batch.',
+    '1. the resolved completion mode is `merge`',
+  );
+});
+
 test('every fresh review read accumulates advisory candidates before evaluation', () => {
   const gate = source('src/tools/merge-gate.md');
   const phase1 = flat(section(gate, '### Phase 1', '\n### Phase 2'));
@@ -13483,10 +14977,10 @@ test('every fresh review read accumulates advisory candidates before evaluation'
   );
   ordered(
     phase4,
-    'against a **fresh** read',
-    'Apply "Unconfigured automatic-reviewer advisory"',
+    'Wait for all three to complete',
+    'Only then apply "Unconfigured automatic-reviewer advisory"',
     'merge its candidates into the wisdom record',
-    'before evaluating any condition',
+    'evaluate every condition from all four results',
     '1. the resolved completion mode is `merge`',
   );
 });

@@ -29,7 +29,7 @@ target. PR review threads are a different API object. A workflow working on a pu
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
 `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
-availability check** are taken from the "Remote helper contract" in `issue-tracker-forge.md` (not
+availability check** are taken from the focused `remote-helper-contract` building block (not
 reinvented); this building block only adds the PR operations.
 
 Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge
@@ -49,13 +49,17 @@ summary comment and every outbound review comment and review body use `language.
 markers, thread IDs, states, finding IDs, and helper payload fields remain stable and are never
 translated.
 
+```include
+remote-helper-contract
+```
+
 ### Remote helper
 
 Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, and error contract from `issue-tracker-forge.md`. PR mode requires a successful provider
-probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit provider choice;
-`CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider requests or
-discover flags in the prompt.
+redaction, error, and working-directory contract from the loaded "Remote helper contract". PR mode
+requires a successful provider probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit
+provider choice; `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider
+requests or discover flags in the prompt.
 
 ### PR resolution
 
@@ -79,6 +83,7 @@ comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
+On Forgejo only, a thread also carries an optional `reviewId`: the id of the review it was read under.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read

@@ -134,10 +134,17 @@ cycle the walk would otherwise not terminate on.
 resolves whether the project setup contains the `mergeGate.bots` row before it parses the value. A
 present row therefore loads the fragment even when its value is empty or unreadable; only the
 absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
-`merge-gate` core for Claude from 2,746 to 2,127 lines, for Codex from 2,734 to 2,121, and for the
-portable target from 2,737 to 2,124. Its context budget is now 2,134 lines. The configured-reviewer
+`merge-gate` core for Claude from 2,892 to 2,262 lines, for Codex from 2,880 to 2,256, and for the
+portable target from 2,883 to 2,259. Its context budget is now 2,270 lines. The configured-reviewer
 contract remains in one source fragment while the default, row-absent route no longer pays its
 context cost.
+
+`durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
+implementation, investigation, planning, or decomposition run. Common implementation workflows
+reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
+because re-entry or mutation always needs the conservative default; `review`, `investigate`, and
+PR-review integration load it at their admission decision. Keep admission before ID reservation and
+artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
@@ -228,9 +235,10 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. One script pair carries this today: `remote-tracker.mjs`/
-  `remote-tracker-core.mjs`. Its runtime prompts are additionally scanned with the unit-tested
-  `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
+  misread as one. Three script pairs carry this today: `delegation-envelope.mjs`/
+  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
+  `remote-tracker.mjs`/`remote-tracker-core.mjs`. The remote-tracker's runtime prompts are
+  additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
@@ -307,20 +315,17 @@ The build aborts with an error message if any of these guards is violated:
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
-  without the lazy fragments – stays under a **per-tool** budget. `build`, `fix`, `docs` and
-  `plan` share **700 lines**; `merge-gate` carries **2741**; every other `src/tools/*.md`
-  carries its measured size plus **up to** ten lines. The build prints each
-  measured size next to the budget it was measured against and aborts if a tool exceeds **its
-  own** limit, naming the tool, its size and that limit. That printed size is the number to
-  measure a new entry against — the guard counts `split('\n').length`, one line more than
-  `wc -l` on a newline-terminated file. `merge-gate` differs from the 700 because it is an
-  orchestration gate: its phases, delegation contracts and provider rules do not compress to
-  the size of an implementation tool. Every number other than the five above is a measured
-  backlog rather than a target – it records what a tool costs today with its mode-gated
-  fragments still inlined, so each later deferral lowers the entries it touches and a large
-  number reads as work outstanding, never as room to fill. The map and the built tool set are
-  reconciled two-sidedly: a tool with no entry fails the build, and so does an entry naming no
-  tool, so a newly added tool cannot ship unmeasured.
+  without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
+  **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
+  **2868** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
+  own measured limits. The build prints each measured size next to its budget and aborts if a tool
+  exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
+  measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
+  on a newline-terminated file. Every entry is a measured backlog rather than a target: it records
+  what a tool costs today, so each later deferral lowers the entries it touches and a large number
+  reads as work outstanding, never as room to fill. The map and the built tool set are reconciled
+  two-sidedly: a tool with no entry fails the build, and so does an entry naming no tool, so a newly
+  added tool cannot ship unmeasured.
 - **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
   one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
   The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
@@ -346,13 +351,16 @@ The build aborts with an error message if any of these guards is violated:
   unnoticed. The pure check logic lives as `missingCategoryReadmes` in `build-lib.mjs` and is
   covered in `test/build-lib.test.mjs`.
 - **Self-contained-agent-contract guard (#100):** Every agent description and every agent body
-  is the complete runtime metadata and instruction basis of the subagent – it receives no
-  sibling or history context at runtime. The guard therefore aborts the build if an agent source
+  is the complete runtime metadata and instruction basis of the subagent. Workers are launched
+  with zero inherited turns when supported, otherwise the smallest supported history, so their
+  contract and compact handoff cannot depend on sibling or ambient conversation context. The
+  guard therefore aborts the build if an agent source
   (frontmatter **and** body) offloads its meaning onto another agent: history comparisons
   ("original agent", "same depth as the …"), relative-to-sibling scope ("… like the `<X>`
   reviewer/implementer/…"), or a cross-agent shorthand as a contract substitute ("As with
-  `{{AGENT:…}}`"). A **legitimate** delegation reference such as "delegate to
-  `{{AGENT:code-validator}}`" stays allowed – only the "As with `{{AGENT:…}}`" form is blocked.
+  `{{AGENT:…}}`"). A legitimate downstream handoff reference such as "tell
+  `{{AGENT:code-validator}}` what to validate" stays allowed – only the "As with
+  `{{AGENT:…}}`" form is blocked.
   The pure check logic lives as `findSelfReferentialContractPhrases` (with the blocklist
   `SELF_CONTAINED_CONTRACT_PATTERNS`) in `build-lib.mjs` and is covered in
   `test/build-lib.test.mjs`.
@@ -394,8 +402,11 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    than handing the rest of the run to the receiving tool, carries the literal payload line
    `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
 6. If the new tool delegates to a worker or performs its own analysis or exploration, embed the
-   eager `delegation-mandate` include. The delegation rules themselves — including which agents
-   may carry `Agent, Task` and why the parenthesised form is banned — are canonical in
+   eager `delegation-mandate` include; every new agent embeds it as well. Only workflow/tool
+   orchestrators start workers or analysis fan-out. Every agent is a leaf, and its Claude tool
+   list must omit `Agent` and `Task` regardless of read/write authority. The parenthesised form
+   cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
+   the smallest supported history, plus the compact, self-contained handoff defined in
    [`AGENTS.md`](../../AGENTS.md), section "Delegation".
 7. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, a Claude agent without `effort`, unsupported Codex sandbox modes, a missing or
@@ -404,13 +415,35 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-One dependency-free script pair ships as consumer runtime code in the skill payload, split into an
-I/O boundary and a pure, unit-testable core:
+Three dependency-free script pairs ship as consumer runtime code in the skill payload, each split
+into an I/O boundary and a pure, unit-testable core:
 
+- **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
+<build|validate>` with one JSON object on standard input whose `cwd` is the verified
+  `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
+  every delegation to `iterate`. `build` takes the control values, the ordered thread and body
+  items, and an optional CI-repair instruction; `reviewId` and `threadId` may be JSON integers or
+  strings and are normalized to strings. It mints the item identifiers and the boundary token,
+  derives the item filter, and refuses a body carrying the delimiter, a body item whose review
+  `url` or `author` is absent (`missing-provenance`, never a synthesized value), an empty body, or
+  a protocol-shaped instruction. A present value the manifest cannot carry safely is not a refusal
+  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines, the manifest, the delimiter,
+  and the body spans in one canonical order, checks its own output, and writes the message plus a
+  manifest snapshot exclusively under `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/`. It
+  returns the path, a `sha256:` digest, and the identifier → durable-key map. `validate` recomputes
+  that digest before re-checking the structure against the snapshot, so text added to the file
+  after `build` fails. It never scans the region below the delimiter for keywords. Failures come
+  back as stable error codes with a nonzero exit code. The canonical envelope shapes, and the
+  rationale for the minting order, the absence-check scope, the token and the helper itself, live
+  in the lazily loaded `delegation-envelope-examples` fragment.
+- **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
+  source `HEAD`, apply them to the refreshed base with conflict detection, and reconcile the exact
+  resulting diff without emitting file content.
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
-  unless `--apply` is present. The core module is pure except for an injected process runner;
+  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
+  that flag. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
@@ -439,16 +472,16 @@ and directive syntax").
 
 - **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
   `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`, `goal-completion`,
-  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, and the status markers in
-  `plan-status`. `goal-completion` governs every remaining phase rather than one decision point,
-  and `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
-  nobody notices. Neither is deferred, however tempting their size. `delegation-mandate` is eager
-  for the same reason: a lazy pointer at the delegation decision point would let the very host
-  default this fragment corrects skip the pointer's own trigger, so the mandate must be present
-  before the model plans the run. `base-branch-resolution` is eager in both of its hosts for a
-  narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so there is no single
-  decision point at which a pointer could sit. `chat-language` is eager in every tool that speaks
-  for both of those reasons at once: every emitted line is its decision point, so no pointer has
+  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, `remote-helper-contract`, and the
+  status markers in `plan-status`. `goal-completion` governs every remaining phase rather than one
+  decision point, and `apply-clarity-gate` is a safety gate whose failure mode — silently not
+  running — is the one nobody notices. Neither is deferred, however tempting their size.
+  `delegation-mandate` is eager for the same reason: a lazy pointer at the delegation decision point
+  would let the very host default this fragment corrects skip the pointer's own trigger, so the
+  mandate must be present before the model plans the run. `base-branch-resolution` is eager in both
+  of its hosts for a narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so
+  there is no single decision point at which a pointer could sit. `chat-language` is eager in every
+  tool that speaks for both of those reasons at once: every emitted line is its decision point, so no pointer has
   anywhere to sit, and its failure mode is silently not running — a run that never loads it simply
   keeps mirroring the user and nothing reports the configured value was ignored. It carries its
   own lazy pointer to `typography-rules`, which is a genuine branch (only a resolved `de` reaches
@@ -467,7 +500,8 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`, `setup-profiles`.
+  `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
+  `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -526,10 +560,31 @@ and directive syntax").
   `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
   every branch that poses **no** question is decided inside the moved text as well; a pointer firing
   only where the question is posed would leave those runs deciding from text they have not loaded.
-  `config-migration` is the live proof that a fragment may be
-  eager in one file and lazy in another: twelve tools that read configuration on every run inline
-  its always-read core, while seven others defer the whole fragment behind their own first
-  configuration read.
+  `merge-gate-provider-settled-threads` is the seventh, holding the rule for a forge that can
+  neither reply to nor resolve review threads: when a configured bot's thread counts as settled by
+  that reviewer's later approval, which read it is evaluated on, its fail-closed cases, and the
+  report wording for settled and still-blocking threads. Its trigger is the Phase 0 forge preflight
+  reporting **both** `reviewThreadReplies` and `reviewThreadResolution` unsupported, and its pointer
+  sits at column 0 after the Phase 0 list. Phase 3 step 5, conditions 6 and 7, and Phase 6 keep
+  only a short reference to it in the always-loaded core, so a GitHub run, or any forge that
+  supports either thread write, never loads it.
+  `source-upstream-sync` is the single-consumer `deliver` fragment for step 1.1's upstream decision
+  flow, and it takes the same cut: the `upstream-status` call and the notice for every state that
+  poses no question stay in the always-loaded core, and the pointer fires on all three question
+  states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
+  fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
+  the merge-gate eval identity.
+  `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
+  twelve tools that read configuration on every run inline its always-read core, while seven others
+  defer the whole fragment behind their own first configuration read.
+
+  `remote-helper-contract` is eager in both `issue-tracker-forge` and `pr-review-comments`. A lazy
+  pointer beside the first PR helper invocation proved nondeterministic: a run could invoke the
+  helper before loading the pointer and omit the required `cwd`. The invocation, envelope, error and
+  working-directory rules therefore stay inline wherever forge helper operations are available.
+  PR review publication still retains its later `issue-tracker-forge` pointer because that distinct
+  decision point needs the canonical finding `Signature`; PR plumbing does not carry the rest of
+  the forge fragment merely to learn how to invoke the helper.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
@@ -562,9 +617,18 @@ Each `src/agents/<name>.md` body remains the only worker contract. The native re
 it with harness-specific frontmatter to produce registered `effective-flow-<name>` sidecars.
 The portable renderer writes the same body to `workers/effective-flow-<name>.md`; instructions
 that reference a worker receive a short delegation protocol telling the harness to load only
-the selected contract and pass it to a built-in general-purpose subagent. This is orchestration
-metadata, not a duplicate domain playbook: centrally discovered skills remain authoritative
-for their declared domains.
+the selected contract and pass it to a built-in general-purpose subagent with zero inherited
+turns when supported, otherwise the smallest supported history. The protocol adds a compact,
+self-contained handoff and reserves worker starts and analysis fan-out for the workflow/tool
+orchestrator; the selected worker is always a leaf. This is orchestration metadata, not a
+duplicate domain playbook: centrally discovered skills remain authoritative for their declared
+domains.
+
+Every native Claude worker tool list omits `Agent` and `Task`. That withholding is the
+enforceable Claude boundary because a granted sub-agent tool can start a child whose capabilities
+prose and `Agent(<type>)` cannot restrict. Native Codex and portable worker metadata do not expose
+an equivalent per-role tool list, so their rendered instructions carry the same leaf-worker
+contract explicitly.
 
 The native frontmatter also owns role-based model selection. Implementers and reviewers use
 Claude `opus`/`xhigh` and Codex `gpt-5.6-sol`/`high`; support roles use Claude
@@ -589,10 +653,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2127/2134, `setup` 1723/1723, `iterate` 1660/1669,
-`apply-review` 1338/1340, `apply-issues` 1187/1187, and `cleanup` 1020/1022.
+`merge-gate` is 2262/2270, `setup` 1723/1723, `iterate` 1771/1775,
+`apply-review` 1357/1360, `apply-issues` 1191/1191, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 655/665, `docs` 607/617, `build` 583/585, and `fix` 479/481. Read every
+`plan` 656/665, `docs` 608/617, `build` 592/595, and `fix` 484/488. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.

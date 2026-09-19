@@ -308,12 +308,17 @@ Start in parallel if possible:
 ### Phase 6: Review
 
 1. Start every reviewer selected by the canonical routing contract for the changed files, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
-2. Aggregate all review findings and classify them:
-   - Critical: must be fixed before completion
-   - Important: should be fixed, can be handled as a follow-up
-   - Note: optional
-3. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
-4. Fix all critical findings before completion.
+2. Aggregate all review findings, then make exactly one automatic incorporation pass for every new
+   finding that belongs to the authorized slice. Re-run the affected review checks once after that
+   pass; do not weaken or consume the separate validator correction budget.
+3. Send the residual batch through the admission contract loaded by “Gated residual
+   review-finding reports”. Severity remains review information, not an admission label:
+   - `current-scope`: correct or safely contain it now; completion stays blocked unless the user or
+     authorized plan/tracker owner explicitly reduces the slice
+   - `admitted`: eligible for the common residual report path
+   - `closed`: report only an aggregate count and short reason in chat
+   - `uncertain`: perform the one bounded evidence/containment check and resolve it or stop
+4. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
 5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
@@ -333,10 +338,11 @@ Summary:
 | High | Z |
 ```
 
-Note: Before completion, the "Open" column for "Critical" must be 0.
+Note: Before completion, the "Open" column for `current-scope` findings must be 0 regardless of
+severity. An admitted Critical residual also requires the existing explicit completion decision.
 
-6. If findings were not implemented, list them directly in the summary with prompt suggestions for later implementation.
-7. Document each finding in a structured way so open or unimplemented findings can be carried over into an external review report:
+6. List only admitted residual findings with prompt suggestions for later implementation.
+7. Document admitted residual findings in a structured way so they can be carried over into an external review report:
    - local ID (`F1`, `F2`, ...)
    - Title
    - Severity (Critical / Important / Note)
@@ -347,8 +353,10 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
    - Recommendation
    - Status in the complete report language (English: Fixed / Open / Not implemented; German: Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
-8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
-9. If after review there remain findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
+   - the complete stable admitted record from “Durable derived-work gate”
+8. Never create an ADR in this workflow and do not ask for one either. Gate rejection is terminal,
+   not an architecture decision.
+9. If after the incorporation pass there remain `admitted` findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - record the generated report path for Phase 7
@@ -410,7 +418,7 @@ Rules for the findings report:
 
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
-6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** Phase-6 finding set to that handback — the findings that survived this run's correction rounds, not the full Phase-6 history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 8. Emit the next-step block per `next-steps` as the last element of the report.
 

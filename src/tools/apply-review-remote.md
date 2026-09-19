@@ -46,7 +46,7 @@ when: the resolved tracker target is `external`
 
 When the resolved tracker target is the forge or an external tool (see "Issue-tracker integration (remote mode)"), the following adjustments apply **in addition to** or **instead of** the local report flow. Determine the target at the start of Phase 1; the argument type takes precedence over the config.
 
-Everything below is phrased for the forge target and applies unchanged to an external target, with the resolved connection taking the place of the helper: read epic and finding issues, comments, and classification values through it, and perform every mutation under the write discipline, classification mapping, and container mechanism of the loaded `tracker-target` contract. Determine the tracker target — not only the mode — at the start of Phase 1, name it in the summary, and abort fail-closed instead of publishing to a different target than the one resolved.
+Everything below is phrased for the forge target and applies unchanged to an external target, with the resolved connection taking the place of the helper: read direct finding issues and any legacy epics, comments, and classification values through it, and perform every mutation under the write discipline and classification mapping of the loaded `tracker-target` contract. Its container mechanism applies only when reconciling a legacy epic. Determine the tracker target — not only the mode — at the start of Phase 1, name it in the summary, and abort fail-closed instead of publishing to a different target than the one resolved.
 
 ### Argument detection and mode determination
 
@@ -54,15 +54,21 @@ Classify the passed argument via the "apply-source detection" (stage A and — f
 
 - **`review-report`** (report file under `.effective-flow/review/`) → `local` (existing behavior, unchanged).
 - **`review-epic`** (issue with `effective-flow-review-epic` label, legacy `firmo-review-epic` equivalent) → `remote`, **epic mode**: work through all finding issues linked in the epic.
-- **`review-finding`** (a single finding issue or a list of finding-issue references) → `remote`, **issue-list mode**: work through exactly these findings only. The corresponding epic per finding is retained from the sub-issue (`Epic` field/reference), if present, for the lifecycle receipt and post-merge reconciliation.
-- **`remote` without argument** → list open epics and let the user choose.
+- **`review-finding`** (a single finding issue or a list of finding-issue references) → `remote`, **issue-list mode**: work through exactly these findings only. A corresponding legacy epic is retained from the optional `Epic` field/reference, if present, solely for backward-compatible lifecycle reconciliation.
+- **`remote` without argument** → list open direct review-finding issues plus closure-marked direct
+  findings across states for the freshness comparison below, suppress those whose receipts remain
+  current, and list stale ones for reclassification; also list legacy review epics. Exclude children
+  of a listed legacy epic from the direct list so the same finding is not offered twice.
 - **`plan`, `container-issue` or `plain-issue`** → does not belong to `{{SKILL:apply-review}}`: point to the responsible skill (`{{SKILL:apply-plan}}` for plan files, `{{SKILL:apply-issues}}` for other issues, or `{{SKILL:apply}}` for automatic routing) and end. When delegating from `{{SKILL:apply}}` this case should not occur; the switch remains as a safeguard.
 
-The argument type takes precedence over the config (see "Determine mode" in the tracker integration): `review-report` forces `local`, and `review-epic`/`review-finding` force the tracker target that reference belongs to — the forge for a forge reference, `external` for a tool-native one. On the forge target, detect host and CLI beforehand and check CLI availability; if the CLI is missing, abort clearly (no silent fallback to `local`). On an external target, establish the single connection and verify its base capabilities beforehand instead; a missing, ambiguous, or under-capable connection aborts just as clearly, again without falling back to `local` or to the forge. Settle the container mechanism in that same step: select a native relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer its completion write until after merge. Require state-list and transition capabilities only for implementable findings immediately before their started transition; `wontfix`, container-only, and publication paths do not inherit them.
+The argument type takes precedence over the config (see "Determine mode" in the tracker integration): `review-report` forces `local`, and `review-epic`/`review-finding` force the tracker target that reference belongs to — the forge for a forge reference, `external` for a tool-native one. On the forge target, detect host and CLI beforehand and check CLI availability; if the CLI is missing, abort clearly (no silent fallback to `local`). On an external target, establish the single connection and verify its base capabilities beforehand instead; a missing, ambiguous, or under-capable connection aborts just as clearly, again without falling back to `local` or to the forge. Settle a container mechanism only in legacy epic mode: select a native relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Direct issue-list mode uses none. Defer a legacy completion write until after merge. Require state-list and transition capabilities only for implementable findings immediately before their started transition; `wontfix`, container-only, and publication paths do not inherit them.
 
 ### Phase 1 remote: Read findings from issues
 
-Replaces reading the report file. Determine the finding issues to work through (parse the epic task list or use the passed list). Read for each finding issue the full body **and the comments fresh from the tracker** ("read comments" operation) and classify:
+Replaces reading the report file. Determine the finding issues to work through (parse a legacy epic
+task list or use the passed/direct list). Read each finding issue body, comments, and classifications
+**fresh from the tracker**, then perform freshness/exact-signature deduplication and validate its
+admission record before creating tasks:
 
 Resolve `language.forge` once for newly authored issue comments and checklist prose, while
 preserving clearly established existing thread/body language. Resolve `language.git` once for
@@ -74,10 +80,45 @@ stable labels, IDs, action values, references, and markers are never translated.
   head branch and base branch of the PR. A target PR overrides the
   default strategy "one PR per finding" for this finding.
 - **Label `wontfix`** → do not implement, create an ADR (Phase 3 remote).
-- **already checked off/closed** → skip.
+- **Admission closure receipt:** parse the helper-owned
+  `<!-- effective-flow-follow-up-admission:v1 -->` comment payload through the helper with verified
+  `RUNTIME_STATE_ROOT` as `cwd`, and read the canonical
+  `effective-flow-follow-up-closed` classification. Skip it only while gate version, normalized
+  signature, evidence digest, and reachability anchor/digest still match. Perform this comparison
+  before any generic checked-off or terminal-state handling; a stale receipt re-enters admission
+  even when the issue is closed or its legacy epic entry is checked.
+- **already checked off/closed without a stale admission closure receipt** → skip.
+- **Missing or stale admission record:** re-evaluate through “Durable derived-work gate”. A credible
+  qualifying path with incomplete evidence is `uncertain` and blocks for its one bounded check. A
+  candidate with no credible qualifying consequence becomes `closed`: use the helper to build the
+  deterministic closure comment, preview and apply the unchanged comment/classification mutations
+  with verified `RUNTIME_STATE_ROOT` as `cwd`, fresh reads and stale-write failure. Use a proven
+  cancelled/not-planned state only when the target exposes exactly those semantics; otherwise leave
+  the issue open but excluded by the receipt. Never call completed `issue-close`, never add
+  `wontfix`, and reconcile an optional legacy epic entry.
+- **A stale closure re-evaluated to `admitted`:** reverse only the closure owned by the exact stale
+  receipt before this finding becomes implementable. Read the issue state fresh. Proceed only when
+  it is already non-terminal, and preserve that state unchanged during this reversal; an open issue
+  that admission closure never terminalized keeps its normal started transition in Phase 4. Any
+  terminal state, including one proven cancelled/not planned, stops before cleanup or task creation,
+  leaves the closure comment and classification intact, and reports that manual tracker restoration
+  plus a fresh run is required; create no task.
+
+  For the eligible non-terminal issue, read comments fresh and require exactly one comment whose
+  helper-parsed active or superseded stale receipt is the closure being reversed. Pass its body and
+  the current freshness keys to `follow-up-admission-supersede`; use only its deterministic body. If
+  it is not already superseded, use `body-hash`, then call `issue-comment-update` for the exact
+  comment ID with the fresh `expectedBodyHash`, previewing and applying the same payload. It must not
+  fall back to `issue-comment` or create a competing comment. Only after the guarded update succeeds
+  or the helper proves an idempotent prior supersession, read classifications fresh and preview then
+  apply `issue-label-remove` for `effective-flow-follow-up-closed`. Re-read the exact comment and
+  classifications fresh and prove that the marker is superseded and the classification absent.
+  Any missing, ambiguous, stale, failed, or mismatched step stops this finding with no task. Only
+  after both mutations succeed may it enter the implementable set.
+
 - **Sub-issue without target action or prompt** (manually altered) → report as not implementable, do not guess.
 - **Developer comment (non-Effective Flow) present** → implement **with context**: pass the comment text as additional context to the delegation skill. This is the remote equivalent of the local "developer note" in the "Implement with context" case. Deliberate rejection in remote mode still runs **exclusively** via the label `wontfix`, not via comment text; Effective Flow comments (e.g. `<!-- … -->`-marked status or PR-link comments) do not count as a developer note.
-- **otherwise** → implement.
+- **otherwise** → implement only with a complete current `admitted` record.
 
 Create the per-finding tasks as in local mode; the finding ID is the `R-XXXXXXX` ID from the issue title.
 
@@ -93,13 +134,18 @@ If a finding has a target PR from Phase 1 remote, **"new commit on existing PR"*
    update it via rooted pull/fetch operations without any rebase or force operation.
 3. Implement the finding there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
 4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the finding as failed and report the conflict instead of overwriting history.
-5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
+5. Use the URL of the existing PR as the result PR link for the issue comment, optional legacy epic entry and summary.
 
 Findings with the same target PR run sequentially so that new commits are created in order on the same PR branch. Findings without a target PR keep the default strategy "one PR per finding". The stash policy is handled as in local mode.
 
 ### Phase 3 remote: Rejected finding → decision candidate
 
-For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `effective-product` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. The ADR file name follows the convention resolved by `project-adr-convention`, not a form this workflow assumes. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
+For each explicit `wontfix` finding, the same ownership rule as in Phase 3 (local) applies; this
+pre-existing product-decision path is separate from admission closure. The candidate context names
+the issue and optional legacy epic. If an epic exists, reconcile its entry after the decision;
+direct findings require no container update. Never add `wontfix` merely because admission returned
+`closed`. The local phase's `project-adr-convention` resolution also owns the ADR file name; an
+unnumbered name is not a form this workflow assumes.
 
 ### Phase 4 remote: Implementation, PR and deferred epic completion
 
@@ -124,19 +170,20 @@ Per implementable finding, in its verified execution root:
    tracker target: `Closes #<sub-issue>` or `Refs #<sub-issue>` on the forge, and a plain non-closing
    reference on external. Both forge keywords are machine tokens the code host parses: write them
    in English whatever `language.forge` resolves to, never translated. Add exactly one
-   validated versioned lifecycle receipt carrying the issue, relationship, and optional
+   validated versioned lifecycle receipt carrying the issue and relationship. A direct finding
+   uses `container: null` and `containerMechanism: null`; a legacy finding may retain its optional
    epic/mechanism. Reject malformed, duplicate, mismatched, or stale receipt state rather than
    overwriting body prose or dropping the handoff.
 5. **Immediately after a successful push or PR creation**, optionally write the PR link through the
    helper's comment payload/mutation, or through the external connection's create-comment
-   capability. Do **not** set a native sub-item to done or tick an epic checklist. The receipt retains
-   that relationship, and `{{SKILL:merge-gate}}` completes it only after merge and freshly observed
-   terminal issue state. Never mix native and checklist mechanisms. The pull request stays on the
-   forge behind `origin`.
+   capability. Direct findings have no container state. For a legacy finding: Do not set a native
+   sub-item to done or tick an epic checklist. `{{SKILL:merge-gate}}` completes any retained relation only
+   after merge and freshly observed terminal issue state. Never mix native and checklist mechanisms.
+   The pull request stays on the forge behind `origin`.
 
 6. **If transition, push, PR creation, or receipt persistence fails**: mark the finding as failed, do
-   not complete the epic, preserve any started state, and continue with the next finding.
-7. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; container reconciliation is omitted and reported to the user.
+   not reconcile any legacy epic, preserve any started state, and continue with the next finding.
+7. **No epic is expected for a direct finding.** Implement it and create a PR without container reconciliation. If a legacy finding explicitly references an epic that is missing, still implement it, omit reconciliation, and report the broken legacy reference to the user.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 3 created a pull request, run "PR review publication" with that
@@ -154,11 +201,12 @@ when: the completion action created or reused a pull request and the automatic P
 
 ### Phase 5 remote: Tracking surface instead of report
 
-No report file is updated. Ensure comments and classifications reflect delivery, but keep an
-implemented finding's epic checkbox or native sub-item incomplete until merge reconciliation.
-`wontfix` findings keep their existing decision path: permanent decision → checked off with ADR
-reference; non-permanent decision → checked off with the issue rationale.
+No report file is updated. Ensure comments and classifications reflect delivery. Direct findings
+have no container state. Keep an implemented legacy finding's epic checkbox or native sub-item
+incomplete until merge reconciliation. `wontfix` findings keep their existing decision path.
 
 ### Phase 7/8 remote
 
-Final validation and summary as in local mode; the summary additionally names the resolved tracker target (with the tool identifier and connection for `external`), the container mechanism used, the epic URL or identifier, the created PRs, and the findings retained for post-merge reconciliation.
+Final validation and summary as in local mode; the summary additionally names the resolved tracker
+target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
+findings retained for post-merge reconciliation.

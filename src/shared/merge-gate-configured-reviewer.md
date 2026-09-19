@@ -42,7 +42,7 @@ login matching.
 ## Returned outcome record
 
 This section is the whole of how `{{SKILL:iterate}}`'s return is consumed. It is deliberately **not**
-a fifth control line: the control lines above frame the message on the way **in**, and nothing here
+a seventh control line: the six control lines above frame the message on the way **in**, and nothing here
 changes what that message carries. The way back carries no delimiter and no token of its own, for the
 reason "The key set is pre-committed" gives below.
 
@@ -55,21 +55,22 @@ assumed, and "deferred" is the word that most needs it, because it does not mean
 each side unless it is pinned. The table is `{{SKILL:iterate}}`'s own and is restated here word for
 word, because a mapping only one end holds is a mapping that drifts:
 
-| processing outcome                                                   | returned value |
-| -------------------------------------------------------------------- | -------------- |
-| implemented as a commit                                              | `implemented`  |
-| `skipped` as a false positive (`unsupported`)                        | `rejected`     |
-| `skipped` as out of scope (`valid_out_of_scope`)                     | `deferred`     |
-| deferred question (`question_or_information`, `needs_evidence`)      | `deferred`     |
-| `failed` – the item's own implementation delegation returned `ABORT` | `unassessed`   |
-| deselected at the approval gate (Phase 2.5)                          | `unassessed`   |
+| processing outcome                                                                                | returned value |
+| ------------------------------------------------------------------------------------------------- | -------------- |
+| implemented as a commit                                                                           | `implemented`  |
+| `skipped` as a false positive (`unsupported`)                                                     | `rejected`     |
+| `skipped` as out of scope (`valid_out_of_scope`): admitted work reported without widening this PR | `deferred`     |
+| `skipped` as out of scope (`valid_out_of_scope`): non-admitted work closed by the gate            | `deferred`     |
+| deferred question (`question_or_information`, `needs_evidence`)                                   | `deferred`     |
+| `failed` – the item's own implementation delegation returned `ABORT`                              | `unassessed`   |
+| deselected at the approval gate (Phase 2.5)                                                       | `unassessed`   |
 
 The last two rows are the ones this gate must not read as an assessment: nobody judged the finding,
 so the item is `unassessed` and condition 10 blocks on it.
 
 **The key set is pre-committed, and that is why the return needs no framing of its own.** Before the
 delegation goes out, this run has already recorded every item identifier it is about to supply, and
-**every one of them is minted by this run** – one for a body-carried finding and one for a thread
+**every one of them is minted by this run's helper** – one for a body-carried finding and one for a thread
 item alike. That pre-commitment – not unpredictability – is still the whole property the rule below
 rests on: an identifier counts because this run wrote it down before the message went out, not
 because it is hard to guess. What changed is that unpredictability is now **uniform across the key
@@ -252,17 +253,27 @@ entries that denote the same reviewer – two spellings of one account are one r
      carried before. Re-delegating one would write a new outcome under the same durable key the
      record is keyed by, and an item that came back `unassessed` that time would be cleared and
      unclearable at once.
-   - **Mint and record one per-message identifier per thread** as the "Delegation contract"
-     requires, and carry it on that thread's `Thread item:` manifest line. The thread IDs travel in
-     the item filter because the delegated run addresses the threads through them; the **return**
-     keys on the minted identifiers and never on the thread IDs.
+   - **Exclude every provider-settled thread**, and on a forge where both thread writes are
+     unsupported every thread this run recorded `implemented`, per the loaded provider-settled rule.
+   - **Build, validate and dispatch that one delegation** per "Building and dispatching a
+     delegation": the threads as `threadItems`, the body findings below as `bodyItems`. `build`
+     mints one per-message identifier per thread and carries it on that thread's `Thread item:`
+     manifest line; record the map it returns before dispatch, as the "Delegation contract"
+     requires. The thread IDs travel in the item filter because the delegated run addresses the
+     threads through them; the **return** keys on the minted identifiers and never on the thread
+     IDs.
    - **Its latest changes-requested review for the verified head travels in the same delegation.**
      Resolve which review that is through the supersession rule of the loaded "Automatic reviewer
      state", and hand each finding its body carries as free text with the provenance and the stable
      identifier the "Delegation contract" requires. A review with an **empty** body still has to be
      assessed: the review, not the finding, is the unit, so record an explicit outcome for it even
-     when there is no finding text to delegate. Where the delegation carries body findings and **no**
-     thread, its filter is `Item filter: free-text-only`, never an empty `threads=` list.
+     when there is no finding text to delegate – `build` refuses such a body rather than delegating
+     it. A body `build` refuses for carrying the delimiter, or as `missing-provenance` because its
+     review has no URL or author, is recorded `unassessed` once the
+     delegation is dispatched, or at once where the refusals leave nothing to delegate and this
+     round delegates nothing; a sender stop records no outcome from that build. Where the delegation carries
+     body findings and **no** thread, its filter is `Item filter: free-text-only`, never an empty
+     `threads=` list.
    - **Record the outcome per finding, keyed by review id and finding ordinal** – `implemented`,
      `deferred`, `rejected`, or `unassessed` from the closed vocabulary of "Returned outcome record"
      – in the wisdom file, as it happens rather than at the end of the round, with the per-message
@@ -298,25 +309,25 @@ entries that denote the same reviewer – two spellings of one account are one r
 
 7. **every unresolved thread of a configured reviewer has been assessed by this run, and every
    assessment that clears it is one this gate may act on** – implemented, or deliberately deferred
-   or rejected. Take every unresolved thread of the same fresh read whose
-   author is a login in `mergeGate.bots` under "Matching a configured login" – the threads arrive
-   from the surface that reports a bot without its `[bot]` suffix, so a literal comparison against a
-   configured login matches nothing here and reports this condition satisfied while open findings
-   sit there – and match it against the record this run kept per round:
-   **the outcome recorded for each thread it delegated**, and nothing besides. That record is
-   **outcome-derived** throughout – handing a thread over is not an assessment of it – so it is
-   built under "Returned outcome record" and nowhere else – and it is built through the
-   identifier→thread-ID mapping this run recorded
-   before delegating, never from anything the return names directly. An outcome carries a minted
-   identifier, and that identifier resolves to the thread it was minted for. An outcome naming an
-   identifier this run never recorded resolves to no thread and never enters the record, and a
-   **thread ID** appearing in the return resolves to nothing at all, because it is not a key. That is
-   what keeps a returned outcome from adding a never-assessed thread to the
-   record this condition matches against. A thread with no recorded outcome arrived after the
-   Phase-3 observation that fixed this run's item filter – the reviewer's check had gone terminal by then, which states that the reviewer
-   finished and never that every thread it wrote had already arrived (see "Automatic reviewer
-   state") – so nobody reached any outcome about it, and it blocks. An **empty** `mergeGate.bots`
-   list produces no such thread and satisfies this condition, as it satisfies condition 5.
+   or rejected. Take every unresolved thread of the same fresh read that is not provider-settled and
+   whose author is a login in `mergeGate.bots` under "Matching a configured login" – the threads
+   arrive from the surface that reports a bot without its `[bot]` suffix, so a literal comparison
+   against a configured login matches nothing here and reports this condition satisfied while open
+   findings sit there – and match it against the record this run kept per round: **the outcome
+   recorded for each thread it delegated**, and nothing besides. That record is **outcome-derived**
+   throughout – handing a thread over is not an assessment of it – so it is built under "Returned
+   outcome record" and nowhere else – and it is built through the identifier→thread-ID mapping this
+   run recorded before delegating, never from anything the return names directly. An outcome carries
+   a minted identifier, and that identifier resolves to the thread it was minted for. An outcome
+   naming an identifier this run never recorded resolves to no thread and never enters the record,
+   and a **thread ID** appearing in the return resolves to nothing at all, because it is not a key.
+   That is what keeps a returned outcome from adding a never-assessed thread to the record this
+   condition matches against. A thread with no recorded outcome was excluded in Phase 3 as
+   provider-settled, or arrived after the Phase-3 observation that fixed this run's item filter –
+   the reviewer's check had gone terminal by then, which states that the reviewer finished and never
+   that every thread it wrote had already arrived (see "Automatic reviewer state") – so nobody
+   reached any outcome about it, and it blocks. An **empty** `mergeGate.bots` list produces no such
+   thread and satisfies this condition, as it satisfies condition 5.
 
    **An `unassessed` thread is as unassessed as an `unassessed` verdict, and blocks the same way.**
    An item whose implementation delegation aborted and an item deselected at the delegated run's own
@@ -381,7 +392,7 @@ entries that denote the same reviewer – two spellings of one account are one r
     a delegated return was produced by a run that **read the reviewer's own text** and classified
     it, so it is evidence of what that run concluded and never evidence that the finding was
     disposed of. The receiver rule of "Returned outcome record" authenticates the **key** – that the
-    identifier is one this run minted and recorded before delegating – and says nothing whatever
+    identifier is one this run's helper minted and this run recorded before delegating – and says nothing whatever
     about the **value**. And the two merge-enabling values leave no trace on the forge to check them
     against, by design: this gate writes no reply and no resolution for a finding it did not
     implement (see "A deferred finding gets no thread reply"), and a commit message carries no
@@ -678,6 +689,8 @@ the residual is accepted and made visible rather than closed.
 
 - **every bot finding this run assessed but did not implement**, named here rather than answered
   in its thread;
+- **every provider-settled thread and every thread still blocking on a forge without thread
+  writes**, worded per the provider-settled rule's report wording;
 - **every configured reviewer's changes-requested review at `VERIFIED_HEAD_SHA`**, with its
   author, review id, URL and submission time, and **one line per finding with its own outcome** –
   `implemented`, `deferred`, `rejected`, or `unassessed` from the closed vocabulary of "Returned
