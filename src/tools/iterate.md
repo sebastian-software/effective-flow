@@ -775,7 +775,9 @@ and stop delivery for reconciliation.
 2. Reply briefly per addressed thread, preserving the clearly established thread language or
    otherwise using resolved `language.forge`, and resolve it through the remote helper's normalized
    review-thread operations. If resolution is an unsupported provider capability, keep the reply
-   and report the required manual resolution. The helper stamps the marker
+   and report the required manual resolution. If the reply is unsupported too, write nothing into
+   the thread, leave it unresolved, and report reply and resolution as manual – in a gate-delegated
+   run the return carries that, since the summary comment is suppressed. The helper stamps the marker
    `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
    `<!-- effective-flow-iterate -->`): which items

@@ -491,7 +491,8 @@ and directive syntax").
   `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
-  `merge-gate-check-list-waiver`, `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
+  `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
+  `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -550,6 +551,14 @@ and directive syntax").
   `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
   every branch that poses **no** question is decided inside the moved text as well; a pointer firing
   only where the question is posed would leave those runs deciding from text they have not loaded.
+  `merge-gate-provider-settled-threads` is the seventh, holding the rule for a forge that can
+  neither reply to nor resolve review threads: when a configured bot's thread counts as settled by
+  that reviewer's later approval, which read it is evaluated on, its fail-closed cases, and the
+  report wording for settled and still-blocking threads. Its trigger is the Phase 0 forge preflight
+  reporting **both** `reviewThreadReplies` and `reviewThreadResolution` unsupported, and its pointer
+  sits at column 0 after the Phase 0 list. Phase 3 step 5, conditions 6 and 7, and Phase 6 keep
+  only a short reference to it in the always-loaded core, so a GitHub run, or any forge that
+  supports either thread write, never loads it.
   `source-upstream-sync` is the single-consumer `deliver` fragment for step 1.1's upstream decision
   flow, and it takes the same cut: the `upstream-status` call and the notice for every state that
   poses no question stay in the always-loaded core, and the pointer fires on all three question

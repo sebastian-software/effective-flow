@@ -3674,6 +3674,73 @@ test('the Forgejo review-thread read walks the two documented raw-API routes', a
   assert.equal(envelope.data.result[0].comments[0].id, '5');
 });
 
+test('a Forgejo review thread carries the id of the review it was read under', async () => {
+  // `merge-gate` settles a bot thread on a forge that can neither reply to nor resolve threads only
+  // when the same reviewer later approved in a *different* review, so each thread has to name its
+  // parent review. The walk already knows that id — it reads `reviews/{id}/comments` — and the
+  // fixture deliberately carries no `pull_request_review_id`, so the id must come from the walk and
+  // not from a payload field nobody has checked against a live instance. Two reviews both carry
+  // comments, so a walker that stamps one id on every thread fails.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const runner = fakeRunner([
+    teaApi([{ id: 40 }, { id: 41 }], 'X-Total-Count: 2\r\n'),
+    teaApi([
+      {
+        id: 1424,
+        body: 'Handle the empty case',
+        user: { login: 'recensor-bot', type: 'Bot' },
+        resolver: null,
+        path: 'src/a.mjs',
+        position: 12,
+        created_at: '2026-09-18T10:00:00Z',
+      },
+    ]),
+    teaApi([
+      {
+        id: 1430,
+        body: 'Nit inside the approval',
+        user: { login: 'recensor-bot', type: 'Bot' },
+        resolver: null,
+        path: 'src/b.mjs',
+        position: 3,
+        created_at: '2026-09-18T12:00:00Z',
+      },
+      {
+        id: 1431,
+        body: 'Second note in the same review',
+        user: { login: 'recensor-bot', type: 'Bot' },
+        resolver: null,
+        path: 'src/c.mjs',
+        position: 7,
+        created_at: '2026-09-18T12:01:00Z',
+      },
+    ]),
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 33 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => [thread.id, thread.reviewId]),
+    [
+      ['1424', '40'],
+      ['1430', '41'],
+      ['1431', '41'],
+    ],
+  );
+  // A string, like every other id on the thread, because `pr-reviews-read` returns the review's
+  // numeric id and the comparison has to be made on one spelling.
+  for (const thread of envelope.data.result) {
+    assert.equal(typeof thread.reviewId, 'string');
+  }
+});
+
 test('a review thread carries the browser link its first comment sits at', async () => {
   // `merge-gate`'s set-aside confirmation promises the operator somewhere to read the finding, and
   // a thread record holding only the thread ID could supply none. Both providers publish the link
