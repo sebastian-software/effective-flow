@@ -47,6 +47,9 @@ export function sandboxPaths(roundRoot, scenario, slot, attempt = 1) {
     traceDir,
     callLog: resolve(traceDir, 'tracker-calls.jsonl'),
     callLogLock: resolve(traceDir, 'tracker-calls.jsonl.lock'),
+    // Written only by the configured-reviewer scenario's `iterate` echo; see
+    // `configured-reviewer-scenario.mjs`. Every other scenario must leave it absent.
+    iterateLog: resolve(traceDir, 'iterate-calls.jsonl'),
     buildIdentity: resolve(traceDir, 'build-identity.json'),
     prompt: resolve(attemptRoot, 'prompt.txt'),
     runMetadata: resolve(attemptRoot, 'run-metadata.json'),

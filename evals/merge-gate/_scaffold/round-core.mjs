@@ -23,9 +23,12 @@ import {
   buildPortableSkill,
   digestFile,
   digestOf,
+  pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from './build-identity.mjs';
+import { requiresIterateTrace } from './configured-reviewer-scenario.mjs';
 import { evaluateEvidence } from './evaluate.mjs';
+import { validateArchivedPairing } from './run-evidence.mjs';
 import { provisionSlot } from './scaffold.mjs';
 import { SANDBOX_BASE, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS, selectScenarios, SUITE_ROOT } from './suite.mjs';
@@ -289,7 +292,10 @@ export function createRound({
   try {
     builtSkillRoot = buildPortableSkill(outputRoot);
     const identities = Object.fromEntries(
-      selected.map((scenario) => [scenario, scenarioBuildIdentity(scenario, builtSkillRoot)]),
+      selected.map((scenario) => [
+        scenario,
+        pristineScenarioBuildIdentity(scenario, builtSkillRoot),
+      ]),
     );
     const slots = [];
     for (const scenario of selected) {
@@ -526,8 +532,14 @@ function preparedDigests(paths) {
   };
 }
 
-function sealDigests(paths) {
-  return { ...preparedDigests(paths), hostReceipt: digestFile(paths.hostReceipt) };
+// The configured-reviewer scenario's echo trace is part of its sealed evidence unit, so a write to
+// it after sealing is `changed-after-seal` exactly as a write to the call log is.
+function sealDigests(paths, scenario) {
+  return {
+    ...preparedDigests(paths),
+    hostReceipt: digestFile(paths.hostReceipt),
+    ...(requiresIterateTrace(scenario) ? { iterateLog: digestFile(paths.iterateLog) } : {}),
+  };
 }
 
 export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBOX_BASE }) {
@@ -546,6 +558,12 @@ export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBO
       throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
     if (!existsSync(paths.callLog) || statSync(paths.callLog).size === 0) {
       throw new Error(`${scenario}/${slot} has no non-empty call log`);
+    }
+    if (requiresIterateTrace(scenario)) {
+      if (existsSync(`${paths.iterateLog}.lock`))
+        throw new Error(`iterate-trace lock is still live at ${paths.iterateLog}.lock`);
+      if (!existsSync(paths.iterateLog))
+        throw new Error(`${scenario}/${slot} has no paired iterate trace at ${paths.iterateLog}`);
     }
     const metadata = json(paths.runMetadata);
     const currentPreparedDigests = preparedDigests(paths);
@@ -590,17 +608,18 @@ export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBO
       attempt: metadata.attempt,
       sealedAt: new Date().toISOString(),
       buildDigest: actualIdentity.digest,
-      digests: sealDigests(paths),
+      digests: sealDigests(paths, scenario),
     };
     atomicJson(paths.sealReceipt, receipt, { exclusive: true });
     return receipt;
   });
 }
 
-function changedAfterSeal(paths) {
+function changedAfterSeal(paths, scenario) {
   if (!existsSync(paths.sealReceipt)) return false;
   const sealed = json(paths.sealReceipt);
-  const current = sealDigests(paths);
+  if (requiresIterateTrace(scenario) && !existsSync(paths.iterateLog)) return true;
+  const current = sealDigests(paths, scenario);
   return JSON.stringify(sealed.digests) !== JSON.stringify(current);
 }
 
@@ -624,7 +643,7 @@ export function roundStatus(handle, { base = SANDBOX_BASE } = {}) {
     let status = 'prepared';
     if (existsSync(paths.callLog) && statSync(paths.callLog).size > 0) status = 'unsealed';
     if (existsSync(paths.sealReceipt)) {
-      if (changedAfterSeal(paths)) status = 'changed-after-seal';
+      if (changedAfterSeal(paths, scenario)) status = 'changed-after-seal';
       else {
         const evaluation = evaluateAttempt(manifest, scenario, paths);
         status = evaluation.validityProblems.length > 0 ? 'invalid' : 'sealed';
@@ -651,6 +670,7 @@ function evaluateAttempt(manifest, scenario, paths) {
     buildIdentity: json(paths.buildIdentity),
     expectedBuildIdentity: manifest.identities[scenario],
     answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
+    iterateTraceText: existsSync(paths.iterateLog) ? readFileSync(paths.iterateLog, 'utf8') : null,
   });
 }
 
@@ -763,7 +783,7 @@ export function retryInvalid({ handle, scenario, slot, reason, base = SANDBOX_BA
     if (recovered) return recovered;
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
     if (!existsSync(paths.sealReceipt)) throw new Error('retry-invalid requires a sealed attempt');
-    if (changedAfterSeal(paths)) {
+    if (changedAfterSeal(paths, scenario)) {
       return reprovision({
         manifest,
         roundRoot,
@@ -893,20 +913,21 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
     if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
       throw new Error(`${scenario} candidate entry is not a regular directory`);
     }
+    const withTrace = requiresIterateTrace(scenario);
+    validateArchivedPairing(directory, withTrace);
+    const suffixes = ['jsonl', 'build.json', 'prompt.txt', 'metadata.json'];
+    if (withTrace) suffixes.push('iterate.jsonl');
     const names = readdirSync(directory).sort();
     for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
-      for (const suffix of ['jsonl', 'build.json', 'prompt.txt', 'metadata.json']) {
+      for (const suffix of suffixes) {
         const name = `run-${slot}.${suffix}`;
         if (!names.includes(name)) throw new Error(`${scenario} candidate is missing ${name}`);
       }
     }
     const allowed = new Set(
-      Array.from({ length: REQUIRED_RUNS }, (_, index) => index + 1).flatMap((slot) => [
-        `run-${slot}.jsonl`,
-        `run-${slot}.build.json`,
-        `run-${slot}.prompt.txt`,
-        `run-${slot}.metadata.json`,
-      ]),
+      Array.from({ length: REQUIRED_RUNS }, (_, index) => index + 1).flatMap((slot) =>
+        suffixes.map((suffix) => `run-${slot}.${suffix}`),
+      ),
     );
     const extra = names.filter((name) => !allowed.has(name));
     if (extra.length > 0)
@@ -932,6 +953,7 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
         buildIdentity: stamp,
         expectedBuildIdentity: identities[scenario],
         answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
+        iterateTraceText: withTrace ? readFileSync(`${target}.iterate.jsonl`, 'utf8') : null,
       });
       if (evaluation.validityProblems.length > 0) {
         throw new Error(
@@ -1073,7 +1095,8 @@ export function recoverPublication({
 function validateSealedSlot(manifest, roundRoot, scenario, slot) {
   const { paths } = currentAttempt(manifest, roundRoot, scenario, slot);
   if (!existsSync(paths.sealReceipt)) throw new Error(`${scenario}/${slot} is not sealed`);
-  if (changedAfterSeal(paths)) throw new Error(`${scenario}/${slot} changed after sealing`);
+  if (changedAfterSeal(paths, scenario))
+    throw new Error(`${scenario}/${slot} changed after sealing`);
   const sealed = json(paths.sealReceipt);
   const metadata = json(paths.runMetadata);
   const host = json(paths.hostReceipt);
@@ -1109,6 +1132,9 @@ function assertCopiedArtifacts(entry, target) {
     log: digestFile(`${target}.jsonl`),
     buildIdentity: digestFile(`${target}.build.json`),
     prompt: digestFile(`${target}.prompt.txt`),
+    ...(requiresIterateTrace(entry.scenario)
+      ? { iterateLog: digestFile(`${target}.iterate.jsonl`) }
+      : {}),
   };
   for (const [name, digest] of Object.entries(copied)) {
     if (digest !== entry.sealed.digests[name]) {
@@ -1133,7 +1159,7 @@ export function publishRound({
   try {
     currentSkillRoot = buildPortableSkill(currentBuild);
     for (const scenario of suite.scenarios) {
-      const current = scenarioBuildIdentity(scenario, currentSkillRoot);
+      const current = pristineScenarioBuildIdentity(scenario, currentSkillRoot);
       currentIdentities[scenario] = current;
       if (
         manifest.scenarios.includes(scenario) &&
@@ -1180,6 +1206,9 @@ export function publishRound({
             copyFileSync(paths.callLog, `${target}.jsonl`);
             copyFileSync(paths.buildIdentity, `${target}.build.json`);
             copyFileSync(paths.prompt, `${target}.prompt.txt`);
+            if (requiresIterateTrace(scenario)) {
+              copyFileSync(paths.iterateLog, `${target}.iterate.jsonl`);
+            }
             const entry = evaluations.find(
               (evaluation) => evaluation.scenario === scenario && evaluation.slot === slot,
             );
@@ -1225,7 +1254,7 @@ export function publishRound({
           try {
             const finalSkillRoot = buildPortableSkill(finalBuild);
             for (const scenario of suite.scenarios) {
-              const current = scenarioBuildIdentity(scenario, finalSkillRoot);
+              const current = pristineScenarioBuildIdentity(scenario, finalSkillRoot);
               if (JSON.stringify(current) !== JSON.stringify(currentIdentities[scenario])) {
                 throw new Error(
                   `source or eval instrument drifted during publication: ${scenario}`,

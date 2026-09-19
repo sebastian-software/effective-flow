@@ -126,11 +126,11 @@ function hostReceipt(projectRoot, profile = PROFILE) {
 }
 
 test('prompt rendering is strict and slot paths cannot collide', () => {
-  const source = `<!-- prompt:start -->\n\n\`\`\`text\nUse {{SKILL_ROOT}} and {{SKILL_ROOT}} plus {{SKILL_ROOT}} from {{PROJECT_ROOT}}.\n\`\`\`\n\n<!-- prompt:end -->`;
+  const source = `<!-- prompt:start -->\n\n\`\`\`text\nUse {{SKILL_ROOT}} and {{SKILL_ROOT}} plus {{SKILL_ROOT}} from {{PROJECT_ROOT}} with cwd {{PROJECT_ROOT}}.\n\`\`\`\n\n<!-- prompt:end -->`;
   const template = extractPrompt(source);
   assert.equal(
     renderPrompt(template, { skillRoot: '/round/a/skill', projectRoot: '/round/a/project' }),
-    'Use /round/a/skill and /round/a/skill plus /round/a/skill from /round/a/project.',
+    'Use /round/a/skill and /round/a/skill plus /round/a/skill from /round/a/project with cwd /round/a/project.',
   );
   assert.throws(
     () => renderPrompt('Use {{SKILL_ROOT}}', { skillRoot: '/s', projectRoot: '/p' }),
@@ -154,11 +154,19 @@ test('prompt rendering is strict and slot paths cannot collide', () => {
   );
   assert.throws(
     () =>
+      renderPrompt('{{SKILL_ROOT}} {{SKILL_ROOT}} {{SKILL_ROOT}} {{PROJECT_ROOT}}', {
+        skillRoot: '/s',
+        projectRoot: '/p',
+      }),
+    /PROJECT_ROOT.*exactly 2.*found 1/,
+  );
+  assert.throws(
+    () =>
       renderPrompt(
-        '{{SKILL_ROOT}} {{SKILL_ROOT}} {{SKILL_ROOT}} {{PROJECT_ROOT}} {{PROJECT_ROOT}}',
+        '{{SKILL_ROOT}} {{SKILL_ROOT}} {{SKILL_ROOT}} {{PROJECT_ROOT}} {{PROJECT_ROOT}} {{PROJECT_ROOT}}',
         { skillRoot: '/s', projectRoot: '/p' },
       ),
-    /PROJECT_ROOT.*exactly 1.*found 2/,
+    /PROJECT_ROOT.*exactly 2.*found 3/,
   );
   assert.throws(
     () =>
@@ -1200,4 +1208,206 @@ test('the round CLI rejects unknown, duplicate, and command-inapplicable flags',
     assert.notEqual(result.status, 0, args.join(' '));
     assert.match(result.stderr, expected, args.join(' '));
   }
+});
+
+// The configured-reviewer scenario is the one scenario whose slots differ from the shared build:
+// its own skill copy carries the `iterate` echo, its own project carries the reviewer rows, and its
+// evidence unit carries a third file. None of that may leak into the round's shared build or into
+// another scenario's slot, and the echo trace has to be sealed, evaluated, and retried like the
+// call log it is paired with.
+const CONFIGURED = 'configured-reviewer-set-aside-blocks';
+const ECHO_SOURCE = resolve(
+  import.meta.dirname,
+  '..',
+  'evals',
+  'merge-gate',
+  '_scaffold',
+  'iterate-echo.md',
+);
+
+function configuredHandoff(fixture) {
+  const [review] = fixture.operations['pr-reviews-read'].envelope.data.result;
+  return [
+    'Item filter: threads=PRRT_kwDOconfiguredReviewer',
+    `Boundary token: ${'C'.repeat(32)}`,
+    `Thread item: ${'A'.repeat(32)} | thread=PRRT_kwDOconfiguredReviewer`,
+    `Item: ${'B'.repeat(32)} | review=${review.id} | author=${review.author.login} | url=${review.url}`,
+    'Summary comment: suppressed',
+    'Next steps: suppressed',
+    'Review guard: established',
+    '--- caller-supplied item text follows ---',
+    review.body,
+  ].join('\n');
+}
+
+test(
+  'the configured-reviewer slots carry their overlay and a sealed, evaluated echo trace',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-configured-'));
+    const base = resolve(temporary, 'rounds');
+    try {
+      const prepared = createRound({
+        scenarios: [CONFIGURED, 'guard-blocks-merge'],
+        profile: PROFILE,
+        base,
+        roundId: 'configured-round',
+      });
+      const echo = readFileSync(ECHO_SOURCE, 'utf8');
+      const shared = prepared.manifest.builtSkillRoot;
+      assert.notEqual(
+        readFileSync(resolve(shared, 'tools', 'iterate.md'), 'utf8'),
+        echo,
+        'the echo overlay leaked into the shared round build',
+      );
+      assert.equal(existsSync(resolve(shared, 'scripts', 'iterate-trace.mjs')), false);
+
+      const guard = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', 1, 1);
+      assert.notEqual(readFileSync(resolve(guard.skillRoot, 'tools', 'iterate.md'), 'utf8'), echo);
+      assert.equal(existsSync(guard.iterateLog), false);
+      assert.doesNotMatch(
+        readFileSync(
+          resolve(guard.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md'),
+          'utf8',
+        ),
+        /mergeGate\.bots/,
+      );
+
+      const fixture = JSON.parse(
+        readFileSync(
+          resolve(
+            import.meta.dirname,
+            '..',
+            'evals',
+            'merge-gate',
+            'fixtures',
+            `${CONFIGURED}.json`,
+          ),
+          'utf8',
+        ),
+      );
+      const delegated = sandboxPaths(prepared.roundRoot, CONFIGURED, 1, 1);
+      assert.equal(readFileSync(resolve(delegated.skillRoot, 'tools', 'iterate.md'), 'utf8'), echo);
+      assert.ok(existsSync(resolve(delegated.skillRoot, 'scripts', 'iterate-trace.mjs')));
+      assert.equal(readFileSync(delegated.iterateLog, 'utf8'), '');
+      assert.match(
+        readFileSync(
+          resolve(delegated.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md'),
+          'utf8',
+        ),
+        /\| mergeGate\.bots +\| recensor +\|/,
+      );
+      const rendered = readFileSync(delegated.prompt, 'utf8');
+      assert.ok(rendered.includes(`"cwd":"${delegated.projectRoot}"`));
+      assert.ok(!rendered.includes('{{'));
+
+      const echoRun = spawnSync(
+        process.execPath,
+        [resolve(delegated.skillRoot, 'scripts', 'iterate-trace.mjs'), '42'],
+        { cwd: delegated.projectRoot, input: configuredHandoff(fixture), encoding: 'utf8' },
+      );
+      assert.equal(echoRun.status, 0, echoRun.stderr);
+      writeFileSync(delegated.callLog, legacyLog(delegated.projectRoot));
+      sealAttempt({
+        handle: prepared.manifestPath,
+        scenario: CONFIGURED,
+        slot: 1,
+        hostReceipt: hostReceipt(delegated.projectRoot),
+        base,
+      });
+      const statusOf = (slot) =>
+        roundStatus(prepared.manifestPath, { base }).find(
+          (row) => row.scenario === CONFIGURED && row.slot === slot,
+        ).status;
+      assert.equal(statusOf(1), 'sealed');
+      const evaluated = evaluateEvidence({
+        scenario: CONFIGURED,
+        logText: readFileSync(delegated.callLog, 'utf8'),
+        fixture,
+        projectRoot: delegated.projectRoot,
+        answerableOperations: new Set(Object.keys(fixture.operations)),
+        iterateTraceText: readFileSync(delegated.iterateLog, 'utf8'),
+      });
+      assert.deepEqual(evaluated.validityProblems, []);
+      assert.deepEqual(evaluated.findings, []);
+
+      appendFileSync(delegated.iterateLog, '\n');
+      assert.equal(statusOf(1), 'changed-after-seal', 'a post-seal echo-trace write went unseen');
+
+      // A run that never delegated leaves an empty trace: valid evidence of a behavioural deviation,
+      // which is published as a finding and may not be retried away.
+      const silent = sandboxPaths(prepared.roundRoot, CONFIGURED, 2, 1);
+      writeFileSync(silent.callLog, legacyLog(silent.projectRoot));
+      sealAttempt({
+        handle: prepared.manifestPath,
+        scenario: CONFIGURED,
+        slot: 2,
+        hostReceipt: hostReceipt(silent.projectRoot),
+        base,
+      });
+      assert.equal(statusOf(2), 'sealed');
+      assert.throws(
+        () => retryInvalid({ handle: prepared.manifestPath, scenario: CONFIGURED, slot: 2, base }),
+        /valid behavioural findings/,
+      );
+
+      // A missing trace cannot be sealed at all.
+      const missing = sandboxPaths(prepared.roundRoot, CONFIGURED, 3, 1);
+      writeFileSync(missing.callLog, legacyLog(missing.projectRoot));
+      rmSync(missing.iterateLog);
+      assert.throws(
+        () =>
+          sealAttempt({
+            handle: prepared.manifestPath,
+            scenario: CONFIGURED,
+            slot: 3,
+            hostReceipt: hostReceipt(missing.projectRoot),
+            base,
+          }),
+        /no paired iterate trace/,
+      );
+    } finally {
+      const manifest = resolve(base, 'configured-round', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+test('the evaluator requires the echo trace for the configured scenario and forbids it elsewhere', () => {
+  const projectRoot = '/tmp/round/project';
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'fixtures', `${CONFIGURED}.json`),
+      'utf8',
+    ),
+  );
+  const common = {
+    logText: legacyLog(projectRoot),
+    fixture,
+    projectRoot,
+    answerableOperations: new Set(Object.keys(fixture.operations)),
+  };
+  assert.ok(
+    evaluateEvidence({ ...common, scenario: CONFIGURED }).validityProblems.includes(
+      'the run has no paired iterate trace',
+    ),
+  );
+  assert.ok(
+    evaluateEvidence({
+      ...common,
+      scenario: CONFIGURED,
+      iterateTraceText: '{not json\n',
+    }).validityProblems.some((problem) => /iterate trace line 1 is not JSON/.test(problem)),
+  );
+  const empty = evaluateEvidence({ ...common, scenario: CONFIGURED, iterateTraceText: '' });
+  assert.deepEqual(empty.validityProblems, []);
+  assert.ok(empty.findings.some((finding) => /invoked the iterate echo 0 time/.test(finding)));
+  assert.ok(
+    evaluateEvidence({
+      ...common,
+      scenario: 'guard-blocks-merge',
+      iterateTraceText: '',
+    }).validityProblems.includes('an iterate trace is orphaned in a scenario without an echo'),
+  );
 });

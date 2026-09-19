@@ -1,12 +1,30 @@
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+import {
+  CONFIGURED_REVIEWER_SCENARIO,
+  requiresIterateTrace,
+} from './configured-reviewer-scenario.mjs';
 import { OUTCOME_EVALUATORS } from './suite.mjs';
 
 const LEGACY_KEYS = ['apply', 'at', 'cwd', 'operation', 'seq'];
 const START_KEYS = ['apply', 'at', 'callId', 'cwd', 'event', 'operation', 'seq'];
 const COMPLETE_KEYS = ['at', 'callId', 'event', 'seq'];
 const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
+const ITERATE_TRACE_SCHEMA = 'effective-flow/merge-gate-iterate-echo/v1';
+const ITERATE_TRACE_KEYS = [
+  'body',
+  'controls',
+  'cwd',
+  'itemFilter',
+  'items',
+  'outcomes',
+  'pullRequest',
+  'schema',
+  'seq',
+];
+const CONFIGURED_REVIEWER_THREAD = 'PRRT_kwDOconfiguredReviewer';
 let supportedOperationsCache = null;
 let mutatingOperationsCache = null;
 
@@ -211,6 +229,125 @@ export function phaseFourInvalidity(records, flippedPosition) {
     : `the flipped status completion at seq ${completions[0].seq} does not precede the earliest second guard read at seq ${earliest}`;
 }
 
+// The configured-reviewer echo trace, split the same way as the call log: what makes it unreadable
+// or unattributable to this slot is a validity problem, and what the gate did at the Phase-3
+// boundary is a finding. The echo writes only records it has already validated, so a structurally
+// broken line means the trace was not written by that echo. An **empty** trace is readable: it
+// records a run that never delegated, which is a behavioural fact about the gate rather than broken
+// evidence, and it must not be retried away.
+export function parseIterateTrace(raw, projectRoot) {
+  const problems = [];
+  const records = [];
+  const expected = normalizedPath(projectRoot);
+  for (const [index, line] of raw.split('\n').entries()) {
+    if (line.trim() === '') continue;
+    const label = `iterate trace line ${index + 1}`;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch (error) {
+      problems.push(`${label} is not JSON: ${error.message}`);
+      continue;
+    }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      problems.push(`${label} is not a JSON object`);
+      continue;
+    }
+    if (!isDeepStrictEqual(Object.keys(record).sort(), ITERATE_TRACE_KEYS)) {
+      problems.push(`${label} does not carry exactly the echo record keys`);
+    }
+    if (record.schema !== ITERATE_TRACE_SCHEMA) problems.push(`${label} has an unknown schema`);
+    if (record.seq !== records.length + 1) {
+      problems.push(`${label} has seq ${record.seq}, expected ${records.length + 1}`);
+    }
+    if (typeof record.cwd !== 'string' || normalizedPath(record.cwd) !== expected) {
+      problems.push(`${label} ran from ${record.cwd}, expected ${projectRoot}`);
+    }
+    records.push(record);
+  }
+  return { records, problems };
+}
+
+function sha256(text) {
+  return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
+}
+
+// What the configured-reviewer trace has to show: exactly one delegation, carrying one thread item
+// and one review-body item attributed to the fixture's reviewer, the declared controls, a body that
+// is byte-for-byte the fixture's review body, and one `deferred` outcome under each caller-minted
+// identifier. The trace records the handoff and the controlled return, never the chat report.
+function iterateTraceFindings(records, fixture) {
+  const findings = [];
+  if (records.length !== 1) {
+    findings.push(
+      `Phase 3 invoked the iterate echo ${records.length} time(s); exactly one delegation of both configured-reviewer items is expected`,
+    );
+    return findings;
+  }
+  const [trace] = records;
+  const reviews = fixture.operations?.['pr-reviews-read']?.envelope?.data?.result ?? [];
+  if (reviews.length !== 1 || typeof reviews[0]?.body !== 'string') {
+    findings.push('the fixture does not identify exactly one review body for this scenario');
+    return findings;
+  }
+  const [review] = reviews;
+  if (trace.pullRequest !== 42)
+    findings.push(`the handoff names pull request ${trace.pullRequest}`);
+  if (trace.itemFilter !== `threads=${CONFIGURED_REVIEWER_THREAD}`) {
+    findings.push(`the handoff item filter is ${JSON.stringify(trace.itemFilter)}`);
+  }
+  if (
+    !isDeepStrictEqual(trace.controls, {
+      summaryComment: 'suppressed',
+      nextSteps: 'suppressed',
+      reviewGuard: 'established',
+    })
+  ) {
+    findings.push('the handoff does not carry the suppressed-summary and review-guard controls');
+  }
+  if (trace.body?.spans !== 1)
+    findings.push(`the handoff carries ${trace.body?.spans} body span(s)`);
+  if (trace.body?.bytes !== Buffer.byteLength(review.body, 'utf8')) {
+    findings.push('the delegated review body byte length differs from the fixture');
+  }
+  if (trace.body?.digest !== sha256(review.body)) {
+    findings.push('the delegated review body differs from the fixture');
+  }
+  const items = Array.isArray(trace.items) ? trace.items : [];
+  if (
+    !isDeepStrictEqual(
+      items.map((item) => item?.kind),
+      ['thread', 'review-body'],
+    )
+  ) {
+    findings.push('the handoff manifest is not one thread item followed by one review-body item');
+  } else {
+    if (items[0].threadId !== CONFIGURED_REVIEWER_THREAD) {
+      findings.push(`the thread item is attributed to ${items[0].threadId}`);
+    }
+    if (items[1].reviewId !== String(review.id)) {
+      findings.push(`the review-body item is attributed to review ${items[1].reviewId}`);
+    }
+    if (items[1].author !== review.author?.login) {
+      findings.push(`the review-body item is attributed to ${items[1].author}`);
+    }
+  }
+  if (new Set(items.map((item) => item?.identifier)).size !== 2) {
+    findings.push('the handoff does not carry two distinct caller-minted identifiers');
+  }
+  if (
+    !isDeepStrictEqual(
+      trace.outcomes,
+      items.map((item) => ({ identifier: item?.identifier, outcome: 'deferred' })),
+    )
+  ) {
+    findings.push(
+      'the echo did not return exactly one deferred outcome under each caller-minted key',
+    );
+  }
+  return findings;
+}
+
 function outcomeFindings(scenario, records, fixture) {
   const findings = [];
   const merges = operationStarts(records, 'pr-merge');
@@ -220,7 +357,14 @@ function outcomeFindings(scenario, records, fixture) {
       if (count < 2) findings.push(`${surface} appears ${count} time(s); Phase 4 was not observed`);
     }
   };
-  if (scenario === 'merge-proceeds') {
+  if (scenario === CONFIGURED_REVIEWER_SCENARIO) {
+    if (merges.length > 0) {
+      findings.push(
+        'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
+      );
+    }
+    guardReadFindings();
+  } else if (scenario === 'merge-proceeds') {
     if (merges.length === 0) findings.push('the gate did not request pr-merge');
     const applied = merges.filter((record) => record.apply === true).length;
     if (applied !== 1)
@@ -266,6 +410,7 @@ export function evaluateEvidence({
   expectedBuildIdentity,
   answerableOperations,
   supportedOperations = null,
+  iterateTraceText = null,
 }) {
   if (!OUTCOME_EVALUATORS.includes(scenario)) throw new Error(`no evaluator for ${scenario}`);
   const parsed = parseCallLog(logText);
@@ -298,7 +443,24 @@ export function evaluateEvidence({
       if (problem) validityProblems.push(problem);
     }
   }
+  let iterateRecords = [];
+  if (requiresIterateTrace(scenario)) {
+    if (typeof iterateTraceText !== 'string') {
+      validityProblems.push('the run has no paired iterate trace');
+    } else {
+      const trace = parseIterateTrace(iterateTraceText, projectRoot);
+      validityProblems.push(...trace.problems);
+      iterateRecords = trace.records;
+    }
+  } else if (iterateTraceText !== null && iterateTraceText !== undefined) {
+    validityProblems.push('an iterate trace is orphaned in a scenario without an echo');
+  }
   const findings =
-    validityProblems.length === 0 ? outcomeFindings(scenario, parsed.records, fixture) : [];
+    validityProblems.length === 0
+      ? [
+          ...outcomeFindings(scenario, parsed.records, fixture),
+          ...(requiresIterateTrace(scenario) ? iterateTraceFindings(iterateRecords, fixture) : []),
+        ]
+      : [];
   return { records: parsed.records, validityProblems, findings };
 }
