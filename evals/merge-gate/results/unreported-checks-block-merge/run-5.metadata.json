@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "roundId": "mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae",
+  "roundId": "mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07",
   "scenario": "unreported-checks-block-merge",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "4453c7fb1d5f6553f120a8637765551a25728680",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
+  "sourceRevision": "cf746318d61690e98033814a978e2bcf9962ede0",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-5.6-sol",
     "reasoningEffort": "high",
     "reportedVersion": "codex-cli 0.154.0",
-    "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config"
+    "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
   },
-  "promptDigest": "sha256:b30f0bde8f86a529600f29eb521af1d85b91b07a10f5fb6e429cda63948da638",
-  "fixtureDigest": "sha256:a5bc63c6de597e064cac8c7284e25d5340006c9ce43bf66bb948fb778cf378d0",
-  "buildDigest": "sha256:ce7394724aaf04597a46110cdb3a08053ee1d2d94f876777ee685b231c6130a4",
+  "promptDigest": "sha256:89b15db6d91b1a1f4aa7eecd35067b064b36a89187e6486b5a1635100871ee91",
+  "fixtureDigest": "sha256:3ec968565154117c35a431d497004ac5773c34e1cfe4e125608f330d8484516b",
+  "buildDigest": "sha256:a7ffeaa2c4fc26e51ef5a1f575f212d44a0d866b805e0ac8235e1618dab94b1b",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
@@ -27,7 +27,7 @@
       "model": "gpt-5.6-sol",
       "reasoningEffort": "high",
       "reportedVersion": "codex-cli 0.154.0",
-      "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config"
+      "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
     }
   }
 }

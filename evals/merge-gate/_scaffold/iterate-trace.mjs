@@ -257,5 +257,9 @@ process.stdout.write(
     'Suppressed summary:',
     `${outcomes.length} configured-reviewer items were deferred for the caller-owned decision.`,
     '',
+    // A delegated `iterate` return ends with its completion keyword; the gate resumes a
+    // keyword-less return once and then treats it as a whole-run `ABORT`.
+    'DONE',
+    '',
   ].join('\n'),
 );

@@ -162,6 +162,8 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
         'Suppressed summary:',
         '2 configured-reviewer items were deferred for the caller-owned decision.',
         '',
+        'DONE',
+        '',
       ].join('\n'),
     );
     const raw = readFileSync(trace, 'utf8');

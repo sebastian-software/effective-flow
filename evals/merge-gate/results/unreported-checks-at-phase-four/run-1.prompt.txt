@@ -1,13 +1,15 @@
-Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill
+Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill
 by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
 
 Resolve the paths the tool asks for as follows and use no others:
 
-- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill,
+- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill,
   so every remote-tracker invocation runs
-  `node /tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
+  `node /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-at-phase-four/slot-1/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-merge-gate-eval/rounds/mu7h7dt3-6d0200e8-9a76-4e2e-bcc2-6cc89992ebae/slots/unreported-checks-at-phase-four/slot-1/attempt-1/project.
+  /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-at-phase-four/slot-1/attempt-1/project;
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/unreported-checks-at-phase-four/slot-1/attempt-1/project"`. Omit
+  that field from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
 path, take it. Finish with the tool's own report of what it did and why.

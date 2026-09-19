@@ -123,7 +123,13 @@ For every row, the calling host must start a **new, non-forked session** with:
 - the slot's `project/` directory as its initial working root;
 - the contents of that slot's `prompt.txt` as its only task input; and
 - the same harness, model, reasoning effort, reported version, and tool policy recorded for the
-  round.
+  round; and
+- no user-level skills or instructions. A delegating scenario dispatches `effective-flow iterate`
+  by name, and a worker with no inherited turns resolves that name through the harness's skill
+  registry: an installed Effective Flow release there shadows the slot's own skill and its
+  overlaid `tools/iterate.md`. For the Codex CLI, give each session a throwaway `HOME` and
+  `CODEX_HOME` that hold only the authentication file, and record that as `isolated-home` in the
+  tool policy.
 
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
