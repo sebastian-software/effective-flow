@@ -427,7 +427,8 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` first. Then run
    `node <skill-root>/scripts/delegation-envelope.mjs build` with one JSON object on standard input –
    never as command-line arguments – whose top-level `cwd` is the verified `RUNTIME_STATE_ROOT`. It
-   carries the pull-request and round numbers, the control values `summaryComment`, `reviewGuard`,
+   carries the pull-request number as `pr` and the round number as `round` – those exact keys, no
+   other spelling – the control values `summaryComment`, `reviewGuard`,
    `nextSteps`, `runState` and `languageContext`, the ordered `threadItems` (`durableKey`,
    `threadId`), the ordered `bodyItems` (`durableKey`, `reviewId`, `author`, `url`, `text`), and a
    CI repair's `instruction`; `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated

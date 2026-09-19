@@ -134,8 +134,8 @@ cycle the walk would otherwise not terminate on.
 resolves whether the project setup contains the `mergeGate.bots` row before it parses the value. A
 present row therefore loads the fragment even when its value is empty or unreadable; only the
 absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
-`merge-gate` core for Claude from 2,892 to 2,262 lines, for Codex from 2,880 to 2,256, and for the
-portable target from 2,883 to 2,259. Its context budget is now 2,270 lines. The configured-reviewer
+`merge-gate` core for Claude from 2,892 to 2,263 lines, for Codex from 2,880 to 2,257, and for the
+portable target from 2,883 to 2,260. Its context budget is now 2,270 lines. The configured-reviewer
 contract remains in one source fragment while the default, row-absent route no longer pays its
 context cost.
 
@@ -653,7 +653,7 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2262/2270, `setup` 1723/1723, `iterate` 1771/1775,
+`merge-gate` is 2263/2270, `setup` 1723/1723, `iterate` 1771/1775,
 `apply-review` 1357/1360, `apply-issues` 1191/1191, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
 `plan` 656/665, `docs` 608/617, `build` 592/595, and `fix` 484/488. Read every
