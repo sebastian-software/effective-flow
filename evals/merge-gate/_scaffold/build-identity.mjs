@@ -307,36 +307,69 @@ function hashFiles(paths, root) {
 // not a member of the set and needs no neutral form.
 const VERSION_STAMPED_FILE = 'SKILL.md';
 
-// The rendered form `build.mjs` writes for `{{VERSION}}` — the manifest semver, a space, and the
-// parenthesised build hash — matched only where the router's own prose introduces it. The whole
-// token is normalised rather than the digits alone: an eval build pins the hash to a marker, but a
-// stamp is read back against whatever a later build wrote there, and a neutral digest that still
-// carried a hash would be neutral in name only.
+// The one generated line `build.mjs` stamps `{{VERSION}}` into, matched as a whole rather than by
+// the version token alone. `src/SKILL.md` writes it as ``… invoked via `{{FLOW}} <tool>` (version
+// {{VERSION}}).``, and the build substitutes the harness-specific invocation for `{{FLOW}}` and the
+// manifest semver plus the parenthesised build hash for `{{VERSION}}`. The pattern therefore anchors
+// on the surrounding generated text — the closing `` `<tool>` `` of the invocation, the ` (version `
+// that introduces the stamp, and the `).` that closes the sentence — and only the FLOW value inside
+// the backticks is left open, because it is the one part of the line that legitimately differs
+// between the three built targets. The whole version token is normalised rather than the digits
+// alone: an eval build pins the hash to a marker, but a stamp is read back against whatever a later
+// build wrote there, and a neutral digest that still carried a hash would be neutral in name only.
 //
-// Anchoring on the introducing word costs nothing and fails in the safe direction. A future router
-// that stamps the version somewhere this pattern does not reach keeps that occurrence in the
-// hashed bytes, so a release bump would once again invalidate the rounds — loudly, and exactly as
-// it does today. Matching a bare semver anywhere in the file would fail the other way, quietly
-// hashing away an edit to any prose that happened to name one.
-const RENDERED_VERSION_RE = /(\bversion )\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)/g;
-const VERSION_REPLACEMENT = '$1<version>';
+// **Matching the exact line, exactly once, is what keeps the neutralisation from laundering an
+// edit.** A looser pattern anchored merely on the introducing word matches any prose shaped like
+// `version <semver> (<token>)`, everywhere in the router. Today the router carries one such phrase,
+// so the loose form and this one agree byte for byte; but the moment a second one appears — a new
+// instruction that happens to name a version this way — a loose global replacement erases *that*
+// phrase from the neutral body too, and an edit confined to it leaves the neutral digest untouched.
+// `isVersionStampOnlyPredecessor` would then waive the archived round as a release-only bump
+// although the instruction the gate executes had changed: exactly the drift this whole file exists
+// to make impossible. Requiring one match closes that by refusing to guess which occurrence is the
+// stamp.
+//
+// Both failure directions therefore abort rather than produce a digest. Zero matches means the
+// router no longer carries the generated line this pattern describes — the version may have moved
+// somewhere else, or the sentence may have been restructured — and a neutral digest that
+// neutralised nothing is indistinguishable from a working one until the next release bump
+// invalidates every round at once. Two or more means the line is no longer unique, so there is no
+// unambiguous stamp to replace. Failing loudly in both cases is the same safe direction the
+// unresolvable-load-pointer guard takes: a wrong neutral digest is silent and durable, a throw is
+// neither.
+//
+// Prose elsewhere in the router that names a version is now simply hashed, in the neutral body as
+// in the exact one. That is the conservative outcome: such an edit invalidates the archived rounds
+// — loudly, and exactly as any other router edit does — instead of being waived.
+const RENDERED_VERSION_RE =
+  /(`[^`\n]+ <tool>` \(version )\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)(\)\.)$/gm;
+const VERSION_REPLACEMENT = '$1<version>$2';
 
 export function builtSkillIdentity(skillRoot, { iterateEcho = false } = {}) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
   const { digest, files } = hashFiles(deriveLoadSet(skillRoot, iterateEcho), skillRoot);
   const routerPath = resolve(skillRoot, VERSION_STAMPED_FILE);
   const body = readFileSync(routerPath, 'utf8');
-  const neutralBody = body.replace(RENDERED_VERSION_RE, VERSION_REPLACEMENT);
-  // Same reasoning as an unresolvable load pointer: a neutral digest that silently neutralised
-  // nothing is indistinguishable from a working one until a release bump invalidates every round,
-  // and by then the stamps carrying it are already committed. Failing here is where the difference
-  // is still visible.
-  if (neutralBody === body) {
+  // Counted before replacing, because a global replacement cannot report how many occurrences it
+  // consumed and both off-by-one directions have to abort. Same reasoning as an unresolvable load
+  // pointer: a neutral digest that neutralised nothing — or neutralised the wrong occurrence along
+  // with the stamp — is indistinguishable from a working one until a release bump invalidates every
+  // round, and by then the stamps carrying it are already committed. Failing here is where the
+  // difference is still visible.
+  const stamps = [...body.matchAll(RENDERED_VERSION_RE)];
+  if (stamps.length === 0) {
     throw new Error(
       `the built router at ${routerPath} carries no rendered version token, so no ` +
         'version-neutral skill digest can be computed',
     );
   }
+  if (stamps.length > 1) {
+    throw new Error(
+      `the built router at ${routerPath} carries ${stamps.length} rendered version tokens, so ` +
+        'no unambiguous version-neutral skill digest can be computed',
+    );
+  }
+  const neutralBody = body.replace(RENDERED_VERSION_RE, VERSION_REPLACEMENT);
   const neutralFiles = { ...files, [VERSION_STAMPED_FILE]: digestOf(neutralBody) };
   return { digest, versionNeutralDigest: canonicalDigest(neutralFiles), files };
 }

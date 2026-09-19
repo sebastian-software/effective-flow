@@ -509,6 +509,46 @@ test('the version-neutral skill digest absorbs the release stamp and nothing els
   );
 });
 
+// The line `build.mjs` generates, as the built router carries it: the invocation in backticks, the
+// parenthesised stamp, and the full stop that closes the sentence. The production matcher is
+// anchored on all of it, so a test that wants a *second* stamp has to reproduce the whole line
+// rather than a bare `version <semver> (<token>)` phrase.
+const GENERATED_VERSION_LINE_RE =
+  /^.*`[^`\n]+ <tool>` \(version \d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)\)\.$/m;
+
+test('the version-neutral digest neutralises the generated line and refuses to guess', () => {
+  const baseline = currentIdentity('guard-blocks-merge');
+
+  // Ordinary router prose that happens to name a version the same way the stamp does. The
+  // neutralisation must not reach it: a matcher anchored merely on the introducing word would
+  // erase it from the neutral body, and an edit confined to that sentence would then leave the
+  // neutral digest untouched and be waived as a release-only bump.
+  const prose = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body.replace(
+      '## Invocation',
+      'Behaviour below was settled in version 9.9.9 (abc1234) and has not moved since.\n\n## Invocation',
+    ),
+  );
+  assert.notEqual(
+    prose.skill.versionNeutralDigest,
+    baseline.skill.versionNeutralDigest,
+    'a second version-shaped phrase was hashed away instead of binding the round',
+  );
+  assert.equal(isVersionStampOnlyPredecessor(baseline, prose), false);
+
+  // Two copies of the generated line itself. There is no unambiguous stamp to replace, so the
+  // identity aborts rather than neutralising whichever occurrence the pattern reaches first.
+  assert.throws(
+    () =>
+      identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) => {
+        const generated = body.match(GENERATED_VERSION_LINE_RE);
+        assert.ok(generated, 'the built router no longer carries the generated version line');
+        return body.replace(generated[0], `${generated[0]}\n\n${generated[0]}`);
+      }),
+    /carries 2 rendered version tokens/,
+  );
+});
+
 test('the version-stamp exception rejects every difference the version does not explain', () => {
   const identity = {
     scenario: 'guard-blocks-merge',
