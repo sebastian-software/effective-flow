@@ -3,6 +3,7 @@
   "digest": "sha256:6ff09a3bd1f3272414ff752b0fcae490ee2e844cbd2ae06e54d2de9e07edab5c",
   "skill": {
     "digest": "sha256:6fc58d9e6f60dfc73c1c1340ee7f056797f59f96fdcc921cd89d662b02c35764",
+    "versionNeutralDigest": "sha256:974f0b7856e0c00685c4a9d62d7d963de1216b5de9e007dbff82fb154eb013eb",
     "files": {
       "SKILL.md": "sha256:5c1bde9dfb8ad4c8e51bd81126d10f85cb2671d326ee0b5d1f41301437196a3a",
       "scripts/iterate-trace.mjs": "sha256:a17bc0271e2ecd666a83f1a423d192c55fba71882982efe2772c6cdee0ab5c14",

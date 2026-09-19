@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+import { isVersionStampOnlyPredecessor } from './build-identity.mjs';
 import {
   CONFIGURED_REVIEWER_SCENARIO,
   requiresIterateTrace,
@@ -419,7 +420,17 @@ export function evaluateEvidence({
     validityProblems.push(...schemaProblems(scenario, parsed.records));
     validityProblems.push(...runtimeRootProblems(parsed.records, projectRoot));
   }
-  if (expectedBuildIdentity && !isDeepStrictEqual(buildIdentity, expectedBuildIdentity)) {
+  // The same exception the archived-run assertions apply, and it is needed here for the same
+  // reason: `publishRound` re-evaluates every already-published scenario against a fresh build, not
+  // only the scenarios the round re-ran, so a release bump would otherwise make publishing any
+  // round impossible until all thirty were re-recorded. A slot of the round being published
+  // matches exactly — it was built from the same manifest moments earlier — so this only ever
+  // reaches the standing evidence beside it.
+  if (
+    expectedBuildIdentity &&
+    !isDeepStrictEqual(buildIdentity, expectedBuildIdentity) &&
+    !isVersionStampOnlyPredecessor(buildIdentity, expectedBuildIdentity)
+  ) {
     validityProblems.push('the build identity does not match the round manifest');
   }
   if (answerableOperations) {

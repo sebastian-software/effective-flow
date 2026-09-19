@@ -3,6 +3,7 @@
   "digest": "sha256:e4da9279e76c4d7d8652e7b352ad4f44964d84fe383ce9399d7f8637e79da840",
   "skill": {
     "digest": "sha256:354b7f95b3d1bc8408537c1692c69462c6ee8a60d1e793aad9f27843ae530092",
+    "versionNeutralDigest": "sha256:1f2f7cbbea6c8437fc646d4191acae9a826e6dec41c78f804975242f0ae0ec6f",
     "files": {
       "SKILL.md": "sha256:5c1bde9dfb8ad4c8e51bd81126d10f85cb2671d326ee0b5d1f41301437196a3a",
       "shared/config-migration-edge-cases.md": "sha256:34dea7564425e84fb4ac61a9e622fbf796d37e7ebd2ead22e8133dab5b2469c2",

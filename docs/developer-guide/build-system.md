@@ -151,7 +151,11 @@ layer derives the content identity each archived round is stamped with by follow
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
 gate can reach widens that identity and invalidates every archived round, forcing the affected
 scenario evidence to be re-recorded by hand through fresh agent sessions. A conditional pointer
-widens it whether or not any scenario takes its branch. See
+widens it whether or not any scenario takes its branch. The one build change that does **not** cost
+a re-record is the release version stamp: each round additionally carries a version-neutral skill
+digest, so a release-please bump of `.release-please-manifest.json` leaves the standing evidence
+valid as long as the built router is the only moved file and nothing but the version token moved in
+it. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and
 `evals/merge-gate/_scaffold/build-identity.mjs` for the derivation itself.
 
