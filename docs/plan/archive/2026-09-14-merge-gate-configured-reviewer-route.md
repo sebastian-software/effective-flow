@@ -201,8 +201,9 @@ are specifically about `merge-gate`, while the review records `iterate` coverage
       records no merge call.
 - [x] Scenario-local configuration and the `iterate` echo apply only to explicitly declaring
       scenarios. The existing five scenarios retain their shared no-reviewer configuration.
-- [x] The configured-reviewer fragment loads when either current or supported legacy reviewer row is
-      present, regardless of parse success, and does not load when both are absent.
+- [x] The configured-reviewer fragment loads when the current `mergeGate.bots` row is present,
+      regardless of whether its value parses or is non-empty, and does not load when the row is
+      absent.
 - [x] The inline tool retains the complete absent-row behavior, safe-default/reporting shells,
       the Phase-3 entry/empty skip shell, Phase-4 numbering and numbered shells 5, 7, and 10,
       condition 6, human-comment guard, whole-run receiver failures, unconfigured-reviewer advisory,
