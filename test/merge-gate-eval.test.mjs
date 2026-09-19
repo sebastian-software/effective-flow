@@ -516,25 +516,56 @@ test('the version-neutral skill digest absorbs the release stamp and nothing els
 const GENERATED_VERSION_LINE_RE =
   /^.*`[^`\n]+ <tool>` \(version \d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)\)\.$/m;
 
-test('the version-neutral digest neutralises the generated line and refuses to guess', () => {
-  const baseline = currentIdentity('guard-blocks-merge');
-
-  // Ordinary router prose that happens to name a version the same way the stamp does. The
-  // neutralisation must not reach it: a matcher anchored merely on the introducing word would
-  // erase it from the neutral body, and an edit confined to that sentence would then leave the
-  // neutral digest untouched and be waived as a release-only bump.
-  const prose = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+// A router carrying ordinary prose that names a version the same way the stamp does, with the
+// version-shaped phrase supplied by the caller. Two builds that differ only in that phrase are what
+// the laundering defect looks like from the outside, and the only way to observe it: a single build
+// carrying such a sentence moves the neutral digest under any matcher, because the sentence itself
+// is new bytes. What has to be compared is two routers that both carry it and disagree about it.
+function identityWithVersionShapedProse(phrase) {
+  return identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
     body.replace(
       '## Invocation',
-      'Behaviour below was settled in version 9.9.9 (abc1234) and has not moved since.\n\n## Invocation',
+      `Behaviour below was settled in ${phrase} and has not moved since.\n\n## Invocation`,
     ),
   );
+}
+
+test('the version-neutral digest neutralises the generated line and refuses to guess', () => {
+  // The edit the finding is about: a second version-shaped phrase is already in the router, and the
+  // change under review is confined to *it* — the generated stamp is untouched, and so is every
+  // other byte of every load-set file. A matcher anchored merely on the introducing word replaces
+  // both occurrences, so both neutral bodies read `settled in version <version> and has not moved
+  // since.`, the neutral digests come out equal, and `isVersionStampOnlyPredecessor` waives the
+  // archived round as a release-only bump although the instruction the gate executes has changed.
+  // Anchoring on the generated line leaves the prose in the hashed bytes, where an edit to it binds
+  // the round exactly as any other router edit does.
+  const settledAt999 = identityWithVersionShapedProse('version 9.9.9 (abc1234)');
+  const settledAt777 = identityWithVersionShapedProse('version 7.7.7 (zzz9999)');
   assert.notEqual(
-    prose.skill.versionNeutralDigest,
-    baseline.skill.versionNeutralDigest,
-    'a second version-shaped phrase was hashed away instead of binding the round',
+    settledAt999.skill.files['SKILL.md'],
+    settledAt777.skill.files['SKILL.md'],
+    'the two routers hash the same, so the fixture is not testing what it claims',
   );
-  assert.equal(isVersionStampOnlyPredecessor(baseline, prose), false);
+  assert.notEqual(
+    settledAt999.skill.versionNeutralDigest,
+    settledAt777.skill.versionNeutralDigest,
+    'an edit confined to a second version-shaped phrase was neutralised away',
+  );
+  assert.equal(isVersionStampOnlyPredecessor(settledAt999, settledAt777), false);
+  assert.equal(isVersionStampOnlyPredecessor(settledAt777, settledAt999), false);
+
+  // The stamp itself still absorbs a release bump when the prose stays put, so the tightened anchor
+  // narrowed the neutralisation without switching it off.
+  const bumpedWithProse = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body
+      .replace(
+        '## Invocation',
+        'Behaviour below was settled in version 9.9.9 (abc1234) and has not moved since.\n\n## Invocation',
+      )
+      .replace(VERSION_TOKEN_RE, '$188.88.88 (eval)'),
+  );
+  assert.equal(bumpedWithProse.skill.versionNeutralDigest, settledAt999.skill.versionNeutralDigest);
+  assert.equal(isVersionStampOnlyPredecessor(settledAt999, bumpedWithProse), true);
 
   // Two copies of the generated line itself. There is no unambiguous stamp to replace, so the
   // identity aborts rather than neutralising whichever occurrence the pattern reaches first.
