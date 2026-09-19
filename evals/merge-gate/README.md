@@ -315,7 +315,19 @@ and the fragments any of those reach through their own load pointers — rather 
 anywhere in the built skill, so an edit to an unrelated tool, an unreached worker contract or a
 fragment no run reads leaves the standing evidence intact. The shipped `scripts/remote-tracker.mjs`
 is not among them: the scaffold overwrites it with the stub, which is hashed separately as the
-instrument. That is a narrower trigger, not an absent one: two pull requests that both touch those
+instrument.
+
+A release does not invalidate a round, although it does change the router. `build.mjs` stamps the
+manifest version into `SKILL.md`, so a release-please pull request moves the skill digest of every
+archived round without a line of the gate having been edited — thirty re-runs owed to a number
+nobody wrote, on the one pull request that has to stay mergeable. Each stamp therefore also carries
+`skill.versionNeutralDigest`: the same load set, hashed with the router's rendered
+`<semver> (<hash>)` token replaced by a placeholder. A round survives a release only when that
+digest matches, `SKILL.md` is the single moved skill file, and the instrument and scenario parts are
+still exactly equal; anything else fails as before, including a stamp too old to carry the field.
+The version still binds every run whose build differs in anything the version does not explain.
+
+That is a narrower trigger, not an absent one: two pull requests that both touch those
 files still invalidate each other's rounds, and whichever lands second re-runs. A load pointer also
 counts whether or not a run can take its branch: `shared/typography-rules.md` is hashed today only
 because `chat-language` points at it under `when: the resolved chat language is de`, a branch

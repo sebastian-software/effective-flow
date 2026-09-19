@@ -84,8 +84,27 @@
 // version line. Without that pin the identity is self-defeating rather than merely noisy: the hash
 // changes with every commit, so the commit that records a round's evidence changes the build that
 // evidence describes, and an archived run could never match a fresh build at the commit containing
-// it. What is pinned is metadata the build itself calls cosmetic — the version number still moves
-// with a release, which genuinely does change the shipped skill.
+// it.
+//
+// The release version in the same line moves for the same structural reason, one release apart
+// rather than one commit apart, and pinning it is not open the way pinning the hash is: the version
+// is what `tools/version.md` reports and what a release genuinely ships, so a stamp that hashed it
+// away would describe a tree that was never built. So it is recorded twice instead. Beside the
+// exact `skill.digest`, the stamp carries `skill.versionNeutralDigest`: the same load set, with the
+// router's rendered `<semver> (<hash>)` token replaced by a fixed placeholder before hashing and
+// every other byte of every other file hashed as before. Nothing about the exact digest changes —
+// it stays the identity an archived run is bound by, and the top-level `digest` that `metadata.json`
+// pins is still composed from it.
+//
+// What the second digest buys is one narrowly readable answer at comparison time. A release-please
+// PR bumps `.release-please-manifest.json`, the built router changes, and every archived round's
+// skill digest moves although the gate is byte-for-byte what it was — thirty re-runs owed to a
+// number nobody edited, on the one pull request that must stay mergeable. The exception in
+// `test/merge-gate-eval.test.mjs` is keyed to that and only that: `SKILL.md` alone may differ, the
+// version-neutral digests must be equal and both present, and the instrument and scenario parts
+// must still be exactly equal. A second changed file, a changed fragment, or an archived stamp from
+// before this field existed fails exactly as it did before. This is deliberately narrower than "the
+// version does not matter": the version still binds every run whose build differs in anything else.
 //
 // One property is deliberate and not worked around: a content digest cannot tell a rule from a
 // comment. Rewording a comment in the gate invalidates the archived rounds exactly as a changed
@@ -114,6 +133,7 @@ import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import process from 'node:process';
 import { relative, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { scenarioSetup } from './configured-reviewer-scenario.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname, '..');
@@ -265,21 +285,123 @@ function deriveLoadSet(skillRoot, iterateEcho = false) {
   return [...set].sort().map((relativePath) => resolve(skillRoot, relativePath));
 }
 
+function canonicalDigest(files) {
+  return digestOf(
+    Object.keys(files)
+      .sort()
+      .map((name) => `${name} ${files[name]}`)
+      .join('\n'),
+  );
+}
+
 // Paths are recorded relative to the tree's own root, so the digest describes the skill rather than
 // where a particular checkout — or a particular throwaway build root — happens to keep it.
 function hashFiles(paths, root) {
   const files = {};
   for (const path of paths) files[relative(root, path)] = digestOf(readFileSync(path));
-  const canonical = Object.keys(files)
-    .sort()
-    .map((name) => `${name} ${files[name]}`)
-    .join('\n');
-  return { digest: digestOf(canonical), files };
+  return { digest: canonicalDigest(files), files };
 }
+
+// The only load-set member that carries the version stamp. `tools/version.md` renders the same
+// `{{VERSION}}` placeholder and deliberately stays out of this: the gate never loads it, so it is
+// not a member of the set and needs no neutral form.
+const VERSION_STAMPED_FILE = 'SKILL.md';
+
+// The one generated line `build.mjs` stamps `{{VERSION}}` into, matched as a whole rather than by
+// the version token alone. `src/SKILL.md` writes it as ``… invoked via `{{FLOW}} <tool>` (version
+// {{VERSION}}).``, and the build substitutes the harness-specific invocation for `{{FLOW}}` and the
+// manifest semver plus the parenthesised build hash for `{{VERSION}}`. The pattern therefore anchors
+// on the surrounding generated text — the closing `` `<tool>` `` of the invocation, the ` (version `
+// that introduces the stamp, and the `).` that closes the sentence — and only the FLOW value inside
+// the backticks is left open, because it is the one part of the line that legitimately differs
+// between the three built targets. The whole version token is normalised rather than the digits
+// alone: an eval build pins the hash to a marker, but a stamp is read back against whatever a later
+// build wrote there, and a neutral digest that still carried a hash would be neutral in name only.
+//
+// **Matching the exact line, exactly once, is what keeps the neutralisation from laundering an
+// edit.** A looser pattern anchored merely on the introducing word matches any prose shaped like
+// `version <semver> (<token>)`, everywhere in the router. Today the router carries one such phrase,
+// so the loose form and this one agree byte for byte; but the moment a second one appears — a new
+// instruction that happens to name a version this way — a loose global replacement erases *that*
+// phrase from the neutral body too, and an edit confined to it leaves the neutral digest untouched.
+// `isVersionStampOnlyPredecessor` would then waive the archived round as a release-only bump
+// although the instruction the gate executes had changed: exactly the drift this whole file exists
+// to make impossible. Requiring one match closes that by refusing to guess which occurrence is the
+// stamp.
+//
+// Both failure directions therefore abort rather than produce a digest. Zero matches means the
+// router no longer carries the generated line this pattern describes — the version may have moved
+// somewhere else, or the sentence may have been restructured — and a neutral digest that
+// neutralised nothing is indistinguishable from a working one until the next release bump
+// invalidates every round at once. Two or more means the line is no longer unique, so there is no
+// unambiguous stamp to replace. Failing loudly in both cases is the same safe direction the
+// unresolvable-load-pointer guard takes: a wrong neutral digest is silent and durable, a throw is
+// neither.
+//
+// Prose elsewhere in the router that names a version is now simply hashed, in the neutral body as
+// in the exact one. That is the conservative outcome: such an edit invalidates the archived rounds
+// — loudly, and exactly as any other router edit does — instead of being waived.
+const RENDERED_VERSION_RE =
+  /(`[^`\n]+ <tool>` \(version )\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)(\)\.)$/gm;
+const VERSION_REPLACEMENT = '$1<version>$2';
 
 export function builtSkillIdentity(skillRoot, { iterateEcho = false } = {}) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  return hashFiles(deriveLoadSet(skillRoot, iterateEcho), skillRoot);
+  const { digest, files } = hashFiles(deriveLoadSet(skillRoot, iterateEcho), skillRoot);
+  const routerPath = resolve(skillRoot, VERSION_STAMPED_FILE);
+  const body = readFileSync(routerPath, 'utf8');
+  // Counted before replacing, because a global replacement cannot report how many occurrences it
+  // consumed and both off-by-one directions have to abort. Same reasoning as an unresolvable load
+  // pointer: a neutral digest that neutralised nothing — or neutralised the wrong occurrence along
+  // with the stamp — is indistinguishable from a working one until a release bump invalidates every
+  // round, and by then the stamps carrying it are already committed. Failing here is where the
+  // difference is still visible.
+  const stamps = [...body.matchAll(RENDERED_VERSION_RE)];
+  if (stamps.length === 0) {
+    throw new Error(
+      `the built router at ${routerPath} carries no rendered version token, so no ` +
+        'version-neutral skill digest can be computed',
+    );
+  }
+  if (stamps.length > 1) {
+    throw new Error(
+      `the built router at ${routerPath} carries ${stamps.length} rendered version tokens, so ` +
+        'no unambiguous version-neutral skill digest can be computed',
+    );
+  }
+  const neutralBody = body.replace(RENDERED_VERSION_RE, VERSION_REPLACEMENT);
+  const neutralFiles = { ...files, [VERSION_STAMPED_FILE]: digestOf(neutralBody) };
+  return { digest, versionNeutralDigest: canonicalDigest(neutralFiles), files };
+}
+
+function changedSkillFiles(archived, current) {
+  const before = archived?.files ?? {};
+  const after = current?.files ?? {};
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .sort()
+    .filter((name) => before[name] !== after[name]);
+}
+
+// The one accepted difference between an archived stamp and a fresh identity: a release bumped the
+// version the router prints and moved nothing else. Every other part stays exact, so this cannot
+// widen into a general "the skill changed" waiver — the scenario, the instrument, and the scenario
+// inputs are compared whole, and within the skill only `SKILL.md` may have moved.
+//
+// Both sides must carry a version-neutral digest. A stamp written before the field existed is
+// rejected rather than treated as unconstrained: absence is not evidence of sameness, and the
+// stamps that predate it were migrated in place only because their exact digests still matched.
+export function isVersionStampOnlyPredecessor(stamp, identity) {
+  if (!stamp || !identity) return false;
+  if (stamp.scenario !== identity.scenario) return false;
+  if (!isDeepStrictEqual(stamp.instrument, identity.instrument)) return false;
+  if (!isDeepStrictEqual(stamp.scenario_inputs, identity.scenario_inputs)) return false;
+  const archived = stamp.skill;
+  const current = identity.skill;
+  if (typeof archived?.versionNeutralDigest !== 'string') return false;
+  if (typeof current?.versionNeutralDigest !== 'string') return false;
+  if (archived.versionNeutralDigest !== current.versionNeutralDigest) return false;
+  const moved = changedSkillFiles(archived, current);
+  return moved.length === 1 && moved[0] === VERSION_STAMPED_FILE;
 }
 
 export function instrumentIdentity() {

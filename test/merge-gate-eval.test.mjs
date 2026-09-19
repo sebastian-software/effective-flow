@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import {
   buildPortableSkill,
+  isVersionStampOnlyPredecessor,
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from '../evals/merge-gate/_scaffold/build-identity.mjs';
@@ -348,6 +356,20 @@ function assertBoundToCurrentBuild(scenario, run, identity) {
   const stamp = JSON.parse(readFileSync(run.stampPath, 'utf8'));
   if (stamp.digest === identity.digest) return;
   if (isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity)) return;
+  // The release bump, and nothing else. A release-please pull request rewrites
+  // `.release-please-manifest.json`, `build.mjs` stamps the new number into the router, and the
+  // skill digest of every archived round moves although the gate is the same text it was. Without
+  // this the one pull request that must stay mergeable is the one that can never be green, and the
+  // owed work would be thirty re-runs that could produce no new information — the same "re-run that
+  // buys nothing" the derived load set exists to avoid, arriving through the version line instead
+  // of through an unreachable fragment.
+  //
+  // It is narrow by construction, not by promise: `isVersionStampOnlyPredecessor` accepts only a
+  // stamp whose instrument and scenario parts are exactly equal, whose sole moved skill file is
+  // `SKILL.md`, and whose version-neutral digest — present on both sides — matches. Anything the
+  // version token does not explain still moves that digest, so a reworded rule inside `SKILL.md`
+  // fails here exactly as it did before, and so does a stamp written before the field existed.
+  if (isVersionStampOnlyPredecessor(stamp, identity)) return;
   assert.fail(
     [
       `${run.name} observed a different build than the working tree holds.`,
@@ -411,6 +433,219 @@ test('legacy instrument compatibility accepts only the exact nonsequenced predec
       label,
     );
   }
+});
+
+// Hands back the identity of a throwaway copy of the current build, after `mutate` has edited a
+// file inside it. Copying is the point: the version-neutral digest is a claim about what a build
+// with a different version stamp hashes to, and the only honest way to check it is to produce such
+// a tree rather than to hand-write two digests and assert they differ.
+function identityOfMutatedBuild(scenario, relativePath, mutate) {
+  const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-version-'));
+  try {
+    const skillRoot = resolve(scratch, 'skill');
+    cpSync(builtSkillRoot, skillRoot, { recursive: true });
+    const path = resolve(skillRoot, relativePath);
+    writeFileSync(path, mutate(readFileSync(path, 'utf8')));
+    return scenarioBuildIdentity(scenario, skillRoot);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+const VERSION_TOKEN_RE = /(\bversion )\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)/;
+
+test('the version-neutral skill digest absorbs the release stamp and nothing else', () => {
+  const baseline = currentIdentity('guard-blocks-merge');
+  assert.match(
+    readFileSync(resolve(builtSkillRoot, 'SKILL.md'), 'utf8'),
+    VERSION_TOKEN_RE,
+    'the built router no longer carries a rendered version token to neutralise',
+  );
+
+  // What a release-please pull request does to the built tree, and the only thing it does: the
+  // manifest semver moves, `build.mjs` stamps the new one into the router, every other byte of
+  // every load-set file is what it was.
+  const bumped = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body.replace(VERSION_TOKEN_RE, '$199.99.99 (eval)'),
+  );
+  assert.notEqual(
+    bumped.skill.files['SKILL.md'],
+    baseline.skill.files['SKILL.md'],
+    'the bumped router hashes the same as the unbumped one',
+  );
+  assert.notEqual(bumped.skill.digest, baseline.skill.digest);
+  assert.equal(bumped.skill.versionNeutralDigest, baseline.skill.versionNeutralDigest);
+  assert.equal(isVersionStampOnlyPredecessor(baseline, bumped), true);
+  assert.equal(isVersionStampOnlyPredecessor(bumped, baseline), true);
+
+  // The same file, changed somewhere the version token is not. The neutral digest has to move with
+  // it, or the exception would launder every edit to the router's own text.
+  const reworded = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body
+      .replace(VERSION_TOKEN_RE, '$199.99.99 (eval)')
+      .replace('Effective Flow bundles', 'Effective Flow now bundles'),
+  );
+  assert.notEqual(reworded.skill.versionNeutralDigest, baseline.skill.versionNeutralDigest);
+  assert.equal(isVersionStampOnlyPredecessor(baseline, reworded), false);
+
+  // A fragment the gate reaches, left out of the neutralisation entirely: it is hashed
+  // byte-for-byte into both digests, so a changed fragment moves the neutral one too.
+  const fragment = identityOfMutatedBuild(
+    'guard-blocks-merge',
+    'shared/merge-gate-conflict-resolution.md',
+    (body) => `${body}\nA sentence that changes what the resolver is told.\n`,
+  );
+  assert.notEqual(fragment.skill.versionNeutralDigest, baseline.skill.versionNeutralDigest);
+  assert.equal(isVersionStampOnlyPredecessor(baseline, fragment), false);
+
+  // A router with no rendered version token cannot be described by a neutral digest, and a digest
+  // that neutralised nothing would look exactly like a working one until the next release.
+  assert.throws(
+    () =>
+      identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+        body.replace(VERSION_TOKEN_RE, '$1elsewhere'),
+      ),
+    /carries no rendered version token/,
+  );
+});
+
+// The line `build.mjs` generates, as the built router carries it: the invocation in backticks, the
+// parenthesised stamp, and the full stop that closes the sentence. The production matcher is
+// anchored on all of it, so a test that wants a *second* stamp has to reproduce the whole line
+// rather than a bare `version <semver> (<token>)` phrase.
+const GENERATED_VERSION_LINE_RE =
+  /^.*`[^`\n]+ <tool>` \(version \d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)\)\.$/m;
+
+// A router carrying ordinary prose that names a version the same way the stamp does, with the
+// version-shaped phrase supplied by the caller. Two builds that differ only in that phrase are what
+// the laundering defect looks like from the outside, and the only way to observe it: a single build
+// carrying such a sentence moves the neutral digest under any matcher, because the sentence itself
+// is new bytes. What has to be compared is two routers that both carry it and disagree about it.
+function identityWithVersionShapedProse(phrase) {
+  return identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body.replace(
+      '## Invocation',
+      `Behaviour below was settled in ${phrase} and has not moved since.\n\n## Invocation`,
+    ),
+  );
+}
+
+test('the version-neutral digest neutralises the generated line and refuses to guess', () => {
+  // The edit the finding is about: a second version-shaped phrase is already in the router, and the
+  // change under review is confined to *it* — the generated stamp is untouched, and so is every
+  // other byte of every load-set file. A matcher anchored merely on the introducing word replaces
+  // both occurrences, so both neutral bodies read `settled in version <version> and has not moved
+  // since.`, the neutral digests come out equal, and `isVersionStampOnlyPredecessor` waives the
+  // archived round as a release-only bump although the instruction the gate executes has changed.
+  // Anchoring on the generated line leaves the prose in the hashed bytes, where an edit to it binds
+  // the round exactly as any other router edit does.
+  const settledAt999 = identityWithVersionShapedProse('version 9.9.9 (abc1234)');
+  const settledAt777 = identityWithVersionShapedProse('version 7.7.7 (zzz9999)');
+  assert.notEqual(
+    settledAt999.skill.files['SKILL.md'],
+    settledAt777.skill.files['SKILL.md'],
+    'the two routers hash the same, so the fixture is not testing what it claims',
+  );
+  assert.notEqual(
+    settledAt999.skill.versionNeutralDigest,
+    settledAt777.skill.versionNeutralDigest,
+    'an edit confined to a second version-shaped phrase was neutralised away',
+  );
+  assert.equal(isVersionStampOnlyPredecessor(settledAt999, settledAt777), false);
+  assert.equal(isVersionStampOnlyPredecessor(settledAt777, settledAt999), false);
+
+  // The stamp itself still absorbs a release bump when the prose stays put, so the tightened anchor
+  // narrowed the neutralisation without switching it off.
+  const bumpedWithProse = identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) =>
+    body
+      .replace(
+        '## Invocation',
+        'Behaviour below was settled in version 9.9.9 (abc1234) and has not moved since.\n\n## Invocation',
+      )
+      .replace(VERSION_TOKEN_RE, '$188.88.88 (eval)'),
+  );
+  assert.equal(bumpedWithProse.skill.versionNeutralDigest, settledAt999.skill.versionNeutralDigest);
+  assert.equal(isVersionStampOnlyPredecessor(settledAt999, bumpedWithProse), true);
+
+  // Two copies of the generated line itself. There is no unambiguous stamp to replace, so the
+  // identity aborts rather than neutralising whichever occurrence the pattern reaches first.
+  assert.throws(
+    () =>
+      identityOfMutatedBuild('guard-blocks-merge', 'SKILL.md', (body) => {
+        const generated = body.match(GENERATED_VERSION_LINE_RE);
+        assert.ok(generated, 'the built router no longer carries the generated version line');
+        return body.replace(generated[0], `${generated[0]}\n\n${generated[0]}`);
+      }),
+    /carries 2 rendered version tokens/,
+  );
+});
+
+test('the version-stamp exception rejects every difference the version does not explain', () => {
+  const identity = {
+    scenario: 'guard-blocks-merge',
+    digest: 'overall-current',
+    skill: {
+      digest: 'skill-current',
+      versionNeutralDigest: 'neutral-shared',
+      files: {
+        'SKILL.md': 'router-current',
+        'shared/merge-gate-conflict-resolution.md': 'fragment-current',
+        'tools/merge-gate.md': 'gate-current',
+      },
+    },
+    instrument: { digest: 'instrument-current', files: { [TRACKER_STUB_PATH]: 'tracker-current' } },
+    scenario_inputs: { digest: 'scenario-current', files: { 'fixture.json': 'fixture-current' } },
+  };
+  const bumped = structuredClone(identity);
+  bumped.digest = 'overall-archived';
+  bumped.skill.digest = 'skill-archived';
+  bumped.skill.files['SKILL.md'] = 'router-archived';
+  assert.equal(isVersionStampOnlyPredecessor(bumped, identity), true);
+
+  for (const [label, mutate] of [
+    // The router moved for a reason the version does not explain: the neutral digests disagree.
+    [
+      'router content beyond the version',
+      (stamp) => (stamp.skill.versionNeutralDigest = 'neutral-other'),
+    ],
+    // Two moved skill files. Even with equal neutral digests — which cannot happen from a real
+    // build, and is exactly why the file list is checked separately — this is not a release bump.
+    [
+      'a second moved skill file',
+      (stamp) => (stamp.skill.files['shared/merge-gate-conflict-resolution.md'] = 'fragment-other'),
+    ],
+    [
+      'a moved skill file that is not the router',
+      (stamp) => {
+        stamp.skill.files['SKILL.md'] = 'router-current';
+        stamp.skill.files['tools/merge-gate.md'] = 'gate-other';
+      },
+    ],
+    [
+      'a skill file gone from the load set',
+      (stamp) => delete stamp.skill.files['tools/merge-gate.md'],
+    ],
+    // A stamp written before the field existed. Absence is not sameness, and accepting it would
+    // waive the version binding for every round archived under the old writer.
+    ['no archived version-neutral digest', (stamp) => delete stamp.skill.versionNeutralDigest],
+    ['instrument drift', (stamp) => (stamp.instrument.files[TRACKER_STUB_PATH] = 'tracker-other')],
+    ['scenario input drift', (stamp) => (stamp.scenario_inputs.digest = 'scenario-other')],
+    ['another scenario', (stamp) => (stamp.scenario = 'merge-proceeds')],
+  ]) {
+    const stamp = structuredClone(bumped);
+    mutate(stamp);
+    assert.equal(isVersionStampOnlyPredecessor(stamp, identity), false, label);
+  }
+
+  // The current side is held to the same rule: an identity computed by a writer that does not emit
+  // the field cannot be the thing an archived stamp is excused against.
+  const withoutCurrentField = structuredClone(identity);
+  delete withoutCurrentField.skill.versionNeutralDigest;
+  assert.equal(
+    isVersionStampOnlyPredecessor(bumped, withoutCurrentField),
+    false,
+    'no current version-neutral digest',
+  );
 });
 
 // A missing or empty log is the failure mode the plan names by hand, and it is the one a naive

@@ -353,6 +353,12 @@ Since `release-please-config.json` carries the single package `.` under the name
 The build stamps `<manifest version> (<git short hash>)` into all three routers. A drift guard
 makes the build fail unless native Claude, native Codex, and portable output agree.
 
+Because the stamp sits in `SKILL.md`, a release changes a file the merge-gate behavioural eval
+binds its archived runs to. That is handled and needs no action on a release pull request: every
+archived round carries a version-neutral skill digest beside its exact one, and a bump that moves
+only the version token is accepted without re-recording. See
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for the exact conditions.
+
 ## Consumer installation through DALO or Skills CLI
 
 The default branch is a portable catalog with one `effective-flow` skill slot. DALO selects that
