@@ -3,9 +3,12 @@ import { readFileSync } from 'node:fs';
 
 export const SKILL_ROOT_PLACEHOLDER = '{{SKILL_ROOT}}';
 export const PROJECT_ROOT_PLACEHOLDER = '{{PROJECT_ROOT}}';
+// The project root appears twice: once as the execution and runtime-state root, and once as the
+// literal `"cwd"` value every helper request must carry. Running a shell from that directory does
+// not populate the JSON field, and a record without it is invalid evidence.
 const REQUIRED_PLACEHOLDER_COUNTS = new Map([
   [SKILL_ROOT_PLACEHOLDER, 3],
-  [PROJECT_ROOT_PLACEHOLDER, 1],
+  [PROJECT_ROOT_PLACEHOLDER, 2],
 ]);
 const PLACEHOLDER_RE = /\{\{[A-Z][A-Z0-9_]*\}\}/g;
 const PROMPT_START = '<!-- prompt:start -->';

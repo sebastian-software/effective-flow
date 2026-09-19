@@ -26,7 +26,9 @@ Resolve the paths the tool asks for as follows and use no others:
   so every remote-tracker invocation runs
   `node {{SKILL_ROOT}}/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  {{PROJECT_ROOT}}.
+  {{PROJECT_ROOT}};
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"{{PROJECT_ROOT}}"`. Omit
+  that field from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
 path, take it. Finish with the tool's own report of what it did and why.

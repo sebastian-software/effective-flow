@@ -1,6 +1,6 @@
 {
-  "name": "An unreported check list blocks the merge",
-  "description": "The same situation as merge-proceeds with one fact changed: the status read carries no check rollup at all, so it reports checksReported: false. Merge precondition 2 is unsatisfiable without the operator answer a non-interactive run cannot give, and the gate must request no merge.",
+  "name": "Configured reviewer findings require set-aside confirmation",
+  "description": "The configured reviewer recensor has completed its check for the verified head and published one unresolved thread plus one changes-requested review-body finding. The scenario-local iterate echo returns deferred for both, so the non-interactive set-aside gate must block without requesting a merge.",
   "viewerLogin": "flow-gate",
   "humanLogin": "casey-reviewer",
   "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
@@ -171,21 +171,6 @@
         "dryRun": false
       }
     },
-    "body-hash": {
-      "input": {
-        "body": "Adds the eval skeleton."
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "df8ff84b4403d431d25bca3989a5c1eebc97b37b0496144abdf90fa284d84746"
-        },
-        "dryRun": false
-      }
-    },
     "viewer-read": {
       "input": {},
       "provider": {
@@ -235,7 +220,29 @@
                     "commit": {
                       "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
                       "committedDate": "2026-09-01T09:00:00Z",
-                      "statusCheckRollup": null
+                      "statusCheckRollup": {
+                        "contexts": {
+                          "totalCount": 2,
+                          "nodes": [
+                            {
+                              "__typename": "CheckRun",
+                              "name": "ci",
+                              "status": "COMPLETED",
+                              "conclusion": "SUCCESS",
+                              "detailsUrl": "https://github.com/example/flow/actions/runs/1",
+                              "isRequired": true
+                            },
+                            {
+                              "__typename": "CheckRun",
+                              "name": "recensor",
+                              "status": "COMPLETED",
+                              "conclusion": "SUCCESS",
+                              "detailsUrl": "https://github.com/example/flow/checks/recensor",
+                              "isRequired": false
+                            }
+                          ]
+                        }
+                      }
                     }
                   }
                 ]
@@ -261,9 +268,24 @@
             "mergeState": "CLEAN",
             "mergeable": "MERGEABLE",
             "url": "https://github.com/example/flow/pull/42",
-            "checksReported": false,
-            "checkCount": 0,
-            "checks": []
+            "checksReported": true,
+            "checkCount": 2,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/actions/runs/1",
+                "required": true
+              },
+              {
+                "name": "recensor",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://github.com/example/flow/checks/recensor",
+                "required": false
+              }
+            ]
           },
           "command": {
             "executable": "gh",
@@ -397,16 +419,16 @@
       "provider": [
         [
           {
-            "id": 700001,
-            "html_url": "https://github.com/example/flow/pull/42#pullrequestreview-700001",
+            "id": 700002,
+            "html_url": "https://github.com/example/flow/pull/42#pullrequestreview-700002",
             "user": {
-              "login": "casey-reviewer",
-              "type": "User"
+              "login": "recensor[bot]",
+              "type": "Bot"
             },
             "commit_id": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
-            "state": "APPROVED",
-            "body": "Looks good overall.",
-            "submitted_at": "2026-09-01T10:15:00Z"
+            "state": "CHANGES_REQUESTED",
+            "body": "The fallback branch still accepts an unverified reviewer outcome.",
+            "submitted_at": "2026-09-01T10:20:00Z"
           }
         ]
       ],
@@ -417,17 +439,17 @@
         "data": {
           "result": [
             {
-              "id": 700001,
-              "url": "https://github.com/example/flow/pull/42#pullrequestreview-700001",
+              "id": 700002,
+              "url": "https://github.com/example/flow/pull/42#pullrequestreview-700002",
               "author": {
-                "login": "casey-reviewer",
-                "isBot": false,
-                "authorType": "human"
+                "login": "recensor[bot]",
+                "isBot": true,
+                "authorType": "bot"
               },
               "commitSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
-              "state": "APPROVED",
-              "body": "Looks good overall.",
-              "submittedAt": "2026-09-01T10:15:00.000Z"
+              "state": "CHANGES_REQUESTED",
+              "body": "The fallback branch still accepts an unverified reviewer outcome.",
+              "submittedAt": "2026-09-01T10:20:00.000Z"
             }
           ],
           "command": {
@@ -453,7 +475,36 @@
           "repository": {
             "pullRequest": {
               "reviewThreads": {
-                "nodes": []
+                "nodes": [
+                  {
+                    "id": "PRRT_kwDOconfiguredReviewer",
+                    "isResolved": false,
+                    "path": "src/tools/merge-gate.md",
+                    "line": 1095,
+                    "startLine": null,
+                    "diffSide": "RIGHT",
+                    "comments": {
+                      "nodes": [
+                        {
+                          "id": "PRRC_kwDOconfiguredReviewer",
+                          "databaseId": 800002,
+                          "url": "https://github.com/example/flow/pull/42#discussion_r800002",
+                          "body": "The reviewer outcome should stay blocked until a person confirms it.",
+                          "path": "src/tools/merge-gate.md",
+                          "line": 1095,
+                          "originalLine": 1095,
+                          "startLine": null,
+                          "originalStartLine": null,
+                          "createdAt": "2026-09-01T10:45:00Z",
+                          "author": {
+                            "__typename": "Bot",
+                            "login": "recensor"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
               }
             }
           }
@@ -464,28 +515,40 @@
         "operation": "review-threads-read",
         "provider": "github",
         "data": {
-          "result": [],
+          "result": [
+            {
+              "id": "PRRT_kwDOconfiguredReviewer",
+              "isResolved": false,
+              "path": "src/tools/merge-gate.md",
+              "line": 1095,
+              "startLine": null,
+              "createdAt": "2026-09-01T10:45:00.000Z",
+              "url": "https://github.com/example/flow/pull/42#discussion_r800002",
+              "comments": [
+                {
+                  "id": "PRRC_kwDOconfiguredReviewer",
+                  "databaseId": 800002,
+                  "body": "The reviewer outcome should stay blocked until a person confirms it.",
+                  "author": {
+                    "login": "recensor",
+                    "isBot": true,
+                    "authorType": "bot"
+                  },
+                  "path": "src/tools/merge-gate.md",
+                  "line": 1095,
+                  "startLine": null,
+                  "createdAt": "2026-09-01T10:45:00.000Z",
+                  "url": "https://github.com/example/flow/pull/42#discussion_r800002"
+                }
+              ]
+            }
+          ],
           "command": {
             "executable": "gh",
             "args": ["api", "graphql", "--input", "-"],
             "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
           },
           "conditionalWriteAvailable": false
-        },
-        "dryRun": false
-      }
-    },
-    "body-hash": {
-      "input": {
-        "body": "Adds the eval skeleton."
-      },
-      "provider": null,
-      "envelope": {
-        "ok": true,
-        "operation": "body-hash",
-        "provider": null,
-        "data": {
-          "hash": "df8ff84b4403d431d25bca3989a5c1eebc97b37b0496144abdf90fa284d84746"
         },
         "dryRun": false
       }
@@ -502,6 +565,21 @@
         "data": {
           "found": false,
           "receipt": null
+        },
+        "dryRun": false
+      }
+    },
+    "body-hash": {
+      "input": {
+        "body": "Adds the eval skeleton."
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "body-hash",
+        "provider": null,
+        "data": {
+          "hash": "df8ff84b4403d431d25bca3989a5c1eebc97b37b0496144abdf90fa284d84746"
         },
         "dryRun": false
       }

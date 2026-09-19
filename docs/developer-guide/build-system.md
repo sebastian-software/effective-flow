@@ -130,6 +130,15 @@ name a fragment no tool references directly, the build walks the fragment set as
 every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
 cycle the walk would otherwise not terminate on.
 
+`merge-gate-configured-reviewer` is a single-consumer, presence-gated example. `merge-gate`
+resolves whether the project setup contains the `mergeGate.bots` row before it parses the value. A
+present row therefore loads the fragment even when its value is empty or unreadable; only the
+absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
+`merge-gate` core for Claude from 2,892 to 2,262 lines, for Codex from 2,880 to 2,256, and for the
+portable target from 2,883 to 2,259. Its context budget is now 2,270 lines. The configured-reviewer
+contract remains in one source fragment while the default, row-absent route no longer pays its
+context cost.
+
 `durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
 implementation, investigation, planning, or decomposition run. Common implementation workflows
 reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
@@ -140,9 +149,9 @@ artifact writes, and do not duplicate its materiality or irreversibility tests i
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
-gate can reach widens that identity and invalidates every archived round — currently fifteen, and
-roughly an hour and a half of re-recording an operator has to drive by hand through fresh agent
-sessions. A conditional pointer widens it whether or not any scenario takes its branch. See
+gate can reach widens that identity and invalidates every archived round, forcing the affected
+scenario evidence to be re-recorded by hand through fresh agent sessions. A conditional pointer
+widens it whether or not any scenario takes its branch. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and
 `evals/merge-gate/_scaffold/build-identity.mjs` for the derivation itself.
 
@@ -644,10 +653,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2868/2870, `setup` 1723/1723, `iterate` 1765/1775,
-`apply-review` 1356/1360, `apply-issues` 1190/1190, and `cleanup` 1020/1022.
+`merge-gate` is 2262/2270, `setup` 1723/1723, `iterate` 1771/1775,
+`apply-review` 1357/1360, `apply-issues` 1191/1191, and `cleanup` 1020/1022.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 655/665, `docs` 607/617, `build` 591/595, and `fix` 483/488. Read every
+`plan` 656/665, `docs` 608/617, `build` 592/595, and `fix` 484/488. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.

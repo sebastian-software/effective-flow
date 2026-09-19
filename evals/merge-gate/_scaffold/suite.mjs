@@ -5,6 +5,7 @@ import { validateScenarioName } from './sandbox.mjs';
 export const SUITE_ROOT = resolve(import.meta.dirname, '..');
 export const REQUIRED_RUNS = 5;
 export const OUTCOME_EVALUATORS = Object.freeze([
+  'configured-reviewer-set-aside-blocks',
   'guard-blocks-merge',
   'linked-issue-open-points',
   'merge-proceeds',

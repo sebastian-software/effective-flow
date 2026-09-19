@@ -4,14 +4,20 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { resolve } from 'node:path';
-import { digestFile, scenarioBuildIdentity } from './build-identity.mjs';
+import {
+  applyScenarioSkillOverlay,
+  digestFile,
+  pristineScenarioBuildIdentity,
+  scenarioBuildIdentity,
+} from './build-identity.mjs';
+import { scenarioSetup } from './configured-reviewer-scenario.mjs';
 import { digestText, promptTemplate, renderPrompt } from './prompt.mjs';
 import { sandboxPaths } from './sandbox.mjs';
 import { SUITE_ROOT } from './suite.mjs';
 
 const TRACKER_STUB = resolve(import.meta.dirname, 'remote-tracker.mjs');
 
-function writeProject(projectRoot, scenario, fixture) {
+function writeProject(projectRoot, scenario, fixture, projectSetupRows) {
   const agentsMarkdown = `# AGENTS.md
 
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
@@ -47,7 +53,7 @@ Scenario configuration for the \`${scenario}\` behavioural eval scenario.
 | mergeGate.requireAllChecks       | true           |
 | mergeGate.conflictResolution     | off            |
 | mergeGate.maxRounds              | 2              |
-`;
+${projectSetupRows.map(([key, value]) => `| ${key.padEnd(32)} | ${value.padEnd(14)} |\n`).join('')}`;
 
   mkdirSync(resolve(projectRoot, 'docs', 'adr'), { recursive: true });
   writeFileSync(resolve(projectRoot, 'AGENTS.md'), agentsMarkdown);
@@ -81,7 +87,7 @@ export function provisionSlot({
   attempt,
   builtSkillRoot,
   profile,
-  identity = scenarioBuildIdentity(scenario, builtSkillRoot),
+  identity = pristineScenarioBuildIdentity(scenario, builtSkillRoot),
 }) {
   const paths = sandboxPaths(roundRoot, scenario, slot, attempt);
   const fixturePath = resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`);
@@ -94,7 +100,21 @@ export function provisionSlot({
   cpSync(TRACKER_STUB, resolve(paths.skillRoot, 'scripts', 'remote-tracker.mjs'));
   cpSync(fixturePath, paths.fixture);
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-  writeProject(paths.projectRoot, scenario, fixture);
+  // The configured-reviewer scenario alone receives the reviewer rows and replaces this slot's
+  // copy of `tools/iterate.md` with the echo; every other scenario keeps the base configuration
+  // and production `iterate`. The overlay lands in the slot's own skill copy, never in the round's
+  // shared build. Its trace starts empty so that a run which never delegates still leaves the
+  // paired evidence file, and the absence of an echo record reads as the finding it is.
+  const setup = scenarioSetup(scenario);
+  applyScenarioSkillOverlay(scenario, paths.skillRoot);
+  if (setup.iterateEcho) writeFileSync(paths.iterateLog, '');
+  writeProject(paths.projectRoot, scenario, fixture, setup.projectSetupRows);
+  const provisionedIdentity = scenarioBuildIdentity(scenario, paths.skillRoot);
+  if (JSON.stringify(provisionedIdentity) !== JSON.stringify(identity)) {
+    throw new Error(
+      `${scenario}/${slot}: provisioned skill does not match the round build identity`,
+    );
+  }
 
   const prompt = renderPrompt(promptTemplate(scenarioPath), paths);
   writeFileSync(paths.prompt, prompt);
