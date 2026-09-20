@@ -348,6 +348,17 @@ The build aborts with an error message if any of these guards is violated:
   supported by Codex.
 - **Version-drift guard:** The version string stamped into all three router outputs
   (`<manifest version> (<git short hash>)`) must be identical.
+- **Stale-brand guard:** The retired product brand must not return. `findStaleBrandReferences` in
+  `build-lib.mjs` reports every occurrence that is neither all-lowercase — the `firmo-` label
+  prefix and slugs stay legal — nor inside the frozen `**Firmo project setup:**` marker, which is
+  the one permitted spelling. Scanned are `build.mjs`, `build-lib.mjs`, every `src/` source, and
+  the normative documentation enumerated in the guard: `AGENTS.md`, `README.md.src`, `README.md`,
+  `docs/adr/`, `docs/developer-guide/` and `docs/user-guide/`. A file's **name** is scanned beside
+  its content, so a brand-carrying file name fails the build on clean content alone. Enumerating
+  the documentation rather than walking `docs/` is what keeps the deliberate exclusions excluded:
+  `docs/plan/` including its archive and `docs/review/` are historical records that legitimately
+  carry the old brand, and shell scripts read the frozen capitalized repository environment alias.
+  The guard's own block in `build.mjs` states each exclusion with its reason.
 - **Doc landing-page guard:** If a README-required doc category
   (`docs/user-guide/`, `docs/developer-guide/`) contains at least one document, a `README.md`
   must be present there as a curated landing page (rule from `src/shared/doc-categories.md`);

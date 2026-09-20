@@ -3421,22 +3421,75 @@ test('the stale brand guard scans the source tree and both build scripts', () =>
   assert.match(buildSource, /frozen backcompat marker "\*\*Firmo project setup:\*\*"/);
 });
 
+// Read the stale brand guard's own block out of build.mjs. The enumerated file
+// names below also occur in the neighbouring guards, so a whole-file match
+// would pass even when this guard never sees them.
+const readStaleBrandGuardBlock = () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  const start = buildSource.indexOf(
+    '// --- Guard: the retired brand never returns to the sources ---',
+  );
+  assert.ok(start >= 0, 'build.mjs must still carry the stale brand guard');
+  const rest = buildSource.slice(start);
+  const end = rest.indexOf('\n// --- ', 1);
+  assert.ok(end > 0, 'the stale brand guard must still be followed by another build section');
+  return rest.slice(0, end);
+};
+
+test('the stale brand guard reports a brand-carrying file name as its own kind', () => {
+  const block = readStaleBrandGuardBlock();
+  // The base name is scanned separately from the content: prepending it would
+  // shift every reported content line by one.
+  assert.match(block, /findStaleBrandReferences\(basename\(file\)\)/);
+  assert.ok(
+    !/basename\(file\)[^\n]*\+[^\n]*readFileSync/.test(block),
+    'the file name must not be prepended to the scanned content',
+  );
+  assert.match(block, /kind: 'file name'/);
+  assert.match(block, /kind \? ` {2}\$\{file\}: \$\{kind\}: \$\{reference\}`/);
+});
+
+test('the stale brand guard scans the enumerated normative documentation', () => {
+  const block = readStaleBrandGuardBlock();
+  for (const literal of [
+    "join(ROOT_DIR, 'AGENTS.md')",
+    "join(ROOT_DIR, 'README.md.src')",
+    "join(ROOT_DIR, 'README.md')",
+    "join(ROOT_DIR, 'docs', 'adr')",
+    "join(ROOT_DIR, 'docs', 'developer-guide')",
+    'DOCS_USER_GUIDE',
+  ]) {
+    assert.ok(block.includes(literal), `the stale brand guard must scan ${literal}`);
+  }
+  // The exclusions are deliberate, so the guard states each reason rather than
+  // leaving a later reader to "complete" the list.
+  for (const excluded of ['docs/plan/', 'docs/review/', 'local-common.sh']) {
+    assert.ok(block.includes(excluded), `the stale brand guard must justify excluding ${excluded}`);
+  }
+});
+
 test('no scanned source outside the frozen marker carries the retired brand', () => {
   const scanned = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
       if (entry.isDirectory()) visit(child);
-      else if (/\.(?:md|mjs)$/.test(entry.name)) scanned.push([entry.name, child]);
+      else if (/\.(?:md|mjs|json)$/.test(entry.name)) scanned.push([entry.name, child]);
     }
   };
   visit(new URL('../src/', import.meta.url));
-  for (const name of ['build.mjs', 'build-lib.mjs']) {
+  for (const directory of ['docs/adr/', 'docs/developer-guide/', 'docs/user-guide/']) {
+    visit(new URL(`../${directory}`, import.meta.url));
+  }
+  for (const name of ['build.mjs', 'build-lib.mjs', 'AGENTS.md', 'README.md.src', 'README.md']) {
     scanned.push([name, new URL(`../${name}`, import.meta.url)]);
   }
 
   const violations = [];
   for (const [name, url] of scanned) {
+    for (const hit of findStaleBrandReferences(name)) {
+      violations.push(`${name}: file name: ${hit.reference}`);
+    }
     for (const hit of findStaleBrandReferences(readFileSync(url, 'utf8'))) {
       violations.push(`${name}:${hit.line}: ${hit.reference}`);
     }
