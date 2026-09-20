@@ -6076,6 +6076,112 @@ test('every claim that the trigger comment is the only own write names what make
   }
 });
 
+test('the gate bounds its own trigger comments per verified head, not per run', () => {
+  // The "leaves at most one item of its own" reading is true only while the head stands still.
+  // Phase 3's idempotency rule suppresses a re-post only while a trigger's `createdAt` is not
+  // older than `headCommittedAt`, and every implementing round moves the head — so an agent that
+  // reads the bound as a rule about its own behaviour skips the next trigger, leaves a configured
+  // bot in "not started", and deadlocks the gate into a report. The bound therefore has to be
+  // stated per head, with the run-level ceiling it implies.
+  const gate = prose(source('src/tools/merge-gate.md'));
+
+  assert.match(
+    gate,
+    near('at most one trigger comment', 'per configured bot per verified head', 120),
+    'the gate must state its own-item bound per configured bot per verified head',
+  );
+  assert.match(
+    gate,
+    near('`mergeGate.maxRounds` × configured bots', '(?:per run|across a run|whole run)', 150),
+    'the per-head bound must name the run-level ceiling it implies',
+  );
+
+  // The obligation an agent must not derive away, with the failure it prevents.
+  assert.match(
+    gate,
+    near(
+      '(?:moves the head|head past it|head moved)',
+      '(?:must trigger that bot again|must trigger again|must post again)',
+      300,
+    ),
+    'a head move must oblige the next Phase-3 entry to trigger that bot again',
+  );
+  assert.match(
+    gate,
+    near('(?:skip that re-post|skip the re-post)', '(?:deadlock|not started)', 300),
+    'the re-post obligation must carry the deadlock it prevents',
+  );
+
+  // The noise argument that justifies suppressing the delegated summary comment now visibly
+  // applies to the gate's own triggers too, and the file may not pretend otherwise.
+  assert.match(
+    gate,
+    near('noise', "(?:own triggers|gate's own trigger)", 300),
+    "the noise argument must be reconciled with the gate's own repeated triggers",
+  );
+
+  // And the two files that restate the bound must restate the qualified form.
+  for (const file of ['src/tools/iterate.md', 'src/shared/pr-review-comments.md']) {
+    const restatement = prose(source(file));
+    assert.doesNotMatch(
+      restatement,
+      /leaves at most one item of its own/i,
+      `${file} must not restate the unqualified per-run form of the bound`,
+    );
+    assert.match(
+      restatement,
+      /per configured bot per verified head/,
+      `${file} must restate the bound in its per-head form`,
+    );
+  }
+});
+
+test('the check-wait question states its cadence at every site that poses it', () => {
+  // "Report the still-pending checks by name and ask the user once" sat inside a Phase-2 step
+  // that repeats every round, and "once" was never scoped — while `mergeGate.conflictResolution:
+  // ask` spells its own cadence out twice. At `maxRounds: 10` and `checkWaitMinutes: 20` a
+  // per-round reading interrupts a human ten times, each after a twenty-minute block. The
+  // resolved cadence is once per run, and a run that already asked needs a stated behaviour.
+  const gate = source('src/tools/merge-gate.md');
+  const phase2 = prose(section(gate, '### Phase 2: Check gate (bounded)'));
+
+  assert.match(
+    phase2,
+    near('ask the user', 'once per run, not once per round', 200),
+    'the check-wait question must state its cadence where it is posed',
+  );
+  assert.match(
+    phase2,
+    near(
+      'later round',
+      '(?:asks nothing|asks no question|does not ask again|without asking again)',
+      300,
+    ),
+    'a later round whose wait times out again must have a stated no-ask behaviour',
+  );
+
+  // The unreported-check-list variant carries the same "once" and must carry the same scope.
+  assert.match(
+    phase2,
+    near('checksReported: false', 'once per run', 400),
+    'the unreported-check-list variant must state the same cadence',
+  );
+
+  // The tail rule summarizes the step and must not contradict it.
+  assert.match(
+    prose(section(gate, '## Rules', '\n## ')),
+    near('poll loop', 'once per run', 200),
+    'the poll-loop rule must carry the same once-per-run cadence',
+  );
+
+  // The shared fragment states the same sentence for the helper's own wait operation.
+  assert.match(
+    prose(source('src/shared/pr-review-comments.md')),
+    near('(?:still-pending checks|pending checks)', 'once per run', 250),
+    'the shared wait contract must state the same cadence',
+  );
+});
+
 test('only the bot threads this run implemented can block the merge', () => {
   const preconditions = flat(section(source('src/tools/merge-gate.md'), '### Phase 4'));
 

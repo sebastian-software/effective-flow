@@ -970,18 +970,26 @@ the later decision replaces it rather than standing beside it. Resolving such a 
 deliberately did not act on. The chat summary is where that outcome belongs.
 
 The consequence, stated plainly: **the gate's only own write onto the pull request's discussion is
-the trigger comment** of Phase 3, and a **gate-initiated run leaves at most that one item of its own
-there** – because the delegated run's summary comment is suppressed (see "Delegation contract") and
-its thread replies are resolved along with their threads. At most, not exactly: Phase 3 posts no
-trigger for a bot it observed as **running**. Every reply for a finding that _is_ implemented is
-written and resolved by `{{SKILL:iterate}}`, as before, and those replies leave the guard untouched:
-in manual mode the identity rule excludes them, in app mode the bot rule does.
+the trigger comment** of Phase 3 – because the delegated run's summary comment is suppressed (see
+"Delegation contract") and its thread replies are resolved along with their threads. **That bound is
+per head, not per run: at most one trigger comment per configured bot per verified head**, up to
+`mergeGate.maxRounds` × configured bots per run. Phase 3's idempotency rule says so: a trigger
+counts as posted only while its `createdAt` is not older than `headCommittedAt`, so an implementing
+round moves the head past it and the next Phase-3 entry **must** trigger that bot again. Never read
+the bound as licence to skip that re-post – a bot left "not started" blocks the merge, deadlocking
+the run into a report. Under it, never over it: Phase 3 posts no trigger for a bot it observed as
+**running**. Every reply for a finding that _is_ implemented is written and resolved by
+`{{SKILL:iterate}}`, as before, and those replies leave the guard untouched: in manual mode the
+identity rule excludes them, in app mode the bot rule does.
 
 **This bounds the discussion surface, not the branch.** The gate also writes to the head **branch** –
-the two kinds of base-into-head merge – and those writes are bounded by "Git write boundary", not
-here. No guard rule reads the at-most-one guarantee back: suppressing the delegated run's summary
-comment (see "Delegation contract") is what sustains it, and that suppression is a contract of this
-file rather than a consequence of how the next run classifies anything.
+the two kinds of base-into-head merge – bounded by "Git write boundary", not here. No guard rule
+reads the per-head bound back: suppressing the delegated run's summary comment (see "Delegation
+contract") is what sustains it, and that suppression is a contract of this file rather than a
+consequence of how the next run classifies anything. Its noise argument – up to
+`mergeGate.maxRounds` summary comments is noise on someone's pull request – visibly applies to the
+gate's own triggers too, and is not pretended away: the summary survives in the chat report, whereas
+a re-trigger is the only way to make a bot re-review a moved head.
 
 ### Phase 2: Check gate (bounded)
 
@@ -1035,7 +1043,14 @@ run can push an unbounded number of commits onto someone's pull request.
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
    - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
-     to a prompt-driven poll loop. Report the still-pending checks by name and ask the user once.
+     to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
+     per run, not once per round** – with `mergeGate.maxRounds` at 10 and a 20-minute
+     `mergeGate.checkWaitMinutes` a per-round reading would interrupt a human ten times, each after
+     a twenty-minute block, and `mergeGate.completion`'s entry gate is the once-per-run precedent.
+     Record in the wisdom file that it was posed: **a later round whose wait times out again asks
+     nothing**, reports the pending checks by name, ends its round under "A round runs forward
+     only", and continues under "Round accounting" – so `mergeGate.maxRounds` bounds the
+     repetition, not a repeated question.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
 3. **Failed checks.** Delegate to `{{SKILL:iterate}} <PR>` an instruction derived from the failing
    check names and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
@@ -1080,8 +1095,8 @@ that blocks an outdated branch fails the merge closed server-side instead. An un
 request – so a genuine conflict there loops to `mergeGate.maxRounds` and ends with a report instead
 of taking the fast "stop and report the conflict" path. Where the check list itself is
 **unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
-report that and ask once per step 2's rule before proceeding, and an unanswered or non-interactive
-run ends there without merging.
+report that and ask per step 2's rule – **once per run**, and a later round reports without asking
+again – before proceeding, and an unanswered or non-interactive run ends there without merging.
 
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
@@ -1379,7 +1394,8 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 - Count an `implemented` body finding only where the head moved in that round.
 - `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
   merge commit, the bot trigger, and the delegated `{{SKILL:iterate}}` rounds still run.
-- Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
+- Never fall back to a prompt-driven poll loop when a wait times out; report, and ask once per run –
+  a later round that times out again reports the pending checks and asks nothing.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – every wait, repair, Phase-2 restart, and Phase-4 return into Phase 3 consumes one.
 - Post no summary comment of your own; the run summary goes to the user in chat.
