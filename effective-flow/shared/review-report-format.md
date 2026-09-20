@@ -42,6 +42,16 @@ German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassu
 - **Area**: [...]
 - **File**: [path:line]
 - **Security**: external | internal | none <!-- publication class of the security gate: external and internal are withheld from the tracker, none is publishable; omitted in workflow reports that ran no classification -->
+- **Admission outcome**: admitted
+- **Admission reason**: material-harm | irreversible-commitment
+- **Admission gate**: v1
+- **Evidence**: [type + concrete reference]
+- **Evidence digest**: [stable digest]
+- **Current reachability**: [role/input/configuration/state + anchor/digest]
+- **Root-cause signature**: [normalized dedup identity]
+- **Scope and containment**: [why not current-scope; why containment is insufficient]
+- **Why now**: [deadline or current consequence]
+- **Completion condition**: [one objective condition]
 - **Problem**: [...]
 - **Recommendation**: [...]
 - **Action**: `effective-flow fix` | `effective-flow refactor` | `effective-flow build` | `effective-flow docs`
@@ -54,6 +64,18 @@ German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassu
 |---|---|---|
 | [...] | [DD-XXX] | [...] |
 ```
+
+For an explicitly requested standalone audit, `closed` observations may appear only after the
+actionable findings in this non-executable appendix. Omit the appendix everywhere else:
+
+```markdown
+## Closed observations
+
+- [Short title] — [closure reason]
+```
+
+Appendix entries carry no finding ID, severity/action field, prompt suggestion, or invocation. They
+do not count in the actionable summary tables and never produce an `apply` recommendation.
 
 If a finding is later implemented, augment the existing report in its preserved report language
 with a matching short status note. English and German field labels and displayed values remain

@@ -17,10 +17,13 @@ optional choice; see [Delegation](#delegation).
 
 The default way an Effective Flow tool gets work done: invoking a tool is your standing request
 to hand a named step to an internal [agent](#agent) rather than have the orchestrator do it
-inline. A worker may itself fan out read-only analysis subagents but never re-delegates its own
-assignment or a write. Inline execution stays legitimate only as a disclosed fallback – for
+inline. Only the workflow orchestrator can start agents or fan out analysis. Every agent is a
+leaf: it starts no child, receives zero inherited turns when supported (otherwise the smallest
+supported history) plus a compact self-contained assignment, and returns missing context to the
+orchestrator. Inline execution stays legitimate only as a disclosed orchestrator fallback – for
 example when the harness offers no subagent mechanism, or a delegation is declined at runtime –
-and is always announced, never silent. See
+and is always announced, never silent. Delegation from one Effective Flow workflow to another is
+separate and follows the receiving tool's own gates. See
 [Troubleshooting](./troubleshooting.md#the-tool-did-everything-itself-instead-of-delegating).
 
 ## Delivery / delivery branch

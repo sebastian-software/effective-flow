@@ -55,15 +55,18 @@ fits.
 
 **Input/output:** Input is the description of the observed behavior. Output is
 `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` with symptom, reproduction,
-root-cause hypotheses including confidence, discarded hypotheses, and exactly one
-follow-up recommendation. Investigation reports are always local: they are never committed and never
+root-cause hypotheses including confidence and discarded hypotheses. The diagnosis report is the
+requested primary artifact; it contains an executable follow-up only when the derived recommendation
+is admitted by the durable-work gate. Investigation reports are always local: they are never committed and never
 tracked as an issue, on no tracker target. Their prose follows `language.workflow`;
 the internal runtime/wisdom schema remains language-stable.
 
-**Interplay:** The recommendation routes to `/effective-flow fix` (defect with a clear cause),
+**Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
 functionality or intentional behavior change), or `/effective-flow docs` (pure
 documentation gap) – including a copy-paste-ready follow-up call that references the report path.
+Current-scope refers back to the already authorized source; closed emits no invocation; unresolved
+credible risk gets one bounded evidence/containment check and otherwise stops.
 
 ## `/effective-flow plan`
 
@@ -142,9 +145,10 @@ issue implementation workflow) skipped due to missing information and marked wit
 the same clarification methodology as `/effective-flow plan` and writes the result as a structured
 comment back to the issue. It then runs the full automatic baseline—gap analysis, validation, and
 internal plan review—before offering the same optional deep interactive review as local planning.
-When one issue contains several independently implementable outcomes, it can also propose a split
-into native sub-issues. It produces neither code nor a plan file – the parent issue and its planning
-comment remain the source for the overall scope.
+Routine technical decomposition and independently implementable outcomes stay in the parent
+planning comment. Only an independently admitted material-harm or irreversible-commitment root
+cause can be proposed as a native child. The tool produces neither code nor a plan file – the
+parent issue and its planning comment remain the source for the overall scope.
 
 **When to use:** When your issues live in a tracker – the Git forge or an external tool – and
 some of them still contain too little information for an autonomous implementation.
@@ -165,14 +169,16 @@ criteria, affected areas, assumptions, baseline review result, and open points. 
 are processed separately and completely, so one blocked issue does not prevent the others from
 being planned.
 
-**Splitting a broad issue:** `plan-issue` proposes a decomposition only when the planning analysis
-finds that the parent is too broad for one coherent implementation or combines independently
-implementable outcomes. The canonical planning comment shows the exact title, workflow, and
+**Splitting a broad issue:** routine technical decomposition stays inside the parent planning
+comment. `plan-issue` proposes a child only for an independently admitted material-harm or
+irreversible-commitment root cause; being broad or independently implementable is insufficient.
+The canonical planning comment shows the exact title, workflow, admission fields, and
 self-contained body for every proposed child before anything is created. The tracker helper builds
 this as one canonical v2 section bound to the exact target and parent; the workflow inserts
 that complete section without assembling its markers or visible entries itself. Each proposal also
 gets a stable parent-scoped key and a draft hash that binds that key to its exact title, workflow,
-and body. Keys must be unique within the parent, as must the issue identities of created children.
+and body. The child body's admission fields are included before the draft hash is built, so they
+are bound without extending the record schema. Keys must be unique within the parent, as must the issue identities of created children.
 A record has exactly one valid status—`proposed`, `approved`, `created`, `missing`, or `declined`—and
 only `created` may carry a child issue reference. Any change to the bound records or their visible
 rendering fails validation instead of being accepted as a partial manual edit.

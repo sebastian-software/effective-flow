@@ -1,7 +1,8 @@
 ## Language resolution
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+Effective Flow resolves language by **target surface**: seven of these keys cover persisted,
+human-readable content, and `language.chat` covers what the run says to the user. The project
+setup ADR may contain these stable keys; each value is `de` or `en`:
 
 | Key                                | Surface                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------- |
@@ -12,12 +13,15 @@ The project setup ADR may contain these stable keys; each value is `de` or `en`:
 | `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
 | `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
 | `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+| `language.chat`                    | Interactive output: what the run says to the user, never a project artifact |
 
 Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+markers, finding IDs, action values, Conventional Commit types, branch slugs, and the forge
+issue-reference keywords — the auto-close keyword with its variants (`Closes #<issue>`) and the
+non-closing `Refs #<issue>` — are not localized. The code host parses them, so they stay English
+inside a PR body written in another language. Product UI/CLI/error text follows the target
+project's product-i18n rules and is not controlled by this configuration. Exact quotations and
+incoming third-party text are not translated unless explicitly requested.
 
 ### Resolver (the single precedence rule)
 
@@ -30,10 +34,14 @@ For each artifact, determine its target surface first and resolve exactly once:
 4. Otherwise use a valid `language.project`.
 5. Otherwise use `en`.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
+Only `de` and `en` are valid, for every key in the table. For an artifact surface an invalid value
+has no special meaning: report the affected key, ignore it, and continue with the next fallback. A
+missing artifact-surface override means inheritance; `null` is not a language value.
+`language.chat` is not an artifact surface and resolves by its own rule, for a missing **and** for
+an invalid value — both mirror the user instead of falling through to `language.project`. That rule
+is the "Interactive output language" fragment, which the tools that resolve it carry eagerly; the
+router, `effective-flow version` and the `pr-review` notice carry none by design, and no agent carries
+it, because an agent never resolves this key.
 
 At overlap boundaries, the publication destination decides: local review prose uses
 `language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
@@ -68,6 +76,13 @@ changes the complete artifact, not only one marker or heading.
 
 ### Typography
 
+Typography does not live here. It follows the resolved value rather than the resolution, so it is
+its own fragment (`typography-rules.md`) that every agent carries eagerly — an orchestrated agent
+is handed resolved values and never loads this one. It is embedded below so that everything
+reaching this fragment still reaches the rule as well.
+
+## Locale typography
+
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
 central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
@@ -77,3 +92,8 @@ If the skill is unavailable (not installed, `skills.enabled: false`, or disabled
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
 transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
 Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+
+This rule is locale-shaped rather than resolution-shaped: it applies to whichever `de`/`en` value a
+run holds, no matter who resolved it. An orchestrated agent is handed concrete values instead of
+resolving them, so it carries this fragment eagerly and never reaches the rule through the
+resolver.

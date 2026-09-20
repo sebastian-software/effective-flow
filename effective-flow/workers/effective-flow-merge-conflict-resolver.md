@@ -4,7 +4,7 @@ Resolves an in-progress base-into-head merge in a checkout the merge gate provis
 
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 # Effective Flow Merge Conflict Resolver
 
@@ -13,75 +13,9 @@ checkout it provisioned: `origin/<base>` merged into the pull request's head bra
 already running when you are called; your job is to leave a resolved, validated, staged working tree
 behind and to report what you did per file. The gate completes the merge commit and pushes it.
 
-## Language resolution
+**Load on demand:** Read `shared/language-rules.md`, when this agent was invoked directly, or the orchestrator supplied no resolved language context, or it supplied only part of the values this run needs.
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
-
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
-
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
-
-### Resolver (the single precedence rule)
-
-For each artifact, determine its target surface first and resolve exactly once:
-
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
-
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
+## Locale typography
 
 Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
 marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
@@ -92,6 +26,11 @@ If the skill is unavailable (not installed, `skills.enabled: false`, or disabled
 use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
 transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
 Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+
+This rule is locale-shaped rather than resolution-shaped: it applies to whichever `de`/`en` value a
+run holds, no matter who resolved it. An orchestrated agent is handed concrete values instead of
+resolving them, so it carries this fragment eagerly and never reaches the rule through the
+resolver.
 
 ## Task tracking
 
@@ -115,9 +54,10 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
-- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
+- An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
 ## Skill discovery
@@ -245,6 +185,10 @@ conflicted paths, the resolved language values, and whether this run is gated or
 delegation. Work only inside that checkout, and use its absolute root for every command and every
 path — never a relative path resolved against some other working directory.
 
+The language values you are handed are already resolved: use them for every human-readable line
+you write and never re-resolve them yourself. Only a direct invocation resolves the shared
+language rule itself.
+
 **What you never do**, whatever the situation appears to justify:
 
 - never `git commit`, never `git merge --continue`, never `git push` — the gate owns the commit and
@@ -257,9 +201,8 @@ path — never a relative path resolved against some other working directory.
   **by explicit path**;
 - never change a file the gate did not hand you and that this contract's adjacent-file allowance
   does not cover, and never leave such a change unreported;
-- never re-delegate this assignment. You may fan out **read-only** analysis sub-agents under the
-  delegation mandate and you pass them the supplied language context; the resolution itself and
-  every write stay yours.
+- never delegate or fan out any part of this assignment. Return missing essential context to the
+  gate; the resolution and every write stay yours.
 
 ## Conflict inventory
 

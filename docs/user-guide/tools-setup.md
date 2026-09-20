@@ -8,21 +8,91 @@ and version information.
 **Purpose:** Prepares a target project for Effective Flow. It makes `.effective-flow/` a fully
 gitignored runtime directory, creates or updates the living project-setup ADR, and writes the
 canonical `**Effective Flow project setup:** <path>` marker in `AGENTS.md` or another existing
-convention file. The wizard starts from safe defaults and offers two paths: **Express** (adopt
-defaults while retaining existing values) or **Guided** (explain and choose each option).
+convention file. The standard wizard applies one of three common workflow profiles after asking
+only for the chat language and the profile. **Express** and **Guided** remain available as explicit
+modes.
 
-**When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
-settings (project and surface languages, worktree, completion action, tracker target including an
-external tool, advanced review/apply-review values, skill discovery), or to prepare the optional
-session-rename check or Claude Code butler described below.
+**When to use:** On the first use of Effective Flow in a project, or later, to switch its common
+planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
+(project and surface languages, worktree, completion action, tracker details, advanced
+review/apply-review values, or skill discovery), and Express when you intentionally want the safe
+base without an interview. Any mode may offer the optional session-rename capability check
+described below.
 
 **Typical call:** `/effective-flow setup`
 
-**Input/output:** No input is required beyond the wizard answers. The output is the normalized
-`.gitignore`, the project-setup ADR (by default
+The accepted invocations are:
+
+```text
+/effective-flow setup
+/effective-flow setup profile
+/effective-flow setup express
+/effective-flow setup guided
+```
+
+The first two forms enter Profile mode. An unknown or additional argument reports these forms and
+stops before changing `.gitignore`, configuration, convention files, or runtime state.
+
+**Input/output:** Profile mode first asks **Chat**, then **Profile**. Local and forge profiles need
+no further configuration answers; the external profile additionally asks only for the external
+tool, exact connection context, and lifecycle states needed for a valid integration. Conditional
+write confirmations, safety decisions, `CLAUDE.md` consent, and the session-rename consent can
+still follow. The output is the normalized `.gitignore`, the project-setup ADR (by default
 `docs/adr/effective-flow-project-setup.md`), and its convention-file marker. When configuration
 already exists, the wizard shows current values and changes them only after explicit
 confirmation. Unknown ADR rows are preserved.
+
+### Profile mode
+
+Profile mode asks its two common questions before any conditional `.gitignore`, configuration
+source, ADR-convention, or topology question:
+
+1. **Chat** — mirror the language you write in, use English, or use German. The answer immediately
+   controls the Profile question and the rest of this setup run. Mirror removes an existing
+   `language.chat` row in the confirmed write; English and German persist `en` or `de`.
+2. **Profile** — choose one of the following topologies.
+
+| Profile                               | Issue-backed planning and tracking | Development and completion                                                                  |
+| ------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| Fully local                           | Local Markdown artifacts           | Local branch, local merge, and no GitHub or Forgejo issue or pull-request operations        |
+| Forge issues and development          | GitHub or Forgejo issues           | Pull request on the verified `origin`, using the repository-derived default branch          |
+| External issues and forge development | External project-management tool   | Pull request on the verified GitHub or Forgejo `origin` and repository-derived default base |
+
+The selected profile is a transient overlay, not a saved preset: no `setup.profile` or equivalent
+row is written. Every profile owns `tracker.mode`, `delivery.completion`, and the base required
+by its topology, plus `tracker.remoteToolOverride` when the forge can be classified. The external
+profile additionally owns its verified tool, context hint, started state, and optional done state.
+Unrelated and unknown rows remain unchanged, while these profile-owned values intentionally replace
+conflicting values after the user confirms the complete before/after preview. Dormant provider or
+external-tracker values stay in the ADR when their mode is inactive.
+
+The fully local profile uses the current named local branch as its base and keeps work local even
+when an `origin` exists. The two forge-backed profiles require an identifiable GitHub or Forgejo
+`origin` and a repository-derived base; setup never guesses a provider or silently falls back to a
+local topology. If that preflight is ambiguous, use `/effective-flow setup guided` to make the
+necessary provider or base choice explicitly.
+
+The external profile builds on verified forge delivery and sets `tracker.mode: external`. It
+preselects recorded external values only after revalidating them, and asks for missing or changed
+tool, connection context, writable non-terminal started state, and optional writable terminal done
+state. The connection must come from a configured MCP integration or authenticated CLI; setup does
+not infer one from a familiar tool name. When several contexts are possible, the proposed
+non-secret `tracker.externalToolHint` includes enough stable workspace, team, or project identity
+to select the same context again. Setup shows the provider, base, context, state evidence, and exact
+hint before confirmation, then repeats discovery before writing. Missing capability, unanswered
+ambiguity, an invalid started state, or changed evidence stops the profile without writing its
+configuration. Omitting a valid done state is allowed, but leaves post-merge completion
+unavailable and is disclosed in the preview.
+
+Profiles route **issue-backed** work. A natural-language `/effective-flow plan "…"` request without
+an issue reference still creates a local plan file under `plan.dir`; choosing a forge or external
+profile does not turn every planning request into a remote issue.
+
+### Explicit Express and Guided modes
+
+`/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly.
+`/effective-flow setup guided` enters the existing per-setting interview and its optional Advanced
+settings directly. Neither invocation asks for a profile first.
 
 Setup follows an ADR file-naming convention your project has already decided on instead of
 imposing its own. Before writing, it looks for a naming rule stated in `AGENTS.md`, `CLAUDE.md`,
@@ -70,12 +140,18 @@ resulting merge commit. That last one is the only one of those defaults that lea
 and it is what changes behavior for a project upgrading from an earlier generation; see
 [Block `mergeGate`](configuration.md#block-mergegate).
 
-Express stores `language.project: en` and lets every absent override inherit it. Guided asks for
-the project language first, then offers independent `de`/`en` overrides for source prose, user
-documentation, technical documentation, local workflow artifacts, Forge prose, and Git/release
-prose. Choosing “inherit project language” removes or omits the override and appears in the
-before/after confirmation. A new ADR uses the technical-documentation language; setup preserves
-the language of an existing ADR during ordinary updates.
+Express stores `language.project: en` and lets every absent artifact-surface override inherit it.
+Guided asks for the project language first, then offers independent `de`/`en` overrides for source
+prose, user documentation, technical documentation, local workflow artifacts, Forge prose,
+Git/release prose, and — as the seventh — the interactive language Effective Flow speaks to you in.
+Choosing “inherit project language” removes or omits an artifact-surface override and appears in
+the before/after confirmation. The chat override differs: its first option is “Mirror the user's
+language (default)”, because an absent `language.chat` row mirrors whatever language you write in
+rather than inheriting the project language. Profile mode asks that chat question first and binds
+the selected language for the remainder of setup; Express adds no row for it but keeps one you
+already set. A new ADR uses the
+technical-documentation language; setup preserves the language of an existing ADR during ordinary
+updates.
 
 **Interplay:** `setup` owns configuration writes and migration. Other tools only resolve and read
 the ADR; if they find only a legacy JSON config, they may use it transitionally for that run and
@@ -85,9 +161,37 @@ without deleting its on-disk content. A legacy `plan.markerLanguage` remains a r
 one compatibility generation when neither a valid workflow nor project language exists. Whenever
 `language.workflow` is absent, setup may show that the old marker-only choice becomes the language
 of the complete workflow artifact, propose the new key, and remove the old row only after
-confirmation; an existing new key always wins. The values set here
+confirmation; an existing new key always wins. Setup is also the repair path for retired rows:
+it rewrites `prReview.*` rows as `mergeGate.*` (see
+[Configuration](configuration.md#block-mergegate)) and `worktree.baseBranch`,
+`worktree.branchPrefix`, and `worktree.completion` as their `delivery.*` successors (see
+[Configuration](configuration.md#block-delivery)), in place and after the same confirmation. Another
+tool stops or reports on such a row only if it resolves that row's successor key; any other tool
+ignores it. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
 `skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
+
+As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
+is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
+`AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
+reliably present. The offer is a question in every mode, Express included, and a run that cannot
+ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
+file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
+pointer to `AGENTS.md` and, where an earlier run left one there, setup's own marker line — and, when
+that marker line is present, only once `AGENTS.md` carries the marker too. That last condition is
+what keeps the replacement safe: while `CLAUDE.md` holds the only copy of the marker, setup leaves
+the file alone. A `CLAUDE.md` with content of its own, or
+one that already imports `AGENTS.md`, is reported and left alone, and a symlink at that path stops
+the step rather than being written through — checked both against what setup saw before it asked
+and again on disk immediately before it writes, so a path that changed while the question was open
+is never written through. A symlink at that path also disqualifies the file as a host for the
+project-setup marker itself: setup then writes that marker into a newly created `AGENTS.md` instead
+of through the link. Where the marker had to go into `CLAUDE.md` because no `AGENTS.md` existed,
+setup first creates the minimal `AGENTS.md` that carries it, and creates it exclusively so a file
+that appeared in the meantime is never overwritten. Should that pair of writes only half-succeed,
+setup says so, and because the marker then already lives in `AGENTS.md` a later run finishes the
+import rather than treating the leftover file as content of its own. Like the session-rename step
+below, this step adds no configuration key.
 
 After the configuration write, setup offers an optional session-rename capability step. In the
 **Codex tab embedded in the ChatGPT Desktop app**, the native current-task capability needs no
@@ -99,14 +203,19 @@ Desktop runs still attempt the native operation independently and print one sugg
 when that individual call is unavailable or fails. Because the app exposes no reliable manual-title
 ownership check, a later Desktop run may replace a title the user set manually.
 
-On Claude Code, setup retains the existing one-time path: the user creates a second session titled
-`Effective Flow rename butler`, pastes the standing mandate, and lets setup verify it by sending one
-message to that session. Codex CLI has no automatic title path in this scope. Choosing **No** skips
-only this visible setup check; it does not disable later host-specific title handling. Runs stay
-suggestion-only on Claude Code without a configured butler, Codex CLI, and any other host without a
-supported title path. The step adds no configuration key, never edits harness configuration, and
-creates no title runtime file. See [Getting
-started](getting-started.md#keeping-sessions-tellable-apart) for each host's current behavior.
+On **Claude Code** the check has the same shape, because the rename itself does: a run renames its
+own session through the host's session-management tool, so there is nothing to install and no
+second session to prepare. After the user consents, setup renames the current session once with the
+fixed title `Effective Flow setup check` and reports the concrete result; the user may rename it
+back or let the next run retitle it. A declined or failed call means only that this probe failed,
+and later runs still attempt the rename on their own. Codex CLI has no automatic title path in this
+scope. Choosing **No** skips only this visible setup check; it does not disable later host-specific
+title handling. Runs stay suggestion-only on Claude Code when the host declines the native rename,
+Codex CLI, and any other host without a supported title path. The step adds no configuration key,
+never edits harness configuration, and creates no title runtime file. If you still keep a separate
+session from the earlier helper-session arrangement, setup no longer contacts it and you can close
+it. See [Getting started](getting-started.md#keeping-sessions-tellable-apart) for each host's
+current behavior.
 
 Users who installed the former Codex path must remove only the `Stop` handler whose command invokes
 `session-title.mjs apply` from their personal or repository-local Codex configuration. Preserve

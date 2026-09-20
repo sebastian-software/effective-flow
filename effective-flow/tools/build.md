@@ -1,12 +1,43 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 # Effective Flow Build
 
 You are the orchestrator for the complete development workflow for new features.
 
 **Load on demand:** Read `shared/language-rules.md`, when an artifact output language or delegated language context must be resolved.
+
+## Interactive output language
+
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
+
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
+
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
+
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
+
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
+
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 ## Task tracking
 
@@ -30,9 +61,10 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
-- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
+- An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
@@ -45,6 +77,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
 
+**Load on demand:** Read `shared/session-title.md`, when the run's subject is fixed and whether a session title is due must be decided.
+
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Recommended skills
@@ -54,6 +88,14 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance for planning, implementation, review, tests, docs and commits.
+
+## Configuration preflight
+
+Before Phase 0, unconditionally perform this run's first Effective Flow configuration read. Apply
+the loaded retired-key contract over every successor this workflow can resolve:
+`delivery.baseBranch`, `delivery.branchPrefix`, and `delivery.completion`. Complete its stop or
+report decision before any delegation or write. This preflight does not replace or move any later
+purpose-specific configuration read; perform each one at its documented workflow point.
 
 ## Plan status convention
 
@@ -131,11 +173,11 @@ Check by the orchestrator:
 
 1. `DONE`: phase completed.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
-3. No keyword: retry with escalation.
+3. No keyword: resume once, then retry with escalation.
 
 ### Retry escalation
 
-When an internal sub-agent ends without `DONE` or `ABORT`:
+When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as not finished rather than as a failed attempt. First resume the same sub-agent once — with its context intact where the harness allows — and a continuation hint to await any pending children and end with `DONE` or `ABORT`. That resume is not a retry. If the harness cannot resume that sub-agent, or the resumed run again ends without a keyword, escalate:
 
 1. Retry 1: same task with a continuation hint
 2. Retry 2: simplified task with reduced scope
@@ -146,14 +188,20 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 
 ## Goal-driven completion control
 
-Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run; Effective Flow neither offers nor starts a harness-native autonomous run for it, and the workflow's regular approval gates always apply.
+Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run, and the workflow's regular approval gates always apply.
 
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
-4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
+4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
+   - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
+   - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input.
+   - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
+   - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
+   - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, step 0).
 
@@ -401,12 +449,17 @@ Start in parallel if possible:
 ### Phase 6: Review
 
 1. Start every reviewer selected by the canonical routing contract for the changed files, including ``effective-flow-generic-product-reviewer`` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `effective-flow review` default, which delivers only Critical + Important.
-2. Aggregate all review findings and classify them:
-   - Critical: must be fixed before completion
-   - Important: should be fixed, can be handled as a follow-up
-   - Note: optional
-3. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
-4. Fix all critical findings before completion.
+2. Aggregate all review findings, then make exactly one automatic incorporation pass for every new
+   finding that belongs to the authorized slice. Re-run the affected review checks once after that
+   pass; do not weaken or consume the separate validator correction budget.
+3. Send the residual batch through the admission contract loaded by “Gated residual
+   review-finding reports”. Severity remains review information, not an admission label:
+   - `current-scope`: correct or safely contain it now; completion stays blocked unless the user or
+     authorized plan/tracker owner explicitly reduces the slice
+   - `admitted`: eligible for the common residual report path
+   - `closed`: report only an aggregate count and short reason in chat
+   - `uncertain`: perform the one bounded evidence/containment check and resolve it or stop
+4. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
 5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
@@ -426,10 +479,11 @@ Summary:
 | High | Z |
 ```
 
-Note: Before completion, the "Open" column for "Critical" must be 0.
+Note: Before completion, the "Open" column for `current-scope` findings must be 0 regardless of
+severity. An admitted Critical residual also requires the existing explicit completion decision.
 
-6. If findings were not implemented, list them directly in the summary with prompt suggestions for later implementation.
-7. Document each finding in a structured way so open or unimplemented findings can be carried over into an external review report:
+6. List only admitted residual findings with prompt suggestions for later implementation.
+7. Document admitted residual findings in a structured way so they can be carried over into an external review report:
    - local ID (`F1`, `F2`, ...)
    - Title
    - Severity (Critical / Important / Note)
@@ -440,8 +494,10 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
    - Recommendation
    - Status in the complete report language (English: Fixed / Open / Not implemented; German: Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
-8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via `tools/apply-review.md`.
-9. If after review there remain findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
+   - the complete stable admitted record from “Durable derived-work gate”
+8. Never create an ADR in this workflow and do not ask for one either. Gate rejection is terminal,
+   not an architecture decision.
+9. If after the incorporation pass there remain `admitted` findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - record the generated report path for Phase 7
@@ -503,7 +559,7 @@ Rules for the findings report:
 
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
-6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** Phase-6 finding set to that handback — the findings that survived this run's correction rounds, not the full Phase-6 history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 8. Emit the next-step block per `next-steps` as the last element of the report.
 

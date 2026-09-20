@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 
 export const ERROR_CODES = Object.freeze([
   'NOT_GIT_REPOSITORY',
@@ -789,6 +790,228 @@ export function parseFindingSignature(body) {
   return { value: values[0], normalized: [...normalized][0], legacy: canonical.length === 0 };
 }
 
+function parseFindingDedupSignature(body) {
+  const rootCauses = bodyFieldValues(body, ['Root-cause signature']);
+  if (rootCauses.length > 0) {
+    const normalized = new Set(rootCauses.map(normalizeSignature));
+    if (normalized.size > 1) {
+      fail('INVALID_PAYLOAD', 'finding body contains conflicting Root-cause signature fields', {
+        fields: rootCauses,
+      });
+    }
+    return { value: rootCauses[0], normalized: [...normalized][0], legacy: false };
+  }
+  const legacy = parseFindingSignature(body);
+  return legacy ? { ...legacy, legacy: true } : undefined;
+}
+
+export const FOLLOW_UP_ADMISSION_MARKER = 'effective-flow-follow-up-admission:v1';
+export const FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER =
+  'effective-flow-follow-up-admission-superseded:v1';
+export const FOLLOW_UP_ADMISSION_VERSION = 'v1';
+
+const ADMISSION_REASONS = new Set(['material-harm', 'irreversible-commitment']);
+const ADMISSION_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'evidenceType',
+  'evidenceReference',
+  'evidenceDigest',
+  'reachability',
+  'reachabilityAnchor',
+  'rootCauseSignature',
+  'scopeAndContainment',
+  'whyNow',
+  'completionCondition',
+]);
+const CLOSURE_RECEIPT_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'signature',
+  'evidenceDigest',
+  'reachabilityAnchor',
+  'date',
+]);
+
+function sha256Digest(value, field) {
+  const digest = requireString(value, field).trim().toLowerCase();
+  if (!/^[a-f\d]{64}$/.test(digest)) {
+    fail('INVALID_PAYLOAD', `${field} must be a lowercase SHA-256 digest`, { field });
+  }
+  return digest;
+}
+
+function admissionText(value, field) {
+  return lifecycleSafeString(assertPublishable(value, field), field);
+}
+
+function normalizeAdmission(value) {
+  exactObjectKeys(value, ADMISSION_KEYS, 'finding.admission');
+  if (value.outcome !== 'admitted') {
+    fail('INVALID_PAYLOAD', 'finding.admission.outcome must be admitted', {
+      field: 'finding.admission.outcome',
+    });
+  }
+  if (!ADMISSION_REASONS.has(value.reason)) {
+    fail('INVALID_PAYLOAD', 'finding.admission.reason is unsupported', {
+      field: 'finding.admission.reason',
+      supported: [...ADMISSION_REASONS],
+    });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'finding.admission.gateVersion is unsupported', {
+      field: 'finding.admission.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  return {
+    outcome: 'admitted',
+    reason: value.reason,
+    gateVersion: value.gateVersion,
+    evidenceType: admissionText(value.evidenceType, 'finding.admission.evidenceType'),
+    evidenceReference: admissionText(
+      value.evidenceReference,
+      'finding.admission.evidenceReference',
+    ),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'finding.admission.evidenceDigest'),
+    reachability: admissionText(value.reachability, 'finding.admission.reachability'),
+    reachabilityAnchor: admissionText(
+      value.reachabilityAnchor,
+      'finding.admission.reachabilityAnchor',
+    ),
+    rootCauseSignature: admissionText(
+      value.rootCauseSignature,
+      'finding.admission.rootCauseSignature',
+    ),
+    scopeAndContainment: admissionText(
+      value.scopeAndContainment,
+      'finding.admission.scopeAndContainment',
+    ),
+    whyNow: admissionText(value.whyNow, 'finding.admission.whyNow'),
+    completionCondition: admissionText(
+      value.completionCondition,
+      'finding.admission.completionCondition',
+    ),
+  };
+}
+
+function normalizeClosureReceipt(value) {
+  exactObjectKeys(value, CLOSURE_RECEIPT_KEYS, 'receipt');
+  if (value.outcome !== 'closed') {
+    fail('INVALID_PAYLOAD', 'receipt.outcome must be closed', { field: 'receipt.outcome' });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'receipt.gateVersion is unsupported', {
+      field: 'receipt.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  const date = requireString(value.date, 'receipt.date').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    fail('INVALID_PAYLOAD', 'receipt.date must be YYYY-MM-DD', { field: 'receipt.date' });
+  }
+  return {
+    outcome: 'closed',
+    reason: admissionText(value.reason, 'receipt.reason'),
+    gateVersion: value.gateVersion,
+    signature: normalizeSignature(value.signature),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'receipt.evidenceDigest'),
+    reachabilityAnchor: admissionText(value.reachabilityAnchor, 'receipt.reachabilityAnchor'),
+    date,
+  };
+}
+
+function closureDataMarker(receipt) {
+  return `<!-- effective-flow-follow-up-admission-data:v1 ${JSON.stringify(receipt)} -->`;
+}
+
+export function buildFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  const receipt = normalizeClosureReceipt(input.receipt ?? input);
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  return { marker, receipt, body: `${marker}\n${closureDataMarker(receipt)}` };
+}
+
+export function parseFollowUpAdmissionReceipt(body, current) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  const supersededMarker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const state = text.startsWith(marker)
+    ? 'active'
+    : text.startsWith(supersededMarker)
+      ? 'superseded'
+      : 'absent';
+  if (state === 'absent') {
+    return { found: false, receipt: null, current: false, state };
+  }
+  const lines = text.split(/\r?\n/);
+  const openingMarker = state === 'active' ? marker : supersededMarker;
+  if (lines[0] !== openingMarker) {
+    fail('INVALID_PAYLOAD', 'follow-up admission marker must be the opening complete line');
+  }
+  const dataLines = lines.filter((line) =>
+    line.startsWith('<!-- effective-flow-follow-up-admission-data:'),
+  );
+  if (dataLines.length !== 1) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt must contain exactly one data marker', {
+      count: dataLines.length,
+    });
+  }
+  const match = dataLines[0].match(
+    /^<!-- effective-flow-follow-up-admission-data:([^\s]+) (\{.*\}) -->$/,
+  );
+  if (!match || match[1] !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt data marker is malformed or unsupported', {
+      version: match?.[1],
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  let raw;
+  try {
+    raw = JSON.parse(match[2]);
+  } catch {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt contains malformed JSON');
+  }
+  const receipt = normalizeClosureReceipt(raw);
+  let isCurrent = false;
+  if (current !== undefined) {
+    requireObject(current, 'current');
+    const expected = normalizeClosureReceipt({ ...receipt, ...current, date: receipt.date });
+    isCurrent = ['gateVersion', 'signature', 'evidenceDigest', 'reachabilityAnchor'].every(
+      (field) => receipt[field] === expected[field],
+    );
+  }
+  return { found: state === 'active', receipt, current: isCurrent, state };
+}
+
+export function supersedeFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  if (input.current === undefined) {
+    fail('INVALID_PAYLOAD', 'current freshness keys are required to supersede a receipt', {
+      field: 'current',
+    });
+  }
+  const text = requireString(input.body, 'body', { allowEmpty: true });
+  const parsed = parseFollowUpAdmissionReceipt(text, input.current);
+  if (parsed.state === 'absent') {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt is absent');
+  }
+  if (parsed.current) {
+    fail('INVALID_PAYLOAD', 'a current follow-up admission receipt cannot be superseded');
+  }
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const activeMarker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  const unchanged = parsed.state === 'superseded';
+  return {
+    marker,
+    receipt: parsed.receipt,
+    body: unchanged ? text : `${marker}${text.slice(activeMarker.length)}`,
+    unchanged,
+  };
+}
+
 function validateFinding(input) {
   requireObject(input, 'finding');
   const allowedSeverity = new Set(['Critical', 'Important', 'Note']);
@@ -806,6 +1029,7 @@ function validateFinding(input) {
   if (!allowedComplexity.has(input.complexity))
     fail('INVALID_PAYLOAD', 'invalid finding complexity');
   if (!allowedAction.has(input.action)) fail('INVALID_PAYLOAD', 'invalid finding action');
+  input.admission = normalizeAdmission(input.admission);
   return input;
 }
 
@@ -815,7 +1039,8 @@ export function buildFindingPayload(input, options = {}) {
   requireString(finding.id, 'finding.id');
   if (!/^R-\d{7}$/.test(finding.id)) fail('INVALID_PAYLOAD', 'finding.id must match R-XXXXXXX');
   const signature = finding.signature ?? `${finding.file} · ${finding.area} · ${finding.problem}`;
-  const body = [
+  const admission = finding.admission;
+  const lines = [
     `- **${strings.findingFields.severity}**: ${strings.severity[finding.severity]}`,
     `- **${strings.findingFields.complexity}**: ${strings.complexity[finding.complexity]}`,
     `- **${strings.findingFields.area}**: ${finding.area}`,
@@ -824,9 +1049,26 @@ export function buildFindingPayload(input, options = {}) {
     `- **${strings.findingFields.recommendation}**: ${finding.recommendation}`,
     `- **Action**: ${finding.action}`,
     `- **${strings.findingFields.promptSuggestion}**: ${finding.promptSuggestion}`,
-    `- **Epic**: ${finding.epic ? `#${requireNumber(finding.epic, 'finding.epic')}` : ''}`,
+    `- **Admission outcome**: ${admission.outcome}`,
+    `- **Admission reason**: ${admission.reason}`,
+    `- **Admission gate**: ${admission.gateVersion}`,
+    `- **Evidence**: ${admission.evidenceType} · ${admission.evidenceReference}`,
+    `- **Evidence digest**: ${admission.evidenceDigest}`,
+    `- **Current reachability**: ${admission.reachability} · ${admission.reachabilityAnchor}`,
+    `- **Root-cause signature**: ${admission.rootCauseSignature}`,
+    `- **Scope and containment**: ${admission.scopeAndContainment}`,
+    `- **Why now**: ${admission.whyNow}`,
+    `- **Completion condition**: ${admission.completionCondition}`,
     `- **Signature**: ${signature}`,
-  ].join('\n');
+  ];
+  if (finding.epic !== undefined && finding.epic !== null && finding.epic !== '') {
+    lines.splice(
+      lines.length - 1,
+      0,
+      `- **Epic**: #${requireNumber(finding.epic, 'finding.epic')}`,
+    );
+  }
+  const body = lines.join('\n');
   return {
     title: `[${finding.id}] ${finding.title}`,
     body,
@@ -1046,16 +1288,26 @@ export function deduplicateFindings(existingIssues, findings) {
     const number = requireNumber(issue.number, 'existing issue number');
     if (!issuesByNumber.has(number)) issuesByNumber.set(number, issue);
   }
-  const signatures = new Map();
+  const modernSignatures = new Map();
+  const legacySignatures = new Map();
   for (const issue of issuesByNumber.values()) {
-    const parsed = parseFindingSignature(issue.body ?? '');
-    if (parsed && !signatures.has(parsed.normalized)) signatures.set(parsed.normalized, issue);
+    const parsed = parseFindingDedupSignature(issue.body ?? '');
+    if (!parsed) continue;
+    const index = parsed.legacy ? legacySignatures : modernSignatures;
+    if (!index.has(parsed.normalized)) index.set(parsed.normalized, issue);
   }
   const duplicate = [];
   const fresh = [];
   for (const finding of findings) {
-    const signature = normalizeSignature(finding.signature);
-    const issue = signatures.get(signature);
+    requireObject(finding, 'finding');
+    const rootCause = finding.admission?.rootCauseSignature;
+    let issue;
+    if (rootCause !== undefined && rootCause !== null) {
+      issue = modernSignatures.get(normalizeSignature(rootCause));
+    }
+    if (!issue) {
+      issue = legacySignatures.get(normalizeSignature(finding.signature));
+    }
     if (issue) duplicate.push({ finding, issueNumber: issue.number });
     else fresh.push(finding);
   }
@@ -5087,8 +5339,11 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         // `HTMLURL json:"html_url"` per the struct comment above - the tag, never the Go field name.
         const rawUrl = thread.html_url ?? thread.url;
         const url = typeof rawUrl === 'string' && rawUrl.trim() !== '' ? rawUrl.trim() : undefined;
+        // Set by `readForgejoReviewThreads`; absent when the comments did not come from that walk.
+        const reviewId = thread[FORGEJO_REVIEW_ID];
         return {
           id: String(thread.id),
+          ...(reviewId === undefined ? {} : { reviewId: String(reviewId) }),
           // `resolver` is `null` while a thread is open and an object once someone resolved it, so
           // truthiness is the whole test. `Boolean(null)` is false and `Boolean({})` is true.
           isResolved: Boolean(thread.resolver),
@@ -5121,57 +5376,73 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
 function localOperation(operation, input) {
   switch (operation) {
     case 'remote-parse':
-      return parseRemote(input.remote, input);
+      return () => parseRemote(input.remote, input);
     case 'reference-parse':
-      return parseReferences(input.references ?? input.reference, input);
+      return () => parseReferences(input.references ?? input.reference, input);
     case 'signature-parse':
-      return parseFindingSignature(input.body);
+      return () => parseFindingSignature(input.body);
     case 'finding-build':
-      return buildFindingPayload(input.finding ?? input, { language: input.language });
+      return () => buildFindingPayload(input.finding ?? input, { language: input.language });
+    case 'follow-up-admission-build':
+      return () => buildFollowUpAdmissionReceipt(input);
+    case 'follow-up-admission-parse':
+      return () => parseFollowUpAdmissionReceipt(input.body, input.current);
+    case 'follow-up-admission-supersede':
+      return () => supersedeFollowUpAdmissionReceipt(input);
     case 'epic-build':
-      return buildEpicPayload(input.epic ?? input, { language: input.language });
+      return () => buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':
-      return buildCommentPayload('planning', input.comment ?? input);
+      return () => buildCommentPayload('planning', input.comment ?? input);
     case 'decomposition-records-build':
-      return buildDecompositionRecords(input.decomposition ?? input);
+      return () => buildDecompositionRecords(input.decomposition ?? input);
     case 'decomposition-records-parse':
-      return parseDecompositionRecords(input.body);
+      return () => parseDecompositionRecords(input.body);
     case 'decomposition-key-build':
-      return buildDecompositionKey(input);
+      return () => buildDecompositionKey(input);
     case 'decomposition-key-parse':
-      return parseDecompositionKey(input.body, input.context ?? input);
+      return () => parseDecompositionKey(input.body, input.context ?? input);
     case 'decomposition-container-compare':
-      return compareDecompositionContainer(input.container ?? input);
+      return () => compareDecompositionContainer(input.container ?? input);
     case 'decomposition-child-workflow-parse':
-      return parseDecompositionChildWorkflow(input.workflow ?? input);
+      return () => parseDecompositionChildWorkflow(input.workflow ?? input);
     case 'apply-comment-build':
-      return buildCommentPayload('apply', input.comment ?? input);
+      return () => buildCommentPayload('apply', input.comment ?? input);
     case 'pr-comment-build':
-      return buildCommentPayload('pr', input.comment ?? input);
+      return () => buildCommentPayload('pr', input.comment ?? input);
     // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
     // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
     // completed work, so the fallback would feed the tool its own findings back.
     case 'pr-review-comment-build':
-      return buildCommentPayload('pr-review', input.comment ?? input);
+      return () => buildCommentPayload('pr-review', input.comment ?? input);
     case 'finding-deduplicate':
-      return deduplicateFindings(input.existingIssues, input.findings);
+      return () => deduplicateFindings(input.existingIssues, input.findings);
     case 'label-query-variants':
-      return labelQueryVariants(input.labels);
+      return () => labelQueryVariants(input.labels);
     case 'sf-label-migration-plan':
-      return planSfLabelMigration(input.issues, input.marker);
+      return () => planSfLabelMigration(input.issues, input.marker);
     case 'marker-patch':
-      return patchMarkedBlock(input.body, input.patch ?? input);
+      return () => patchMarkedBlock(input.body, input.patch ?? input);
     case 'checklist-patch':
-      return patchChecklistEntry(input.body, input.patch ?? input);
+      return () => patchChecklistEntry(input.body, input.patch ?? input);
     case 'body-hash':
-      return { hash: bodyHash(input.body) };
+      return () => ({ hash: bodyHash(input.body) });
     case 'issue-lifecycle-receipt-build':
-      return buildIssueLifecycleReceipt(input, input.context ?? input);
+      return () => buildIssueLifecycleReceipt(input, input.context ?? input);
     case 'issue-lifecycle-receipt-parse':
-      return parseIssueLifecycleReceipt(input.body, input.context ?? input);
+      return () => parseIssueLifecycleReceipt(input.body, input.context ?? input);
     default:
       return undefined;
   }
+}
+
+function requireExistingDirectory(value) {
+  const cwd = requireString(value, 'cwd');
+  try {
+    if (statSync(cwd).isDirectory()) return cwd;
+  } catch {
+    // The public failure deliberately does not expose platform-specific filesystem errors.
+  }
+  fail('INVALID_PAYLOAD', 'working directory is not an existing directory', { cwd });
 }
 
 function issueStateWaitClock(clock) {
@@ -5389,6 +5660,11 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
   };
 }
 
+// The id of the review a Forgejo comment was read under. The walk addresses every comment through
+// `reviews/{id}/comments`, so it knows the parent review without trusting a payload field; the key
+// is a module-private symbol so it can never collide with, or be spoofed by, a key the forge sends.
+const FORGEJO_REVIEW_ID = Symbol('forgejoReviewId');
+
 // The two-step walk both forges force. Forgejo's router declares `GET …/pulls/{index}/reviews` and
 // `GET …/pulls/{index}/reviews/{id}/comments`; there is no flat review-comment listing at any
 // nesting level on either forge, so the reviews have to be enumerated before their comments can be
@@ -5425,7 +5701,8 @@ async function readForgejoReviewThreads(input, repository, runner) {
       `review-threads-read review ${id} comments`,
     );
     commands.push(...page.commands);
-    comments.push(...page.items);
+    // Pair each comment with the review it was read under, so the thread can name its parent.
+    comments.push(...page.items.map((item) => ({ ...item, [FORGEJO_REVIEW_ID]: id })));
   }
   return {
     result: normalizeRemoteData('review-threads-read', comments, repository, input),
@@ -5728,9 +6005,10 @@ export async function executeOperation(operation, input = {}, options = {}) {
   requireObject(input);
   const dryRun = MUTATIONS.has(operation) && options.apply !== true;
   try {
-    const local = localOperation(operation, input);
-    if (local !== undefined) {
-      return { ok: true, operation, provider: null, data: local, dryRun: false };
+    const runLocal = localOperation(operation, input);
+    if (runLocal !== undefined) {
+      if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
+      return { ok: true, operation, provider: null, data: runLocal(), dryRun: false };
     }
     if (!REMOTE_OPERATIONS.has(operation)) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });

@@ -1,14 +1,19 @@
-## Open review-finding reports
+## Gated residual review-finding reports
 
-When a workflow review produces findings that are not fixed directly before completion, write these open findings additionally into a review-report file under `.effective-flow/review/`.
+**Load on demand:** Read `shared/durable-follow-up-gate.md`, when residual implementation-review candidates are about to be classified before ID reservation or materialization.
+
+When a workflow review leaves candidates after its one correction pass, classify them through the
+loaded “Durable derived-work gate” before any ID reservation, directory creation, or report write.
+Only `admitted` residual root causes may enter a review-report file under
+`.effective-flow/review/`.
 
 Goal:
 
-- Open or deliberately unimplemented findings do not get lost in long plan files.
-- ``tools/apply-review.md`` can process the findings later in the familiar report format.
+- Independently admitted material harm or structural irreversibility remains actionable.
+- ``tools/apply-review.md`` can process only the admitted findings later in the familiar format.
 - The plan file stays completion documentation and only points to the external report.
 
-Applies to findings with the matching status from either complete report language:
+Status is still read in either complete report language, but it is only a candidate selector:
 
 - English: `Open`, `Not implemented`, or `Not implemented (ADR: <slug>)`
 - German: `Offen`, `Nicht umgesetzt`, or `Nicht umgesetzt (ADR: <slug>)`
@@ -23,6 +28,13 @@ Do not carry over into the external report:
   readable as the same completed state
 - Findings that were fixed directly during the workflow
 - purely informational reviewer comments without a concrete recommendation
+- `current-scope`, `closed`, or `uncertain` candidates
+
+Return every `current-scope` candidate to the owning workflow for correction, safe containment, or
+an explicit scope decision by the authorized owner; completion stays blocked while one remains.
+Resolve each credible `uncertain` path through its single bounded evidence/containment check or stop
+and escalate. `closed` candidates produce only aggregate counts and short reasons in chat. Internal
+implementation reviews create no closed appendix.
 
 ### Report path
 
@@ -55,8 +67,9 @@ absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required b
 
 This report uses the same global finding IDs as `effective-flow review`.
 
-1. Finish confidence and design-decision filtering plus any applicable deduplication, then fix the
-   ordered list of findings that the report will actually publish.
+1. Finish confidence and design-decision filtering, same-run root-cause grouping, known-reference
+   and exact-signature deduplication, then run admission once for the unresolved batch and fix the
+   ordered list of `admitted` root causes the report will actually publish.
 2. If the list is empty, publish no finding report and reserve no IDs.
 3. Otherwise use “Shared memory-state mutation” against the absolute
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle to reserve the exact range for that
@@ -81,10 +94,14 @@ Additional header fields for workflow reports:
   - English: `- **Status**: Fixed | Open | Not implemented`
   - German: `- **Status**: Behoben | Offen | Nicht umgesetzt`
 - The `## Skipped findings (design decisions)` section is only emitted when such findings are present.
+- Every finding carries the stable admitted record from the loaded gate. A workflow report that
+  lacks an explicit valid `Admission outcome: admitted` is not an implementation source.
 
 Rules:
 
-- Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
+- A Critical candidate caused by or required for the active slice is `current-scope` and cannot be
+  exported. A genuinely independent Critical residual is reportable only after admission and an
+  explicit decision to complete despite it.
 - Determine the action as in `effective-flow review`: defect → `effective-flow fix`, structural problem → `effective-flow refactor`, missing functionality or safeguard → `effective-flow build`, pure documentation gap → `effective-flow docs`.
 - Never enter anything automatically in `Developer note`. This field is reserved exclusively for
   the developer's manual notes and stays empty in automatically generated reports. When a finding

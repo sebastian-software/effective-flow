@@ -36,7 +36,11 @@ in v0.12.0, and the flag they need on top of it (`--include`) is probed rather t
 `issue-close` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
 every run. `issue-close` joined that list without adding a probe of its own – it rides the same
-transport – so nothing about the check changed except its length. Without `pr-reviews-read` the merge
+transport – so nothing about the check changed except its length. The gate's post-merge read of a
+linked issue's canonical planning comment is deliberately **not** on that list: `issue-comments-read`
+is gated on `tea`'s issue and issue-comment support rather than on the `tea api` transport, so a
+`tea` built without `--include` still reports the open points recorded for an issue even where the
+issue close is unavailable. Without `pr-reviews-read` the merge
 gate cannot establish a reviewer's changes-requested
 verdict, so it reports that and asks once instead of merging – and never merges at all in a
 non-interactive run. Without `issue-close` nothing about the merge changes: only the gate's offered
@@ -109,6 +113,21 @@ either a native lifecycle capability or `tracker.externalDoneState` could not be
 last one the report lists the observed terminal candidates; check the displayed name and stable value
 and persist it with `/effective-flow setup`, exactly as for the started state. An unresolvable
 `externalDoneState` never fails a run – the merge already succeeded – it only leaves the issue open.
+
+The row also gives you what the issue's canonical planning comment recorded as **open points** – the
+implementation-blocking decisions `/effective-flow plan-issue` left standing there rather than in the
+issue body. You get them for every issue the run assessed, whichever next action it named, and their
+text is quoted, which no other issue text in this report is: they are report-only, so no verdict, no
+offered transition, and no write depends on a word of them, and reading them is the shortest route to
+what the issue still needs from you. Three results read differently. Entries are listed, cut at a
+fixed cap with the comment URL given for anything longer. A recorded absence says which of three
+reasons it is: the comment states its empty section, the comment predates the section and carries
+none, or the issue carries no canonical comment at all. Open points reported as unobserved mean the
+comment could not be read – because the read is unsupported, on the forge for a missing
+`issueCommentsRead` capability and on an external tracker for a connection that exposes no way to
+read comments, or because a supported read failed – and that costs nothing but the observation: the
+verdict, the offer, and everything the run wrote are exactly what they would have been. An issue already terminal when the grace period
+ended is not assessed at all and carries no such line.
 
 If automation simply needs longer, run `/effective-flow merge-gate <PR>` again. For an already
 merged pull request, this is observer-only: it repeats receipt validation, tracker observation, the
@@ -214,8 +233,9 @@ not rewrite earlier files.
 
 Other surfaces intentionally may differ: remote issues and comments and PR bodies use
 `language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
-Each missing override inherits `language.project`, which itself defaults to `en`. An invalid
-`de`/`en` value is reported and ignored in favor of the next fallback rather than guessed.
+Each missing artifact-surface override inherits `language.project`, which itself defaults to `en`.
+An invalid `de`/`en` value is reported and ignored in favor of the next fallback rather than
+guessed. The reply language is a separate question with a separate key; see the next section.
 
 Use [`/effective-flow setup`](./tools-setup.md) to inspect and change these values. If only a
 legacy `plan.markerLanguage` row exists, Effective Flow can still read it as a temporary workflow
@@ -225,6 +245,27 @@ when plan prose and markers are consistently German or English. Mixed or contrad
 not a valid signal. If one existing artifact is itself mixed or unclear, clarify its intended
 language before asking Effective Flow to edit it.
 
+## Effective Flow answers in the wrong language
+
+The language a run speaks to you in is `language.chat`, not `language.project` and not any
+artifact surface. Three results surprise people, and none of them is a bug:
+
+- **It answers German although you wrote English** (or the reverse). A configured `language.chat`
+  outranks the language of your message; that is what the key is for. Only an explicit request in
+  the message itself beats it. Change or remove the row with
+  [`/effective-flow setup`](./tools-setup.md).
+- **One run mixes both languages.** The key covers what the run says itself, including the
+  next-steps block and the session-title label. Reports from delegated workers and notices from
+  agents are relayed word for word, so they arrive in the language they were written in. The tool
+  catalog, `/effective-flow version`, and the `pr-review` deprecation notice appear before any
+  configuration is read and stay on the language of the conversation.
+- **Setting the key seems to do nothing.** Check the spelling of the value: only `de` and `en` are
+  valid, and an invalid value is reported and then treated as if the row were absent — which means
+  mirroring the language you write in, not falling back to `language.project`.
+
+Leaving `language.chat` out is the default and is not inheritance: replies mirror whatever
+language you write in, and `language.project` is reached only when that language is unclear.
+
 ## There is no project-setup ADR
 
 This is not an error. Without an ADR or transitional legacy source, every tool uses the safe
@@ -232,8 +273,11 @@ defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): workt
 completion via merge, local tracker as the safe base, and English as the project language.
 Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
 Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
-[`/effective-flow setup`](./tools-setup.md); its Express path adopts the safe base after one
-before/after confirmation.
+[`/effective-flow setup`](./tools-setup.md) and choose one of the three common profiles after the
+Chat question. Use `/effective-flow setup express` explicitly when you intentionally want the
+safe-base-plus-existing-values path after one before/after confirmation. Use
+`/effective-flow setup guided` when you need per-key configuration, including an explicit
+GitHub/Forgejo provider override or base that Profile mode cannot verify without guessing.
 
 If a convention-file marker exists but points to a missing ADR, Effective Flow reports the stale
 marker and continues through the default-path scan and other fallbacks. Run setup to correct the

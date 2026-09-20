@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 # Effective Flow Apply Review
 
@@ -12,85 +12,38 @@ This workflow reads an existing review report file from `.effective-flow/review/
 
 If the resolved tracker target is the forge or an external tool, the workflow reads the findings from that issue tracker instead: it is passed an epic/container issue or a list of concrete finding issues, one PR is created per finding, and the container entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
-## Language resolution
+**Load on demand:** Read `shared/language-rules.md`, when an artifact output language or delegated language context must be resolved.
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+## Interactive output language
 
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
 
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
 
-### Resolver (the single precedence rule)
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
 
-For each artifact, determine its target surface first and resolve exactly once:
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
 
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
-
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
-locale guidance is authoritative; Effective Flow keeps no second typography checklist.
-
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 ## Task tracking
 
@@ -114,9 +67,10 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
-- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
+- An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
 The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the overlap components, the git commit mutex, the worktree isolation, the synchronization barrier, and the `failed (delegation)` handling stay authoritative and are never replaced by inline work. The mandate adds authorization only.
@@ -124,6 +78,8 @@ The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
+
+**Load on demand:** Read `shared/session-title.md`, when the run's subject is fixed and whether a session title is due must be decided.
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
@@ -143,44 +99,31 @@ first matching step wins:
 
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
    `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
-   `**Firmo project setup:** <path>` is recognized as equivalent on read; effective-flow setup
-   converts it non-destructively to the new spelling on the next run. If the
-   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
-   there, but fall through in this order and report the stale marker
-   (correction in effective-flow setup).
+   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
+   equivalent on read; the spelling stays here because it is the **detection** predicate, while
+   what that recognition then triggers belongs to the deferred building block below. If the
+   marker points to a path under which **no** ADR lives
+   (dead/stale marker), do not stay there, but fall through in this order and report the stale
+   marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
-   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
-   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
-   its body carries one of the canonical configuration envelopes listed under "Table encoding"
-   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
-   what a new file is named. That tolerance widens the scan to a family of names, so **several**
-   files can match inside this one step; "the first matching step wins" ranks the four steps, not
-   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
-   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
-   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
-   stem over a prefixed one. Stated as two independent preferences,
-   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
-   neither would survive both. If more than one match still ties at the top of that ranking, report
-   every matching path and fall through to the next step instead of picking one. Falling through
-   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
-   on a reported several-match result, reporting every matching path so its user resolves the
-   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
-   ADR into that state adds a further one beside the matches already reported.
-3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
-   verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
-   a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
-   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) and point to effective-flow setup. Never inspect a
-   same-named fallback below a linked `EXECUTION_ROOT`. A missing, bare, moved, unsafe, or
-   repository-mismatched runtime root blocks the fallback. This read path creates **nothing**
-   and touches **no** Git.
+   file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
+   carries one of the canonical configuration envelopes listed under "Table encoding" below. The
+   stem comparison is deliberately tolerant of a legacy slug and a numeric prefix, so this one
+   step can match **several** files; that tolerance and the ordered ranking which resolves a
+   several-match state belong to the deferred building block below, not to this step.
+3. **Transitional compatibility.** Otherwise — only transitionally — the legacy
+   `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) read fallback, whose complete contract is the
+   deferred building block's.
 4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-The deterministic read path of any tool is non-blocking: It reads the ADR (or
-the transitional fallback), but itself creates no file and mutates no Git. Creating
-the ADR, the markers and the migration happen exclusively in the Git-touching path of
-effective-flow setup.
+The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
+transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
+the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
+in the Git-touching path of effective-flow setup.
+
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -209,24 +152,11 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
-- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
-  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
-  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
-  fresh list of writable states in the exact configured tracker context before every implementation
-  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
-  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
-  observation grace period has no configuration key.
-- **`tracker.externalDoneState`** → a nullable string containing the external connection's stable
-  **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
-  or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
-  against a fresh list of writable states in the exact configured tracker context before the offered
-  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
-  and display-name-only matches make that transition unavailable instead of guessing, and never
-  abort a run whose merge already succeeded. That transition is not the only reader: the post-merge
-  observation of an issue found already terminal resolves the same value by the same rules, and a
-  value that fails there makes that issue's reconciliation unavailable rather than its transition.
-  Only `effective-flow setup` writes a confirmed
-  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
+- **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
+  whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
+  to the safe-default rule below, under the deferred building block's retired-key contract.
+- **`tracker.externalStartedState`** and **`tracker.externalDoneState`** → nullable state IDs read
+  only by a `tracker.mode: external` run; their per-key notes are the deferred building block's.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -245,6 +175,8 @@ value cell). Example excerpt (interface sketch, not full content):
 If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
+
+**Load on demand:** Read `shared/durable-follow-up-gate.md`, when a local or legacy review finding is re-evaluated before task creation or delegation.
 
 ## Living ADR model
 
@@ -636,11 +568,11 @@ Check by the orchestrator:
 
 1. `DONE`: phase completed.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
-3. No keyword: retry with escalation.
+3. No keyword: resume once, then retry with escalation.
 
 ### Retry escalation
 
-When an internal sub-agent ends without `DONE` or `ABORT`:
+When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as not finished rather than as a failed attempt. First resume the same sub-agent once — with its context intact where the harness allows — and a continuation hint to await any pending children and end with `DONE` or `ABORT`. That resume is not a retry. If the harness cannot resume that sub-agent, or the resumed run again ends without a keyword, escalate:
 
 1. Retry 1: same task with a continuation hint
 2. Retry 2: simplified task with reduced scope
@@ -651,14 +583,20 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 
 ## Goal-driven completion control
 
-Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run; Effective Flow neither offers nor starts a harness-native autonomous run for it, and the workflow's regular approval gates always apply.
+Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run, and the workflow's regular approval gates always apply.
 
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
-4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
+4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
+   - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
+   - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input.
+   - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
+   - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
+   - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
 
 ## Wisdom Accumulation
 
@@ -820,9 +758,10 @@ Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
 
 Stage B refines an `issue-reference` from stage A into the concrete subtype. It requires the
 resolved tracker target from "Tracker target" in `issue-tracker.md` together with its established
-access — the host/CLI detection and availability check of the "Remote helper contract" on the forge
-target, or the single established connection of the `tracker-target` contract on an external
-target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
+access — the host/CLI detection and availability check of the "Remote helper contract" in
+`issue-tracker-forge.md` on the forge target, or the single established connection of the
+`tracker-target` contract on an external target; a skill that uses stage B therefore also embeds
+`issue-tracker.md` and reaches `issue-tracker-forge.md` on the forge target.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
@@ -870,7 +809,7 @@ read) is treated like `review-finding`. If the subtype remains unclear afterward
 Why label before body: a `review-epic` carries — like a generic
 `container-issue` — a `- [ ] <reference>` checklist. The label `effective-flow-review-epic` or
 `effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
-`issue-tracker.md`) is the reliable discriminator and takes precedence over the
+`issue-tracker-forge.md`) is the reliable discriminator and takes precedence over the
 body structure.
 
 ### Ownership and target
@@ -901,9 +840,12 @@ argument type; report which target the argument selected.
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
   lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
   `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the resolved
-  tracker target is the forge or an external tool, it additionally lists open review epics (label
-  `effective-flow-review-epic`, incl. old `firmo-review-epic`, or the target's equivalent
-  container) as candidates, since on those targets no local report files exist.
+  tracker target is the forge or an external tool, it additionally lists open direct
+  `review-finding` issues and legacy review epics (including old `firmo-review-epic`). Exclude the
+  known children of each listed legacy epic from the direct list. A valid admission-closure receipt
+  excludes a direct finding while its gate/signature/evidence/reachability inputs remain current.
+  On the forge, build and parse that receipt only through the shipped helper with the verified
+  `RUNTIME_STATE_ROOT` supplied as `cwd`.
 - **`ambiguous`:** name the competing interpretations and ask, instead of
   guessing.
 - **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
@@ -913,7 +855,7 @@ argument type; report which target the argument selected.
   the call by tracker target.
 - **Issue reference, but the target is unreachable** (forge CLI missing or not authenticated, or
   no usable external connection): stage B cannot run → clear error message with a remediation hint
-  per "Errors and edge cases" in `issue-tracker.md`; no silent fallback to a local type and none to
+  per "Error and edge cases" in `issue-tracker-forge.md`; no silent fallback to a local type and none to
   another target.
 - **Unresolvable path:** `ambiguous` → ask or error message; note that
   `effective-flow open-plans` can list open plans.
@@ -977,6 +919,8 @@ First determine the tracker target via the "apply-source detection" (report file
    - `Prompt suggestion`
    - `Developer note` (if present)
    - `Status` (if present) and already present implementation hints (✅)
+   - the admission outcome, reason, gate version, evidence digest/reference, current-reachability
+     anchor, and root-cause signature (when present)
 
    When reading an existing local report, also accept the historical German field aliases
    `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Empfehlung`, `Aktion`,
@@ -987,13 +931,21 @@ First determine the tracker target via the "apply-source detection" (report file
    finding IDs, paths, and other machine tokens remain stable. A mixed/unclear report is not
    rewritten automatically. Remote issues independently use `language.forge`.
 
-7. Classify each finding:
+7. After freshness and exact-signature deduplication, validate admission before task creation or
+   delegation. An explicit current `Admission outcome: admitted` record with all stable gate fields
+   is implementable. Re-evaluate a legacy finding that lacks the record; open status or Importance
+   is insufficient. A credible qualifying path with incomplete evidence is `uncertain` and blocks
+   for the one bounded evidence/containment check. A finding without a credible qualifying
+   consequence is `closed`: append one dated gate note carrying outcome, reason, gate version,
+   normalized signature, evidence digest, and reachability anchor, then skip it idempotently while
+   those inputs remain unchanged. Gate rejection never becomes an ADR candidate.
+8. Classify each admitted or separately rejected finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
    - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report, because the local report and the issue would otherwise be implemented twice. Collect these findings with their issue numbers for the handover in step 9; the local flow never processes them silently. If a note is present but its issue number is unreadable or ambiguous, ask instead of guessing, and do not treat the finding as implementable in the meantime.
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `effective-product` as a decision candidate (ADR only for a permanent decision)
    - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
-8. Give the user an overview:
+9. Give the user an overview:
 
 ```markdown
 **Report:** [filename]
@@ -1005,11 +957,14 @@ First determine the tracker target via the "apply-source detection" (report file
 | Do not implement (→ effective-product) | Y |
 | Already implemented | Z |
 | Already published (→ issue) | P |
+| Closed by admission gate | C |
 | Total | N |
 ```
 
-9. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `effective-flow apply #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
-10. If no implementable findings and no rejected findings remain: report that briefly. If published findings exist, the message is the handover from step 9 rather than a bare abort, so a report consisting only of published findings ends with an executable next step instead of an apparent dead end. Then end the workflow.
+10. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `effective-flow apply #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
+11. If no implementable findings and no rejected findings remain, report that briefly and end. A
+    report containing only closed findings emits no substitute workflow recommendation. Published
+    findings use the concrete handover from step 10.
 
 ### Phase 2: Commit and stash strategy
 
@@ -1054,7 +1009,7 @@ The detailed mechanics of the committing strategies — **Individually** (git co
 
 ### Phase 3: Rejected findings → decision candidate (delegation to `effective-product`)
 
-The ADR authoring is owned by the host skill `effective-product` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index — one branch of the broader product-decision scope that skill carries). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Firmo keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
+The ADR authoring is owned by the host skill `effective-product` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index — one branch of the broader product-decision scope that skill carries). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Effective Flow keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
 
 First survey the available skills:
 

@@ -131,9 +131,27 @@ default case, therefore, always. The delivery branch is named
 the plan title, task description, issue, or finding; on a name collision Effective Flow appends
 a numeric suffix and reports the chosen name.
 
-`delivery.baseBranch` (default `origin/main`) serves as the starting point. If it is a remote
-ref, Effective Flow first fetches the current state via `git fetch`, so the delivery branch does
-not start out stale.
+`delivery.baseBranch` serves as the starting point. Without that key, Effective Flow derives the
+default from the repository: `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. An explicitly configured value is used as written; where it names
+a different branch than `origin/HEAD`, the run names both once and suggests
+`git remote set-head origin -a`, without blocking anything. The value is a remote
+ref only when the part before its first `/` is a configured remote – local branch names carry
+slashes too, so `feature/foo` stays that branch, and a value without any `/` is never a remote
+ref. For a configured remote, Effective Flow first fetches the current state via `git fetch`, so
+the delivery branch does not start out stale; a failed fetch or resolution stops the run rather
+than quietly starting from a possibly stale local branch. Without that remote – a purely local project, for instance – no such ref can exist, so
+Effective Flow resolves the value locally: as it stands first, and only if that fails its local
+branch part (`main` for `origin/main`), reporting that substitution. If no candidate resolves, the
+run aborts instead of creating a base branch.
+
+Resolution records two results, and every later step uses one of them instead of re-reading the
+configured value:
+
+- the **resolved base ref** – what the delivery branch is created from and what a commit range is
+  computed against (`origin/main` for `origin/main`; `feature/foo` for a local `feature/foo`);
+- the **resolved local base branch** – the local branch that merge, switch-back, and the
+  pull-request target use (`main` for `origin/main`; `feature/foo` for a local `feature/foo`).
 
 ### Delivering local changes from the current session
 
@@ -149,8 +167,11 @@ After selection, `deliver` proposes an ordered partition into coherent commits a
 confirm the exact paths, order, and tentative commit effect for every group. It then refreshes the
 configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch in an
 Effective Flow-owned worktree. Only the confirmed states are transferred. The source checkout may
-be dirty, detached, on the base branch, or harness-managed; it remains unchanged, including its
-index and all non-selected files.
+be dirty, detached, on the base branch, or harness-managed; once `deliver` has recorded its
+evidence, it remains unchanged, including its index and all non-selected files. The only earlier
+write is an optional fast-forward to the branch's upstream, which runs only when you confirm it
+before the selection (see
+[When your branch is behind its upstream](tools-deliver.md#when-your-branch-is-behind-its-upstream)).
 
 Each group is staged separately in the delivery worktree and committed through the staged-only
 `commit` tool. The pull request is opened through the commit-only `pr` tool only after all groups
@@ -185,11 +206,11 @@ After the actual work is finished, `delivery.completion` (default `merge`) decid
 with the finished delivery branch unless the current invocation contains one unambiguous,
 affirmative request for `pr`, `merge`, or `branch`:
 
-| Value    | Behavior                                                                                                                                                                                                |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `merge`  | The branch is merged locally into `delivery.baseBranch` via fast-forward or a merge commit. On a conflict, Effective Flow stops, leaves the branch, and informs you – no automatic conflict resolution. |
-| `pr`     | The branch is pushed, [`/effective-flow pr`](./tools-deliver.md) opens a pull request against `delivery.baseBranch`.                                                                                    |
-| `branch` | The branch is simply left in the local repo; you decide later yourself about a PR or merge.                                                                                                             |
+| Value    | Behavior                                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge`  | The branch is merged locally into the resolved local base branch via fast-forward or a merge commit. On a conflict, Effective Flow stops, leaves the branch, and informs you – no automatic conflict resolution. |
+| `pr`     | The branch is pushed, [`/effective-flow pr`](./tools-deliver.md) opens a pull request against the resolved local base branch.                                                                                    |
+| `branch` | The branch is simply left in the local repo; you decide later yourself about a PR or merge.                                                                                                                      |
 
 If `delivery.completion` is not set (`null`), Effective Flow asks again on every run for the
 desired action.

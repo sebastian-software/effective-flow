@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 # Effective Flow Setup
 
@@ -9,92 +9,46 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 ## Goal
 
 - enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
-- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`)
+- write the Effective Flow configuration through the selected setup mode into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
-- always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
+- always start from safe defaults; use **Profile** as the standard two-question path and retain
+  **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice
 - do not run project validation such as linting, tests, or build checks
 
-## Language resolution
+**Load on demand:** Read `shared/language-rules.md`, when the language configuration keys are offered or the ADR output language must be resolved.
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+## Interactive output language
 
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
 
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
 
-### Resolver (the single precedence rule)
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
 
-For each artifact, determine its target surface first and resolve exactly once:
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
 
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
-
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
-locale guidance is authoritative; Effective Flow keeps no second typography checklist.
-
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 ## Task tracking
 
@@ -118,6 +72,8 @@ If no task tool is available, give the user a short progress update after each c
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker.
+
+**Load on demand:** Read `shared/setup-retired-login-migration.md`, when setup collapses configured bot spellings or migrates retired `prReview.bots.<login>.trigger` or `.check` rows.
 
 ## Living ADR model
 
@@ -455,44 +411,31 @@ first matching step wins:
 
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
    `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
-   `**Firmo project setup:** <path>` is recognized as equivalent on read; effective-flow setup
-   converts it non-destructively to the new spelling on the next run. If the
-   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
-   there, but fall through in this order and report the stale marker
-   (correction in effective-flow setup).
+   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
+   equivalent on read; the spelling stays here because it is the **detection** predicate, while
+   what that recognition then triggers belongs to the deferred building block below. If the
+   marker points to a path under which **no** ADR lives
+   (dead/stale marker), do not stay there, but fall through in this order and report the stale
+   marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
-   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
-   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
-   its body carries one of the canonical configuration envelopes listed under "Table encoding"
-   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
-   what a new file is named. That tolerance widens the scan to a family of names, so **several**
-   files can match inside this one step; "the first matching step wins" ranks the four steps, not
-   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
-   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
-   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
-   stem over a prefixed one. Stated as two independent preferences,
-   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
-   neither would survive both. If more than one match still ties at the top of that ranking, report
-   every matching path and fall through to the next step instead of picking one. Falling through
-   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
-   on a reported several-match result, reporting every matching path so its user resolves the
-   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
-   ADR into that state adds a further one beside the matches already reported.
-3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
-   verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
-   a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
-   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) and point to effective-flow setup. Never inspect a
-   same-named fallback below a linked `EXECUTION_ROOT`. A missing, bare, moved, unsafe, or
-   repository-mismatched runtime root blocks the fallback. This read path creates **nothing**
-   and touches **no** Git.
+   file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
+   carries one of the canonical configuration envelopes listed under "Table encoding" below. The
+   stem comparison is deliberately tolerant of a legacy slug and a numeric prefix, so this one
+   step can match **several** files; that tolerance and the ordered ranking which resolves a
+   several-match state belong to the deferred building block below, not to this step.
+3. **Transitional compatibility.** Otherwise — only transitionally — the legacy
+   `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) read fallback, whose complete contract is the
+   deferred building block's.
 4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-The deterministic read path of any tool is non-blocking: It reads the ADR (or
-the transitional fallback), but itself creates no file and mutates no Git. Creating
-the ADR, the markers and the migration happen exclusively in the Git-touching path of
-effective-flow setup.
+The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
+transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
+the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
+in the Git-touching path of effective-flow setup.
+
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -521,24 +464,11 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
-- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
-  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
-  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
-  fresh list of writable states in the exact configured tracker context before every implementation
-  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
-  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
-  observation grace period has no configuration key.
-- **`tracker.externalDoneState`** → a nullable string containing the external connection's stable
-  **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
-  or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
-  against a fresh list of writable states in the exact configured tracker context before the offered
-  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
-  and display-name-only matches make that transition unavailable instead of guessing, and never
-  abort a run whose merge already succeeded. That transition is not the only reader: the post-merge
-  observation of an issue found already terminal resolves the same value by the same rules, and a
-  value that fails there makes that issue's reconciliation unavailable rather than its transition.
-  Only `effective-flow setup` writes a confirmed
-  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
+- **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
+  whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
+  to the safe-default rule below, under the deferred building block's retired-key contract.
+- **`tracker.externalStartedState`** and **`tracker.externalDoneState`** → nullable state IDs read
+  only by a `tracker.mode: external` run; their per-key notes are the deferred building block's.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -561,7 +491,7 @@ do **not** guess.
 ## Merge-gate configuration keys
 
 This fragment carries only the `mergeGate.*` block of the Effective Flow configuration: the keys,
-their values and defaults, and the per-key read fallback to the legacy `prReview.*` namespace. It
+their values and defaults, and the retirement of the legacy `prReview.*` namespace. It
 is loaded by the sources that resolve those keys without documenting them themselves. The config
 locator (where the project setup ADR is found) and the table encoding (how a value is written and
 read) are not repeated here; they live in the "Effective Flow configuration (project setup ADR)"
@@ -587,10 +517,9 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
 
-**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
-the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
-a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
-migrate, or report as shadowed. `auto` resolves a conflict with the base through
+**`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
+row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
+`mergeGate.conflictResolution`, and a project whose legacy block effective-flow setup migrates without one gets the default `auto`. `auto` resolves a conflict with the base through
 effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
 once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
 once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
@@ -604,14 +533,8 @@ default and the documented default are the same value, and for this one they are
 unparseable line must never authorize a commit and a push. Report the affected key as that rule
 requires and continue with `off`.
 
-**Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
-`mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
-that the legacy namespace was read and that effective-flow setup migrates it. Precedence is per key: a
-present `mergeGate.<key>` always wins over a present `prReview.<key>`, and the two namespaces are
-never merged at a finer grain than the individual key. Reading is all this fallback does — only
-effective-flow setup writes configuration, and it rewrites a legacy block in place (carry the values
-over, remove the old rows, report a shadowed key). Once every project has run effective-flow setup once,
-the fallback has no remaining reader and is removable rather than load-bearing.
+**Retired namespace:** these keys were formerly named `prReview.*`. A `prReview.<key>` row is retired
+and never read; the configuration building block's retired-key rule decides whether it stops a run.
 
 **`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
 publishes **its own review findings** onto a pull request it created (see the encoding rule above),
@@ -632,9 +555,11 @@ repeated here; they live in the "Effective Flow configuration (project setup ADR
 The supported language keys and their surface mapping live only in the shared "Language
 resolution" fragment. This configuration contract accepts `language.project`,
 `language.source`, `language.documentation.user`, `language.documentation.technical`,
-`language.workflow`, `language.forge`, and `language.git`; every value is `de` or `en`.
-Missing overrides inherit `language.project`, and a missing project language resolves to `en`.
-Invalid values are ignored with a diagnostic and never guessed.
+`language.workflow`, `language.forge`, `language.git`, and `language.chat`; every value is `de`
+or `en`. Missing artifact-surface overrides inherit `language.project`, and a missing project
+language resolves to `en`. A missing `language.chat` row is the exception: it means mirror the
+user's language and never inherits `language.project`, so absence is written as an absent row
+rather than as a value. Invalid values are ignored with a diagnostic and never guessed.
 
 `plan.markerLanguage` is a legacy read/migration key, not part of the current schema. If
 `language.workflow` is absent, effective-flow setup may propose migrating a valid legacy `de`/`en`
@@ -679,11 +604,12 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`review`** (source: `effective-flow review`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (source: ``tools/apply-review.md``): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
 - **`language`** (source: shared "Language resolution"): `project` and optional `source`,
-  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
-  (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
+  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git`, `chat` overrides
+  (`de`/`en`; a missing artifact-surface override inherits `language.project`, whose default is
+  `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
-- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
+- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -712,12 +638,21 @@ ADR's table-encoding form):
 | plan.dir                          | docs/plan                  |
 | language.project                  | en                         |
 
+`delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
+holds where a remote named `origin` is configured, while every other repository takes its current
+local branch instead. `origin/HEAD` refines it: where it names another branch, that branch
+replaces `main`. Every path resolves this row against `git remote` and `origin/HEAD` before
+writing it — Express, which never reaches Step 4, as much as the guided path, whose base-branch
+question (Step 4) states the rule in full and presents the resolved value as its proposal.
+
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
 changedScope`) reaches these values individually via the guided path (advanced
-settings). Missing `language.*` overrides inherit `language.project`; Express therefore writes
-only `language.project = en` unless existing overrides are preserved. The legacy
-`plan.markerLanguage` is never written as a current setting.
+settings). Missing artifact-surface `language.*` overrides inherit `language.project`; Express
+therefore writes only `language.project = en` unless existing overrides are preserved. The base
+deliberately carries **no** `language.chat` row and Express adds none, though it retains an
+existing one like any other override, so interactive replies keep mirroring the user until a row
+is set. The legacy `plan.markerLanguage` is never written as a current setting.
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
@@ -728,6 +663,26 @@ branch and its base and to push the resulting merge commit. That last one is the
 that writes, and it is what changes behavior for a project upgrading from an earlier generation.
 
 ## Workflow
+
+### Step 0: Resolve the setup mode
+
+Classify the invocation before Step 1 and before any file, Git, ADR, marker, migration, or runtime
+mutation. Trim surrounding whitespace and fold ASCII case only. Accept exactly these forms:
+
+- `effective-flow setup` and `effective-flow setup profile` select **Profile**;
+- `effective-flow setup express` selects **Express**;
+- `effective-flow setup guided` selects **Guided**.
+
+An additional or unknown argument prints all four accepted forms above and stops without mutation.
+Do not reinterpret it as free text and do not ask a setup-mode question. Record the resolved mode
+once and carry it through the summary.
+
+For Profile mode, resolve the entry chat language read-only under the shared chat-language rule,
+then load and follow the profile contract below immediately. Its `Chat` and `Profile` asks are the
+first two substantive configuration questions and both precede Step 1. Express and Guided do not
+load it and proceed directly to Step 1.
+
+**Load on demand:** Read `shared/setup-profiles.md`, when the normalized invocation has no argument or its single argument is `profile`.
 
 ### Step 1: .gitignore entry
 
@@ -762,7 +717,7 @@ There is **no** `!.effective-flow/config.json` exception pattern anymore: the Ef
    search globs of `effective-flow review`): `docs/adr/`, `docs/decisions/`, `adr/`. Use an
    existing directory. If none exists, the default is `docs/adr/`. If
    **several** exist, prefer `docs/adr/` for the project setup ADR; ask only on genuine
-   ambiguity in the guided path:
+   ambiguity in Profile or Guided mode:
 
 If several ADR directories exist and none is clearly `docs/adr/`: Ask the user: **In which directory should the Effective Flow project setup ADR live?**
 - docs/adr/ -- Recommended default for the project setup ADR
@@ -817,34 +772,35 @@ If several ADR directories exist and none is clearly `docs/adr/`: Ask the user: 
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
-   ("currently not set – default: …"). While parsing, record a legacy merge-gate block: every row
+   ("currently not set – default: …"). While parsing, record every retired row: every row
    whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
-   for each such row note whether a `mergeGate.*` row with the same trailing key already exists.
-   `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the recorded
-   block in place.
+   a `worktree.baseBranch`, `worktree.branchPrefix` or `worktree.completion` row is the former
+   spelling of the same `delivery.*` key. For each such row note whether its successor row already
+   exists. `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the
+   recorded rows in place.
 5. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
    not valid JSON, do not overwrite silently. Inform the user with that exact handle and the error,
    and ask whether the configuration should be newly created (old backup/overwrite) or the run
    aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
    ADR, create a new one, untrack either JSON file, or mark the migration complete.
 
-### Step 3: Express or Guided
-
-Briefly explain to the user that Effective Flow is immediately ready to use with safe defaults and that they only need to adjust something if they want to. Then offer the two paths:
-
-Ask the user: **How would you like to set up the Effective Flow configuration?**
-- Express -- Adopt safe defaults (keep the current values of an existing config) — one confirmation step, then done
-- Guided -- Step by step through the options — each is explained, ideal if you do not yet know Effective Flow
+### Step 3: Enter the selected mode
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
-  `language.project = en` per the base and retain valid existing language overrides. Apply the
-  confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
-  merge-gate block — when needed. Jump directly to Step 6
+  `language.project = en` per the base, introduce no new `language.chat` row, and retain valid
+  existing language overrides, `language.chat` among them. Apply the
+  confirmed compatibility migrations described below — the language keys and the retired
+  `prReview.*` and `worktree.*` rows — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
   advanced gate follows afterwards (Step 5).
+- **Profile:** Apply the retained answers and the topology preflight from the loaded
+  `setup-profiles` fragment to the current values formed in Step 2. Do not ask any Guided core or
+  advanced question. A local or forge profile proceeds directly to Step 6; only External + forge
+  may first ask the integration questions required by that fragment. The common before/after list
+  and confirmation in Step 6 remain the write authority.
 
 ### Step 4: Core switches (guided path only)
 
@@ -872,9 +828,16 @@ Ask the user: **Which completion action should Effective Flow use by default?**
 - Branch only -- delivery.completion = branch
 - Ask at run time -- delivery.completion = null — the action is asked per run
 
-Briefly explain the base branch (the branch that is delivered into) and ask for it as free text
-(`delivery.baseBranch`, default `origin/main`); the switch-back target (`delivery.returnBranch`,
-default `auto`) only optionally.
+**Base branch.** Briefly explain the base branch (the branch that is delivered into) and ask for
+it as free text (`delivery.baseBranch`). Derive the proposal from `git remote` before asking
+instead of offering `origin/main` unconditionally: with a remote named `origin`, propose
+`origin/main` — or the branch `origin/HEAD` names, where that ref names another; without one, no
+`origin/…` ref can ever resolve in this repository, so propose its current local branch, which
+does resolve, and name the reason (no remote at all, or none named `origin`). Never guess a remote
+ref from a differently named remote — with several remotes none of them is the obvious one, and
+free text carries `upstream/main` just as well. Either way it
+stays a proposal — free text overrides it, and only the confirmed Step 6 write persists it. Ask
+for the switch-back target (`delivery.returnBranch`, default `auto`) only optionally.
 
 **PR review.** Explain: when a run creates a pull request, Effective Flow can post that run's
 review findings on it as comments. "Ask each time" decides per run, "Always" posts without asking,
@@ -889,20 +852,24 @@ Ask the user: **Should Effective Flow post its review findings on a pull request
 **Project and surface languages.** Explain: the project language is the fallback for every new
 human-readable artifact, while optional surface overrides let source prose, documentation,
 workflow artifacts, Forge communication, and Git history differ. A plan is entirely in the
-workflow language, including its status marker. Only `de` and `en` are supported; German maps to
-`de-DE` typography and English to `en-US`.
+workflow language, including its status marker. `language.chat` is the one non-artifact surface:
+it fixes the language Effective Flow speaks to the user in — replies, questions, and completion
+reports — and, left unset, mirrors whatever language the user writes in. Only `de` and `en` are
+supported; German maps to `de-DE` typography and English to `en-US`.
 
 Ask the user: **Which default language should Effective Flow use for this project?**
 - English -- language.project = en (default)
 - German -- language.project = de
 
 Then offer each override in turn: `language.source`, `language.documentation.user`,
-`language.documentation.technical`, `language.workflow`, `language.forge`, and `language.git`.
-For every override, offer **Inherit project language** first, then English and German. Inherit is
-represented by an absent row, not `null`; removing an existing override is a normal before/after
-change that requires confirmation. Explain the exact target surface from the shared language
-table. In particular, a Conventional Commit PR title uses `language.git`, while the PR body and
-comments use `language.forge`.
+`language.documentation.technical`, `language.workflow`, `language.forge`, `language.git`, and
+`language.chat`. For every artifact-surface override, offer **Inherit project language** first,
+then English and German; `language.chat` offers **Mirror the user's language (default)** first,
+then English and German, because an absent chat row mirrors instead of inheriting. Inherit and
+mirror are alike represented by an absent row, not `null`; removing an existing override is a
+normal before/after change that requires confirmation. Explain the exact target surface from the
+shared language table. In particular, a Conventional Commit PR title uses `language.git`, while the
+PR body and comments use `language.forge`.
 
 Before asking, detect compatibility input. If `language.workflow` is absent and a valid
 `plan.markerLanguage` exists, show the old value and explain that migration changes it from a
@@ -985,7 +952,7 @@ config value or default as the pre-selection:
 
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `language`: the project language and six overrides already asked in Step 4 — carry over
+3. `language`: the project language and seven overrides already asked in Step 4 — carry over
 4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
    `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
    canonicalized before they are written; reject values that resolve to the same directory or nest
@@ -999,7 +966,7 @@ config value or default as the pre-selection:
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
 `review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
 
-Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but the legacy `prReview.*` namespace is still read, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
+Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but a retired `prReview.*` row may still stand in an ADR, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
 
 Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that.
 
@@ -1015,7 +982,7 @@ different things:
   open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
   configured automatic reviewers, refuses to implement or merge while a comment from an account
   that is neither a bot nor the one it runs as is open, and finally merges. If the project still
-  carries these keys as `prReview.*`, show the recorded legacy values as the current ones and say
+  carries these keys as `prReview.*`, show the recorded `prReview.*` values as the current ones and say
   that Step 6 migrates the block.
 
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
@@ -1051,8 +1018,8 @@ value or default as the pre-selection:
   one — and behaves as `off` in a non-interactive delegated one. Say when asking that the default
   **changes** behavior for
   a project upgrading from an earlier generation, and that `off` restores the previous behavior
-  exactly. This key is new: it never existed as `prReview.conflictResolution`, so there is no legacy
-  row to carry over for it.
+  exactly. No earlier generation wrote a `prReview.conflictResolution` row; one that exists anyway is
+  retired like any other `prReview.<key>` row and carried over to this key.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.
@@ -1106,10 +1073,10 @@ login" rule **before** the two follow-up questions above, on the Express path as
 one:
 
 - **Collapse first, then ask.** Group the recorded logins into reviewers under that rule and ask
-  `.trigger` and `.check` once per reviewer. Asking once per login asks one reviewer's question
-  twice, and two different answers to it write exactly the conflict that rule refuses to resolve by
-  guessing — one this skill, as the only writer of the configuration, would leave nothing able to
-  repair.
+  `.trigger` and `.check` once per reviewer, except for a destination key whose retired sources
+  conflict and whose source configuration has no current successor: `Bot conflict` is that key's
+  sole answer, and the ordinary follow-up is not posed. Asking once per login would ask one
+  reviewer's question twice and write a conflict only this configuration writer can repair.
 - **Keep one entry.** The rule keeps the first of the collapsing logins as the reviewer's key, so
   record the chosen values under that spelling and drop the other entry's `mergeGate.bots` member and
   its `.trigger`/`.check` rows.
@@ -1118,7 +1085,7 @@ one:
   that recorded each, and have the user choose one. Never combine them and never keep one silently. A
   key set on only one of the two is no disagreement: it is simply the reviewer's value.
 
-If two collapsing `mergeGate.bots` entries carry different recorded values for the same key: Ask the user: **These two entries are one reviewer and recorded different values for this key. Which value should the single entry keep?**
+If two collapsing current `mergeGate.bots` entries, or two retired login-keyed sources with no resolved current successor, carry different recorded values for the same key: Ask the user: **These two entries are one reviewer and recorded different values for this key. Which value should the single entry keep?**
 - First value -- Keep the value recorded under the first of the two collapsing spellings, verbatim
 - Second value -- Keep the value recorded under the second spelling, verbatim
 - Neither -- Neither recorded value is right; capture the replacement as free text
@@ -1130,8 +1097,25 @@ If two collapsing `mergeGate.bots` entries carry different recorded values for t
 
 ### Step 6: Merge and write
 
-1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
-2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
+1. Build the target configuration non-destructively. Express and Guided retain their existing merge
+   order. For Profile, use `safe defaults → freshly read existing known and unknown values →
+selected profile overlay → explicit chat-language choice`; the last two overlays intentionally
+   win only for the keys the profile contract owns. Carry over every unasked known value and every
+   unknown row byte-for-byte, and never write the selected profile name or any equivalent key. A
+   retired `prReview.*` or `worktree.*` row recorded in Step 2 is not an unknown key: rewrite it as
+   described below before the before/after list is built. Two recorded `mergeGate.bots` entries
+   that denote one reviewer are collapsed just as early, as described for block 9.
+2. This also applies to the safe defaults: a default value that would replace an already-present,
+   differing config value is set only after explicit confirmation. Before writing, show a
+   before/after list of **all** keys to be changed, whether from Profile-owned topology and chat
+   values, the Express base, the Guided core switches, or the advanced settings, and obtain one
+   explicit confirmation. Profile selection is not write confirmation. A full overwrite
+   (discarding existing values) likewise only after explicit confirmation. Where the
+   `delivery.baseBranch` about to be written names a branch other than `origin/HEAD`, name both in
+   that list — a report, not a gate. For Profile also show the selected topology, detected forge
+   provider and base where applicable, and the non-secret external connection/context/state
+   evidence retained by `setup-profiles`; these are evidence for the pending write, not additional
+   persisted profile metadata.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
    - If the fresh locator reports **several** matching project setup ADRs and falls through on
@@ -1163,7 +1147,18 @@ If two collapsing `mergeGate.bots` entries carry different recorded values for t
      fallback or to defaults.
 
    Rebuild the target configuration from the applicable fresh values so that intervening changes,
-   including unknown keys, are not lost.
+   including unknown keys, are not lost. For Profile, reapply only the retained profile and chat
+   overlays after that fresh read; never let the fresh source silently discard or reinterpret either
+   answer.
+
+   For External + forge, after rebuilding and immediately before item 4, repeat read-only discovery
+   using the exact proposed `tracker.externalTool` and `tracker.externalToolHint`. It must uniquely
+   reselect the same configured connection and exact workspace/team/project context. List states
+   again and compare the selected started/done stable values plus their context, normalized
+   category, terminal flag, and writability against the basis shown in the confirmed preview. Do
+   not compare or retain credentials or unrelated connector metadata. If connection, context, hint
+   replay, state identity, or any validity-affecting property differs, discard the confirmation and
+   stop, or rebuild the complete before/after preview and obtain a new confirmation before writing.
 
    Before Step 4 in a migration case, perform a read-only idempotency check. This check creates
    nothing and touches no Git: read the verified absolute
@@ -1226,7 +1221,9 @@ If two collapsing `mergeGate.bots` entries carry different recorded values for t
      `## Kontext`, `## Konfiguration`, `| Schlüssel | Wert |`) for `de`.
    - For an existing ADR, preserve its recognized English or German envelope and surrounding
      prose during a normal update, even when the configured technical-documentation language
-     changes. Do not translate it incidentally.
+     changes. Do not translate it incidentally. Sections **after** the configuration table are
+     surrounding prose too: rewrite the table in place and keep everything below it in every mode,
+     a confirmed full overwrite included — that discards values, never prose a later run may read.
    - Add a short context sentence in that envelope's language explaining that the ADR holds the
      tracked Effective Flow configuration and `.effective-flow/` is a pure runtime directory.
    - Use one row per key in the table-encoding form (boolean, unquoted string, literal `null`,
@@ -1265,7 +1262,42 @@ If two collapsing `mergeGate.bots` entries carry different recorded values for t
    convention file that will carry the marker. Keep those snapshots only for the failure recovery
    in Step 6.
 
-5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
+5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process. Before writing anything here, record the `CLAUDE.md` state this step **observed** — absent, a symlink, or present with its content, and whether that content already carried a marker or an `@AGENTS.md` import — and carry that record forward to item 7 and Step 8 the way `<adr-convention>` is carried from Step 2, together with which file this step then wrote the marker into; item 7 decides on that record rather than on the file this step may just have changed.
+   - **Every write this item and item 7 perform goes through a primitive that cannot be raced.**
+     The property: validation and write do not re-resolve the path between them, and the destination
+     entry is replaced rather than traversed. A separate test and a path-based write never hold it —
+     the same race one step smaller, whether a confirmation fence separates the two or nothing does.
+     - **Exclusive create**, where the path must not already exist. It fails when anything is already
+       there — a file, a live symlink, or a dangling one, which it refuses without resolving — so a
+       path occupied inside the window stops that write and is reported.
+     - **Same-directory temporary file plus rename**, where the file is meant to be there and an
+       exclusive create cannot express that write at all. Write the new content to a temporary file
+       in the same directory — because a rename across filesystems is not that operation — created
+       exclusively so the staging file is nobody else's, and move it onto the target path with a
+       rename. A rename removes the destination entry rather than resolving it, so it replaces a
+       symlink there instead of following it, and it is one step, so no reader sees a partial file.
+       Never truncate and rewrite the live path, and remove the temporary file on any failure.
+     - **Both leave the same residue.** A symlink either read saw stops the run and is named, while
+       one planted after the last read is destroyed by the replacement rather than followed. Say that
+       plainly rather than claiming the later link is reported too. The replacement is unconditional
+       for the same reason: a destination changed between the read this write was decided on and the
+       swap is replaced and its content lost, because no portable primitive makes a rename
+       conditional on what the destination holds. What no path-based write closes is a swap of the
+       containing directory, which an actor able to perform it does not need.
+     - **This item's own branches.** The marker update into an existing `AGENTS.md` or `CLAUDE.md`
+       modifies a file meant to be there and takes the rename; the third branch's minimal
+       `AGENTS.md` takes the exclusive create. Item 7 picks per branch below.
+   - **A symlink at the `CLAUDE.md` path is never the marker target.** Where the project has no
+     `AGENTS.md` this step would otherwise select that file, and item 7's own hard stop cannot cover
+     that write: it fires after the marker has already gone through the link. Test the `CLAUDE.md`
+     path itself before selecting it, with a test that does not follow the link so a dangling one is
+     seen rather than reported absent. That test decides **host selection**, not write safety — the
+     rename above keeps the write itself off a link planted after it, so this step needs no
+     revalidation of its own the way item 7 does and claims no guarantee from adjacency. A symlink
+     there — live or dangling — disqualifies the file as a marker host: record the observed symlink,
+     take the third branch and create the minimal `AGENTS.md` instead, and report the path. That is
+     no softened hard stop but a different write: nothing is written through the link, and the
+     marker lands on a path this step created itself.
 6. **Migration and untracking (migration case only).** If a transitional
    `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
    - In a Git repository, determine whether that exact source is tracked with
@@ -1315,22 +1347,141 @@ If two collapsing `mergeGate.bots` entries carry different recorded values for t
      or update the marker after invalid JSON, failed required untracking, or failed target-state
      validation; the pre-write marker check above owns idempotency for an already-complete
      migration.
+   - **Record this item's outcome and carry it forward**, the way item 5 carries its `CLAUDE.md`
+     observation: `not applicable` where the locator selected no transitional source, `complete`
+     only where every step above succeeded and `configMigration.adr` was written, and `incomplete`
+     for every branch above that reported a failure and rolled back. Item 7 reads that outcome and
+     declines to run on an incomplete one, because its own decision rests on item 5's record and a
+     rollback here has withdrawn that record's basis.
+7. **Offer a `CLAUDE.md` that imports `AGENTS.md`.** Claude Code loads `CLAUDE.md` into every
+   session and reads `AGENTS.md` only when something asks it to, so a project whose guidance lives
+   in `AGENTS.md` reaches Claude Code reliably only through a `CLAUDE.md` that imports it. Offer
+   that file as non-destructively as the marker step above: its whole content is the single line
+   `@AGENTS.md`, it is created only where nothing is there, and an existing `CLAUDE.md` is replaced
+   only where it carries nothing but a pointer.
+   - **An incomplete migration skips this item, checked before anything else here.** Item 6's
+     failure branches restore the ADR and the convention-marker file but leave the run going, and
+     this item decides on item 5's record — which those branches have just invalidated. The rule
+     below, decide on the observed state rather than the resulting one, holds only while nothing
+     between item 5 and here changed the file, and item 6's rollback is the one thing in this
+     workflow that does. Left ungated in the no-`AGENTS.md` case, this item would read a record
+     saying the marker went into `CLAUDE.md`, mint a minimal `AGENTS.md` naming the ADR item 6 just
+     rolled back, and replace the `CLAUDE.md` item 6 just restored — rebuilding the state the
+     rollback undid and destroying a file on the way, which defeats the rollback's own purpose of
+     letting a later run's locator select the same source again. So run this item only where item
+     6's carried outcome is `not applicable` or `complete`. On `incomplete`, skip it entirely: pose
+     no fence, create no `AGENTS.md`, replace no `CLAUDE.md`, and report the skip and its reason in
+     Step 8. Skip rather than stop the run, because Step 8 still has to report. Do not instead reset
+     item 5's record to the snapshot state: this item would then take the pure prose pointer branch
+     and write `@AGENTS.md` into a project that has no `AGENTS.md`, which the homeless-marker rule
+     below forbids by name.
+   - **A symlink at the `CLAUDE.md` path is a hard stop**, evaluated **before** the state
+     classification below and never softened into a reroute. A symlink at that path is never a
+     write target — report the path and write nothing rather than writing through it, outside the
+     repository. That covers both a live `ln -s AGENTS.md CLAUDE.md` and a broken symlink, which
+     would otherwise read as absent and be written through to an arbitrary path.
+   - **Decide on the state item 5 observed, not the state item 5 left.** Item 5 writes the marker
+     into an existing `CLAUDE.md` where the project has no `AGENTS.md`, so a fresh read here would
+     see the marker this run just wrote and silently decline the very case this step exists for.
+     Classify the `CLAUDE.md` state item 5 recorded, and do not re-read the file to classify it.
+   - **Never leave the marker homeless, and never write an import that resolves to nothing.** Item 5
+     writes the marker into an existing `CLAUDE.md` exactly when the project has no `AGENTS.md`, so
+     in that case replacing this file would delete the marker this run just wrote — the locator
+     fallback in `config-migration` reads it from `CLAUDE.md` — and would leave `@AGENTS.md`
+     pointing at a file that does not exist, which loads no guidance at all and is strictly worse
+     than the pointer it replaced. Where item 5's record shows that it wrote the marker into
+     `CLAUDE.md`, first create the minimal `AGENTS.md` carrying that marker, exactly as item 5's
+     third branch would have, and only then replace `CLAUDE.md`. Report both writes in Step 8.
+   - **Create that minimal `AGENTS.md` with item 5's exclusive create.** Item 5 reached its
+     `CLAUDE.md` branch only because `AGENTS.md` was absent at that earlier moment, and the fence
+     has stood between that observation and this write, so the path may now hold a file or a symlink
+     another process planted. Where the create fails because the path is occupied,
+     stop, report the path, and replace no `CLAUDE.md` — the marker must not be handed to a file
+     this run did not write. This is a write guard rather than a fresh classification, so it leaves
+     the decide-on-the recorded-state rule above intact.
+   - **Revalidate the `CLAUDE.md` path immediately before writing it, and never reclassify on that
+     read.** The fence stands between item 5's observation and this write, so the path can have
+     become a symlink while the answer was pending, and the hard stop above cannot see that: it
+     consumed the recorded state. Test that exact path once more, with the same test that does not
+     follow the link, and a symlink found there stops this write — report the path and write
+     nothing. The stop is therefore evaluated twice, once on the record and once on the filesystem.
+     This second read decides only **whether the write the record already chose may still be
+     performed**. It never re-derives the state, never turns a decline into a write, never poses a
+     second question, and never feeds the classification below, which stays keyed to item 5's record
+     for the reason given above. Its only two outcomes are performing that write and stopping with a
+     report.
+   - **Write through item 5's instruments, not through the path the revalidation just checked.**
+     The revalidation cannot close the gap it opens; the instrument does. **Where item 5 recorded
+     the path as absent**, create the file with the same exclusive create the minimal `AGENTS.md`
+     above uses, so a path occupied inside the window stops this write and is reported, exactly as
+     the hard stop promises. **Where item 5 recorded a pointer to replace**, the file is meant to be
+     there and an exclusive create cannot express that write at all: write the single line through
+     the same-directory temporary file and rename. **The two stops therefore promise different
+     things, and both are honest:** the escape is closed by the write primitive, the revalidation
+     keeps the **report**, and item 5's residue rule states what a link planted after it costs.
+   - **Absent** → pose the fence below and create the file only on an affirmative answer.
+   - **A pure prose pointer** → pose the fence below, naming the exact line that would be replaced.
+     The predicate, applied to the state item 5 observed: no `**Effective Flow project setup:**`
+     marker and no legacy `**Firmo project setup:**` marker, no `@AGENTS.md` import already
+     present, and the file's only non-blank, non-heading content is a single line referring to
+     `AGENTS.md`. Anything else is content-bearing.
+   - **A pointer whose marker already lives in `AGENTS.md`** → pose the fence below, naming the
+     lines that would be replaced. The predicate, applied to the state item 5 observed: the file's
+     non-blank, non-heading content is nothing but one `**Effective Flow project setup:**` or legacy
+     `**Firmo project setup:**` marker line and at most one line referring to `AGENTS.md`, no
+     `@AGENTS.md` import is already present, **and** item 5 wrote this run's marker into `AGENTS.md`
+     rather than into this file. That last conjunct is the whole safety of the state and is never
+     optional: it is what proves the marker survives the replacement, and the marker exclusions in
+     the pointer predicate above exist only because a marker-bearing `CLAUDE.md` may otherwise hold
+     the last copy. **The optional pointer line is not a courtesy either.** Item 5 sets the marker
+     non-destructively and leaves the remaining content untouched, so where it wrote the marker into
+     a pure prose pointer the file it left behind carries **both** lines — and that two-line file,
+     not a bare marker, is what a conversion that created `AGENTS.md` and then failed to replace
+     `CLAUDE.md` leaves on disk. A predicate admitting only the marker line would miss the very
+     state this one exists for, the leftover would read as content-bearing, and every later run
+     would decline the conversion this workflow itself left unfinished. Recognizing both shapes is
+     what makes the ordered pair of writes retryable rather than permanently half-done.
+   - **Content-bearing, or already importing** → write nothing, report that state, and do not pose
+     the fence at all. A `CLAUDE.md` that already imports `AGENTS.md` is the finished state.
+   - **Report a half-completed conversion as half-completed.** The two writes are ordered and not
+     atomic, so a failure or an interruption between them leaves a real state on disk. Where
+     `AGENTS.md` was created and `CLAUDE.md` was not replaced, name both files, give the marker's
+     home as that new `AGENTS.md`, say that a later run finishes the import through the
+     marker-already-in-`AGENTS.md` state above — not the content-bearing one this rule now sits
+     under — and never report the import as written.
+
+This fence is deliberately **unconditional** rather than guided-path only, for the reason
+`project-adr-convention` gives for its own: it decides whether a file is written to the project
+root rather than a presentation detail. Profile, Express, and Guided all pose it, and a run that
+cannot pose it — unanswered, skipped, or non-interactive — writes nothing and reports that the
+fence could not be posed. There is no silent default in any mode. Item 5's express behavior does
+not extend here: setup cannot work without a marker host, while nothing requires a `CLAUDE.md`
+import.
+
+If the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration: Ask the user: **Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?**
+- Yes -- Write CLAUDE.md with the single line `@AGENTS.md`, replacing a pure prose pointer, or the pointer a half-completed conversion left behind, where one exists
+- No -- Write nothing; AGENTS.md stays the only convention file and Claude Code reads it only when asked
+
+Item 7 is **not** part of the configuration. It declares no key, belongs to none of the Step 5
+blocks, and adds nothing to the ADR written in item 4.
 
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
-The merge-gate keys of block 9 were named `prReview.*` in an earlier generation. If Step 2 recorded
-such rows, rewrite that block **in place** as part of this same confirmed write — on the Express
-path as well as the guided one:
+The merge-gate keys were formerly `prReview.*`, and three `delivery` keys were `worktree.*`. If Step 2
+recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write:
 
-- **Carry every legacy row over** to the identical trailing key under `mergeGate.`
-  (`prReview.completion` → `mergeGate.completion`, `prReview.bots.<login>.trigger` →
-  `mergeGate.bots.<login>.trigger`, and so on), preserving the recorded value verbatim. The values
-  are unchanged by the rename; only the namespace moves.
-- **Remove the old rows.** Do not leave both blocks standing. Nothing breaks if you do — every
-  reader resolves `mergeGate.*` first — but two adjacent blocks of plausible-looking configuration,
-  one of them inert, is exactly the artifact a later maintainer edits without effect.
-- **Report a shadowed key, do not merge it.** If a `mergeGate.<key>` and a `prReview.<key>` row are
-  both present with different values, keep the `mergeGate` value, name the discarded legacy value
+- **Carry ordinary non-login rows mechanically:** `prReview.completion` → `mergeGate.completion`;
+  keep the identical trailing key and preserve the recorded value verbatim.
+- **Apply `setup-retired-login-migration`.** Follow it for every retired login `.trigger` or
+  `.check` row and all destination, removal, retention, deduplication, conflict, and shadow outcomes.
+- **Carry the three retired `worktree.*` rows over the same way:** `worktree.baseBranch` →
+  `delivery.baseBranch`, `worktree.branchPrefix` → `delivery.branchPrefix`, `worktree.completion` →
+  `delivery.completion`, value verbatim, under the same removal and shadowed-key rules below.
+  `worktree.enabled`, `worktree.setup` and `worktree.baseDir` are current keys and stay.
+- **Remove only retired rows with a reachable destination established or shadowed.** Unmatched login rows are a retained explicit exception.
+  A conflicting retired login row becomes removable only after the `Bot conflict` choice selects its destination value and the normal confirmation produces the confirmed write.
+- **Report a shadowed key, do not merge it.** If a successor row and its retired row are both
+  present with different values, keep the successor's value, name the discarded retired value
   explicitly, and never combine the two into one setting.
 - **`delivery.prReview` is not part of this block.** It is a `delivery` key with an unrelated
   meaning, keeps its name, and is neither carried over nor removed.
@@ -1338,40 +1489,39 @@ path as well as the guided one:
   the before/after list of item 2 and write it only after the same confirmation as any other change.
   Without that confirmation, leave the legacy rows exactly as they are.
 
-This skill is the **only** writer of the configuration. A `effective-flow merge-gate` or
-`effective-flow iterate` run that resolves a value through the legacy namespace reports that once and
-points here; it never rewrites the ADR itself.
+This skill is the **only** writer of the configuration. Every other run that meets a retired row
+stops or reports under the configuration building block's retired-key rule and points here; it
+never resolves a value through that row and never rewrites the ADR itself.
 
 ### Step 7: Session rename capability (optional)
 
 Hosts derive a session title from the first message, so a run is listed under a name that predates
 its subject. Where the running harness has an established rename path, Effective Flow applies the
 better title itself instead of suggesting it; where it has none, every run keeps printing a
-suggestion the user applies by hand. The ChatGPT Desktop Codex tab exposes its path directly and
-needs no installation; Claude Code still needs a one-time, per-user butler setup.
+suggestion the user applies by hand. Both harnesses that have such a path — the ChatGPT Desktop Codex
+tab and Claude Code — expose it directly, so neither needs anything installed or configured.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
-blocks, and adds nothing to the Step 6 write. It explains the detected path and, on Claude Code,
-prints what the user pastes; it never opens, edits, or creates a file above the repository root, and
-it never touches the user's harness configuration. What the user pastes, and whether they paste it
-at all, stays their decision. Its announced side effects outside this repository are the verification
+blocks, and adds nothing to the Step 6 write. It explains the detected path and proves it once; it
+never opens, edits, or creates a file above the repository root, and it never touches the user's
+harness configuration. Its one announced side effect outside this repository is the verification
 probe's: with the user's go-ahead it renames the current session once, because a rename nobody can
-see proves nothing, and on the Claude Code path it sends one message to the user's own butler session.
+see proves nothing.
 
 If the configuration write completed and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
-- Yes -- Detect the harness, explain or prepare its path, and prove it once by renaming this session
+- Yes -- Detect the harness, explain its established path, and prove it once by renaming this session
 - No -- Skip only this visible capability check; later runs keep following their host's path
 
-For "No", note that setup skips only this visible check and continue with Step 8. On ChatGPT Desktop,
-later eligible runs still attempt the native operation and fall back independently from each call's
-result. On Claude Code, setup neither prepares nor verifies a butler; without an already working
-butler, later runs keep emitting the suggestion line. For "Yes", **detect the harness** from the
-running environment first. Two harnesses have an established rename path today: the **ChatGPT
-Desktop Codex tab** exposes a native current-task operation, while **Claude Code** mandates a second
-session as a rename butler. Follow that harness's path below and no other. Codex CLI has no automatic
-path in this scope. On any other harness, say plainly that no path is established, that runs therefore
-keep suggesting a title, and end this step. Never invent a mechanism, and never probe a harness for
-one.
+For "No", note that setup skips only this visible check and continue with Step 8. On either harness
+with an established path, later eligible runs still attempt the native operation themselves and fall
+back independently from each call's result, so skipping the probe withholds the proof rather than
+the capability. For "Yes", **detect the harness** from the running environment first. Two harnesses
+have an established rename path today: the **ChatGPT Desktop Codex tab** exposes a native
+current-task operation, while **Claude Code** renames the running session through its own
+session-title operation. Follow that harness's path below and no other. Codex CLI has no automatic
+path in this scope. On any other harness, say plainly that no path is established, that runs
+therefore keep suggesting a title, and end this step. Never invent a mechanism, and never probe a
+harness for one.
 
 #### ChatGPT Desktop, Codex tab: the native capability needs no installation
 
@@ -1391,49 +1541,33 @@ one.
    probe failed. Later eligible runs still attempt the operation and fall back independently from
    each call's result. Never report a probe that did not run or claim more than the host reported.
 
-#### Claude Code: the butler session the user mandates
+#### Claude Code: the native capability needs no installation
 
-1. **Print the marker title and the mandate block from `shared/session-rename.md` verbatim.** Read
-   `<skill-root>/shared/session-rename.md`, resolving `<skill-root>` to the absolute path of the
-   installed skill. That fragment owns both: the literal
-   marker title a butler carries, `Effective Flow rename butler`, and the fenced standing-mandate
-   block below it. Print both from that file, character for character — never from memory and never
-   rephrased, so one wording ships everywhere. If the file cannot be read, say so and print nothing
-   rather than reconstructing the text: several of its clauses were put there by a live test, and a
-   remembered paraphrase drops them while looking complete. Never shorten it, never replace it with
-   your own explanation, and never send it to any session yourself: the user pastes it, because a
-   mandate that arrives through the channel it authorizes is not a mandate.
-2. **Say what the user does with them.** They open a second Claude Code session, set that session's
-   title to the marker title exactly, and paste the mandate into it as its first message. Name the
-   two consequences plainly: while a session carries that title it answers rename requests from any
-   session that finds it, so the title is the entire capability and nothing else authenticates it;
-   and a rename costs the butler one model turn, which is why a small, cheap model is the sensible
-   choice for that session.
-3. **Probe with a real rename, not a claim.** Once the user confirms the butler is set up, list the
-   sessions and report what the lookup found before acting on it: no session carrying the marker
-   title, several of them, or exactly one. Only for exactly one, send it this session's own id
-   together with the literal probe title `Effective Flow setup check`, in the request shape the same
-   `<skill-root>/shared/session-rename.md` defines — read it there rather than assembling the message
-   from memory. Say beforehand that this deliberately renames the session once — the rename
-   **is** the observable proof — and that the user renames it back or lets the next run retitle it.
-   This path writes no file at all: the request is a cross-session message, so it creates no runtime
-   target and invokes no write-safety guard. Never report a probe that did not run.
-4. **The reply arrives in the next turn, so close the loop there.** The butler answers as a user turn
-   after this one has ended, so this turn reports only that the request was sent — say so instead of
-   presenting the silence as a failure. In the following turn, which the user's own confirmation
-   already creates, report the reply itself: the title the butler says it observed, verbatim. A
-   reported `Effective Flow setup check` is first-hand evidence that the path works end to end. A
-   different observed title means the host kept a title the user had set, which is the host working
-   as designed rather than a broken setup. No reply at all means the butler is absent, declining, or
-   unattended, and runs will keep printing the suggestion line. Report the concrete outcome and never
-   claim a success nobody observed.
+1. **Explain the direct path.** The host already exposes its session-title operation, currently
+   `set_session_title`, and that operation accepts the literal sentinel `"self"` for the session
+   calling it; there is no second session, hook, marker title, file or one-time configuration to
+   install. Ordinary Effective Flow runs use it directly when their subject is fixed, and no session
+   id is assembled, sent or received on that path.
+2. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
+   current session once and that the user may rename it back or let the next run retitle it. Then
+   call the operation once with the sentinel `"self"` and only the literal title
+   `Effective Flow setup check`; never resolve or supply a session id, never name another session,
+   and never retry. Where the host defers its session tools until they are loaded by name, load the
+   operation first — an unlisted tool is not an absent capability, and only a refusal or an error
+   from the call itself is a failed probe. Report the concrete result. A successful call proves the
+   path for this run; an absent or denied operation, a refused sentinel, or a failed call means only
+   that this setup probe failed. Later eligible runs still attempt the operation and fall back
+   independently from each call's result. Never report a probe that did not run or claim more than
+   the host reported.
 
 ### Step 8: Summary
 
 Report to the user:
 
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
-- which path was chosen (Express or Guided) and whether advanced settings were adjusted
+- which mode was chosen (Profile, Express, or Guided); for Profile, the selected topology, chat
+  choice, profile-owned final values and detected provider/base, and for Guided whether advanced
+  settings were adjusted
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
   `delivery.prReview` [default `ask`],
@@ -1450,9 +1584,9 @@ Report to the user:
 - whether two `mergeGate.bots` entries were collapsed into one reviewer: which login was kept, which
   redundant list member and rows were removed, and, for every key the two disagreed about, both
   recorded values and the one the user chose
-- whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
-  over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
-  discarded because a `mergeGate.*` row already held a different one
+- whether retired `prReview.*` or `worktree.*` rows were rewritten in place: which rows were carried
+  over to `mergeGate.*` or `delivery.*`, that the old rows were removed, and every shadowed retired
+  value that was discarded because its successor row already held a different one
 - for `tracker.mode = external`: the external tool and hint verbatim, the observed state candidates,
   and the confirmed `tracker.externalStartedState` and `tracker.externalDoneState` stable values or
   `null`, plus the note that the connection is
@@ -1474,12 +1608,25 @@ Report to the user:
   from the flag carried in `<adr-convention>`, together with every speaking source and its outcome
   and the tier that then decided — or inconclusive evidence that made the Effective Flow default
   apply. Name file paths and classified outcomes only, never verbatim prose from a declaring source
-- for the capability step of Step 7: the detected harness, which path it followed, whether the
-  Desktop native path was explained or the Claude marker title and mandate were printed, whether the
-  verification ran and with which concrete result, whether stale-hook removal guidance was relevant,
-  and — on Claude Code — what the following turn added, whether exactly one butler was found and
-  which title its reply reported. State that no file above the repository root and no configuration
-  key was changed by the step
+- for the capability step of Step 7: the detected harness, which path it followed, that its native
+  path was explained rather than installed, whether the verification ran and with which concrete
+  result, and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. State that no
+  file above the repository root and no configuration key was changed by the step
+- for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
+  created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
+  line named, the pointer left by an earlier half-completed conversion replaced by it with the
+  marker line named alongside it, nothing written because the file is content-bearing or already imports `AGENTS.md`,
+  or nothing written because a symlink at that path was a hard stop — recorded by item 5 or found by
+  the revalidation immediately before the write — because the minimal `AGENTS.md` could not be
+  created exclusively, because item 6 reported an incomplete migration and the item was skipped
+  before its own checks, because the fence could not be
+  posed, or because the user declined. Where item 5 found a symlink at that path and therefore wrote
+  the marker into a minimal `AGENTS.md` rather than through the link, report that too. Where the marker had gone into `CLAUDE.md` and item 7
+  therefore created the minimal `AGENTS.md` first, report both writes and give the marker's final
+  location as that new `AGENTS.md`, so this bullet never contradicts the marker location reported
+  above. Where that first write succeeded and the replacement did not, report the conversion as
+  half-completed rather than as written: name both files and say that a later run finishes it.
+  State that this step added no configuration key
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -1495,15 +1642,23 @@ with nothing staged matches no row and emits nothing.
 ## Rules
 
 - Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
-  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
+  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
+  Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
-  configuration key. The Desktop path calls the app-native current-task title operation directly;
-  the Claude Code path sends a cross-session message. Neither creates a runtime target or invokes a
-  write-safety guard. Either probe renames the current session once, with the user's go-ahead and its
-  own fixed probe title.
+  configuration key. Both paths call their own host's native title operation directly — the Desktop
+  path its current-task title operation, the Claude Code path its session-title operation with the
+  sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
+  renames the current session once, with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
+- Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge
+  profiles ask no further substantive configuration questions; only External + forge may ask for
+  its missing integration details. Safety, consent, invalid-source and write-confirmation questions
+  remain conditional and do not count as profile-configuration questions.
+- The profile name is run state, never configuration. A profile-dependent ADR, marker or migration
+  write happens only through the common confirmed Step 6 path; Step 1 keeps its independent
+  `.gitignore` repair lifecycle.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as ``effective-flow-code-validator``.
 - Do not create commits. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing; Step 7's next-step block names who commits it.

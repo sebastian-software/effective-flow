@@ -10,6 +10,10 @@ defaults, and migration behavior. The guides [Worktree and delivery](./worktree-
 [Remote tracker](./remote-tracker.md), and [Skill discovery](./skill-discovery.md) explain how the
 corresponding settings affect everyday use.
 
+The standard `/effective-flow setup` flow asks for the chat language and one common workflow
+profile, then derives the relevant rows. A profile is only a transient setup overlay: the ADR stores
+the resulting individual settings and never a profile name.
+
 ## Project-setup ADR
 
 The configuration is a mutable, numberless Markdown ADR whose current contents are the tracked
@@ -172,6 +176,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.workflow                    | en                         |
 | language.forge                       | en                         |
 | language.git                         | en                         |
+| language.chat                        | en                         |
 | plan.dir                             | docs/plan                  |
 | concept.dir                          | docs/concept               |
 | delivery.baseBranch                  | origin/main                |
@@ -191,8 +196,10 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | skills.tools.docs.exclude            | humanizer                  |
 ```
 
-The seven explicit language rows illustrate every override. In a typical project, only
-`language.project` is needed; omit an override to inherit the project language. Omit optional
+`delivery.baseBranch` appears here as an explicit value: omit the row and the default is derived
+from `origin/HEAD` instead. The eight explicit language rows illustrate every override. In a
+typical project, only `language.project` is needed; omit an artifact-surface override to inherit the project language,
+and omit `language.chat` to keep mirroring the language you write in. Omit optional
 skill override rows when no override is needed. `tracker.externalTool`,
 `tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
 absent because this example pins `tracker.mode: local`; they belong to an external target only (see
@@ -200,8 +207,9 @@ absent because this example pins `tracker.mode: local`; they belong to an extern
 
 ## Block `language`
 
-Controls the language of human-readable content created or edited by Effective Flow. Every value
-is `de` or `en`; `null` has no special meaning for these keys.
+Controls the language of human-readable content created or edited by Effective Flow. Seven keys
+cover persisted artifacts; `chat` covers what a run says to you. Every value is `de` or `en`;
+`null` has no special meaning for these keys.
 
 | Key                       | Scope                                                                                       |
 | ------------------------- | ------------------------------------------------------------------------------------------- |
@@ -212,19 +220,39 @@ is `de` or `en`; `null` has no special meaning for these keys.
 | `workflow`                | Plans, plan reviews, local review reports, investigations, and other local workflow prose   |
 | `forge`                   | Issues, PR bodies, issue/PR comments, remote reviews, and review-thread replies             |
 | `git`                     | Commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose |
+| `chat`                    | Interactive output: what a run says to you, persisted nowhere                               |
 
 For a new artifact, the surface-specific override wins, then `language.project`, then the
 built-in default `en`. An explicit user instruction for that artifact wins over configuration.
 When editing an existing artifact, its recognizable language is preserved unless translation is
 requested. Incoming third-party text and verbatim quotations are not translated automatically.
-Interactive, non-persisted replies follow the current user's language; the project language is
-only a fallback when the conversation language is unclear.
 
 A local review therefore follows `language.workflow`, while the same review published as issues
 follows `language.forge`. PR bodies and comments follow `language.forge`, but a
 Conventional-Commit PR title follows `language.git` because squash merges may turn it into the
 commit subject. Commit descriptions and generated changelog/release prose also follow
 `language.git`; Conventional-Commit types remain English.
+
+`language.chat` is the one key that does not inherit. Leave it out and Effective Flow keeps
+mirroring the language you write in, exactly as it did before the key existed; `language.project`
+is reached only when the conversation language is unclear. Set it and it wins over the language of
+your message, so `language.chat: de` answers an English prompt in German — that is the intended
+behavior, not a bug. Only an explicit request in the message itself outranks it, and an invalid
+value is reported and treated like an absent row rather than falling back to `language.project`.
+
+The key covers everything a run says itself: prose, status updates, the questions it asks, the
+completion report, the next-steps heading and each option's description, and the session-title
+label. It stops at delegated output. Reports from workers and notices from agents are passed
+through as written, so a run with `language.chat: de` can still show an English worker report. The
+tool catalog, the `version` output, and the `pr-review` deprecation notice appear before any
+configuration is read and stay on the language of the conversation.
+
+Profile setup is the sole exception to resolving this key once before a run's first question. It
+asks **Chat** in the language established at entry, immediately binds Mirror, English, or German,
+and uses that choice for the following **Profile** question and all later setup output. Mirror
+removes the `language.chat` row only in the confirmed write; English and German persist `en` or
+`de`. No other setup mode or Effective Flow tool can rebind its resolved chat language during a
+run.
 
 Stable machine-facing tokens are never localized: config keys and encoded values, labels, HTML
 idempotency markers, finding IDs, action values, paths, Conventional-Commit types, branch slugs,
@@ -327,10 +355,10 @@ that one merge commit; `conflictResolution: off` is the switch for a run that ma
 push at all. What the resolver does with a conflict, and where it refuses to guess, is described
 under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base).
 
-**This key is new and has no legacy `prReview.*` counterpart.** It never existed as
-`prReview.conflictResolution`, so the per-key legacy fallback described below finds nothing for it
-and `/effective-flow setup` has no row to migrate. A project that carries only an unmigrated legacy
-block therefore gets the default `auto` here.
+**This key is new.** No earlier generation wrote a `prReview.conflictResolution` row. One that exists
+anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
+its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
+setup migrates gets the default `auto` here.
 
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
@@ -361,7 +389,7 @@ two-state behavior for that reviewer. See
 
 When the gate conservatively observes a bot-typed submitted review or review thread whose login is
 missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
-effective `.check`, its final chat summary recommends `/effective-flow setup` → **Guided** →
+effective `.check`, its final chat summary recommends `/effective-flow setup guided` →
 **Advanced settings** → **Block 9 (`mergeGate`)**. Add or select the reviewer there and copy only an
 exact `.check` context confirmed in a pull request that tool reviewed. A normal check name or
 top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
@@ -375,14 +403,33 @@ controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable
 reviewers it expects. They control unrelated things – one is about publishing your own findings,
 the other is about driving somebody else's pull request to merge.
 
-**Legacy `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
-to `merge-gate`. A run still reads each legacy key when its `mergeGate.*` counterpart is absent, so
-an unmigrated project keeps its configured behavior instead of silently falling back to the
-defaults; the run reports once that it did so. A present `mergeGate.<key>` always wins over the
-legacy name, per key. This fallback lasts one generation: run
-[`/effective-flow setup`](./tools-setup.md), which carries the values over, removes the old rows,
-and names any legacy key it discarded because a `mergeGate.*` value already existed. No other tool
-writes configuration.
+**Retired `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
+to `merge-gate`. Those rows are retired: no run reads a `prReview.*` row as a value any more.
+`merge-gate`, and `iterate` in PR mode for `mergeGate.bots`, `mergeGate.bots.<login>.trigger`,
+`mergeGate.bots.<login>.check`, and `mergeGate.botWaitMinutes`, look for such a row at the first
+configuration read, before fetching, committing, pushing, or merging anything:
+
+- **The matching `mergeGate.*` row is absent:** the run stops, names the retired row, its
+  `mergeGate.*` successor, and `/effective-flow setup`, and does nothing else. It never quietly
+  continues with the default instead, because that would change what the gate does without telling
+  you.
+- **The matching `mergeGate.*` row is present:** that row wins, the run reports the inert legacy row
+  once, and it continues. The two rows are never combined.
+
+A retired `prReview.bots.<login>.trigger` or `.check` row for a login that matches no reviewer the
+run knows about is only reported. The repair is one step: run
+[`/effective-flow setup`](./tools-setup.md), which rewrites resolvable rows in place. For login-keyed
+rows, setup carries and removes a retired row only when it can establish its reviewer destination
+or that destination already exists. An unmatched login is reported and retained without creating a
+reviewer. Equal values from equivalent retired login spellings are deduplicated. If unequal raw
+values collapse onto one destination and no current successor exists in the source configuration, setup reports a `Bot conflict`
+and asks you to choose the first value, the second value, or a replacement raw value. A completed
+choice establishes one current successor under the surviving configured spelling and removes all
+contributing retired rows only during the normal confirmed write. If the choice cannot complete,
+setup stops with manual-repair and rerun instructions and does not claim completion. An existing
+resolved `mergeGate.*` successor still wins without prompting; setup names the shadowed retired raw
+values before removing those source rows. No other tool writes configuration.
+`delivery.prReview` is not a `prReview.*` row and is unaffected.
 
 The merge method itself is a delivery property, not a gate property, and lives under
 [Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
@@ -421,11 +468,16 @@ dedicated delivery branch.
 
 | Key            | Values                             | Default          | Meaning                                                            |
 | -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `baseBranch`   | Git ref as string                  | `origin/main`    | Starting point of the delivery branch                              |
+| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                              |
 | `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 | `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+
+An absent `baseBranch` takes `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. A configured value is used as written, and a run that finds it
+naming a different branch than `origin/HEAD` reports both once — with the
+`git remote set-head origin -a` hint — and continues.
 
 `delivery.completion` is the fallback when the current invocation does not already contain one
 unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch`. A qualifying
@@ -439,6 +491,18 @@ confirmed.
 It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
 action default, and reports when its `pr` outcome replaces a different configured value. The other
 delivery settings still control its refreshed base, branch prefix, setup, and worktree location.
+
+**Retired `worktree.*` spellings.** `worktree.baseBranch`, `worktree.branchPrefix`, and
+`worktree.completion` are the former names of `delivery.baseBranch`, `delivery.branchPrefix`, and
+`delivery.completion`. They are retired and never read as values. A run that reads one of these
+delivery keys as its own setting, not merely to provision a pull request's checkout, looks for the
+old row at its first configuration read, before any fetch, branch,
+worktree, or commit. If the `delivery.*` row is absent, the run stops and names both keys and
+[`/effective-flow setup`](./tools-setup.md), which rewrites the row in place. If the `delivery.*`
+row is present, it wins and the inert row is reported once. `/effective-flow deliver` only reports a
+retired `worktree.completion`, because its own pull-request intent overrides the completion setting
+anyway. `worktree.enabled`, `worktree.setup`, and `worktree.baseDir` are current keys and are
+unaffected.
 
 ## Block `worktree`
 
@@ -471,6 +535,16 @@ no product-specific integration and establishes every capability from the connec
 at run time. Both keys are ignored for routing while the mode is `local` or `remote`, and are kept
 in the ADR. A `mode: external` without a non-empty `externalTool` is invalid configuration: the run
 aborts instead of falling back to the forge or to `local`.
+
+Choosing **External issues and forge development** in Profile setup can populate these rows in a
+fresh project. After the two common Chat and Profile questions, setup asks only for missing
+external-tool, exact connection-context, and lifecycle-state information. It resolves a configured
+MCP connection or authenticated CLI, never a connector guessed from a product name. When the tool
+identifier is not sufficient to select the same context again, `externalToolHint` includes the
+stable, non-secret workspace, team, or project identity chosen by the user. The proposed hint and
+stable state values appear in the common before/after confirmation, and setup repeats discovery
+immediately before the write. Ambiguous or changed context, missing capability, or an invalid
+started state stops without changing the tracker mode.
 
 `externalStartedState` is a nullable structured connection value, not a display-name preference.
 Missing or `null` means unset and never authorizes a guessed transition. A non-null value stores the
@@ -531,7 +605,9 @@ uninstalled included skill is ignored.
 ## Safe defaults at a glance
 
 `/effective-flow setup` always starts from this single conservative base. Existing differing
-values are retained unless the user explicitly confirms a change.
+values are retained unless the user explicitly confirms a change. In Profile mode, the selected
+topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
+keys, while all other known and unknown rows remain untouched.
 
 | Key                                 | Value                        |
 | ----------------------------------- | ---------------------------- |
@@ -559,8 +635,31 @@ values are retained unless the user explicitly confirms a change.
 | `plan.dir`                          | `docs/plan`                  |
 | `concept.dir`                       | `docs/concept`               |
 
-Language overrides are absent in the safe base and therefore inherit `language.project`. If the
-entire `language.*` block is absent, the default remains `en`.
+`delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
+holds where a remote named `origin` is configured and `origin/HEAD` names `main` or is missing;
+where that ref names another branch the base takes it, and a repository without a remote named
+`origin` is proposed its current local branch instead.
+
+Artifact-surface language overrides are absent in the safe base and therefore inherit
+`language.project`. If the entire `language.*` block is absent, the default remains `en`.
+`language.chat` is deliberately absent too, and its absence is not inheritance: the safe base
+leaves interactive replies mirroring the language you write in. Profile setup asks for this choice
+first; Guided also exposes it among the individual language settings.
+
+There is no persisted profile key. The three transient Profile-mode overlays own only these
+topology values. Setup constructs the target as safe defaults, then existing known and unknown
+values, then this profile overlay, and finally the explicit Chat choice.
+
+| Profile                               | Profile-owned result                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fully local                           | `tracker.mode: local`; `delivery.completion: merge`; `delivery.baseBranch` set to the current named local branch                                 |
+| Forge issues and development          | `tracker.mode: remote`; `delivery.completion: pr`; repository-derived forge base; `tracker.remoteToolOverride: auto` when classification works   |
+| External issues and forge development | Forge delivery result above; `tracker.mode: external`; freshly verified external tool, context hint, required started state, optional done state |
+
+Worktree, review, validation, branch-prefix, merge-gate, plan/concept path, skill, and artifact
+language settings are not profile-owned. Existing external/provider rows are retained when another
+profile makes them dormant. The full preview still requires confirmation before profile-dependent
+configuration, ADR, marker, or migration writes.
 
 The `mergeGate.*` rows and `delivery.mergeMethod` are listed here as the values a run uses, not as
 rows Express writes: they belong to their source tools, a missing line means exactly the value above,
@@ -593,17 +692,29 @@ It first normalizes `.gitignore` to the single runtime-directory entry:
 .effective-flow/
 ```
 
-The wizard then resolves and rereads any existing source, offers **Express** or **Guided** setup,
-shows every proposed change, and writes only after confirmation. Express combines the safe base,
-including `language.project: en`, with existing values. Guided first explains the project
-language, then offers each optional language override with “inherit project language” represented
-by an absent row. Removing an existing override appears in the same before/after diff as any other
-change. In both paths, existing values and unknown rows are preserved unless a change is
-explicitly confirmed.
+With no argument, or with the explicit `profile` argument, setup asks **Chat** and then
+**Profile** before it resolves later conditional gates. Fully local, Forge issues and development,
+and External issues and forge development map to the transient overlays above. The two forge-backed
+profiles require an identifiable GitHub or Forgejo `origin` and a repository-derived base. The
+external profile may then ask the additional tool, exact connection-context, and lifecycle-state
+questions needed for valid issue routing. Issue-backed planning follows the resulting tracker; a
+natural-language `/effective-flow plan "…"` request without an issue reference still creates a
+local plan under `plan.dir`.
+
+`/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly,
+including `language.project: en`. `/effective-flow setup guided` enters the existing per-setting
+interview directly; it first explains the project language, then offers each optional language
+override with “inherit project language” represented by an absent row. No explicit mode asks for a
+profile. Every path shows all proposed changes and writes only after confirmation. Removing an
+existing override appears in the same before/after diff as any other change, and all unknown or
+unowned rows are preserved.
 
 On write, setup creates or updates the living ADR and writes or corrects the convention-file
-marker. A new ADR uses `language.documentation.technical`; an existing ADR retains its envelope
-and prose language. Ordinary config readers do none of these operations.
+marker. As the last part of that write it also offers a one-line `CLAUDE.md` importing
+`AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer;
+that step adds no configuration key. A new ADR uses `language.documentation.technical`; an
+existing ADR retains its envelope and prose language. Ordinary config readers do none of these
+operations.
 
 ### Migrating `plan.markerLanguage`
 

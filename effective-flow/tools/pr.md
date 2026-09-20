@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 # Effective Flow PR
 
@@ -15,85 +15,38 @@ You create a pull request on the detected Git host from a prepared committed bra
 - derive title and description from the branch's commits
 - do not run project validation such as linting, tests, or build checks
 
-## Language resolution
+**Load on demand:** Read `shared/language-rules.md`, when the PR title and body output languages must be resolved.
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+## Interactive output language
 
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
 
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
 
-### Resolver (the single precedence rule)
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
 
-For each artifact, determine its target surface first and resolve exactly once:
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
 
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
-
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
-locale guidance is authoritative; Effective Flow keeps no second typography checklist.
-
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 ## Task tracking
 
@@ -219,6 +172,61 @@ checkout, which may be on the base branch or an unrelated branch.
 
 If the project has an `AGENTS.md`, read it before creating the PR and follow its guidance on branch names, PR titles, PR descriptions, and project-wide conventions.
 
+## Base-branch resolution
+
+`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step refers
+back to the results recorded here instead of restating the rule or re-deriving anything from the
+configured value. Absent, the key takes `origin/` prefixed to the branch
+`git symbolic-ref refs/remotes/origin/HEAD` names, else `origin/main`; the derived value is a
+remote ref like any other and is classified below as one. An explicit value is used as written. The value is a
+remote ref only when the part before its first `/` is a remote that `git remote` lists for this
+repository; local branch names carry slashes too, so `feature/foo` is that branch unless `feature`
+is a configured remote. A value with no `/` at all (`main`, `develop`, whatever `setup` proposes
+where no `origin` exists) has no such leading part and is therefore never a remote ref.
+
+- Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
+  branch starts from the current remote state. If the fetch or the resolution fails (offline,
+  credentials, deleted branch), report and stop — never fall back here: a stale local branch
+  can be far behind and would start delivery from the wrong commit. After a successful
+  resolution, and only where REMOTE is `origin`, read `origin/HEAD`: where it resolves and names
+  another branch, name both facts once, neither as authoritative — the clone-time cache may be the
+  stale side — and offer `git remote set-head origin -a`. This adds no gate: the configured value
+  wins. A `origin/HEAD` that does not resolve is not an error and reports nothing; a base on a
+  differently named remote is not compared against origin's at all. Stay silent where the project
+  setup ADR carries, in prose outside its configuration table, a sentence calling the divergence
+  between `delivery.baseBranch` and the repository default deliberate and permanent.
+- Remote not configured: no such ref can exist in this repository. Resolve the value as a
+  local ref instead: as it stands first, and only if that fails the local branch part after
+  the first `/` (`main` for `origin/main`); report that substitution once.
+- Neither the remote ref nor any local candidate for the value resolves: abort, naming both
+  facts. Never invent or create a base branch.
+
+### Recorded results
+
+The arm that ran records two named results. They are the only base-branch values later steps use,
+and no step recomputes either one from the configured value.
+
+- **Resolved base ref** — what a delivery branch is created from, and what a commit range is
+  computed against.
+- **Resolved local base branch** — the local branch every merge target, switch-back target and
+  pull-request target uses.
+
+The remote-configured arm records the fetched remote-tracking ref as the resolved base ref, and
+the branch name after the remote name as the resolved local base branch. The
+remote-not-configured arm records the candidate that actually resolved as **both** results: the
+value as it stands, or — only where the last-resort substitution above fired and was reported —
+the substituted local candidate. The aborting arm records nothing, and no consuming step runs.
+
+The pair therefore identifies its own arm, and a consuming step reads that arm off the two
+results rather than off which arm it watched run. This matters exactly where nothing ran: a
+delegated run handed both results resolved nothing itself and has no arm to remember. The
+remote-configured arm's two results always **differ**, because its resolved base ref carries the
+remote name in front of the branch while its resolved local base branch is that branch name
+alone. The remote-not-configured arm's two results are always **equal**, because it records one
+candidate as both — the value as it stands, or the substituted one. So equal results are the
+remote-not-configured arm and differing results are the remote-configured one. There is no third
+reading, and therefore no arm name any caller has to pass alongside the pair.
+
 ## Inputs
 
 - **Execution root:** the verified absolute `RUNTIME_STATE_ROOT` from a delivery handback. If it is
@@ -226,11 +234,25 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 - **Head branch:** the prepared delivery branch. A direct invocation uses the named branch checked
   out in its invocation checkout. A delivery handback always passes the branch explicitly.
 - **Committed handoff:** an optional returning-caller receipt containing the exact head branch,
-  resolved base branch, verified head OID, and confirmation that every intended group was committed
-  and verified. Missing or contradictory handoff evidence fails closed.
-- **Base branch:** the PR target. Default: the branch part of
+  both base results named as such — the resolved base ref and the resolved local base branch —
+  the verified head OID, and confirmation that every intended group was committed
+  and verified. A handoff that supplies both results is complete: this tool then runs no
+  resolution of its own. A caller that hands over a single untyped base value is read as having
+  supplied the resolved local base branch, which leaves that handoff **incomplete** rather than
+  broken: step 4 applies "Base-branch resolution" to that one value exactly as a direct invocation
+  does and takes both results from there, which also corrects the reading where the value the
+  caller meant was a remote ref after all. `effective-flow deliver` is the caller that hands over one
+  value today, so this is the routine path and not a degenerate one. Missing or contradictory
+  evidence about the head branch, the verified OID or the commit-only guarantee fails closed; a
+  single base value does not.
+- **Base branch:** the PR target — always the resolved local base branch, never the resolved base
+  ref. On a direct invocation it comes from applying "Base-branch resolution" to
   `delivery.baseBranch` from the Effective Flow configuration (project setup ADR; so `main` for `origin/main`);
-  legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
+  if the config is missing, the derived remote default —
+  the one the delivery configuration documents, and a remote ref deliberately. A slashless `main`
+  is never a remote ref under that rule and `git rev-parse` does not widen it into one, so an
+  unconfigured checkout that has `origin/main` but no local `main` — a `--single-branch` clone, a
+  branch deleted after its merge — would resolve no base at all.
 - **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
 - **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 9.
 
@@ -241,14 +263,21 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     falling back to the old `worktree.baseBranch` value and then the documented default.
+     or the documented default where that line is absent. Record
+     that configured value and resolve nothing from it here: step 4 applies "Base-branch
+     resolution" to it, deliberately behind the step 2 preconditions, so a direct invocation
+     reaches the network only once its checkout has been accepted.
+   - A `worktree.baseBranch` row is retired and never read, on a direct invocation and a committed handoff
+     alike. With no `delivery.baseBranch` row beside it, stop here, before any fetch or push, naming both keys
+     and effective-flow setup; with both present, `delivery.baseBranch` wins and the retired row is reported once.
    - Classify the call as either a direct invocation from its current checkout or a returning
      committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
      `effective-flow deliver` for that lifecycle.
 2. **Check preconditions:**
    - A Git repository with an `origin` remote is present. If `origin` is missing, no PR can be created: report clearly and abort.
-   - The head exists as an exact local branch, is not detached, and differs from both the resolved
-     base ref and its local branch part. A detached invocation or base branch as head aborts.
+   - The head exists as an exact local branch and is not detached. A detached invocation aborts
+     here; a base branch as head aborts in step 4, which is where the resolved base ref and the
+     resolved local base branch first exist to compare it against.
    - For a direct invocation, require the complete working tree and index to be clean, including
      untracked paths. If it is dirty, abort before fetch or push and direct the user to
      `effective-flow deliver`; never omit local content silently.
@@ -260,11 +289,75 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
    squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
    handoff must already have supplied the same OID.
-4. **Resolve the base and inspect the head before any push:** Refresh the configured base ref if
-   needed, resolve its remote-tracking ref, and determine the commits in
-   `<remote-tracking-base>..<head-branch>`. Preserve this discovered commit range for the later
-   title and description derivation. If the base cannot be refreshed or resolved, abort before
-   any push and preserve the head branch.
+4. **Resolve the base and inspect the head against it before any push:** The two base results are
+   produced here. A handoff that supplied both is used unchanged; every other call applies
+   "Base-branch resolution" to the value step 1 recorded. This is the first step that may touch
+   the network, and that is why it sits behind step 2 rather than in step 1: a dirty direct
+   invocation is turned away with the diagnosis it deserves instead of with a fetch or credential
+   error from a base it was never going to reach. The step adds no refresh of its own and never
+   repeats the one that rule owns; where an arm below needs a ref brought up to date, it goes back
+   through that same rule. Require the head branch to differ from both results; a base branch as
+   head aborts. Derive the
+   remote-tracking diff base from the arm the two results identify, reading that arm off the pair
+   per "Recorded results" rather than off which arm ran here — a complete handoff ran none, so
+   equal results are the remote-not-configured arm and differing results the remote-configured
+   one, and no handoff has to carry an arm name. Both arms below yield a
+   remote-tracking ref on `origin` or abort. Then determine the commits in
+   `<remote-tracking-base>..<head-branch>` and preserve this discovered commit range for the later
+   title and description derivation. If no diff base can be derived, abort before any push and
+   preserve the head branch.
+   - **Remote configured:** the resolved base ref is already a remote-tracking ref, so no upstream
+     lookup runs. Require its remote to be `origin` all the same, and abort as **base branch
+     tracked on a non-`origin` remote** when it is not — the same abort the other arm raises, for
+     the same reason. A configured `upstream/main` resolves here while this tool pushes the head
+     to `origin` and opens the pull request there with base `main`, so the commit range, the
+     empty-range decision and the derived title and description would all describe a repository
+     the pull request is not opened on. The accepted ref is the diff base directly, once it is
+     current in this run. A call that resolved the value here already brought it up to date and
+     owes nothing further. A complete handoff resolved nothing here, and the ref it recorded is a
+     mutable remote-tracking name that can be arbitrarily far behind by the time this step runs:
+     the handoff may arrive long after the resolution that produced it, and `origin` moves in
+     between, so the empty-range decision and the derived title and description would read a base
+     the pull request no longer has. Put that ref back through "Base-branch resolution", which
+     performs the one refresh this arm then owes — exactly as the other arm does with its
+     discovered upstream — before the range below is inspected; a failure there stops the run as
+     that rule requires. Refreshing a recorded ref recomputes neither result: both stay exactly as
+     the handoff stated them.
+   - **Remote not configured:** the resolved base ref is local and cannot serve as a diff base
+     here. Discover the resolved local base branch's upstream with
+     `git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/<branch>` and read
+     the refname back rather than trusting the pattern to have matched only that branch. Two
+     properties of this command decide the format, and dropping the refname loses both. A
+     `refs/heads/<branch>` pattern matches that ref **or** any ref below `refs/heads/<branch>/`, so
+     a base `release` that does not exist locally reports `release/1.0`'s upstream and the range,
+     title and description are all derived against a sibling branch with no abort firing. And the
+     two absences are not distinguishable from a bare `%(upstream:short)`: a missing branch prints
+     nothing and a branch without an upstream prints a lone newline, which command substitution
+     strips, so both arrive as the empty string. **No row whose refname equals the branch** is
+     therefore the branch missing, and **a row whose upstream field is empty** is the branch
+     without an upstream. Abort as **base branch has no upstream** in either case and name which
+     of the two the observation showed; a branch absent from the forge cannot be a PR target. Otherwise require the upstream's remote to be `origin`, and abort as **base branch
+     tracked on a non-`origin` remote** when it is not: this tool pushes the head to `origin`, so
+     a base tracked on another remote would compute the commit range against a repository the pull
+     request is not opened on. Then require the upstream's branch component — the part after the
+     remote name — to equal the resolved local base branch, and abort as **base branch tracked
+     under a different name** when it does not. Git lets a local branch track a remote branch of
+     any name, so a `release` that tracks `origin/main` computes the range against `origin/main`
+     while `release` stays the pull-request target: creation fails outright where `origin/release`
+     is absent, and opens against an unrelated branch where one exists. Adopting the upstream's
+     branch component as the target instead is the wrong repair, because it would open the pull
+     request against a branch the configuration never named — `main` for a configured `release` —
+     and "Base-branch resolution" already recorded the resolved local base branch, so redefining
+     it here would leave step 8's lookup filter and step 10's payload disagreeing with the rule
+     that produced them. The comparison reads refs already in hand, so it runs before the refresh
+     below and turns that configuration away without reaching the network. The accepted upstream is
+     not current yet: this arm ran because the configured value named no remote, so the resolution
+     fetched nothing and the remote-tracking ref can be arbitrarily far behind the branch the pull
+     request will actually target. Put that
+     upstream back through "Base-branch resolution", which classifies it as a remote ref and
+     performs the one refresh this arm owes; a failure there stops the run as that rule requires.
+     Its resolved base ref is the diff base, and the resolved local base branch stays the one this
+     arm already recorded.
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
    - **No commits found:** Preserve the prepared branch, report that it has no commits against the
      resolved base, and stop without any remote mutation.
@@ -282,7 +375,8 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
    abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
-   normalized details using both `head === <head-branch>` and `base === <base-branch>`, and require
+   normalized details using both `head === <head-branch>` and `base === <base-branch>`, where
+   `<base-branch>` is the resolved local base branch and never the resolved base ref, and require
    state `open` and a parseable URL. The helper owns the provider-specific GitHub and
    Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
    pagination; do not bypass it with guessed `gh` or `tea` flags.
@@ -293,7 +387,7 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
      for the same head but a different base, as well as a closed or merged PR, is not a match.
    - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear
      diagnostic and abort without attempting PR creation or guessing which PR to use.
-9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
+9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. A forge issue-reference keyword carried in a supplied reference — the auto-close keyword with its variants, or the non-closing `Refs` — is a machine token the code host parses: keep it in English whatever `language.forge` resolves to, never translated. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
    The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>`
    with a stable English type and a `language.git` description, per "Commit message rules". This
@@ -307,7 +401,7 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-10. **Create the PR:** Build the provider-neutral PR payload, set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
       mutation would create a duplicate for the same head. Resolve it by repeating the step 8

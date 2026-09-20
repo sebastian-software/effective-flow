@@ -10,11 +10,14 @@ tool and no Effective Flow agent depends on a host skill for its base function.
 
 ## How detection works
 
-1. **Prefer recommended skills.** Many tools and agents name a short list of "Recommended
+1. **Prefer recommended skills.** Agents and tools can name a short list of "Recommended
    skills" in their own header – skills that are an especially good fit for their typical
    task (e.g. `humanizer` for documentation prose, `impeccable`/`frontend-design` for
-   UI implementation). A notation `A › B` is an **ordered fallback**: the first available,
-   non-excluded skill in the group is taken – never both at once.
+   UI implementation). For **agents** the list is guaranteed: the build rejects an agent that
+   names none unless it is a documented exemption. For **tools** it stays optional –
+   a tool with no domain owner to name simply carries no such list, and that is not a defect.
+   A notation `A › B` is an **ordered fallback**: the first available, non-excluded skill in
+   the group is taken – never both at once.
 2. **Assess relevance.** Each skill is checked against the specific task; only clearly
    fitting ones are brought in (typically zero to two), not "on suspicion". A running tool
    never loads the `effective-flow` router again as a skill: nesting it would create competing
@@ -71,11 +74,12 @@ Example – prefer `humanizer` globally, but disable it for the `docs` tool:
 | skills.tools.docs.exclude    | humanizer |
 ```
 
-## Materialization via `/effective-flow setup`
+## Materialization via `/effective-flow setup guided`
 
-In the guided path of [`/effective-flow setup`](./tools-setup.md) you can have the built-in
-fallback recommendations of individual agents written visibly into the config (section
-"Advanced settings"). For a fallback recommendation like `impeccable › frontend-design`,
+With [`/effective-flow setup guided`](./tools-setup.md) you can have the built-in fallback
+recommendations of individual agents written visibly into the config (section “Advanced
+settings”). Profile setup does not ask about skill preferences. For a fallback recommendation like
+`impeccable › frontend-design`,
 only the **primary** skill is materialized (row `skills.agents.<name>.include`, value `impeccable`)
 – the built-in fallback to `frontend-design` still stays active in case `impeccable` is
 ever unavailable. A flat recommendation without a fallback (e.g. `humanizer`) is taken over

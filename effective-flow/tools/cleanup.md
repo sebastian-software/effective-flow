@@ -29,85 +29,38 @@ remove a worktree through a verified Effective Flow lifecycle record.
 - be idempotent; a true no-op has neither a migration action nor a removable worktree, but still
   prints the mandatory worktree report
 
-## Language resolution
+**Load on demand:** Read `shared/language-rules.md`, when the chat-language rule leaves this run's interactive output language on `language.project`, so the artifact-surface resolver must be read.
 
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
+## Interactive output language
 
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
 
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
 
-### Resolver (the single precedence rule)
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
 
-For each artifact, determine its target surface first and resolve exactly once:
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
 
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
 
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
-
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `effective-writing` skill, which carries locale typography alongside its prose craft. Its
-locale guidance is authoritative; Effective Flow keeps no second typography checklist.
-
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 ## Task tracking
 
@@ -372,10 +325,10 @@ lifecycle records separately so partial cleanup evidence is not hidden.
 ## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
 Effective Flow keeps project-local runtime data under `.effective-flow/` (`memory.json`,
-`cache.json`, `review/`, `investigation/`, `.worktrees/`, and wisdom files; a legacy
-`config.json` may still be present as transitional input, but configuration migration to the
-project-setup ADR is owned by `effective-flow setup`). Earlier versions used `.firmo/`, and still older
-ones used `.sf-plugin/`.
+`cache.json`, `review/`, `investigation/`, `merge-gate/` delegation messages, `.worktrees/`, and
+wisdom files; a legacy `config.json` may still be present as transitional input, but configuration
+migration to the project-setup ADR is owned by `effective-flow setup`). Earlier versions used `.firmo/`,
+and still older ones used `.sf-plugin/`.
 
 Every workflow that can mutate `.effective-flow/` must load this fragment after
 “Runtime-state write safety” and run the following prerequisite before its **first** runtime
@@ -588,44 +541,31 @@ first matching step wins:
 
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
    `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
-   `**Firmo project setup:** <path>` is recognized as equivalent on read; effective-flow setup
-   converts it non-destructively to the new spelling on the next run. If the
-   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
-   there, but fall through in this order and report the stale marker
-   (correction in effective-flow setup).
+   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
+   equivalent on read; the spelling stays here because it is the **detection** predicate, while
+   what that recognition then triggers belongs to the deferred building block below. If the
+   marker points to a path under which **no** ADR lives
+   (dead/stale marker), do not stay there, but fall through in this order and report the stale
+   marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
-   file matches that scan when its stem equals `effective-flow-project-setup` or the legacy slug
-   `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix, **and**
-   its body carries one of the canonical configuration envelopes listed under "Table encoding"
-   below. Both the numeric prefix and the legacy slug are read-side tolerance; they do not decide
-   what a new file is named. That tolerance widens the scan to a family of names, so **several**
-   files can match inside this one step; "the first matching step wins" ranks the four steps, not
-   the matches within a step. Rank the matches by one **ordered** comparison rather than by two
-   independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
-   `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
-   stem over a prefixed one. Stated as two independent preferences,
-   `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
-   neither would survive both. If more than one match still ties at the top of that ranking, report
-   every matching path and fall through to the next step instead of picking one. Falling through
-   here is not the same result as finding nothing: a tool that **writes** configuration ends its run
-   on a reported several-match result, reporting every matching path so its user resolves the
-   duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
-   ADR into that state adds a further one beside the matches already reported.
-3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
-   verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
-   a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
-   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) and point to effective-flow setup. Never inspect a
-   same-named fallback below a linked `EXECUTION_ROOT`. A missing, bare, moved, unsafe, or
-   repository-mismatched runtime root blocks the fallback. This read path creates **nothing**
-   and touches **no** Git.
+   file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
+   carries one of the canonical configuration envelopes listed under "Table encoding" below. The
+   stem comparison is deliberately tolerant of a legacy slug and a numeric prefix, so this one
+   step can match **several** files; that tolerance and the ordered ranking which resolves a
+   several-match state belong to the deferred building block below, not to this step.
+3. **Transitional compatibility.** Otherwise — only transitionally — the legacy
+   `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) read fallback, whose complete contract is the
+   deferred building block's.
 4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-The deterministic read path of any tool is non-blocking: It reads the ADR (or
-the transitional fallback), but itself creates no file and mutates no Git. Creating
-the ADR, the markers and the migration happen exclusively in the Git-touching path of
-effective-flow setup.
+The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
+transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
+the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
+in the Git-touching path of effective-flow setup.
+
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -654,24 +594,11 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
-- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
-  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
-  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
-  fresh list of writable states in the exact configured tracker context before every implementation
-  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
-  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
-  observation grace period has no configuration key.
-- **`tracker.externalDoneState`** → a nullable string containing the external connection's stable
-  **terminal** state ID, or its exact accepted token only when that connection exposes no ID. Missing
-  or `null` means unset and never authorizes a guessed transition. Readers validate a non-null value
-  against a fresh list of writable states in the exact configured tracker context before the offered
-  post-merge terminal transition; stale, non-terminal, read-only, cross-context, not-done-category,
-  and display-name-only matches make that transition unavailable instead of guessing, and never
-  abort a run whose merge already succeeded. That transition is not the only reader: the post-merge
-  observation of an issue found already terminal resolves the same value by the same rules, and a
-  value that fails there makes that issue's reconciliation unavailable rather than its transition.
-  Only `effective-flow setup` writes a confirmed
-  tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
+- **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
+  whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
+  to the safe-default rule below, under the deferred building block's retired-key contract.
+- **`tracker.externalStartedState`** and **`tracker.externalDoneState`** → nullable state IDs read
+  only by a `tracker.mode: external` run; their per-key notes are the deferred building block's.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -693,13 +620,13 @@ do **not** guess.
 
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" below.
+This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
 
 The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the provider-neutral remote-helper contract, the label convention, and the canonical issue and epic body formats. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
+It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
 
-In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
+In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
 
 ### Configuration
 
@@ -733,7 +660,7 @@ Valid values:
 - `tracker.externalToolHint`: free text that lets the run-time agent pick the right connection —
   e.g. MCP server name, workspace, team or project key, identifier convention, or state names.
 
-`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides. It names a **forge** CLI and stays forge-only.
+`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection of the "Remote helper contract" in `issue-tracker-forge.md` decides. It names a **forge** CLI and stays forge-only.
 
 ### Config migration
 
@@ -762,348 +689,13 @@ The query stays deliberately two-way: it runs only when no configuration pins a 
 
 ### Tracker target
 
-The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything below in this fragment — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
+The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything in the sibling fragment `issue-tracker-forge.md` — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
 
 `external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (``tools/apply-issues.md``, `effective-flow plan-issue`) and review publication.
 
 The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
 
-### Remote helper contract (remote mode only)
-
-All deterministic remote mechanics of the forge target run through the shipped helper:
-
-```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
-```
-
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea` probing, capability normalization, command construction, JSON normalization, payload validation, compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens a shell and never prompts.
-
-Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`. The helper runs `git`, `gh`
-and `tea` in that directory, and every provider CLI resolves its repository context from it. The
-runtime root is the one checkout guaranteed to exist for the whole run, whereas an execution
-worktree may already have been withdrawn by the time a completion action runs. The field is
-optional for compatibility — when it is absent the helper inherits the process working directory —
-but an Effective Flow workflow always sets it. A `cwd` that is not an existing directory fails with
-a structured error naming the path, never as a missing-CLI error.
-
-For `finding-build` and `epic-build`, pass the already-resolved `language.forge` as the top-level
-`language: en|de`; this applies equally when the finding or epic data is nested under its named
-key. The optional field defaults to `en`, and unsupported values are rejected. The helper returns
-the same language-stable payload keys in either language.
-
-Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`, and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API requests, read CLI credentials, or invent a fallback. In particular:
-
-- `AMBIGUOUS_HOST`: obtain an explicit `github`/`forgejo` choice from configuration or the user, then retry with that override.
-- `CLI_MISSING`/`AUTH_FAILED`: abort without side effects; offer local mode only with explicit user consent.
-- `UNSUPPORTED_CAPABILITY`: report the unsupported provider capability and preserve the surrounding workflow state.
-- `STALE_WRITE`: abort that write without retrying, merging, or overwriting; re-enter the workflow from a fresh read.
-- all other structured errors: preserve scope and let the owning workflow decide whether a retry is safe.
-
-Reads execute immediately. Mutations are dry runs by default: inspect the returned executable, argument vector, and redacted input preview, obtain every workflow-specific approval that still applies, and only then repeat the same operation with `--apply`. A dry run never changes Git, tracker state, memory, labels, issues, pull requests, comments, or review threads.
-
-### Label convention
-
-In remote mode, use these labels and create missing labels idempotently. The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy of a label; each call reports whether it created anything. Copies an earlier version already created are not removed and can still attach several times to one issue. Where the existing labels cannot be read, it aborts instead of creating:
-
-| Label                                                                                          | Meaning                                                                           |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `effective-flow-review-finding`                                                                | marks a single finding issue                                                      |
-| `effective-flow-review-epic`                                                                   | marks the epic/tracking issue                                                     |
-| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
-| `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
-| `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
-| `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
-| `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
-| `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `effective-flow plan-issue` needed   |
-
-`wontfix` already exists on many trackers; the helper creates it only if it is missing.
-`effective-flow-issue-in-progress`, `effective-flow-issue-done`, and
-`effective-flow-needs-planning` belong to the issue-driven lifecycle and are created idempotently
-where needed. The in-progress label is a forge fallback for a native started state; the done label
-continues to mean "implementation secured in a PR", not "tracker issue closed". Merge reconciliation
-removes the in-progress label only after it freshly observes the issue as terminal.
-
-**Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
-
-**Backward compatibility (legacy prefix `firmo-`):** Earlier versions used the prefix `firmo-` instead of `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Newly **created or set** is exclusively the `effective-flow-` label; an upgrade of existing `firmo-` labels is **not** needed. When **reading, listing, deduplicating and detecting**, every `firmo-` variant counts permanently as equivalent to the associated `effective-flow-` variant:
-
-- **Listing/filtering** (dedup, epic/issue search): `gh`/`tea` combine multiple `--label` specifications with AND semantics. Therefore run the query **separately per prefix** (once `effective-flow-…`, once `firmo-…`) and union the matches by the issue number.
-- **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label. `effective-flow-issue-in-progress` is new and has no legacy variant.
-
-**One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). If the runtime directory is missing, apply the owning workflow's loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact directory immediately before its `mkdir`. After the remote migration, use the loaded shared memory mutation contract against the retained absolute memory handle: acquire its lock, re-read memory, merge only `labelMigration.sf`, and atomically persist `done` plus the completion timestamp while preserving every sibling and unknown field. If this marker mutation blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `effective-flow setup`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
-
-### Security disclosure gate
-
-A finding classified as security relevant is **never** written to a tracker without an explicit
-per-run confirmation by the user. This gate binds every publisher of review findings and
-overrides `tracker.mode` as well as every other configuration value; there is no configuration key
-that switches it off. Publication to a third-party tracker is a disclosure with the same
-consequences as publication to a public forge, so the gate binds a forge target and an external
-target alike. The producing workflow owns the classification and the confirmation
-(see `effective-flow review`, Phase 3 and Phase 4).
-
-Rules for every publisher, on whichever tracker target the run resolved:
-
-- **Local first:** the withheld findings are persisted in a local report below
-  `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
-  for them; it stays in the gitignored runtime state of the main checkout and is never committed.
-- **Confirmation before publication:** publication happens only after an explicit user decision in
-  that run, taken with knowledge of the disclosure consequence. Keeping them local is the default;
-  an unanswered, skipped, or non-interactive run publishes nothing from the withheld set.
-- **Silence in public artifacts:** epic bodies, issue bodies, and comments contain no count, title,
-  signature, ID, or other reference to a withheld finding. A public hint that unfixed security
-  findings exist is itself an exploitable signal.
-- **Conservative classification:** an uncertain or missing security assessment counts as security
-  relevant and stays local.
-- **Scope:** the gate covers the publication of review findings. It does not sanitize branch names,
-  commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
-  delivering workflow and its user.
-
-The gate governs only the destination of a finding. It never removes a finding, changes its
-severity, or narrows the active finding scope.
-
-### No AI attribution in issue bodies and comments
-
-Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not. This binds every publisher on every tracker target, the forge and an external tool alike.
-
-### Remote prose language
-
-Resolve `language.forge` once per remote run and pass it to all issue/comment writers. Preserve
-the clear language of an existing issue or thread when editing/replying; otherwise use the
-resolved Forge language. Finding and epic bodies use one complete language for human-readable
-titles, headings, field labels, displayed severity/complexity values, and prose.
-
-The German display mapping is `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Problem`,
-`Empfehlung`, `Prompt-Vorschlag`, `Sicherheit`, `Befunde`, and
-`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. The exposure
-values `external`, `internal`, and `none` of the `Security`/`Sicherheit` field are machine tokens
-and stay unlocalized in both forms. `Action`,
-`Epic`, and `Signature` are stable helper/dedup fields and remain canonical English in both
-forms, as do their action values. Displayed severities map to
-`Kritisch`/`Wichtig`/`Hinweis`, and displayed complexities map to
-`Niedrig`/`Mittel`/`Hoch`; their helper input enums remain
-`Critical`/`Important`/`Note` and `Low`/`Medium`/`High`. Labels, issue numbers, `R-XXXXXXX` IDs, HTML markers, body
-hashes, checklist syntax, and helper payload keys are never localized. Readers accept both
-German and English historical display fields, including legacy `Signatur`, but canonical writes
-use `Signature`.
-
-### Issue body format (finding issue)
-
-A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see the shared `review-report-format` fragment).
-
-- **Title:** `[R-XXXXXXX] <short title in language.forge>`
-- **Labels:** `effective-flow-review-finding`, the action label and the severity label.
-- **Body** (canonical template):
-
-```markdown
-- **Severity**: Critical / Important / Note
-- **Complexity**: Low / Medium / High
-- **Area**: [...]
-- **File**: [path:line]
-- **Problem**: [...]
-- **Recommendation**: [...]
-- **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
-- **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
-- **Epic**: #<epic number> (empty if no epic)
-- **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
-```
-
-A finding published through the "Security disclosure gate" keeps its `Security`/`Sicherheit` field
-in the issue body, so the accepted disclosure stays visible; an ordinary finding omits that field
-instead of carrying an empty `none`.
-
-The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
-
-### Epic body format (tracking issue)
-
-- **Title:** `Code review YYYY-MM-DD[-N]` for English or
-  `Code-Review YYYY-MM-DD[-N]` for German
-- **Labels:** `effective-flow-review-epic`
-- **Body** (canonical template):
-
-```markdown
-Code review of YYYY-MM-DD · Scope: [Entire code / Described area] · Project type: [...]
-
-## Findings
-
-- [ ] #<nr> [R-0000001] <short title> — Action: effective-flow-fix
-- [ ] #<nr> [R-0000002] <short title> — Action: effective-flow-refactor
-
-## Skipped (design decisions)
-
-- <short title> — Signature: [normalized signature] — covered by [decision reference] ([Source])
-```
-
-Rules for the task list:
-
-- Each entry under `## Findings` references exactly one finding issue via its number and carries the `R-XXXXXXX` ID as well as the action.
-- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. A skipped entry is identified by title, normalized signature, and decision reference; it carries no issue number and no `R-XXXXXXX` ID, and it never advances `lastFindingNumber`. The section is omitted when no such findings are present.
-- Ticking off delegates the exact checklist patch to the helper, using the body hash from the preceding fresh read. It may append the PR link; a finding deliberately not implemented is marked with its decision reference.
-
-### Tracker operations
-
-Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-issue state transition, native sub-issue read/create, comment read/create/update, label
-create/change, PR review-thread read/reply/resolve, PR submitted-review read,
-marker/checklist patch, or PR creation. Use the helper's normalized output rather than
-provider-specific fields. For list operations, request the compatibility variants and let the
-helper union matches by issue number before signature deduplication.
-
-The two native-containment operations are deliberately separate from generic issue creation:
-
-- `issue-sub-issues-read` takes a mandatory top-level `parent` issue reference and returns a list of
-  normalized issue objects. Every item additionally carries
-  `parent: { number, repository }`; a child created from an Effective Flow decomposition also
-  carries its normalized `decompositionKey` from the canonical marker in its body. A malformed,
-  duplicated, invalid, or different-parent marker does not discard the provider-verified native
-  child or abort its siblings: that child instead carries a safe structured
-  `decompositionKeyError`. Planning reconciliation must fail closed on that diagnostic; lifecycle
-  and merge observation still use the verified native relation and issue identity.
-- `issue-sub-issue-create` is a mutation whose top-level `parent` is mandatory. Its `payload`
-  contains a non-empty `title`, non-empty self-contained `body`, optional `labels`, and the stable
-  lowercase `decompositionKey`. The helper validates that a parent URL belongs to the active
-  repository, redacts complete recognizable secret values in titles and bodies, rejects an unsafe
-  credential form it cannot transform deterministically, rejects secret-bearing labels and
-  generation attribution, appends exactly
-  one `<!-- effective-flow-decomposition-key:v2 <base64url> -->`
-  marker as the final nonblank standalone line of the child body, and returns the normalized child
-  with the same parent relation and key. The encoded payload is exactly
-  `{"target":"forge|external","parent":"<identity>","key":"<key>"}`; a forge parent is stored in its
-  normalized `#<number>` form and an external identity byte for byte. A `v1` marker is **not**
-  parsed: it fails closed as an unsupported version reporting `version` and `supported`, never as a
-  malformed marker and never rewritten. Reads recognize the marker only in that canonical appended
-  position; quoted and fenced examples are ordinary issue prose. A body with an unclosed Markdown
-  fence is rejected before preview, because an appended marker would remain unreadable inside that
-  fence. Explicit secret forms include AWS access-key fields, refresh tokens, private-key blocks,
-  client/session credentials, Authorization Bearer/token/Basic values, and common environment
-  identifiers such as `GH_TOKEN`, `NPM_TOKEN`, `DATABASE_PASSWORD`, `*_SECRET`, and `*_API_KEY`.
-  Quoted values, equals assignments, indented credential blocks, and single-token colon values are
-  high-confidence and fully redacted. Sentence-like prose such as `Password: require …`,
-  `Secret: do not log …`, or `Token: support …` remains unchanged; other multiword colon forms are
-  ambiguous and fail closed with a value-free diagnostic instead of silently deleting specification
-  semantics.
-
-Canonical decomposition state uses these dependency-free local helper operations:
-
-- `decomposition-records-build` accepts a nonempty exact record array with
-  `key`, `title`, `workflow`, `body`, `status`, and `issue`, plus the artifact language, target,
-  resolved target binding, and parent. It sanitizes publishable title/body text, requires exactly
-  one language-matching Recommended-workflow field equal to the record workflow, validates the
-  `proposed|approved|created|missing|declined` status/issue combination, enforces unique keys and
-  target-aware created issue identities, binds each exact draft with a SHA-256 `draftHash`, and
-  returns one complete canonical v2 section. Insert that returned section verbatim; never handwrite
-  a record marker or its visible rendering.
-- `decomposition-records-parse` accepts the fresh stored parent-comment body and validates those
-  v2 boundaries, safe-encoded full records, target binding, exact schema, body workflow, recomputed
-  hash, and byte-for-byte visible rendering. Quoted and fenced examples are ignored. A changed
-  visible title/body, encoded record, status, identity, or rendering fails closed. It reports
-  whether records were found and whether any active (`proposed|approved|created|missing`) record
-  keeps the issue a decomposition container.
-- `decomposition-container-compare` combines that fresh comment body with the fresh normalized
-  native children. It reports `containerOnly: true` for an active canonical decomposition even when
-  the child list is empty, and returns safe discrepancy codes for incomplete, missing, duplicated,
-  invalid-marker, detached, mismatched, or unexpected children.
-- `decomposition-key-build` is the single canonical writer of the stable-key marker for both
-  targets. It accepts `target`, the target-aware `parent`, the resolved forge `repository` binding
-  when the parent is a URL, and the stable lowercase `key`, either flat or under `decomposition`.
-  Without a `body` it returns `{ marker }`. With a `body` it first runs the same child-text
-  sanitization the forge child payload applies — generation attribution is rejected and credential
-  material is redacted — and then rejects an unclosed Markdown fence, a body that already carries a
-  marker, and an appended marker it cannot read back, before returning
-  `{ marker, body, parent, key }` with the marker as the final nonblank standalone line. Never
-  handwrite that marker or concatenate it by hand: the four guards live only here. Fail-closed
-  codes are `INVALID_PAYLOAD` for generation attribution in the body, an empty or whitespace-only
-  body, credential material that cannot be safely redacted (`reason: unterminated-private-key`,
-  `unterminated-quoted-secret`, `ambiguous-empty-secret-assignment`, `empty-secret-assignment`,
-  `ambiguous-secret-assignment`, `ambiguous-colon-credential-assignment`,
-  `residual-secret-assignment`, or `residual-private-key`), an unclosed fence
-  (`reason: unclosed-markdown-fence`), a caller-supplied marker, an unreadable appended marker
-  (`reason: unreadable-appended-decomposition-marker`), an unknown target, or an invalid key, and
-  `INVALID_REFERENCE` for a parent that is not a valid identity of that target.
-- `decomposition-key-parse` accepts the fresh stored child body plus the expected `target` and
-  `parent` (flat or under `context`). It reports `{ found: false, key: null }` for an absent marker
-  and `{ found: true, version, target, parent, key }` otherwise, with both parents normalized
-  through the same target-aware rule the writer uses, so `42`, `'42'`, `'#42'`, and a
-  repository-bound issue URL all compare equal while an external identity compares byte for byte.
-  It fails closed with `AMBIGUOUS_TARGET` for more than one marker and `INVALID_PAYLOAD` for a
-  marker that is not the final nonblank standalone line, an unsupported version (`version`,
-  `supported`), a malformed or undecodable payload, an invalid schema, a target mismatch
-  (`expectedTarget`, `actualTarget`), or a different parent (`expectedParent`, `actualParent`).
-- `decomposition-child-workflow-parse` requires exactly one language-matching canonical
-  Recommended-workflow field in a decomposed child's body, validates it against the parent record,
-  and returns the stable workflow plus its `build|fix|refactor|docs` implementation route. It uses
-  the Markdown inventory: blockquoted and fenced examples do not count, so an example-only body is
-  rejected while one top-level field plus examples is accepted.
-
-For a decomposition bound to GitHub, `decomposition-records-build` enforces the 65,536-byte UTF-8
-comment ceiling on the generated section, and `planning-comment-build` enforces it again on the
-complete stamped planning comment. The structured error reports `maximum`, `actual`, the unit, the
-section/other-comment split, and per-record title/body/encoded-record contributions. This limit is
-not applied to ordinary non-decomposition legacy planning comments; another provider may still
-reject a smaller target-specific limit, which remains a fail-closed persistence error.
-
-Forge identities are normalized only through the resolved host/repository and `parseReference`;
-a URL from another host or repository never aliases `#N`. External tool-native identifiers and
-URLs remain exact strings and are never collapsed by their trailing number. These operations are
-local validation and reconciliation, not provider transport. Callers never parse marker data or
-infer proposal identity from titles themselves. `planning-comment-build` also validates every
-decomposition-bearing comment so a caller cannot bypass the canonical parser before persistence.
-
-Both operations are provider-neutral at the workflow boundary. On GitHub, the helper maps child
-reads to the paginated native sub-issues endpoint and creation to the provider's atomic
-parent-aware create capability with the verified parent identity. The helper probes that create
-capability before the first create preview or write. On Forgejo, both capabilities are false and the create operation returns
-`UNSUPPORTED_CAPABILITY` before any write until a verified native operation exists. The helper
-never routes `issue-sub-issue-create` through `issue-create`, never creates first and links later,
-and never fabricates a checklist relation.
-
-The normal mutation discipline applies: preview the exact redacted command and publishable child
-payload, obtain the owning workflow's approval, then apply the identical operation. A command
-failure during `issue-sub-issue-create`, or a successful command without a parseable same-repository
-child URL, reports `mutationMayHaveSucceeded: true` and is non-retryable. The caller must read
-`issue-sub-issues-read` fresh and reconcile the stable key before any later attempt. Zero matches
-does not authorize a blind retry after an unknown outcome; one unique match recovers it; multiple
-matches fail closed as ambiguous.
-
-The targeted issue-comment update operation is `issue-comment-update`. Its input contains the
-issue number, the positive `commentId` returned by `issue-comments-read`, the freshly computed
-`expectedBodyHash` of that exact comment body, and `payload.body`. It is a mutation and therefore
-uses the normal dry-run-first envelope. On apply, the helper reads the issue comments again,
-requires exactly one matching comment ID, and compares its body hash before writing. A missing,
-ambiguous, or changed comment fails with `TARGET_NOT_FOUND`, `AMBIGUOUS_TARGET`, or `STALE_WRITE`;
-the caller must not fall back to `issue-comment` and create a competing comment.
-
-Provider mapping for `issue-comment-update` is fixed and owned by the helper:
-
-- GitHub: `PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}`.
-- Forgejo: `PATCH /repos/{owner}/{repo}/issues/{index}/comments/{id}`; Forgejo currently ignores
-  `index`, but the adapter still supplies the freshly resolved issue number.
-
-Both send a JSON object with the validated, attribution-free `body`. If probing reports that the
-provider or installed CLI cannot execute this API operation, abort with `UNSUPPORTED_CAPABILITY`
-before a write; never append a replacement planning comment.
-
-Body writes, including `issue-comment-update`, require `expectedBodyHash` from the immediately
-preceding fresh read. Preview the exact patch and command in dry-run mode, then apply with the same
-payload. Zero or multiple semantic matches are structured errors; unchanged state is successful
-and idempotent. The helper exposes whether provider-level conditional writes are available; the
-expected-body precondition is mandatory regardless. GitHub returns the read ETag for diagnostics
-but documents unsafe-method conditional requests as unsupported for these endpoints, so the
-adapter reports the write as non-atomic instead of sending a misleading `If-Match` header. The
-fresh read therefore detects sequential re-entry and the per-draft child reads detect duplicates,
-but neither is a cross-process lease: two simultaneous writers can still race between the final
-read and PATCH/create. Fail closed on every duplicate observed before or after an uncertain result;
-do not claim the client-side hash guard closes that provider TOCTOU window.
-
-Legacy-label transitions use the helper's add and remove operations in that order. The one-time `sf-` migration returns its completion marker only after every step succeeds; a partial failure reports completed steps and keeps the marker pending. Cleanup of recognized `firmo-` aliases uses the same add-before-remove operations without changing that one-time marker contract.
-
-### Error and edge cases
-
-- **Missing/unauthenticated CLI:** abort clearly, give a remediation hint, leave no partial state; no silent fallback to `local`.
-- **No Git repository / no `origin` remote:** remote mode not possible; report.
-- **Ambiguous host:** use `remoteToolOverride` or a per-run hint; if both are unclear, ask the user.
-- **Argument type contradicts `tracker.mode`:** The argument type overrides the config mode for this run (see "Determine mode").
-- **External target:** connection discovery, its four fail-closed failure classes (missing tool identifier, no connection, ambiguous connection, missing capability) and the write discipline live in the loaded "Tracker target" fragment. There is no fallback to the forge or to `local`.
+**Load on demand:** Read `shared/issue-tracker-forge.md`, when the resolved tracker target is the forge and the Phase 1 inventory is about to list issues carrying `firmo-` labels.
 
 This tool deliberately carries **no** deferred `tracker-target` pointer, unlike every other source
 that embeds the fragment above. It resolves the tracker target only to decide whether its
@@ -1144,7 +736,7 @@ The skill knows exactly these four classes of migration remnants, each with its 
 | Legacy `.gitignore` entries | outdated ignore lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern `.effective-flow/*` + `!.effective-flow/config.json`             | the single line `.effective-flow/`              |
 | `firmo-` labels             | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` on the issue | the `effective-flow-` variant on the same issue |
 
-`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker.md`). This skill only clears up remaining `firmo-` labels.
+`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker-forge.md`). This skill only clears up remaining `firmo-` labels.
 
 Linked worktrees are a separate cleanup class, not a fifth migration remnant. Existing
 worktrees are never treated as legacy merely because they predate lifecycle recording.
@@ -1180,7 +772,7 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
-   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
+   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker-forge.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
 5. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
    `runtimeMigration.directory.version`. When the valid version `1` marker is missing, treat the

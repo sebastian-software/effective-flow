@@ -23,9 +23,22 @@ under `.effective-flow/` – local and untracked.
 
 ## Remote mode (Git forge)
 
-With `tracker.mode: remote`, `/effective-flow review` instead creates an issue for each finding
-on your Git hosting service, bundled under an epic/tracking issue. `/effective-flow apply` then
-reads these issues back in and works through them.
+With `tracker.mode: remote`, `/effective-flow review` creates one direct issue for each admitted
+root cause on your Git hosting service. It creates no new review epic. `/effective-flow apply`
+discovers these direct findings and still reads legacy epics created by older versions.
+
+Admission requires concrete current reachability and exactly one reason: `material-harm` or
+`irreversible-commitment`. Current-scope problems are corrected in the active delivery; ordinary
+maintainability, optional completeness, polish, and convenience create no durable issue.
+Each direct issue carries the admission reason, evidence and digest, reachability anchor,
+root-cause signature, scope/containment rationale, why-now, and objective completion condition.
+Missing metadata never implies admission.
+
+When re-entry closes a legacy or stale finding below that threshold, Effective Flow writes one
+versioned admission receipt and adds `effective-flow-follow-up-closed`. Repeated runs reuse it only
+while the signature, evidence digest, reachability anchor, and gate version still match. This is
+not `wontfix` and not completed work. A native transition is used only when the tracker proves it
+means cancelled/not planned; otherwise the issue remains open but excluded from discovery.
 
 Local Markdown reports use `language.workflow`. Issue bodies, epic prose, issue comments, remote
 review content, and review-thread replies use `language.forge`; existing German and English
@@ -67,7 +80,8 @@ creates only the ones that are genuinely missing:
 | Label                                                                                             | Meaning                                                                                          |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `effective-flow-review-finding`                                                                   | single finding issue                                                                             |
-| `effective-flow-review-epic`                                                                      | epic/tracking issue                                                                              |
+| `effective-flow-review-epic`                                                                      | legacy epic/tracking issue (read and reconciliation only)                                        |
+| `effective-flow-follow-up-closed`                                                                 | admission gate closed the finding; exclude it from implementation discovery                      |
 | `effective-flow-fix` / `effective-flow-refactor` / `effective-flow-build` / `effective-flow-docs` | target action of the finding (exactly one per finding issue)                                     |
 | `critical` / `important` / `note`                                                                 | severity (exactly one per finding issue; German `kritisch`/`wichtig`/`hinweis` still recognized) |
 | `wontfix`                                                                                         | deliberately not implemented (ADR instead of code)                                               |
@@ -118,10 +132,12 @@ color or description keeps it.
 
 ### Native sub-issues created during planning
 
-`/effective-flow plan-issue` may propose splitting a broad issue into independently implementable
-children, but only when the resolved tracker proves that it can both list native children and
-create an issue under the current parent as one operation. These capabilities are deliberately
-stricter than generic issue creation:
+`/effective-flow plan-issue` keeps routine technical decomposition inside the parent's planning
+comment. A broad issue or independently implementable outcome does not by itself justify another
+issue. It may propose a native child only for an independently admitted `material-harm` or
+`irreversible-commitment` root cause, and only when the resolved tracker proves that it can both
+list native children and create an issue under the current parent as one operation. These
+capabilities are deliberately stricter than generic issue creation:
 
 - **GitHub:** the tracker helper owns the provider-specific mapping for native child reads and
   atomic parent-aware creation. It probes that capability before the first creation preview or
@@ -232,13 +248,13 @@ cannot record the tool identifier this mode requires.
 
 ### What sends its content to the external tool
 
-| Artifact                                             | Where it lives on an external target                    |
-| ---------------------------------------------------- | ------------------------------------------------------- |
-| Review findings, their container, and their comments | the external tool                                       |
-| Issue-driven work (`apply`, `plan-issue`)            | the external tool                                       |
-| Pull requests, PR comments, PR review threads        | always the Git forge behind `origin`                    |
-| Plan files                                           | always committed under `plan.dir` (default `docs/plan`) |
-| Investigations                                       | always local under `.effective-flow/investigation/`     |
+| Artifact                                                      | Where it lives on an external target                    |
+| ------------------------------------------------------------- | ------------------------------------------------------- |
+| Direct review findings, legacy containers, and their comments | the external tool                                       |
+| Issue-driven work (`apply`, `plan-issue`)                     | the external tool                                       |
+| Pull requests, PR comments, PR review threads                 | always the Git forge behind `origin`                    |
+| Plan files                                                    | always committed under `plan.dir` (default `docs/plan`) |
+| Investigations                                                | always local under `.effective-flow/investigation/`     |
 
 Both issue-carrying flows follow the same target; one run never splits them across two systems.
 Prose written to the external tool uses `language.forge`, exactly as forge issue prose does.
@@ -280,7 +296,8 @@ intact, so the run is resumable once the connection is fixed. See
 Effective Flow's classification strings stay canonical on an external target:
 `effective-flow-review-finding`,
 `effective-flow-review-epic`, the action labels, the severity labels, `wontfix`,
-`effective-flow-issue-done`, and `effective-flow-needs-planning` keep exactly the spellings listed
+`effective-flow-follow-up-closed`, `effective-flow-issue-done`, and
+`effective-flow-needs-planning` keep exactly the spellings listed
 under [Labels](#labels). A run stores them in whichever classification primitive your tool offers –
 labels, tags, workflow states, or a custom field – and reports which one it used. If the connection
 exposes no such primitive, the run aborts rather than creating findings without severity and action
@@ -297,21 +314,20 @@ may propose its display name and stable value for that run. Only `/effective-flo
 the value. Zero or several candidates, a stale value, or a non-interactive run without a configured
 value stops before implementation rather than guessing.
 
-The container that groups a review run's findings uses the tool's native parent/sub-issue relation
-only when the connection both exposes it and can write the sub-item's completion state; otherwise
-it uses the Markdown checklist. Which mechanism was used is reported per run. Either way, every
-finding stays reachable from its container and its completion stays visible. Creating the pull
-request does not complete the native sub-item or tick its checklist entry. That happens only after
-`merge-gate` observes the linked work item in a terminal state after merge.
+New review runs publish direct finding issues and use no container. The native/checklist mechanism
+remains available only to read and reconcile legacy review epics and to support the separate
+issue-driven flow. Creating a pull request does not complete a legacy native sub-item or tick its
+checklist entry; `merge-gate` performs that reconciliation after merge.
 
-That checklist fallback applies to containers that group review findings; it does **not** authorize
-issue decomposition by `plan-issue`. An external connection can offer decomposition only when it
-proves the complete native-container mechanism—native child listing plus writable native sub-item
-completion—and atomic create-under-parent. When any guarantee is missing, the parent can still
-follow the ordinary canonical-comment planning path, but no child issue is created and Effective
-Flow does not fall back to the forge or a checklist. When all three are proven, the same exact-set
-approval, stable-key reconciliation, and no-blind-retry behavior described for the forge applies
-through that one external connection.
+That checklist fallback applies to legacy containers that group review findings; it does **not**
+authorize issue decomposition by `plan-issue`. An external connection can offer decomposition only
+for an independently admitted child and only when it proves the complete native-container
+mechanism—native child listing plus writable native sub-item completion—and atomic
+create-under-parent. When any guarantee is missing, the parent can still follow the ordinary
+canonical-comment planning path, but no child issue is created and Effective Flow does not fall
+back to the forge or a checklist. When all three are proven, the same exact-set approval,
+stable-key reconciliation, and no-blind-retry behavior described for the forge applies through that
+one external connection.
 
 **Deduplication does not span targets.** A run only sees the target it currently resolves, so if
 you switch targets, findings that already exist in the old one are published again in the new one.
@@ -363,20 +379,22 @@ disclosure with the same consequences, so the gate binds that target too.
 
 Therefore `/effective-flow review` does this whenever it publishes to a tracker:
 
-1. The findings of the run are classified. Anything security relevant – above all anything
-   reachable from outside through untrusted input, a network boundary, or an auth boundary –
-   becomes `local-only`. An uncertain assessment counts as security relevant.
-2. The withheld findings are written first to a local report
+1. After durable-work admission, every admitted finding is classified for disclosure. Anything
+   security relevant – above all anything reachable from outside through untrusted input, a
+   network boundary, or an auth boundary – becomes `local-only`. An uncertain security assessment
+   counts as security relevant; it does not change the finding's admission outcome.
+2. The withheld admitted findings are written first to a local report
    `.effective-flow/review/review-report-YYYY-MM-DD-security[-N].md`, with a notice that the file
    must not be pasted into public issues, pull requests, or chats. Like all runtime state it stays
    local and untracked.
-3. The remaining findings become issues plus a container, exactly as before. The container and
-   every issue body stay silent about the withheld findings – even a bare "3 security findings
+3. The remaining admitted findings become direct issues. Every public issue body stays silent
+   about withheld findings – even a bare "3 security findings
    withheld" would tell an attacker that unfixed vulnerabilities exist.
 4. Only then does Effective Flow offer to publish the withheld findings as issues as well, naming
    the disclosure consequence. Keeping them local is the default; an unanswered or non-interactive
-   run publishes nothing. If you accept, the findings land in the same container and their report
-   entry records the issue number.
+   run publishes nothing. If you accept, each finding becomes a direct issue and its report entry
+   records the issue number. That publication receipt transfers execution authority to the remote
+   issue, so local `apply` skips the report copy.
 
 This gate overrides `tracker.mode` and every other configuration value; there is no config key
 that switches it off. Process the withheld findings with
@@ -392,20 +410,22 @@ publishing.
 ## Merge gate operations
 
 [`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, reads the submitted
-reviews, waits for checks, merges, and – after the merge and only on your explicit confirmation –
-closes a linked issue it assessed as completed, through seven additional forge operations of the
-same remote-tracker helper. Like all PR work, they are inherently forge-bound: they never evaluate
+reviews, waits for checks, merges, reads what a linked issue's canonical planning comment recorded
+as still open, and – after the merge and only on your explicit confirmation – closes a linked issue
+it assessed as completed, through eight additional forge operations of the same remote-tracker
+helper. Like all PR work, they are inherently forge-bound: they never evaluate
 `tracker.mode` and only need a Git repository, an `origin` remote, and an authenticated CLI.
 
-| Operation          | Capability              | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-status-read`   | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below)                                                                                                                                                                                                                                                           |
-| `pr-reviews-read`  | `prReviewsRead`         | A read. Returns every submitted review with its author, the commit it was submitted against, its state as one provider-neutral verdict token, its body, its submission time, its id, and its URL. A review with no submission time is a pending draft, never a verdict — GitHub omits the field, Forgejo serialises a zero instant the helper normalizes to absent, and the `PENDING` state token is the portable cross-check on both                                                                                                                     |
-| `pr-checks-wait`   | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `pr-merge`         | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `viewer-read`      | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                                                                                                                                                                                                                                                                                     |
-| `issue-state-wait` | `issueRead`             | Reads a linked forge issue, waits once for the fixed 30-second grace period when it is still open, then performs one final read; it never polls or closes the issue                                                                                                                                                                                                                                                                                                                                                                                       |
-| `issue-close`      | `issueClose`            | Sets a linked forge issue to closed, on GitHub with the completed state reason, which the normalized issue then reports back as `stateReason` so a caller can tell a completed close from a `not_planned` one (Forgejo states no reason and the field is absent there); a mutation, so a run without `--apply` produces a dry-run plan and closes nothing. It takes the issue number only – the state and its reason are fixed, never caller-supplied – and it runs only after the gate's post-merge completion assessment and your explicit confirmation |
+| Operation             | Capability              | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-status-read`      | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below)                                                                                                                                                                                                                                                                                                                                                                 |
+| `pr-reviews-read`     | `prReviewsRead`         | A read. Returns every submitted review with its author, the commit it was submitted against, its state as one provider-neutral verdict token, its body, its submission time, its id, and its URL. A review with no submission time is a pending draft, never a verdict — GitHub omits the field, Forgejo serialises a zero instant the helper normalizes to absent, and the `PENDING` state token is the portable cross-check on both                                                                                                                                                                                                                           |
+| `pr-checks-wait`      | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `pr-merge`            | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `viewer-read`         | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `issue-state-wait`    | `issueRead`             | Reads a linked forge issue, waits once for the fixed 30-second grace period when it is still open, then performs one final read; it never polls or closes the issue                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `issue-comments-read` | `issueCommentsRead`     | A read, and the only one this gate performs purely for its report. Returns a linked forge issue's comments so the post-merge assessment can select the newest canonical planning comment and record the open points it holds. What it returns is report-only: no completion verdict, no terminal-transition offer and no write reads a word of it, which is why its text is the one thing the summary quotes. On Forgejo it rides `tea`'s own issue support — which `issue-state-wait` also uses — together with its issue-comment support, and not the `tea api --include` transport `issue-close` needs, so a `tea` built without `--include` still serves it |
+| `issue-close`         | `issueClose`            | Sets a linked forge issue to closed, on GitHub with the completed state reason, which the normalized issue then reports back as `stateReason` so a caller can tell a completed close from a `not_planned` one (Forgejo states no reason and the field is absent there); a mutation, so a run without `--apply` produces a dry-run plan and closes nothing. It takes the issue number only – the state and its reason are fixed, never caller-supplied – and it runs only after the gate's post-merge completion assessment and your explicit confirmation                                                                                                       |
 
 `issue-state-wait` uses the adapter's general CLI floor, not the higher GitHub merge-gate floor.
 Its 30-second bound is fixed and has no configuration key. A still-open issue is a successful
@@ -467,9 +487,13 @@ one of them matches `…/pulls/comments/…`; an authenticated `POST …/pulls/c
 rejected by the router with the same status a deliberately nonsense path draws, while the
 neighbouring `…/reviews/{id}/dismissals` reaches its handler. The capability is therefore stated as a
 provider fact, exactly as `pullRequestStatus` and `pullRequestMerge` are, rather than derived from a
-`--help` probe that could only ever attest the client subcommand. `iterate` keeps its reply, leaves
-the thread unresolved and says so; `merge-gate` reads the same refusal as workflow input rather than
-as a failure.
+`--help` probe that could only ever attest the client subcommand. `review-thread-reply` is
+unsupported as well, so `iterate` writes nothing into the thread: it neither replies nor resolves,
+and reports both as manual steps. `merge-gate` instead treats a configured bot's thread as settled
+once that same reviewer's latest submitted review for the verified head is an approval – a different
+review from the one that opened the thread, submitted after it. A dismissal alone settles nothing.
+The gate stops handing a settled thread to `iterate`, no longer lets it block the merge, and lists it
+in the report with its URL as left unresolved because the provider cannot resolve review threads.
 
 **Reading review threads costs one request per review, plus one.** Forgejo exposes no flat
 review-comment listing at any nesting level, so the read enumerates `…/pulls/{index}/reviews` and
@@ -692,13 +716,25 @@ both native lifecycle capabilities plus a resolved `tracker.externalDoneState` o
 – `merge-gate` **offers** to set it to its terminal state. The offer is one question for the whole
 run, asked only in an interactive session, and it lists each eligible issue with its verdict and a
 locator per criterion: which criterion, and whether its covering statement sat in the pull request's
-title or body. No issue or pull-request text is ever quoted into that listing, the question, or the
-summary – you read the wording at the issue and pull-request URLs. Confirming authorizes three
-writes per issue: the transition, the in-progress label removal, and the container completion, and
+title or body. No issue or pull-request text is ever quoted into that listing or the question, and
+the summary quotes exactly one thing, described below – everywhere else you read the wording at the
+issue and pull-request URLs. Confirming authorizes three writes per issue: the transition, the in-progress label removal, and the container completion, and
 the option text says so. Declining transitions nothing. A non-interactive run poses nothing and
 transitions nothing; it carries the recommendation into its summary instead. A missing capability or
 an unset `externalDoneState` makes the offer unavailable for that issue, which is reported with the
 missing value named and is not the same result as an issue found incomplete.
+
+**The summary's one quotation is an issue's recorded open points.** For every issue it assesses,
+`merge-gate` also reads that issue's canonical planning comment – on the forge through the helper's
+`issue-comments-read`, on an external target through the connection's own read-comments capability –
+and reports the open points [`/effective-flow plan-issue`](./tools-understand.md) recorded there,
+which live in that comment and never in the issue body. It reports them for every assessed issue,
+whichever closure step the issue was given. They are report-only: they enter no verdict, block no
+`complete` one, reach no offer, and authorize no write, which is exactly why their text may be quoted
+where a criterion's may not, under a display discipline that caps each entry, states the truncation,
+and gives the comment URL. A comment that could not be read costs that observation alone, is reported
+as unobserved, and leaves the verdict, the offer, and every write untouched; a comment that recorded
+no open points is a different result and is reported as one.
 
 **Terminal is not the same as done, and only a done issue is reconciled.** GitHub states why a
 closed issue is closed, so an issue closed as `not_planned` – whether it was closed that way before

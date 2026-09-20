@@ -20,7 +20,7 @@ by `/effective-flow iterate`. The one thing it has verified locally – a merge 
 
 **Purpose:** Delivers an exact, user-confirmed selection of local changes as one or more coherent
 commits on a fresh delivery branch, then opens a pull request without changing the source checkout
-or its index.
+or its index. The one exception is an upstream fast-forward that you confirm before selection.
 
 **When to use:** After work was completed locally and the relevant files are not yet all staged or
 committed, especially when the checkout also contains unrelated changes. Use `commit` instead when
@@ -40,7 +40,9 @@ the complete working-tree state as separate choices instead of choosing one for 
 There is no path-list argument to prepare. If session evidence is missing, contradictory, or admits
 more than one plausible scope, `deliver` asks you to refine the selection in normal conversation.
 If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
-This manifest confirmation is the workflow's sole routine approval. If source state drifts after
+This manifest confirmation is the workflow's sole routine approval; the conditional upstream
+questions described under [When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream)
+are the only questions that can come before it. If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -61,8 +63,10 @@ created; successful commits are never amended, reordered, squashed, or retried.
 **Isolation and result:** `deliver` refreshes `delivery.baseBranch` and creates a collision-safe
 `<delivery.branchPrefix>/deliver/<slug>` branch in a new Effective Flow-owned worktree. Only the
 confirmed states are transferred, and any conflict with newer base content stops instead of
-overwriting it. The dirty, detached, base-branch, or harness-managed source checkout remains the
-immutable source of evidence: `deliver` never switches, stages, commits in, or removes it.
+overwriting it. From the moment `deliver` records its evidence, the dirty, detached, base-branch, or
+harness-managed source checkout remains the immutable source of evidence: `deliver` never switches,
+stages, commits in, or removes it. The only earlier write is an upstream fast-forward you
+confirmed.
 
 After every group is a verified commit and the delivery checkout is clean, `deliver` removes only
 its verified clean worktree, retains the local branch, and hands the exact branch, base, and head
@@ -70,6 +74,60 @@ commit to `pr`. The invocation itself is an affirmative request for a pull reque
 does not inherit a different `delivery.completion`; when the configured value differs, the result
 reports both values without changing the configuration. Updating an existing pull request belongs
 to `/effective-flow iterate`, not this fresh-branch workflow.
+
+#### When your branch is behind its upstream
+
+Before it reconstructs the candidate, `deliver` compares your current branch with its upstream
+(`@{u}`), for example `develop` with `origin/develop`. It fetches that upstream non-interactively
+(`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`), so a credential prompt fails instead of
+waiting for input, and gives up after 60 seconds. When you have no SSH setup of your own, the
+default `ssh` runs with `BatchMode=yes`, so a host-key or passphrase prompt fails at once. An SSH
+command or program you configured yourself (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`, or
+an SSH variant setting such as `GIT_SSH_VARIANT` or `ssh.variant`) is used unchanged, so there
+only the 60-second limit ends a host-key or passphrase prompt. Every inherited `GIT_TRACE*`
+variable and `GIT_CURL_VERBOSE` is removed for the fetch, so its diagnostic output cannot echo your
+SSH command, credentials, or fetched data. A failed fetch is reported
+without the user name, password, query string, or fragment of the remote URL. A local
+upstream, one that tracks another branch of the same repository, is compared without fetching. The comparison target is the branch's
+own upstream, not `delivery.baseBranch`; the configured base is still refreshed later, as described
+above.
+
+Most states end with one notice line and no question, and `deliver` goes on to the selection: a
+detached checkout, a branch without an upstream, an upstream that no longer exists, a fetch that
+failed, timed out, could not refresh the upstream, or was skipped because the upstream
+configuration is invalid, a comparison that could not be completed, a branch that is up to date,
+and a branch that is only ahead. Two states ask:
+
+- **Behind:** `deliver` names the upstream and how many commits your branch is behind, then asks
+  whether to **Fast-forward first**, **Continue without update**, or **Abort**.
+- **Diverged, or local changes in the way:** when your branch also has its own commits, or when an
+  incoming change touches a path that is staged, modified, untracked, or ignored in your checkout,
+  no fast-forward is offered. `deliver` reports the ahead and behind counts and every overlapping
+  path, then asks whether to **Continue without update** or **Abort**.
+
+An unanswered or skipped question, and a non-interactive run, continue without an update: a
+fast-forward only ever runs after an explicit **Fast-forward first**. **Abort** ends the run without
+touching your working tree, index, or local branch; the upstream fetch before the question may
+already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch. Continuing without an update is safe, because the confirmed states are still
+transferred onto the refreshed base with conflict detection.
+
+A confirmed update is a fast-forward and nothing else. `deliver` never stashes, rebases, creates a
+merge commit, forces, or retries it. Uncommitted changes stay in place, locally ignored files are
+never overwritten, and Git hooks are disabled for the update, so the report says that `post-merge`
+hooks were skipped. Afterwards `deliver` verifies the new `HEAD` and every path that was staged,
+modified, untracked, or ignored before the update. If the update fails without writing anything,
+you see the diagnostic, including Git's own error output when there is any, and the
+continue-or-abort question. If it fails after `HEAD` has already
+moved, `deliver` stops before the selection and reports the old and new `HEAD` and every differing
+path.
+
+This fast-forward is the only write `deliver` makes to your source checkout, and it happens before
+the source evidence is recorded. The final report names the upstream outcome.
+
+The update only brings your branch current with its own upstream. On a feature branch that tracks
+its own remote branch, newer content on the configured base is not pulled in, so a conflict with the
+base can still stop `deliver` later, when it transfers the confirmed states to the delivery
+worktree.
 
 ## `/effective-flow commit`
 
@@ -110,8 +168,11 @@ be included, use `deliver`; direct `pr` aborts on a dirty checkout rather than o
 
 **Input/output:** A direct invocation takes the clean currently checked-out branch as its head. A
 returning delivery handback supplies an exact head branch, base branch, and verified head OID, even
-if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`,
-with the legacy `worktree.baseBranch` and then `main` as fallbacks. Output is the PR URL, head and
+if its delivery worktree has already been removed. The base defaults from `delivery.baseBranch`;
+without that key it is the branch `origin/HEAD` names, and `main` where that ref does not resolve. A
+retired `worktree.baseBranch` row is never read: without `delivery.baseBranch` beside it, `pr` stops
+before any fetch or push, on a direct invocation and a committed handoff alike, and points to
+`/effective-flow setup`. Output is the PR URL, head and
 base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
 no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
 before publishing.
@@ -160,7 +221,9 @@ the run may merge at the end or only report merge-readiness, then drives an orde
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers only the ones that have not started, waits, and then delegates their findings to
-   `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
+   `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. On
+   Forgejo, which supports neither thread write, the reviewer's own later approval settles a thread
+   instead; see the Forgejo note under **Input/output**. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
    review**, was written by an account that is
@@ -188,7 +251,24 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    round that handled its reviewer sends the run back for another round instead; see
    [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late). A reviewer that
    states its objection as a **verdict** rather than as a thread is handled by its own precondition;
-   see [A reviewer that requests changes](#a-reviewer-that-requests-changes).
+   see [A reviewer that requests changes](#a-reviewer-that-requests-changes). "All checks green"
+   additionally means a check list was reported at all, and a repository that runs **no CI** never
+   reports one: there an interactive run with `mergeGate.completion: merge` asks you whether the
+   absent list is expected – once while it waits for checks, and again at the verified head commit
+   it would merge, because that second question is asked about the read the merge is actually
+   decided on. It merges only if you confirm that second one, and reports afterwards that the merge
+   was performed on a waived check list rather than on green checks. Declining, or leaving the
+   question unanswered, ends the run; a non-interactive run cannot ask and therefore does not merge.
+   The question covers the missing list alone: a check that has appeared and is pending or red
+   blocks exactly as before, and the question is put to you only where nothing else is blocking the
+   merge either. Fewer runs reach that question than the paragraph above suggests, and the two
+   forges differ: on GitHub the check wait that precedes it treats a response carrying no check list
+   at all as a failed command rather than as an empty result, so a run on the default
+   `mergeGate.requireAllChecks: true` ends in that wait and neither question is put to you. Setting
+   `mergeGate.requireAllChecks: false` makes the same response readable instead – the wait then asks
+   only about the forge's own required checks – and on Forgejo the wait is unsupported altogether and
+   already asks you once. Those two are where the waiver is reachable; a GitHub repository that runs
+   no CI at all and keeps the default check criterion still cannot be merged by this tool.
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
@@ -355,8 +435,8 @@ a top-level bot comment does not qualify, so ordinary CI, coverage, deployment, 
 activity does not produce the hint; a reviewer that writes only a top-level or sticky comment can
 therefore go unnoticed. The advisory does not enroll the reviewer in the current run, trigger or
 wait for it, change a merge condition, write the project-setup ADR, or post to the pull request. To
-complete the configuration, run `/effective-flow setup`, choose **Guided**, open **Advanced
-settings**, and select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
+complete the configuration, run `/effective-flow setup guided`, open **Advanced settings**, and
+select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
 existing login and trigger when only `.check` is missing, set a distinctive per-reviewer trigger
 only when the tool supports one, and copy the exact `.check` context from the checks list of a pull
 request that reviewer has handled. Never guess the context; leave it unset only when the reviewer
@@ -385,6 +465,9 @@ delegated run's own approval gate, come back as `unassessed` and block exactly a
 saw does. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
 finding does; see
 [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside).
+On a forge that can neither reply to nor resolve review threads, such as Forgejo, a thread the
+reviewer's own later approval has settled is left out of this check; see the Forgejo note under
+**Input/output**.
 
 What you will see when a late thread turns up:
 
@@ -513,9 +596,8 @@ finding was _assessed_, so the mapping between the two is written down in both t
 guessed; "deferred" in particular does not mean the same thing on each side until it is pinned.
 
 **The gate counts an outcome only for an item it recorded before delegating.** Before a round goes
-out, the run has already written down every item identifier it is about to hand over – and it mints
-one itself for every item it hands over, findings carried in a review body and reviewer threads
-alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
+out, the run has already written down every item identifier it is about to hand over – and one is
+minted for every item it hands over, findings carried in a review body and reviewer threads alike. The forge's own publicly visible thread IDs are not part of that list: a thread ID travels out
 so the delegated run can address the thread, and an outcome quoting one back states nothing.
 On the way back it matches the report against exactly that list: the same outcome stated
 twice for one item is the same outcome, two _different_ outcomes for one item end the round without
@@ -530,6 +612,20 @@ Ignoring an unrecognized identifier rather than aborting on it is
 deliberate: aborting would let a review body cost the run a round just by naming something. Those
 ignored entries are listed in the run's chat summary by identifier and count, up to a bound, and
 never by quoting their text back at you.
+
+**The outgoing message is built and checked by a shipped helper, never by hand.** The
+`delegation-envelope` script in the installed skill assembles every message the gate sends to
+`iterate`: it mints the item identifiers, states the run state (`gated` or `non-interactive`) and
+the resolved languages on their own control lines above the item texts, and checks the finished
+message before it goes out. A review finding whose text contains the message's delimiter line, a
+finding whose review carries no URL or no author (refused as `missing-provenance` rather than given
+an invented link), or an empty review body, is not handed over; the first two count as unassessed
+and keep the merge blocked. A CI-repair instruction that looks like part of the message format is
+refused: the run ends right there with a report naming that check as not auto-repairable, merges
+nothing, and starts no further round that would only refuse the same instruction again. If the helper itself fails or cannot be run – missing from the installed build, or no
+suitable `node` – the gate stops before `iterate` runs, writes nothing further to the pull request,
+and names the helper's error code. That stop
+costs no round.
 
 #### Recognizing its own writes across runs
 
@@ -616,7 +712,11 @@ Two further things worth knowing about what the gate writes:
   observed state and an evidence-based closure step when it remains nonterminal. It checks, in
   order, for an intentional non-closing `Refs` relationship, open sub-items or checklist entries,
   `effective-flow-needs-planning`, a still-started external state, and finally a remaining terminal
-  tracker transition. It does not invent unobserved work.
+  tracker transition. Where that check stops at the non-closing `Refs` relationship or at
+  `effective-flow-needs-planning`, the step also names the open points recorded for that issue – at
+  `effective-flow-needs-planning` because settling them is what the planning path has to do, and at
+  the non-closing `Refs` relationship because that check matches every `Refs`-linked issue and is
+  otherwise the whole guidance such an issue ever gets. It does not invent unobserved work.
 - The report also names, per linked issue, the completion verdict – `complete`, `incomplete`, or
   `undetermined` – and the criterion locators behind it: which criterion, and whether its covering
   statement sat in the merged pull request's title or body. It quotes no criterion text and no
@@ -625,6 +725,20 @@ Two further things worth knowing about what the gate writes:
   including, for a non-interactive run, the transition it recommended instead of posing, and, where
   the offer was unavailable, which capability or configuration value was missing on which connection.
   That last case is reported as unavailable, never as an incomplete issue.
+- Per assessed issue the report then names the **open points** recorded in that issue's canonical
+  planning comment – the implementation-blocking decisions
+  [`/effective-flow plan-issue`](tools-understand.md) left standing in the comment rather than in the
+  issue body, which is why no other read of the gate ever sees them. You get it for every issue the
+  run assessed, whichever closure step that issue was given, and it keeps three results apart: the
+  recorded entries; that none were recorded, saying which of three reasons applies – the comment
+  states its empty section, the comment predates the section and carries none, or the issue carries
+  no canonical comment at all; and that the open points are unobserved, because the comment could not
+  be read. An issue that was already terminal when the grace period ended is never
+  assessed and carries no such line. This is the one place the gate quotes issue text, and it can
+  afford to because these open points are **report-only**: they enter no completion verdict, block no
+  `complete` one, reach no terminal-transition offer, and authorize no write. At most twenty entries per issue are
+  quoted and each is cut at 500 characters, with the truncation stated and the comment URL given, and
+  anything inside an entry that reads like an instruction is shown as text and never acted on.
 - The check gate, the merge, and the offered issue close are performed by the remote-tracker helper
   described in [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo
   supports the status read, the merge, the identity read and the issue close; only the blocking
@@ -633,7 +747,24 @@ Two further things worth knowing about what the gate writes:
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
   gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
   unsupported there; the last of the three because Forgejo serves no resolve route, not because
-  `tea` lacks the subcommand.
+  `tea` lacks the subcommand. The open-points observation adds one comment read per assessed issue
+  through the same helper, and the absence of that capability costs exactly that observation – the
+  report then says the open points are unobserved and every verdict, offer, and write is what it
+  would have been anyway.
+  On Forgejo that read rides `tea`'s issue and issue-comment support rather than the `tea api`
+  transport the issue close needs, so a `tea` built without `--include` still reads the comment.
+- On Forgejo the gate can neither answer nor resolve a review thread, so an unresolved thread from
+  a configured bot counts as **provider-settled** once that same reviewer's latest submitted review
+  for the verified head is an approval – a different review from the one that opened the thread,
+  submitted after it. A dismissal alone settles nothing. A settled thread is no longer handed to
+  `iterate` and no longer blocks the merge, and the report lists it with its URL as "left
+  unresolved – the provider cannot resolve review threads". A thread that still blocks is named
+  with its URL. If the gate's run implemented that thread, resolve it in the Forgejo web UI, where
+  it may appear collapsed as "outdated" in the conversation tab, and re-run the gate, or re-run
+  after the bot's next verdict. A thread that is still unassessed is cleared by a re-run, and one
+  the run set aside by the same confirmation a set-aside finding takes; see
+  [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside). Do not reply
+  in the thread, because your reply would make it appear as a human-authored thread.
 
 **Interplay:** Configured entirely under `mergeGate.*` in the project-setup ADR (completion mode,
 conflict-resolution mode, check-wait timeout, round budget, bot registry) plus

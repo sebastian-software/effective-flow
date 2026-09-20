@@ -1,14 +1,17 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, iterate, commit, pr, merge-gate, setup, cleanup, open-plans, investigate, version."
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, apply, build, fix, refactor, docs, maintain, iterate, review, deliver, commit, pr, merge-gate, setup, cleanup, version."
 argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.63.0 (3b44300)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.64.0 (cdd9320)).
 
-This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
+This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
+the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
+tool-specific instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the
+session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
@@ -27,63 +30,6 @@ For the `apply` tool, its instructions may in turn load an appropriate **interna
 Some retired tool names stay invocable as **deprecated aliases**. They are deliberately absent from the catalog below, so rule 1 does not apply to them, and the tool file of an alias is the one case in which rule 2 allows a second tool file to be read:
 
 - `effective-flow pr-review` is the deprecated former name of `effective-flow merge-gate`. Read `tools/pr-review.md`, which reports the deprecation and then follows `tools/merge-gate.md` with the arguments unchanged.
-
-## Session title
-
-Hosts derive a session title from the **first** message, so a run is listed as
-`Effective-flow plan R-0000010` long before its subject is known. Once the running tool knows that
-subject, propose a better title — once.
-
-- **Only where sessions carry titles:** emit only when the host exposes a session-management or
-  session-title capability, or an Effective Flow rename path applies. Where sessions carry no titles
-  at all, stay silent. Never call such a tool for the current session except through a mechanism this
-  contract explicitly establishes as an app-native **current-task** path that takes no task id; never
-  retitle another session, and never probe speculatively. Where the running host has an established
-  rename path and the loaded mechanism fragment reports success, apply the title silently instead of
-  proposing it and report nothing further. Otherwise emit the suggestion line once — no established
-  path, an unavailable or failed path, or a run that cannot tell. The mechanism fragment owns how the
-  host is identified, when the operation is sent, and how its reported outcome is judged. On the
-  ChatGPT Desktop current-task path, a later automatic title may replace one the user set manually;
-  do not list or read tasks to infer title ownership.
-  One carve-out: a session acting under its **own user's** standing rename mandate may honor a
-  cross-session rename request for the session that asked. That is a mandated role its user gave it,
-  not a run retitling a session of its own accord — the mechanism fragment owns that whole contract,
-  and nothing here loosens the requester side.
-- **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
-  `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
-  `review`, `iterate`, and `investigate`. `version`, `open-plans`, `setup`, `cleanup`, `commit`, and `pr` stay silent, and
-  internal sub-agents and workers never emit. One carve-out: `setup`'s capability probe renames the
-  session once with its own fixed probe title, as the observable proof that the path works. That is
-  a capability check, not a work title — `setup` still derives, emits and applies none.
-- **Once, as soon as the subject exists:** the issue or pull-request title has been read, the plan
-  H1 has been read, the review or maintenance scope is fixed, or the requirement is clarified —
-  whichever comes first for the running tool. A delegating parent leaves the emission to its
-  delegate, and a delegate never repeats a subject its parent already proposed. Restate the title
-  in the completion report only if the final scope diverged from it. Deciding the title and applying
-  it are separate moments: decide it here, while the mechanism fragment owns when its host-specific
-  operation is sent. The subject is fixed here while the reference is resolved when the title is
-  applied or emitted, so every late-applying path needs nothing further. An early-applying path —
-  the ChatGPT Desktop native call and the Claude Code butler request — re-derives the title when
-  its inputs change, as when the first carried no reference, one now exists, and the resulting
-  title differs. Its mechanism applies it again, as often as that fragment allows.
-- **Reference first:** `<Reference> · <Subject> · <tool>` with the same `·` separator, and
-  at most 60 characters, cut at a word boundary; no reference leaves `<Subject> · <tool>`. Reuse an
-  existing artifact title verbatim — plan H1 without a legacy number, issue title without its
-  `[R-XXXXXXX]` prefix, pull-request title without its Conventional Commit type — instead of
-  paraphrasing it; otherwise use a short noun phrase from the requirement. A reference is a forge
-  issue or pull request `#<number>`, a tracker issue's tool-native id such as `SEB-123`, or a
-  finding `R-XXXXXXX` absent a tracker reference; several issues, the first one's reference plus
-  `+N`; anything else, a legacy plan number included, none. Exactly one segment, tracker reference
-  over finding ID. A reference token, before any `+N`, is a whitespace-free run of letters, digits,
-  `#` and `-`, at most 16 characters; a non-matching candidate is omitted, never trimmed or
-  sanitized into shape. Over the cap cut the subject, then the `<tool>` segment, never the
-  reference; a bare reference over it yields none. No workflow-name prefix, no echo of the invocation, no AI attribution.
-- **One line, never blocking:** output `**Suggested session title:** <title>` and nothing else — no
-  explanation, no follow-up question, and never in place of the run's own output. Wherever it is
-  emitted at all, it is printed in the run's completion report, by which time the reference is
-  bound — never earlier and never twice. The label follows the conversation language while a
-  reused artifact title keeps its own. Never put secrets or credential values in a title; the
-  session list is a persistent visible surface.
 
 ## Tools
 
@@ -122,7 +68,7 @@ _from a clarified plan/issue to code_
 
 ### Set up & info
 
-- `effective-flow setup` — Sets up Effective Flow in the project – guided wizard, starts with safe defaults.
+- `effective-flow setup` — Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard.
 - `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees.
 - `effective-flow version` — Shows the installed Effective Flow version.
 
@@ -142,4 +88,5 @@ clarification instead of a guess.
 ## Rules
 
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
-- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `effective-flow` tools. Tools invoke them internally through bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.
+- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `effective-flow` tools. Only the workflow/tool orchestrator may start worker roles or analysis fan-out, using bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism; workers are leaf executors and never delegate further. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.
+- Start each worker with zero inherited turns when supported, otherwise the smallest host-supported history, and give it a compact self-contained handoff: objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. A worker returns missing essential context to the orchestrator instead of starting a child.

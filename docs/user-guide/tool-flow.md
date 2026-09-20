@@ -26,6 +26,10 @@ need (a plan path, a PR number, an issue number) simply does not exist, the bloc
 entirely rather than filled with a guess. A wrong recommendation costs you more than no
 recommendation.
 
+The same rule applies to review findings: `apply` is shown only when the current run actually wrote
+an admitted report or direct finding issue and can name it. A current-scope, closed, uncertain,
+deduplicated, or eligible-but-not-written observation produces no recursive substitute.
+
 These end states are deliberately silent for that reason:
 
 - **`/effective-flow setup`** with nothing staged – there is nothing for `commit` to pick up.
@@ -56,10 +60,10 @@ only one. Fill every `<...>` placeholder with the run's actual state.
 | `concept`     | deep review declined                                         | `/effective-flow review <concept-file>`      | —                                               |
 | `concept`     | deep review done, ready                                      | `/effective-flow plan <work package>`        | `/effective-flow review <concept-file>`         |
 | `concept`     | deep review done, open points remain                         | `/effective-flow review <concept-file>`      | —                                               |
-| `investigate` | defect with a clear cause                                    | `/effective-flow fix <report>`               | `/effective-flow plan <report>`                 |
-| `investigate` | structural problem                                           | `/effective-flow refactor <report>`          | `/effective-flow plan <report>`                 |
-| `investigate` | missing functionality                                        | `/effective-flow build <report>`             | `/effective-flow plan <report>`                 |
-| `investigate` | pure documentation gap or behavior to be documented          | `/effective-flow docs <report>`              | —                                               |
+| `investigate` | admitted defect with a clear cause                           | `/effective-flow fix <report>`               | —                                               |
+| `investigate` | admitted structural problem                                  | `/effective-flow refactor <report>`          | —                                               |
+| `investigate` | admitted missing functionality                               | `/effective-flow build <report>`             | —                                               |
+| `investigate` | admitted pure documentation gap or behavior to be documented | `/effective-flow docs <report>`              | —                                               |
 | `plan`        | deep review declined                                         | `/effective-flow apply <plan-file>`          | `/effective-flow review <plan-file>`            |
 | `plan`        | deep review done, ready                                      | `/effective-flow apply <plan-file>`          | `/effective-flow plan <plan-file>`              |
 | `plan`        | deep review done, open points remain                         | `/effective-flow review <plan-file>`         | `/effective-flow plan <plan-file>`              |
@@ -84,7 +88,7 @@ only one. Fill every `<...>` placeholder with the run's actual state.
 | `iterate`     | PR mode                                                      | `/effective-flow merge-gate <PR>`            | `/effective-flow review <PR>`                   |
 | `iterate`     | local mode, delivery branch retained                         | `/effective-flow pr`                         | —                                               |
 | `review`      | local report written                                         | `/effective-flow apply <report>`             | —                                               |
-| `review`      | published to a tracker                                       | `/effective-flow apply #<epic>`              | `/effective-flow apply <local security report>` |
+| `review`      | direct admitted findings published to a tracker              | `/effective-flow apply #<finding>…`          | `/effective-flow apply <local security report>` |
 | `review`      | plan file mode, ready                                        | `/effective-flow apply <plan-file>`          | —                                               |
 | `review`      | plan file mode, open points remain                           | `/effective-flow review <plan-file>`         | `/effective-flow plan <plan-file>`              |
 | `review`      | concept file mode, ready                                     | `/effective-flow plan <work package>`        | —                                               |

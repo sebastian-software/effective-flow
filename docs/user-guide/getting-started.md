@@ -153,16 +153,16 @@ says nothing once several runs are open at the same time. Two things help:
     titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
     expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
     title you set manually.
-  - On **Claude Code**, the host refuses a self-rename outright – its session-management tools
-    reject the calling session by design – so a run applies its title through a second session
-    acting as a rename butler, which you set up once through `/effective-flow setup`. That request
-    goes out as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
-    a reference that only turns up later – a pull request the run itself opened – follows in a
-    further request, so the listed title still ends up carrying it. Without a butler, the run
-    prints the suggestion. With one, the first run in a session still prints it once while the
-    rename happens in the background; a later run in the same continuing session stays silent. If
-    you rename that session manually, the butler reads the retained title back and stops sending
-    further rename requests, so Claude preserves the title you chose.
+  - On **Claude Code**, a run renames its own session directly, through the host's own
+    session-management tool. It needs no second session, no hook and no setup step. The rename
+    happens as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
+    a reference that only turns up later – a pull request the run itself opened – buys exactly
+    one further rename, so the listed title still ends up carrying it. A successful rename stays
+    silent, in the first run of a session as much as in a later one. If the host declines or the
+    rename fails – an older app, a session without the session-management tools, or a title you
+    set yourself and chose not to have replaced – the run prints the suggestion once and
+    continues. If you still keep a separate session from the earlier helper-session arrangement,
+    nothing contacts it any more and you can close it.
   - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion – in
     the completion report, reference included – when its host carries titles. Other hosts without
     an established rename path behave the same; hosts without titled sessions stay silent.
@@ -171,6 +171,35 @@ says nothing once several runs are open at the same time. Two things help:
   invokes `session-title.mjs apply`. Preserve unrelated handlers and the containing personal or
   repository-local Codex configuration file. Old title request and receipt files are inert and may
   remain; Effective Flow does not delete them or edit your Codex configuration.
+
+## Choose a workflow topology
+
+Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex to choose one of
+three common topologies. The standard Profile flow asks only **Chat** and then **Profile** before
+its normal confirmation and any conditional safety questions:
+
+- **Fully local** keeps issue-shaped work in local Markdown, develops on local Git branches, and
+  completes by local merge. It neither creates GitHub/Forgejo issues nor opens pull requests.
+- **Forge issues and development** uses GitHub or Forgejo for issue-backed planning and tracking,
+  and delivers development through a pull request on that forge.
+- **External issues and forge development** uses an external project-management tool such as
+  Linear for issue-backed planning and tracking, while branches and pull requests stay on GitHub or
+  Forgejo.
+  This profile can ask additional questions for the configured external connection, its exact
+  workspace/team/project context, and valid started/done states.
+
+The selected profile is not stored as a preset. Setup writes the resulting tracker, completion,
+and base-branch settings only after showing their exact before/after changes. The forge-backed
+profiles require a verifiable GitHub or Forgejo `origin`; setup never guesses the provider or
+downgrades silently. Use `/effective-flow setup guided` when you need provider overrides or other
+per-setting control, and `/effective-flow setup express` when you deliberately want the
+safe-default path without the profile questions.
+
+The tracker choice governs work that already has an issue reference. A natural-language
+`/effective-flow plan "…"` call still writes a local plan under `plan.dir`; choosing a forge or
+external profile does not automatically create a remote issue for it. See
+[Setup & info](tools-setup.md#effective-flow-setup), [Configuration](configuration.md), and
+[Remote tracker](remote-tracker.md) for the detailed contracts.
 
 ## The typical flow: Plan → Build → Pull Request
 
@@ -214,22 +243,27 @@ When the implementation is already present as local changes, use:
 /effective-flow deliver
 ```
 
-You do not need to prepare a structured path list. `deliver` derives a candidate from concrete file
-changes made in the current session, shows the complete ordered file/state selection, and asks you
-to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
+You do not need to prepare a structured path list. First, `deliver` compares your branch with its
+upstream. If the branch is behind, it offers to fast-forward it; if the branch has diverged or
+local changes are in the way, it asks whether to continue without an update; otherwise it only
+notes the state. It then derives a candidate from concrete file changes made in the current
+session, shows the complete ordered file/state selection, and asks you to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
 partially staged, choose either its staged state or its complete working-tree state. If session and
 Git evidence do not identify one exact scope, the tool asks for clarification and aborts without
 mutation if the scope remains ambiguous.
 
-That manifest confirmation is the only routine approval. `deliver` then derives and displays the
+That manifest confirmation is the only routine approval; the upstream questions are the only ones
+that can come before it, and they come up only when your branch is behind its upstream, either
+cleanly or with its own commits or local changes in the way. `deliver` then derives and displays the
 ordered commit groups, validates their exact partition, and continues automatically without a
 commit-group confirmation. If grouping is ambiguous, it aborts before staging; if the manifest
 drifts, it displays the changed selection and asks you to confirm it again. It transfers only the
 confirmed states to a fresh branch and worktree based on the refreshed configured base, commits
 each coherent group in order, and opens a pull request only after every commit and the final clean
-branch are verified. Your source checkout and its unrelated changes remain untouched. If a later
-commit group fails, the delivery branch and worktree remain available with earlier commits and the
-uncommitted groups; nothing is pushed and no PR is opened.
+branch are verified. Apart from that optional fast-forward, which runs only if you confirm it,
+your source checkout and its unrelated changes remain untouched. If a later commit group fails, the
+delivery branch and worktree remain available with earlier commits and the uncommitted groups;
+nothing is pushed and no PR is opened.
 
 Use `/effective-flow commit` instead when the exact intended diff is already staged. Use
 `/effective-flow pr` only when all intended content is already committed on a clean, attached,

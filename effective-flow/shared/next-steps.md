@@ -23,14 +23,19 @@ instead of relying on the receiving tool to notice.
 ## Shape of the block
 
 - At most **two** options, the most likely one first, as the **last** element of the report, under a
-  heading in the conversation language. The block is interactive output and is persisted nowhere, so
-  no `language.*` surface applies to it.
+  heading in the resolved chat language. The block is interactive output and is never a project
+  artifact, so it follows `language.chat` rather than any artifact surface.
 - Each option is **one line**: the copy-paste-ready invocation with this run's real arguments — the
   actual plan path, the actual pull-request number, the actual report path — followed by an em dash
   and at most about twelve words describing what that tool would do **from here**, not what the tool
-  is in general.
+  is in general. That description follows the chat language too; the invocation token itself is
+  copy-paste input and is never translated.
 - Never name an invocation whose argument this run does not have. If an edge cannot be filled, drop
   that option; if neither can be filled, emit nothing rather than a generic suggestion.
+- A finding/review `apply` option exists only when this run actually created an admitted durable
+  report or direct finding issue and can name its concrete path/reference. `current-scope`,
+  `closed`, `uncertain`, a merely eligible result without write authority, or an empty/deduplicated
+  result emits no substitute planning or review invocation.
 - When one run opened several pull requests, name the first one and state in that same line that the
   remaining ones follow the same way. Never exceed two options to cover them.
 - **Never start the follow-up tool.** This is a recommendation, not a handoff; the existing
@@ -61,10 +66,10 @@ backstop for one that carries open points.
 | concept     | deep review declined                                         | effective-flow review <concept-file>      | —                                       |
 | concept     | deep review done, ready                                      | effective-flow plan <work package>        | effective-flow review <concept-file>         |
 | concept     | deep review done, open points remain                         | effective-flow review <concept-file>      | —                                       |
-| investigate | defect with a clear cause                                    | effective-flow fix <report>               | effective-flow plan <report>                 |
-| investigate | structural problem                                           | effective-flow refactor <report>          | effective-flow plan <report>                 |
-| investigate | missing functionality                                        | effective-flow build <report>             | effective-flow plan <report>                 |
-| investigate | pure documentation gap or behavior to be documented          | effective-flow docs <report>              | —                                       |
+| investigate | admitted defect with a clear cause                           | effective-flow fix <report>               | —                                       |
+| investigate | admitted structural problem                                  | effective-flow refactor <report>          | —                                       |
+| investigate | admitted missing functionality                               | effective-flow build <report>             | —                                       |
+| investigate | admitted pure documentation gap or behavior to be documented | effective-flow docs <report>              | —                                       |
 | plan        | deep review declined                                         | effective-flow apply <plan-file>          | effective-flow review <plan-file>            |
 | plan        | deep review done, ready                                      | effective-flow apply <plan-file>          | effective-flow plan <plan-file>              |
 | plan        | deep review done, open points remain                         | effective-flow review <plan-file>         | effective-flow plan <plan-file>              |
@@ -89,7 +94,7 @@ backstop for one that carries open points.
 | iterate     | PR mode                                                      | effective-flow merge-gate <PR>            | effective-flow review <PR>                   |
 | iterate     | local mode, delivery branch retained                         | effective-flow pr                         | —                                       |
 | review      | local report written                                         | effective-flow apply <report>             | —                                       |
-| review      | published to a tracker                                       | effective-flow apply #<epic>              | effective-flow apply <local security report> |
+| review      | direct admitted findings published to a tracker              | effective-flow apply #<finding>…          | effective-flow apply <local security report> |
 | review      | plan file mode, ready                                        | effective-flow apply <plan-file>          | —                                       |
 | review      | plan file mode, open points remain                           | effective-flow review <plan-file>         | effective-flow plan <plan-file>              |
 | review      | concept file mode, ready                                     | effective-flow plan <work package>        | —                                       |

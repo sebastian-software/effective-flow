@@ -18,6 +18,13 @@ expertise differs by route.
 “Complete workflow” means lifecycle coverage. It does not mean identical specialist depth for
 every programming language.
 
+The Rust and Node.js implementers draw their language depth from the central
+`effective-engineering` skill instead of keeping a second copy of it. For Rust the hand-over is
+complete. For Node.js it covers the TypeScript language layer only – the Node runtime rules the
+skill does not reach, among them HTTP handling, processes, logging, security and shutdown, stay
+with the agent. If the skill is unavailable, both fall back to a short essential core and say so:
+the route stays specialist, while its depth follows the skill you have installed.
+
 ## Reduced-depth product mode
 
 For Python, Go, Java/Kotlin, .NET, Ruby, PHP, Swift, unknown languages, and other product code

@@ -3,7 +3,8 @@
 
 You turn an exact, user-confirmed selection of local changes into one or more coherent commits on a
 fresh delivery branch, then open a pull request. You leave the source checkout and its index
-unchanged.
+unchanged from the moment the source evidence is captured; the only earlier write is an upstream
+fast-forward the user confirmed.
 
 ## Task tracking
 
@@ -27,12 +28,44 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
-- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
+- An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
 **Load on demand:** Read `shared/language-rules.md`, when commit and forge output languages are resolved.
+
+## Interactive output language
+
+**Resolve `language.chat` once, before this run's first interactive output, and hold it for the
+whole run.** It is `de` or `en`; there is no `auto`, and a missing row means **mirror the user's
+language**, never inherit `language.project`. Precedence: an explicit in-message request, then a
+configured value, then the conversation language, then `language.project`, then `en`. An invalid
+value is reported and treated as an absent row — mirror, not a jump to `language.project`.
+
+The sole bootstrap exception is `effective-flow setup` in Profile mode. It resolves an entry language
+read-only, asks `Chat` in that language as its first substantive question, and then binds the
+selected `de`, `en`, or recognizable mirrored conversation language once for its second question
+and the remainder of that setup run. Mirror is pending removal of `language.chat`; English and
+German are pending `en`/`de`, and none is persisted before setup's common confirmation. Express,
+Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never
+rebind their chat language during a run.
+
+Scope is every interactive output: free prose, status updates, completion reports, an `ask` block's header,
+question, option labels and descriptions, the next-steps heading and each option's description (never its
+invocation token), and the session-title label, though a reused artifact title keeps its own. Encoded values
+stay verbatim inside translated prose — the description `delivery.prReview = always — post the findings
+without asking` is posed in German as `delivery.prReview = always — Ergebnisse ohne Rückfrage posten`.
+
+Delegated output is relayed **verbatim**: this key is not handed down, so worker reports and agent
+notices arrive as written and only the orchestrator's framing follows it — a run may be visibly
+bilingual. The router catalog, `effective-flow version` and the `pr-review` notice precede any config
+read and stay on the conversation language.
+
+**Load on demand:** Read `shared/config-migration.md`, when the project setup ADR must be located to read the configured `language.chat` value.
+
+**Load on demand:** Read `shared/typography-rules.md`, when the resolved chat language is `de`.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
 
@@ -448,6 +481,8 @@ status, one concrete retention reason, and one safe next step. Never collapse se
 behind a shared reason. State explicitly when no linked worktrees remain. Report unmatched
 lifecycle records separately so partial cleanup evidence is not hidden.
 
+**Load on demand:** Read `shared/session-title.md`, when the confirmed delivery subject is known and whether a session title is due must be decided.
+
 **Load on demand:** Read `shared/session-rename.md`, when the confirmed delivery subject is known and a session title is about to be applied or emitted.
 
 ## Completion protocol
@@ -461,11 +496,11 @@ Check by the orchestrator:
 
 1. `DONE`: phase completed.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
-3. No keyword: retry with escalation.
+3. No keyword: resume once, then retry with escalation.
 
 ### Retry escalation
 
-When an internal sub-agent ends without `DONE` or `ABORT`:
+When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as not finished rather than as a failed attempt. First resume the same sub-agent once — with its context intact where the harness allows — and a continuation hint to await any pending children and end with `DONE` or `ABORT`. That resume is not a retry. If the harness cannot resume that sub-agent, or the resumed run again ends without a keyword, escalate:
 
 1. Retry 1: same task with a continuation hint
 2. Retry 2: simplified task with reduced scope
@@ -484,7 +519,7 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 - transfer only those states to a fresh branch/worktree based on the refreshed configured base
 - stage and commit one derived coherent group at a time through `effective-flow commit`
 - call commit-only `effective-flow pr` only after every group is a verified commit
-- preserve the source checkout byte-for-byte and index-for-index
+- preserve the source checkout byte-for-byte and index-for-index once its evidence is captured
 
 This tool always targets a pull request. Its invocation is itself affirmative current-run PR intent,
 so it does not inherit `delivery.completion`. Existing pull-request updates belong to
@@ -555,14 +590,16 @@ no skill directory or none fits, this step is a no-op — continue without an er
 Read the project's `AGENTS.md` before any mutation. Use the repository's configured base, branch
 prefix, setup, validation, language, and forge conventions. No external dependency is required: use
 the shipped dependency-free `scripts/delivery-selection.mjs` helper for its `inventory`,
-`bind-manifest`, `verify-source`, `transfer`, and `reconcile` operations.
+`upstream-status`, `fast-forward`, `bind-manifest`, `verify-source`, `transfer`, and `reconcile`
+operations.
 
 ## Selection contract
 
-There is no structured public path argument. Reconstruct the candidate from the current session's
-known output set and concrete file-operation evidence, then reconcile it with the helper's NUL-safe
-`inventory {root}` result for staged, unstaged, untracked, deleted, renamed, and partially staged
-paths. Recency or repository dirt alone is never evidence that a path belongs to this session.
+There is no structured public path argument. Only after step 1.1's upstream check, reconstruct the
+candidate from the current session's known output set and concrete file-operation evidence, then
+reconcile it with the helper's NUL-safe `inventory {root}` result for staged, unstaged, untracked,
+deleted, renamed, and partially staged paths. Recency or repository dirt alone is never evidence
+that a path belongs to this session.
 
 For every candidate, show the exact repository-relative literal path, state, and selection origin in
 a stable order. A partially staged path exposes its staged state and full working-tree state as two
@@ -588,7 +625,8 @@ blob and mode without dereferencing it. Bind each selected state to source `HEAD
 absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
 file contents.
 
-This manifest confirmation is the sole routine approval. An affirmative answer authorizes automatic
+This manifest confirmation is the sole routine approval; the conditional pre-selection upstream
+questions of step 1.1 are the only questions that can precede it. An affirmative answer authorizes automatic
 derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
 subject to every drift check, invariant, verification step, and abort boundary below.
 
@@ -596,9 +634,22 @@ subject to every drift check, invariant, verification step, and abort boundary b
 
 ### 1. Establish immutable source evidence
 
-1. Issue and verify a source execution-location receipt before any operation that may write. Record
-   the source `HEAD`, branch or detached OID, complete index state, worktree state, repository
-   identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`.
+1. Issue and verify a source execution-location receipt before any operation that may write, with
+   repository identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`. Then, before any candidate is
+   reconstructed, call `upstream-status {root: sourceRoot, fetch: true}`. A failed `upstream-status`
+   envelope (`ok: false`) ends this check with one notice line naming its error code; continue
+   without an update. A failed or stale fetch, or one reported as `fetch.skipped`, ends this check
+   with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`,
+   `up-to-date`, and `ahead`, with no question. Only `behind`, `behind-overlap`, and `diverged`
+   proceed to the fragment below, and only when the fetch was not attempted, or `fetch.ok` is true
+   and `fetch.stale` is false. A local upstream (`branch.<name>.remote = .`) is compared without
+   fetching, so its fetch is not attempted.
+
+**Load on demand:** Read `shared/source-upstream-sync.md`, when upstream-status reports behind, behind-overlap, or diverged.
+
+Only after this check, record the source `HEAD`, branch or detached OID, complete index state, and
+worktree state.
+
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
    `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
    contract. `deliver` reports that its explicit PR intent replaces any different configured
@@ -640,7 +691,7 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 
 The source may be detached, on the configured base, dirty, or harness-managed. Those states are why
 this tool creates its own verified delivery worktree; they never authorize switching or committing
-in the source checkout.
+in the source checkout, or writing to it after its evidence is captured.
 
 ### 4. Transfer and validate the confirmed selection
 
@@ -708,7 +759,8 @@ its exact state.
 ### 7. Report
 
 Report the confirmed selected paths/states, ordered groups, created commit OIDs, delivery branch,
-base, pull-request URL, lifecycle result, explicit-PR override when configuration differed, and the
+base, pull-request URL, lifecycle result, upstream outcome (state, fast-forward done or skipped, and
+skipped `post-merge` hooks when it ran), explicit-PR override when configuration differed, and the
 final source-checkout/index comparison. Never report file content or claim that `delivery.completion`
 was changed. Emit the `deliver` next-step block last unless this run itself received
 `Next steps: suppressed`.

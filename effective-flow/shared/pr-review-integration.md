@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
 ## PR review publication
 
@@ -45,7 +45,7 @@ target. PR review threads are a different API object. A workflow working on a pu
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
 ``tools/apply-issues.md``/`effective-flow plan-issue` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
-availability check** are taken from the "Remote helper contract" in `issue-tracker.md` (not
+availability check** are taken from the focused `remote-helper-contract` building block (not
 reinvented); this building block only adds the PR operations.
 
 Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge
@@ -65,13 +65,59 @@ summary comment and every outbound review comment and review body use `language.
 markers, thread IDs, states, finding IDs, and helper payload fields remain stable and are never
 translated.
 
+### Remote helper contract (remote mode only)
+
+All deterministic remote mechanics of the forge target run through the shipped helper:
+
+```text
+node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+```
+
+Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from
+standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
+the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea`
+probing, capability normalization, command construction, JSON normalization, payload validation,
+compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens
+a shell and never prompts.
+
+Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd` on **every helper
+operation**, including local deterministic operations such as `reference-parse`, `body-hash`, and
+`issue-lifecycle-receipt-parse`. The helper runs `git`, `gh` and `tea` in that directory, and every
+provider CLI resolves its repository context from it. The runtime root is the one checkout
+guaranteed to exist for the whole run, whereas an execution worktree may already have been
+withdrawn by the time a completion action runs. The field is optional for compatibility — when it
+is absent the helper inherits the process working directory — but an Effective Flow workflow always
+sets it. A `cwd` that is not an existing directory fails with a structured error naming the path,
+never as a missing-CLI error.
+
+Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes
+additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`,
+and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API
+requests, read CLI credentials, or invent a fallback. In particular:
+
+- `AMBIGUOUS_HOST`: obtain an explicit `github`/`forgejo` choice from configuration or the user,
+  then retry with that override.
+- `CLI_MISSING`/`AUTH_FAILED`: abort without side effects; offer local mode only with explicit user
+  consent.
+- `UNSUPPORTED_CAPABILITY`: report the unsupported provider capability and preserve the surrounding
+  workflow state.
+- `STALE_WRITE`: abort that write without retrying, merging, or overwriting; re-enter the workflow
+  from a fresh read.
+- all other structured errors: preserve scope and let the owning workflow decide whether a retry is
+  safe.
+
+Reads execute immediately. Mutations are dry runs by default: inspect the returned executable,
+argument vector, and redacted input preview, obtain every workflow-specific approval that still
+applies, and only then repeat the same operation with `--apply`. A dry run never changes Git,
+tracker state, memory, labels, issues, pull requests, comments, or review threads.
+
 ### Remote helper
 
 Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, and error contract from `issue-tracker.md`. PR mode requires a successful provider
-probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit provider choice;
-`CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider requests or
-discover flags in the prompt.
+redaction, error, and working-directory contract from the loaded "Remote helper contract". PR mode
+requires a successful provider probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit
+provider choice; `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider
+requests or discover flags in the prompt.
 
 ### PR resolution
 
@@ -95,6 +141,7 @@ comments (for the inbound direction see the error cases in `effective-flow itera
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
+On Forgejo only, a thread also carries an optional `reviewId`: the id of the review it was read under.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read
@@ -330,10 +377,10 @@ This shared building block holds the three **write** operations on a pull reques
 replying to a thread, resolving a thread, and submitting a review with inline comments. The shared
 read surface they are performed against — PR resolution, the fresh thread and comment reads, the
 authenticated identity, the summary comment, the marker contract, the `language.forge` and
-"No AI attribution" rules, and through them the "Remote helper" reference to the helper contract in
-`issue-tracker.md` — stays in the "PR review comment integration" building block, which every
-consumer of this fragment loads as well. `effective-flow merge-gate` loads that read surface too, but
-not this fragment: it writes no reply, resolves no thread, and submits no review.
+"No AI attribution" rules, and through them the eagerly included `remote-helper-contract` — stays
+in the "PR review comment integration" building block, which every consumer of this fragment loads
+as well. `effective-flow merge-gate` loads that read surface too, but not this fragment: it writes no
+reply, resolves no thread, and submits no review.
 
 ### Reply to a thread
 
@@ -347,7 +394,9 @@ second time.
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
-leave the thread unresolved, and note that manual resolution is needed; do not improvise.
+leave the thread unresolved, and note that manual resolution is needed; do not improvise. Where the
+reply is unsupported as well, write nothing into the thread, leave it unresolved, and report reply
+and resolution as manual; a gate-delegated run carries that in its return, not in a summary comment.
 
 ### Submit a review with inline comments
 
@@ -379,12 +428,14 @@ visible to everyone with read access, and is propagated through notifications, m
 mirrors — deleting it later does not undo the disclosure.
 
 This fragment owns the classification, the local-first persistence, and the publication offer. The
-cross-publisher contract lives in "Issue-tracker integration (remote mode)"; the artifact
+cross-publisher contract lives in "Issue-tracker forge mechanics"; the artifact
 lifecycle stays with the calling workflow.
 
 ### Classification
 
-Classify every finding that survives confidence, scope, and design-decision filtering:
+Classify every `admitted` finding after confidence, scope, design-decision, deduplication, and
+durable-work admission. Disclosure never admits work and never reclassifies a non-admitted
+observation:
 
 - `local-only` for every security-relevant finding, `publishable` for every other finding.
 - Use the `Security relevance` value reported by the reviewer as a signal and check it against the
@@ -413,7 +464,8 @@ report file.
 
 ### Local-first persistence
 
-After reservation and before any tracker mutation, persist the `local-only` findings, so a
+After admission and reservation and before any tracker mutation, persist the `local-only`
+findings, so a
 declined offer, a CLI failure, or an interrupted session cannot lose them:
 
 1. **Write the report.** Use the calling workflow's report path, guard, and collision mechanics,
@@ -442,11 +494,11 @@ remembered — a stored decision would silently suppress a finding that later gr
 
 If at least one local-only finding remains after the security classification: Ask the user: **Publish the withheld security findings as issues as well? They are already saved locally. A public tracker entry describes an unfixed vulnerability with file, line, and reproduction prompt, is visible to everyone with read access, and is propagated through notifications, mail, feeds, and mirrors, so deleting the issue later does not undo the disclosure.**
 - Keep local -- Default — the findings stay solely in the local report; no issue is created for them
-- Publish as issues -- The withheld findings are additionally created as issues in this run's epic, with the disclosure accepted
+- Publish as issues -- Each withheld finding is additionally created as a direct issue, with the disclosure accepted
 
 On `Keep local`, publish only the `publishable` findings. On `Publish as issues`, treat the
-withheld findings as publishable for this run, so a single epic covers both groups and the epic
-invariant "an existing epic is never extended" holds. Afterwards append to each affected finding
+withheld findings as publishable for this run and create each as an admitted direct finding issue;
+create no epic or container. Afterwards append to each affected finding
 block of the just-written report a publication note as its last entry, in the preserved report
 language and analogous to the review-report backlinks; guard the report path again immediately
 before that write. The note is machine-recognizable so the local apply route can skip an
@@ -455,9 +507,14 @@ already-published finding:
 - English: `🔓 Published as #<issue number> on YYYY-MM-DD`
 - German: `🔓 Veröffentlicht als #<issue number> am YYYY-MM-DD`
 
+Until that publication note is persisted, the required local security report is the sole executable
+representation. After explicit publication the direct remote finding is the executable source and
+the note makes local `apply` skip its copy. The safety report remains local, but the two
+representations are never simultaneously active implementation sources.
+
 ### Silence in public artifacts
 
-The epic body and every issue body contain no count, title, signature, ID, or other reference to a
+Every public issue body contains no count, title, signature, ID, or other reference to a
 finding that stayed local. A public "N security findings withheld" line is itself an exploitable
 signal. The withheld count belongs solely in the local report and the chat summary.
 
@@ -467,13 +524,15 @@ The gate covers the publication of review findings. It does not sanitize branch 
 subjects, or pull request bodies of a later fix — that disclosure decision belongs to the
 delivering workflow and its user.
 
+**Load on demand:** Read `shared/durable-follow-up-gate.md`, when a PR-review finding is about to be admitted for publication or closed as non-admitted.
+
 The loaded "PR review comment integration" owns PR resolution, the fresh thread and comment reads,
 the review submission with its marker and its provider fallbacks, the summary comment, the
 `language.forge` rule, and the "No AI attribution" rule — and through it the host detection, CLI
-probing, envelope, dry-run, redaction, and error contract of the "Remote helper contract" in
-`issue-tracker.md`. The loaded "Security disclosure gate" owns the security classification, the
-local-first persistence, and the per-run publication offer. None of that is restated here. Pull
-requests stay on the forge behind `origin` regardless of `tracker.mode`.
+probing, envelope, dry-run, redaction, and error contract eagerly included from
+`remote-helper-contract.md`. The loaded "Security disclosure gate" owns the security
+classification, the local-first persistence, and the per-run publication offer. None of that is
+restated here. Pull requests stay on the forge behind `origin` regardless of `tracker.mode`.
 
 ### Inputs
 
@@ -541,8 +600,13 @@ Regardless of entry point, run exactly this order and publish nothing before it 
    directories, the plan directory, and the repository convention files for documented decisions and
    drop every finding one of them covers, recording the source reference in the run summary. Do not
    assume `effective-flow review` Phase 3 is loaded here; at the automatic call sites it is not.
-4. **Security classification and the loaded "Security disclosure gate".**
-5. **Publication.**
+4. **Durable-work admission.** First triage possible current-scope or credible high-risk paths, then
+   group by root-cause signature, apply bounded deduplication, and run the loaded “Durable
+   derived-work gate” before disclosure or publication. `valid_in_scope` remains part of the active
+   PR. A `valid_out_of_scope` item creates a publication candidate only when `admitted`; `closed`
+   terminates, and unresolved `uncertain` blocks/escalates without an artifact.
+5. **Security classification and the loaded “Security disclosure gate”.**
+6. **Publication.**
 
 ### Judgment handoff to effective-delivery
 
@@ -553,13 +617,18 @@ publication, and delivery; the analysis performs no discovery, implementation, G
 action and may only classify the supplied context.
 
 Consume the returned `pr-review-handoff/v1` object and require exactly one returned item per
-supplied ID. Map its classifications:
+supplied ID. Before switching on a returned classification, run the loaded gate's preliminary
+current-scope/high-risk triage across the complete returned set. Keep possible `current-scope`
+items in the active PR. A credible qualifying `needs_evidence` path becomes `uncertain`: perform
+exactly one bounded read-only question/check with an explicit completion criterion, then resolve it
+or block/escalate; never publish or export it unresolved. A non-credible `needs_evidence` item is
+`closed` without durable work. Then map the remaining classifications:
 
 - `valid_in_scope` + `caller_fix` → earns a comment on this pull request.
-- `valid_out_of_scope` → a noted follow-up in the run summary, never a comment.
+- `valid_out_of_scope` → gate it; publish nothing unless it is `admitted`, and never widen the PR.
 - `unsupported` → a rejected false positive; record the returned rationale and publish nothing.
 - `question_or_information` → reported to the user, never posted as a defect.
-- `needs_evidence` → dropped, with the exact missing proof recorded.
+- `needs_evidence` → only the triage outcome above applies; do not start a second evidence round.
 
 **These five are `effective-delivery`'s judgment vocabulary, and no workflow returns them as an
 outcome.** They sit **behind** the outcome vocabularies of the workflows that consume this handoff
@@ -581,7 +650,7 @@ unavailable. Never invent the missing classification.
 
 ### Security binding
 
-Step 4 runs the loaded "Security disclosure gate" on every finding still standing. A finding set
+Step 5 runs the loaded “Security disclosure gate” on every admitted finding still standing. A finding set
 that arrives **without a recorded security classification** is classified there before anything is
 published: `build`, `refactor`, and `maintain` hand over residual findings that never passed through
 that classification, and an unclassified finding is never treated as publishable. A finding that
@@ -597,6 +666,12 @@ withheld finding.
 The loaded "Submit a review with inline comments" performs the submission; this fragment decides its
 content. The helper's payload builder stamps the marker — never hand-write it.
 
+The idempotency key below is the canonical finding-issue `Signature` form, which lives in
+`issue-tracker-forge.md`. Pull-request work never evaluates the tracker target, so that fragment is
+not reached through a target-gated include here and is loaded through this pointer instead:
+
+**Load on demand:** Read `shared/issue-tracker-forge.md`, when a finding is about to be published onto a pull request and its `Signature` idempotency key must be built or parsed.
+
 - Each inline comment is anchored to the finding's `file:line` **inside the diff**.
 - A finding on a line **outside the diff** cannot be anchored onto a wrong line. It does not go into
   the review body either: the idempotency check below reads the review threads and the pull-request
@@ -609,7 +684,7 @@ content. The helper's payload builder stamps the marker — never hand-write it.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
   marker, its body holds the finding's stable ID, its severity, its problem and recommendation
   prose, and — as its last line — the idempotency key in the canonical finding-issue form of
-  `issue-tracker.md`:
+  `issue-tracker-forge.md`:
   `- **Signature**: <path:line> · <Area> · <short summary of the problem>`. A finding published
   without that line cannot be recognized next run and is posted a second time.
 - **Empty result:** on the explicit `effective-flow review <PR>` entry point, publish one short summary
