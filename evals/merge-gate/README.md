@@ -7,7 +7,7 @@ present somewhere. This layer asserts the opposite kind of thing — that a merg
 blocked is observed to be blocked.
 
 The plan behind it is
-[`docs/plan/2026-09-02-merge-gate-behavioural-evals.md`](../../docs/plan/2026-09-02-merge-gate-behavioural-evals.md).
+[`docs/plan/archive/2026-09-02-merge-gate-behavioural-evals.md`](../../docs/plan/archive/2026-09-02-merge-gate-behavioural-evals.md).
 
 ## The design in one paragraph
 
