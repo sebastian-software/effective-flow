@@ -8475,16 +8475,34 @@ test('external started-state configuration is tracker-verified and only setup pe
   const tracker = prose(source('src/shared/tracker-target.md'));
   const setup = prose(source('src/tools/setup.md'));
 
+  // Mutation testing found the fail-closed clauses below deletable with the whole suite staying
+  // green. They are what stops a run from writing a guessed workflow-state transition into a live
+  // external tracker, so removing one silently costs a wrong write nobody sees. Each pin is
+  // anchored to the started bullet, whose wording the done bullet otherwise shares verbatim.
   assert.match(migration, /tracker\.externalStartedState.*nullable string.*stable state ID/);
   assert.match(
     migration,
-    /Missing or `null` means unset and never authorizes a guessed transition/,
+    /stable state ID, or its exact accepted token only when that connection exposes no ID\. Missing or `null` means unset and never authorizes a guessed transition/,
   );
   assert.match(
     migration,
-    /Only `\{\{SKILL:setup\}\}` writes a confirmed tracker-verified suggestion/,
+    /Readers validate a non-null value against a fresh list of writable states in the exact configured tracker context before every implementation run/,
+  );
+  assert.match(
+    migration,
+    /stale, terminal, read-only, cross-context, and display-name-only matches fail closed before code/,
+  );
+  assert.match(
+    migration,
+    /Only `\{\{SKILL:setup\}\}` writes a confirmed tracker-verified suggestion\. The fixed post-merge observation grace period has no configuration key/,
   );
   assert.match(tracker, /Before the first implementation delegation, list those states fresh/);
+  assert.match(tracker, /it must be writable, non-terminal, and normalized as `started`/);
+  assert.match(tracker, /normalized as `started`\. A display-name match is never enough/);
+  assert.match(
+    tracker,
+    /A stale, cross-context, terminal, read-only, or missing value aborts before code and reports the current candidates/,
+  );
   assert.match(
     tracker,
     /Exactly one candidate may be proposed with both its display name and stable value/,
@@ -8493,6 +8511,10 @@ test('external started-state configuration is tracker-verified and only setup pe
   assert.match(
     tracker,
     /A non-interactive run, zero candidates, or multiple candidates aborts before code/,
+  );
+  assert.match(
+    setup,
+    /Validate an existing value by stable value, context, normalized `started` category, writability, and non-terminal state/,
   );
   assert.match(setup, /Persist the suggestion only in the confirmed Step 6 write/);
   assert.match(setup, /Never infer a state from the tool name or a familiar display name/);
@@ -9342,6 +9364,10 @@ test('external done-state configuration mirrors the started state and never abor
   assert.match(
     migration,
     /Missing or `null` means unset and never authorizes a guessed transition/,
+  );
+  assert.match(
+    migration,
+    /stale, non-terminal, read-only, cross-context, not-done-category, and display-name-only matches/,
   );
   assert.match(
     migration,
