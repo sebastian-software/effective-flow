@@ -1,6 +1,6 @@
 # Behavioural evals for the merge gate
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`/effective-flow build`)
 
