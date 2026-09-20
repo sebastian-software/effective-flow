@@ -411,22 +411,63 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) visit(path);
-      else if (entry.isFile() && /\.(?:md|mjs)$/.test(entry.name)) sourceFiles.push(path);
+      else if (entry.isFile() && /\.(?:md|mjs|json)$/.test(entry.name)) sourceFiles.push(path);
     }
   };
   visit(SOURCE_DIR);
 
-  const violations = sourceFiles.flatMap((file) =>
-    findStaleBrandReferences(readFileSync(file, 'utf8')).map((hit) => ({
-      file: relative(ROOT_DIR, file),
-      ...hit,
-    })),
+  // Normative documentation is in scope alongside the sources, enumerated like
+  // the ADR ownership-contract guard above rather than walked from `docs/`, so
+  // the excluded neighbours stay excluded on purpose and nobody "completes" the
+  // list later:
+  //   - `docs/plan/` including its archive: plans are historical records and
+  //     legitimately quote the retired brand, down to their file names;
+  //   - `docs/review/`: the architecture review carries the retired brand as
+  //     the subject of its finding F-02;
+  //   - shell scripts such as `local-common.sh`: they read the frozen legacy
+  //     repository environment alias, whose name carries the brand in capitals.
+  // Normative documents that sit outside those directories are enumerated
+  // individually here.
+  sourceFiles.push(
+    join(ROOT_DIR, 'AGENTS.md'),
+    join(ROOT_DIR, 'README.md.src'),
+    join(ROOT_DIR, 'README.md'),
+    join(ROOT_DIR, 'docs', 'readme-theme.md'),
   );
+  for (const directory of [
+    join(ROOT_DIR, 'docs', 'adr'),
+    join(ROOT_DIR, 'docs', 'developer-guide'),
+    DOCS_USER_GUIDE,
+  ]) {
+    visit(directory);
+  }
+
+  // A file name carries the brand just as publicly as the prose inside it, so
+  // scan it too -- separately, because the scanner reports 1-based line numbers
+  // and prepending the name to the content would shift every content hit by one
+  // line. A name hit is reported as its own kind instead of a line number.
+  const violations = sourceFiles.flatMap((file) => {
+    const path = relative(ROOT_DIR, file);
+    return [
+      ...findStaleBrandReferences(basename(file)).map(({ reference }) => ({
+        file: path,
+        kind: 'file name',
+        reference,
+      })),
+      ...findStaleBrandReferences(readFileSync(file, 'utf8')).map(({ line, reference }) => ({
+        file: path,
+        line,
+        reference,
+      })),
+    ];
+  });
   if (violations.length > 0) {
     process.stderr.write(
-      'ERROR: stale brand guard: src/ and the build scripts name the product "Effective Flow"; the frozen backcompat marker "**Firmo project setup:**" is the only permitted occurrence:\n' +
+      'ERROR: stale brand guard: src/, the build scripts and the normative documentation name the product "Effective Flow"; the frozen backcompat marker "**Firmo project setup:**" is the only permitted occurrence:\n' +
         violations
-          .map(({ file, line, reference }) => `  ${file}:${line}: ${reference}`)
+          .map(({ file, line, kind, reference }) =>
+            kind ? `  ${file}: ${kind}: ${reference}` : `  ${file}:${line}: ${reference}`,
+          )
           .join('\n') +
         '\n',
     );
