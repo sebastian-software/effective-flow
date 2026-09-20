@@ -4441,6 +4441,13 @@ function normalizeLabels(value) {
 // provider never said, and `unknown` is precisely this record's word for "nobody decided". Matching
 // ignores case, because case is spelling rather than class — the same discipline
 // `VIEWER_ACCOUNT_TYPES` applies to the identity read.
+//
+// Forgejo and every released Gitea state no class at all — their `structs.User` carries no
+// account-type field — so `author.type` in `normalizeAuthor` and `item.type` in `normalizeViewer`
+// both read `undefined` there by design, not for want of parsing: authorship falls back to
+// `is_bot` and the `[bot]` login suffix, and the identity read states no type. Gitea `main` has
+// since added `type` with GitHub's own capitalized values (`User`, `Organization`, `Bot`), which
+// this same allow-list already decides, leaving `Organization` undecided.
 const AUTHOR_ACCOUNT_TYPES = Object.freeze(['User', 'Bot']);
 
 function declaredAccountBot(value) {
@@ -4651,7 +4658,14 @@ function headCommitTimestamp(item, headSha) {
   // query, or to a flattener that does not address the commit by its object name, switches head
   // verification off without touching a line of this function, so anyone introducing one has to
   // decide here whether the stated value may still skip the match.
-  const direct = normalizeTimestamp(item.headCommittedAt, item.head?.commit?.committer?.date);
+  //
+  // `headCommittedAt` is the only field read, and a second, Forgejo-shaped
+  // `head.commit.committer.date` fallback was removed rather than kept: no producer can set it.
+  // `structs.PRBranchInfo` declares `label`, `ref`, `sha`, `repo_id` and `repo` and no commit
+  // member, so `flattenForgejoPullRequestStatus` — which passes `pull.head` straight through —
+  // cannot carry one, and the GitHub path spreads a GraphQL node whose selection set has no `head`
+  // field at all. Reading it was not a second source but a line that could never fire.
+  const direct = normalizeTimestamp(item.headCommittedAt);
   if (direct !== undefined) return direct;
   if (typeof headSha !== 'string' || headSha === '') return undefined;
   const commits = Array.isArray(item.commits) ? item.commits : [];
