@@ -3455,6 +3455,7 @@ test('the stale brand guard scans the enumerated normative documentation', () =>
     "join(ROOT_DIR, 'AGENTS.md')",
     "join(ROOT_DIR, 'README.md.src')",
     "join(ROOT_DIR, 'README.md')",
+    "join(ROOT_DIR, 'docs', 'readme-theme.md')",
     "join(ROOT_DIR, 'docs', 'adr')",
     "join(ROOT_DIR, 'docs', 'developer-guide')",
     'DOCS_USER_GUIDE',
@@ -3484,6 +3485,11 @@ test('no scanned source outside the frozen marker carries the retired brand', ()
   for (const name of ['build.mjs', 'build-lib.mjs', 'AGENTS.md', 'README.md.src', 'README.md']) {
     scanned.push([name, new URL(`../${name}`, import.meta.url)]);
   }
+  // Enumerated individually by the guard because it sits at the top level of
+  // `docs/`, outside the three scanned directories. The guard scans a file's
+  // base name, so pair that base name with the path rather than scanning the
+  // path itself.
+  scanned.push(['readme-theme.md', new URL('../docs/readme-theme.md', import.meta.url)]);
 
   const violations = [];
   for (const [name, url] of scanned) {

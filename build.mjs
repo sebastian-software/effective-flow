@@ -426,10 +426,13 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
   //     the subject of its finding F-02;
   //   - shell scripts such as `local-common.sh`: they read the frozen legacy
   //     repository environment alias, whose name carries the brand in capitals.
+  // Normative documents that sit outside those directories are enumerated
+  // individually here.
   sourceFiles.push(
     join(ROOT_DIR, 'AGENTS.md'),
     join(ROOT_DIR, 'README.md.src'),
     join(ROOT_DIR, 'README.md'),
+    join(ROOT_DIR, 'docs', 'readme-theme.md'),
   );
   for (const directory of [
     join(ROOT_DIR, 'docs', 'adr'),
