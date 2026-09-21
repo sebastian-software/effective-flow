@@ -1,10 +1,13 @@
 # Behavioural evals for `merge-gate`
 
-A behavioural safety net for `src/tools/merge-gate.md`, run deliberately rather than in CI. It exists
-because every other assertion guarding that file checks its **text**: a restructure can move a
-fail-closed rule out of reach of the run and the whole suite still passes, because the wording is
-present somewhere. This layer asserts the opposite kind of thing — that a merge which should be
-blocked is observed to be blocked.
+A behavioural safety net for `src/tools/merge-gate.md`, recorded deliberately rather than in CI: no
+runner here ever starts a model. What CI does read is the archived result, and the release pull
+request is where it has to still describe the build — see
+[Freshness and the release gate](#freshness-and-the-release-gate). It exists because every other
+assertion guarding that file checks its **text**: a restructure can move a fail-closed rule out of
+reach of the run and the whole suite still passes, because the wording is present somewhere. This
+layer asserts the opposite kind of thing — that a merge which should be blocked is observed to be
+blocked.
 
 The plan behind it is
 [`docs/plan/archive/2026-09-02-merge-gate-behavioural-evals.md`](../../docs/plan/archive/2026-09-02-merge-gate-behavioural-evals.md).
@@ -57,7 +60,8 @@ Three test files in the ordinary `pnpm test` suite belong to this layer:
   round lifecycle, isolation, receipt validation, retries, publication locking, and crash recovery.
 
 None runs a model, and none starts a gate run. `pnpm test` stays a pure file-and-transform
-suite.
+suite. None of them answers whether the archived logs still describe the working tree either; that
+question belongs to `pnpm merge-gate-eval verify`.
 
 ## Running a round
 
@@ -261,9 +265,72 @@ tampered generations fail closed. `publish` performs the same recovery after acq
 before staging its candidate; `recover` is the explicit operator entry point and acquires that same
 lock.
 
+Then read the new evidence with the ordinary assertions. They judge whether it is sound; whether it
+still describes the working tree is a separate question with its own command:
+
 ```sh
 node --test test/merge-gate-eval.test.mjs         # or just pnpm test
+pnpm merge-gate-eval verify                       # does the archive still describe this tree?
 ```
+
+### Freshness and the release gate
+
+`pnpm test` asks whether the archived files are evidence at all — a stamp exists, parses, and is the
+one its own metadata names, and five runs of five are there. It no longer asks whether they still
+describe the working tree. That second question is a property of the _pair_ rather than of the
+files, and it has its own read-only command:
+
+```sh
+pnpm merge-gate-eval verify [--mode report|strict]
+```
+
+`verify` builds the portable skill once into a throwaway root, recomputes each scenario's build
+identity from it, and compares that against every archived stamp. It writes nothing, takes no
+publication lock, and launches no model, so it is safe beside a round, beside a publication, and
+inside a CI step. Report mode — the default — names the corpus it read, then prints one line per
+scenario, with its runs counted by state and any waiver named, then the slots that went stale and
+the files that moved behind the first of them; it exits 0 even when a scenario is stale.
+`--mode strict` additionally exits 1 for any scenario that is not `current`.
+
+A scenario is one of five states, and they are kept apart because each one sends an operator
+somewhere different:
+
+| State     | Meaning                                                    | Remedy                                             |
+| --------- | ---------------------------------------------------------- | -------------------------------------------------- |
+| `current` | every archived stamp still describes this tree             | nothing to do                                      |
+| `stale`   | a stamp describes another build, or a run carries none     | re-record the round                                |
+| `short`   | fewer runs than the five-of-five bar                       | finish the round                                   |
+| `surplus` | more runs than that bar — the shape publication rejects     | reconcile the directory before publishing again    |
+| `absent`  | no archived runs at all                                    | record a round; nothing is proven about this gate  |
+
+The count is read before the content, so a round that is both short and stale reports `short`; the
+remedies chain correctly, because a run recorded against the current tree leaves the rest of that
+round visibly stale on the next verdict.
+
+`surplus` exists because the count is wrong in two directions and the remedies are opposites:
+telling an operator to finish a round that is already over-complete costs more than the extra word
+in the vocabulary. Every state other than `current` fails `--mode strict`: at a release point
+"nothing was observed" is not an acceptable state, although it stays a legitimate skip in a fresh
+checkout.
+
+Only a failure to reach a verdict at all — a build that fails, an archived stamp that will not
+parse — exits nonzero in report mode: an unwelcome verdict is not an operational error, and
+conflating the two would turn every pull request red through the step that exists to keep it green.
+
+CI runs exactly that command as the last step of the required `Format, test and build` job, and that
+is the whole of CI's involvement with this layer: no model, no quota, no round. On an ordinary
+pull request the step reports — the verdict goes to the job summary and the check stays green even
+when the corpus is stale — because paying a round per pull request for a claim about the build that
+ships is the cost this arrangement removes. On the release pull request, recognised by its
+`release-please--` head-ref prefix, the same step runs strict and a stale, short, or absent corpus
+fails the required check. There is no waiver: without a current round there is no release.
+
+That moves the deadline, not the bar. Five of five still holds, the load set is still the derived
+one, and the evidence is still recorded by hand. What changed is when the invalidated round comes
+due — once per release rather than once per pull request that touches the load set — and that
+staleness is now visible, with its list of moved files, from the pull request that caused it. Record
+the round as an ordinary pull request into `develop`; never commit evidence onto the release branch,
+which release-please owns and force-pushes.
 
 ### Evidence units and invalid runs
 
@@ -327,8 +394,10 @@ digest matches, `SKILL.md` is the single moved skill file, and the instrument an
 still exactly equal; anything else fails as before, including a stamp too old to carry the field.
 The version still binds every run whose build differs in anything the version does not explain.
 
-That is a narrower trigger, not an absent one: two pull requests that both touch those
-files still invalidate each other's rounds, and whichever lands second re-runs. A load pointer also
+That is a narrower trigger, not an absent one — but an invalidated round is no longer owed at the
+next merge. Two pull requests that both touch those files leave the corpus stale in the same way,
+and one round re-recorded before the next release answers for both; `verify` reports that staleness
+on every pull request in between and enforces it on the release pull request. A load pointer also
 counts whether or not a run can take its branch: `shared/typography-rules.md` is hashed today only
 because `chat-language` points at it under `when: the resolved chat language is de`, a branch
 neither scenario reaches. That widening is a recorded decision rather than an accident, and its
@@ -365,9 +434,11 @@ correlated `complete` events are not additional calls.
 - **With no archived runs at all, the assertions skip with a loud reason rather than passing.** They
   never report success for a scenario nobody ran. Skipping rather than failing is deliberate: a
   permanently red `pnpm test` in every checkout that has not spent quota on a run — CI included,
-  which this layer deliberately stays out of — is ignored within a week, and would cost more evidence
-  than it gathers. `node --test` prints the skip reason beside the test, and the pass count does not
-  include it.
+  which runs these assertions and never a model — is ignored within a week, and would cost more
+  evidence than it gathers. `node --test` prints the skip reason beside the test, and the pass count
+  does not include it. `verify --mode strict` does fail on that same empty corpus, because at a
+  release point "nothing was observed" is not an acceptable state; in `pnpm test`, in any checkout,
+  it stays a skip.
 - **Between one and four archived runs is a failure, not a skip.** The five-of-five bar is asserted
   rather than printed. Zero runs and a short round are different facts: zero describes a checkout
   nobody has spent quota in, which is the ordinary state of a fresh clone, while one to four
@@ -472,9 +543,14 @@ correlated `complete` events are not additional calls.
   rules, so what stays untested is the Codex **execution**, not the rule. With the log as the
   evidence, a later Codex driver would reuse the stub, the fixtures and every assertion unchanged.
   This is a named residual, not a gap to be closed by weakening anything here.
-- **The suite is not in CI**, which has neither the credentials nor the quota for it. What makes it
-  binding is evidence instead: every pull request of the deferral round carries the suite's output —
-  date, commit, per-scenario run count and result — in its body.
+- **No round is ever run in CI**, which has neither the credentials nor the quota for it: the
+  evidence is recorded by hand or not at all. What CI does is read the result. `verify` reports on
+  every pull request whether the archive still describes the tree and fails the required check on
+  the release pull request, so what makes the suite binding is now that check rather than a
+  convention. The body convention survives for one pull request only — the one that re-records a
+  round, which carries the suite's output in its body: date, commit, per-scenario run count and
+  result. It produces the evidence, and it is the only place in the history where the recording
+  profile is stated. Every other pull request carries nothing.
 
 ## The sandbox
 

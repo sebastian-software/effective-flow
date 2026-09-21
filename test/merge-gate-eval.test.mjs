@@ -10,12 +10,15 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { isDeepStrictEqual } from 'node:util';
 import {
   buildPortableSkill,
+  freshnessVerdict,
+  isCompatibleLegacyInstrumentPredecessor,
   isVersionStampOnlyPredecessor,
+  PREDECESSOR_LEGACY_INSTRUMENT_DIGEST,
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
+  TRACKER_STUB_PATH,
 } from '../evals/merge-gate/_scaffold/build-identity.mjs';
 import {
   evaluateEvidence,
@@ -280,110 +283,87 @@ function archivedRuns(scenario) {
     }));
 }
 
-// Which files moved, named rather than counted, across all three parts of the stamp. A digest
-// mismatch says only that the run observed something else; this says what, which is the difference
-// between an operator re-running a round on purpose and one re-running it because a number changed
-// and they could not see why. Naming the part first matters too: "the built skill moved" and "the
-// stub moved" call for different reactions, and only one of them is a change to the gate.
-const IDENTITY_PARTS = ['skill', 'instrument', 'scenario_inputs'];
-const PREDECESSOR_LEGACY_INSTRUMENT_DIGEST =
-  'sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040';
-const TRACKER_STUB_PATH = 'evals/merge-gate/_scaffold/remote-tracker.mjs';
-
-// A change to `build.mjs` can move every file in the built tree at once, and a stamp written before
-// a part existed reads as though the whole part appeared. Either way the list runs to dozens of lines
-// per run and dozens more per further run, which buries the one line a reader needs. Past a handful
-// the count is the information, so the rest is summarised rather than printed.
-const DRIFT_LIST_LIMIT = 8;
-
-function describeDrift(archived, current) {
-  const lines = [];
-  for (const part of IDENTITY_PARTS) {
-    const before = archived[part]?.files ?? {};
-    const after = current[part].files;
-    const names = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
-    const moved = names.filter((name) => before[name] !== after[name]);
-    if (moved.length === 0) continue;
-    lines.push(`  ${part}: ${moved.length} file(s)`);
-    for (const name of moved.slice(0, DRIFT_LIST_LIMIT)) {
-      if (before[name] === undefined) lines.push(`    + ${name} (not part of the run)`);
-      else if (after[name] === undefined) lines.push(`    - ${name} (gone from the build)`);
-      else lines.push(`    ~ ${name}`);
-    }
-    if (moved.length > DRIFT_LIST_LIMIT) {
-      lines.push(`    … and ${moved.length - DRIFT_LIST_LIMIT} more`);
-    }
-  }
-  return lines;
-}
-
-function changedFiles(archivedPart, currentPart) {
-  const before = archivedPart?.files ?? {};
-  const after = currentPart?.files ?? {};
-  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
-    .sort()
-    .filter((name) => before[name] !== after[name]);
-}
-
-// One generation of compatibility, scoped to the four fixtures whose call-log schema stayed
-// byte-for-byte legacy. The sequenced Phase-4 fixture needs completion evidence and can never use
-// this exception. Every other identity part and instrument file remains exact, so this cannot turn
-// into a general "instrument changed" waiver.
-function isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity) {
-  return (
-    scenario !== 'unreported-checks-at-phase-four' &&
-    isDeepStrictEqual(stamp.skill, identity.skill) &&
-    isDeepStrictEqual(stamp.scenario_inputs, identity.scenario_inputs) &&
-    stamp.instrument?.digest === PREDECESSOR_LEGACY_INSTRUMENT_DIGEST &&
-    changedFiles(stamp.instrument, identity.instrument).length === 1 &&
-    changedFiles(stamp.instrument, identity.instrument)[0] === TRACKER_STUB_PATH
-  );
-}
-
-// The binding between a log and the code it describes. Without it a round observed against one
-// version of the gate keeps reporting green after that version is rewritten — the suite would go on
-// certifying a build nobody runs, which is the drift the whole layer exists to catch, one level up
-// where nothing was watching.
+// The structural half of the stamp check, and deliberately only that half. Whether a stamp exists,
+// parses, and is the stamp its own metadata names is a property of the archived files alone: it can
+// be decided from `results/` without building anything, it can never be fixed by re-recording the
+// tree, and a checkout that fails it holds files that look like evidence and are not. So it stays
+// hard here, on every pull request.
+//
+// **Whether the stamp still describes the working tree is a property of the pair, and it moved.**
+// It used to be asserted three lines below this one, which made every edit to a load-set source
+// turn `pnpm test` red until six scenarios times five runs had been re-recorded — roughly three
+// hours of agent sessions, paid per pull request for a claim that is about the build that ships.
+// `pnpm merge-gate-eval verify` owns that question now: it reports on every pull request and is
+// enforced on the release pull request. The always-skipped test below names it so `node --test`
+// prints a pointer here rather than leaving a silent gap. The shared verdict itself lives in
+// `evals/merge-gate/_scaffold/build-identity.mjs` — moved there, not deleted, because three callers
+// now ask it.
 //
 // A run archived without a stamp fails rather than skips. It is not "no evidence yet", which is what
 // a skip means everywhere else in this file; it is a file sitting in `results/` that looks like
 // evidence and cannot be read as any, and the two must not report the same way.
-function assertBoundToCurrentBuild(scenario, run, identity) {
+function assertStructurallyBound(scenario, run) {
   assert.ok(
     existsSync(run.stampPath),
     `${run.name} has no build stamp at ${run.stampName}. Nothing says which version of the gate it observed, so it cannot be read as evidence about the current one — re-run the scenario, or delete the log if you no longer know what produced it.`,
   );
-  const stamp = JSON.parse(readFileSync(run.stampPath, 'utf8'));
-  if (stamp.digest === identity.digest) return;
-  if (isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity)) return;
-  // The release bump, and nothing else. A release-please pull request rewrites
-  // `.release-please-manifest.json`, `build.mjs` stamps the new number into the router, and the
-  // skill digest of every archived round moves although the gate is the same text it was. Without
-  // this the one pull request that must stay mergeable is the one that can never be green, and the
-  // owed work would be thirty re-runs that could produce no new information — the same "re-run that
-  // buys nothing" the derived load set exists to avoid, arriving through the version line instead
-  // of through an unreachable fragment.
+  let stamp;
+  try {
+    stamp = JSON.parse(readFileSync(run.stampPath, 'utf8'));
+  } catch (error) {
+    assert.fail(`${run.name}: ${run.stampName} is not readable JSON — ${error.message}`);
+  }
+  assert.match(
+    stamp.digest ?? '',
+    /^sha256:[0-9a-f]{64}$/,
+    `${run.name}: ${run.stampName} carries no digest, so nothing binds the log to a build at all`,
+  );
+  assert.equal(
+    stamp.scenario,
+    scenario,
+    `${run.name}: ${run.stampName} describes ${stamp.scenario}, so it was archived under the wrong scenario`,
+  );
+  // The metadata is what publication writes to bind the four files of one evidence unit together.
+  // A stamp the metadata does not name means the archived unit was assembled from two different
+  // runs, which no freshness check would ever notice: both halves can be perfectly current and
+  // still describe different observations.
   //
-  // It is narrow by construction, not by promise: `isVersionStampOnlyPredecessor` accepts only a
-  // stamp whose instrument and scenario parts are exactly equal, whose sole moved skill file is
-  // `SKILL.md`, and whose version-neutral digest — present on both sides — matches. Anything the
-  // version token does not explain still moves that digest, so a reworded rule inside `SKILL.md`
-  // fails here exactly as it did before, and so does a stamp written before the field existed.
-  if (isVersionStampOnlyPredecessor(stamp, identity)) return;
-  assert.fail(
-    [
-      `${run.name} observed a different build than the working tree holds.`,
-      `  archived: ${stamp.digest}`,
-      `  current:  ${identity.digest}`,
-      'changed:',
-      ...describeDrift(stamp, identity),
-      '',
-      'The log is a real observation of a build that has since moved, so it proves nothing about the',
-      'one here now. Re-run the round; a content digest cannot tell a reworded comment from a changed',
-      'rule, so this fires for both.',
-    ].join('\n'),
+  // Required rather than optional, and parsed under the same guard as the stamp above. Every
+  // archived unit is written by `publishRound`, which writes the metadata beside the log, so a unit
+  // without one was not published by the tool that owns this directory — and treating that as
+  // "nothing to check here" turns the binding assertion off for exactly the units least likely to
+  // hold. An unparseable metadata file would otherwise fail as a raw `SyntaxError` naming a byte
+  // offset, which is the failure text this file already refuses to hand an operator.
+  assert.ok(
+    existsSync(run.metadataPath),
+    `${run.name} has no metadata beside it. Publication always writes one, so nothing binds this log, its prompt and its stamp into a single evidence unit — re-run the scenario, or delete the log if you no longer know what produced it.`,
+  );
+  let metadata;
+  try {
+    metadata = JSON.parse(readFileSync(run.metadataPath, 'utf8'));
+  } catch (error) {
+    assert.fail(
+      `${run.name}: ${basename(run.metadataPath)} is not readable JSON — ${error.message}`,
+    );
+  }
+  assert.equal(
+    metadata.buildDigest,
+    stamp.digest,
+    `${run.name}: the metadata names build ${metadata.buildDigest} while ${run.stampName} carries ${stamp.digest}, so the archived unit does not describe one run`,
   );
 }
+
+// Nothing was observed here, and this file says so rather than passing quietly — the same rule
+// `skipWithoutRuns` applies to a checkout with no archived runs. A silent gap where an assertion
+// used to be is how a moved check becomes a deleted one: the next reader sees a suite that is green
+// about freshness and has no way to learn that nothing checked it.
+test(
+  'archived-run freshness against the working tree is verified by `pnpm merge-gate-eval verify`',
+  {
+    skip: 'freshness is not a per-pull-request assertion: run `pnpm merge-gate-eval verify` for the verdict, which CI reports on every pull request and enforces with --mode strict on the release pull request. What stays asserted here is structural — a stamp exists, parses, and is the one its metadata names.',
+  },
+  () => {},
+);
 
 test('legacy instrument compatibility accepts only the exact nonsequenced predecessor', () => {
   const identity = {
@@ -645,6 +625,87 @@ test('the version-stamp exception rejects every difference the version does not 
     isVersionStampOnlyPredecessor(bumped, withoutCurrentField),
     false,
     'no current version-neutral digest',
+  );
+});
+
+// The composed verdict, which is what every reporting caller actually reads. The two tests above
+// pin the waivers in isolation and the CLI cases in `test/merge-gate-eval-round.test.mjs` pin the
+// end-to-end states, and between them the composition was covered by nothing: the order the
+// branches are tried in, the labels the report prints for an accepted difference, and the
+// `missing-stamp` state, which no test reached at all.
+//
+// **The order is load-bearing, not incidental.** `missing-stamp` is decided before anything is
+// compared, because there is nothing to compare; an exact digest match is decided before the
+// waivers, so a stamp that happens to be waiver-shaped is still reported as what it is rather than
+// as an accepted difference; and `stale` is the fallthrough, so a state nobody anticipated arrives
+// as drift to look at rather than as a quiet pass.
+test('the freshness verdict is ordered and names the waiver it applied', () => {
+  const identity = {
+    scenario: 'guard-blocks-merge',
+    digest: 'overall-current',
+    skill: {
+      digest: 'skill-current',
+      versionNeutralDigest: 'neutral-shared',
+      files: { 'SKILL.md': 'router-current', 'tools/merge-gate.md': 'gate-current' },
+    },
+    instrument: {
+      digest: 'instrument-current',
+      files: {
+        [TRACKER_STUB_PATH]: 'tracker-current',
+        'evals/merge-gate/_scaffold/sandbox.mjs': 'sandbox-current',
+      },
+    },
+    scenario_inputs: { digest: 'scenario-current', files: { 'fixture.json': 'fixture-current' } },
+  };
+
+  const current = structuredClone(identity);
+
+  const legacyInstrument = structuredClone(identity);
+  legacyInstrument.digest = 'overall-archived';
+  legacyInstrument.instrument.digest = PREDECESSOR_LEGACY_INSTRUMENT_DIGEST;
+  legacyInstrument.instrument.files[TRACKER_STUB_PATH] = 'tracker-predecessor';
+
+  const versionBump = structuredClone(identity);
+  versionBump.digest = 'overall-archived';
+  versionBump.skill.digest = 'skill-archived';
+  versionBump.skill.files['SKILL.md'] = 'router-archived';
+
+  // Waiver-shaped and digest-equal at once, which only the order can tell apart: if the waivers
+  // were tried first this would report `waived (legacy-instrument)` for a stamp that matches the
+  // build exactly.
+  const waiverShapedButEqual = structuredClone(legacyInstrument);
+  waiverShapedButEqual.digest = identity.digest;
+
+  const drifted = structuredClone(identity);
+  drifted.digest = 'overall-archived';
+  drifted.skill.digest = 'skill-archived';
+  drifted.skill.versionNeutralDigest = 'neutral-archived';
+  drifted.skill.files['tools/merge-gate.md'] = 'gate-archived';
+
+  for (const [label, stamp, expected] of [
+    ['no stamp at all', null, { state: 'missing-stamp' }],
+    ['an exact match', current, { state: 'current' }],
+    ['the superseded stub', legacyInstrument, { state: 'waived', waiver: 'legacy-instrument' }],
+    ['a release bump', versionBump, { state: 'waived', waiver: 'version-stamp' }],
+    ['a waiver-shaped exact match', waiverShapedButEqual, { state: 'current' }],
+  ]) {
+    assert.deepEqual(freshnessVerdict('guard-blocks-merge', stamp, identity), expected, label);
+  }
+
+  // Stale is the fallthrough, and it carries the three things a report is expected to print: the
+  // pair of digests being compared and the files that moved between them.
+  const stale = freshnessVerdict('guard-blocks-merge', drifted, identity);
+  assert.equal(stale.state, 'stale');
+  assert.equal(stale.archived, 'overall-archived');
+  assert.equal(stale.current, 'overall-current');
+  assert.deepEqual(stale.drift, ['  skill: 1 file(s)', '    ~ tools/merge-gate.md']);
+
+  // The scenario the legacy waiver can never cover reaches the fallthrough instead of the waiver,
+  // asserted through the composed verdict rather than through the helper alone: this is the path
+  // `verify` takes, and a wiring mistake here would make the sequenced fixture reportable.
+  assert.equal(
+    freshnessVerdict('unreported-checks-at-phase-four', legacyInstrument, identity).state,
+    'stale',
   );
 });
 
@@ -922,9 +983,8 @@ for (const scenario of SCENARIOS) {
 
   test(`${scenario}: every archived run is a log these assertions can read`, { skip }, async () => {
     const answerable = answerableOperations(scenario);
-    const identity = currentIdentity(scenario);
     for (const run of runs) {
-      assertBoundToCurrentBuild(scenario, run, identity);
+      assertStructurallyBound(scenario, run);
       const records = readRun(run);
       assertSchema(scenario, run, records);
       assertRuntimeRoot(scenario, run, records);
@@ -939,7 +999,12 @@ for (const scenario of SCENARIOS) {
         fixture,
         projectRoot,
         buildIdentity: JSON.parse(readFileSync(run.stampPath, 'utf8')),
-        expectedBuildIdentity: identity,
+        // No `expectedBuildIdentity`. The evaluator's identity comparison is the same freshness
+        // question as the one above, reached through a second door: passing the current identity
+        // here would keep every load-set edit red in `pnpm test` while the assertion it replaces
+        // was removed for exactly that reason. `publishRound` still passes it, because a round
+        // being published must describe the tree it was built from, and `verify` still asks it of
+        // the whole corpus.
         iterateTraceText: existsSync(run.iteratePath)
           ? readFileSync(run.iteratePath, 'utf8')
           : null,

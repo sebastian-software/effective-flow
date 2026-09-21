@@ -62,6 +62,33 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    below. While it is enabled, a failure in this downstream job marks the release workflow as
    failed, but does not roll back the already published release, archive, or delivery commit.
 
+### The release pull request gates the merge-gate eval evidence
+
+The behavioural eval suite for `merge-gate` archives evidence about a build, and the build that
+matters is the one that ships, so the release pull request is where that evidence has to be current.
+The last step of the required `Format, test and build` job runs `pnpm merge-gate-eval verify`: a
+read-only command that rebuilds the skill into a throwaway root and compares it against the archived
+stamps, writing nothing and launching no model. On an ordinary pull request it reports — the verdict
+goes to the job summary and the check stays green even when the corpus is stale, because a round
+costs six scenarios times five fresh agent sessions and the claim it supports is about the delivered
+build rather than about every merge on the way there. When the head ref starts with
+`release-please--` — the prefix of release-please's own
+`release-please--branches--develop--components--effective-flow`, matched rather than the full name
+so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
+absent corpus fails the check. There is no waiver: without a current round there is no release.
+
+A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
+the release branch, which release-please owns and force-pushes. Pushing to `develop` makes
+release-please refresh its pull request, which re-runs CI and clears the gate. Start the round when
+`verify` first reports stale rather than when the release pull request turns red; see
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and how
+one is recorded.
+
+The gate is deliberately not in `release.yml`. That workflow runs on every push to `develop` and its
+`pnpm test` sits ahead of the `Release Please` step, so a strict check there would block ordinary
+development pushes and stall the release pull request's own updates — and once release-please has
+run, the tag exists and it is too late to gate anything.
+
 ### A mistakenly breaking commit is pinned forward
 
 A tool rename that ships as a deprecated forwarding alias is additive, not a break, so its commit
@@ -191,6 +218,16 @@ reporting and blocks every pull request permanently, so `test/workflow-contracts
 both strings. Second, `ci.yml` currently runs on every `pull_request` with no `paths:` filter, which
 is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
 every filtered pull request.
+
+The merge-gate eval freshness gate sits inside that same required job for exactly those reasons. It
+has to be strict on the release pull request and merely reporting everywhere else, and a job that an
+`if:` skips never reports at all — so it is a step of `Format, test and build` rather than a job of
+its own, carries no `if:` at either level, and selects its mode from inside the step. See
+[The release pull request gates the merge-gate eval evidence](#the-release-pull-request-gates-the-merge-gate-eval-evidence).
+`test/workflow-contracts.test.mjs` pins the step, its placement as the job's last, the absent
+condition, and the literal `release-please--` prefix it matches. Each of those is a literal, and
+without those assertions a rename of any one would turn the gate off while every CI run stayed green
+about it — the same silent-green failure mode the two constraints above describe.
 
 Inspect either ruleset with `gh api repos/sebastian-software/effective-flow/rulesets`, and check
 what actually applies to a branch for the calling user with
@@ -354,9 +391,11 @@ The build stamps `<manifest version> (<git short hash>)` into all three routers.
 makes the build fail unless native Claude, native Codex, and portable output agree.
 
 Because the stamp sits in `SKILL.md`, a release changes a file the merge-gate behavioural eval
-binds its archived runs to. That is handled and needs no action on a release pull request: every
-archived round carries a version-neutral skill digest beside its exact one, and a bump that moves
-only the version token is accepted without re-recording. See
+binds its archived runs to — on the one pull request where that evidence is
+[enforced](#the-release-pull-request-gates-the-merge-gate-eval-evidence). That is handled and needs
+no action: every archived round carries a version-neutral skill digest beside its exact one, and a
+bump that moves only the version token is accepted without re-recording, so an otherwise current
+corpus clears the strict check on its own. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for the exact conditions.
 
 ## Consumer installation through DALO or Skills CLI

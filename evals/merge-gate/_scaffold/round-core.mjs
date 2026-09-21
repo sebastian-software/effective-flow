@@ -23,6 +23,7 @@ import {
   buildPortableSkill,
   digestFile,
   digestOf,
+  freshnessVerdict,
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from './build-identity.mjs';
@@ -233,6 +234,25 @@ function pauseAtBoundary(name) {
     return;
   }
   for (;;) blockingWait(1_000);
+}
+
+// The same gate, with one difference: it consumes its release file, so a controller can stop the
+// same boundary again later in the process. `verify` is the only caller that needs that, and it
+// needs it because its retry has to be observable: the torn-read path below is reachable only when
+// *both* walks see a corpus that moves, and a one-shot gate would let the second walk read a
+// settled corpus and hide the error a test is asserting. Consuming the release also closes the
+// lost wakeup the pair would otherwise have — a controller deletes the marker before it writes the
+// release, so the next marker it sees can only be the next pause and never the one it just
+// answered.
+function pauseAtRepeatableBoundary(name) {
+  if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
+  const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
+  if (!marker) throw new Error(`${name} pause requires a marker path`);
+  const release = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE;
+  if (!release) throw new Error(`${name} pause requires a release path`);
+  writeFileSync(marker, name);
+  while (!existsSync(release)) blockingWait(20);
+  rmSync(release, { force: true });
 }
 
 function holdPublicationLockForTest() {
@@ -1303,5 +1323,174 @@ export function publishRound({
     );
   } finally {
     rmSync(currentBuild, { recursive: true, force: true });
+  }
+}
+
+// The read-only half of this file, and the owner of one question: does the archived corpus still
+// describe the working tree? Nothing here writes, and nothing here takes the publication lock —
+// running it must stay safe beside a publication, beside a round, and inside a CI step that has no
+// business serialising against either.
+//
+// It exists because the question moved. It used to be asked once per pull request, as an assertion
+// inside `pnpm test`, where a stale answer turned an ordinary pull request red and the only remedy
+// was a fresh round of six scenarios times five runs. The claim the evidence supports is about the
+// build that ships, so the enforcement belongs at the release point and the *report* belongs
+// everywhere: `pnpm merge-gate-eval verify` prints the verdict on every pull request and
+// `--mode strict` fails only on the release pull request. The structural assertions — a stamp
+// exists, a log parses, five runs of five — stay hard in `pnpm test`, because they are properties
+// of the archived files alone rather than of the pair.
+//
+// **A verdict is not an operational error, and the two must not arrive the same way.** Every state
+// this can reach — current, waived, stale, short, surplus, absent — is returned. A build that
+// fails, an archived stamp that will not parse, a results directory that cannot be read: those
+// throw, because they mean no verdict was produced at all. The CLI maps that split onto its exit
+// code, and without it a broken build would make the required check red on ordinary pull requests
+// through the very step added to keep it green.
+// The behavioural log, not the stamp: a slot exists here because somebody archived a call log for
+// it, and whether that log has a stamp beside it is the `missing-stamp` verdict rather than a
+// reason to leave the slot out of the count. Naming it after the log keeps that ordering visible.
+const RUN_LOG_RE = /^run-(\d+)\.jsonl$/;
+
+function archivedSlots(directory) {
+  return readdirSync(directory)
+    .map((name) => RUN_LOG_RE.exec(name))
+    .filter((match) => match !== null)
+    .map((match) => Number(match[1]))
+    .sort((left, right) => left - right);
+}
+
+// Reads one archived stamp. An unreadable or unparseable file is re-thrown with the run it belongs
+// to in the message: `JSON.parse`'s own text names a byte offset and nothing else, and an operator
+// reading a CI log needs to know which of thirty files to look at. It is deliberately not a
+// verdict — see the header above.
+function archivedStamp(scenario, directory, slot) {
+  const path = resolve(directory, `run-${slot}.build.json`);
+  if (!existsSync(path)) return null;
+  try {
+    return json(path);
+  } catch (error) {
+    throw new Error(`${scenario}/run-${slot}.build.json is unreadable: ${error.message}`, {
+      cause: error,
+    });
+  }
+}
+
+// The per-scenario state, in the order a reader should hear it. `absent`, `short` and `surplus`
+// come before `stale` because they describe a round that was never finished, or one whose shape is
+// wrong, rather than evidence that has aged: telling an operator their corpus drifted, when what
+// actually happened is that nobody ever recorded it, sends them to re-run a round they have not
+// started. The per-run verdicts are reported either way, so a short round that is also stale still
+// says so.
+//
+// **A count that is wrong in the other direction is its own state.** Fewer runs than required is
+// `short` and the remedy is to finish the round; more is `surplus`, where the round is already
+// over-complete and the remedy is to find out what put an extra slot there. Reporting the second as
+// the first prints `short 6/5 run(s)` and sends an operator to record a run nobody needs.
+// `ensureCanonicalGeneration` refuses the same shape at publication as unexpected files, so the two
+// layers now name it rather than one of them calling it something else. Both fail strict: a round
+// of an unexpected size is not evidence anyone can read as five of five.
+//
+// **`missing-stamp` is folded into `stale` here, and only here.** These are the two per-run
+// verdicts that make a scenario unusable, and a scenario line has one job: say whether this
+// scenario can back a release. It cannot, either way, and the run list below it names each affected
+// slot with its own verdict, so the distinction the per-run states exist to keep is printed rather
+// than lost. The rule that the two must not report the same way is about a run, not about this
+// rollup — see the header of `freshnessVerdict` in `build-identity.mjs`.
+function scenarioFreshness(scenario, identity, resultsDir) {
+  const directory = resolve(resultsDir, scenario);
+  if (!existsSync(directory)) {
+    return { scenario, state: 'absent', runs: [], drift: [] };
+  }
+  const runs = archivedSlots(directory).map((slot) => ({
+    slot,
+    ...freshnessVerdict(scenario, archivedStamp(scenario, directory, slot), identity),
+  }));
+  const firstStale = runs.find((run) => run.state === 'stale');
+  const drift = firstStale?.drift ?? [];
+  const unusable = runs.some((run) => run.state === 'stale' || run.state === 'missing-stamp');
+  let state = 'current';
+  if (runs.length === 0) state = 'absent';
+  else if (runs.length < REQUIRED_RUNS) state = 'short';
+  else if (runs.length > REQUIRED_RUNS) state = 'surplus';
+  else if (unusable) state = 'stale';
+  return { scenario, state, runs, drift };
+}
+
+// One walk of the corpus, with the archived generation read before it and again after it. Nothing
+// here writes and nothing here takes a lock; the reason the generation is read twice instead is in
+// `verifyFreshness` below.
+function pinnedScenarioWalk(suite, skillRoot, resultsDir) {
+  const before = generationInfo(resultsDir);
+  const scenarios = suite.scenarios.map((scenario) => {
+    // The seam a test tears the corpus through, and it belongs *inside* the loop rather than
+    // between the two generation reads. A boundary outside the loop would only prove that the
+    // comparison works, while the state this guards against is a walk that read one scenario from
+    // the old generation and the next one from the new.
+    pauseAtRepeatableBoundary('verify-scenario-read');
+    return scenarioFreshness(
+      scenario,
+      pristineScenarioBuildIdentity(scenario, skillRoot),
+      resultsDir,
+    );
+  });
+  const after = generationInfo(resultsDir);
+  if (sameGeneration(before, after)) return { pinned: true, scenarios };
+  // `generationInfo` answers `null` for a directory that is not there, and that answer is
+  // genuinely ambiguous: a fresh clone that has never recorded a round reads exactly like the
+  // instant between `publishRound`'s two renames. Null on *both* sides is the only shape that can
+  // be the harmless one, so it is retried like a tear and, surviving the retry, accepted — every
+  // scenario then reports `absent`, which is what this command answered before it pinned anything.
+  return { pinned: false, settledAbsent: before === null && after === null, scenarios };
+}
+
+// Builds the portable skill **once** into a throwaway root and computes every scenario's identity
+// from it. Throwaway rather than the checkout's `dist/` for the reason stated at the top of
+// `build-identity.mjs`: `build.mjs` swaps through fixed `dist.tmp` and `dist.bak` paths, so a build
+// that shares a destination with a concurrent one dies mid-rename — and this runs in CI beside
+// whatever else the job is doing.
+export function verifyFreshness({ resultsDir = RESULTS_DIR } = {}) {
+  const suite = discoverSuite();
+  const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-verify-'));
+  try {
+    const skillRoot = buildPortableSkill(outputRoot);
+    // The corpus is read under a pinned generation rather than under the publication lock, and
+    // that choice is why this command can be run where it is run. `publishRound` renames the
+    // canonical directory away and the candidate into its place, so a walk that straddles either
+    // rename reads a directory that is briefly not there — every scenario `absent` — or mixes one
+    // scenario from the old generation with the next from the new one. Taking the publication lock
+    // would close that window and take the lock-freedom stated at the top of this section with it:
+    // `verify` would block behind the publication that ends a three-hour round, and in CI it would
+    // wait out a lock left behind by a killed one. Pinning proves the same thing after the fact and
+    // still writes nothing — `generationInfo` and `sameGeneration` are what publication itself uses
+    // to prove its candidate did not move, and both reads keep their tolerance for an unmarked
+    // "legacy" corpus, because an unmarked corpus is a state publication deliberately supports.
+    //
+    // **Exactly one retry, and a torn second walk is not a verdict.** The rename window is
+    // microseconds wide, so a second tear means something other than a passing publication is
+    // moving the corpus, and waiting it out would trade a fast, honest failure for an open-ended
+    // one. A torn read produced no verdict at all, so it throws and report mode exits nonzero for
+    // it exactly as it does for an unreadable stamp — see the header above. It is deliberately not
+    // a further scenario state: a state would be printed as a verdict about the gate, and this
+    // says nothing about the gate at all.
+    let walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
+    if (!walk.pinned) walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
+    if (!walk.pinned && !walk.settledAbsent) {
+      throw new Error(
+        `the archived corpus changed while it was being read, twice over: ${resolve(resultsDir)}`,
+      );
+    }
+    const { scenarios } = walk;
+    return {
+      requiredRuns: REQUIRED_RUNS,
+      resultsDir: resolve(resultsDir),
+      scenarios,
+      // What `--mode strict` fails on, decided here rather than in the CLI so the rule is one
+      // expression a test can read. At a release point "nothing was observed" is not an acceptable
+      // state, even though it is a legitimate skip in a fresh checkout — so `absent` and `short`
+      // fail beside `stale`.
+      failsStrict: scenarios.some(({ state }) => state !== 'current'),
+    };
+  } finally {
+    rmSync(outputRoot, { recursive: true, force: true });
   }
 }

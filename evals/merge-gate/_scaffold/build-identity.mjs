@@ -374,9 +374,13 @@ export function builtSkillIdentity(skillRoot, { iterateEcho = false } = {}) {
   return { digest, versionNeutralDigest: canonicalDigest(neutralFiles), files };
 }
 
-function changedSkillFiles(archived, current) {
-  const before = archived?.files ?? {};
-  const after = current?.files ?? {};
+// The files that differ between one part of an archived stamp and the same part of a fresh
+// identity, named rather than counted. Both sides are defaulted, so a part that is absent on one
+// side reads as "every file moved" instead of throwing — an archived stamp written before a part
+// existed is a legitimate input here, and the caller decides what to do about it.
+function changedFiles(archivedPart, currentPart) {
+  const before = archivedPart?.files ?? {};
+  const after = currentPart?.files ?? {};
   return [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .sort()
     .filter((name) => before[name] !== after[name]);
@@ -400,8 +404,142 @@ export function isVersionStampOnlyPredecessor(stamp, identity) {
   if (typeof archived?.versionNeutralDigest !== 'string') return false;
   if (typeof current?.versionNeutralDigest !== 'string') return false;
   if (archived.versionNeutralDigest !== current.versionNeutralDigest) return false;
-  const moved = changedSkillFiles(archived, current);
+  const moved = changedFiles(archived, current);
   return moved.length === 1 && moved[0] === VERSION_STAMPED_FILE;
+}
+
+// Which files moved, named rather than counted, across all three parts of the stamp. A digest
+// mismatch says only that the run observed something else; this says what, which is the difference
+// between an operator re-running a round on purpose and one re-running it because a number changed
+// and they could not see why. Naming the part first matters too: "the built skill moved" and "the
+// stub moved" call for different reactions, and only one of them is a change to the gate.
+const IDENTITY_PARTS = ['skill', 'instrument', 'scenario_inputs'];
+export const PREDECESSOR_LEGACY_INSTRUMENT_DIGEST =
+  'sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040';
+export const TRACKER_STUB_PATH = 'evals/merge-gate/_scaffold/remote-tracker.mjs';
+
+// A change to `build.mjs` can move every file in the built tree at once, and a stamp written before
+// a part existed reads as though the whole part appeared. Either way the list runs to dozens of lines
+// per run and dozens more per further run, which buries the one line a reader needs. Past a handful
+// the count is the information, so the rest is summarised rather than printed.
+const DRIFT_LIST_LIMIT = 8;
+
+function describeDrift(archived, current) {
+  const lines = [];
+  for (const part of IDENTITY_PARTS) {
+    const before = archived[part]?.files ?? {};
+    const after = current[part].files;
+    const names = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+    const moved = names.filter((name) => before[name] !== after[name]);
+    if (moved.length === 0) continue;
+    lines.push(`  ${part}: ${moved.length} file(s)`);
+    for (const name of moved.slice(0, DRIFT_LIST_LIMIT)) {
+      if (before[name] === undefined) lines.push(`    + ${name} (not part of the run)`);
+      else if (after[name] === undefined) lines.push(`    - ${name} (gone from the build)`);
+      else lines.push(`    ~ ${name}`);
+    }
+    if (moved.length > DRIFT_LIST_LIMIT) {
+      lines.push(`    … and ${moved.length - DRIFT_LIST_LIMIT} more`);
+    }
+  }
+  return lines;
+}
+
+// One generation of compatibility, scoped to the four fixtures whose call-log schema stayed
+// byte-for-byte legacy. The sequenced Phase-4 fixture needs completion evidence and can never use
+// this exception. Every other identity part and instrument file remains exact, so this cannot turn
+// into a general "instrument changed" waiver.
+//
+// **Living in shipped scaffold code does not make it permanent.** This waiver was written in
+// `test/merge-gate-eval.test.mjs` and moved here when a second and third caller appeared, and a
+// relocation is exactly the kind of change that quietly promotes a deliberately temporary exception
+// into a standing rule: nothing about a file under `_scaffold/` says "one generation" the way a
+// test case did. It still means one generation. `PREDECESSOR_LEGACY_INSTRUMENT_DIGEST` is a
+// hardcoded digest of one superseded stub, so the waiver stops applying on its own the moment the
+// rounds carrying that digest are re-recorded — and the correct response to it firing on a corpus
+// nobody recognises is to delete this function, not to add a second digest beside it.
+//
+// **As of this commit the waiver has no subject.** Every one of the thirty archived stamps under
+// `evals/merge-gate/results/` carries the current instrument digest; the predecessor digest below
+// appears in none of them, so this function cannot fire on the corpus that ships. The deletion the
+// paragraph above calls for is therefore already available and deliberately not taken here: this
+// change moved the waiver, it did not decide its end of life, and removing it belongs to the change
+// that says so in its own right. Re-check the corpus before deleting — a round re-recorded from an
+// older checkout could reintroduce the digest — and delete the function, the constant and their
+// unit tests together when it is still absent.
+export function isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity) {
+  return (
+    scenario !== 'unreported-checks-at-phase-four' &&
+    isDeepStrictEqual(stamp.skill, identity.skill) &&
+    isDeepStrictEqual(stamp.scenario_inputs, identity.scenario_inputs) &&
+    stamp.instrument?.digest === PREDECESSOR_LEGACY_INSTRUMENT_DIGEST &&
+    changedFiles(stamp.instrument, identity.instrument).length === 1 &&
+    changedFiles(stamp.instrument, identity.instrument)[0] === TRACKER_STUB_PATH
+  );
+}
+
+// The single answer to "does this archived stamp still describe the working tree" **for the callers
+// that report on a corpus**: `verifyFreshness` in `round-core.mjs` and, through it,
+// `pnpm merge-gate-eval verify`, which owns the question for CI. It was written as three helpers in
+// `test/merge-gate-eval.test.mjs`, beside the per-scenario assertion that used to ask it on every
+// pull request; when that assertion moved out, the rule moved here, beside the identity code it is
+// about, rather than into the one caller that was left.
+//
+// **Publication deliberately does not read it.** `ensureCanonicalGeneration` hands
+// `expectedBuildIdentity` to `evaluateEvidence`, which compares the two identities part by part and
+// waives only the version stamp: no legacy-instrument waiver, and no shortcut through the combined
+// `digest`. That rule is strictly stricter than this one, so the honest count is two
+// implementations rather than one — a real cost, kept on purpose. A report describes a corpus that
+// already exists and may legitimately carry one generation of accepted difference; a publication
+// decides what the corpus *becomes*, and every run it writes has to bind to the round manifest
+// exactly, or a later reader cannot tell which build the archived evidence observed. Unifying the
+// two would not remove a copy, it would loosen publication.
+//
+// The two therefore disagree in exactly one case, and it is a known one: a predecessor accepted
+// here under the `legacy-instrument` waiver is `waived` by `verify` and passes `--mode strict`,
+// while `publishRound` refuses the same unit. Any further divergence is a bug in one of them; that
+// one is the designed difference.
+//
+// It **reports** rather than asserting, because its callers disagree about what a stale verdict
+// means: a release gate fails on it and a report prints it and exits 0. Returning a state keeps
+// that decision with the caller and the rule here.
+//
+// The four states are deliberately distinct **as per-run verdicts**, which is the only thing this
+// function produces. `missing-stamp` is not a flavour of `stale`: a stale stamp is a real
+// observation of a build that has since moved, while a missing one is a log sitting in `results/`
+// that looks like evidence and cannot be read as any, and a run must not report the second as the
+// first. What a caller does when it rolls thirty run verdicts into one scenario line is its own
+// decision — `scenarioFreshness` folds both into `stale` there, and says why — and no claim here
+// binds it. `waived` names which waiver fired, so a reader is never left to guess why a differing
+// digest was accepted.
+export function freshnessVerdict(scenario, stamp, identity) {
+  if (!stamp) return { state: 'missing-stamp' };
+  if (stamp.digest === identity.digest) return { state: 'current' };
+  if (isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity)) {
+    return { state: 'waived', waiver: 'legacy-instrument' };
+  }
+  // The release bump, and nothing else. A release-please pull request rewrites
+  // `.release-please-manifest.json`, `build.mjs` stamps the new number into the router, and the
+  // skill digest of every archived round moves although the gate is the same text it was. Without
+  // this the one pull request that must stay mergeable is the one that can never be green, and the
+  // owed work would be thirty re-runs that could produce no new information — the same "re-run that
+  // buys nothing" the derived load set exists to avoid, arriving through the version line instead
+  // of through an unreachable fragment.
+  //
+  // It is narrow by construction, not by promise: `isVersionStampOnlyPredecessor` accepts only a
+  // stamp whose instrument and scenario parts are exactly equal, whose sole moved skill file is
+  // `SKILL.md`, and whose version-neutral digest — present on both sides — matches. Anything the
+  // version token does not explain still moves that digest, so a reworded rule inside `SKILL.md`
+  // fails here exactly as it did before, and so does a stamp written before the field existed.
+  if (isVersionStampOnlyPredecessor(stamp, identity)) {
+    return { state: 'waived', waiver: 'version-stamp' };
+  }
+  return {
+    state: 'stale',
+    archived: stamp.digest,
+    current: identity.digest,
+    drift: describeDrift(stamp, identity),
+  };
 }
 
 export function instrumentIdentity() {

@@ -7980,6 +7980,84 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
   }
 });
 
+test('the merge-gate eval gate always reports and turns strict only for release-please', () => {
+  // Enforcement of the archived eval evidence moved from every pull request to the release one,
+  // which leaves four properties that all fail silently when they are lost: the step exists at
+  // all, it is the last step of the required job, nothing can stop it reporting, and the release
+  // pull request is still recognized by the literal release-please writes into its head ref.
+  const ci = source('.github/workflows/ci.yml');
+  const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
+
+  assert.ok(
+    buildJob.includes('      - name: Merge-gate eval evidence\n'),
+    'ci.yml must carry the `Merge-gate eval evidence` step inside the job the develop ruleset ' +
+      'requires; anywhere else it reports nothing the release pull request can be blocked on',
+  );
+
+  // Last, not next to `Unit tests`: a strict failure aborts the job where it happens, so an
+  // earlier position would skip `Build distribution` and `pnpm test:distribution` on exactly the
+  // pull request that ships, hiding a real build failure behind an owed eval round.
+  const steps = [...buildJob.matchAll(/^ {6}- (?:name|uses|run): (.*)$/gm)].map(
+    (match) => match[1],
+  );
+  assert.equal(
+    steps.at(-1),
+    'Merge-gate eval evidence',
+    'the eval-evidence step must stay the last step of `Format, test and build`; ahead of the ' +
+      'distribution steps a strict failure would mask a genuine build failure',
+  );
+  ordered(
+    buildJob,
+    'name: Build distribution',
+    'name: Distribution and installation smoke tests',
+    'name: Merge-gate eval evidence',
+  );
+
+  // No condition at either level. A required status check that never reports blocks the pull
+  // request forever, with no timeout and no override short of editing the ruleset outside this
+  // repository. A well-meant condition on the step is the cheaper version of the same mistake:
+  // the check still reports, but the gate is gone and CI stays green about its absence.
+  assert.doesNotMatch(
+    buildJob.slice(0, buildJob.indexOf('    steps:')),
+    /^ {4}if:/m,
+    'job `build` must carry no `if:`; a skipped job never reports the status check the develop ' +
+      'ruleset requires',
+  );
+  // Comments stripped first, so a rationale line that merely mentions a condition cannot fail
+  // this — and, in the other direction, cannot be where a real one hides.
+  const step = shellCode(workflowStep(ci, 'Merge-gate eval evidence'));
+  assert.doesNotMatch(
+    step,
+    /^\s*if:/m,
+    'the eval-evidence step must carry no `if:`; it selects its mode from inside the step so ' +
+      'that it always runs and always reports',
+  );
+
+  // The strict half of the gate hangs off a single literal. If release-please ever renames its
+  // head-branch prefix, nothing else in the repository notices: every release would simply pass
+  // unverified.
+  assert.match(
+    step,
+    /release-please--[^\n]*mode=strict/,
+    'strict mode must be selected from a `release-please--` head ref, on one recognizable line',
+  );
+  assert.match(
+    step,
+    /\bmode=report\b/,
+    'report mode must be the default, so an ordinary pull request stays green on a stale verdict',
+  );
+  assert.match(
+    step,
+    /merge-gate-eval verify --mode "\$mode"/,
+    'the step must run the read-only `verify` subcommand with the mode it selected',
+  );
+  assert.match(
+    step,
+    /GITHUB_STEP_SUMMARY/,
+    'the verdict must reach the step summary; a staleness report nobody sees is not a report',
+  );
+});
+
 test('every workflow action is pinned to a commit', () => {
   // Movable tags let upstream change what runs in a job where the App private keys are in
   // scope — including for actions that receive no credential of their own. This scans the
