@@ -236,6 +236,25 @@ function pauseAtBoundary(name) {
   for (;;) blockingWait(1_000);
 }
 
+// The same gate, with one difference: it consumes its release file, so a controller can stop the
+// same boundary again later in the process. `verify` is the only caller that needs that, and it
+// needs it because its retry has to be observable: the torn-read path below is reachable only when
+// *both* walks see a corpus that moves, and a one-shot gate would let the second walk read a
+// settled corpus and hide the error a test is asserting. Consuming the release also closes the
+// lost wakeup the pair would otherwise have — a controller deletes the marker before it writes the
+// release, so the next marker it sees can only be the next pause and never the one it just
+// answered.
+function pauseAtRepeatableBoundary(name) {
+  if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
+  const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
+  if (!marker) throw new Error(`${name} pause requires a marker path`);
+  const release = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE;
+  if (!release) throw new Error(`${name} pause requires a release path`);
+  writeFileSync(marker, name);
+  while (!existsSync(release)) blockingWait(20);
+  rmSync(release, { force: true });
+}
+
 function holdPublicationLockForTest() {
   if (process.env.EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS === undefined) return;
   const milliseconds = Number(process.env.EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS);
@@ -1397,6 +1416,33 @@ function scenarioFreshness(scenario, identity, resultsDir) {
   return { scenario, state, runs, drift };
 }
 
+// One walk of the corpus, with the archived generation read before it and again after it. Nothing
+// here writes and nothing here takes a lock; the reason the generation is read twice instead is in
+// `verifyFreshness` below.
+function pinnedScenarioWalk(suite, skillRoot, resultsDir) {
+  const before = generationInfo(resultsDir);
+  const scenarios = suite.scenarios.map((scenario) => {
+    // The seam a test tears the corpus through, and it belongs *inside* the loop rather than
+    // between the two generation reads. A boundary outside the loop would only prove that the
+    // comparison works, while the state this guards against is a walk that read one scenario from
+    // the old generation and the next one from the new.
+    pauseAtRepeatableBoundary('verify-scenario-read');
+    return scenarioFreshness(
+      scenario,
+      pristineScenarioBuildIdentity(scenario, skillRoot),
+      resultsDir,
+    );
+  });
+  const after = generationInfo(resultsDir);
+  if (sameGeneration(before, after)) return { pinned: true, scenarios };
+  // `generationInfo` answers `null` for a directory that is not there, and that answer is
+  // genuinely ambiguous: a fresh clone that has never recorded a round reads exactly like the
+  // instant between `publishRound`'s two renames. Null on *both* sides is the only shape that can
+  // be the harmless one, so it is retried like a tear and, surviving the retry, accepted — every
+  // scenario then reports `absent`, which is what this command answered before it pinned anything.
+  return { pinned: false, settledAbsent: before === null && after === null, scenarios };
+}
+
 // Builds the portable skill **once** into a throwaway root and computes every scenario's identity
 // from it. Throwaway rather than the checkout's `dist/` for the reason stated at the top of
 // `build-identity.mjs`: `build.mjs` swaps through fixed `dist.tmp` and `dist.bak` paths, so a build
@@ -1407,9 +1453,33 @@ export function verifyFreshness({ resultsDir = RESULTS_DIR } = {}) {
   const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-verify-'));
   try {
     const skillRoot = buildPortableSkill(outputRoot);
-    const scenarios = suite.scenarios.map((scenario) =>
-      scenarioFreshness(scenario, pristineScenarioBuildIdentity(scenario, skillRoot), resultsDir),
-    );
+    // The corpus is read under a pinned generation rather than under the publication lock, and
+    // that choice is why this command can be run where it is run. `publishRound` renames the
+    // canonical directory away and the candidate into its place, so a walk that straddles either
+    // rename reads a directory that is briefly not there — every scenario `absent` — or mixes one
+    // scenario from the old generation with the next from the new one. Taking the publication lock
+    // would close that window and take the lock-freedom stated at the top of this section with it:
+    // `verify` would block behind the publication that ends a three-hour round, and in CI it would
+    // wait out a lock left behind by a killed one. Pinning proves the same thing after the fact and
+    // still writes nothing — `generationInfo` and `sameGeneration` are what publication itself uses
+    // to prove its candidate did not move, and both reads keep their tolerance for an unmarked
+    // "legacy" corpus, because an unmarked corpus is a state publication deliberately supports.
+    //
+    // **Exactly one retry, and a torn second walk is not a verdict.** The rename window is
+    // microseconds wide, so a second tear means something other than a passing publication is
+    // moving the corpus, and waiting it out would trade a fast, honest failure for an open-ended
+    // one. A torn read produced no verdict at all, so it throws and report mode exits nonzero for
+    // it exactly as it does for an unreadable stamp — see the header above. It is deliberately not
+    // a further scenario state: a state would be printed as a verdict about the gate, and this
+    // says nothing about the gate at all.
+    let walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
+    if (!walk.pinned) walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
+    if (!walk.pinned && !walk.settledAbsent) {
+      throw new Error(
+        `the archived corpus changed while it was being read, twice over: ${resolve(resultsDir)}`,
+      );
+    }
+    const { scenarios } = walk;
     return {
       requiredRuns: REQUIRED_RUNS,
       resultsDir: resolve(resultsDir),
