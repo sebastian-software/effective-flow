@@ -2723,11 +2723,11 @@ function headCommitTimestamp(item, headSha) {
   // sets it, and that is why the precedence is safe there: `flattenForgejoPullRequestStatus` reads
   // the head commit **by** the head SHA the pull-request read just returned, so the value cannot
   // describe a different commit — the match this function would perform has already happened, in
-  // the request itself. The GitHub path still reaches the comparison, because `PR_STATUS_QUERY`
-  // selects no top-level timestamp. The precedence stays the hazard: adding such a field to the
-  // query, or to a flattener that does not address the commit by its object name, switches head
-  // verification off without touching a line of this function, so anyone introducing one has to
-  // decide here whether the stated value may still skip the match.
+  // the request itself. The GitHub path still reaches the comparison, because `PR_STATUS_QUERY` in
+  // `remote-tracker-github-core.mjs` selects no top-level timestamp. The precedence stays the
+  // hazard: adding such a field to the query, or to a flattener that does not address the commit by
+  // its object name, switches head verification off without touching a line of this function, so
+  // anyone introducing one has to decide here whether the stated value may still skip the match.
   //
   // `headCommittedAt` is the only field read, and a second, Forgejo-shaped
   // `head.commit.committer.date` fallback was removed rather than kept: no producer can set it.

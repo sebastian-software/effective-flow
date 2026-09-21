@@ -137,7 +137,7 @@ function ghHostArgs(repository) {
 // gate compares against an automatic reviewer's latest comment. It rides on this read rather than on
 // a second request, so the two values it correlates describe the same instant. `contexts` reports
 // its `totalCount` alongside its nodes so a truncated page can be detected — see
-// `flattenPullRequestStatus`, which is where that count is acted on.
+// `flattenPullRequestStatus` in `remote-tracker-core.mjs`, which is where that count is acted on.
 const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {

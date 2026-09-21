@@ -307,9 +307,9 @@ export function inspectDecompositionKey(body, expectedParent, context) {
   }
 }
 
-// The absent case returns a wrapper rather than `undefined`: `executeOperation` reads an
-// `undefined` local result as "not a local operation", so a bare `undefined` here would make every
-// clean body fail as an unknown operation.
+// The absent case returns a wrapper rather than `undefined`: `executeOperation` in
+// `remote-tracker-core.mjs` reads an `undefined` local result as "not a local operation", so a bare
+// `undefined` here would make every clean body fail as an unknown operation.
 export function parseDecompositionKey(body, context = {}) {
   const scope =
     typeof context === 'string' ? { target: context } : requireObject(context ?? {}, 'context');

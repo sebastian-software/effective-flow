@@ -345,9 +345,9 @@ export function redact(value) {
   //
   // Do not bound the scheme instead. A bound is the obvious fix and it is worse on both counts: it
   // still does its bounded amount of work at every position, and it silently stops redacting a
-  // scheme longer than the bound whose tail holds no letter to restart from, while `parseRemote`
-  // (see its scheme guard) keeps accepting that same string as a URL. The grammar here is
-  // deliberately identical to that guard's.
+  // scheme longer than the bound whose tail holds no letter to restart from, while `parseRemote` in
+  // `remote-tracker-core.mjs` (see its scheme guard) keeps accepting that same string as a URL. The
+  // grammar here is deliberately identical to that guard's.
   return value
     .replace(/(?<![a-z\d+.-])([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')
@@ -524,8 +524,8 @@ export function mutationPlan(executable, args, stdin, metadata = {}) {
 //
 // The flag is a transport attestation and nothing more. `head_commit_id` is a request-body field
 // and cannot be probed at all, so a server older than the Gitea 1.16 API surface would ignore it
-// silently and leave the merge race unguarded — see `mergeHeadGuard`, which closes no race of its
-// own.
+// silently and leave the merge race unguarded — see `mergeHeadGuard` in `remote-tracker-core.mjs`,
+// which closes no race of its own.
 export function teaApiReadPlan(repository, endpoint) {
   return mutationPlan('tea', [
     'api',
@@ -562,10 +562,11 @@ export function forgejoIssueListEndpoint(input, repository) {
   const query = new URLSearchParams({ state: input.state ?? 'all', type: 'issues' });
   // One single-label query per variant, exactly as the renderer path passed. `/issues?labels=`
   // resolves label **names** and means **AND** — `count(*) = len(includedLabelIDs)` — so a
-  // multi-label value would intersect rather than union. `labelQueryVariants` exists to express OR
-  // across label *spellings* (`effective-flow-fix` ∪ `firmo-fix`), which no endpoint offers by name,
-  // and it already emits one single-label query per variant. Nothing about this endpoint obsoletes
-  // it, and collapsing its variants into one `labels=` value would silently intersect them.
+  // multi-label value would intersect rather than union. `labelQueryVariants` in
+  // `remote-tracker-core.mjs` exists to express OR across label *spellings* (`effective-flow-fix` ∪
+  // `firmo-fix`), which no endpoint offers by name, and it already emits one single-label query per
+  // variant. Nothing about this endpoint obsoletes it, and collapsing its variants into one
+  // `labels=` value would silently intersect them.
   if (input.labels?.length) query.set('labels', input.labels.join(','));
   return `repos/${repository.owner}/${repository.repository}/issues?${query}`;
 }
