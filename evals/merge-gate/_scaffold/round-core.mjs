@@ -34,6 +34,13 @@ import { provisionSlot } from './scaffold.mjs';
 import { SANDBOX_BASE, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS, selectScenarios, SUITE_ROOT } from './suite.mjs';
 
+// The parent this process was launched under, captured once at module load and deliberately not on
+// entry to the wait below. A `publishRound` child spends seconds on `loadRound`,
+// `validateAllSealed`, `discoverSuite` and a full `buildPortableSkill` before it reaches a
+// boundary, so a child orphaned during that window would already read the reparented value on
+// entry and the backstop would never fire.
+const LAUNCH_PPID = process.ppid;
+
 const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
 const PHYSICAL_REPOSITORY_ROOT = realpathSync(REPOSITORY_ROOT);
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
@@ -215,7 +222,9 @@ function withLock(lockPath, action, { kind = 'slot', waitMilliseconds } = {}) {
     try {
       return action();
     } finally {
-      pauseAtBoundary('before-lock-release');
+      // The one boundary that proceeds when its launch parent dies: a throw here would skip the
+      // `releaseLock` on the next line and swallow whatever exception is already in flight.
+      pauseAtBoundary('before-lock-release', { orphanAction: 'proceed' });
       releaseLock(lockPath, token);
     }
   } finally {
@@ -223,17 +232,47 @@ function withLock(lockPath, action, { kind = 'slot', waitMilliseconds } = {}) {
   }
 }
 
-function pauseAtBoundary(name) {
+// Waits for the release sentinel, or parks indefinitely when the boundary has none, and leaves
+// either way once the launch parent is gone. Returns `false` for that backstop exit, which is what
+// decides whether the caller throws.
+//
+// The backstop is a liveness check rather than a duration on purpose: a duration is a budget some
+// other process's startup and build work has to beat, which is the class of flake this gate exists
+// to remove. POSIX reparents an orphan onto init, so the parent's death shows up either as a
+// changed `ppid` or as `1`. It covers the child's **direct** parent dying — the test-file process,
+// or the `round.mjs` controller. It does not cover a SIGKILLed `node --test` runner, because
+// node:test runs each file in its own subprocess that survives and keeps its pid, nor a node:test
+// timeout, which fails a test without terminating the test-file process; a parked child left by
+// either is the caller's to kill.
+function waitForBoundaryRelease(name, release) {
+  for (;;) {
+    if (release && existsSync(release)) return true;
+    if (process.ppid !== LAUNCH_PPID || process.ppid <= 1) {
+      process.stderr.write(`launch parent exited while paused at ${name}\n`);
+      return false;
+    }
+    blockingWait(release ? 20 : 1_000);
+  }
+}
+
+// Two rules on a backstop exit, and they differ because the boundaries sit on opposite sides of
+// `withLock`'s `finally`. A boundary **inside** the locked action throws: its process is now
+// unsupervised, and resuming would run a real publication — a `renameSync` of the canonical
+// results directory — with nobody watching, so it ends non-zero instead. The lock is released
+// either way, because `releaseLock` below sits in a `finally`.
+//
+// `before-lock-release` is the deliberate exception and proceeds, because that call *is* inside
+// that `finally`: a throw there would skip the `releaseLock` on the next line and swallow any
+// exception already in flight. Its call site passes `orphanAction: 'proceed'` and says so.
+function pauseAtBoundary(name, { orphanAction = 'throw' } = {}) {
   if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
   const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
   if (!marker) throw new Error(`${name} pause requires a marker path`);
   writeFileSync(marker, name);
-  const release = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE;
-  if (release) {
-    while (!existsSync(release)) blockingWait(20);
-    return;
+  const released = waitForBoundaryRelease(name, process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE);
+  if (!released && orphanAction === 'throw') {
+    throw new Error(`launch parent exited while paused at ${name}`);
   }
-  for (;;) blockingWait(1_000);
 }
 
 // The same gate, with one difference: it consumes its release file, so a controller can stop the
@@ -244,6 +283,11 @@ function pauseAtBoundary(name) {
 // lost wakeup the pair would otherwise have — a controller deletes the marker before it writes the
 // release, so the next marker it sees can only be the next pause and never the one it just
 // answered.
+//
+// It shares the wait above, and so the same backstop, but proceeds on a backstop exit rather than
+// throwing: its only boundary is `verify`, which takes no lock and writes nothing, so an orphaned
+// walk has nothing to damage by finishing. The `rmSync` below is already a no-op on an absent
+// file, so leaving the wait without a release cannot break it.
 function pauseAtRepeatableBoundary(name) {
   if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
   const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
@@ -251,19 +295,8 @@ function pauseAtRepeatableBoundary(name) {
   const release = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE;
   if (!release) throw new Error(`${name} pause requires a release path`);
   writeFileSync(marker, name);
-  while (!existsSync(release)) blockingWait(20);
+  waitForBoundaryRelease(name, release);
   rmSync(release, { force: true });
-}
-
-function holdPublicationLockForTest() {
-  if (process.env.EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS === undefined) return;
-  const milliseconds = Number(process.env.EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS);
-  if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 5_000) {
-    throw new Error('EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS must be from 0 through 5000');
-  }
-  const marker = process.env.EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MARKER;
-  if (marker) writeFileSync(marker, 'locked');
-  blockingWait(milliseconds);
 }
 
 export function normalizeProfile(profile = {}) {
@@ -1105,7 +1138,7 @@ export function recoverPublication({
   return withLock(
     lockPath,
     () => {
-      holdPublicationLockForTest();
+      pauseAtBoundary('publication-lock-held');
       return recoverPublicationLocked({ resultsDir: resolve(resultsDir), publicationRoot });
     },
     { kind: 'publication', waitMilliseconds: 0 },
@@ -1206,7 +1239,7 @@ export function publishRound({
     return withLock(
       publicationLock,
       () => {
-        holdPublicationLockForTest();
+        pauseAtBoundary('publication-lock-held');
         recoverPublicationLocked({ resultsDir: canonicalResults, publicationRoot });
         const evaluations = validateAllSealed(manifest, roundRoot);
         const generation = randomUUID();

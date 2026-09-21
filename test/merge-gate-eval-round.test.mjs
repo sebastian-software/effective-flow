@@ -591,6 +591,17 @@ test(
   { timeout: 60_000 },
   async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-test-'));
+    // Release sentinels live beside `temporary`, never inside it: the `finally` removes `temporary`
+    // with `rmSync`, which would race a parked child's 20 ms poll and could delete a release before
+    // it was ever observed. Both this directory and the registry below are declared before the
+    // `try` so they are in scope in the `finally`, following `driveVerifyWalk`.
+    const gate = mkdtempSync(join(tmpdir(), 'effective-flow-round-gate-'));
+    // Every child that can park at a boundary inside the `try`, as `{ child, release, result }` —
+    // the result promise captured once at the spawn site, because `childResult` attaches its `exit`
+    // listener at call time and `exit` fires once: a second call on an exited child returns a
+    // promise that never settles. The teardown kills and awaits these, so a failed assertion
+    // reports instead of hanging on a parked child's still-open pipes.
+    const parked = [];
     const base = resolve(temporary, 'rounds');
     const publicationRoot = resolve(temporary, 'publication');
     const resultsDir = resolve(publicationRoot, 'results');
@@ -707,9 +718,11 @@ test(
           },
         },
       );
+      const interruptedSealResult = childResult(interruptedSeal);
+      parked.push({ child: interruptedSeal, release: null, result: interruptedSealResult });
       await waitForFile(sealMarker);
       interruptedSeal.kill('SIGKILL');
-      assert.equal((await childResult(interruptedSeal)).signal, 'SIGKILL');
+      assert.equal((await interruptedSealResult).signal, 'SIGKILL');
       const resumedSeal = sealAttempt({
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
@@ -736,6 +749,8 @@ test(
           },
         },
       );
+      const interruptedRetryResult = childResult(interruptedRetry);
+      parked.push({ child: interruptedRetry, release: null, result: interruptedRetryResult });
       await waitForFile(retryMarker);
       const pendingRetry = roundStatus(prepared.manifestPath, { base }).find(
         ({ slot: number }) => number === 3,
@@ -743,7 +758,7 @@ test(
       assert.equal(pendingRetry.status, 'retry-pending');
       assert.equal(pendingRetry.attempt, 2);
       interruptedRetry.kill('SIGKILL');
-      assert.equal((await childResult(interruptedRetry)).signal, 'SIGKILL');
+      assert.equal((await interruptedRetryResult).signal, 'SIGKILL');
       const replacement3 = retryAborted({
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
@@ -976,16 +991,24 @@ test(
       const publicationLock = publicationLockPath(publicationRoot);
       const beforeWaitingMutation = readFileSync(resolve(resultsDir, '.generation.json'), 'utf8');
       const blockingRecoveryMarker = resolve(temporary, 'blocking-recovery-holds-lock');
+      const blockingRecoveryRelease = resolve(gate, 'release-blocking-recovery');
       const blockingRecovery = runCoreChild(
         'recoverPublication',
         { resultsDir, publicationRoot },
         {
           env: {
-            EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS: '1200',
-            EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MARKER: blockingRecoveryMarker,
+            EFFECTIVE_FLOW_EVAL_PAUSE_AT: 'publication-lock-held',
+            EFFECTIVE_FLOW_EVAL_PAUSE_MARKER: blockingRecoveryMarker,
+            EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE: blockingRecoveryRelease,
           },
         },
       );
+      const blockingRecoveryResult = childResult(blockingRecovery);
+      parked.push({
+        child: blockingRecovery,
+        release: blockingRecoveryRelease,
+        result: blockingRecoveryResult,
+      });
       await waitForFile(blockingRecoveryMarker);
       const waitingPublisherMarker = resolve(temporary, 'publisher-is-waiting');
       const waitingPublisher = runCoreChild('publishRound', publicationArguments, {
@@ -997,7 +1020,10 @@ test(
       await waitForFile(waitingPublisherMarker);
       const sealedLog = readFileSync(slot(5).callLog);
       appendFileSync(slot(5).callLog, '\nmutation while publication waits\n');
-      assert.equal((await childResult(blockingRecovery)).code, 0);
+      // The holder leaves the lock only now, so the waiting publisher's own budget has to cover
+      // two synchronous parent-side file operations rather than another process's startup.
+      writeFileSync(blockingRecoveryRelease, 'release');
+      assert.equal((await blockingRecoveryResult).code, 0);
       const waitingPublisherResult = await childResult(waitingPublisher);
       assert.notEqual(waitingPublisherResult.code, 0);
       assert.match(waitingPublisherResult.stderr, /changed after sealing/);
@@ -1016,6 +1042,8 @@ test(
           EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE: releaseSignal,
         },
       });
+      const predecessorResultPromise = childResult(predecessor);
+      parked.push({ child: predecessor, release: releaseSignal, result: predecessorResultPromise });
       await waitForFile(releaseMarker);
       const displacedLock = resolve(temporary, 'displaced-publication-lock');
       renameSync(publicationLock, displacedLock);
@@ -1026,7 +1054,7 @@ test(
         `${JSON.stringify({ pid: process.pid, token: successorToken }, null, 2)}\n`,
       );
       writeFileSync(releaseSignal, 'release');
-      const predecessorResult = await childResult(predecessor);
+      const predecessorResult = await predecessorResultPromise;
       assert.equal(predecessorResult.code, 0, predecessorResult.stderr);
       assert.ok(existsSync(resolve(publicationLock, `${successorToken}.owner.json`)));
       rmSync(publicationLock, { recursive: true, force: true });
@@ -1051,11 +1079,19 @@ test(
       rmSync(`${publicationLock}.reaped-${staleToken}`, { recursive: true, force: true });
 
       const serializationMarker = resolve(temporary, 'publisher-holds-lock');
+      const serializationRelease = resolve(gate, 'release-publisher-holds-lock');
       const firstPublisher = runCoreChild('publishRound', publicationArguments, {
         env: {
-          EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS: '400',
-          EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MARKER: serializationMarker,
+          EFFECTIVE_FLOW_EVAL_PAUSE_AT: 'publication-lock-held',
+          EFFECTIVE_FLOW_EVAL_PAUSE_MARKER: serializationMarker,
+          EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE: serializationRelease,
         },
+      });
+      const firstPublisherResult = childResult(firstPublisher);
+      parked.push({
+        child: firstPublisher,
+        release: serializationRelease,
+        result: firstPublisherResult,
       });
       await waitForFile(serializationMarker);
       const refusedLiveRecovery = runCoreChild('recoverPublication', {
@@ -1065,32 +1101,55 @@ test(
       const refusedLiveRecoveryResult = await childResult(refusedLiveRecovery);
       assert.notEqual(refusedLiveRecoveryResult.code, 0);
       assert.match(refusedLiveRecoveryResult.stderr, /timed out waiting for live publication lock/);
-      const secondPublisher = runCoreChild('publishRound', publicationArguments);
-      const serializedResults = await Promise.all(
-        [firstPublisher, secondPublisher].map(childResult),
-      );
+      // Releasing before spawning `secondPublisher` would make the assertion below trivially true:
+      // the first publisher might already be finished, and two publications that never overlapped
+      // prove nothing about serialization. Instead the second one is spawned into the held lock and
+      // observed waiting on it, so the contention is proven rather than timed. Its wait now has to
+      // cover the first publisher's entire in-lock publication — a second full `buildPortableSkill`
+      // among the rest — so it gets the validator's own ceiling rather than the 10 s default that
+      // was sized for a parked hold.
+      const secondPublisherMarker = resolve(temporary, 'second-publisher-is-waiting');
+      const secondPublisher = runCoreChild('publishRound', publicationArguments, {
+        env: {
+          EFFECTIVE_FLOW_EVAL_LOCK_WAIT_MARKER: secondPublisherMarker,
+          EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '30000',
+        },
+      });
+      const secondPublisherResult = childResult(secondPublisher);
+      await waitForFile(secondPublisherMarker);
+      writeFileSync(serializationRelease, 'release');
+      const serializedResults = await Promise.all([firstPublisherResult, secondPublisherResult]);
       assert.ok(
         serializedResults.every(({ code }) => code === 0),
         JSON.stringify(serializedResults),
       );
 
       const recoverySerializationMarker = resolve(temporary, 'recovery-holds-lock');
+      const recoverySerializationRelease = resolve(gate, 'release-recovery-holds-lock');
       const firstRecovery = runCoreChild(
         'recoverPublication',
         { resultsDir, publicationRoot },
         {
           env: {
-            EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MS: '300',
-            EFFECTIVE_FLOW_EVAL_PUBLICATION_HOLD_MARKER: recoverySerializationMarker,
+            EFFECTIVE_FLOW_EVAL_PAUSE_AT: 'publication-lock-held',
+            EFFECTIVE_FLOW_EVAL_PAUSE_MARKER: recoverySerializationMarker,
+            EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE: recoverySerializationRelease,
           },
         },
       );
+      const firstRecoveryResult = childResult(firstRecovery);
+      parked.push({
+        child: firstRecovery,
+        release: recoverySerializationRelease,
+        result: firstRecoveryResult,
+      });
       await waitForFile(recoverySerializationMarker);
       const secondRecovery = runCoreChild('recoverPublication', { resultsDir, publicationRoot });
       const secondRecoveryResult = await childResult(secondRecovery);
       assert.notEqual(secondRecoveryResult.code, 0);
       assert.match(secondRecoveryResult.stderr, /timed out waiting for live publication lock/);
-      assert.equal((await childResult(firstRecovery)).code, 0);
+      writeFileSync(recoverySerializationRelease, 'release');
+      assert.equal((await firstRecoveryResult).code, 0);
 
       const canonicalMarker = readFileSync(resolve(resultsDir, '.generation.json'), 'utf8');
       const finalBuildMarker = resolve(temporary, 'publisher-after-final-build');
@@ -1102,11 +1161,17 @@ test(
           EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE: finalBuildRelease,
         },
       });
+      const finalBuildPublisherResultPromise = childResult(finalBuildPublisher);
+      parked.push({
+        child: finalBuildPublisher,
+        release: finalBuildRelease,
+        result: finalBuildPublisherResultPromise,
+      });
       await waitForFile(finalBuildMarker);
       const finalBuildSealedLog = readFileSync(slot(5).callLog);
       appendFileSync(slot(5).callLog, '\nmutation after final build\n');
       writeFileSync(finalBuildRelease, 'release');
-      const finalBuildPublisherResult = await childResult(finalBuildPublisher);
+      const finalBuildPublisherResult = await finalBuildPublisherResultPromise;
       assert.notEqual(finalBuildPublisherResult.code, 0);
       assert.match(finalBuildPublisherResult.stderr, /changed after sealing/);
       assert.equal(readFileSync(resolve(resultsDir, '.generation.json'), 'utf8'), canonicalMarker);
@@ -1166,6 +1231,10 @@ test(
             EFFECTIVE_FLOW_EVAL_PROMOTION_PAUSE_MARKER: pauseMarker,
           },
         });
+        // The promotion pause has no release path at all; the registry is what keeps this child
+        // from stranding the run when an assertion below its marker fails.
+        const publisherResult = childResult(publisher);
+        parked.push({ child: publisher, release: null, result: publisherResult });
         await waitForFile(pauseMarker);
         if (phase === 'candidate-ready') {
           const competing = runCoreChild('publishRound', publicationArguments, {
@@ -1176,7 +1245,7 @@ test(
           assert.match(competingResult.stderr, /timed out waiting for live publication lock/);
         }
         publisher.kill('SIGKILL');
-        const killed = await childResult(publisher);
+        const killed = await publisherResult;
         assert.equal(killed.signal, 'SIGKILL');
 
         const recovery = runCoreChild('recoverPublication', { resultsDir, publicationRoot });
@@ -1193,6 +1262,8 @@ test(
           EFFECTIVE_FLOW_EVAL_PROMOTION_PAUSE_MARKER: corruptMarker,
         },
       });
+      const corruptPublisherResult = childResult(corruptPublisher);
+      parked.push({ child: corruptPublisher, release: null, result: corruptPublisherResult });
       await waitForFile(corruptMarker);
       const journalPath = resolve(publicationRoot, '.results-publication.json');
       const corruptJournal = JSON.parse(readFileSync(journalPath, 'utf8'));
@@ -1201,7 +1272,7 @@ test(
         '\n{"tampered":true}\n',
       );
       corruptPublisher.kill('SIGKILL');
-      await childResult(corruptPublisher);
+      await corruptPublisherResult;
       const refusedRecovery = runCoreChild('recoverPublication', { resultsDir, publicationRoot });
       const refusedRecoveryResult = await childResult(refusedRecovery);
       assert.notEqual(refusedRecoveryResult.code, 0);
@@ -1225,9 +1296,17 @@ test(
       );
     } finally {
       // The manifest is deliberately read-only; make the temporary tree removable on all platforms.
+      // This stays first: a read-only manifest blocks the removals below.
       const manifest = resolve(base, 'round-one', 'manifest.json');
       if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      // Kill every registered child and then await its recorded result, so no parked child's pipes
+      // hold `node --test` open after a failed assertion. Deliberately no release is written here:
+      // a released child would resume into a real publication — a `renameSync` of the canonical
+      // results directory — racing both this kill and the removals below.
+      for (const { child } of parked) child.kill('SIGKILL');
+      for (const { result } of parked) await result;
       rmSync(temporary, { recursive: true, force: true });
+      rmSync(gate, { recursive: true, force: true });
     }
   },
 );
