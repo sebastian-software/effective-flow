@@ -242,9 +242,12 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Three script pairs carry this today: `delegation-envelope.mjs`/
-  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
-  `remote-tracker.mjs`/`remote-tracker-core.mjs`. The remote-tracker's runtime prompts are
+  misread as one. Three subsystems carry this today: the pairs `delegation-envelope.mjs`/
+  `delegation-envelope-core.mjs` and `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
+  the remote tracker, a six-file family whose thin entry point `remote-tracker.mjs` sits over
+  `remote-tracker-core.mjs` and its four siblings `remote-tracker-shared-core.mjs`,
+  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs` and
+  `remote-tracker-forgejo-core.mjs`. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
