@@ -11,8 +11,8 @@
     "test": "node --test",
     "test:distribution": "node scripts/distribution-smoke.mjs offline",
     "test:managers": "node scripts/distribution-smoke.mjs managers",
-    "merge-gate-eval": "node evals/merge-gate/round.mjs",
-    "prepare:merge-gate-eval": "node evals/merge-gate/prepare.mjs"
+    "eval": "node evals/eval.mjs",
+    "prepare:eval": "node evals/prepare.mjs"
   },
   "devDependencies": {
     "oxfmt": "^0.62.0"

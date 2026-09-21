@@ -12,6 +12,7 @@ import {
   sealAttempt,
   verifyFreshness,
 } from './_scaffold/round-core.mjs';
+import { loadSuite } from './_scaffold/suite-loader.mjs';
 
 const COMMAND_OPTIONS = Object.freeze({
   prepare: new Set([
@@ -37,7 +38,9 @@ const COMMAND_OPTIONS = Object.freeze({
 const ALL_OPTIONS = new Set(Object.values(COMMAND_OPTIONS).flatMap((flags) => [...flags]));
 
 function usage() {
-  return `usage: node evals/merge-gate/round.mjs <command> [options]
+  return `usage: node evals/eval.mjs <tool> <command> [options]
+
+<tool> names a suite directory under evals/ that carries a suite.config.mjs (e.g. merge-gate).
 
 commands:
   prepare [--scenario NAME ...] [profile flags]
@@ -190,27 +193,35 @@ function printFreshness(report) {
 }
 
 async function main() {
-  const [command, ...args] = process.argv.slice(2);
+  const [tool, command, ...args] = process.argv.slice(2);
+  if (!tool || tool === '--help' || tool === 'help') {
+    process.stdout.write(usage());
+    return;
+  }
   if (!command || command === '--help' || command === 'help') {
     process.stdout.write(usage());
     return;
   }
+  const suite = await loadSuite(tool);
   const parsed = options(args);
   validateOptions(command, parsed);
   if (command === 'prepare') {
-    const prepared = createRound({ scenarios: parsed.scenario, profile: profileFrom(parsed) });
+    const prepared = createRound(suite, {
+      scenarios: parsed.scenario,
+      profile: profileFrom(parsed),
+    });
     process.stdout.write(
       `prepared round ${prepared.manifest.roundId}\nmanifest: ${prepared.manifestPath}\n`,
     );
-    printStatus(roundStatus(prepared.manifestPath));
+    printStatus(roundStatus(suite, prepared.manifestPath));
     return;
   }
   if (command === 'status') {
-    printStatus(roundStatus(required(parsed.round, '--round')));
+    printStatus(roundStatus(suite, required(parsed.round, '--round')));
     return;
   }
   if (command === 'seal') {
-    const receipt = sealAttempt({
+    const receipt = sealAttempt(suite, {
       handle: required(parsed.round, '--round'),
       scenario: required(parsed.scenario[0], '--scenario'),
       slot: Number(required(parsed.slot, '--slot')),
@@ -220,7 +231,7 @@ async function main() {
     return;
   }
   if (command === 'retry-aborted') {
-    const result = retryAborted({
+    const result = retryAborted(suite, {
       handle: required(parsed.round, '--round'),
       scenario: required(parsed.scenario[0], '--scenario'),
       slot: Number(required(parsed.slot, '--slot')),
@@ -230,7 +241,7 @@ async function main() {
     return;
   }
   if (command === 'retry-invalid') {
-    const result = retryInvalid({
+    const result = retryInvalid(suite, {
       handle: required(parsed.round, '--round'),
       scenario: required(parsed.scenario[0], '--scenario'),
       slot: Number(required(parsed.slot, '--slot')),
@@ -240,7 +251,7 @@ async function main() {
     return;
   }
   if (command === 'publish') {
-    const result = publishRound({ handle: required(parsed.round, '--round') });
+    const result = publishRound(suite, { handle: required(parsed.round, '--round') });
     process.stdout.write(`published generation ${result.generation}\n`);
     if (result.findings.length > 0) {
       for (const finding of result.findings) {
@@ -258,7 +269,7 @@ async function main() {
     if (mode !== 'report' && mode !== 'strict') {
       throw new Error(`--mode accepts report or strict, not ${mode}`);
     }
-    const report = verifyFreshness({ resultsDir: verifyResultsDir() });
+    const report = verifyFreshness(suite, { resultsDir: verifyResultsDir() });
     printFreshness(report);
     // Report mode reaches this line with every verdict it can produce, stale included, and exits 0.
     // Only a thrown error — a build that failed, an archived file that would not parse — reaches
@@ -269,14 +280,14 @@ async function main() {
       process.stderr.write(
         `${failing.map(({ scenario, state }) => `${scenario} is ${state}`).join('; ')}\n` +
           'A release needs a current round: re-record the evidence before releasing ' +
-          '(see evals/merge-gate/README.md).\n',
+          `(see evals/${suite.name}/README.md).\n`,
       );
       process.exitCode = 1;
     }
     return;
   }
   if (command === 'recover') {
-    const result = recoverPublication();
+    const result = recoverPublication(suite);
     process.stdout.write(
       result.recovered ? 'recovered interrupted publication\n' : 'nothing to recover\n',
     );

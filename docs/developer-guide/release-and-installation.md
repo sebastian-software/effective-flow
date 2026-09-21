@@ -66,7 +66,7 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 
 The behavioural eval suite for `merge-gate` archives evidence about a build, and the build that
 matters is the one that ships, so the release pull request is where that evidence has to be current.
-The last step of the required `Format, test and build` job runs `pnpm merge-gate-eval verify`: a
+The last step of the required `Format, test and build` job runs `pnpm eval merge-gate verify`: a
 read-only command that rebuilds the skill into a throwaway root and compares it against the archived
 stamps, writing nothing and launching no model. On an ordinary pull request it reports — the verdict
 goes to the job summary and the check stays green even when the corpus is stale, because a round

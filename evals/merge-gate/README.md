@@ -29,25 +29,41 @@ final publication of canonical results is serialized.
 
 ## What is here
 
-| Path                                   | What it is                                                                              |
-| -------------------------------------- | --------------------------------------------------------------------------------------- |
-| `scenarios/<name>.md`                  | One scenario: a prompt template plus its expected outcome as prose                      |
-| `round.mjs`                            | The round lifecycle CLI; it prepares and validates evidence but never launches a model  |
-| `prepare.mjs`                          | Deprecated compatibility wrapper for preparing one scenario as a five-slot round        |
-| `_scaffold/round-core.mjs`             | Importable round, slot, sealing, retry, publication, and recovery logic                 |
-| `_scaffold/scaffold.mjs`               | Provisions an isolated slot from the round's shared build                               |
-| `_scaffold/remote-tracker.mjs`         | The canned-envelope stub standing in for the shipped helper, and writer of the call log |
-| `_scaffold/sandbox.mjs`                | The round, scenario, slot, and attempt sandbox layout                                   |
+The instrument is shared with every other behavioural eval suite and lives one level up, under
+`evals/_scaffold/`; what is specific to this suite lives here. `suite.config.mjs` is the seam
+between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
+tracker stub, its `iterate`-echo overlay policy and its sandbox namespace, and the shared scaffold
+reads all of it from there rather than naming a tool. It is hashed as one of the suite's instrument
+files, because every one of those bindings decides what a slot sees. The scenario registry is the
+one declaration that does not, so it sits in `scenario-registry.mjs` and is hashed by nothing —
+adding a scenario therefore costs its own evidence and no other scenario's. `validateSuite` holds
+both halves, and neither is safe alone.
+
+| Path                                         | What it is                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                      |
+| `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it |
+| `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument          |
+| `_scaffold/remote-tracker.mjs`               | The canned-envelope stub standing in for the shipped helper, and writer of the call log |
 | `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace |
-| `_scaffold/iterate-echo.md`            | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`        |
-| `_scaffold/iterate-trace.mjs`          | The echo's receiver and the writer of its bounded handoff trace                         |
-| `_scaffold/run-evidence.mjs`           | The call-log/build-stamp/echo-trace pairing rule publication checks                     |
-| `fixtures/<name>.json`                 | The scenario's envelope set, the provider payload each came from, and its merge opt-in  |
-| `results/<name>/run-<n>.jsonl`         | Published call logs — the evidence the assertions read                                  |
-| `results/<name>/run-<n>.build.json`    | Per-file hashes of what that scenario loads, binding the log to a build                 |
-| `results/<name>/run-<n>.prompt.txt`    | The exact rendered prompt supplied to the fresh session                                 |
-| `results/<name>/run-<n>.metadata.json` | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata     |
-| `results/<name>/run-<n>.iterate.jsonl` | Configured-reviewer handoff trace; required for that scenario, forbidden for any other  |
+| `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads           |
+| `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                    |
+| `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`        |
+| `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace                         |
+| `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in  |
+| `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                  |
+| `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                 |
+| `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                 |
+| `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata     |
+| `results/<name>/run-<n>.iterate.jsonl`       | Configured-reviewer handoff trace; required for that scenario, forbidden for any other  |
+
+The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
+deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
+sealing, retry, publication and recovery logic), `scaffold.mjs` (provisioning one isolated slot from
+the round's shared build), `build-identity.mjs` (the three-part identity an archived run is bound
+by), `sandbox.mjs` (the round, scenario, slot and attempt layout), `prompt.mjs`, `suite.mjs`,
+`evaluate.mjs` (the generic evidence rules) and `run-evidence.mjs` (the call-log/build-stamp/echo-trace
+pairing rule publication checks).
 
 Three test files in the ordinary `pnpm test` suite belong to this layer:
 
@@ -61,7 +77,7 @@ Three test files in the ordinary `pnpm test` suite belong to this layer:
 
 None runs a model, and none starts a gate run. `pnpm test` stays a pure file-and-transform
 suite. None of them answers whether the archived logs still describe the working tree either; that
-question belongs to `pnpm merge-gate-eval verify`.
+question belongs to `pnpm eval merge-gate verify`.
 
 ## Running a round
 
@@ -71,7 +87,7 @@ Replace the uppercase values below with the non-sensitive execution profile the 
 every slot in this round:
 
 ```sh
-pnpm merge-gate-eval prepare \
+pnpm eval merge-gate prepare \
   --harness HARNESS_NAME \
   --model MODEL_NAME \
   --reasoning-effort REASONING_EFFORT \
@@ -83,7 +99,7 @@ With no `--scenario`, `prepare` discovers the complete scenario corpus. To prepa
 the option; each selected scenario still receives all five canonical slots:
 
 ```sh
-pnpm merge-gate-eval prepare \
+pnpm eval merge-gate prepare \
   --scenario guard-blocks-merge \
   --scenario merge-proceeds \
   --harness HARNESS_NAME \
@@ -145,7 +161,7 @@ waves; no preparation or slot identity changes. Use `status` at any time to insp
 attempt and prompt path:
 
 ```sh
-pnpm merge-gate-eval status --round ROUND_ID_OR_MANIFEST
+pnpm eval merge-gate status --round ROUND_ID_OR_MANIFEST
 ```
 
 The status values are `prepared`, `unsealed`, `sealed`, `invalid`, `changed-after-seal`, and
@@ -178,7 +194,7 @@ The working root and profile must exactly match that attempt and its round. Do n
 or session IDs, account or email values, or links. Seal only after the host task has ended:
 
 ```sh
-pnpm merge-gate-eval seal \
+pnpm eval merge-gate seal \
   --round ROUND_ID_OR_MANIFEST \
   --scenario guard-blocks-merge \
   --slot 1 \
@@ -202,7 +218,7 @@ If a stopped host task produced no non-empty log, attest that fact in a separate
 Then reprovision the same slot:
 
 ```sh
-pnpm merge-gate-eval retry-aborted \
+pnpm eval merge-gate retry-aborted \
   --round ROUND_ID_OR_MANIFEST \
   --scenario guard-blocks-merge \
   --slot 1 \
@@ -216,7 +232,7 @@ Use `retry-invalid` only for a sealed attempt that `status` classifies as invali
 changed after sealing:
 
 ```sh
-pnpm merge-gate-eval retry-invalid \
+pnpm eval merge-gate retry-invalid \
   --round ROUND_ID_OR_MANIFEST \
   --scenario guard-blocks-merge \
   --slot 1 \
@@ -239,7 +255,7 @@ it does not discard another attempt. Do not move quarantine or attempt directori
 When every selected slot is sealed and valid, publish the round:
 
 ```sh
-pnpm merge-gate-eval publish --round ROUND_ID_OR_MANIFEST
+pnpm eval merge-gate publish --round ROUND_ID_OR_MANIFEST
 ```
 
 Publication builds the current source once more to reject drift, carries forward unselected
@@ -256,7 +272,7 @@ Promotion uses same-filesystem renames, a generation marker with a content diges
 the three rename phases. After an abruptly interrupted publish, run:
 
 ```sh
-pnpm merge-gate-eval recover
+pnpm eval merge-gate recover
 ```
 
 Recovery compares the observed candidate, current, and backup generation identifiers and content
@@ -270,7 +286,7 @@ still describes the working tree is a separate question with its own command:
 
 ```sh
 node --test test/merge-gate-eval.test.mjs         # or just pnpm test
-pnpm merge-gate-eval verify                       # does the archive still describe this tree?
+pnpm eval merge-gate verify                       # does the archive still describe this tree?
 ```
 
 ### Freshness and the release gate
@@ -281,7 +297,7 @@ describe the working tree. That second question is a property of the _pair_ rath
 files, and it has its own read-only command:
 
 ```sh
-pnpm merge-gate-eval verify [--mode report|strict]
+pnpm eval merge-gate verify [--mode report|strict]
 ```
 
 `verify` builds the portable skill once into a throwaway root, recomputes each scenario's build
@@ -359,8 +375,8 @@ claim checkable by someone who did not perform the runs.
 
 ### Compatibility command
 
-`pnpm prepare:merge-gate-eval <scenario>` remains temporarily available. It prints a deprecation
-notice and forwards to `pnpm merge-gate-eval prepare --scenario <scenario>`, producing a complete
+`pnpm prepare:eval <tool> <scenario>` remains temporarily available. It prints a deprecation
+notice and forwards to `pnpm eval <tool> prepare --scenario <scenario>`, producing a complete
 five-slot round. It no longer archives a previous log or owns any lifecycle logic.
 
 ### Cost is quota and wall-clock time
@@ -401,7 +417,7 @@ on every pull request in between and enforces it on the release pull request. A 
 counts whether or not a run can take its branch: `shared/typography-rules.md` is hashed today only
 because `chat-language` points at it under `when: the resolved chat language is de`, a branch
 neither scenario reaches. That widening is a recorded decision rather than an accident, and its
-reasoning sits beside `LOAD_POINTER_RE` in `_scaffold/build-identity.mjs`.
+reasoning sits beside `LOAD_POINTER_RE` in `../_scaffold/build-identity.mjs`.
 
 ### Parallelism and evidence isolation
 
@@ -713,9 +729,18 @@ held lock.
    `<!-- prompt:end -->` markers as a single fenced block, and the expected outcome below it, marked
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
    that is what makes the run a test rather than a recitation.
-4. Register the scenario's name in `OUTCOME_EVALUATORS` in `_scaffold/suite.mjs`, then implement its
-   outcome evaluation in `_scaffold/evaluate.mjs`. Discovery requires the scenario template,
-   fixture, and evaluator registration to match in both directions; `test/merge-gate-eval.test.mjs`
+4. Register the scenario's name in the `SCENARIOS` registry in `scenario-registry.mjs`, then
+   implement its outcome evaluation in `_scaffold/evaluate.mjs` and add the same name to that file's
+   `BRANCHED_SCENARIOS`. The registry lives in a module of its own — not in the shared
+   `../_scaffold/suite.mjs`, and not in `suite.config.mjs` either — precisely so that adding a name
+   costs nothing: that module is the only one the instrument does not hash, so no other scenario's
+   archived evidence goes stale for it. Nothing but names belongs there; the configuration beside it
+   is hashed, and a binding moved into the registry would be behaviour no archived stamp could
+   notice moving. `BRANCHED_SCENARIOS` is what keeps that cheapness honest — a registered name no branch
+   recognises would otherwise publish five green runs that assert nothing — and the outcome chain
+   throws on a name that reaches no branch, as a backstop for the two lists disagreeing.
+   Discovery requires the scenario template,
+   fixture, registry entry and evaluator branch to match in every direction; `test/merge-gate-eval.test.mjs`
    applies the shared assertions — the pinned log schema, the runtime-root check over every record,
    the undefined-operation check, and the five-of-five bar — to the discovered corpus. Add the
    scenario-specific test assertion as well. A

@@ -23,12 +23,9 @@ import { pathToFileURL } from 'node:url';
 import {
   buildPortableSkill,
   pristineScenarioBuildIdentity,
-} from '../evals/merge-gate/_scaffold/build-identity.mjs';
-import {
-  evaluateEvidence,
-  supportedTrackerOperations,
-} from '../evals/merge-gate/_scaffold/evaluate.mjs';
-import { extractPrompt, renderPrompt } from '../evals/merge-gate/_scaffold/prompt.mjs';
+} from '../evals/_scaffold/build-identity.mjs';
+import { evaluateEvidence, supportedTrackerOperations } from '../evals/_scaffold/evaluate.mjs';
+import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
 import {
   createRound,
   loadRound,
@@ -38,9 +35,12 @@ import {
   retryInvalid,
   roundStatus,
   sealAttempt,
-} from '../evals/merge-gate/_scaffold/round-core.mjs';
-import { sandboxPaths } from '../evals/merge-gate/_scaffold/sandbox.mjs';
-import { discoverSuite, REQUIRED_RUNS } from '../evals/merge-gate/_scaffold/suite.mjs';
+} from '../evals/_scaffold/round-core.mjs';
+import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
+import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
+import { loadSuite, suiteConfigPath, validateSuite } from '../evals/_scaffold/suite-loader.mjs';
+import { findings as evaluatorFindings } from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import suite from '../evals/merge-gate/suite.config.mjs';
 
 const PROFILE = {
   harness: 'test-harness',
@@ -50,11 +50,14 @@ const PROFILE = {
   toolPolicy: 'test-policy',
 };
 const ROUND_CORE_URL = pathToFileURL(
-  resolve(import.meta.dirname, '..', 'evals', 'merge-gate', '_scaffold', 'round-core.mjs'),
+  resolve(import.meta.dirname, '..', 'evals', '_scaffold', 'round-core.mjs'),
+).href;
+const SUITE_CONFIG_URL = pathToFileURL(
+  resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'suite.config.mjs'),
 ).href;
 
 function runCoreChild(exportName, argumentsValue, { env = {} } = {}) {
-  const script = `import { ${exportName} } from ${JSON.stringify(ROUND_CORE_URL)}; const result = ${exportName}(JSON.parse(process.argv[1])); if (result !== undefined) process.stdout.write(JSON.stringify(result));`;
+  const script = `import { ${exportName} } from ${JSON.stringify(ROUND_CORE_URL)}; import suite from ${JSON.stringify(SUITE_CONFIG_URL)}; const result = ${exportName}(suite, JSON.parse(process.argv[1])); if (result !== undefined) process.stdout.write(JSON.stringify(result));`;
   return spawn(
     process.execPath,
     ['--input-type=module', '--eval', script, JSON.stringify(argumentsValue)],
@@ -167,10 +170,10 @@ function copyRestampedResults(resultsDir) {
   const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-round-restamp-'));
   try {
     const skillRoot = buildPortableSkill(outputRoot);
-    for (const scenario of discoverSuite().scenarios) {
+    for (const scenario of discoverSuite(suite).scenarios) {
       const directory = resolve(resultsDir, scenario);
       if (!existsSync(directory)) continue;
-      const identity = pristineScenarioBuildIdentity(scenario, skillRoot);
+      const identity = pristineScenarioBuildIdentity(suite, scenario, skillRoot);
       for (const name of readdirSync(directory).filter((entry) =>
         /^run-\d+\.build\.json$/.test(entry),
       )) {
@@ -252,10 +255,172 @@ test('prompt rendering is strict and slot paths cannot collide', () => {
 });
 
 test('the discovered scenarios, fixtures, and evaluator registrations stay in parity', () => {
-  const suite = discoverSuite();
-  assert.ok(suite.scenarios.length > 0);
-  assert.equal(new Set(suite.scenarios).size, suite.scenarios.length);
+  const discovered = discoverSuite(suite);
+  assert.ok(discovered.scenarios.length > 0);
+  assert.equal(new Set(discovered.scenarios).size, discovered.scenarios.length);
   assert.equal(REQUIRED_RUNS, 5);
+});
+
+// The suite configuration is a plain object the shared scaffold trusts, and most of its fields fail
+// loudly at first use. The ones that do not are why this check exists at all: an omitted
+// `auxiliaryEvidence` reads exactly like a suite that records no second evidence file, so a suite
+// that ships an exit-channel helper and forgets the block publishes runs whose only positive
+// observable was never examined. The loader therefore requires every field and lets a suite say
+// "none" explicitly.
+test('the suite contract is checked once at load rather than discovered field by field at first use', () => {
+  const label = 'probe';
+  assert.equal(validateSuite(suite, label), suite);
+
+  // Omission and an intentional "no auxiliary evidence" must not be the same thing.
+  const { auxiliaryEvidence, ...withoutAuxiliary } = suite;
+  assert.throws(
+    () => validateSuite(withoutAuxiliary, label),
+    /auxiliaryEvidence missing or malformed/,
+    'a suite that omits auxiliaryEvidence is accepted as one that deliberately records no second evidence file, so an orphaned trace would never be detected',
+  );
+  assert.doesNotThrow(() => validateSuite({ ...suite, auxiliaryEvidence: null }, label));
+
+  // The four functions the shared evaluator calls, and the branch list the parity contract reads.
+  for (const name of [
+    'usesLifecycleSchema',
+    'validityProblems',
+    'parseAuxiliary',
+    'findings',
+    'BRANCHED_SCENARIOS',
+  ]) {
+    const { [name]: _removed, ...partialEvaluator } = suite.evaluator;
+    assert.throws(
+      () => validateSuite({ ...suite, evaluator: partialEvaluator }, label),
+      /evaluator missing or malformed/,
+      `an evaluator without ${name} is accepted, so the seam is enforced by reading the merge-gate implementation rather than by this check`,
+    );
+  }
+
+  // `projectDocuments` is the one contract function whose return shape nothing downstream reads.
+  assert.throws(
+    () => validateSuite({ ...suite, projectDocuments: () => ({ agents: 'only one half' }) }, label),
+    /projectDocuments must return \{ agents, setupAdr \} as strings/,
+  );
+
+  // The stub that answers a run has to be the stub the instrument hashes.
+  assert.throws(
+    () =>
+      validateSuite(
+        { ...suite, trackerStub: { source: resolve(suite.root, 'not-hashed.mjs') } },
+        label,
+      ),
+    /hashes no instrument entry for its tracker stub/,
+  );
+
+  // Both halves of the registry split, neither of which is safe alone. A configuration left out of
+  // its own instrument can re-point `scenarioSetup` or `projectDocuments` at other modules while
+  // every archived stamp reports current; a registry pulled into it costs every other scenario a
+  // re-record per name added.
+  assert.throws(
+    () =>
+      validateSuite(
+        {
+          ...suite,
+          instrumentFiles: suite.instrumentFiles.filter(
+            (path) => path !== resolve(suite.root, 'suite.config.mjs'),
+          ),
+        },
+        label,
+      ),
+    /is not one of its own instrumentFiles/,
+    'a suite that omits its own configuration from the instrument is accepted, so the bindings it makes are unhashed',
+  );
+  assert.throws(
+    () =>
+      validateSuite(
+        { ...suite, instrumentFiles: [...suite.instrumentFiles, suite.scenarioRegistry] },
+        label,
+      ),
+    /hashes its scenario registry/,
+    'a suite that hashes its scenario registry is accepted, so adding one name is back to staling every archived round',
+  );
+
+  for (const field of ['scenarios', 'loadSetSeeds', 'instrumentFiles']) {
+    assert.throws(
+      () => validateSuite({ ...suite, [field]: [] }, label),
+      new RegExp(`${field} missing or malformed`),
+      `an empty ${field} is accepted, and an empty one hashes to a plausible digest of nothing`,
+    );
+  }
+});
+
+// The regex in `suite-loader.mjs` is the only thing between a shell-supplied `<tool>` argument and
+// an arbitrary module: `pnpm eval ../../something verify` would otherwise resolve outside `evals/`.
+// Nothing else in the repository would fail if a later edit loosened it.
+test('the suite name is validated before it is resolved to a module path', async () => {
+  for (const name of ['../etc', 'merge gate', '/absolute', '.hidden', 'Upper', '', undefined]) {
+    assert.throws(
+      () => suiteConfigPath(name),
+      /invalid suite name/,
+      `${JSON.stringify(name)} resolved to a module path instead of being refused`,
+    );
+    await assert.rejects(() => loadSuite(name), /invalid suite name/);
+  }
+  assert.equal(
+    suiteConfigPath('merge-gate'),
+    resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'suite.config.mjs'),
+  );
+  await assert.rejects(() => loadSuite('no-such-suite'), /no eval suite no-such-suite/);
+
+  // A configuration that loads but answers to another name is refused before it is validated: the
+  // directory a suite is found under is the name the CLI and every sandbox path use.
+  const probe = 'name-mismatch-probe';
+  const probeRoot = resolve(import.meta.dirname, '..', 'evals', probe);
+  try {
+    mkdirSync(probeRoot, { recursive: true });
+    writeFileSync(
+      resolve(probeRoot, 'suite.config.mjs'),
+      "export default { name: 'some-other-name' };\n",
+    );
+    await assert.rejects(
+      () => loadSuite(probe),
+      /does not export a suite configuration named name-mismatch-probe/,
+    );
+  } finally {
+    rmSync(probeRoot, { recursive: true, force: true });
+  }
+});
+
+// Registering a scenario became cheap when the registry left the hashed instrument, and the cost of
+// a mistake fell with it: a registered name the evaluator does not branch on carries five sealed
+// runs and asserts nothing about any of them. The branch list is the fourth parity member, and the
+// outcome chain's terminal throw is the backstop for the two lists disagreeing.
+test('a registered scenario the evaluator does not branch on fails parity and cannot evaluate silently', () => {
+  const unbranched = 'registered-but-unbranched';
+  assert.throws(
+    () =>
+      discoverSuite({
+        ...suite,
+        scenarios: [...suite.scenarios, unbranched],
+        evaluator: {
+          ...suite.evaluator,
+          BRANCHED_SCENARIOS: [...suite.evaluator.BRANCHED_SCENARIOS, unbranched],
+        },
+      }),
+    new RegExp(`${unbranched} missing scenarios, fixtures`),
+  );
+  assert.throws(
+    () => discoverSuite({ ...suite, scenarios: [...suite.scenarios, unbranched] }),
+    new RegExp(`${unbranched} missing scenarios, fixtures, branches`),
+    'a registry entry with no evaluator branch passed parity, so a misspelled name would publish five green runs that assert nothing',
+  );
+  assert.throws(
+    () =>
+      evaluatorFindings({
+        scenario: unbranched,
+        records: [],
+        fixture: {},
+        auxiliaryRecords: [],
+        requiresAuxiliary: false,
+      }),
+    /registered as branched but reaches no outcome branch/,
+    'the outcome chain returned no findings for an unrecognised scenario instead of throwing',
+  );
 });
 
 test('suite discovery rejects missing and unregistered corpus members in both directions', () => {
@@ -264,10 +429,11 @@ test('suite discovery rejects missing and unregistered corpus members in both di
   try {
     cpSync(resolve(suiteRoot, 'scenarios'), resolve(temporary, 'scenarios'), { recursive: true });
     cpSync(resolve(suiteRoot, 'fixtures'), resolve(temporary, 'fixtures'), { recursive: true });
-    assert.deepEqual(discoverSuite(temporary).scenarios, discoverSuite().scenarios);
+    const relocated = { ...suite, root: temporary };
+    assert.deepEqual(discoverSuite(relocated).scenarios, discoverSuite(suite).scenarios);
 
     rmSync(resolve(temporary, 'fixtures', 'guard-blocks-merge.json'));
-    assert.throws(() => discoverSuite(temporary), /guard-blocks-merge missing fixtures/);
+    assert.throws(() => discoverSuite(relocated), /guard-blocks-merge missing fixtures/);
 
     cpSync(
       resolve(suiteRoot, 'fixtures', 'guard-blocks-merge.json'),
@@ -275,7 +441,7 @@ test('suite discovery rejects missing and unregistered corpus members in both di
     );
     writeFileSync(resolve(temporary, 'fixtures', 'unregistered-scenario.json'), '{}\n');
     assert.throws(
-      () => discoverSuite(temporary),
+      () => discoverSuite(relocated),
       /unregistered-scenario missing scenarios, evaluators/,
     );
   } finally {
@@ -290,13 +456,13 @@ test(
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-collision-'));
     const base = resolve(temporary, 'rounds');
     try {
-      const first = createRound({
+      const first = createRound(suite, {
         scenarios: ['guard-blocks-merge', 'merge-proceeds'],
         profile: PROFILE,
         base,
         roundId: 'collision-first',
       });
-      const second = createRound({
+      const second = createRound(suite, {
         scenarios: ['guard-blocks-merge'],
         profile: PROFILE,
         base,
@@ -352,7 +518,7 @@ test('round resolution rejects an intermediate symlink escape', () => {
     writeFileSync(resolve(outside, 'round', 'manifest.json'), '{}\n');
     symlinkSync(outside, resolve(base, 'intermediate'));
     assert.throws(
-      () => loadRound(resolve(base, 'intermediate', 'round', 'manifest.json'), { base }),
+      () => loadRound(suite, resolve(base, 'intermediate', 'round', 'manifest.json'), { base }),
       /physical round root.*escapes/,
     );
   } finally {
@@ -364,7 +530,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
   const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-contained-'));
   const base = resolve(temporary, 'rounds');
   try {
-    const prepared = createRound({
+    const prepared = createRound(suite, {
       scenarios: ['guard-blocks-merge'],
       profile: {},
       base,
@@ -376,7 +542,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     delete omitted.profile.model;
     assert.throws(
       () =>
-        sealAttempt({
+        sealAttempt(suite, {
           handle: prepared.manifestPath,
           scenario: 'guard-blocks-merge',
           slot: 1,
@@ -391,7 +557,10 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     writeFileSync(outsideState, originalState);
     rmSync(paths.state);
     symlinkSync(outsideState, paths.state);
-    assert.throws(() => roundStatus(prepared.manifestPath, { base }), /symlinked.*slot state/);
+    assert.throws(
+      () => roundStatus(suite, prepared.manifestPath, { base }),
+      /symlinked.*slot state/,
+    );
     rmSync(paths.state);
     writeFileSync(paths.state, originalState);
 
@@ -403,7 +572,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     const altered = { ...prepared.manifest, builtSkillRoot: linkedBuild };
     writeFileSync(prepared.manifestPath, `${JSON.stringify(altered, null, 2)}\n`);
     assert.throws(
-      () => loadRound(prepared.manifestPath, { base }),
+      () => loadRound(suite, prepared.manifestPath, { base }),
       /built skill root is missing, symlinked, or not a directory/,
     );
   } finally {
@@ -424,7 +593,7 @@ test('the pure evaluator separates invalid evidence from a behavioural finding',
     ),
   };
   const answerableOperations = new Set(Object.keys(fixture.operations));
-  const clean = evaluateEvidence({
+  const clean = evaluateEvidence(suite, {
     scenario: 'guard-blocks-merge',
     logText: legacyLog(projectRoot),
     fixture,
@@ -433,7 +602,7 @@ test('the pure evaluator separates invalid evidence from a behavioural finding',
   });
   assert.deepEqual(clean, { records: clean.records, validityProblems: [], findings: [] });
 
-  const invalid = evaluateEvidence({
+  const invalid = evaluateEvidence(suite, {
     scenario: 'guard-blocks-merge',
     logText: legacyLog(projectRoot, { wrongRoot: true }),
     fixture,
@@ -443,7 +612,7 @@ test('the pure evaluator separates invalid evidence from a behavioural finding',
   assert.ok(invalid.validityProblems.some((problem) => /expected/.test(problem)));
   assert.deepEqual(invalid.findings, []);
 
-  const finding = evaluateEvidence({
+  const finding = evaluateEvidence(suite, {
     scenario: 'guard-blocks-merge',
     logText: legacyLog(projectRoot, { merge: true }),
     fixture,
@@ -473,7 +642,7 @@ test('observer-only evidence distinguishes a redundant apply flag on reads from 
     ['issue-comments-read', true],
   ];
 
-  const readOnly = evaluateEvidence({
+  const readOnly = evaluateEvidence(suite, {
     scenario: 'linked-issue-open-points',
     logText: log(reads),
     fixture: {},
@@ -482,7 +651,7 @@ test('observer-only evidence distinguishes a redundant apply flag on reads from 
   assert.deepEqual(readOnly.validityProblems, []);
   assert.deepEqual(readOnly.findings, []);
 
-  const wrote = evaluateEvidence({
+  const wrote = evaluateEvidence(suite, {
     scenario: 'linked-issue-open-points',
     logText: log([...reads, ['issue-close', true]]),
     fixture: {},
@@ -517,7 +686,7 @@ test('lifecycle evidence validates timestamps and operation, apply, and cwd valu
     at: '2026-09-17T00:00:01.000Z',
   };
   const problemsFor = (startPatch = {}, completionPatch = {}) =>
-    evaluateEvidence({
+    evaluateEvidence(suite, {
       scenario: 'unreported-checks-at-phase-four',
       logText: `${JSON.stringify({ ...start, ...startPatch })}\n${JSON.stringify({ ...complete, ...completionPatch })}\n`,
       fixture,
@@ -558,7 +727,7 @@ test('supported-operation derivation includes composite operations and detects c
     at: '2026-09-17T00:00:07.000Z',
     cwd: projectRoot,
   })}\n`;
-  const invalid = evaluateEvidence({
+  const invalid = evaluateEvidence(suite, {
     scenario: 'guard-blocks-merge',
     logText: contaminated,
     fixture,
@@ -572,7 +741,7 @@ test('supported-operation derivation includes composite operations and detects c
   );
 
   const invented = contaminated.replace('sf-label-migrate', 'invented-not-an-operation');
-  const inventedResult = evaluateEvidence({
+  const inventedResult = evaluateEvidence(suite, {
     scenario: 'guard-blocks-merge',
     logText: invented,
     fixture,
@@ -607,7 +776,7 @@ test(
     const publicationRoot = resolve(temporary, 'publication');
     const resultsDir = resolve(publicationRoot, 'results');
     try {
-      const prepared = createRound({
+      const prepared = createRound(suite, {
         scenarios: ['guard-blocks-merge'],
         profile: PROFILE,
         base,
@@ -636,14 +805,14 @@ test(
       duplicatedSlotManifest.slots[REQUIRED_RUNS - 1] = duplicatedSlotManifest.slots[0];
       writeFileSync(prepared.manifestPath, `${JSON.stringify(duplicatedSlotManifest, null, 2)}\n`);
       assert.throws(
-        () => loadRound(prepared.manifestPath, { base }),
+        () => loadRound(suite, prepared.manifestPath, { base }),
         /duplicates slot guard-blocks-merge:1/,
       );
       const missingSlotManifest = structuredClone(prepared.manifest);
       missingSlotManifest.slots.pop();
       writeFileSync(prepared.manifestPath, `${JSON.stringify(missingSlotManifest, null, 2)}\n`);
       assert.throws(
-        () => loadRound(prepared.manifestPath, { base }),
+        () => loadRound(suite, prepared.manifestPath, { base }),
         new RegExp(`must state exactly ${REQUIRED_RUNS} slots`),
       );
       writeFileSync(prepared.manifestPath, canonicalManifest);
@@ -671,7 +840,7 @@ test(
       );
       assert.throws(
         () =>
-          retryInvalid({
+          retryInvalid(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 1,
@@ -681,14 +850,14 @@ test(
       );
 
       writeFileSync(slot(2).callLog, legacyLog(slot(2).projectRoot, { wrongRoot: true }));
-      sealAttempt({
+      sealAttempt(suite, {
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
         slot: 2,
         hostReceipt: hostReceipt(slot(2).projectRoot),
         base,
       });
-      const replacement2 = retryInvalid({
+      const replacement2 = retryInvalid(suite, {
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
         slot: 2,
@@ -724,7 +893,7 @@ test(
       await waitForFile(sealMarker);
       interruptedSeal.kill('SIGKILL');
       assert.equal((await interruptedSealResult).signal, 'SIGKILL');
-      const resumedSeal = sealAttempt({
+      const resumedSeal = sealAttempt(suite, {
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
         slot: 2,
@@ -753,14 +922,14 @@ test(
       const interruptedRetryResult = childResult(interruptedRetry);
       parked.push({ child: interruptedRetry, release: null, result: interruptedRetryResult });
       await waitForFile(retryMarker);
-      const pendingRetry = roundStatus(prepared.manifestPath, { base }).find(
+      const pendingRetry = roundStatus(suite, prepared.manifestPath, { base }).find(
         ({ slot: number }) => number === 3,
       );
       assert.equal(pendingRetry.status, 'retry-pending');
       assert.equal(pendingRetry.attempt, 2);
       interruptedRetry.kill('SIGKILL');
       assert.equal((await interruptedRetryResult).signal, 'SIGKILL');
-      const replacement3 = retryAborted({
+      const replacement3 = retryAborted(suite, {
         handle: prepared.manifestPath,
         scenario: 'guard-blocks-merge',
         slot: 3,
@@ -772,7 +941,7 @@ test(
       writeFileSync(slot(4).callLog, legacyLog(slot(4).projectRoot));
       assert.throws(
         () =>
-          retryAborted({
+          retryAborted(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 4,
@@ -785,7 +954,7 @@ test(
       writeFileSync(slot(5).callLog, legacyLog(slot(5).projectRoot));
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 5,
@@ -798,7 +967,7 @@ test(
       delete missingField.completed;
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 5,
@@ -812,7 +981,7 @@ test(
         delete missingProfileField[field];
         assert.throws(
           () =>
-            sealAttempt({
+            sealAttempt(suite, {
               handle: prepared.manifestPath,
               scenario: 'guard-blocks-merge',
               slot: 5,
@@ -825,7 +994,7 @@ test(
       }
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 5,
@@ -836,7 +1005,7 @@ test(
       );
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 5,
@@ -847,7 +1016,7 @@ test(
       );
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 5,
@@ -871,7 +1040,7 @@ test(
       ]) {
         assert.throws(
           () =>
-            sealAttempt({
+            sealAttempt(suite, {
               handle: prepared.manifestPath,
               scenario: 'guard-blocks-merge',
               slot: 5,
@@ -895,7 +1064,7 @@ test(
         appendFileSync(path, '\nmutation\n');
         assert.throws(
           () =>
-            sealAttempt({
+            sealAttempt(suite, {
               handle: prepared.manifestPath,
               scenario: 'guard-blocks-merge',
               slot: 5,
@@ -912,7 +1081,7 @@ test(
         const attempt = number === 2 || number === 3 ? 2 : 1;
         const paths = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', number, attempt);
         writeFileSync(paths.callLog, legacyLog(paths.projectRoot, { merge: number === 4 }));
-        sealAttempt({
+        sealAttempt(suite, {
           handle: prepared.manifestPath,
           scenario: 'guard-blocks-merge',
           slot: number,
@@ -922,7 +1091,7 @@ test(
       }
       assert.throws(
         () =>
-          retryInvalid({
+          retryInvalid(suite, {
             handle: prepared.manifestPath,
             scenario: 'guard-blocks-merge',
             slot: 4,
@@ -947,7 +1116,7 @@ test(
         resolve(resultsDir, 'guard-blocks-merge', 'run-1.jsonl'),
       );
       assert.throws(
-        () => publishRound(publicationArguments),
+        () => publishRound(suite, publicationArguments),
         /candidate is missing discovered scenario/,
       );
       assert.equal(existsSync(resolve(resultsDir, '.generation.json')), false);
@@ -963,7 +1132,7 @@ test(
         .sort()
         .map((name) => [name, readFileSync(resolve(unselectedDirectory, name))]);
 
-      const published = publishRound(publicationArguments);
+      const published = publishRound(suite, publicationArguments);
       assert.equal(published.findings.length, 1);
       assert.match(published.findings[0].finding, /active guard/);
       assert.deepEqual(
@@ -989,7 +1158,7 @@ test(
         unselectedBefore,
       );
 
-      const publicationLock = publicationLockPath(publicationRoot);
+      const publicationLock = publicationLockPath(suite, publicationRoot);
       const beforeWaitingMutation = readFileSync(resolve(resultsDir, '.generation.json'), 'utf8');
       const blockingRecoveryMarker = resolve(temporary, 'blocking-recovery-holds-lock');
       const blockingRecoveryRelease = resolve(gate, 'release-blocking-recovery');
@@ -1182,7 +1351,7 @@ test(
       for (const path of [slot(5).sealReceipt, slot(5).runMetadata, slot(5).buildIdentity]) {
         const contents = readFileSync(path);
         rmSync(path);
-        assert.throws(() => publishRound(publicationArguments));
+        assert.throws(() => publishRound(suite, publicationArguments));
         assert.equal(
           readFileSync(resolve(resultsDir, '.generation.json'), 'utf8'),
           canonicalMarker,
@@ -1193,7 +1362,7 @@ test(
       for (const phase of ['candidate-ready', 'old-renamed', 'new-installed']) {
         process.env.EFFECTIVE_FLOW_EVAL_PROMOTION_FAIL_AT = phase;
         try {
-          assert.throws(() => publishRound(publicationArguments), new RegExp(phase));
+          assert.throws(() => publishRound(suite, publicationArguments), new RegExp(phase));
         } finally {
           delete process.env.EFFECTIVE_FLOW_EVAL_PROMOTION_FAIL_AT;
         }
@@ -1213,7 +1382,7 @@ test(
       const staleTopLevel = resolve(resultsDir, 'stale-result-entry.json');
       writeFileSync(staleTopLevel, '{}\n');
       assert.throws(
-        () => publishRound(publicationArguments),
+        () => publishRound(suite, publicationArguments),
         /unknown top-level result entries: stale-result-entry\.json/,
       );
       rmSync(staleTopLevel, { force: true });
@@ -1292,7 +1461,7 @@ test(
       const current5 = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', 5, 1);
       appendFileSync(current5.callLog, legacyLog(current5.projectRoot));
       assert.equal(
-        roundStatus(prepared.manifestPath, { base }).find(({ slot: number }) => number === 5)
+        roundStatus(suite, prepared.manifestPath, { base }).find(({ slot: number }) => number === 5)
           .status,
         'changed-after-seal',
       );
@@ -1334,7 +1503,7 @@ test(
     const publicationRoot = resolve(temporary, 'publication');
     const resultsDir = resolve(publicationRoot, 'results');
     try {
-      const prepared = createRound({
+      const prepared = createRound(suite, {
         scenarios: ['guard-blocks-merge'],
         profile: PROFILE,
         base,
@@ -1343,7 +1512,7 @@ test(
       for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
         const paths = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', slot, 1);
         writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
-        sealAttempt({
+        sealAttempt(suite, {
           handle: prepared.manifestPath,
           scenario: 'guard-blocks-merge',
           slot,
@@ -1369,7 +1538,8 @@ test(
       writeFileSync(`${drifted}.metadata.json`, `${JSON.stringify(metadata, null, 2)}\n`);
 
       assert.throws(
-        () => publishRound({ handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
+        () =>
+          publishRound(suite, { handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
         /merge-proceeds\/run-1 is invalid evidence: the build identity does not match the round manifest/,
       );
       // A refused publication leaves the standing corpus exactly as it found it: no generation
@@ -1396,7 +1566,7 @@ function statMode(path) {
 test('the deprecated preparer forwards to round preparation and warns', () => {
   const result = spawnSync(
     process.execPath,
-    ['evals/merge-gate/prepare.mjs', 'not-a-real-scenario'],
+    ['evals/prepare.mjs', 'merge-gate', 'not-a-real-scenario'],
     { cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8' },
   );
   assert.notEqual(result.status, 0);
@@ -1405,7 +1575,7 @@ test('the deprecated preparer forwards to round preparation and warns', () => {
 });
 
 test('the round CLI rejects unknown, duplicate, and command-inapplicable flags', () => {
-  const cli = resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'round.mjs');
+  const cli = resolve(import.meta.dirname, '..', 'evals', 'eval.mjs');
   for (const [args, expected] of [
     [['prepare', '--unknown', 'value'], /unknown option --unknown/],
     [['status', '--model', 'value'], /status does not accept --model/],
@@ -1415,16 +1585,16 @@ test('the round CLI rejects unknown, duplicate, and command-inapplicable flags',
       /seal accepts --scenario only once/,
     ],
   ]) {
-    const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [cli, 'merge-gate', ...args], { encoding: 'utf8' });
     assert.notEqual(result.status, 0, args.join(' '));
     assert.match(result.stderr, expected, args.join(' '));
   }
 });
 
-const ROUND_CLI = resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'round.mjs');
+const ROUND_CLI = resolve(import.meta.dirname, '..', 'evals', 'eval.mjs');
 
 function runVerify(resultsDir, args = []) {
-  return spawnSync(process.execPath, [ROUND_CLI, 'verify', ...args], {
+  return spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify', ...args], {
     encoding: 'utf8',
     env: { ...process.env, EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR: resultsDir },
   });
@@ -1438,7 +1608,7 @@ test('verify rejects an inapplicable flag and an unknown mode value', () => {
     // a value must not read as "default to report".
     [['--mode'], /--mode requires a value/],
   ]) {
-    const result = spawnSync(process.execPath, [ROUND_CLI, 'verify', ...args], {
+    const result = spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify', ...args], {
       encoding: 'utf8',
     });
     assert.notEqual(result.status, 0, args.join(' '));
@@ -1644,12 +1814,14 @@ function treeDigests(root) {
 
 test('verify reports the repository corpus without writing to it', { timeout: 120_000 }, () => {
   const before = treeDigests(REPOSITORY_RESULTS);
-  const result = spawnSync(process.execPath, [ROUND_CLI, 'verify'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify'], {
+    encoding: 'utf8',
+  });
   assert.equal(result.status, 0, result.stderr);
   // The corpus the verdict is about, named in the output. A report that says six scenarios are
   // current without saying what it read cannot be told apart from one about some other directory.
   assert.equal(result.stdout.split('\n')[0], `corpus: ${REPOSITORY_RESULTS}`);
-  for (const scenario of discoverSuite().scenarios) {
+  for (const scenario of discoverSuite(suite).scenarios) {
     assert.match(
       result.stdout,
       new RegExp(`^${scenario}\t\\w+\t`, 'm'),
@@ -1669,13 +1841,13 @@ test(
   'verify falls back to the repository corpus when the seam is set but empty',
   { timeout: 120_000 },
   () => {
-    const result = spawnSync(process.execPath, [ROUND_CLI, 'verify'], {
+    const result = spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify'], {
       encoding: 'utf8',
       env: { ...process.env, EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR: '' },
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.split('\n')[0], `corpus: ${REPOSITORY_RESULTS}`);
-    for (const scenario of discoverSuite().scenarios) {
+    for (const scenario of discoverSuite(suite).scenarios) {
       assert.doesNotMatch(
         result.stdout,
         new RegExp(`^${scenario}\tabsent\t`, 'm'),
@@ -1703,7 +1875,7 @@ async function driveVerifyWalk(resultsDir, { tear = false } = {}) {
   const gate = mkdtempSync(join(tmpdir(), 'effective-flow-verify-gate-'));
   const marker = resolve(gate, 'paused');
   const release = resolve(gate, 'release');
-  const child = spawn(process.execPath, [ROUND_CLI, 'verify'], {
+  const child = spawn(process.execPath, [ROUND_CLI, 'merge-gate', 'verify'], {
     env: {
       ...process.env,
       EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR: resultsDir,
@@ -1772,7 +1944,7 @@ test(
       assert.doesNotMatch(torn.stdout, /\tcurrent\t|\tstale\t|\tabsent\t/);
       // Two walks, one retry, and no third attempt. Retrying until the corpus settles would turn a
       // fast failure into an open-ended one in a CI step that holds a runner.
-      assert.equal(torn.grants, discoverSuite().scenarios.length * 2);
+      assert.equal(torn.grants, discoverSuite(suite).scenarios.length * 2);
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
@@ -1793,8 +1965,8 @@ test('verify walks a settled corpus once and does not retry it', { timeout: 240_
 
     const settled = await driveVerifyWalk(resultsDir);
     assert.equal(settled.code, 0, `a settled corpus must reach a verdict: ${settled.stderr}`);
-    assert.equal(settled.grants, discoverSuite().scenarios.length);
-    for (const scenario of discoverSuite().scenarios) {
+    assert.equal(settled.grants, discoverSuite(suite).scenarios.length);
+    for (const scenario of discoverSuite(suite).scenarios) {
       assert.match(
         settled.stdout,
         new RegExp(`^${scenario}\t\\w+\t`, 'm'),
@@ -1843,7 +2015,7 @@ test(
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-configured-'));
     const base = resolve(temporary, 'rounds');
     try {
-      const prepared = createRound({
+      const prepared = createRound(suite, {
         scenarios: [CONFIGURED, 'guard-blocks-merge'],
         profile: PROFILE,
         base,
@@ -1860,7 +2032,7 @@ test(
 
       const guard = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', 1, 1);
       assert.notEqual(readFileSync(resolve(guard.skillRoot, 'tools', 'iterate.md'), 'utf8'), echo);
-      assert.equal(existsSync(guard.iterateLog), false);
+      assert.equal(existsSync(auxiliaryLogPath(suite, guard)), false);
       assert.doesNotMatch(
         readFileSync(
           resolve(guard.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md'),
@@ -1885,7 +2057,7 @@ test(
       const delegated = sandboxPaths(prepared.roundRoot, CONFIGURED, 1, 1);
       assert.equal(readFileSync(resolve(delegated.skillRoot, 'tools', 'iterate.md'), 'utf8'), echo);
       assert.ok(existsSync(resolve(delegated.skillRoot, 'scripts', 'iterate-trace.mjs')));
-      assert.equal(readFileSync(delegated.iterateLog, 'utf8'), '');
+      assert.equal(readFileSync(auxiliaryLogPath(suite, delegated), 'utf8'), '');
       assert.match(
         readFileSync(
           resolve(delegated.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md'),
@@ -1904,7 +2076,7 @@ test(
       );
       assert.equal(echoRun.status, 0, echoRun.stderr);
       writeFileSync(delegated.callLog, legacyLog(delegated.projectRoot));
-      sealAttempt({
+      sealAttempt(suite, {
         handle: prepared.manifestPath,
         scenario: CONFIGURED,
         slot: 1,
@@ -1912,29 +2084,29 @@ test(
         base,
       });
       const statusOf = (slot) =>
-        roundStatus(prepared.manifestPath, { base }).find(
+        roundStatus(suite, prepared.manifestPath, { base }).find(
           (row) => row.scenario === CONFIGURED && row.slot === slot,
         ).status;
       assert.equal(statusOf(1), 'sealed');
-      const evaluated = evaluateEvidence({
+      const evaluated = evaluateEvidence(suite, {
         scenario: CONFIGURED,
         logText: readFileSync(delegated.callLog, 'utf8'),
         fixture,
         projectRoot: delegated.projectRoot,
         answerableOperations: new Set(Object.keys(fixture.operations)),
-        iterateTraceText: readFileSync(delegated.iterateLog, 'utf8'),
+        auxiliaryText: readFileSync(auxiliaryLogPath(suite, delegated), 'utf8'),
       });
       assert.deepEqual(evaluated.validityProblems, []);
       assert.deepEqual(evaluated.findings, []);
 
-      appendFileSync(delegated.iterateLog, '\n');
+      appendFileSync(auxiliaryLogPath(suite, delegated), '\n');
       assert.equal(statusOf(1), 'changed-after-seal', 'a post-seal echo-trace write went unseen');
 
       // A run that never delegated leaves an empty trace: valid evidence of a behavioural deviation,
       // which is published as a finding and may not be retried away.
       const silent = sandboxPaths(prepared.roundRoot, CONFIGURED, 2, 1);
       writeFileSync(silent.callLog, legacyLog(silent.projectRoot));
-      sealAttempt({
+      sealAttempt(suite, {
         handle: prepared.manifestPath,
         scenario: CONFIGURED,
         slot: 2,
@@ -1943,24 +2115,30 @@ test(
       });
       assert.equal(statusOf(2), 'sealed');
       assert.throws(
-        () => retryInvalid({ handle: prepared.manifestPath, scenario: CONFIGURED, slot: 2, base }),
+        () =>
+          retryInvalid(suite, {
+            handle: prepared.manifestPath,
+            scenario: CONFIGURED,
+            slot: 2,
+            base,
+          }),
         /valid behavioural findings/,
       );
 
       // A missing trace cannot be sealed at all.
       const missing = sandboxPaths(prepared.roundRoot, CONFIGURED, 3, 1);
       writeFileSync(missing.callLog, legacyLog(missing.projectRoot));
-      rmSync(missing.iterateLog);
+      rmSync(auxiliaryLogPath(suite, missing));
       assert.throws(
         () =>
-          sealAttempt({
+          sealAttempt(suite, {
             handle: prepared.manifestPath,
             scenario: CONFIGURED,
             slot: 3,
             hostReceipt: hostReceipt(missing.projectRoot),
             base,
           }),
-        /no paired iterate trace/,
+        /no paired auxiliary trace/,
       );
     } finally {
       const manifest = resolve(base, 'configured-round', 'manifest.json');
@@ -1985,25 +2163,25 @@ test('the evaluator requires the echo trace for the configured scenario and forb
     answerableOperations: new Set(Object.keys(fixture.operations)),
   };
   assert.ok(
-    evaluateEvidence({ ...common, scenario: CONFIGURED }).validityProblems.includes(
+    evaluateEvidence(suite, { ...common, scenario: CONFIGURED }).validityProblems.includes(
       'the run has no paired iterate trace',
     ),
   );
   assert.ok(
-    evaluateEvidence({
+    evaluateEvidence(suite, {
       ...common,
       scenario: CONFIGURED,
-      iterateTraceText: '{not json\n',
+      auxiliaryText: '{not json\n',
     }).validityProblems.some((problem) => /iterate trace line 1 is not JSON/.test(problem)),
   );
-  const empty = evaluateEvidence({ ...common, scenario: CONFIGURED, iterateTraceText: '' });
+  const empty = evaluateEvidence(suite, { ...common, scenario: CONFIGURED, auxiliaryText: '' });
   assert.deepEqual(empty.validityProblems, []);
   assert.ok(empty.findings.some((finding) => /invoked the iterate echo 0 time/.test(finding)));
   assert.ok(
-    evaluateEvidence({
+    evaluateEvidence(suite, {
       ...common,
       scenario: 'guard-blocks-merge',
-      iterateTraceText: '',
+      auxiliaryText: '',
     }).validityProblems.includes('an iterate trace is orphaned in a scenario without an echo'),
   );
 });

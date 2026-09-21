@@ -5,7 +5,7 @@ is still open and whose canonical planning comment records two open points. The 
 observer-only mode, skips everything the open-PR path would do, and reaches Phase 5.5 — where the
 post-merge observation reads that comment once for the report.
 
-Prepare the sandbox with `pnpm prepare:merge-gate-eval linked-issue-open-points`, then hand the
+Prepare the sandbox with `pnpm eval merge-gate prepare --scenario linked-issue-open-points`, then hand the
 prompt below to a **fresh** agent — one that has not read this file. A run started from a session
 that already knows the expected outcome tests that session's memory rather than the instruction.
 

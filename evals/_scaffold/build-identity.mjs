@@ -1,6 +1,12 @@
 // The identity of the thing a run measured, computed the same way by the scaffold that provisions a
 // run and by the assertions that later read its archived log.
 //
+// It is shared by every behavioural eval suite and knows none of them. What a suite loads, which
+// files are its instrument, which scenario carries a skill overlay and which archived instrument
+// digest its one legacy waiver accepts are all read from the suite configuration handed in as
+// `suite`; nothing here names a tool. The commentary below is written from `merge-gate`, the first
+// suite, because that is where every one of these rules was decided.
+//
 // The gap this closes: an archived call log records what a run *did*, and nothing about the code it
 // did it to. Left that way, `src/tools/merge-gate.md` can be restructured and the logs of runs
 // against the previous text keep reporting green underneath — the suite would go on certifying a
@@ -132,15 +138,13 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import process from 'node:process';
 import { relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { scenarioSetup } from './configured-reviewer-scenario.mjs';
 
-const SUITE_ROOT = resolve(import.meta.dirname, '..');
-const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
+const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
 
 // A marker rather than a plausible hash, so a tree built for an eval cannot be mistaken for one
 // built for release if it ever escapes the sandbox.
@@ -157,19 +161,23 @@ const EVAL_GIT_HASH = 'eval';
 // isolated attempts, the other only computes this digest — and changing what this file hashes
 // already shows up as a changed digest without hashing the hasher itself.
 //
-// `configured-reviewer-scenario.mjs` is a member for every scenario, not only the one it configures:
-// the scaffold asks it which project-setup rows and which `iterate` overlay each slot receives, so a
-// change there can change what any run sees. The echo it selects — `iterate-echo.md` and
-// `iterate-trace.mjs` — is deliberately not an instrument file: it is copied into the slot's skill
-// tree and hashed there, at the paths the run executes, as part of `skill`.
-const INSTRUMENT_FILES = [
-  resolve(import.meta.dirname, 'remote-tracker.mjs'),
-  resolve(import.meta.dirname, 'sandbox.mjs'),
-  resolve(import.meta.dirname, 'scaffold.mjs'),
-  resolve(import.meta.dirname, 'prompt.mjs'),
-  resolve(import.meta.dirname, 'suite.mjs'),
-  resolve(import.meta.dirname, 'configured-reviewer-scenario.mjs'),
-];
+// `merge-gate`'s `configured-reviewer-scenario.mjs` is a member for every scenario, not only the one
+// it configures: the scaffold asks it which project-setup rows and which `iterate` overlay each slot
+// receives, so a change there can change what any run sees. The echo it selects — `iterate-echo.md`
+// and `iterate-trace.mjs` — is deliberately not an instrument file: it is copied into the slot's
+// skill tree and hashed there, at the paths the run executes, as part of `skill`.
+//
+// The list itself is `suite.instrumentFiles`, declared by each suite beside the modules it names,
+// and a suite's own configuration file is a member of it. The set it declares is already visible in
+// the digest that set produces, but the *selection* is not: `scenarioSetup`, `projectDocuments`, the
+// tracker stub and the overlay are bound there, and re-pointing one of them changes what every slot
+// sees while every file the digest covers stays byte-identical.
+//
+// What stays out is the scenario registry, which each suite therefore keeps in a module of its own
+// (`scenario-registry.mjs`) rather than in its configuration. A list of names is the one declaration
+// no run reads, and hashing it costs every archived round of every other scenario a re-record per
+// name added. `validateSuite` holds both halves — the configuration hashed, the registry not — since
+// either half alone is defeated by moving a binding into the unhashed module.
 
 export function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
@@ -179,56 +187,34 @@ export function digestFile(path) {
   return digestOf(readFileSync(path));
 }
 
-// The seeds of the load set: the router that dispatches the invocation, the tool body that is the
-// gate itself, the three artifacts the gate delegates into — the `iterate` workflow it hands a
-// review round to, and the two worker contracts it can select — and the delegation-envelope helper
-// the gate runs to build and validate every one of those handoffs, together with the `-core.mjs`
-// half that helper imports.
+// The seeds of the load set are `suite.loadSetSeeds`, and why a given suite seeds what it seeds is
+// that suite's own rationale — `evals/merge-gate/suite.config.mjs` carries it for the gate. Two
+// rules are this module's, because no suite can state them for itself:
 //
-// **The envelope helper is seeded rather than reached, and it has to be.** A sandbox run executes
-// the shipped `scripts/delegation-envelope.mjs`, so a change to it changes what the run does; but a
-// `.mjs` file carries no load pointer, and the tool body names it as a shell command, which is
-// ordinary prose to `LOAD_POINTER_RE`. Nothing in the derivation can therefore find it, and left
-// unseeded it was the one piece of executed text a run could change underneath the archived stamps
-// while every one of them went on reporting current.
+// A seed added, removed or re-pointed changes the derived set, so it changes `skill.files` and the
+// skill digest with it, quite apart from the declaring file now being hashed. That makes the seed
+// list doubly self-enforcing — which is exactly why the one shape that escapes it needs its own
+// guard.
 //
-// `scripts/remote-tracker.mjs` stays deliberately absent, together with its `-core.mjs` half, and
-// the contrast with the envelope helper is the membership rule rather than an inconsistency:
-// `scaffold.mjs` replaces that path in the copied tree with the stub, which is hashed as the
-// `instrument` part instead, so a run loads neither the shipped helper nor the module it imports.
-// Nothing replaces the envelope helper, so a run loads exactly what the build shipped.
-const LOAD_SET_SEEDS = [
-  'SKILL.md',
-  'tools/merge-gate.md',
-  'tools/iterate.md',
-  'workers/effective-flow-merge-conflict-resolver.md',
-  'workers/effective-flow-code-validator.md',
-  'scripts/delegation-envelope.mjs',
-  'scripts/delegation-envelope-core.mjs',
-];
+// **A collapse to nothing escapes it, which is why `deriveLoadSet` refuses an empty seed list.**
+// Self-enforcement rests on a shorter set producing a *different* digest, and a set of zero files
+// still produces a perfectly well-formed one. A suite whose seeds resolved empty would bind every
+// archived run to no files at all, and `verify` would report it current forever while the sources
+// moved underneath. The same holds for `instrumentIdentity` and an empty `suite.instrumentFiles`.
 
-const ITERATE_ECHO_SOURCE = resolve(import.meta.dirname, 'iterate-echo.md');
-const ITERATE_TRACE_SOURCE = resolve(import.meta.dirname, 'iterate-trace.mjs');
-const ITERATE_TRACE_SKILL_PATH = 'scripts/iterate-trace.mjs';
-
-// Apply the exact overlay a scenario executes to a copied skill tree. The echo replaces the
-// production `tools/iterate.md` seed rather than being hashed beside it, and its trace helper is an
-// additional seed because the replacement explicitly executes it. Both files therefore appear
-// once in `skill.files`, at their sandbox paths, and never again under `instrument.files`.
+// Apply the exact overlay a scenario executes to a copied skill tree. For `merge-gate`'s one
+// overlaid scenario the echo replaces the production `tools/iterate.md` seed rather than being
+// hashed beside it, and its trace helper is an additional seed because the replacement explicitly
+// executes it. Both files therefore appear once in `skill.files`, at their sandbox paths, and never
+// again under `instrument.files`.
 //
 // It mutates the tree it is given, so it is applied only to a slot's own skill copy (by
 // `scaffold.mjs`) or to a throwaway copy (by `pristineScenarioBuildIdentity`) — never to a round's
 // shared build, which every other scenario's slots are copied from.
-export function applyScenarioSkillOverlay(scenario, skillRoot) {
-  const setup = scenarioSetup(scenario);
-  if (!setup.iterateEcho) return setup;
-  for (const source of [ITERATE_ECHO_SOURCE, ITERATE_TRACE_SOURCE]) {
-    if (!existsSync(source))
-      throw new Error(`${scenario}: iterate echo source missing at ${source}`);
-  }
-  copyFileSync(ITERATE_ECHO_SOURCE, resolve(skillRoot, 'tools', 'iterate.md'));
-  copyFileSync(ITERATE_TRACE_SOURCE, resolve(skillRoot, ITERATE_TRACE_SKILL_PATH));
-  return setup;
+export function applyScenarioSkillOverlay(suite, scenario, skillRoot) {
+  if (!suite.overlay.applies(scenario)) return false;
+  suite.overlay.apply(scenario, skillRoot);
+  return true;
 }
 
 // The built form of a ```lazy-include fence, as `renderLazyPointer` in build-lib.mjs emits it. The
@@ -276,8 +262,13 @@ const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 // the affected rounds have been re-stamped against it, nothing downstream can tell it from a
 // legitimately narrower one — the dropped fragment is then free to drift uncovered. Failing here is
 // the only place the difference is still visible.
-function deriveLoadSet(skillRoot, iterateEcho = false) {
-  const seeds = iterateEcho ? [...LOAD_SET_SEEDS, ITERATE_TRACE_SKILL_PATH] : LOAD_SET_SEEDS;
+function deriveLoadSet(skillRoot, seeds) {
+  // Zero seeds is the one shape the checks below cannot catch: there is no missing seed and no
+  // unresolvable pointer, only an empty set that hashes to a plausible digest of nothing. It is the
+  // loudest possible failure here and an undetectable one two steps later.
+  if (seeds.length === 0) {
+    throw new Error(`the suite declares no load-set seeds, so no skill identity can be computed`);
+  }
   const set = new Set(seeds);
   for (const seed of seeds) {
     if (existsSync(resolve(skillRoot, seed))) continue;
@@ -363,9 +354,21 @@ const RENDERED_VERSION_RE =
   /(`[^`\n]+ <tool>` \(version )\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? \([^()\s]+\)(\)\.)$/gm;
 const VERSION_REPLACEMENT = '$1<version>$2';
 
-export function builtSkillIdentity(skillRoot, { iterateEcho = false } = {}) {
+export function builtSkillIdentity(skillRoot, seeds) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const { digest, files } = hashFiles(deriveLoadSet(skillRoot, iterateEcho), skillRoot);
+  const { digest, files } = hashFiles(deriveLoadSet(skillRoot, seeds), skillRoot);
+  // The neutral body below replaces this file's entry in a copy of the exact set, so the file has
+  // to be in that set. If it is not, `neutralFiles` gains a member the exact digest never covered,
+  // and the two digests then describe different file sets — with `isVersionStampOnlyPredecessor`
+  // waiving an archived round on the strength of the wider one. A suite that does not load the
+  // router has no version stamp to neutralise and must say so by failing here rather than by
+  // silently acquiring one.
+  if (!Object.hasOwn(files, VERSION_STAMPED_FILE)) {
+    throw new Error(
+      `${VERSION_STAMPED_FILE} is not in the derived load set at ${skillRoot}, so the ` +
+        'version-neutral skill digest would cover a file the exact digest does not',
+    );
+  }
   const routerPath = resolve(skillRoot, VERSION_STAMPED_FILE);
   const body = readFileSync(routerPath, 'utf8');
   // Counted before replacing, because a global replacement cannot report how many occurrences it
@@ -432,9 +435,6 @@ export function isVersionStampOnlyPredecessor(stamp, identity) {
 // and they could not see why. Naming the part first matters too: "the built skill moved" and "the
 // stub moved" call for different reactions, and only one of them is a change to the gate.
 const IDENTITY_PARTS = ['skill', 'instrument', 'scenario_inputs'];
-export const PREDECESSOR_LEGACY_INSTRUMENT_DIGEST =
-  'sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040';
-export const TRACKER_STUB_PATH = 'evals/merge-gate/_scaffold/remote-tracker.mjs';
 
 // A change to `build.mjs` can move every file in the built tree at once, and a stamp written before
 // a part existed reads as though the whole part appeared. Either way the list runs to dozens of lines
@@ -472,33 +472,36 @@ function describeDrift(archived, current) {
 // `test/merge-gate-eval.test.mjs` and moved here when a second and third caller appeared, and a
 // relocation is exactly the kind of change that quietly promotes a deliberately temporary exception
 // into a standing rule: nothing about a file under `_scaffold/` says "one generation" the way a
-// test case did. It still means one generation. `PREDECESSOR_LEGACY_INSTRUMENT_DIGEST` is a
+// test case did. It still means one generation. A suite's `legacyInstrumentWaiver` carries a
 // hardcoded digest of one superseded stub, so the waiver stops applying on its own the moment the
 // rounds carrying that digest are re-recorded — and the correct response to it firing on a corpus
-// nobody recognises is to delete this function, not to add a second digest beside it.
+// nobody recognises is to delete this function and that declaration, not to add a second digest
+// beside them.
 //
 // **As of this commit the waiver has no subject.** Every one of the thirty archived stamps under
-// `evals/merge-gate/results/` carries the current instrument digest; the predecessor digest below
-// appears in none of them, so this function cannot fire on the corpus that ships. The deletion the
+// `evals/merge-gate/results/` carries the current instrument digest; the predecessor digest the
+// suite declares appears in none of them, so this function cannot fire on the corpus that ships. The deletion the
 // paragraph above calls for is therefore already available and deliberately not taken here: this
 // change moved the waiver, it did not decide its end of life, and removing it belongs to the change
 // that says so in its own right. Re-check the corpus before deleting — a round re-recorded from an
 // older checkout could reintroduce the digest — and delete the function, the constant and their
 // unit tests together when it is still absent.
-export function isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity) {
+export function isCompatibleLegacyInstrumentPredecessor(suite, scenario, stamp, identity) {
+  const waiver = suite.legacyInstrumentWaiver;
+  if (!waiver) return false;
   return (
-    scenario !== 'unreported-checks-at-phase-four' &&
+    !waiver.excludedScenarios.includes(scenario) &&
     isDeepStrictEqual(stamp.skill, identity.skill) &&
     isDeepStrictEqual(stamp.scenario_inputs, identity.scenario_inputs) &&
-    stamp.instrument?.digest === PREDECESSOR_LEGACY_INSTRUMENT_DIGEST &&
+    stamp.instrument?.digest === waiver.predecessorInstrumentDigest &&
     changedFiles(stamp.instrument, identity.instrument).length === 1 &&
-    changedFiles(stamp.instrument, identity.instrument)[0] === TRACKER_STUB_PATH
+    changedFiles(stamp.instrument, identity.instrument)[0] === waiver.trackerStubPath
   );
 }
 
 // The single answer to "does this archived stamp still describe the working tree" **for the callers
 // that report on a corpus**: `verifyFreshness` in `round-core.mjs` and, through it,
-// `pnpm merge-gate-eval verify`, which owns the question for CI. It was written as three helpers in
+// `pnpm eval <tool> verify`, which owns the question for CI. It was written as three helpers in
 // `test/merge-gate-eval.test.mjs`, beside the per-scenario assertion that used to ask it on every
 // pull request; when that assertion moved out, the rule moved here, beside the identity code it is
 // about, rather than into the one caller that was left.
@@ -530,10 +533,10 @@ export function isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identit
 // decision — `scenarioFreshness` folds both into `stale` there, and says why — and no claim here
 // binds it. `waived` names which waiver fired, so a reader is never left to guess why a differing
 // digest was accepted.
-export function freshnessVerdict(scenario, stamp, identity) {
+export function freshnessVerdict(suite, scenario, stamp, identity) {
   if (!stamp) return { state: 'missing-stamp' };
   if (stamp.digest === identity.digest) return { state: 'current' };
-  if (isCompatibleLegacyInstrumentPredecessor(scenario, stamp, identity)) {
+  if (isCompatibleLegacyInstrumentPredecessor(suite, scenario, stamp, identity)) {
     return { state: 'waived', waiver: 'legacy-instrument' };
   }
   // The release bump, and nothing else. A release-please pull request rewrites
@@ -560,8 +563,16 @@ export function freshnessVerdict(scenario, stamp, identity) {
   };
 }
 
-export function instrumentIdentity() {
-  return hashFiles(INSTRUMENT_FILES, REPOSITORY_ROOT);
+export function instrumentIdentity(suite) {
+  // Empty for the same reason and with the same consequence as an empty seed list: a digest of no
+  // files is well-formed, so nothing downstream can tell it from a suite whose bench genuinely did
+  // not move.
+  if (suite.instrumentFiles.length === 0) {
+    throw new Error(
+      `the suite declares no instrument files, so no instrument identity can be computed`,
+    );
+  }
+  return hashFiles(suite.instrumentFiles, REPOSITORY_ROOT);
 }
 
 export function portableSkillRoot(outputRoot) {
@@ -598,15 +609,17 @@ export function buildPortableSkill(outputRoot) {
 // echo therefore fails on a tree without one — the trace helper is a load-set seed — rather than
 // describing the production `iterate` it never ran. Use `pristineScenarioBuildIdentity` for a
 // round build or a fresh build that has not been overlaid.
-export function scenarioBuildIdentity(scenario, skillRoot) {
+export function scenarioBuildIdentity(suite, scenario, skillRoot) {
   if (!existsSync(skillRoot)) throw new Error(`no built skill at ${skillRoot}`);
-  const setup = scenarioSetup(scenario);
-  const skill = builtSkillIdentity(skillRoot, { iterateEcho: setup.iterateEcho });
-  const instrument = instrumentIdentity();
+  const skill = builtSkillIdentity(skillRoot, [
+    ...suite.loadSetSeeds,
+    ...suite.overlay.extraSeeds(scenario),
+  ]);
+  const instrument = instrumentIdentity(suite);
   const scenarioInputs = hashFiles(
     [
-      resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`),
-      resolve(SUITE_ROOT, 'scenarios', `${scenario}.md`),
+      resolve(suite.root, 'fixtures', `${scenario}.json`),
+      resolve(suite.root, 'scenarios', `${scenario}.md`),
     ],
     REPOSITORY_ROOT,
   );
@@ -623,15 +636,17 @@ export function scenarioBuildIdentity(scenario, skillRoot) {
 // `builtSkillRoot`. Scenarios without an overlay hash the build directly; the configured-reviewer
 // scenario hashes a throwaway overlaid copy, so asking for its identity never leaks the echo into
 // the shared build every other scenario is provisioned from.
-export function pristineScenarioBuildIdentity(scenario, builtSkillRoot) {
+export function pristineScenarioBuildIdentity(suite, scenario, builtSkillRoot) {
   if (!existsSync(builtSkillRoot)) throw new Error(`no built skill at ${builtSkillRoot}`);
-  if (!scenarioSetup(scenario).iterateEcho) return scenarioBuildIdentity(scenario, builtSkillRoot);
+  if (!suite.overlay.applies(scenario)) {
+    return scenarioBuildIdentity(suite, scenario, builtSkillRoot);
+  }
   const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-identity-'));
   try {
     const skillRoot = resolve(scratch, 'skill');
     cpSync(builtSkillRoot, skillRoot, { recursive: true });
-    applyScenarioSkillOverlay(scenario, skillRoot);
-    return scenarioBuildIdentity(scenario, skillRoot);
+    applyScenarioSkillOverlay(suite, scenario, skillRoot);
+    return scenarioBuildIdentity(suite, scenario, skillRoot);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

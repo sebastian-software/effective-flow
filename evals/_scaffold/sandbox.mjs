@@ -1,6 +1,5 @@
 import { resolve, sep } from 'node:path';
 
-export const SANDBOX_BASE = resolve('/tmp', 'effective-flow-merge-gate-eval', 'rounds');
 export const SCENARIO_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 function contained(root, candidate, label) {
@@ -47,13 +46,20 @@ export function sandboxPaths(roundRoot, scenario, slot, attempt = 1) {
     traceDir,
     callLog: resolve(traceDir, 'tracker-calls.jsonl'),
     callLogLock: resolve(traceDir, 'tracker-calls.jsonl.lock'),
-    // Written only by the configured-reviewer scenario's `iterate` echo; see
-    // `configured-reviewer-scenario.mjs`. Every other scenario must leave it absent.
-    iterateLog: resolve(traceDir, 'iterate-calls.jsonl'),
     buildIdentity: resolve(traceDir, 'build-identity.json'),
     prompt: resolve(attemptRoot, 'prompt.txt'),
     runMetadata: resolve(attemptRoot, 'run-metadata.json'),
     hostReceipt: resolve(attemptRoot, 'host-receipt.json'),
     sealReceipt: resolve(attemptRoot, 'seal.json'),
   };
+}
+
+// The second evidence file a suite may pair with the call log, named by that suite rather than by
+// this module: only the suite knows whether it has one and what the helper that writes it calls it.
+// `merge-gate` has one — the `iterate` echo's trace — and a suite without an overlay of that kind
+// has none, which is what `null` says.
+export function auxiliaryLogPath(suite, paths) {
+  const auxiliary = suite.auxiliaryEvidence;
+  if (!auxiliary) return null;
+  return resolve(paths.traceDir, auxiliary.fileName);
 }

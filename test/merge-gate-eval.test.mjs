@@ -10,24 +10,33 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import {
   buildPortableSkill,
   freshnessVerdict,
+  instrumentIdentity,
   isCompatibleLegacyInstrumentPredecessor,
   isVersionStampOnlyPredecessor,
-  PREDECESSOR_LEGACY_INSTRUMENT_DIGEST,
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
-  TRACKER_STUB_PATH,
-} from '../evals/merge-gate/_scaffold/build-identity.mjs';
-import {
-  evaluateEvidence,
-  mutatingTrackerOperations,
-} from '../evals/merge-gate/_scaffold/evaluate.mjs';
-import { discoverSuite, REQUIRED_RUNS } from '../evals/merge-gate/_scaffold/suite.mjs';
+} from '../evals/_scaffold/build-identity.mjs';
+import { evaluateEvidence, mutatingTrackerOperations } from '../evals/_scaffold/evaluate.mjs';
+import { TRACKER_STUB_SKILL_PATH } from '../evals/_scaffold/scaffold.mjs';
+import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
+import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
+import suite from '../evals/merge-gate/suite.config.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
+
+// The one generation of accepted instrument difference is declared by the suite rather than by the
+// shared identity module, so the waiver's two values are read from there and asserted here under
+// the names the cases below already used.
+const { predecessorInstrumentDigest: PREDECESSOR_LEGACY_INSTRUMENT_DIGEST } =
+  suite.legacyInstrumentWaiver;
+const { trackerStubPath: TRACKER_STUB_PATH } = suite.legacyInstrumentWaiver;
+// The instrument file that owns the tracker stub's destination inside a slot's skill tree.
+const SCAFFOLD_PATH = resolve(import.meta.dirname, '..', 'evals', '_scaffold', 'scaffold.mjs');
 
 // The behavioural safety net of docs/plan/2026-09-02-merge-gate-behavioural-evals.md, asserted as
 // ordinary tests over ordinary files. There is no harness here and no model: `evals/merge-gate/
@@ -124,7 +133,7 @@ function operationStarts(records, operation) {
 // assertion answers, and it is answered in both directions below.
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
 
-const SCENARIOS = discoverSuite().scenarios;
+const SCENARIOS = discoverSuite(suite).scenarios;
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -278,6 +287,147 @@ test('the build stamp covers the built tree a run actually loads', () => {
   }
 });
 
+// The scenario registry sits outside the hashed instrument set on purpose, and nothing else in this
+// suite holds that open. While the registry lived in `evals/_scaffold/suite.mjs` — an instrument
+// file — declaring one new scenario name moved the instrument digest and staled every archived round
+// of every other scenario: six scenarios times five runs, roughly three hours of hand-recorded agent
+// sessions, paid for a list of names no run ever reads. The rationale is written above
+// `INSTRUMENT_FILES` in `build-identity.mjs`; the three tests below are what make it a property
+// rather than a comment, so the cost cannot come back silently.
+//
+// The first asserts on the digest and not on a file list, because the claim is "the registry is not
+// hashed" rather than "this particular file is absent" — a registry moved into any hashed module
+// would restore the cost just as completely. The second pins the membership rule at the registry
+// module, so an edit that starts hashing it fails here instead of in three hours of re-recording.
+//
+// The third pins the half that pays for the first two. Cheapness bought by leaving the whole suite
+// configuration unhashed was not cheapness, it was a hole: that file binds `scenarioSetup`,
+// `projectDocuments`, the tracker stub and the overlay, so re-pointing one of them changes what
+// every slot sees without a byte of any hashed file moving, and every archived stamp goes on
+// reporting current. The names live in their own module and the configuration is hashed again;
+// keeping only one of those two facts under test lets the other be defeated by moving a binding into
+// the unhashed module.
+const UNDECLARED_SCENARIO = 'a-scenario-that-does-not-exist-yet';
+
+test("adding a scenario leaves the instrument digest untouched, so a new scenario costs its own evidence and no other scenario's", () => {
+  const registryWithOneMoreName = Object.freeze([...suite.scenarios, UNDECLARED_SCENARIO]);
+  const baseline = instrumentIdentity(suite);
+  const widened = instrumentIdentity({ ...suite, scenarios: registryWithOneMoreName });
+
+  assert.equal(
+    widened.digest,
+    baseline.digest,
+    `the instrument digest moved from ${baseline.digest} to ${widened.digest} when the scenario registry gained one name. A registry entry is a list of names no run reads, so hashing it invalidates every archived round of every other scenario for a change none of them could observe — six scenarios times five runs of hand-recorded sessions per added name. Keep the registry out of the instrument.`,
+  );
+
+  // The other half of the same property, and the reason the assertion above is not merely true of
+  // a field nobody reads: the registry carried on the suite object is the one the scaffold
+  // actually consumes. Were it moved back into a hashed module, the parity contract would stop
+  // reading this field — and the digest would go back to moving with every added name while the
+  // assertion above kept passing.
+  assert.throws(
+    () => discoverSuite({ ...suite, scenarios: registryWithOneMoreName }),
+    new RegExp(`${UNDECLARED_SCENARIO} missing scenarios, fixtures`),
+    'the parity contract ignored a name added to the registry on the suite configuration, so the registry the scaffold reads is declared somewhere else — move it back to the unhashed configuration before the instrument starts hashing it again',
+  );
+});
+
+test('the scenario registry module is not an instrument file, so declaring a scenario cannot stale every archived round', async () => {
+  const registryPath = realpathSync(suite.scenarioRegistry);
+  const hashed = suite.instrumentFiles.map((path) => realpathSync(path));
+
+  assert.ok(
+    !hashed.includes(registryPath),
+    `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
+  );
+  assert.equal(
+    basename(registryPath),
+    'scenario-registry.mjs',
+    `the suite points scenarioRegistry at ${registryPath}. The unhashed module is meant to hold names and nothing else, and a suite that points the field at another file of its own has declared whatever that file contains exempt from the instrument.`,
+  );
+
+  // Ties the structural claim to the thing it protects. Asserting only that this path is unhashed
+  // says nothing while the registry lives elsewhere, so read the module back and require it to be
+  // where the registry is declared.
+  const registrySource = readFileSync(registryPath, 'utf8');
+  for (const scenario of suite.scenarios) {
+    assert.ok(
+      registrySource.includes(scenario),
+      `the scenario registry names ${scenario}, which ${registryPath} does not mention — so the registry is declared in some other module. Unless that module is unhashed too, adding a scenario is back to costing a re-record of every archived round.`,
+    );
+  }
+
+  // The other direction, and the one that keeps the exemption honest: this module is exempt because
+  // names are all it holds. A function, a path or a document template moved here would be unhashed
+  // behaviour, which is precisely what hashing the configuration closed.
+  const registryModule = await import(pathToFileURL(registryPath).href);
+  for (const [name, value] of Object.entries(registryModule)) {
+    assert.ok(
+      Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
+      `${registryPath} exports ${name}, which is not a list of names. The module is kept out of the instrument because a scenario registry changes nothing any run does; anything else declared here is behaviour no archived stamp would ever notice moving.`,
+    );
+  }
+});
+
+// The two bindings the finding named, each rebound in the object literal rather than in the import
+// block: a rebinding is the change the file-level hash is there to catch, since it moves what every
+// slot sees while every file the digest already covered stays byte-identical.
+const BEHAVIOUR_BEARING_REBINDINGS = [
+  {
+    field: 'projectDocuments',
+    pattern: /\n  projectDocuments,\n/,
+    replacement: "\n  projectDocuments: () => ({ agents: '', setupAdr: '' }),\n",
+    consequence: "every slot's AGENTS.md and project-setup ADR",
+  },
+  {
+    field: 'scenarioSetup',
+    pattern: /\n  scenarioSetup,\n  projectDocuments,\n/,
+    replacement: '\n  scenarioSetup: () => ({}),\n  projectDocuments,\n',
+    consequence: 'the rows and overlay each scenario is provisioned with',
+  },
+];
+
+test('rebinding a behaviour-bearing value in the suite configuration moves the instrument digest', () => {
+  const configPath = realpathSync(suiteConfigPath(suite.name));
+  assert.ok(
+    suite.instrumentFiles.map((path) => realpathSync(path)).includes(configPath),
+    `${configPath} is not an instrument file. It binds scenarioSetup, projectDocuments, the tracker stub and the overlay policy, so unhashed it can be re-pointed at other modules and every archived round goes on reporting current over evidence recorded against a different sandbox. Only the scenario registry is exempt, and it has its own module for that.`,
+  );
+
+  // Membership is half the claim; the other half is that the identity is computed from this file's
+  // bytes. Hash a copy of the real configuration, rebind one value in it, and hash again. The copy
+  // keeps one path across both hashes, so the difference can only come from the content.
+  const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-instrument-binding-'));
+  try {
+    const probePath = resolve(scratch, 'suite.config.mjs');
+    const instrumentFiles = suite.instrumentFiles.map((path) =>
+      realpathSync(path) === configPath ? probePath : path,
+    );
+    const source = readFileSync(configPath, 'utf8');
+    writeFileSync(probePath, source);
+    const baseline = instrumentIdentity({ ...suite, instrumentFiles });
+
+    for (const { field, pattern, replacement, consequence } of BEHAVIOUR_BEARING_REBINDINGS) {
+      const rebound = source.replace(pattern, replacement);
+      assert.notEqual(
+        rebound,
+        source,
+        `the probe's ${field} rebinding matched nothing in ${configPath}, so this case proves nothing about it — re-anchor the pattern on however the suite binds ${field} now`,
+      );
+      writeFileSync(probePath, rebound);
+      const moved = instrumentIdentity({ ...suite, instrumentFiles });
+      assert.notEqual(
+        moved.digest,
+        baseline.digest,
+        `rebinding ${field} left the instrument digest at ${baseline.digest}. That rebinding changes ${consequence} without moving a byte of any other hashed file, so an unobserved one lets the sandbox drift while every archived round reports current.`,
+      );
+      writeFileSync(probePath, source);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
 function archivedRuns(scenario) {
   const dir = join(RESULTS_DIR, scenario);
   if (!existsSync(dir)) return [];
@@ -305,10 +455,10 @@ function archivedRuns(scenario) {
 // It used to be asserted three lines below this one, which made every edit to a load-set source
 // turn `pnpm test` red until six scenarios times five runs had been re-recorded — roughly three
 // hours of agent sessions, paid per pull request for a claim that is about the build that ships.
-// `pnpm merge-gate-eval verify` owns that question now: it reports on every pull request and is
+// `pnpm eval merge-gate verify` owns that question now: it reports on every pull request and is
 // enforced on the release pull request. The always-skipped test below names it so `node --test`
 // prints a pointer here rather than leaving a silent gap. The shared verdict itself lives in
-// `evals/merge-gate/_scaffold/build-identity.mjs` — moved there, not deleted, because three callers
+// `evals/_scaffold/build-identity.mjs` — moved there, not deleted, because three callers
 // now ask it.
 //
 // A run archived without a stamp fails rather than skips. It is not "no evidence yet", which is what
@@ -370,9 +520,9 @@ function assertStructurallyBound(scenario, run) {
 // used to be is how a moved check becomes a deleted one: the next reader sees a suite that is green
 // about freshness and has no way to learn that nothing checked it.
 test(
-  'archived-run freshness against the working tree is verified by `pnpm merge-gate-eval verify`',
+  'archived-run freshness against the working tree is verified by `pnpm eval merge-gate verify`',
   {
-    skip: 'freshness is not a per-pull-request assertion: run `pnpm merge-gate-eval verify` for the verdict, which CI reports on every pull request and enforces with --mode strict on the release pull request. What stays asserted here is structural — a stamp exists, parses, and is the one its metadata names.',
+    skip: 'freshness is not a per-pull-request assertion: run `pnpm eval merge-gate verify` for the verdict, which CI reports on every pull request and enforces with --mode strict on the release pull request. What stays asserted here is structural — a stamp exists, parses, and is the one its metadata names.',
   },
   () => {},
 );
@@ -385,8 +535,8 @@ test('legacy instrument compatibility accepts only the exact nonsequenced predec
       digest: 'instrument-current',
       files: {
         [TRACKER_STUB_PATH]: 'tracker-current',
-        'evals/merge-gate/_scaffold/sandbox.mjs': 'sandbox-current',
-        'evals/merge-gate/_scaffold/scaffold.mjs': 'scaffold-current',
+        'evals/_scaffold/sandbox.mjs': 'sandbox-current',
+        'evals/_scaffold/scaffold.mjs': 'scaffold-current',
       },
     },
   };
@@ -395,11 +545,12 @@ test('legacy instrument compatibility accepts only the exact nonsequenced predec
   predecessor.instrument.files[TRACKER_STUB_PATH] = 'tracker-predecessor';
 
   assert.equal(
-    isCompatibleLegacyInstrumentPredecessor('guard-blocks-merge', predecessor, identity),
+    isCompatibleLegacyInstrumentPredecessor(suite, 'guard-blocks-merge', predecessor, identity),
     true,
   );
   assert.equal(
     isCompatibleLegacyInstrumentPredecessor(
+      suite,
       'unreported-checks-at-phase-four',
       predecessor,
       identity,
@@ -413,14 +564,13 @@ test('legacy instrument compatibility accepts only the exact nonsequenced predec
     ['scenario drift', (stamp) => (stamp.scenario_inputs.digest = 'scenario-other')],
     [
       'another instrument file drift',
-      (stamp) =>
-        (stamp.instrument.files['evals/merge-gate/_scaffold/sandbox.mjs'] = 'sandbox-other'),
+      (stamp) => (stamp.instrument.files['evals/_scaffold/sandbox.mjs'] = 'sandbox-other'),
     ],
   ]) {
     const stamp = structuredClone(predecessor);
     mutate(stamp);
     assert.equal(
-      isCompatibleLegacyInstrumentPredecessor('guard-blocks-merge', stamp, identity),
+      isCompatibleLegacyInstrumentPredecessor(suite, 'guard-blocks-merge', stamp, identity),
       false,
       label,
     );
@@ -438,7 +588,7 @@ function identityOfMutatedBuild(scenario, relativePath, mutate) {
     cpSync(builtSkillRoot, skillRoot, { recursive: true });
     const path = resolve(skillRoot, relativePath);
     writeFileSync(path, mutate(readFileSync(path, 'utf8')));
-    return scenarioBuildIdentity(scenario, skillRoot);
+    return scenarioBuildIdentity(suite, scenario, skillRoot);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -664,7 +814,7 @@ test('the freshness verdict is ordered and names the waiver it applied', () => {
       digest: 'instrument-current',
       files: {
         [TRACKER_STUB_PATH]: 'tracker-current',
-        'evals/merge-gate/_scaffold/sandbox.mjs': 'sandbox-current',
+        'evals/_scaffold/sandbox.mjs': 'sandbox-current',
       },
     },
     scenario_inputs: { digest: 'scenario-current', files: { 'fixture.json': 'fixture-current' } },
@@ -701,12 +851,16 @@ test('the freshness verdict is ordered and names the waiver it applied', () => {
     ['a release bump', versionBump, { state: 'waived', waiver: 'version-stamp' }],
     ['a waiver-shaped exact match', waiverShapedButEqual, { state: 'current' }],
   ]) {
-    assert.deepEqual(freshnessVerdict('guard-blocks-merge', stamp, identity), expected, label);
+    assert.deepEqual(
+      freshnessVerdict(suite, 'guard-blocks-merge', stamp, identity),
+      expected,
+      label,
+    );
   }
 
   // Stale is the fallthrough, and it carries the three things a report is expected to print: the
   // pair of digests being compared and the files that moved between them.
-  const stale = freshnessVerdict('guard-blocks-merge', drifted, identity);
+  const stale = freshnessVerdict(suite, 'guard-blocks-merge', drifted, identity);
   assert.equal(stale.state, 'stale');
   assert.equal(stale.archived, 'overall-archived');
   assert.equal(stale.current, 'overall-current');
@@ -716,7 +870,7 @@ test('the freshness verdict is ordered and names the waiver it applied', () => {
   // asserted through the composed verdict rather than through the helper alone: this is the path
   // `verify` takes, and a wiring mistake here would make the sequenced fixture reportable.
   assert.equal(
-    freshnessVerdict('unreported-checks-at-phase-four', legacyInstrument, identity).state,
+    freshnessVerdict(suite, 'unreported-checks-at-phase-four', legacyInstrument, identity).state,
     'stale',
   );
 });
@@ -924,7 +1078,7 @@ function answerableOperations(scenario) {
 // as a green suite, which is precisely the claim the bar exists to prevent.
 function skipWithoutRuns(scenario, runs) {
   return runs.length === 0
-    ? `no archived runs under ${join(RESULTS_DIR, scenario)} — NOTHING IS PROVEN about the merge gate's behaviour. Produce runs with: pnpm merge-gate-eval prepare --scenario ${scenario} (it builds first), hand each slot prompt to a fresh session, then seal every slot and publish the round (see evals/merge-gate/README.md).`
+    ? `no archived runs under ${join(RESULTS_DIR, scenario)} — NOTHING IS PROVEN about the merge gate's behaviour. Produce runs with: pnpm eval merge-gate prepare --scenario ${scenario} (it builds first), hand each slot prompt to a fresh session, then seal every slot and publish the round (see evals/merge-gate/README.md).`
     : false;
 }
 
@@ -940,17 +1094,95 @@ function skipWithoutRuns(scenario, runs) {
 // process dies, which is what `tmpdir()` is for.
 let builtSkillRoot = null;
 
-function currentIdentity(scenario) {
+function builtSkillRootForTests() {
   if (builtSkillRoot === null) {
     const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-build-'));
     process.on('exit', () => rmSync(outputRoot, { recursive: true, force: true }));
     builtSkillRoot = buildPortableSkill(outputRoot);
   }
+  return builtSkillRoot;
+}
+
+function currentIdentity(scenario) {
+  builtSkillRootForTests();
   // A configured scenario replaces `tools/iterate.md`. The pristine identity applies that overlay to
   // a throwaway copy of the build, so asking for it cannot leak the echo into a later production
   // scenario's identity merely because this test caches one build.
-  return pristineScenarioBuildIdentity(scenario, builtSkillRoot);
+  return pristineScenarioBuildIdentity(suite, scenario, builtSkillRoot);
 }
+
+// A digest of nothing is a well-formed digest, and that is the whole hazard. Every other way the
+// derivation can go wrong aborts: a seed absent from the built tree, a load pointer naming a
+// fragment that is not there, a router carrying no version stamp. A seed list that resolves to zero
+// files trips none of those — it produces a plausible `sha256:…` that thirty archived runs can bind
+// to, after which `verify` reports `current` forever while the sources move underneath. Hashing the
+// suite configuration catches a list that was edited; it cannot catch a list that resolved to
+// nothing, because the digest of no files is as well-formed as any other.
+test('an empty load set or instrument list aborts instead of hashing nothing', () => {
+  const skillRoot = builtSkillRootForTests();
+  assert.throws(
+    () => scenarioBuildIdentity({ ...suite, loadSetSeeds: [] }, 'guard-blocks-merge', skillRoot),
+    /declares no load-set seeds/,
+    'a suite whose seeds resolve empty produced a skill digest of zero files, which no later check can tell from a legitimately narrow one',
+  );
+  assert.throws(
+    () => instrumentIdentity({ ...suite, instrumentFiles: [] }),
+    /declares no instrument files/,
+    'a suite whose instrument list is empty produced an instrument digest of zero files',
+  );
+});
+
+// The corollary, and the reason it is not merely tidiness: `builtSkillIdentity` builds the neutral
+// file map by replacing `SKILL.md` in a copy of the exact one. If the router is not a member, the
+// neutral map gains a file the exact map never had — and `isVersionStampOnlyPredecessor` waives an
+// archived round on the strength of that wider digest.
+test('the version-stamped router must be a member of the load set it is neutralised in', () => {
+  const skillRoot = builtSkillRootForTests();
+  const withoutRouter = suite.loadSetSeeds.filter((seed) => seed !== 'SKILL.md');
+  assert.notDeepEqual(withoutRouter, suite.loadSetSeeds, 'SKILL.md is no longer a declared seed');
+  assert.throws(
+    () =>
+      scenarioBuildIdentity(
+        { ...suite, loadSetSeeds: withoutRouter },
+        'guard-blocks-merge',
+        skillRoot,
+      ),
+    /SKILL\.md is not in the derived load set/,
+    'the version-neutral digest was computed over a file the exact digest does not cover, which is what the release-bump waiver is decided on',
+  );
+});
+
+// The stub's destination inside a slot's skill tree decides whether the shipped helper survives the
+// copy. Every scenario prompt drives `node <skill root>/scripts/remote-tracker.mjs` by hand, and the
+// load set excludes that path precisely because the stub replaces it — so a destination one file
+// sideways leaves the real helper in place, pointed at a real forge, and the run still looks like a
+// run. It is therefore one constant in one instrument file, and the suite must not carry a second
+// copy of it to diverge from — a per-suite destination is a choice no suite should have, quite apart
+// from whether the file stating it is hashed.
+test('the tracker stub destination is fixed by an instrument file, not by the suite configuration', () => {
+  assert.equal(TRACKER_STUB_SKILL_PATH, 'scripts/remote-tracker.mjs');
+  assert.ok(
+    !Object.hasOwn(suite.trackerStub, 'skillPath'),
+    'the suite configuration declares a stub destination of its own, so the shared scaffold and the suite now state the destination twice and a run drives whichever one wins',
+  );
+  assert.ok(
+    suite.instrumentFiles.some((path) => realpathSync(path) === realpathSync(SCAFFOLD_PATH)),
+    `${SCAFFOLD_PATH} is not an instrument file, so the stub destination it declares is unhashed`,
+  );
+  // The exclusion the destination underwrites: the shipped helper is absent from every scenario's
+  // load set because the stub overwrites it at exactly that path.
+  const identity = currentIdentity('guard-blocks-merge');
+  for (const excluded of ['scripts/remote-tracker.mjs', 'scripts/remote-tracker-core.mjs']) {
+    assert.ok(
+      !Object.hasOwn(identity.skill.files, excluded),
+      `${excluded} is hashed as skill content although the stub is meant to replace it`,
+    );
+  }
+  assert.ok(
+    !suite.loadSetSeeds.includes(TRACKER_STUB_SKILL_PATH),
+    'the stub destination is seeded, so the shipped helper is hashed as content no run ever reads',
+  );
+});
 
 test('the configured scenario identity replaces production iterate without double-counting it', () => {
   const production = currentIdentity('guard-blocks-merge');
@@ -978,12 +1210,12 @@ test('the configured scenario identity replaces production iterate without doubl
   // un-overlaid tree cannot be described as the configured scenario, and a production scenario's
   // identity of the shared build must not have acquired the echo from an earlier configured call.
   assert.throws(
-    () => scenarioBuildIdentity('configured-reviewer-set-aside-blocks', builtSkillRoot),
+    () => scenarioBuildIdentity(suite, 'configured-reviewer-set-aside-blocks', builtSkillRoot),
     /load-set seed missing.*scripts\/iterate-trace\.mjs/,
     'the configured scenario identity was computed from a tree without its echo overlay',
   );
   assert.deepEqual(
-    scenarioBuildIdentity('guard-blocks-merge', builtSkillRoot),
+    scenarioBuildIdentity(suite, 'guard-blocks-merge', builtSkillRoot),
     production,
     'computing the configured identity leaked its overlay into the shared build',
   );
@@ -1005,7 +1237,7 @@ for (const scenario of SCENARIOS) {
       const projectRoot = existsSync(run.metadataPath)
         ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
         : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
-      const evaluated = evaluateEvidence({
+      const evaluated = evaluateEvidence(suite, {
         scenario,
         logText: readFileSync(run.path, 'utf8'),
         fixture,
@@ -1017,9 +1249,7 @@ for (const scenario of SCENARIOS) {
         // was removed for exactly that reason. `publishRound` still passes it, because a round
         // being published must describe the tree it was built from, and `verify` still asks it of
         // the whole corpus.
-        iterateTraceText: existsSync(run.iteratePath)
-          ? readFileSync(run.iteratePath, 'utf8')
-          : null,
+        auxiliaryText: existsSync(run.iteratePath) ? readFileSync(run.iteratePath, 'utf8') : null,
       });
       assert.deepEqual(
         evaluated.validityProblems,

@@ -16,8 +16,8 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { validateArchivedPairing } from '../evals/merge-gate/_scaffold/run-evidence.mjs';
-import { extractPrompt, renderPrompt } from '../evals/merge-gate/_scaffold/prompt.mjs';
+import { validateArchivedPairing } from '../evals/_scaffold/run-evidence.mjs';
+import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
 import {
   CONFIGURED_REVIEWER_SCENARIO,
   scenarioSetup,
@@ -53,6 +53,10 @@ const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
 const SCENARIO_DIR = resolve(SUITE_ROOT, 'scenarios');
 const STUB_PATH = resolve(SUITE_ROOT, '_scaffold', 'remote-tracker.mjs');
 const ITERATE_TRACE_PATH = resolve(SUITE_ROOT, '_scaffold', 'iterate-trace.mjs');
+// The suite's auxiliary-evidence descriptor as `validateArchivedPairing` takes it: the archived
+// suffix plus whether the scenario under test must carry that second file.
+const ITERATE_PAIRING = { suffix: 'iterate.jsonl', required: true };
+const NO_PAIRING = { suffix: 'iterate.jsonl', required: false };
 
 function fixtureFiles() {
   return readdirSync(FIXTURE_DIR)
@@ -278,17 +282,20 @@ test('run evidence pairs as one explicit trio and rejects missing or orphaned pa
       'run-1.iterate.jsonl',
       'run-1.jsonl',
     ]);
-    validateArchivedPairing(results, true);
+    validateArchivedPairing(results, ITERATE_PAIRING);
 
     rmSync(join(results, 'run-1.iterate.jsonl'));
-    assert.throws(() => validateArchivedPairing(results, true), /missing run-1\.iterate\.jsonl/);
+    assert.throws(
+      () => validateArchivedPairing(results, ITERATE_PAIRING),
+      /missing run-1\.iterate\.jsonl/,
+    );
     writeFileSync(join(results, 'run-1.iterate.jsonl'), 'orphan\n');
     rmSync(join(results, 'run-1.jsonl'));
-    assert.throws(() => validateArchivedPairing(results, true), /missing run-1\.jsonl/);
+    assert.throws(() => validateArchivedPairing(results, ITERATE_PAIRING), /missing run-1\.jsonl/);
     writeFileSync(join(results, 'run-1.jsonl'), 'restored\n');
     assert.throws(
-      () => validateArchivedPairing(results, false),
-      /orphaned in a scenario without an echo/,
+      () => validateArchivedPairing(results, NO_PAIRING),
+      /orphaned in a scenario that records no auxiliary evidence/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -10,7 +10,7 @@ both look identical in a call log. This scenario is what separates them: if a ru
 merge, the refusal scenario's result means less than it appears to. Read the two together or
 neither.
 
-Prepare the sandbox with `pnpm prepare:merge-gate-eval merge-proceeds`, then hand the prompt below
+Prepare the sandbox with `pnpm eval merge-gate prepare --scenario merge-proceeds`, then hand the prompt below
 to a **fresh** agent — one that has not read this file. A run started from a session that already
 knows the expected outcome tests that session's memory rather than the instruction.
 

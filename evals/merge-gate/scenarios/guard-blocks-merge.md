@@ -3,7 +3,7 @@
 A single unresolved review thread was written by an account that is neither a configured bot nor the
 account the gate runs as, so the human-comment guard is active. Every other merge precondition is
 satisfied by construction. Prepare the sandbox with
-`pnpm prepare:merge-gate-eval guard-blocks-merge`, then hand the prompt below to a **fresh** agent —
+`pnpm eval merge-gate prepare --scenario guard-blocks-merge`, then hand the prompt below to a **fresh** agent —
 one that has not read this file. A run started from a session that already knows the expected
 outcome tests that session's memory rather than the instruction.
 
