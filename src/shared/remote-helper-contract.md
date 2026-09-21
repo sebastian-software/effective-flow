@@ -42,4 +42,5 @@ requests, read CLI credentials, or invent a fallback. In particular:
 Reads execute immediately. Mutations are dry runs by default: inspect the returned executable,
 argument vector, and redacted input preview, obtain every workflow-specific approval that still
 applies, and only then repeat the same operation with `--apply`. A dry run never changes Git,
-tracker state, memory, labels, issues, pull requests, comments, or review threads.
+tracker state, memory, labels, issues, pull requests, comments, or review threads. Redaction covers
+credential shapes, not quoted content: the preview echoes review and comment bodies verbatim.

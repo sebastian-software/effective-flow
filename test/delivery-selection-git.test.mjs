@@ -1103,7 +1103,7 @@ test('a merge ref that differs from the branch name is fetched and compared', as
   assert.deepEqual(result.fetch, FETCHED);
 });
 
-test('a narrowed fetch refspec that leaves the tracking ref behind reports a stale fetch', async (t) => {
+test('a narrowed fetch refspec leaves the upstream untracked rather than gone', async (t) => {
   const { seed, local } = createUpstreamFixture(t);
   ugit(local, 'config', 'remote.origin.fetch', '+refs/heads/other:refs/remotes/origin/other');
   publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
@@ -1111,10 +1111,40 @@ test('a narrowed fetch refspec that leaves the tracking ref behind reports a sta
   const result = await status(local);
   assert.equal(result.fetch.attempted, true);
   assert.equal(result.fetch.ok, true);
-  assert.equal(result.fetch.stale, true);
+  // Staleness compares the fetched commit against the tracking ref. There is none, so the fetch is
+  // not reported as stale: it succeeded and brought the upstream commit in.
+  assert.equal(result.fetch.stale, null);
   // The narrowed refspec maps no tracking ref for `main`, so the fetched commit never becomes
-  // `@{u}` and the status cannot claim `behind` from it.
+  // `@{u}` and the status cannot claim `behind` from it. The upstream is untracked, not gone.
+  assert.equal(result.state, 'untracked-upstream');
+  assert.equal(result.upstream, null);
+  assert.equal(result.upstreamOid, null);
+});
+
+test('a branch whose remote is a URL reports untracked-upstream, not upstream-gone', async (t) => {
+  const { remote, seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'incoming.txt', 'new\n'));
+  // A URL in place of a remote name fetches fine but resolves no tracking ref at all.
+  ugit(local, 'config', '--replace-all', 'branch.main.remote', `file://${remote}`);
+
+  const result = await status(local);
+  assert.equal(result.fetch.attempted, true);
+  assert.equal(result.fetch.ok, true);
+  assert.equal(result.fetch.stale, null);
+  assert.equal(result.fetch.error, null);
+  assert.equal(result.state, 'untracked-upstream');
+  assert.equal(result.upstream, null);
+  assert.equal(result.upstreamOid, null);
+});
+
+test('a tracking ref that is known but no longer resolves stays upstream-gone', async (t) => {
+  const { local } = createUpstreamFixture(t);
+  // `origin/missing` is the tracking ref Git resolves; it simply names no commit.
+  ugit(local, 'config', 'branch.main.merge', 'refs/heads/missing');
+
+  const result = await status(local, false);
   assert.equal(result.state, 'upstream-gone');
+  assert.equal(result.upstream, 'origin/missing');
   assert.equal(result.upstreamOid, null);
 });
 
@@ -1124,6 +1154,20 @@ test('core.ignorecase makes the overlap check case-insensitive', async (t) => {
   write(local, 'NOTES.txt', 'local untracked\n');
 
   ugit(local, 'config', 'core.ignorecase', 'true');
+  const folded = await status(local);
+  assert.equal(folded.state, 'behind-overlap');
+  assert.deepEqual(folded.overlappingPaths, ['NOTES.txt']);
+});
+
+test('core.precomposeunicode alone also folds the overlap check', async (t) => {
+  const { seed, local } = createUpstreamFixture(t);
+  publish(seed, 'incoming', (root) => write(root, 'Notes.txt', 'upstream\n'));
+  write(local, 'NOTES.txt', 'local untracked\n');
+
+  // A checkout that folds the Unicode normalization form folds path spellings too, so the overlap
+  // check must run folded there as well, not only where `core.ignorecase` is set.
+  ugit(local, 'config', 'core.ignorecase', 'false');
+  ugit(local, 'config', 'core.precomposeunicode', 'true');
   const folded = await status(local);
   assert.equal(folded.state, 'behind-overlap');
   assert.deepEqual(folded.overlappingPaths, ['NOTES.txt']);
@@ -1157,7 +1201,10 @@ test('an option-like or malformed remote or merge ref skips the fetch and still 
       label,
     );
     assert.equal(result.headOid, head, label);
-    assert.ok(['upstream-gone', 'up-to-date'].includes(result.state), label);
+    assert.ok(
+      ['untracked-upstream', 'upstream-gone', 'up-to-date'].includes(result.state),
+      `${label}: ${result.state}`,
+    );
     assert.equal(
       calls.some((call) => call.args.includes('fetch')),
       false,

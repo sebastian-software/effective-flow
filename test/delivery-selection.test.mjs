@@ -499,6 +499,32 @@ test('overlap folds case only when the repository ignores case', () => {
   assert.deepEqual(computeOverlap(['DOCS'], incoming, { ignoreCase: true }), ['DOCS']);
 });
 
+test('overlap folds the Unicode normalization form together with case', () => {
+  // The same name in both normalization forms: a checkout that folds case also folds the form,
+  // so a local NFD path and an incoming NFC path are one file and must be reported as overlapping.
+  const nfc = 'docs/Übersicht.md'.normalize('NFC');
+  const nfd = 'docs/Übersicht.md'.normalize('NFD');
+  assert.notEqual(nfc, nfd);
+
+  assert.deepEqual(computeOverlap([nfd], { paths: [nfc], gitlinks: [] }), []);
+  assert.deepEqual(computeOverlap([nfd], { paths: [nfc], gitlinks: [] }, { ignoreCase: true }), [
+    nfd,
+  ]);
+  assert.deepEqual(
+    computeOverlap([nfd.toUpperCase()], { paths: [nfc], gitlinks: [] }, { ignoreCase: true }),
+    [nfd.toUpperCase()],
+  );
+  // The fast-forward snapshot scope folds the same way, so an entry beside an incoming path is
+  // captured whichever form its directory name is spelled in.
+  const local = { dirty: ['docs/Ü/local.txt'.normalize('NFD')], ignored: [] };
+  const incomingPaths = ['docs/Ü/incoming.txt'.normalize('NFC')];
+  assert.deepEqual(snapshotScope(local, incomingPaths), { dirty: [], ignored: [] });
+  assert.deepEqual(snapshotScope(local, incomingPaths, { ignoreCase: true }), {
+    dirty: local.dirty,
+    ignored: [],
+  });
+});
+
 test('an unexpected runner exception before the merge is a COMMAND_FAILED without mutation', async () => {
   const runner = () => {
     throw Object.assign(new Error('runner exploded'), { code: 'EBOOM' });

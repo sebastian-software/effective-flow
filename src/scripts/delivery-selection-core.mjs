@@ -1642,8 +1642,15 @@ function pathsOverlap(left, right) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
+// A checkout that ignores case also ignores the Unicode normalization form of a path name — APFS
+// and HFS+ store a precomposed name whatever form the writer used — so one fold covers both: an
+// NFD local path and an NFC incoming path are the same file and must be reported as overlapping.
+function pathFold(ignoreCase) {
+  return ignoreCase ? (value) => value.normalize('NFC').toLowerCase() : (value) => value;
+}
+
 export function computeOverlap(localPaths, incoming, { ignoreCase = false } = {}) {
-  const fold = ignoreCase ? (value) => value.toLowerCase() : (value) => value;
+  const fold = pathFold(ignoreCase);
   const incomingFolded = incoming.paths.map(fold);
   const overlapping = new Set(incoming.gitlinks);
   for (const localPath of localPaths) {
@@ -1655,11 +1662,19 @@ export function computeOverlap(localPaths, incoming, { ignoreCase = false } = {}
   return [...overlapping].sort();
 }
 
-async function repositoryIgnoresCase(root, runner) {
-  const result = await git(runner, root, ['config', '--bool', '--get', 'core.ignorecase'], {
+async function booleanConfig(root, key, runner) {
+  const result = await git(runner, root, ['config', '--bool', '--get', key], {
     allowedStatus: [0, 1],
   });
   return result.status === 0 && asText(result.stdout).trim() === 'true';
+}
+
+// `core.precomposeunicode` marks a checkout whose filesystem folds the Unicode normalization form
+// of a path name; `core.ignorecase` marks one that folds case. Either one makes two spellings name
+// the same file, so both enable the folded comparison.
+async function repositoryIgnoresCase(root, runner) {
+  if (await booleanConfig(root, 'core.ignorecase', runner)) return true;
+  return await booleanConfig(root, 'core.precomposeunicode', runner);
 }
 
 async function overlapFor(root, fromOid, toOid, runner) {
@@ -1736,9 +1751,19 @@ export async function upstreamStatus(input, options = {}) {
 
   const tracking = await trackingRef(root, branch, runner);
   const upstreamOid = tracking === null ? null : await resolveCommit(root, tracking.ref, runner);
-  if (fetch.ok) fetch.stale = fetchHeadOid === null || fetchHeadOid !== upstreamOid;
+  // Staleness is the distance between the commit the fetch brought in and the tracking ref. With
+  // no tracking ref there is nothing to compare, so it stays unknown rather than reporting a
+  // successful fetch as stale.
+  if (fetch.ok && tracking !== null) {
+    fetch.stale = fetchHeadOid === null || fetchHeadOid !== upstreamOid;
+  }
   if (upstreamOid === null) {
-    return emptyUpstreamStatus('upstream-gone', {
+    // Two different situations end here. `branch.<name>.remote` and `branch.<name>.merge` name an
+    // upstream that Git resolves to no tracking ref at all — a URL in place of a remote name, or a
+    // fetch refspec that does not map the merge ref — which leaves the upstream untracked rather
+    // than gone, and does not contradict a fetch that succeeded. A tracking ref that is known but
+    // no longer resolves to a commit is the upstream actually being gone.
+    return emptyUpstreamStatus(tracking === null ? 'untracked-upstream' : 'upstream-gone', {
       branch,
       upstream: tracking?.short ?? null,
       headOid,
@@ -1821,7 +1846,7 @@ function incomingDirectories(incomingPaths, fold) {
 // other dirty, untracked or ignored entry (for example a dependency tree elsewhere) is out of scope
 // and never read.
 export function snapshotScope(local, incomingPaths, { ignoreCase = false } = {}) {
-  const fold = ignoreCase ? (value) => value.toLowerCase() : (value) => value;
+  const fold = pathFold(ignoreCase);
   const directories = incomingDirectories(incomingPaths, fold);
   const inScope = (repoPath) => directories.has(parentDirectory(fold(repoPath)));
   return {

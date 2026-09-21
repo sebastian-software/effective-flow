@@ -152,10 +152,10 @@ subject to every drift check, invariant, verification step, and abort boundary b
    envelope (`ok: false`) ends this check with one notice line naming its error code; continue
    without an update. A failed or stale fetch, or one reported as `fetch.skipped`, ends this check
    with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`,
-   `up-to-date`, and `ahead`, with no question. Only `behind`, `behind-overlap`, and `diverged`
-   proceed to the fragment below, and only when the fetch was not attempted, or `fetch.ok` is true
-   and `fetch.stale` is false. A local upstream (`branch.<name>.remote = .`) is compared without
-   fetching, so its fetch is not attempted.
+   `untracked-upstream`, `up-to-date`, and `ahead`, with no question. Only `behind`,
+   `behind-overlap`, and `diverged` proceed to the fragment below, and only when the fetch was not
+   attempted, or `fetch.ok` is true and `fetch.stale` is false. A local upstream
+   (`branch.<name>.remote = .`) is compared without fetching, so its fetch is not attempted.
 
 ```lazy-include
 source-upstream-sync

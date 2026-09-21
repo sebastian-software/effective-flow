@@ -67,9 +67,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.

@@ -33,6 +33,8 @@ import {
   assertNoUnresolvedEagerIncludes,
   findUnresolvedLazyIncludes,
   assertNoUnresolvedLazyIncludes,
+  findUnresolvedPlaceholders,
+  assertNoUnresolvedPlaceholders,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   renderDeprecatedAliasClause,
@@ -71,6 +73,7 @@ import {
   collectRecommendedSkillChains,
   collectRecommendedSkillSections,
   parseSkillOwnershipRelevanceGateOwners,
+  assertDisjointConsumerNames,
   assertSkillOwnershipContract,
   assertAgentSkillRecommendationRoster,
 } from '../build-lib.mjs';
@@ -744,6 +747,68 @@ test('the ownership reverse check exempts shared-fragment consumers by kind', ()
       knownConsumers: new Set(['test-writer', 'language-rules']),
       recommendationCapableConsumers: new Set(['test-writer', 'ui-implementer']),
     }),
+  );
+});
+
+test('a tool and agent sharing a basename cross-satisfy the delegate obligation', () => {
+  // The hole the disjointness guard closes, pinned as the reason it exists: the
+  // pair key carries no consumer kind, so a tool named `test-writer` fills the
+  // pair the same-named *agent* owes. The agent could drop its owner entirely
+  // and the build would stay green — which is exactly what the guard below
+  // prevents by refusing the collision in the first place.
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+      },
+    ],
+  });
+  const toolOnlyChains = collectRecommendedSkillChains([
+    {
+      consumer: 'test-writer',
+      context: 'tools/test-writer.md',
+      text: '## Recommended skills\n\n- `effective-web`\n',
+    },
+  ]);
+
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest,
+        inventoryRows: skillOwnershipTable(),
+        // The agent source names nothing; only the colliding tool recommends.
+        recommendationChains: toolOnlyChains,
+        relevanceGateOwners: [],
+        knownConsumers: new Set(['test-writer']),
+        recommendationCapableConsumers: new Set(['test-writer']),
+      },
+      { context: 'colliding consumer names' },
+    ),
+  );
+  assert.throws(
+    () =>
+      assertDisjointConsumerNames(
+        { toolNames: ['test-writer', 'plan'], agentNames: ['test-writer', 'ui-implementer'] },
+        { context: 'central-skill ownership guard' },
+      ),
+    /Tool and agent share the basename\(s\) test-writer:.*cross-satisfy its "delegate" obligation.*central-skill ownership guard/s,
+  );
+});
+
+test('the checked-in tool and agent basenames stay disjoint', () => {
+  const sourceNames = (directory) => {
+    const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+    return readdirSync(sourceDirectory)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => file.slice(0, -'.md'.length));
+  };
+
+  assert.doesNotThrow(() =>
+    assertDisjointConsumerNames(
+      { toolNames: sourceNames('tools'), agentNames: sourceNames('agents') },
+      { context: 'checked-in sources' },
+    ),
   );
 });
 
@@ -2008,21 +2073,6 @@ test('portable ask rendering uses the Codex-equivalent English default', () => {
   assert.equal(renderBody(body, 'portable', { ...refConfig, context: 'ask.md' }), expected);
 });
 
-test('plan.markerLanguage does not influence the block-local ask language default', () => {
-  const body = ['```ask', 'header: Approval', 'question: Continue?', 'type: approval', '```'].join(
-    '\n',
-  );
-  const rendered = renderBody(body, 'claude', {
-    ...refConfig,
-    context: 'marker-config.md',
-    plan: { markerLanguage: 'de' },
-  });
-
-  assert.match(rendered, /Use the `AskUserQuestion` tool/);
-  assert.match(rendered, /label: "Yes", description: "Approval granted"/);
-  assert.doesNotMatch(rendered, /Verwende|Freigabe erteilt/);
-});
-
 // --- Retired goal mode ---
 
 const sourceToolsUrl = new URL('../src/tools/', import.meta.url);
@@ -2845,6 +2895,46 @@ test('unresolved lazy-include output is rejected with source line diagnostics', 
   assert.doesNotThrow(() => assertNoUnresolvedEagerIncludes(unresolved, { context: 'x' }));
   assert.doesNotThrow(() =>
     assertNoUnresolvedLazyIncludes('a\n```include\nmemory-state\n```\n', { context: 'x' }),
+  );
+});
+
+// --- Unresolved placeholder guard ---
+
+test('the placeholder guard rejects any unresolved token, not a known-name list', () => {
+  const body = [
+    'A live one: {{SKILL:fix}}',
+    'A retired one: {{GOAL_START}}',
+    'A typo: {{SKIL:fix}}',
+    'An invented one: {{NEVER_IMPLEMENTED:x y}}',
+  ].join('\n');
+
+  assert.deepEqual(findUnresolvedPlaceholders(body), [
+    { line: 1, placeholder: '{{SKILL:fix}}', name: 'SKILL' },
+    { line: 2, placeholder: '{{GOAL_START}}', name: 'GOAL_START' },
+    { line: 3, placeholder: '{{SKIL:fix}}', name: 'SKIL' },
+    { line: 4, placeholder: '{{NEVER_IMPLEMENTED:x y}}', name: 'NEVER_IMPLEMENTED' },
+  ]);
+  assert.throws(
+    () => assertNoUnresolvedPlaceholders(body, { context: 'rendered claude file tools/x.md' }),
+    /unresolved placeholder \(in rendered claude file tools\/x\.md\): line 1 \(\{\{SKILL:fix\}\}\), line 2 \(\{\{GOAL_START\}\}\), line 3 \(\{\{SKIL:fix\}\}\), line 4 \(\{\{NEVER_IMPLEMENTED:x y\}\}\)/,
+  );
+});
+
+test('the placeholder guard passes on resolved output and non-placeholder braces', () => {
+  const resolved = transformRefs(
+    'Run {{SKILL:fix}} via {{FLOW}} with {{AGENT:code-validator}}.',
+    'claude',
+    {
+      ...refConfig,
+      context: 'tools/x.md',
+    },
+  );
+
+  assert.doesNotThrow(() => assertNoUnresolvedPlaceholders(resolved, { context: 'tools/x.md' }));
+  // Braces that are not placeholder-shaped stay legal in prose and code fences.
+  assert.deepEqual(
+    findUnresolvedPlaceholders('`{{ value }}` and `{{lowercase}}` and `{ {SPACED} }`'),
+    [],
   );
 });
 

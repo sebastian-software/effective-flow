@@ -36,6 +36,7 @@ import {
   resolveEagerIncludes,
   assertNoUnresolvedEagerIncludes,
   assertNoUnresolvedLazyIncludes,
+  assertNoUnresolvedPlaceholders,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   assertDocumentationSyncConsumers,
@@ -56,6 +57,7 @@ import {
   findNextStepsDocViolations,
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
+  assertDisjointConsumerNames,
   collectRecommendedSkillChains,
   collectRecommendedSkillSections,
   parseSkillOwnershipRelevanceGateOwners,
@@ -642,6 +644,16 @@ try {
     text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
   }));
   const recommendationSources = [...toolRecommendationSources, ...agentRecommendationSources];
+  // The ownership manifest and the pair keys inside assertSkillOwnershipContract
+  // identify a consumer by bare name, so the two kinds must stay distinguishable
+  // by name alone.
+  assertDisjointConsumerNames(
+    {
+      toolNames: toolRecommendationSources.map((source) => source.consumer),
+      agentNames: agentRecommendationSources.map((source) => source.consumer),
+    },
+    { context: 'central-skill ownership guard' },
+  );
   const recommendationChains = collectRecommendedSkillChains(recommendationSources);
   // Roster guard: every agent either names its domain owner or is exempt. The
   // chains are collected from the agent sources alone so a same-named tool can
@@ -1395,13 +1407,10 @@ try {
             `parameter=${finding.parameter}`,
         );
       }
-      if (
-        /\{\{(?:AGENT|SKILL|FLOW|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES|TOOL_LIST|TOOL_CATALOG)(?::[^}]*)?\}\}/.test(
-          content,
-        )
-      ) {
-        throw new Error(`unresolved placeholder in rendered ${target.name} file ${file}`);
-      }
+      // Shape-matched, not allowlisted: see assertNoUnresolvedPlaceholders.
+      assertNoUnresolvedPlaceholders(content, {
+        context: `rendered ${target.name} file ${relative(target.root, file)}`,
+      });
       for (const ref of collectRenderedWorkerRefs(content, AGENT_PREFIX, renderedWorkerNames)) {
         const workerPath = target.workerPath(ref);
         if (!existsSync(workerPath)) {
