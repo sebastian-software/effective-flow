@@ -977,8 +977,14 @@ per head, not per run: at most one trigger comment per configured bot per verifi
 counts as posted only while its `createdAt` is not older than `headCommittedAt`, so an implementing
 round moves the head past it and the next Phase-3 entry **must** trigger that bot again. Never read
 the bound as licence to skip that re-post – a bot left "not started" blocks the merge, deadlocking
-the run into a report. Under it, never over it: Phase 3 posts no trigger for a bot it observed as
-**running**. Every reply for a finding that _is_ implemented is written and resolved by
+the run into a report. The per-head figure is the rule, not an invariant: where that idempotency
+comparison is **unprovable** – a timestamp is absent, or the trigger's author cannot be established
+at all – Phase 3 deliberately treats the trigger as not yet posted and posts it again, so two
+Phase-3 entries against one unchanged head can leave that bot two comments. The fallback is
+deliberate in the same direction as the re-post: a redundant mention costs one extra bot run, a
+wrongly suppressed one costs the merge. The run-level ceiling is unaffected, because it counts
+Phase-3 entries rather than proofs. Downwards the figure is firm: Phase 3 posts no trigger for a bot
+it observed as **running**. Every reply for a finding that _is_ implemented is written and resolved by
 `{{SKILL:iterate}}`, as before, and those replies leave the guard untouched: in manual mode the
 identity rule excludes them, in app mode the bot rule does.
 

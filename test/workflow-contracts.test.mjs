@@ -6096,6 +6096,32 @@ test('the gate bounds its own trigger comments per verified head, not per run', 
     'the per-head bound must name the run-level ceiling it implies',
   );
 
+  // The per-head figure is the rule, not an invariant, and the file may not present it as one.
+  // Phase 3 posts a second trigger for one unchanged head whenever its idempotency comparison is
+  // unprovable — a missing timestamp, an author that cannot be established — because a redundant
+  // mention costs one extra bot run while a wrongly suppressed one costs the merge. An absolute
+  // here would read as a prohibition on that conservative fallback, and the next editor would
+  // resolve the contradiction by suppressing the trigger. The exception is therefore pinned
+  // beside the rule, so restoring the absolute fails.
+  assert.match(
+    gate,
+    near(
+      '(?:the rule, not an invariant|not an invariant)',
+      '(?:unprovable|cannot be established)',
+      300,
+    ),
+    'the per-head figure must be stated as a rule with an exception, not as an invariant',
+  );
+  assert.match(
+    gate,
+    near(
+      '(?:unprovable|cannot be established)',
+      '(?:posts? it again|second trigger|two comments)',
+      400,
+    ),
+    'the per-head bound must name the unprovable-comparison fallback that can exceed it',
+  );
+
   // The obligation an agent must not derive away, with the failure it prevents.
   assert.match(
     gate,
