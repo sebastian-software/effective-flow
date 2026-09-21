@@ -1159,18 +1159,19 @@ test('core.ignorecase makes the overlap check case-insensitive', async (t) => {
   assert.deepEqual(folded.overlappingPaths, ['NOTES.txt']);
 });
 
-test('core.precomposeunicode alone also folds the overlap check', async (t) => {
+test('core.precomposeunicode alone leaves the overlap check case-sensitive', async (t) => {
   const { seed, local } = createUpstreamFixture(t);
   publish(seed, 'incoming', (root) => write(root, 'Notes.txt', 'upstream\n'));
   write(local, 'NOTES.txt', 'local untracked\n');
 
-  // A checkout that folds the Unicode normalization form folds path spellings too, so the overlap
-  // check must run folded there as well, not only where `core.ignorecase` is set.
+  // `core.precomposeunicode` states that the filesystem decomposes path names, not that it folds
+  // case — a case-sensitive macOS volume sets it alone. Folding case there would make two distinct
+  // files compare equal and report a valid fast-forward as `behind-overlap`.
   ugit(local, 'config', 'core.ignorecase', 'false');
   ugit(local, 'config', 'core.precomposeunicode', 'true');
-  const folded = await status(local);
-  assert.equal(folded.state, 'behind-overlap');
-  assert.deepEqual(folded.overlappingPaths, ['NOTES.txt']);
+  const unfolded = await status(local);
+  assert.equal(unfolded.state, 'behind');
+  assert.deepEqual(unfolded.overlappingPaths, []);
 });
 
 test('an option-like or malformed remote or merge ref skips the fetch and still classifies', async (t) => {

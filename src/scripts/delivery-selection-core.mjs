@@ -1642,15 +1642,22 @@ function pathsOverlap(left, right) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
-// A checkout that ignores case also ignores the Unicode normalization form of a path name — APFS
-// and HFS+ store a precomposed name whatever form the writer used — so one fold covers both: an
-// NFD local path and an NFC incoming path are the same file and must be reported as overlapping.
-function pathFold(ignoreCase) {
-  return ignoreCase ? (value) => value.normalize('NFC').toLowerCase() : (value) => value;
+// Case folding and Unicode normalization are two independent filesystem properties, and each flag
+// is Git's own statement about exactly one of them: NTFS folds case while comparing normalization
+// forms exactly, and a case-sensitive macOS volume decomposes path names without folding case. So
+// only the transform its flag enables may run — folding the other one too makes two genuinely
+// distinct paths compare equal and reports a valid fast-forward as `behind-overlap`.
+function pathFold({ ignoreCase = false, precomposeUnicode = false } = {}) {
+  const normalize = precomposeUnicode ? (value) => value.normalize('NFC') : (value) => value;
+  return ignoreCase ? (value) => normalize(value).toLowerCase() : normalize;
 }
 
-export function computeOverlap(localPaths, incoming, { ignoreCase = false } = {}) {
-  const fold = pathFold(ignoreCase);
+export function computeOverlap(
+  localPaths,
+  incoming,
+  { ignoreCase = false, precomposeUnicode = false } = {},
+) {
+  const fold = pathFold({ ignoreCase, precomposeUnicode });
   const incomingFolded = incoming.paths.map(fold);
   const overlapping = new Set(incoming.gitlinks);
   for (const localPath of localPaths) {
@@ -1669,23 +1676,23 @@ async function booleanConfig(root, key, runner) {
   return result.status === 0 && asText(result.stdout).trim() === 'true';
 }
 
-// `core.precomposeunicode` marks a checkout whose filesystem folds the Unicode normalization form
-// of a path name; `core.ignorecase` marks one that folds case. Either one makes two spellings name
-// the same file, so both enable the folded comparison.
-async function repositoryIgnoresCase(root, runner) {
-  if (await booleanConfig(root, 'core.ignorecase', runner)) return true;
-  return await booleanConfig(root, 'core.precomposeunicode', runner);
+// `core.ignorecase` marks a checkout whose filesystem folds the case of a path name;
+// `core.precomposeunicode` marks one that hands back decomposed names Git precomposes before it
+// compares them. Neither implies the other, so both are read and carried separately.
+async function pathFoldingConfig(root, runner) {
+  return {
+    ignoreCase: await booleanConfig(root, 'core.ignorecase', runner),
+    precomposeUnicode: await booleanConfig(root, 'core.precomposeunicode', runner),
+  };
 }
 
 async function overlapFor(root, fromOid, toOid, runner) {
   const incoming = await incomingChanges(root, fromOid, toOid, runner);
   const inventory = await statusInventory(root, runner, true);
   const local = localDirtyPaths(inventory);
-  const ignoreCase = await repositoryIgnoresCase(root, runner);
-  const overlappingPaths = computeOverlap([...local.dirty, ...local.ignored], incoming, {
-    ignoreCase,
-  });
-  return { incoming, inventory, local, overlappingPaths, ignoreCase };
+  const folding = await pathFoldingConfig(root, runner);
+  const overlappingPaths = computeOverlap([...local.dirty, ...local.ignored], incoming, folding);
+  return { incoming, inventory, local, overlappingPaths, folding };
 }
 
 function idleFetch() {
@@ -1845,8 +1852,12 @@ function incomingDirectories(incomingPaths, fold) {
 // only local entries that live directly in one of those directories can be touched by it. Every
 // other dirty, untracked or ignored entry (for example a dependency tree elsewhere) is out of scope
 // and never read.
-export function snapshotScope(local, incomingPaths, { ignoreCase = false } = {}) {
-  const fold = pathFold(ignoreCase);
+export function snapshotScope(
+  local,
+  incomingPaths,
+  { ignoreCase = false, precomposeUnicode = false } = {},
+) {
+  const fold = pathFold({ ignoreCase, precomposeUnicode });
   const directories = incomingDirectories(incomingPaths, fold);
   const inScope = (repoPath) => directories.has(parentDirectory(fold(repoPath)));
   return {
@@ -1995,9 +2006,11 @@ export async function fastForwardUpstream(input, options = {}) {
   try {
     precheck = await fastForwardPrecheck(input, runner);
     if (options.apply === true) {
-      scope = snapshotScope(precheck.overlap.local, precheck.overlap.incoming.paths, {
-        ignoreCase: precheck.overlap.ignoreCase,
-      });
+      scope = snapshotScope(
+        precheck.overlap.local,
+        precheck.overlap.incoming.paths,
+        precheck.overlap.folding,
+      );
       before = await localStateSnapshot(precheck.root, scope, runner);
     }
   } catch (error) {

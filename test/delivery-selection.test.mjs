@@ -499,27 +499,34 @@ test('overlap folds case only when the repository ignores case', () => {
   assert.deepEqual(computeOverlap(['DOCS'], incoming, { ignoreCase: true }), ['DOCS']);
 });
 
-test('overlap folds the Unicode normalization form together with case', () => {
-  // The same name in both normalization forms: a checkout that folds case also folds the form,
-  // so a local NFD path and an incoming NFC path are one file and must be reported as overlapping.
+test('the normalization form folds on its own flag, independently of case', () => {
+  // The same name in both normalization forms. Case folding and normalization are two independent
+  // filesystem properties, so each flag folds only its own: `core.ignorecase` alone leaves an NFD
+  // and an NFC spelling distinct, and `core.precomposeunicode` alone leaves case distinct.
   const nfc = 'docs/Übersicht.md'.normalize('NFC');
   const nfd = 'docs/Übersicht.md'.normalize('NFD');
   assert.notEqual(nfc, nfd);
+  const incoming = { paths: [nfc], gitlinks: [] };
 
-  assert.deepEqual(computeOverlap([nfd], { paths: [nfc], gitlinks: [] }), []);
-  assert.deepEqual(computeOverlap([nfd], { paths: [nfc], gitlinks: [] }, { ignoreCase: true }), [
-    nfd,
-  ]);
+  assert.deepEqual(computeOverlap([nfd], incoming), []);
+  assert.deepEqual(computeOverlap([nfd], incoming, { ignoreCase: true }), []);
+  assert.deepEqual(computeOverlap([nfd], incoming, { precomposeUnicode: true }), [nfd]);
+  assert.deepEqual(computeOverlap([nfd.toUpperCase()], incoming, { precomposeUnicode: true }), []);
   assert.deepEqual(
-    computeOverlap([nfd.toUpperCase()], { paths: [nfc], gitlinks: [] }, { ignoreCase: true }),
+    computeOverlap([nfd.toUpperCase()], incoming, { ignoreCase: true, precomposeUnicode: true }),
     [nfd.toUpperCase()],
   );
   // The fast-forward snapshot scope folds the same way, so an entry beside an incoming path is
-  // captured whichever form its directory name is spelled in.
+  // captured whichever form its directory name is spelled in — but only where the checkout says
+  // the filesystem decomposes path names.
   const local = { dirty: ['docs/Ü/local.txt'.normalize('NFD')], ignored: [] };
   const incomingPaths = ['docs/Ü/incoming.txt'.normalize('NFC')];
   assert.deepEqual(snapshotScope(local, incomingPaths), { dirty: [], ignored: [] });
   assert.deepEqual(snapshotScope(local, incomingPaths, { ignoreCase: true }), {
+    dirty: [],
+    ignored: [],
+  });
+  assert.deepEqual(snapshotScope(local, incomingPaths, { precomposeUnicode: true }), {
     dirty: local.dirty,
     ignored: [],
   });
