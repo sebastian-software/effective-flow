@@ -56,7 +56,8 @@ export function buildForgejoCommandPlan(operation, input, repository) {
   switch (operation) {
     // Class B: tea renderer output; the authority for its keys is tea's `modules/print`, not
     // `modules/structs`. Colors arrive without a leading `#` and `index` arrives stringified.
-    // See the GitHub case above for why this plan exists without a registered operation.
+    // See the GitHub case in `remote-tracker-github-core.mjs` for why this plan exists without a
+    // registered operation.
     // `--exclude-org` scopes the pre-check to repository labels: an organization label of the same
     // name must not suppress creating the repository-scoped one, because the worst case of a
     // redundant repository label is cosmetic while the worst case of the opposite is an issue that
