@@ -177,6 +177,42 @@ function defaultCell(text, cell) {
   return rowCells(lines[rowIndex])[rowCells(header).indexOf('Default')];
 }
 
+// The `Value` cell of one row, reduced to the documented value alone. `defaultCell` does not fit
+// the user guide's two overview tables: neither is `Default`-headed, and the two spell their cells
+// differently. The complete-table example reproduces an ADR verbatim, so its cells carry no
+// backticks at all (`| mergeGate.maxRounds | 10 |`), while the safe-defaults table is ordinary
+// guide prose that backticks its cells and sometimes appends an explanatory gloss
+// (`| `mergeGate.completion` | `ask` (ask at run time) |`). The code span and that trailing
+// parenthesis are editorial, so both are dropped on purpose: the contract is the value, not the
+// sentence explaining when the question gets asked, and rewording the gloss must not fail a test
+// about defaults. A cell that is nothing but a parenthesis — `(empty)` — is a value, not a gloss,
+// so the gloss is stripped only where something stands in front of it.
+//
+// `unspan` drops exactly one surrounding code-span pair and only from a cell that is one
+// well-formed span. Stripping every backtick instead repaired a malformed cell into a passing one:
+// `| `mergeGate.maxRounds` | `1`0` |` normalized to the same `10` the well-formed row yields, so
+// the contract went green on documentation nobody could copy. Anything that is not a single span
+// is now returned as it stands and fails the comparison.
+const unspan = (cell) => /^`([^`]*)`$/.exec(cell)?.[1] ?? cell;
+
+function valueCell(text, cell) {
+  const lines = text.split('\n');
+  const key = (line) => unspan(rowCells(line)[0]);
+  const rowIndex = lines.findIndex((line) => line.startsWith('|') && key(line) === cell);
+  assert.notEqual(rowIndex, -1, `missing table row: ${cell}`);
+  // The same upward scan `defaultCell` uses, and for the same reason: only the row's own table is
+  // searched, so a renamed `Value` header fails loudly instead of silently borrowing the column
+  // index of an earlier table in the same slice.
+  const tableLines = [];
+  for (let index = rowIndex - 1; index >= 0 && lines[index].startsWith('|'); index -= 1) {
+    tableLines.push(lines[index]);
+  }
+  const header = tableLines.find((line) => rowCells(line).includes('Value'));
+  assert.ok(header, `missing a Value column header above the table row: ${cell}`);
+  const value = rowCells(lines[rowIndex])[rowCells(header).indexOf('Value')];
+  return unspan(value.replace(/^(.*\S)\s+\([^)]*\)$/, '$1'));
+}
+
 function flat(text) {
   return text.replace(/\s+/g, ' ');
 }
@@ -6791,6 +6827,42 @@ test('the conflict-resolution mode gate is resolved before any write and degrade
   );
 });
 
+test("the merge gate's own Configuration table carries every key with its default", () => {
+  // The authoritative copy. `merge-gate` resolves these keys from this table rather than from the
+  // shared configuration fragment `setup` and `iterate` load, so this is the one a gate run
+  // actually behaves by — and nothing pinned its **Default column**. The table was not unread:
+  // "the completion offer adds no mergeGate.* key" already pins its key set through the same
+  // `section(...)` slice, and the unreadable-conflictResolution test reads its prose. Both would
+  // have stayed green on a default changed here and nowhere else, while the three places that do
+  // pin defaults — setup.md, the user guide, the fragment — went on reporting agreement about a
+  // value the gate no longer used.
+  const configuration = section(source('src/tools/merge-gate.md'), '## Configuration', '\n## ');
+  for (const [key, value] of [
+    ['mergeGate.completion', '`ask`'],
+    ['mergeGate.conflictResolution', '`auto`'],
+    ['mergeGate.requireAllChecks', '`true`'],
+    ['mergeGate.checkWaitMinutes', '`20`'],
+    ['mergeGate.maxRounds', '`10`'],
+    ['mergeGate.botWaitMinutes', '`10`'],
+    ['mergeGate.bots', '`(empty)`'],
+    // The two per-login rows have no default: an unset trigger or check is what keeps a
+    // configured reviewer from being triggered or waited on by accident, so `unset` is the
+    // contract rather than a gap in the table.
+    ['mergeGate.bots.<login>.trigger', 'unset'],
+    ['mergeGate.bots.<login>.check', 'unset'],
+    // `delivery.mergeMethod` is read by this gate's merge step, so it sits in this table and is
+    // pinned with it.
+    ['delivery.mergeMethod', '`squash`'],
+  ]) {
+    assert.equal(
+      defaultCell(configuration, `\`${key}\``),
+      value,
+      `merge-gate.md's Configuration table must pair ${key} with its default ${value} in the ` +
+        'Default column',
+    );
+  }
+});
+
 test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys with their defaults', () => {
   const setup = source('src/tools/setup.md');
 
@@ -6844,13 +6916,11 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
   // The dedicated "Block `mergeGate`" table carries the untraded key/default pairs. Read from the
   // Default column, not from the row: this table's Values column lists every accepted value, so a
   // whole-row match on `` `auto` `` is already satisfied by `off` / `ask` / `auto` and survives a
-  // Default column flipped to `off`. The same defaults live in setup.md's block-9 table and in
-  // the shared configuration fragment, three places read by three different audiences, and a
-  // divergence is a project running a gate that resolves conflicts while its documentation says
-  // it does not. Only `completion`, `conflictResolution`, `requireAllChecks` and `bots` are
-  // actually pinned in all three: the fragment's own test asserts those four Default cells and
-  // no others, so `checkWaitMinutes`, `maxRounds` and `botWaitMinutes` are pinned here and in
-  // setup.md while the fragment carries their values with nothing asserting them.
+  // Default column flipped to `off`. The same defaults live in merge-gate.md's own Configuration
+  // table, in setup.md's block-9 table, in the shared configuration fragment, and in the guide's
+  // two overview tables — six places read by different audiences, each pinned by its own test
+  // above or below — and a divergence is a project running a gate that resolves conflicts while
+  // its documentation says it does not.
   const block = section(docs, '## Block `mergeGate`', '\n## ');
   for (const [key, value] of [
     ['completion', '`ask`'],
@@ -6876,6 +6946,91 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
     flat(block),
     /Do not confuse `mergeGate\.\*` with the pre-existing `delivery\.prReview`/,
   );
+});
+
+test("the user guide's two overview tables repeat the mergeGate.* defaults unchanged", () => {
+  // Two further copies of the same defaults, neither of them the block table above. The complete
+  // table example reproduces a whole ADR the way a reader is meant to copy it, and the
+  // safe-defaults table documents the values an unconfigured project runs on — not rows setup
+  // writes: `src/tools/setup.md` keeps the `mergeGate.*` keys and `delivery.mergeMethod` out of
+  // the Express base on purpose, so Express emits no line for them and the gate's own defaults
+  // apply. A wrong value in either one is still a wrong value in somebody's repository: the
+  // example is copied by hand, and the safe-defaults table is what a project behaves like when
+  // nobody configured it — yet both were unpinned.
+  const docs = source('docs/user-guide/configuration.md');
+  // `boundedSlice`, not `section`: the example reproduces an ADR whose own `## Configuration`
+  // heading sits inside the fence, so a `'\n## '` stop would cut the slice off above the table.
+  // A required stop marker also keeps a renamed following heading from silently widening the cut.
+  const example = boundedSlice(docs, '## Complete table example', '\n## Block `language`');
+  const safeDefaults = boundedSlice(
+    docs,
+    '## Safe defaults at a glance',
+    '\n## Runtime-state safety',
+  );
+
+  // Read from the Value column through `valueCell`, which normalizes the two tables' different
+  // cell spellings away; see its comment for why the gloss is dropped rather than pinned.
+  const shared = [
+    ['mergeGate.completion', 'ask'],
+    ['mergeGate.conflictResolution', 'auto'],
+    ['mergeGate.requireAllChecks', 'true'],
+    ['mergeGate.checkWaitMinutes', '20'],
+    ['mergeGate.maxRounds', '10'],
+    ['mergeGate.botWaitMinutes', '10'],
+    ['delivery.mergeMethod', 'squash'],
+  ];
+  for (const [key, value] of [...shared, ['mergeGate.bots', '(empty)']]) {
+    assert.equal(
+      valueCell(example, key),
+      value,
+      `the complete table example must show ${key} as ${value}`,
+    );
+  }
+  // `mergeGate.bots` is deliberately absent from the safe base — an empty bot list is the absence
+  // of the row, not a row carrying an empty value — so it is pinned in the example only.
+  for (const [key, value] of shared) {
+    assert.equal(
+      valueCell(safeDefaults, key),
+      value,
+      `the safe-defaults table must show ${key} as ${value}`,
+    );
+  }
+});
+
+test('valueCell normalizes one code span and leaves a malformed cell to fail', () => {
+  // The two tests above read the real guide; this one reads synthetic tables, because the point is
+  // the helper's tolerance rather than any documented value. A cell loses exactly one surrounding
+  // code-span pair, so `` `10` `` and a backtick-free `10` both read as the documented value while
+  // a stray internal backtick survives normalization and fails the comparison. The earlier
+  // strip-every-backtick rule made the malformed cell indistinguishable from the well-formed one,
+  // which let a documented default that no reader can copy pass the contract.
+  const table = (row) => `| Key | Value |\n| --- | --- |\n${row}`;
+
+  assert.equal(valueCell(table('| `mergeGate.maxRounds` | `10` |'), 'mergeGate.maxRounds'), '10');
+  assert.equal(valueCell(table('| mergeGate.maxRounds | 10 |'), 'mergeGate.maxRounds'), '10');
+  assert.equal(
+    valueCell(table('| `mergeGate.maxRounds` | `1`0` |'), 'mergeGate.maxRounds'),
+    '`1`0`',
+    'a value cell with a stray internal backtick must stay malformed, not normalize to `10`',
+  );
+
+  // A malformed key cell must miss the row rather than match the well-formed key, so the table it
+  // sits in is reported as missing that row instead of answering for it.
+  assert.throws(
+    () => valueCell(table('| `mergeGate`.maxRounds` | `10` |'), 'mergeGate.maxRounds'),
+    /missing table row: mergeGate\.maxRounds/,
+  );
+
+  // The two deliberate tolerances the helper documents are unaffected: a trailing gloss is still
+  // dropped, and a cell that is nothing but a parenthesis is still a value rather than a gloss.
+  assert.equal(
+    valueCell(
+      table('| `mergeGate.completion` | `ask` (ask at run time) |'),
+      'mergeGate.completion',
+    ),
+    'ask',
+  );
+  assert.equal(valueCell(table('| mergeGate.bots | (empty) |'), 'mergeGate.bots'), '(empty)');
 });
 
 test('skill-ownership.json names no merge gate among the consumers of effective-delivery', () => {
@@ -7827,16 +7982,24 @@ test('the shared configuration fragment documents every merge-gate key and the r
     assert.ok(block.includes(`\`${key}\``), `the configuration fragment must document ${key}`);
   }
 
-  // The third of the three places these keys live, and the defaults have to agree with setup.md's
-  // block-9 table and the user guide. `auto` is what makes a gate run resolve a conflict and push
-  // a merge commit at all, so a fragment carrying a different default would resolve the key one
-  // way while the wizard that writes it promised another. Read from the Default column: this
-  // table's Values column repeats every default it accepts.
+  // The defaults have to agree with merge-gate.md's own Configuration table, setup.md's block-9
+  // table and the user guide. `auto` is what makes a gate run resolve a conflict and push a merge
+  // commit at all, so a fragment carrying a different default would resolve the key one way while
+  // the wizard that writes it promised another. Read from the Default column: this table's Values
+  // column repeats every default it accepts. Every row is pinned, the numeric ones included — the
+  // three wait and round keys used to be pinned in setup.md and the user guide while the fragment
+  // carried their values with nothing asserting them, which is precisely where an edit could land
+  // unnoticed.
   for (const [key, value] of [
     ['mergeGate.completion', '`ask`'],
     ['mergeGate.conflictResolution', '`auto`'],
     ['mergeGate.requireAllChecks', '`true`'],
+    ['mergeGate.checkWaitMinutes', '`20`'],
+    ['mergeGate.maxRounds', '`10`'],
+    ['mergeGate.botWaitMinutes', '`10`'],
     ['mergeGate.bots', '`(empty)`'],
+    ['mergeGate.bots.<login>.trigger', 'unset'],
+    ['mergeGate.bots.<login>.check', 'unset'],
   ]) {
     assert.equal(
       defaultCell(block, `\`${key}\``),
