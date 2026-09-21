@@ -3871,23 +3871,26 @@ test('Stage B and apply-issues reconcile canonical containers before legacy expa
 });
 
 test('decomposition parsers derive their exact matcher from the versioned prefix contract', () => {
+  // The prefixes and the key parser live in the decomposition module, the record parser in the
+  // core; both halves of the contract are still asserted, each against the file that holds it.
+  const decomposition = source('src/scripts/remote-tracker-decomposition-core.mjs');
   const core = source('src/scripts/remote-tracker-core.mjs');
   assert.match(
-    core,
+    decomposition,
     /const DECOMPOSITION_KEY_PREFIX = `\$\{DECOMPOSITION_KEY_MARKER\}:\$\{DECOMPOSITION_KEY_VERSION\}`/,
   );
   assert.match(
-    core,
+    decomposition,
     /const DECOMPOSITION_RECORD_PREFIX = `\$\{DECOMPOSITION_RECORD_MARKER\}:\$\{DECOMPOSITION_RECORD_VERSION\}`/,
   );
   assert.match(
-    core,
+    decomposition,
     /const DECOMPOSITION_SECTION_PREFIX = `\$\{DECOMPOSITION_SECTION_MARKER\}:\$\{DECOMPOSITION_SECTION_VERSION\}`/,
   );
 
-  const keyParser = core.slice(
-    core.indexOf('function inspectDecompositionKey'),
-    core.indexOf('export function parseDecompositionKey'),
+  const keyParser = decomposition.slice(
+    decomposition.indexOf('function inspectDecompositionKey'),
+    decomposition.indexOf('export function parseDecompositionKey'),
   );
   const recordParser = core.slice(
     core.indexOf('export function parseDecompositionRecords'),
