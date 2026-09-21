@@ -14335,6 +14335,37 @@ test('commit-message-rules keeps both named overrides of effective-delivery', ()
   );
 });
 
+// Five of the fifteen sources that embed this fragment neither carry `effective-delivery` in a
+// `## Recommended skills` section nor appear in its ownership relationship, so they never discover
+// the skill and the labelled fallback is the only commit-message guidance they ever see. That is
+// what makes the fallback load-bearing rather than decorative: thinning it back to the bare type
+// set would silently take the concreteness rule and the generic-message ban away from every one of
+// them, which is a behaviour change disguised as a de-duplication. Pinned against the labelled
+// block itself, so the substance cannot drift out of the fallback into prose that an undiscovered
+// consumer is not reading.
+test('commit-message-rules keeps the fallback usable where effective-delivery is undiscovered', () => {
+  const flatRules = prose(source('src/shared/commit-message-rules.md'));
+
+  assert.match(
+    flatRules,
+    near(
+      'Minimal fallback when `effective-delivery` is absent or undiscovered',
+      'state concretely what was changed and why',
+      400,
+    ),
+    'the minimal fallback must keep the concreteness rule',
+  );
+  assert.match(
+    flatRules,
+    near(
+      'Minimal fallback when `effective-delivery` is absent or undiscovered',
+      'never settle for a generic message such as `update files` or `misc changes`',
+      400,
+    ),
+    'the minimal fallback must keep the generic-message ban',
+  );
+});
+
 // --- Advisory for observed but incompletely configured automatic reviewers ---
 
 test('the reviewer advisory conservatively classifies and retains candidates without gating', () => {
