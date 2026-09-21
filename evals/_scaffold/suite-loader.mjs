@@ -14,7 +14,7 @@
 // choice have to be different things, so a suite with no auxiliary evidence says
 // `auxiliaryEvidence: null` and a suite that says nothing is rejected.
 
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -29,6 +29,7 @@ const REQUIRED_FIELDS = {
   sandboxBase: (value) => typeof value === 'string' && value !== '',
   runtimeStateDir: (value) => typeof value === 'string' && value !== '',
   scenarios: (value) => Array.isArray(value) && value.length > 0,
+  scenarioRegistry: (value) => typeof value === 'string' && value !== '',
   loadSetSeeds: (value) => Array.isArray(value) && value.length > 0,
   instrumentFiles: (value) => Array.isArray(value) && value.length > 0,
   alwaysAllowedOperations: (value) => Array.isArray(value),
@@ -60,6 +61,18 @@ const REQUIRED_FIELDS = {
   retryDiscardLimit: (value) => typeof value === 'function',
 };
 
+// Path comparison that survives a checkout reached through a symlink: the suite declares its
+// instrument entries from `import.meta.dirname`, which is already resolved, but a suite could
+// legitimately declare one any other way. A path that does not exist yet compares as itself, so a
+// mis-declared entry fails on its own terms rather than here.
+function realPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
 export function suiteConfigPath(name) {
   if (!SUITE_NAME_RE.test(name ?? '')) {
     throw new Error(`invalid suite name ${JSON.stringify(name)}`);
@@ -86,6 +99,28 @@ export function validateSuite(suite, label) {
   if (!suite.instrumentFiles.includes(suite.trackerStub.source)) {
     throw new Error(
       `${label} hashes no instrument entry for its tracker stub at ${suite.trackerStub.source}`,
+    );
+  }
+  // The two halves of the registry split, which every suite follows and neither half of which is
+  // safe alone.
+  //
+  // A suite configuration selects what a slot sees — the setup rows, the project documents, the
+  // tracker stub, the overlay — so a rebinding there changes the run while every file the digest
+  // covers stays byte-identical. It has to be hashed. A scenario registry is a list of names no run
+  // reads, so hashing it would stale every archived round of every other scenario for a change none
+  // of them could observe. It must not be hashed. Splitting the two into separate modules is what
+  // lets both hold; checking only one half lets the other be defeated by moving a binding into the
+  // unhashed module or the names back into the hashed one.
+  const hashed = new Set(suite.instrumentFiles.map(realPath));
+  const configPath = resolve(suite.root, 'suite.config.mjs');
+  if (!hashed.has(realPath(configPath))) {
+    throw new Error(
+      `${label} is not one of its own instrumentFiles: it binds the setup, the project documents, the tracker stub and the overlay, so leaving it unhashed lets any of them be re-pointed while every archived stamp still reports current`,
+    );
+  }
+  if (hashed.has(realPath(suite.scenarioRegistry))) {
+    throw new Error(
+      `${label} hashes its scenario registry at ${suite.scenarioRegistry}: a registry is a list of names no run reads, and hashing it stales every archived round of every other scenario for each name added`,
     );
   }
   // `projectDocuments` is the one contract function whose return shape nothing downstream checks:

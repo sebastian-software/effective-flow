@@ -167,11 +167,17 @@ const EVAL_GIT_HASH = 'eval';
 // and `iterate-trace.mjs` — is deliberately not an instrument file: it is copied into the slot's
 // skill tree and hashed there, at the paths the run executes, as part of `skill`.
 //
-// The list itself is `suite.instrumentFiles`, declared by each suite beside the modules it names.
-// A suite's own configuration file is deliberately absent from it, for the same reason this file is:
-// the set it declares is already visible in the digest that set produces, and hashing the
-// declaration would put the scenario registry — a list of names no run reads — inside the
-// instrument.
+// The list itself is `suite.instrumentFiles`, declared by each suite beside the modules it names,
+// and a suite's own configuration file is a member of it. The set it declares is already visible in
+// the digest that set produces, but the *selection* is not: `scenarioSetup`, `projectDocuments`, the
+// tracker stub and the overlay are bound there, and re-pointing one of them changes what every slot
+// sees while every file the digest covers stays byte-identical.
+//
+// What stays out is the scenario registry, which each suite therefore keeps in a module of its own
+// (`scenario-registry.mjs`) rather than in its configuration. A list of names is the one declaration
+// no run reads, and hashing it costs every archived round of every other scenario a re-record per
+// name added. `validateSuite` holds both halves — the configuration hashed, the registry not — since
+// either half alone is defeated by moving a binding into the unhashed module.
 
 export function digestOf(content) {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
@@ -185,16 +191,16 @@ export function digestFile(path) {
 // that suite's own rationale — `evals/merge-gate/suite.config.mjs` carries it for the gate. Two
 // rules are this module's, because no suite can state them for itself:
 //
-// Seeds are safe to declare in an unhashed configuration. A seed added, removed or re-pointed
-// changes the derived set, so it changes `skill.files` and the skill digest with it; the guard is
-// self-enforcing there in a way it is not for the instrument list.
+// A seed added, removed or re-pointed changes the derived set, so it changes `skill.files` and the
+// skill digest with it, quite apart from the declaring file now being hashed. That makes the seed
+// list doubly self-enforcing — which is exactly why the one shape that escapes it needs its own
+// guard.
 //
-// **Except when the set collapses to nothing, which is why `deriveLoadSet` refuses an empty seed
-// list.** Self-enforcement rests on a shorter set producing a *different* digest, and a set of zero
-// files still produces a perfectly well-formed one. A suite whose seeds resolved empty would bind
-// every archived run to no files at all, and `verify` would report it current forever while the
-// sources moved underneath. The same holds for `instrumentIdentity` and an empty
-// `suite.instrumentFiles`.
+// **A collapse to nothing escapes it, which is why `deriveLoadSet` refuses an empty seed list.**
+// Self-enforcement rests on a shorter set producing a *different* digest, and a set of zero files
+// still produces a perfectly well-formed one. A suite whose seeds resolved empty would bind every
+// archived run to no files at all, and `verify` would report it current forever while the sources
+// moved underneath. The same holds for `instrumentIdentity` and an empty `suite.instrumentFiles`.
 
 // Apply the exact overlay a scenario executes to a copied skill tree. For `merge-gate`'s one
 // overlaid scenario the echo replaces the production `tools/iterate.md` seed rather than being

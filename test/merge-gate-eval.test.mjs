@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import {
   buildPortableSkill,
   freshnessVerdict,
@@ -291,14 +292,21 @@ test('the build stamp covers the built tree a run actually loads', () => {
 // file — declaring one new scenario name moved the instrument digest and staled every archived round
 // of every other scenario: six scenarios times five runs, roughly three hours of hand-recorded agent
 // sessions, paid for a list of names no run ever reads. The rationale is written above
-// `INSTRUMENT_FILES` in `build-identity.mjs`; the two tests below are what make it a property rather
-// than a comment, so the cost cannot come back silently.
+// `INSTRUMENT_FILES` in `build-identity.mjs`; the three tests below are what make it a property
+// rather than a comment, so the cost cannot come back silently.
 //
 // The first asserts on the digest and not on a file list, because the claim is "the registry is not
 // hashed" rather than "this particular file is absent" — a registry moved into any hashed module
-// would restore the cost just as completely. The second pins the membership rule itself, so an edit
-// that adds the suite configuration to `instrumentFiles` fails here instead of in three hours of
-// re-recording.
+// would restore the cost just as completely. The second pins the membership rule at the registry
+// module, so an edit that starts hashing it fails here instead of in three hours of re-recording.
+//
+// The third pins the half that pays for the first two. Cheapness bought by leaving the whole suite
+// configuration unhashed was not cheapness, it was a hole: that file binds `scenarioSetup`,
+// `projectDocuments`, the tracker stub and the overlay, so re-pointing one of them changes what
+// every slot sees without a byte of any hashed file moving, and every archived stamp goes on
+// reporting current. The names live in their own module and the configuration is hashed again;
+// keeping only one of those two facts under test lets the other be defeated by moving a binding into
+// the unhashed module.
 const UNDECLARED_SCENARIO = 'a-scenario-that-does-not-exist-yet';
 
 test("adding a scenario leaves the instrument digest untouched, so a new scenario costs its own evidence and no other scenario's", () => {
@@ -324,31 +332,99 @@ test("adding a scenario leaves the instrument digest untouched, so a new scenari
   );
 });
 
-test("the suite's own configuration is not an instrument file, so declaring a scenario cannot stale every archived round", () => {
-  const configPath = realpathSync(suiteConfigPath(suite.name));
+test('the scenario registry module is not an instrument file, so declaring a scenario cannot stale every archived round', async () => {
+  const registryPath = realpathSync(suite.scenarioRegistry);
   const hashed = suite.instrumentFiles.map((path) => realpathSync(path));
 
   assert.ok(
-    !hashed.includes(configPath),
-    `${configPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
+    !hashed.includes(registryPath),
+    `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
   );
-  for (const path of suite.instrumentFiles) {
-    assert.notEqual(
-      basename(path),
-      'suite.config.mjs',
-      `${path} is hashed as an instrument file. A suite configuration is deliberately absent from the instrument: the set it declares is already visible in the digest that set produces, and hashing the declaration puts the scenario registry inside the instrument.`,
+  assert.equal(
+    basename(registryPath),
+    'scenario-registry.mjs',
+    `the suite points scenarioRegistry at ${registryPath}. The unhashed module is meant to hold names and nothing else, and a suite that points the field at another file of its own has declared whatever that file contains exempt from the instrument.`,
+  );
+
+  // Ties the structural claim to the thing it protects. Asserting only that this path is unhashed
+  // says nothing while the registry lives elsewhere, so read the module back and require it to be
+  // where the registry is declared.
+  const registrySource = readFileSync(registryPath, 'utf8');
+  for (const scenario of suite.scenarios) {
+    assert.ok(
+      registrySource.includes(scenario),
+      `the scenario registry names ${scenario}, which ${registryPath} does not mention — so the registry is declared in some other module. Unless that module is unhashed too, adding a scenario is back to costing a re-record of every archived round.`,
     );
   }
 
-  // Ties the structural claim to the thing it protects. Asserting only that this path is unhashed
-  // says nothing while the registry lives elsewhere, so read the configuration back and require it
-  // to be where the registry is declared.
-  const configSource = readFileSync(configPath, 'utf8');
-  for (const scenario of suite.scenarios) {
+  // The other direction, and the one that keeps the exemption honest: this module is exempt because
+  // names are all it holds. A function, a path or a document template moved here would be unhashed
+  // behaviour, which is precisely what hashing the configuration closed.
+  const registryModule = await import(pathToFileURL(registryPath).href);
+  for (const [name, value] of Object.entries(registryModule)) {
     assert.ok(
-      configSource.includes(scenario),
-      `the scenario registry names ${scenario}, which ${configPath} does not mention — so the registry is declared in some other module. Unless that module is unhashed too, adding a scenario is back to costing a re-record of every archived round.`,
+      Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
+      `${registryPath} exports ${name}, which is not a list of names. The module is kept out of the instrument because a scenario registry changes nothing any run does; anything else declared here is behaviour no archived stamp would ever notice moving.`,
     );
+  }
+});
+
+// The two bindings the finding named, each rebound in the object literal rather than in the import
+// block: a rebinding is the change the file-level hash is there to catch, since it moves what every
+// slot sees while every file the digest already covered stays byte-identical.
+const BEHAVIOUR_BEARING_REBINDINGS = [
+  {
+    field: 'projectDocuments',
+    pattern: /\n  projectDocuments,\n/,
+    replacement: "\n  projectDocuments: () => ({ agents: '', setupAdr: '' }),\n",
+    consequence: "every slot's AGENTS.md and project-setup ADR",
+  },
+  {
+    field: 'scenarioSetup',
+    pattern: /\n  scenarioSetup,\n  projectDocuments,\n/,
+    replacement: '\n  scenarioSetup: () => ({}),\n  projectDocuments,\n',
+    consequence: 'the rows and overlay each scenario is provisioned with',
+  },
+];
+
+test('rebinding a behaviour-bearing value in the suite configuration moves the instrument digest', () => {
+  const configPath = realpathSync(suiteConfigPath(suite.name));
+  assert.ok(
+    suite.instrumentFiles.map((path) => realpathSync(path)).includes(configPath),
+    `${configPath} is not an instrument file. It binds scenarioSetup, projectDocuments, the tracker stub and the overlay policy, so unhashed it can be re-pointed at other modules and every archived round goes on reporting current over evidence recorded against a different sandbox. Only the scenario registry is exempt, and it has its own module for that.`,
+  );
+
+  // Membership is half the claim; the other half is that the identity is computed from this file's
+  // bytes. Hash a copy of the real configuration, rebind one value in it, and hash again. The copy
+  // keeps one path across both hashes, so the difference can only come from the content.
+  const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-instrument-binding-'));
+  try {
+    const probePath = resolve(scratch, 'suite.config.mjs');
+    const instrumentFiles = suite.instrumentFiles.map((path) =>
+      realpathSync(path) === configPath ? probePath : path,
+    );
+    const source = readFileSync(configPath, 'utf8');
+    writeFileSync(probePath, source);
+    const baseline = instrumentIdentity({ ...suite, instrumentFiles });
+
+    for (const { field, pattern, replacement, consequence } of BEHAVIOUR_BEARING_REBINDINGS) {
+      const rebound = source.replace(pattern, replacement);
+      assert.notEqual(
+        rebound,
+        source,
+        `the probe's ${field} rebinding matched nothing in ${configPath}, so this case proves nothing about it — re-anchor the pattern on however the suite binds ${field} now`,
+      );
+      writeFileSync(probePath, rebound);
+      const moved = instrumentIdentity({ ...suite, instrumentFiles });
+      assert.notEqual(
+        moved.digest,
+        baseline.digest,
+        `rebinding ${field} left the instrument digest at ${baseline.digest}. That rebinding changes ${consequence} without moving a byte of any other hashed file, so an unobserved one lets the sandbox drift while every archived round reports current.`,
+      );
+      writeFileSync(probePath, source);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 });
 
@@ -1039,9 +1115,9 @@ function currentIdentity(scenario) {
 // derivation can go wrong aborts: a seed absent from the built tree, a load pointer naming a
 // fragment that is not there, a router carrying no version stamp. A seed list that resolves to zero
 // files trips none of those — it produces a plausible `sha256:…` that thirty archived runs can bind
-// to, after which `verify` reports `current` forever while the sources move underneath. The seeds
-// and the instrument list live in an unhashed suite configuration, so this is the one shape the
-// self-enforcement argument for putting them there does not cover.
+// to, after which `verify` reports `current` forever while the sources move underneath. Hashing the
+// suite configuration catches a list that was edited; it cannot catch a list that resolved to
+// nothing, because the digest of no files is as well-formed as any other.
 test('an empty load set or instrument list aborts instead of hashing nothing', () => {
   const skillRoot = builtSkillRootForTests();
   assert.throws(
@@ -1079,14 +1155,15 @@ test('the version-stamped router must be a member of the load set it is neutrali
 // The stub's destination inside a slot's skill tree decides whether the shipped helper survives the
 // copy. Every scenario prompt drives `node <skill root>/scripts/remote-tracker.mjs` by hand, and the
 // load set excludes that path precisely because the stub replaces it — so a destination one file
-// sideways leaves the real helper in place, pointed at a real forge, with no digest moving. It is
-// therefore a constant in an instrument file rather than a field of the unhashed suite
-// configuration, and the suite must not carry a second copy of it to diverge from.
+// sideways leaves the real helper in place, pointed at a real forge, and the run still looks like a
+// run. It is therefore one constant in one instrument file, and the suite must not carry a second
+// copy of it to diverge from — a per-suite destination is a choice no suite should have, quite apart
+// from whether the file stating it is hashed.
 test('the tracker stub destination is fixed by an instrument file, not by the suite configuration', () => {
   assert.equal(TRACKER_STUB_SKILL_PATH, 'scripts/remote-tracker.mjs');
   assert.ok(
     !Object.hasOwn(suite.trackerStub, 'skillPath'),
-    'the suite configuration declares a stub destination of its own; it is unhashed, so it could be pointed anywhere while every prompt still drives the shipped helper',
+    'the suite configuration declares a stub destination of its own, so the shared scaffold and the suite now state the destination twice and a run drives whichever one wins',
   );
   assert.ok(
     suite.instrumentFiles.some((path) => realpathSync(path) === realpathSync(SCAFFOLD_PATH)),

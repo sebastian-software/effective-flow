@@ -31,14 +31,19 @@ final publication of canonical results is serialized.
 
 The instrument is shared with every other behavioural eval suite and lives one level up, under
 `evals/_scaffold/`; what is specific to this suite lives here. `suite.config.mjs` is the seam
-between the two: it is the single place this suite declares its load-set seeds, its scenario
-registry, its evaluator, its tracker stub, its `iterate`-echo overlay policy and its sandbox
-namespace, and the shared scaffold reads all of it from there rather than naming a tool.
+between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
+tracker stub, its `iterate`-echo overlay policy and its sandbox namespace, and the shared scaffold
+reads all of it from there rather than naming a tool. It is hashed as one of the suite's instrument
+files, because every one of those bindings decides what a slot sees. The scenario registry is the
+one declaration that does not, so it sits in `scenario-registry.mjs` and is hashed by nothing —
+adding a scenario therefore costs its own evidence and no other scenario's. `validateSuite` holds
+both halves, and neither is safe alone.
 
 | Path                                         | What it is                                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                      |
-| `suite.config.mjs`                           | Everything the shared scaffold needs about this suite, the scenario registry included   |
+| `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it |
+| `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument          |
 | `_scaffold/remote-tracker.mjs`               | The canned-envelope stub standing in for the shipped helper, and writer of the call log |
 | `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace |
 | `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads           |
@@ -724,12 +729,14 @@ held lock.
    `<!-- prompt:end -->` markers as a single fenced block, and the expected outcome below it, marked
    plainly as **not part of the prompt**. The prompt must not state what the gate should conclude —
    that is what makes the run a test rather than a recitation.
-4. Register the scenario's name in the `SCENARIOS` registry in `suite.config.mjs`, then implement its
-   outcome evaluation in `_scaffold/evaluate.mjs` and add the same name to that file's
-   `BRANCHED_SCENARIOS`. The registry lives in the suite configuration
-   rather than in the shared `../_scaffold/suite.mjs` precisely so that adding a name costs nothing:
-   the configuration is not an instrument file, so no other scenario's archived evidence goes stale
-   for it. `BRANCHED_SCENARIOS` is what keeps that cheapness honest — a registered name no branch
+4. Register the scenario's name in the `SCENARIOS` registry in `scenario-registry.mjs`, then
+   implement its outcome evaluation in `_scaffold/evaluate.mjs` and add the same name to that file's
+   `BRANCHED_SCENARIOS`. The registry lives in a module of its own — not in the shared
+   `../_scaffold/suite.mjs`, and not in `suite.config.mjs` either — precisely so that adding a name
+   costs nothing: that module is the only one the instrument does not hash, so no other scenario's
+   archived evidence goes stale for it. Nothing but names belongs there; the configuration beside it
+   is hashed, and a binding moved into the registry would be behaviour no archived stamp could
+   notice moving. `BRANCHED_SCENARIOS` is what keeps that cheapness honest — a registered name no branch
    recognises would otherwise publish five green runs that assert nothing — and the outcome chain
    throws on a name that reaches no branch, as a backstop for the two lists disagreeing.
    Discovery requires the scenario template,

@@ -2,14 +2,23 @@
 // under `evals/_scaffold/` names no tool: it reads the seeds, the registry, the evaluator, the
 // tracker stub, the overlay policy and the sandbox namespace from here.
 //
-// **This file is deliberately not one of `instrumentFiles`.** The membership rule for the
-// instrument is "would a change here change what the run did" (see `build-identity.mjs`), and a
-// scenario registry is a list of names no run ever reads. While the registry lived in
-// `_scaffold/suite.mjs`, which is hashed, adding a single scenario moved the instrument digest and
-// staled every archived round of every other scenario — thirty re-recorded runs for a change that
-// altered nothing any of them observed. Everything else declared here is covered elsewhere: the
-// seeds and the overlay show up in `skill.files`, the stub and the modules below are hashed by
-// name in `instrumentFiles`, and the sandbox base is a scratch path no run reads.
+// **This file is one of `instrumentFiles`, and the registry it imports is not.** The membership
+// rule for the instrument is "would a change here change what the run did" (see
+// `build-identity.mjs`), and this file answers that both ways, so the two answers were separated
+// rather than one of them given up:
+//
+//   * `scenarioSetup`, `projectDocuments`, `trackerStub`, the overlay policy and the seeds are
+//     bindings, and each one decides what a slot sees. Re-pointing `projectDocuments` at another
+//     document template changes the `AGENTS.md` every gate run reads, with not a byte of any file
+//     the digest covered moving. That has to cost a stamp, so this file is hashed.
+//   * The scenario registry is a list of names no run ever reads. While it lived in a hashed module,
+//     declaring one new name moved the instrument digest and staled every archived round of every
+//     other scenario — thirty re-recorded runs for a change none of them could observe. That must
+//     stay free, so the names live in `scenario-registry.mjs`, which is hashed by nothing.
+//
+// Hashing this file does not double-count what it declares: the seeds and the overlay already show
+// up in `skill.files`, the modules below are hashed by name, and the sandbox base is a scratch path
+// no run reads. What it adds is the binding itself — which of those files this suite selected.
 
 import { resolve } from 'node:path';
 import {
@@ -21,21 +30,15 @@ import {
 } from './_scaffold/configured-reviewer-scenario.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import * as evaluator from './_scaffold/evaluate.mjs';
+import { SCENARIOS } from './scenario-registry.mjs';
 
 const SUITE_ROOT = resolve(import.meta.dirname);
 const SCAFFOLD = resolve(SUITE_ROOT, '_scaffold');
 const SHARED_SCAFFOLD = resolve(SUITE_ROOT, '..', '_scaffold');
 
-// The scenario registry: the third parity member beside `scenarios/` and `fixtures/`, and the one
-// place a scenario is declared to have an evaluator branch at all.
-const SCENARIOS = Object.freeze([
-  'configured-reviewer-set-aside-blocks',
-  'guard-blocks-merge',
-  'linked-issue-open-points',
-  'merge-proceeds',
-  'unreported-checks-at-phase-four',
-  'unreported-checks-block-merge',
-]);
+// The unhashed half of the split, declared as a path so `validateSuite` can hold both halves of the
+// membership rule: this module out of the instrument, the configuration in it.
+const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 
 // The seeds of the load set: the router that dispatches the invocation, the tool body that is the
 // gate itself, the three artifacts the gate delegates into — the `iterate` workflow it hands a
@@ -74,6 +77,10 @@ const LOAD_SET_SEEDS = Object.freeze([
 const TRACKER_STUB_SOURCE = resolve(SCAFFOLD, 'remote-tracker.mjs');
 
 const INSTRUMENT_FILES = Object.freeze([
+  // This file. Every binding above and below it selects what a slot sees, so the selection is
+  // hashed alongside the files it selects; `scenario-registry.mjs` stays out, which is what keeps
+  // adding a scenario free.
+  resolve(SUITE_ROOT, 'suite.config.mjs'),
   TRACKER_STUB_SOURCE,
   resolve(SHARED_SCAFFOLD, 'sandbox.mjs'),
   resolve(SHARED_SCAFFOLD, 'scaffold.mjs'),
@@ -92,6 +99,7 @@ const suite = {
   // The directory under `.effective-flow/` that holds this suite's publication locks.
   runtimeStateDir: 'merge-gate-eval',
   scenarios: SCENARIOS,
+  scenarioRegistry: SCENARIO_REGISTRY,
   loadSetSeeds: LOAD_SET_SEEDS,
   instrumentFiles: INSTRUMENT_FILES,
   // Operations a run may legitimately attempt without the fixture answering them. `pr-merge` is the
@@ -99,8 +107,8 @@ const suite = {
   // record the attempt, which is the observation that scenario exists to make.
   alwaysAllowedOperations: Object.freeze(['pr-merge']),
   // Where it lands inside a slot's skill tree is not declared here: `TRACKER_STUB_SKILL_PATH` in
-  // the shared `scaffold.mjs` owns that, so the destination is covered by an instrument hash
-  // instead of by this unhashed file.
+  // the shared `scaffold.mjs` owns that, so every suite copies the stub over the same path instead
+  // of each choosing one and a run driving whichever of the two declarations won.
   trackerStub: { source: TRACKER_STUB_SOURCE },
   // The one generation of accepted difference between an archived stamp and a fresh identity, and
   // the only waiver besides the release-version one. It has no subject in the corpus that ships;

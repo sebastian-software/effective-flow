@@ -312,6 +312,34 @@ test('the suite contract is checked once at load rather than discovered field by
     /hashes no instrument entry for its tracker stub/,
   );
 
+  // Both halves of the registry split, neither of which is safe alone. A configuration left out of
+  // its own instrument can re-point `scenarioSetup` or `projectDocuments` at other modules while
+  // every archived stamp reports current; a registry pulled into it costs every other scenario a
+  // re-record per name added.
+  assert.throws(
+    () =>
+      validateSuite(
+        {
+          ...suite,
+          instrumentFiles: suite.instrumentFiles.filter(
+            (path) => path !== resolve(suite.root, 'suite.config.mjs'),
+          ),
+        },
+        label,
+      ),
+    /is not one of its own instrumentFiles/,
+    'a suite that omits its own configuration from the instrument is accepted, so the bindings it makes are unhashed',
+  );
+  assert.throws(
+    () =>
+      validateSuite(
+        { ...suite, instrumentFiles: [...suite.instrumentFiles, suite.scenarioRegistry] },
+        label,
+      ),
+    /hashes its scenario registry/,
+    'a suite that hashes its scenario registry is accepted, so adding one name is back to staling every archived round',
+  );
+
   for (const field of ['scenarios', 'loadSetSeeds', 'instrumentFiles']) {
     assert.throws(
       () => validateSuite({ ...suite, [field]: [] }, label),
