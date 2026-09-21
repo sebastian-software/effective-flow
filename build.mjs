@@ -84,6 +84,7 @@ const RUNTIME_SCRIPT_FILES = [
   'remote-tracker-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker-decomposition-core.mjs',
+  'remote-tracker-forgejo-core.mjs',
 ];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
