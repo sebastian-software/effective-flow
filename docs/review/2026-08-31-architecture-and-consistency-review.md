@@ -58,9 +58,9 @@ document rather than in the code:
   include and lazy-include fences and the delegation-mandate scoping paragraphs, which belong to the
   tool's own contract rather than to the exclusion. D-4 therefore has nothing left to cut and is
   withdrawn; the size question it was part of stays with F-15.
-- **The §6.2 move recommendation did not survive a per-item comparison.** §6.2 (L529), repeated in
-  P4 (L625), proposed moving all six reusable fragments to the skills repository. Compared item by
-  item against the skills checkout at `f4300bb` (2026-09-14), the recommendation is resolved for
+- **The §6.2 move recommendation did not survive a per-item comparison.** §6.2, repeated in P4,
+  proposed moving all six reusable fragments to the skills repository. Compared item by item
+  against the skills checkout at `f4300bb` (2026-09-14), the recommendation is resolved for
   one item by delegation rather than by a move, fails for two, is premature for two, and has lost
   its basis for the sixth. M-1 (`worktree-lifecycle` + `execution-location`) stays in Effective
   Flow: `effective-delivery/references/worktree-safety.md:22–23` says to "keep the receipt in run

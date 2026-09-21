@@ -6,10 +6,10 @@
 
 ## Requirement
 
-Section §6.2 (L529) of
+Section §6.2 of
 [`docs/review/2026-08-31-architecture-and-consistency-review.md`](../../review/2026-08-31-architecture-and-consistency-review.md)
 proposed moving six Effective Flow shared fragments into the central skills repository (M-1 … M-6), and P4
-(L625) repeats it: "move the six reusable fragments to the skills repository".
+repeats it: "move the six reusable fragments to the skills repository".
 
 A per-item comparison against the skills checkout found that recommendation largely wrong. The table below is
 restated against the **current** checkout `f4300bb` (2026-09-14); the original comparison ran against
@@ -268,8 +268,8 @@ open | — |`, and no `Everything else` row exists to keep last.
    what `build.mjs:1464–1472` warns against.
 6. **Correct the review document** in its status section:
    - change the "Three corrections" lead-in (L38) to four;
-   - add a fourth correction bullet: the §6.2 recommendation (L529), repeated in P4 (L625), to move all six
-     fragments did not survive a per-item comparison with the skills checkout — one item confirmed and
+   - add a fourth correction bullet: the §6.2 recommendation, repeated in P4, to move all six fragments
+     did not survive a per-item comparison with the skills checkout — one item confirmed and
      implemented, two withdrawn, two deferred to an upstream contribution that has not happened, and one left
      without a basis. State it that way rather than as a blanket rejection, because the table below says
      exactly that. Carry the one-line verdict per item from the Requirement table, quote the surviving upstream
