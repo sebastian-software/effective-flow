@@ -1454,7 +1454,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
   // of one allowance: its measured always-loaded size plus at most ten lines of
-  // headroom. `merge-gate` currently measures 2263 lines against its 2270 limit.
+  // headroom. `merge-gate` currently measures 2286 lines against its 2290 limit.
   //
   // Every number here is a **measured backlog, not a target**. It records what a
   // tool's always-loaded core costs today; it is not a size anyone argued for.
@@ -1497,7 +1497,7 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2270,
+    'merge-gate': 2290,
     iterate: 1775,
     setup: 1723,
     'apply-review': 1360,

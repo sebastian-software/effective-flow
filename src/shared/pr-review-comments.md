@@ -160,9 +160,9 @@ A delegating caller may suppress that comment, and `{{SKILL:merge-gate}}` does s
 delegates. Four grounds carry that, none of them about how a later read classifies the author. One
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
-request receives the same content in the gate's own chat summary. The gate's stated guarantee — a
-gate-initiated run leaves **at most one** item of its own on the pull request, its trigger comment —
-is false the moment a delegated round adds a second. And a gate authenticated as a **different**
+request receives the same content in the gate's own chat summary. The gate's stated bound — its own
+items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
 dropped.
@@ -228,12 +228,13 @@ operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
-report the still-pending checks and ask the user once instead.
+report the still-pending checks and ask the user instead – **once per run**, not once per repeated
+wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
