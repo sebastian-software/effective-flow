@@ -14259,6 +14259,82 @@ test('commit and pr preserve the staged-only and committed-only boundaries', () 
   );
 });
 
+// `effective-delivery` is the declared owner of commit-message craft, so the fragment has to say
+// so: without this paragraph the remaining rules read as a competing playbook rather than as the
+// scope constraints and overrides they are, and the ownership check has nothing to verify.
+test('commit-message-rules declares effective-delivery authoritative for commit-message craft', () => {
+  const flatRules = prose(source('src/shared/commit-message-rules.md'));
+
+  assert.match(
+    flatRules,
+    near('`effective-delivery` owns commit-message craft', 'authoritative when present', 80),
+    'the fragment must name effective-delivery as the authoritative owner of commit-message craft',
+  );
+  // The bans are the other half of the same argument: they constrain scope instead of restating
+  // the skill, which is why they may stay here at all.
+  assert.match(
+    flatRules,
+    near(
+      'scope constraints rather than a second copy',
+      'states unconditionally what the skill makes conditional',
+      200,
+    ),
+    'the remaining rules must be justified as scope constraints, not as a second copy',
+  );
+});
+
+// The two refinements below are the entire reason this fragment was not moved upstream, so each is
+// pinned on its own and in both of its two places: the override claim in the authority paragraph,
+// and the operative rule further down. Pinning only one place lets the other be deleted silently —
+// an override nobody states is advice, and a claim with no rule behind it is decoration.
+test('commit-message-rules keeps both named overrides of effective-delivery', () => {
+  const flatRules = prose(source('src/shared/commit-message-rules.md'));
+
+  assert.match(
+    flatRules,
+    near(
+      'which therefore override it',
+      'deployment-effective config/env/secrets/CI is not `chore:`',
+      120,
+    ),
+    'the deployment-effect refinement must be declared an override of effective-delivery',
+  );
+  assert.match(
+    flatRules,
+    near('which therefore override it', 'the squash PR title is the release signal', 220),
+    'the squash-PR-title refinement must be declared an override of effective-delivery',
+  );
+
+  // Override 1, as an operative rule: classification follows deployment effect, so pure
+  // config/env/secrets/CI with runtime effect is not `chore:`.
+  assert.match(
+    flatRules,
+    near(
+      'Choose the commit type by effect, not by file type',
+      'config/env/secrets/CI with deployment or runtime effect',
+      200,
+    ),
+    'the effect classification must keep deployment-effective config/env/secrets/CI out of chore:',
+  );
+  assert.match(
+    flatRules,
+    /`chore:` only for deploy-neutral changes without behavioral effect/,
+    'the effect classification must reserve chore: for deploy-neutral changes',
+  );
+
+  // Override 2, as an operative rule: the squash PR title is what release-please reads, so it
+  // carries the same classification as the commit type.
+  assert.match(
+    flatRules,
+    near(
+      'This also applies to the squash PR title',
+      'determines the release-please bump on a squash merge',
+      120,
+    ),
+    'the squash PR title must stay the release signal that carries the same classification',
+  );
+});
+
 // --- Advisory for observed but incompletely configured automatic reviewers ---
 
 test('the reviewer advisory conservatively classifies and retains candidates without gating', () => {
@@ -14833,18 +14909,74 @@ test('the project ADR-naming fragment fences disagreeing declared sources before
   );
 });
 
-// Both halves of the declared-source surface are security decisions the deep review made
-// explicitly: the fragment resolves a write path from attacker-influenceable repository text, so
-// the set of texts it reads stays exactly the two it was reviewed with, and the `effective-product`
-// premise stays out of it (the ADR ownership guard reads that word, and this fragment is
-// deliberately outside its premise).
+// The fragment opens by naming its relationship to the skill that owns ADR craft, and that
+// paragraph is the whole justification for the resolution living in Effective Flow:
+// `effective-product` follows a declared convention, so determining one where the target project's
+// scheme is unknown is the deferring side's work. Without the paragraph the section reads as a
+// second ADR playbook competing with its owner, which is exactly what the ownership check forbids.
+test('the project ADR-naming fragment declares the effective-product relationship it serves', () => {
+  const opening = prose(
+    boundedSlice(
+      source('src/shared/project-adr-convention.md'),
+      '## Project-declared ADR naming convention',
+      '\nThe naming',
+    ),
+  );
+
+  assert.match(
+    opening,
+    near('`effective-product` owns ADR craft', 'authoritative for it', 60),
+    'the opening must name effective-product as the authoritative owner of ADR craft',
+  );
+  assert.match(
+    opening,
+    near('on naming it follows the', 'declared convention rather than imposing one of its own', 80),
+    'the opening must state that the owner follows the declared convention instead of imposing one',
+  );
+  // The deferral only works where a convention exists, so this section is what supplies one.
+  assert.match(
+    opening,
+    near('This section is that mechanism', 'resolve an unfamiliar scheme', 240),
+    'the opening must name this section as the mechanism that determines the convention',
+  );
+  assert.match(
+    opening,
+    /Resolution is orchestration, which Effective Flow keeps/,
+    'the opening must keep the resolution itself on the Effective Flow side of the ownership line',
+  );
+});
+
+// The declared-source surface is a security decision the deep review made explicitly: the fragment
+// resolves a write path from attacker-influenceable repository text, so the set of texts it reads
+// stays exactly the two it was reviewed with. The surface no longer includes a ban on the word
+// `effective-product`: the fragment now names that skill on purpose, in the relationship paragraph
+// pinned above. The ban existed because the ADR ownership guard did not read this file, so the
+// guard's scan set was widened to include it rather than the protection being dropped — which is
+// what the next test pins.
+test('the ADR ownership guard scans every file that names effective-product on ADR craft', () => {
+  const guidance = section(source('build.mjs'), 'const guidanceFiles = [', '\n  ];');
+
+  // The four the guard was introduced with, plus the fragment that gained a relationship
+  // paragraph. `project-adr-convention` is the load-bearing one: a word-ban used to keep
+  // `effective-product` out of it *because* the guard was blind to it, so dropping that ban
+  // without widening the scan would have left the prose unchecked.
+  for (const file of [
+    'AGENTS.md',
+    'configuration.md',
+    'skill-ownership.md',
+    'adr-convention.md',
+    'project-adr-convention.md',
+  ]) {
+    assert.ok(
+      guidance.includes(`'${file}'`),
+      `the ADR ownership guard must scan ${file}; a file that names effective-product on ADR ` +
+        'craft outside this set carries unchecked claims',
+    );
+  }
+});
+
 test('the project ADR-naming fragment keeps its declared-source surface at two sources', () => {
   const raw = source('src/shared/project-adr-convention.md');
-
-  assert.ok(
-    !raw.includes('effective-product'),
-    'the fragment must not name effective-product; it sits outside the ADR ownership guard premise',
-  );
 
   const declared = boundedSlice(raw, '### Declared sources', '\n### ');
   const items = bullets(declared);
@@ -15016,6 +15148,66 @@ test('the project ADR-naming fragment allocates a width and a number and guards 
       200,
     ),
     'a numberless collision must stop and report rather than allocate a second name',
+  );
+});
+
+// `effective-product` permits a living ADR lifecycle only where the repository declares five
+// things first, so this list is the verification surface for that permission: a reader checks the
+// declaration instead of taking it on trust. A missing answer silently turns the living model back
+// into an undeclared divergence, which is why all five are pinned. Item 4 is pinned twice over:
+// "neither" is the one answer this declaration newly decided rather than collected from a section
+// the fragment already carried, and a later edit that quietly introduces an update date or a change
+// note would otherwise pass.
+test('adr-convention answers all five upstream living-record declaration items', () => {
+  const declaration = boundedSlice(
+    source('src/shared/adr-convention.md'),
+    '**What this declaration has to answer.**',
+    '\n**Coexistence.**',
+  );
+
+  assert.match(
+    prose(declaration),
+    near(
+      '`effective-product` permits a living lifecycle only where',
+      'declares five things first',
+      120,
+    ),
+    'the declaration must name the upstream permission it is answering',
+  );
+
+  const answers = declaration
+    .split(/\n(?=\d+\. )/)
+    .slice(1)
+    .map((item) => prose(item));
+  assert.equal(answers.length, 5, 'all five declaration items must be answered');
+
+  for (const [index, subject] of [
+    [0, /The living or mutable lifecycle/],
+    [1, /Filename identity and location/],
+    [2, /The status vocabulary/],
+    [3, /Whether a record carries an update date or a short change note/],
+    [4, /Which narrow records may own configuration values/],
+  ]) {
+    assert.match(answers[index], subject, `declaration item ${index + 1} must keep its subject`);
+  }
+
+  // Each subject needs its answer, not only its heading; a heading with the answer cut is a
+  // declaration item that declares nothing.
+  assert.match(answers[0], /updated in place when the decision changes/);
+  assert.match(answers[1], /Project-declared ADR naming convention/);
+  assert.match(answers[2], /`Active`, `Superseded`,\s*`Not implemented`/);
+  assert.match(answers[4], /exactly one, the project-setup ADR/);
+
+  // Item 4's answer is "neither", and repository history is what holds the earlier states instead.
+  assert.match(
+    answers[3],
+    near('neither\\.', 'carries no update date and no change note', 200),
+    'item 4 must answer "neither" and state that no update date and no change note are carried',
+  );
+  assert.match(
+    answers[3],
+    /repository history carries its earlier states/,
+    'item 4 must name repository history as what holds the earlier states instead',
   );
 });
 

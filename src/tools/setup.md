@@ -67,6 +67,10 @@ config-merge-gate-keys
 config-setup-migration
 ```
 
+## Recommended skills
+
+- `effective-product`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before writing and follow its guidance on configuration, file formats, and project-wide conventions.

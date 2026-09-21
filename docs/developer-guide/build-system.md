@@ -212,12 +212,12 @@ The build aborts with an error message if any of these guards is violated:
   **`route-when-relevant`** consumer is checked **per relationship**, because a relevance-gate
   consumer such as `plan` reaches its owner through the structured marker in
   `central-reasoning-delegation.md` instead of a section of its own. Shared-fragment consumers
-  (`language-rules`, `chat-language`, `dependency-version-policy`,
-  `documentation-sync-contract`, `durable-follow-up-gate`, `investigation-method`,
-  `worktree-integration`) are exempt **by kind** in both cases: a fragment expresses its ownership
-  as prose inside the tool that embeds it and can never produce a chain. The
-  `recommendationCapableConsumers` argument that carries that filter is required, so dropping it
-  fails the build instead of silently disabling the check.
+  (`language-rules`, `chat-language`, `adr-convention`, `commit-message-rules`,
+  `dependency-version-policy`, `documentation-sync-contract`, `durable-follow-up-gate`,
+  `investigation-method`, `project-adr-convention`, `worktree-integration`) are exempt **by kind**
+  in both cases: a fragment expresses its ownership as prose inside the tool that embeds it and
+  can never produce a chain. The `recommendationCapableConsumers` argument that carries that
+  filter is required, so dropping it fails the build instead of silently disabling the check.
 - **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
   worker contract is scanned after transformation. Native references must resolve to exact
   namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to
@@ -261,8 +261,8 @@ The build aborts with an error message if any of these guards is violated:
   inferred from source files. Unit tests cover allowlist boundaries and diagnostics;
   `pnpm test:distribution` verifies the staged-payload rejection path.
 - **ADR ownership-contract guard (#167):** `AGENTS.md`,
-  `docs/developer-guide/configuration.md`, `docs/developer-guide/skill-ownership.md`, and
-  `src/shared/adr-convention.md` are scanned for stale current claims that Effective Flow
+  `docs/developer-guide/configuration.md`, `docs/developer-guide/skill-ownership.md`,
+  `src/shared/adr-convention.md`, and `src/shared/project-adr-convention.md` are scanned for stale current claims that Effective Flow
   deliberately or intentionally diverges, deviates, or conflicts with `effective-product` – the
   central skill that owns ADR craft – or that this skill requires immutable, numbered ADRs. An
   explicitly historical paragraph is accepted only when it also marks that premise as outdated or
