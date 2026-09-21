@@ -182,14 +182,22 @@ function defaultCell(text, cell) {
 // differently. The complete-table example reproduces an ADR verbatim, so its cells carry no
 // backticks at all (`| mergeGate.maxRounds | 10 |`), while the safe-defaults table is ordinary
 // guide prose that backticks its cells and sometimes appends an explanatory gloss
-// (`| `mergeGate.completion` | `ask` (ask at run time) |`). Backticks and that trailing
+// (`| `mergeGate.completion` | `ask` (ask at run time) |`). The code span and that trailing
 // parenthesis are editorial, so both are dropped on purpose: the contract is the value, not the
 // sentence explaining when the question gets asked, and rewording the gloss must not fail a test
 // about defaults. A cell that is nothing but a parenthesis — `(empty)` — is a value, not a gloss,
 // so the gloss is stripped only where something stands in front of it.
+//
+// `unspan` drops exactly one surrounding code-span pair and only from a cell that is one
+// well-formed span. Stripping every backtick instead repaired a malformed cell into a passing one:
+// `| `mergeGate.maxRounds` | `1`0` |` normalized to the same `10` the well-formed row yields, so
+// the contract went green on documentation nobody could copy. Anything that is not a single span
+// is now returned as it stands and fails the comparison.
+const unspan = (cell) => /^`([^`]*)`$/.exec(cell)?.[1] ?? cell;
+
 function valueCell(text, cell) {
   const lines = text.split('\n');
-  const key = (line) => rowCells(line)[0].replace(/`/g, '');
+  const key = (line) => unspan(rowCells(line)[0]);
   const rowIndex = lines.findIndex((line) => line.startsWith('|') && key(line) === cell);
   assert.notEqual(rowIndex, -1, `missing table row: ${cell}`);
   // The same upward scan `defaultCell` uses, and for the same reason: only the row's own table is
@@ -202,7 +210,7 @@ function valueCell(text, cell) {
   const header = tableLines.find((line) => rowCells(line).includes('Value'));
   assert.ok(header, `missing a Value column header above the table row: ${cell}`);
   const value = rowCells(lines[rowIndex])[rowCells(header).indexOf('Value')];
-  return value.replace(/^(.*\S)\s+\([^)]*\)$/, '$1').replace(/`/g, '');
+  return unspan(value.replace(/^(.*\S)\s+\([^)]*\)$/, '$1'));
 }
 
 function flat(text) {
@@ -6943,8 +6951,12 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
 test("the user guide's two overview tables repeat the mergeGate.* defaults unchanged", () => {
   // Two further copies of the same defaults, neither of them the block table above. The complete
   // table example reproduces a whole ADR the way a reader is meant to copy it, and the
-  // safe-defaults table is what `/effective-flow setup` writes into a fresh project, so a wrong
-  // value in either one is a wrong value in somebody's repository — yet both were unpinned.
+  // safe-defaults table documents the values an unconfigured project runs on — not rows setup
+  // writes: `src/tools/setup.md` keeps the `mergeGate.*` keys and `delivery.mergeMethod` out of
+  // the Express base on purpose, so Express emits no line for them and the gate's own defaults
+  // apply. A wrong value in either one is still a wrong value in somebody's repository: the
+  // example is copied by hand, and the safe-defaults table is what a project behaves like when
+  // nobody configured it — yet both were unpinned.
   const docs = source('docs/user-guide/configuration.md');
   // `boundedSlice`, not `section`: the example reproduces an ADR whose own `## Configuration`
   // heading sits inside the fence, so a `'\n## '` stop would cut the slice off above the table.
@@ -6983,6 +6995,42 @@ test("the user guide's two overview tables repeat the mergeGate.* defaults uncha
       `the safe-defaults table must show ${key} as ${value}`,
     );
   }
+});
+
+test('valueCell normalizes one code span and leaves a malformed cell to fail', () => {
+  // The two tests above read the real guide; this one reads synthetic tables, because the point is
+  // the helper's tolerance rather than any documented value. A cell loses exactly one surrounding
+  // code-span pair, so `` `10` `` and a backtick-free `10` both read as the documented value while
+  // a stray internal backtick survives normalization and fails the comparison. The earlier
+  // strip-every-backtick rule made the malformed cell indistinguishable from the well-formed one,
+  // which let a documented default that no reader can copy pass the contract.
+  const table = (row) => `| Key | Value |\n| --- | --- |\n${row}`;
+
+  assert.equal(valueCell(table('| `mergeGate.maxRounds` | `10` |'), 'mergeGate.maxRounds'), '10');
+  assert.equal(valueCell(table('| mergeGate.maxRounds | 10 |'), 'mergeGate.maxRounds'), '10');
+  assert.equal(
+    valueCell(table('| `mergeGate.maxRounds` | `1`0` |'), 'mergeGate.maxRounds'),
+    '`1`0`',
+    'a value cell with a stray internal backtick must stay malformed, not normalize to `10`',
+  );
+
+  // A malformed key cell must miss the row rather than match the well-formed key, so the table it
+  // sits in is reported as missing that row instead of answering for it.
+  assert.throws(
+    () => valueCell(table('| `mergeGate`.maxRounds` | `10` |'), 'mergeGate.maxRounds'),
+    /missing table row: mergeGate\.maxRounds/,
+  );
+
+  // The two deliberate tolerances the helper documents are unaffected: a trailing gloss is still
+  // dropped, and a cell that is nothing but a parenthesis is still a value rather than a gloss.
+  assert.equal(
+    valueCell(
+      table('| `mergeGate.completion` | `ask` (ask at run time) |'),
+      'mergeGate.completion',
+    ),
+    'ask',
+  );
+  assert.equal(valueCell(table('| mergeGate.bots | (empty) |'), 'mergeGate.bots'), '(empty)');
 });
 
 test('skill-ownership.json names no merge gate among the consumers of effective-delivery', () => {
