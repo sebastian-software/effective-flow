@@ -7,7 +7,7 @@
 ## Requirement
 
 Section §6.2 (L529) of
-[`docs/review/2026-08-31-architecture-and-consistency-review.md`](../review/2026-08-31-architecture-and-consistency-review.md)
+[`docs/review/2026-08-31-architecture-and-consistency-review.md`](../../review/2026-08-31-architecture-and-consistency-review.md)
 proposed moving six Effective Flow shared fragments into the central skills repository (M-1 … M-6), and P4
 (L625) repeats it: "move the six reusable fragments to the skills repository".
 
