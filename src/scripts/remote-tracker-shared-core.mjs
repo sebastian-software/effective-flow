@@ -156,7 +156,7 @@ export function normalizeForgeLifecycleReference(value, label, repository) {
   return `#${parsedReference.number}`;
 }
 
-export function externalLifecycleUrlHasCredentialMaterial(reference, parsed) {
+function externalLifecycleUrlHasCredentialMaterial(reference, parsed) {
   if (parsed.username || parsed.password) return true;
   const credentialName =
     /auth(?:orization)?|cookie|credential|pass(?:word)?|secret|session|token|api[_-]?key/i;
@@ -208,7 +208,7 @@ export function normalizeHost(host) {
   return requireString(host, 'host').trim().toLowerCase().replace(/\.$/, '');
 }
 
-export function sameRepository(left, right) {
+function sameRepository(left, right) {
   return (
     normalizeHost(left.host) === normalizeHost(right.host) &&
     left.owner.toLowerCase() === right.owner.toLowerCase() &&
@@ -267,7 +267,7 @@ export function parseReference(reference, options = {}) {
   return { kind, number: Number(match[4]), repository };
 }
 
-export const COMMENT_MARKERS = Object.freeze({
+const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',
@@ -370,14 +370,14 @@ export const MERGE_METHOD_FLAGS = Object.freeze({
   rebase: '--rebase',
 });
 
-export const DEFAULT_CHECKS_WAIT_MINUTES = 20;
+const DEFAULT_CHECKS_WAIT_MINUTES = 20;
 
-export const DEFAULT_CHECKS_INTERVAL_SECONDS = 10;
+const DEFAULT_CHECKS_INTERVAL_SECONDS = 10;
 
 // Node clamps a `setTimeout` delay above this ceiling to 1 ms. An over-large bound would therefore
 // not relax the wait but invert it into an instant, fake timeout — repeated once per gate round —
 // so it is rejected rather than accepted and silently reinterpreted.
-export const MAX_TIMEOUT_MS = 2_147_483_647;
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 // `gh pr checks --watch` blocks until the checks finish and has no timeout flag of its own, so the
 // caller's bound travels with the plan as `timeoutMs` and the process runner enforces it. Without
@@ -478,7 +478,7 @@ export function issueNumber(input) {
 // `payload` object would otherwise never be looked at — harmless for the plan that is built, but
 // this guard is the operation's stated contract and a contract that silently skips half its input
 // is not one.
-export const ISSUE_CLOSE_REJECTED_FIELDS = Object.freeze([
+const ISSUE_CLOSE_REJECTED_FIELDS = Object.freeze([
   'state',
   'reason',
   'stateReason',

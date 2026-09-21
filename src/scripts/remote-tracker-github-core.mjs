@@ -42,16 +42,16 @@ import {
 // that these markers are never written by hand: the merge gate's guard matches them as exact
 // strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
 // read as a human's, blocking the merge on this tool's own output.
-export function buildThreadReplyBody(payload) {
+function buildThreadReplyBody(payload) {
   const marker = commentMarker('pr');
   return stampMarker(marker, publishableText(payload.body, 'payload.body'));
 }
 
-export const REVIEW_EVENTS = Object.freeze(['COMMENT']);
+const REVIEW_EVENTS = Object.freeze(['COMMENT']);
 
-export const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
+const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
 
-export function reviewCommentSide(value, field) {
+function reviewCommentSide(value, field) {
   const side =
     value === undefined || value === null
       ? 'RIGHT'
@@ -114,7 +114,7 @@ export function buildReviewPayload(input) {
   };
 }
 
-export function ghHostArgs(repository) {
+function ghHostArgs(repository) {
   return repository.host === 'github.com' ? [] : ['--hostname', repository.host];
 }
 
@@ -138,7 +138,7 @@ export function ghHostArgs(repository) {
 // a second request, so the two values it correlates describe the same instant. `contexts` reports
 // its `totalCount` alongside its nodes so a truncated page can be detected — see
 // `flattenPullRequestStatus`, which is where that count is acted on.
-export const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}`;
+const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;

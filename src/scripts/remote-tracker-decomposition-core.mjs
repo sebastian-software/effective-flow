@@ -22,31 +22,31 @@ import {
   requireString,
 } from './remote-tracker-shared-core.mjs';
 
-export const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
+const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
 
-export const DECOMPOSITION_KEY_VERSION = 'v2';
+const DECOMPOSITION_KEY_VERSION = 'v2';
 
-export const DECOMPOSITION_KEY_PREFIX = `${DECOMPOSITION_KEY_MARKER}:${DECOMPOSITION_KEY_VERSION}`;
+const DECOMPOSITION_KEY_PREFIX = `${DECOMPOSITION_KEY_MARKER}:${DECOMPOSITION_KEY_VERSION}`;
 
 export const DECOMPOSITION_SECTION_MARKER = 'effective-flow-decomposition';
 
-export const DECOMPOSITION_SECTION_VERSION = 'v2';
+const DECOMPOSITION_SECTION_VERSION = 'v2';
 
 export const DECOMPOSITION_SECTION_PREFIX = `${DECOMPOSITION_SECTION_MARKER}:${DECOMPOSITION_SECTION_VERSION}`;
 
 export const DECOMPOSITION_RECORD_MARKER = 'effective-flow-decomposition-record';
 
-export const DECOMPOSITION_RECORD_VERSION = 'v2';
+const DECOMPOSITION_RECORD_VERSION = 'v2';
 
 export const DECOMPOSITION_RECORD_PREFIX = `${DECOMPOSITION_RECORD_MARKER}:${DECOMPOSITION_RECORD_VERSION}`;
 
 // Every marker version this file writes is `v<N>`, so a probe that reports a stored version back
 // to a caller captures exactly that shape and nothing wider.
-export const DECOMPOSITION_MARKER_VERSION_PATTERN = 'v[0-9]{1,3}';
+const DECOMPOSITION_MARKER_VERSION_PATTERN = 'v[0-9]{1,3}';
 
 export const GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES = 65_536;
 
-export const DECOMPOSITION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const DECOMPOSITION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 
 export const DECOMPOSITION_WORKFLOWS = Object.freeze([
   'Feature',
@@ -70,10 +70,10 @@ export const ACTIVE_DECOMPOSITION_STATUSES = new Set([
   'missing',
 ]);
 
-export const SENSITIVE_CHILD_FIELD =
+const SENSITIVE_CHILD_FIELD =
   '(?:(?:[A-Z][A-Z0-9]*_)+(?:TOKEN|PASSWORD|SECRET|API_KEY|ACCESS_KEY_ID|SECRET_ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET|SESSION_ID)|access[ _-]?token|refresh[ _-]?token|api[ _-]?key|client[ _-]?secret|password|private[ _-]?key|secret|session[ _-]?id|aws[ _-]?access[ _-]?key[ _-]?id|aws[ _-]?secret[ _-]?access[ _-]?key|token)';
 
-export const SENSITIVE_CHILD_ASSIGNMENT = `(?<![A-Za-z0-9_])["']?${SENSITIVE_CHILD_FIELD}["']?(?![A-Za-z0-9_])\\s*[:=]\\s*`;
+const SENSITIVE_CHILD_ASSIGNMENT = `(?<![A-Za-z0-9_])["']?${SENSITIVE_CHILD_FIELD}["']?(?![A-Za-z0-9_])\\s*[:=]\\s*`;
 
 export function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -154,7 +154,7 @@ export function decompositionKey(value, field = 'payload.decompositionKey') {
 // the bare literal `'forge'` on the forge path, or as a context object when a repository binding is
 // needed to resolve an issue URL — and the marker carries its own target so a parse can cross-check
 // it instead of guessing from the shape of the parent.
-export function decompositionKeyContext(value, field = 'decomposition key context') {
+function decompositionKeyContext(value, field = 'decomposition key context') {
   const input = typeof value === 'string' ? { target: value } : requireObject(value ?? {}, field);
   const target = requireString(input.target, `${field}.target`).trim();
   if (!['forge', 'external'].includes(target)) {
@@ -176,7 +176,7 @@ export function buildDecompositionKeyMarker(parent, key, context) {
   })} -->`;
 }
 
-export function decompositionKeyFailure(code, message, details = {}) {
+function decompositionKeyFailure(code, message, details = {}) {
   return { code, message, details: redact(details) };
 }
 
@@ -368,18 +368,18 @@ export function buildDecompositionKey(input) {
   return { marker, body: updated, parent: appended.parent, key: appended.key };
 }
 
-export function sensitiveChildAssignmentPattern(flags = 'gi') {
+function sensitiveChildAssignmentPattern(flags = 'gi') {
   return new RegExp(`(${SENSITIVE_CHILD_ASSIGNMENT})`, flags);
 }
 
-export function failUnsafeChildSecret(field, reason) {
+function failUnsafeChildSecret(field, reason) {
   fail('INVALID_PAYLOAD', `${field} contains credential material that cannot be safely redacted`, {
     field,
     reason,
   });
 }
 
-export function redactChildPrivateKeys(text, field) {
+function redactChildPrivateKeys(text, field) {
   const begin = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/g;
   const end = /-----END(?: [A-Z0-9]+)* PRIVATE KEY-----/g;
   if ((text.match(begin) ?? []).length !== (text.match(end) ?? []).length) {
@@ -391,7 +391,7 @@ export function redactChildPrivateKeys(text, field) {
   );
 }
 
-export function redactChildQuotedAssignments(text, field) {
+function redactChildQuotedAssignments(text, field) {
   const matcher = sensitiveChildAssignmentPattern('gi');
   let cursor = 0;
   let output = '';
@@ -419,11 +419,11 @@ export function redactChildQuotedAssignments(text, field) {
   return `${output}${text.slice(cursor)}`;
 }
 
-export function indentationWidth(value) {
+function indentationWidth(value) {
   return value.replace(/\t/g, '    ').length;
 }
 
-export function redactChildBlockAssignments(text, field) {
+function redactChildBlockAssignments(text, field) {
   const newline = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(/\r?\n/);
   const output = [];
@@ -449,7 +449,7 @@ export function redactChildBlockAssignments(text, field) {
   return output.join(newline);
 }
 
-export function redactChildAssignments(text, field) {
+function redactChildAssignments(text, field) {
   const assignment = new RegExp(
     `(${SENSITIVE_CHILD_ASSIGNMENT})(?!\\[REDACTED(?: PRIVATE KEY)?\\])[^\\r\\n]*`,
     'gi',
@@ -465,7 +465,7 @@ export function redactChildAssignments(text, field) {
   });
 }
 
-export function isLegitimateCredentialProse(prefix, value) {
+function isLegitimateCredentialProse(prefix, value) {
   if (!/:\s*$/.test(prefix)) return false;
   const prose = value.trim();
   if (!/^\p{Ll}[\p{L}\p{N}._,'’()\/-]*(?:\s+[^\s]+)+[.!?]?$/u.test(prose)) return false;
@@ -474,7 +474,7 @@ export function isLegitimateCredentialProse(prefix, value) {
   );
 }
 
-export function isLegitimateCredentialProseMatch(match, text) {
+function isLegitimateCredentialProseMatch(match, text) {
   const prefix = match[0];
   const value = text.slice(match.index + prefix.length).split(/\r?\n/, 1)[0];
   return isLegitimateCredentialProse(prefix, value);
@@ -500,14 +500,14 @@ export function sanitizeChildText(value, field) {
   return publishableText(text, field);
 }
 
-export function sanitizeChildLabel(value, field) {
+function sanitizeChildLabel(value, field) {
   const label = publishableText(value, field);
   const sanitized = sanitizeChildText(label, field);
   if (sanitized !== label) failUnsafeChildSecret(field, 'secret-in-label');
   return label;
 }
 
-export function canonicalDecompositionRepository(context) {
+function canonicalDecompositionRepository(context) {
   return context.target === 'forge' ? { host: context.host, slug: context.repository } : undefined;
 }
 
