@@ -16,6 +16,11 @@ import {
 
 const repositoryRoot = new URL('..', import.meta.url);
 
+// Nine of the helpers below are copied verbatim into `test/session-contracts.test.mjs`, which is how
+// every suite in this directory carries its source-reading helpers instead of sharing a module:
+// `source`, `ordered`, `section`, `boundedSlice`, `firstColumnCells`, `tableRow`, `flat`, `prose` and
+// `near`. They sit among helpers only this suite uses, so they are not one contiguous block — an edit
+// to one of those nine belongs in both files, and an edit to any other helper here does not.
 function source(path) {
   return readFileSync(new URL(path, repositoryRoot), 'utf8');
 }
