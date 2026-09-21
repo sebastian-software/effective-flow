@@ -10,6 +10,7 @@ import {
   retryInvalid,
   roundStatus,
   sealAttempt,
+  verifyFreshness,
 } from './_scaffold/round-core.mjs';
 
 const COMMAND_OPTIONS = Object.freeze({
@@ -27,6 +28,11 @@ const COMMAND_OPTIONS = Object.freeze({
   'retry-invalid': new Set(['round', 'scenario', 'slot', 'reason']),
   publish: new Set(['round']),
   recover: new Set(),
+  // `--mode` takes a value rather than being a bare `--strict` flag: the parser below requires a
+  // value for every flag, so a boolean concept would have to special-case one option and would
+  // reach the CLI rejection test for no gain. Two named modes also read better in a workflow step
+  // than a flag whose absence is the interesting half.
+  verify: new Set(['mode']),
 });
 const ALL_OPTIONS = new Set(Object.values(COMMAND_OPTIONS).flatMap((flags) => [...flags]));
 
@@ -41,9 +47,14 @@ commands:
   retry-invalid --round ... --scenario ... --slot N [--reason TEXT]
   publish --round ID|MANIFEST
   recover
+  verify [--mode report|strict]
 
 profile flags: --harness, --model, --reasoning-effort, --reported-version, --tool-policy
 Omitted profile values are recorded explicitly as "unknown". No command launches a model.
+verify reads the archived corpus and writes nothing: report (the default) prints the verdict and
+exits 0 even when a scenario is stale, strict additionally exits 1 on any scenario that is not
+current. Only a failure to reach a verdict at all — a build that fails, an unreadable archived
+file — exits nonzero in report mode.
 `;
 }
 
@@ -107,6 +118,77 @@ function printStatus(rows) {
   }
 }
 
+// A test seam, and the only one this CLI carries. The exit-code mapping — report mode exits 0 on a
+// stale verdict, strict mode exits 1, and both exit nonzero when no verdict could be produced — is
+// the property the release gate rests on, and the only honest way to observe it is to run this
+// process against a corpus that is stale and against one that cannot be read. Neither state can be
+// produced in the repository's own `results/` without leaving damaged evidence behind.
+//
+// It is an environment variable rather than a `--results` flag on purpose. A flag is a supported
+// interface, and a supported way to point `verify` at an arbitrary directory would let a workflow
+// step report some other corpus as this repository's — the gate would then be green about evidence
+// nobody shipped. Nothing else about the run moves: the build is still the working tree's, and the
+// verdict is still the shared rule in `build-identity.mjs`.
+//
+// An empty value reads as unset, and that is not tidiness. `EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR:
+// ${{ ... }}` with nothing behind it is the ordinary shape of an unset workflow input, and the
+// empty string resolves against the process working directory rather than against `results/`: every
+// scenario would report `absent`, report mode would exit 0, and the step would look like it had
+// verified the corpus it never opened. Falling through to the default is the only reading that
+// cannot be silently wrong.
+function verifyResultsDir() {
+  const configured = process.env.EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR;
+  return configured === undefined || configured === '' ? undefined : configured;
+}
+
+// The per-run verdicts as one counted summary rather than one line per run. Thirty lines saying
+// `waived (version-stamp)` is the ordinary state of the corpus for most of a release cycle, and a
+// report whose ordinary output is thirty uniform lines is one nobody reads the day it says
+// something else. A waiver still has to be visible — it is a difference that was accepted, not an
+// absence of one — so it is counted by name instead of dropped.
+function runSummary(runs) {
+  const counts = new Map();
+  for (const run of runs) {
+    const key = run.waiver === undefined ? run.state : `${run.state}: ${run.waiver}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].map(([key, count]) => `${count} ${key}`).join(', ');
+}
+
+function printFreshness(report) {
+  // Which corpus produced this verdict, named before the verdict itself. A CI log otherwise says
+  // six scenarios are current without ever saying what was read, and the one failure the seam above
+  // makes possible — a verdict about some other directory — is exactly the one an operator cannot
+  // spot from the scenario lines alone.
+  process.stdout.write(`corpus: ${report.resultsDir}\n`);
+  for (const { scenario, state, runs, drift } of report.scenarios) {
+    const summary = runs.length === 0 ? 'no archived runs' : runSummary(runs);
+    process.stdout.write(
+      `${scenario}\t${state}\t${runs.length}/${report.requiredRuns} run(s)\t${summary}\n`,
+    );
+    // Named individually, because these are the runs somebody has to act on: which slots went
+    // stale is what decides whether a scenario is re-recorded or the whole round is.
+    //
+    // A stale run also prints the pair of digests it disagrees on. The named files below say what
+    // moved; the digests say which two builds are being compared, which is what an operator needs
+    // to look one of them up in a round manifest or in another scenario's stamp and decide whether
+    // the whole corpus drifted or only this run did.
+    for (const run of runs) {
+      if (run.state !== 'stale' && run.state !== 'missing-stamp') continue;
+      process.stdout.write(`  run-${run.slot}: ${run.state}\n`);
+      if (run.state !== 'stale') continue;
+      process.stdout.write(`    archived: ${run.archived}\n    current:  ${run.current}\n`);
+    }
+    // The moved files, for the first stale run of the scenario. This is the bisect list an operator
+    // needs: a digest mismatch says the archived round observed something else, and only these
+    // lines say what, which is the difference between re-recording a round on purpose and
+    // re-recording it because a number changed and nobody could see why.
+    if (drift.length === 0) continue;
+    process.stdout.write('  changed since the round was recorded:\n');
+    for (const line of drift) process.stdout.write(`${line}\n`);
+  }
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!command || command === '--help' || command === 'help') {
@@ -164,6 +246,31 @@ async function main() {
       for (const finding of result.findings) {
         process.stderr.write(`${finding.scenario}/${finding.slot}: ${finding.finding}\n`);
       }
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (command === 'verify') {
+    // Validated before the build runs, so a typo costs a message rather than a build, and
+    // rejected rather than falling back to `report`: a workflow step that meant `strict` and
+    // mistyped it would otherwise pass silently, which is the one failure this gate cannot have.
+    const mode = parsed.mode ?? 'report';
+    if (mode !== 'report' && mode !== 'strict') {
+      throw new Error(`--mode accepts report or strict, not ${mode}`);
+    }
+    const report = verifyFreshness({ resultsDir: verifyResultsDir() });
+    printFreshness(report);
+    // Report mode reaches this line with every verdict it can produce, stale included, and exits 0.
+    // Only a thrown error — a build that failed, an archived file that would not parse — reaches
+    // the handler below, which is what keeps an ordinary pull request green while still failing
+    // loudly when the step could not answer at all.
+    if (mode === 'strict' && report.failsStrict) {
+      const failing = report.scenarios.filter(({ state }) => state !== 'current');
+      process.stderr.write(
+        `${failing.map(({ scenario, state }) => `${scenario} is ${state}`).join('; ')}\n` +
+          'A release needs a current round: re-record the evidence before releasing ' +
+          '(see evals/merge-gate/README.md).\n',
+      );
       process.exitCode = 1;
     }
     return;

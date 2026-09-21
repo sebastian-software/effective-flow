@@ -27,6 +27,8 @@ pnpm test:distribution   # isolated build/archive/delivery smoke suite
 
 Package manager is **pnpm**; the root `package.json` `packageManager` field is the source of truth for the pinned version. Node.js 22 or newer is required for the build and the shipped runtime scripts. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
+The `merge-gate` behavioural eval suite is a fourth layer and a deliberately manual one: its evidence under `evals/merge-gate/results/` is recorded by hand in fresh agent sessions, and neither `pnpm test` nor CI ever runs a model for it. `pnpm test` asserts only that the archive is structurally sound; whether it still describes the working tree is answered by `pnpm merge-gate-eval verify`, a read-only command that writes nothing and takes no lock. CI reports that verdict on every pull request and enforces it with `--mode strict` on the release pull request, so editing a source the gate loads owes a re-recorded round — six scenarios times five runs, roughly three hours — before the next release, not before the next merge. See [`evals/merge-gate/README.md`](evals/merge-gate/README.md).
+
 ## Build architecture
 
 The source layout **mirrors the output**, and the directory decides the category:

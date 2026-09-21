@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
@@ -20,6 +20,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import {
+  buildPortableSkill,
+  pristineScenarioBuildIdentity,
+} from '../evals/merge-gate/_scaffold/build-identity.mjs';
 import {
   evaluateEvidence,
   supportedTrackerOperations,
@@ -123,6 +127,64 @@ function hostReceipt(projectRoot, profile = PROFILE) {
     completed: true,
     profile: { ...profile },
   };
+}
+
+const REPOSITORY_RESULTS = resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'results');
+
+// The repository's archived corpus, copied into a temporary publication root so `publishRound` has
+// standing evidence to carry forward, re-stamped to the identity of the tree the test is running
+// against.
+//
+// Without the re-stamp the publication assertions depend on something they are not about.
+// `ensureCanonicalGeneration` re-evaluates **every** carried-forward scenario against a freshly
+// built tree, so one uncommitted edit to any load-set source — the ordinary state of a branch that
+// touches `src/` — makes the publication fail for a reason that has nothing to do with sealing,
+// locking, journalling or promotion, and the lifecycle coverage disappears exactly when drift is
+// most common. Gating the test instead would drop that coverage the same way, more quietly.
+//
+// Only the stamp and the `buildDigest` its metadata pins are rewritten. The behavioural `.jsonl`
+// logs are left exactly as recorded, because they are what `evaluateEvidence` judges: rewriting
+// those would turn the fixture into evidence of nothing.
+//
+// The rejection path this removes from the lifecycle test is restored deliberately below, in
+// `publishRound refuses a carried-forward run whose stamp describes another build`. That case is
+// stronger than the coverage it replaces: it names the drifted run instead of depending on whoever
+// runs the suite happening to have a dirty working tree.
+function copyRestampedResults(resultsDir) {
+  rmSync(resultsDir, { recursive: true, force: true });
+  cpSync(REPOSITORY_RESULTS, resultsDir, { recursive: true });
+  // The copied generation marker pins a content digest of the bytes as archived, and re-stamping
+  // moves those bytes. Removing it leaves the tree as an unmarked — "legacy" — generation, which
+  // the publication path handles explicitly; leaving a stale marker in place would fail the very
+  // next `generationInfo` read with an integrity error the test is not about.
+  //
+  // It does change which publication branch the first publish onto this copy takes: from a marked
+  // predecessor to an unmarked one. That is a deliberate trade and not a gap — the unmarked branch
+  // is the one a checkout that has never published takes, the marked branch is exercised by every
+  // later publish in the same test, and a caller that needs the marked branch on the *first*
+  // publish has to write the marker itself rather than expect this helper to carry one.
+  rmSync(resolve(resultsDir, '.generation.json'), { force: true });
+  const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-round-restamp-'));
+  try {
+    const skillRoot = buildPortableSkill(outputRoot);
+    for (const scenario of discoverSuite().scenarios) {
+      const directory = resolve(resultsDir, scenario);
+      if (!existsSync(directory)) continue;
+      const identity = pristineScenarioBuildIdentity(scenario, skillRoot);
+      for (const name of readdirSync(directory).filter((entry) =>
+        /^run-\d+\.build\.json$/.test(entry),
+      )) {
+        const stampPath = resolve(directory, name);
+        writeFileSync(stampPath, `${JSON.stringify(identity, null, 2)}\n`);
+        const metadataPath = stampPath.replace(/\.build\.json$/, '.metadata.json');
+        const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+        metadata.buildDigest = identity.digest;
+        writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+      }
+    }
+  } finally {
+    rmSync(outputRoot, { recursive: true, force: true });
+  }
 }
 
 test('prompt rendering is strict and slot paths cannot collide', () => {
@@ -859,16 +921,9 @@ test(
         resultsDir,
         publicationRoot,
       };
-      const repositoryResults = resolve(
-        import.meta.dirname,
-        '..',
-        'evals',
-        'merge-gate',
-        'results',
-      );
       mkdirSync(resultsDir, { recursive: true });
       cpSync(
-        resolve(repositoryResults, 'guard-blocks-merge'),
+        resolve(REPOSITORY_RESULTS, 'guard-blocks-merge'),
         resolve(resultsDir, 'guard-blocks-merge'),
         { recursive: true },
       );
@@ -886,8 +941,7 @@ test(
         incompleteLegacyEvidence,
       );
 
-      rmSync(resultsDir, { recursive: true, force: true });
-      cpSync(repositoryResults, resultsDir, { recursive: true });
+      copyRestampedResults(resultsDir);
       const unselectedDirectory = resolve(resultsDir, 'linked-issue-open-points');
       const unselectedBefore = readdirSync(unselectedDirectory)
         .sort()
@@ -1178,6 +1232,82 @@ test(
   },
 );
 
+// The one property the lifecycle test above stopped proving the moment its carried-forward evidence
+// began being re-stamped: publication refuses a standing run whose stamp describes a build that is
+// not the one being published. That used to be covered incidentally, by whoever ran the suite
+// happening to have a modified working tree — a coverage that appeared and disappeared with the
+// checkout's cleanliness, and that took the surrounding lifecycle assertions down with it whenever
+// it did appear. Asserted on purpose it is both stronger and readable: the drifted run is named
+// here, and the case fails for one reason only.
+//
+// The metadata's `buildDigest` is moved along with the stamp deliberately. Leaving the two
+// inconsistent would fail one step earlier, on the binding check, and would prove only that two
+// files disagree. What is under test is the comparison against the freshly built identity, and a
+// unit that does not bind itself correctly never reaches it.
+test(
+  'publishRound refuses a carried-forward run whose stamp describes another build',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-drift-'));
+    const base = resolve(temporary, 'rounds');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    try {
+      const prepared = createRound({
+        scenarios: ['guard-blocks-merge'],
+        profile: PROFILE,
+        base,
+        roundId: 'drifted-carry-forward',
+      });
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', slot, 1);
+        writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
+        sealAttempt({
+          handle: prepared.manifestPath,
+          scenario: 'guard-blocks-merge',
+          slot,
+          hostReceipt: hostReceipt(paths.projectRoot),
+          base,
+        });
+      }
+
+      mkdirSync(publicationRoot, { recursive: true });
+      copyRestampedResults(resultsDir);
+      const drifted = resolve(resultsDir, 'merge-proceeds', 'run-1');
+      const stamp = JSON.parse(readFileSync(`${drifted}.build.json`, 'utf8'));
+      // A moved gate tool, not merely a different top-level digest: the version-stamp waiver
+      // accepts a stamp whose only moved skill file is the router, so a fixture that moved nothing
+      // identifiable would be waived and this case would pass for the wrong reason.
+      stamp.skill.files['tools/merge-gate.md'] = `sha256:${'a'.repeat(64)}`;
+      stamp.skill.digest = `sha256:${'b'.repeat(64)}`;
+      stamp.skill.versionNeutralDigest = `sha256:${'c'.repeat(64)}`;
+      stamp.digest = `sha256:${'d'.repeat(64)}`;
+      writeFileSync(`${drifted}.build.json`, `${JSON.stringify(stamp, null, 2)}\n`);
+      const metadata = JSON.parse(readFileSync(`${drifted}.metadata.json`, 'utf8'));
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(`${drifted}.metadata.json`, `${JSON.stringify(metadata, null, 2)}\n`);
+
+      assert.throws(
+        () => publishRound({ handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
+        /merge-proceeds\/run-1 is invalid evidence: the build identity does not match the round manifest/,
+      );
+      // A refused publication leaves the standing corpus exactly as it found it: no generation
+      // marker, and no candidate or backup tree left behind to be recovered into place later.
+      assert.equal(existsSync(resolve(resultsDir, '.generation.json')), false);
+      assert.deepEqual(
+        readdirSync(publicationRoot).filter((name) =>
+          /^\.results-(?:candidate|backup)-/.test(name),
+        ),
+        [],
+      );
+    } finally {
+      const manifest = resolve(base, 'drifted-carry-forward', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 function statMode(path) {
   return statSync(path).mode;
 }
@@ -1209,6 +1339,263 @@ test('the round CLI rejects unknown, duplicate, and command-inapplicable flags',
     assert.match(result.stderr, expected, args.join(' '));
   }
 });
+
+const ROUND_CLI = resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'round.mjs');
+
+function runVerify(resultsDir, args = []) {
+  return spawnSync(process.execPath, [ROUND_CLI, 'verify', ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR: resultsDir },
+  });
+}
+
+test('verify rejects an inapplicable flag and an unknown mode value', () => {
+  for (const [args, expected] of [
+    [['--round', 'some-round'], /verify does not accept --round/],
+    [['--mode', 'quiet'], /--mode accepts report or strict, not quiet/],
+    // The empty-ish forms the parser already refuses, asserted for `verify` too: `--mode` without
+    // a value must not read as "default to report".
+    [['--mode'], /--mode requires a value/],
+  ]) {
+    const result = spawnSync(process.execPath, [ROUND_CLI, 'verify', ...args], {
+      encoding: 'utf8',
+    });
+    assert.notEqual(result.status, 0, args.join(' '));
+    assert.match(result.stderr, expected, args.join(' '));
+  }
+});
+
+// The split the release gate rests on, asserted through the process exit code because that is the
+// only thing a workflow step reads.
+//
+// **A verdict and a failure to produce one must not arrive the same way.** Report mode exits 0 for
+// every state it can reach, stale included, so the step this work adds cannot turn an ordinary
+// pull request red; it exits nonzero only when no verdict exists at all. Without that split the
+// CLI's shared error path — which exits 1 for any thrown error — would make a broken build red on
+// every pull request through the very step introduced to prevent that.
+test(
+  'verify separates a stale or absent verdict from a failure to reach one',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-verify-'));
+    try {
+      // Re-stamped first, so the corpus is current whatever the working tree holds and the states
+      // below are the ones this test put there rather than ones it inherited.
+      const resultsDir = resolve(temporary, 'results');
+      copyRestampedResults(resultsDir);
+      const drifted = resolve(resultsDir, 'merge-proceeds', 'run-1.build.json');
+      const stamp = JSON.parse(readFileSync(drifted, 'utf8'));
+      stamp.skill.files['tools/merge-gate.md'] = `sha256:${'a'.repeat(64)}`;
+      stamp.skill.digest = `sha256:${'b'.repeat(64)}`;
+      stamp.skill.versionNeutralDigest = `sha256:${'c'.repeat(64)}`;
+      stamp.digest = `sha256:${'d'.repeat(64)}`;
+      writeFileSync(drifted, `${JSON.stringify(stamp, null, 2)}\n`);
+      rmSync(resolve(resultsDir, 'linked-issue-open-points'), { recursive: true, force: true });
+
+      const report = runVerify(resultsDir);
+      assert.equal(report.status, 0, `report mode must not fail on a verdict: ${report.stderr}`);
+      assert.match(report.stdout, /merge-proceeds\tstale\t/);
+      assert.match(report.stdout, /linked-issue-open-points\tabsent\t/);
+      assert.match(report.stdout, /guard-blocks-merge\tcurrent\t/);
+      // The moved file, named. This is the bisect list a stale report exists to hand over, and a
+      // report that only said "stale" would send an operator to re-record a round blind.
+      assert.match(report.stdout, /~ tools\/merge-gate\.md/);
+      // And the pair of digests the moved file explains. The list says what changed; these two say
+      // which builds are being compared, which is what lets an operator match a stale run against
+      // a round manifest or against the stamps beside it instead of taking the verdict on trust.
+      assert.match(
+        report.stdout,
+        new RegExp(`^ {4}archived: ${stamp.digest}$`, 'm'),
+        report.stdout,
+      );
+      assert.match(report.stdout, /^ {4}current: {2}sha256:[0-9a-f]{64}$/m, report.stdout);
+
+      const strict = runVerify(resultsDir, ['--mode', 'strict']);
+      assert.equal(strict.status, 1);
+      assert.match(strict.stderr, /merge-proceeds is stale/);
+      assert.match(strict.stderr, /linked-issue-open-points is absent/);
+
+      // The other direction: an archived file that cannot be read is not a verdict about the gate,
+      // so both modes fail — and the message names the run rather than a byte offset.
+      const unreadable = resolve(temporary, 'unreadable-results');
+      cpSync(REPOSITORY_RESULTS, unreadable, { recursive: true });
+      writeFileSync(resolve(unreadable, 'merge-proceeds', 'run-1.build.json'), 'not json\n');
+      const operational = runVerify(unreadable);
+      assert.notEqual(operational.status, 0);
+      assert.match(operational.stderr, /merge-proceeds\/run-1\.build\.json is unreadable/);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// The third state, kept in its own case because it is the one the neighbour above cannot hold: its
+// three scenarios are already spoken for as stale, absent and current, and a short round has to be
+// a fourth, independent one or the four verdicts stop being separable.
+//
+// **A short round fails strict even though every run it does have is current.** That is the whole
+// point of the state: the archived runs are fresh, the stamps match, nothing drifted — the round
+// was simply never finished, and at a release point "nothing was observed" is not an acceptable
+// answer. Dropping `short` from `failsStrict` would leave every other assertion in this file green
+// while the gate waved through a release backed by a partial round, which is the failure the gate
+// exists to prevent. Report mode still exits 0, because an unfinished round is a verdict and not a
+// failure to produce one.
+//
+// Short is also asserted apart from absent on purpose: an interrupted round and a round nobody
+// started need different remedies, and a report that collapsed them would send an operator to
+// re-record work that is mostly already recorded.
+test(
+  'verify fails strict on a short round whose archived runs are all current',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-verify-short-'));
+    try {
+      // Re-stamped first, so every remaining run is current and the verdict below can only come
+      // from the run count. Without that, a drifted working tree would reach `short` through
+      // `stale` and the test would pass for the wrong reason.
+      const resultsDir = resolve(temporary, 'results');
+      copyRestampedResults(resultsDir);
+      const shortScenario = 'unreported-checks-block-merge';
+      const directory = resolve(resultsDir, shortScenario);
+      // One slot removed, not all of them: the boundary this protects is "fewer than required", and
+      // deleting the directory would only re-assert the absent case the neighbour already covers.
+      for (const name of readdirSync(directory).filter((entry) =>
+        entry.startsWith(`run-${REQUIRED_RUNS}.`),
+      )) {
+        rmSync(resolve(directory, name));
+      }
+
+      const report = runVerify(resultsDir);
+      assert.equal(report.status, 0, `report mode must not fail on a verdict: ${report.stderr}`);
+      assert.match(
+        report.stdout,
+        new RegExp(
+          `^${shortScenario}\\tshort\\t${REQUIRED_RUNS - 1}/${REQUIRED_RUNS} run\\(s\\)`,
+          'm',
+        ),
+        report.stdout,
+      );
+
+      const strict = runVerify(resultsDir, ['--mode', 'strict']);
+      assert.equal(strict.status, 1, `a short round must fail strict: ${strict.stdout}`);
+      // The first stderr line lists every scenario strict rejected, so asserting it in full also
+      // asserts that the short verdict stayed scoped to the scenario this test shortened.
+      assert.equal(strict.stderr.split('\n')[0], `${shortScenario} is short`);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// The count wrong in the other direction, and its own state rather than a flavour of `short`. A
+// single `runs.length !== REQUIRED_RUNS` test reports six archived runs as `short 6/5 run(s)` and
+// sends an operator to finish a round that is already over-complete, when the actual question is
+// what put a sixth slot in a published directory — a hand copy, an interrupted publication, two
+// rounds merged by hand. `ensureCanonicalGeneration` refuses the same shape at publication as
+// unexpected files, so the report names it too instead of calling it something else.
+//
+// Like `short` it fails strict while every run it holds is current: a directory of an unexpected
+// size is not evidence anybody can read as five of five, whichever side of five it is on.
+test(
+  'verify reports a surplus round apart from a short one and fails strict on it',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-verify-surplus-'));
+    try {
+      // Re-stamped first, for the same reason as the short case: the verdict below has to come
+      // from the run count and not from a drifted working tree.
+      const resultsDir = resolve(temporary, 'results');
+      copyRestampedResults(resultsDir);
+      const surplusScenario = 'unreported-checks-block-merge';
+      const directory = resolve(resultsDir, surplusScenario);
+      const extra = REQUIRED_RUNS + 1;
+      for (const name of readdirSync(directory).filter((entry) =>
+        entry.startsWith(`run-${REQUIRED_RUNS}.`),
+      )) {
+        cpSync(
+          resolve(directory, name),
+          resolve(directory, name.replace(`run-${REQUIRED_RUNS}.`, `run-${extra}.`)),
+        );
+      }
+
+      const report = runVerify(resultsDir);
+      assert.equal(report.status, 0, `report mode must not fail on a verdict: ${report.stderr}`);
+      assert.match(
+        report.stdout,
+        new RegExp(`^${surplusScenario}\\tsurplus\\t${extra}/${REQUIRED_RUNS} run\\(s\\)`, 'm'),
+        report.stdout,
+      );
+      assert.doesNotMatch(report.stdout, new RegExp(`^${surplusScenario}\\tshort\\t`, 'm'));
+
+      const strict = runVerify(resultsDir, ['--mode', 'strict']);
+      assert.equal(strict.status, 1, `a surplus round must fail strict: ${strict.stdout}`);
+      assert.equal(strict.stderr.split('\n')[0], `${surplusScenario} is surplus`);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// Every file under a tree, by content rather than by name. A name listing catches an added or a
+// deleted file and nothing else, and the write a command that claims to be read-only is most likely
+// to make by accident is an in-place rewrite: a re-stamp, a normalised JSON file, a generation
+// marker refreshed in place. All three leave the listing identical.
+function treeDigests(root) {
+  return Object.fromEntries(
+    readdirSync(root, { recursive: true })
+      .filter((name) => statSync(resolve(root, name)).isFile())
+      .sort()
+      .map((name) => [
+        name,
+        createHash('sha256')
+          .update(readFileSync(resolve(root, name)))
+          .digest('hex'),
+      ]),
+  );
+}
+
+test('verify reports the repository corpus without writing to it', { timeout: 120_000 }, () => {
+  const before = treeDigests(REPOSITORY_RESULTS);
+  const result = spawnSync(process.execPath, [ROUND_CLI, 'verify'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  // The corpus the verdict is about, named in the output. A report that says six scenarios are
+  // current without saying what it read cannot be told apart from one about some other directory.
+  assert.equal(result.stdout.split('\n')[0], `corpus: ${REPOSITORY_RESULTS}`);
+  for (const scenario of discoverSuite().scenarios) {
+    assert.match(
+      result.stdout,
+      new RegExp(`^${scenario}\t\\w+\t`, 'm'),
+      `verify reported nothing about ${scenario}`,
+    );
+  }
+  assert.deepEqual(treeDigests(REPOSITORY_RESULTS), before);
+});
+
+// The seam's empty form, which is the ordinary shape of an unset workflow input: a value that is
+// set and empty must read as unset, not as a path. The empty string resolves against the process
+// working directory, so without the fallback every scenario would report `absent`, report mode
+// would exit 0, and a CI step would look like it had verified a corpus it never opened. Asserted
+// through the printed corpus line, because the path is the only thing that separates the two
+// readings from outside the process.
+test(
+  'verify falls back to the repository corpus when the seam is set but empty',
+  { timeout: 120_000 },
+  () => {
+    const result = spawnSync(process.execPath, [ROUND_CLI, 'verify'], {
+      encoding: 'utf8',
+      env: { ...process.env, EFFECTIVE_FLOW_EVAL_VERIFY_RESULTS_DIR: '' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.split('\n')[0], `corpus: ${REPOSITORY_RESULTS}`);
+    for (const scenario of discoverSuite().scenarios) {
+      assert.doesNotMatch(
+        result.stdout,
+        new RegExp(`^${scenario}\tabsent\t`, 'm'),
+        `${scenario} read as absent, so the empty value was taken as a path`,
+      );
+    }
+  },
+);
 
 // The configured-reviewer scenario is the one scenario whose slots differ from the shared build:
 // its own skill copy carries the `iterate` echo, its own project carries the reviewer rows, and its

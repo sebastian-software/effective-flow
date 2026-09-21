@@ -149,10 +149,13 @@ artifact writes, and do not duplicate its materiality or irreversibility tests i
 One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
 layer derives the content identity each archived round is stamped with by following exactly
 these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
-gate can reach widens that identity and invalidates every archived round, forcing the affected
-scenario evidence to be re-recorded by hand through fresh agent sessions. A conditional pointer
-widens it whether or not any scenario takes its branch. The one build change that does **not** cost
-a re-record is the release version stamp: each round additionally carries a version-neutral skill
+gate can reach widens that identity, invalidates every archived round, and owes a re-record of the
+affected scenario evidence by hand through fresh agent sessions. That debt comes due before the next
+release rather than before the next merge: `pnpm test` asserts only that the archived evidence is
+structurally sound, while `pnpm merge-gate-eval verify` reports the staleness on every pull request
+and fails the required check on the release one. A conditional pointer widens it whether or not any
+scenario takes its branch. The one build change that does **not** cost a re-record is the release
+version stamp: each round additionally carries a version-neutral skill
 digest, so a release-please bump of `.release-please-manifest.json` leaves the standing evidence
 valid as long as the built router is the only moved file and nothing but the version token moved in
 it. See

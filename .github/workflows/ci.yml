@@ -40,6 +40,59 @@ jobs:
       - name: Distribution and installation smoke tests
         run: pnpm test:distribution
 
+      # The job's last step, deliberately. A strict failure aborts the job at the point it
+      # happens, so placing this next to `Unit tests` would skip `Build distribution` and
+      # `pnpm test:distribution` on exactly the pull request that ships — hiding a real build
+      # failure behind an owed eval round, which is the cheaper of the two problems.
+      #
+      # No condition guards this step, and none may guard the job. `Format, test and build` is a
+      # required status check on `develop` with an empty bypass-actor list, and a required check
+      # that never reports blocks the pull request forever: no timeout, and no override short of
+      # editing the ruleset outside this repository. That deadlock is already documented for path
+      # filters beside the required-check list in
+      # docs/developer-guide/release-and-installation.md. The step therefore always runs and
+      # always reports; only whether a stale verdict is fatal varies.
+      #
+      # It never runs a model. `verify` rebuilds the skill into a throwaway root and compares the
+      # archived merge-gate eval evidence against the working tree. On an ordinary pull request
+      # that verdict is a report — printed to the step summary, green even when stale, because
+      # re-recording a round on every merge is the cost this gate exists to remove. On the
+      # release pull request it is strict: that is the one point where the evidence has to
+      # describe the build that actually ships, and a stale, absent or short corpus fails.
+      - name: Merge-gate eval evidence
+        env:
+          # Read through the environment rather than expanded into the script with `${{ }}`: a
+          # head-ref is attacker-controlled text on a fork pull request, and a direct expansion
+          # would splice it into the command line before bash ever parses it.
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          # release-please opens its pull request from
+          # release-please--branches--develop--components--effective-flow. The prefix is matched
+          # rather than the full name, so the component suffix may change with the manifest.
+          # test/workflow-contracts.test.mjs pins this literal: a renamed prefix would otherwise
+          # turn the gate off while every CI run stayed green about it.
+          mode=report
+          case "$EVENT_NAME:$HEAD_REF" in
+            pull_request:release-please--*) mode=strict ;;
+          esac
+
+          verdict="$RUNNER_TEMP/merge-gate-eval-verify.txt"
+          # The exit status is captured rather than inherited: the verdict belongs in the step
+          # summary whether the command passed or failed, and piping into `tee` would report
+          # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
+          status=0
+          pnpm merge-gate-eval verify --mode "$mode" > "$verdict" 2>&1 || status=$?
+          cat "$verdict"
+          {
+            echo "### Merge-gate eval evidence (\`--mode $mode\`)"
+            echo
+            echo '```'
+            cat "$verdict"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
