@@ -44,7 +44,9 @@
           "classification": "route-when-relevant"
         },
         { "consumer": "investigate", "classification": "delegate" },
-        { "consumer": "investigation-method", "classification": "delegate" }
+        { "consumer": "investigation-method", "classification": "delegate" },
+        { "consumer": "commit", "classification": "delegate" },
+        { "consumer": "commit-message-rules", "classification": "delegate" }
       ]
     },
     {
@@ -95,7 +97,10 @@
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
         { "consumer": "concept", "classification": "delegate" },
-        { "consumer": "durable-follow-up-gate", "classification": "delegate" }
+        { "consumer": "durable-follow-up-gate", "classification": "delegate" },
+        { "consumer": "setup", "classification": "delegate" },
+        { "consumer": "adr-convention", "classification": "delegate" },
+        { "consumer": "project-adr-convention", "classification": "delegate" }
       ]
     },
     {

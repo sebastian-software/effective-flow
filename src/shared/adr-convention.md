@@ -64,6 +64,25 @@ The layered contract therefore applies (see `skill-discovery.md`):
   calling tool itself authors according to the **minimal fallback structure**
   below — **no** silent invention of a second convention.
 
+**What this declaration has to answer.** `effective-product` permits a living lifecycle only where
+the repository declares five things first ("Living records" in its `references/adr-format.md`).
+This building block answers all five, so a reader can verify the declaration instead of taking it
+on trust:
+
+1. **The living or mutable lifecycle** — under "Living ADR model" and "Form and location"
+   (`**Mutability:**`): an existing ADR is updated in place when the decision changes.
+2. **Filename identity and location** — under "Form and location" for the default form, resolved
+   per project by "Project-declared ADR naming convention" below.
+3. **The status vocabulary** — under "Form and location" (`**Status:**`): `Active`, `Superseded`,
+   `Not implemented`, with `Aktiv`, `Abgelöst`, `Nicht umgesetzt` as equal German forms.
+4. **Whether a record carries an update date or a short change note** — **neither.** An Effective
+   Flow living ADR carries no update date and no change note; repository history carries its
+   earlier states. That is the tradeoff a living lifecycle accepts by design, and this item
+   declares current practice rather than changing it.
+5. **Which narrow records may own configuration values** — exactly one, the project-setup ADR,
+   whose key/value table is itself the owning tracked configuration artifact. Declared in
+   `AGENTS.md`, "Configuration and ADRs", and not restated here.
+
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
 convention in the target repo (the skill follows it) or toggles `effective-product` deliberately
 via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.

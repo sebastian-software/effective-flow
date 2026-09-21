@@ -381,6 +381,11 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
     join(ROOT_DIR, 'docs', 'developer-guide', 'configuration.md'),
     join(ROOT_DIR, 'docs', 'developer-guide', 'skill-ownership.md'),
     join(ROOT_DIR, 'src', 'shared', 'adr-convention.md'),
+    // Added when the fragment below gained its relationship paragraph. A word-ban in
+    // `test/workflow-contracts.test.mjs` previously kept `effective-product` out of it precisely
+    // because the guard could not see it; scanning it is the restoration of that property, not its
+    // removal.
+    join(ROOT_DIR, 'src', 'shared', 'project-adr-convention.md'),
   ];
   const violations = guidanceFiles.flatMap((file) =>
     findStaleAdrContractClaims(readFileSync(file, 'utf8')).map((hit) => ({
@@ -1511,18 +1516,18 @@ try {
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2290,
-    iterate: 1775,
-    setup: 1723,
-    'apply-review': 1360,
-    'apply-issues': 1191,
+    iterate: 1782,
+    setup: 1753,
+    'apply-review': 1393,
+    'apply-issues': 1199,
     cleanup: 1022,
-    refactor: 885,
+    refactor: 892,
     deliver: 790,
     'plan-issue': 745,
     review: 770,
     plan: 665,
     'apply-review-commit-mechanics': 656,
-    maintain: 685,
+    maintain: 692,
     docs: 617,
     build: 595,
     apply: 580,
@@ -1530,11 +1535,11 @@ try {
     investigate: 553,
     fix: 488,
     'plan-review': 446,
-    pr: 440,
+    pr: 447,
     'concept-review': 344,
     'apply-review-remote': 382,
     concept: 332,
-    commit: 239,
+    commit: 250,
     'open-plans': 147,
     'pr-review': 38,
     version: 38,

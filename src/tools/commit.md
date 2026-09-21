@@ -47,6 +47,10 @@ next-steps
 when: the run reaches its completion report
 ```
 
+## Recommended skills
+
+- `effective-delivery`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before committing and follow its guidance on commit style, scope, way of working, and project-wide conventions.

@@ -1,5 +1,12 @@
 ## Project-declared ADR naming convention
 
+`effective-product` owns ADR craft and is authoritative for it; on naming it follows the
+repository's declared convention rather than imposing one of its own. That deferral presupposes a
+project that **has** a declared convention, so determining it where the scheme is unknown is the
+deferring side's work, not the owner's. This section is that mechanism: Effective Flow writes ADRs
+into arbitrary target projects and therefore has to resolve an unfamiliar scheme before it can
+hand the skill a convention to follow. Resolution is orchestration, which Effective Flow keeps.
+
 The naming **convention** — the resolved form, the tier that resolved it, and the zero-pad width
 where that form carries numbers — is resolved once per run, before any ADR is written. Each
 individual ADR **file name** is then resolved under that one convention, with its own number
