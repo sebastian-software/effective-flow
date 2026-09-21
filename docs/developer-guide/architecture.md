@@ -89,7 +89,7 @@ on.
 `session-title` therefore now loads from the tools that emit a title and from nowhere else, beside
 the `session-rename` mechanism each of them already points at. The two lists inside the fragment —
 the emitting tools and the silent ones — partition the exposed tool set, and a test in
-`test/workflow-contracts.test.mjs` fails when a tool appears in neither or in both. `setup` is
+`test/session-contracts.test.mjs` fails when a tool appears in neither or in both. `setup` is
 silent, and its capability probe keeps its own authorization: the probe title and its call shape
 are stated in `src/tools/setup.md` and in `src/shared/session-rename.md`, which `setup` reads by
 explicit path.
