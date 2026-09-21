@@ -2021,6 +2021,13 @@ test('canonical v2 decomposition sections round-trip every visible field and rej
   assert.match(built.section, /\*\*Status:\*\* Approved/);
   assert.match(built.section, /Implement `alpha` exactly\./);
 
+  // The section marker is restated here rather than imported, for the same reason the key marker is
+  // restated above: the prefix is declared in `remote-tracker-decomposition-core.mjs` and consumed
+  // in `remote-tracker-core.mjs`, so nothing but a literal binds the two files to one value. Without
+  // it a re-declaration in the consumer with a changed version would pass every other assertion.
+  assert.match(built.section, /^<!-- effective-flow-decomposition:v2:begin [A-Za-z0-9_-]+ -->$/m);
+  assert.match(built.section, /^<!-- effective-flow-decomposition:v2:end -->$/m);
+
   const marker = built.section.match(
     /<!-- effective-flow-decomposition-record:v2 ([A-Za-z0-9_-]+) -->/,
   );
