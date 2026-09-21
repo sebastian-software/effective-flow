@@ -67,6 +67,10 @@ session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
+## Recommended skills
+
+- `effective-delivery`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance on analysis, diagnosis, and report formats.
@@ -134,6 +138,8 @@ skill-discovery
 3. Work strictly read-only; write no code and no tests.
 
 ### Phase 3: Diagnosis
+
+The numbered points below are the report's output contract; the diagnostic depth behind them follows the recommended owner named in "Investigation method", while the report's own classification vocabulary — the `**Classification:**` field of the Phase 5 template — stays Effective Flow's.
 
 1. Formulate the root-cause hypotheses with evidence and a confidence per hypothesis.
 2. Explicitly record rejected hypotheses, including the reason for rejection.
