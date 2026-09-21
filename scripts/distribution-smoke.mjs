@@ -236,6 +236,10 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     for (const file of [
       'remote-tracker.mjs',
       'remote-tracker-core.mjs',
+      'remote-tracker-shared-core.mjs',
+      'remote-tracker-decomposition-core.mjs',
+      'remote-tracker-forgejo-core.mjs',
+      'remote-tracker-github-core.mjs',
       'delegation-envelope.mjs',
       'delegation-envelope-core.mjs',
     ]) {
