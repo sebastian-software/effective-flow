@@ -42,7 +42,9 @@
         {
           "consumer": "generic-product-implementer",
           "classification": "route-when-relevant"
-        }
+        },
+        { "consumer": "investigate", "classification": "delegate" },
+        { "consumer": "investigation-method", "classification": "delegate" }
       ]
     },
     {

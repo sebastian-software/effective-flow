@@ -738,9 +738,10 @@ export function assertSkillOwnershipContract(
   // recommendation at all, which is exactly the tool and agent sources build.mjs
   // scans. The manifest also lists shared-fragment consumers (`language-rules`,
   // `chat-language`, `dependency-version-policy`, `documentation-sync-contract`,
-  // `worktree-integration`); a fragment expresses its ownership as prose inside
-  // the tool that embeds it and can never carry a section of its own, so it is
-  // exempt by kind rather than left as a silent hole.
+  // `durable-follow-up-gate`, `investigation-method`, `worktree-integration`); a
+  // fragment expresses its ownership as prose inside the tool that embeds it and
+  // can never carry a section of its own, so it is exempt by kind rather than
+  // left as a silent hole.
   //
   // The strictness differs by classification, and deliberately so:
   //

@@ -1514,7 +1514,7 @@ try {
     build: 595,
     apply: 580,
     'apply-plan': 580,
-    investigate: 545,
+    investigate: 553,
     fix: 488,
     'plan-review': 446,
     pr: 440,

@@ -213,9 +213,9 @@ The build aborts with an error message if any of these guards is violated:
   consumer such as `plan` reaches its owner through the structured marker in
   `central-reasoning-delegation.md` instead of a section of its own. Shared-fragment consumers
   (`language-rules`, `chat-language`, `dependency-version-policy`,
-  `documentation-sync-contract`, `worktree-integration`) are exempt **by kind** in both cases: a
-  fragment expresses its ownership as prose inside the tool that embeds it and can never produce a
-  chain. The
+  `documentation-sync-contract`, `durable-follow-up-gate`, `investigation-method`,
+  `worktree-integration`) are exempt **by kind** in both cases: a fragment expresses its ownership
+  as prose inside the tool that embeds it and can never produce a chain. The
   `recommendationCapableConsumers` argument that carries that filter is required, so dropping it
   fails the build instead of silently disabling the check.
 - **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and

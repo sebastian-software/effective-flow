@@ -33,9 +33,14 @@ has changed since. Update it when a finding is closed; leave the finding text it
 | F-15 `merge-gate` size                                         | implemented | #400–#402 and #419 deferred four local routes; the configured-reviewer extraction in `7126b0c` (#425) measured 2,127 always-loaded lines on its own branch, and the gate builds to 2,263 lines (budget 2,270) at that merge once #430, #431, #433 and #435 landed beside it — down from 2,746, with the sequential gate shell preserved and the unsupported ~1,200-line target withdrawn                                                     |
 | F-15 prerequisite: an eval scenario with a configured reviewer | implemented | The `configured-reviewer-set-aside-blocks` scenario records five valid current-build runs, each delegating two attributed reviewer items and failing closed at the non-interactive set-aside gate                                                                                                                                                                                                                                            |
 | D-4 exclusion rationale in `merge-gate`                        | withdrawn   | — overstated; see the correction below                                                                                                                                                                                                                                                                                                                                                                                                       |
-| M-1 … M-6 move candidates                                      | open        | —                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| M-1 `worktree-lifecycle` + `execution-location` move candidate | withdrawn   | stays in Effective Flow per the correction below                                                                                                                                                                                                                                                                                                                                                                                             |
+| M-2 `security-disclosure-gate` move candidate                  | withdrawn   | stays in Effective Flow per the correction below                                                                                                                                                                                                                                                                                                                                                                                             |
+| M-3 `commit-message-rules` move candidate                      | open        | upstream contribution first                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| M-4 `investigation-method` move candidate                      | implemented | `#TBD` — not moved: the fragment stays in Effective Flow, with `effective-delivery` declared authoritative for diagnostic depth                                                                                                                                                                                                                                                                                                              |
+| M-5 `adr-convention` + `project-adr-convention` move candidate | open        | upstream contribution first                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| M-6 `doc-categories` move candidate                            | open        | original upstream evidence withdrawn in `fcffae7` (#244); re-assessment pending                                                                                                                                                                                                                                                                                                                                                              |
 
-Three corrections the implementation work produced, recorded here because they are defects in this
+Four corrections the implementation work produced, recorded here because they are defects in this
 document rather than in the code:
 
 - **The Rust CLI contract should not have been on the cut list.** `§6.1 D-1` and the P2 plan derived
@@ -53,6 +58,27 @@ document rather than in the code:
   include and lazy-include fences and the delegation-mandate scoping paragraphs, which belong to the
   tool's own contract rather than to the exclusion. D-4 therefore has nothing left to cut and is
   withdrawn; the size question it was part of stays with F-15.
+- **The §6.2 move recommendation did not survive a per-item comparison.** §6.2 (L529), repeated in
+  P4 (L625), proposed moving all six reusable fragments to the skills repository. Compared item by
+  item against the skills checkout at `f4300bb` (2026-09-14), the recommendation is resolved for
+  one item by delegation rather than by a move, fails for two, is premature for two, and has lost
+  its basis for the sixth. M-1 (`worktree-lifecycle` + `execution-location`) stays in Effective
+  Flow: `effective-delivery/references/worktree-safety.md:22–23` says to "keep the receipt in run
+  context" and forbids "a private ledger, hidden state directory, or mandatory receipt file" — a
+  rule about the worktree receipt specifically, which is what the lifecycle persists under
+  `.effective-flow/worktree-runs/`. M-2 (`security-disclosure-gate`) stays in Effective Flow: no
+  upstream reference owns withholding a security finding from a tracker, and the gate governs
+  Effective Flow's own tracker publication and finding IDs. M-3 (`commit-message-rules`) and M-5
+  (`adr-convention` + `project-adr-convention`) need an upstream contribution first — the
+  runtime-effect and squash-title rules in the one case, the precedence, width-allocation and
+  collision rules in the other — and that contribution has not happened, so neither fragment is
+  thinned yet. M-4 (`investigation-method`) is confirmed and implemented: `effective-delivery` is
+  declared authoritative for diagnostic depth while the embedding workflow keeps its report path,
+  wisdom file, routing and scope. M-6 (`doc-categories`) is left open rather than closed: the
+  passage this review relied on to keep it — `route-docs.md` rejecting a mandatory docs hierarchy
+  for a repository that does not already use one — was deleted upstream by `fcffae7` (#244) and
+  appears nowhere in the current skills tree, so that verdict has no current basis and a fresh
+  comparison is owed before the row can close.
 
 ---
 

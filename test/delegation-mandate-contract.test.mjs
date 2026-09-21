@@ -18,6 +18,7 @@ const skill = readSource('SKILL.md');
 const planReview = readSource('tools', 'plan-review.md');
 const conceptReview = readSource('tools', 'concept-review.md');
 const investigationMethod = readSource('shared', 'investigation-method.md');
+const investigateTool = readSource('tools', 'investigate.md');
 const initialStateDocumentation = readSource('shared', 'initial-state-documentation.md');
 const planTool = readSource('tools', 'plan.md');
 const planIssueTool = readSource('tools', 'plan-issue.md');
@@ -380,6 +381,80 @@ test('the four analysis-delegation sites state delegation as the default with on
       ],
     ]);
   }
+});
+
+// The skill override in investigation-method.md has two halves: an antecedent enumerating which
+// of `effective-delivery`'s rules are set aside, and a consequence naming what stays binding
+// instead. Pinning only the consequence passes a fragment that has quietly dropped a member of
+// the enumeration — the mandatory report path, say, whose exclusion is what keeps writing under
+// `.effective-flow/investigation/` legitimate — so the antecedent gets its own assertion.
+// `BEFORE_OVERRIDE` keeps every lookahead on the antecedent side of the `do **not** apply here`
+// hinge, so a member cannot be satisfied by prose that follows the hinge; the members themselves
+// stay order-free, because resequencing the enumeration changes nothing and losing one does.
+const BEFORE_OVERRIDE = '(?:(?!do \\*\\*not\\*\\* apply here)[^\\n])*';
+const OVERRIDE_ANTECEDENT = new RegExp(
+  'Its rules on' +
+    `(?=${BEFORE_OVERRIDE}where an investigation report lives)` +
+    `(?=${BEFORE_OVERRIDE}when it may be saved)` +
+    `(?=${BEFORE_OVERRIDE}on mandatory report paths)` +
+    `${BEFORE_OVERRIDE}do \\*\\*not\\*\\* apply here`,
+  'i',
+);
+
+test('investigation-method.md delegates diagnostic depth and keeps the workflow contract and scorecard', () => {
+  assertClauses(investigationMethod, [
+    [
+      // `it is the authority`, verbatim and sentence-final, so a hedge that inverts the sentence
+      // ("is not the only authority for how deep a diagnosis goes") no longer satisfies it.
+      /Diagnostic depth[^\n]{0,200}follows\s+`effective-delivery`[^\n]{0,80}\bit is the authority for how deep a diagnosis goes[.;]/i,
+      'src/shared/investigation-method.md must name `effective-delivery` as the authority for how ' +
+        'deep a diagnosis goes, not as one of several sources for it',
+    ],
+    [
+      OVERRIDE_ANTECEDENT,
+      'src/shared/investigation-method.md must enumerate which of the skill rules the override ' +
+        'sets aside — where an investigation report lives, when it may be saved, and its ' +
+        'mandatory report paths — not just the consequence that follows from them',
+    ],
+    [
+      // All four bindings are named literally; only the punctuation between them is free, so none
+      // can be dropped into a gap the way `its routing and its own scope` previously could be.
+      /do \*\*not\*\* apply here[^\n]{0,20}because the embedding workflow['’]s report path[,;]\s*its transient wisdom file[,;]\s*its routing[,;]?\s*and its own scope stay binding/i,
+      "src/shared/investigation-method.md must hold the embedding workflow's report path, its " +
+        "transient wisdom file, its routing and its own scope binding against the skill's own " +
+        'rules on reports and runtime state',
+    ],
+    [
+      /- \*\*Clarity:\*\*/,
+      'src/shared/investigation-method.md must keep the Clarity criterion of the diagnosis scorecard',
+    ],
+    [
+      /- \*\*Verification:\*\*/,
+      'src/shared/investigation-method.md must keep the Verification criterion of the diagnosis ' +
+        'scorecard',
+    ],
+    [
+      // Both halves of the criterion, and the line ends at the target: a trailing clause that
+      // waives it ("may be ignored entirely") can no longer ride along behind the threshold.
+      /^- \*\*Context:\*\* (?=[^\n]*assumptions explicitly marked)[^\n]*target <= 10 % guessing\.$/m,
+      'src/shared/investigation-method.md must keep the Context criterion with its explicitly ' +
+        'marked assumptions and its `<= 10 %` guessing target; that threshold stays an Effective ' +
+        'Flow artifact contract',
+    ],
+  ]);
+});
+
+test('investigate.md keeps the Phase 3 numbered points as an output contract, not a depth rule', () => {
+  assertClauses(investigateTool, [
+    [
+      /numbered points below are the report['’]s output contract[^\n]{0,40}diagnostic depth[^\n]{0,40}follows the recommended owner named in ["“]Investigation method["”][^\n]{0,160}`\*\*Classification:\*\*`[^\n]{0,80}stays Effective Flow['’]s/i,
+      'src/tools/investigate.md must frame its Phase 3 numbered points as the report output ' +
+        'contract whose diagnostic depth follows the owner named in "Investigation method", ' +
+        "while the `**Classification:**` vocabulary stays Effective Flow's; without that " +
+        'sentence the numbered points read as a competing depth rule again. Its sibling, the ' +
+        '`## Recommended skills` section, is guarded by the build instead.',
+    ],
+  ]);
 });
 
 test('the old optional-delegation phrasing does not regress anywhere under src/', () => {
