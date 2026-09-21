@@ -7,7 +7,7 @@ the deterministic echo, so the run records the real Phase-3 handoff while leavin
 `iterate` outside the claim.
 
 Prepare its five slots with
-`pnpm merge-gate-eval prepare --scenario configured-reviewer-set-aside-blocks`, then hand each
+`pnpm eval merge-gate prepare --scenario configured-reviewer-set-aside-blocks`, then hand each
 slot's rendered prompt to a **fresh** agent — one that has not read this file. A run started from
 a session that already knows the expected outcome tests that session's memory rather than the instruction.
 

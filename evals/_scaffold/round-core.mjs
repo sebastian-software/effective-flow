@@ -27,12 +27,11 @@ import {
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from './build-identity.mjs';
-import { requiresIterateTrace } from './configured-reviewer-scenario.mjs';
 import { evaluateEvidence } from './evaluate.mjs';
 import { validateArchivedPairing } from './run-evidence.mjs';
-import { provisionSlot } from './scaffold.mjs';
-import { SANDBOX_BASE, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
-import { discoverSuite, REQUIRED_RUNS, selectScenarios, SUITE_ROOT } from './suite.mjs';
+import { provisionSlot, TRACKER_STUB_SKILL_PATH } from './scaffold.mjs';
+import { auxiliaryLogPath, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
+import { discoverSuite, REQUIRED_RUNS, selectScenarios } from './suite.mjs';
 
 // The parent this process was launched under, captured once at module load and deliberately not on
 // entry to the wait below. A `publishRound` child spends seconds on `loadRound`,
@@ -41,9 +40,8 @@ import { discoverSuite, REQUIRED_RUNS, selectScenarios, SUITE_ROOT } from './sui
 // entry and the backstop would never fire.
 const LAUNCH_PPID = process.ppid;
 
-const REPOSITORY_ROOT = resolve(SUITE_ROOT, '..', '..');
+const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
 const PHYSICAL_REPOSITORY_ROOT = realpathSync(REPOSITORY_ROOT);
-const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
 const PROFILE_KEYS = ['harness', 'model', 'reasoningEffort', 'reportedVersion', 'toolPolicy'];
 const PREPARED_DIGEST_KEYS = [
   'buildIdentity',
@@ -65,6 +63,19 @@ const RECEIPT_KEYS = [
 
 function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+// The suite's canonical archive, and whether a given scenario's run pairs a second evidence file
+// with its call log. Both were module constants while this file served one suite; they are the two
+// places the lifecycle below has to ask the suite rather than assume.
+function resultsDirOf(suite) {
+  return resolve(suite.root, 'results');
+}
+
+function auxiliaryFor(suite, scenario) {
+  const auxiliary = suite.auxiliaryEvidence;
+  if (!auxiliary) return null;
+  return auxiliary.required(scenario) ? auxiliary : null;
 }
 
 function stableJson(value) {
@@ -328,13 +339,16 @@ function sourceRevision() {
   }).trim();
 }
 
-export function createRound({
-  scenarios = [],
-  profile = {},
-  base = SANDBOX_BASE,
-  roundId = `${Date.now().toString(36)}-${randomUUID()}`,
-} = {}) {
-  const selected = selectScenarios(scenarios);
+export function createRound(
+  suite,
+  {
+    scenarios = [],
+    profile = {},
+    base = suite.sandboxBase,
+    roundId = `${Date.now().toString(36)}-${randomUUID()}`,
+  } = {},
+) {
+  const selected = selectScenarios(suite, scenarios);
   const normalizedProfile = normalizeProfile(profile);
   if (!/^[a-z0-9][a-z0-9-]*$/.test(roundId)) throw new Error(`invalid round id ${roundId}`);
   const roundRoot = contained(base, resolve(base, roundId), 'round root');
@@ -347,13 +361,13 @@ export function createRound({
     const identities = Object.fromEntries(
       selected.map((scenario) => [
         scenario,
-        pristineScenarioBuildIdentity(scenario, builtSkillRoot),
+        pristineScenarioBuildIdentity(suite, scenario, builtSkillRoot),
       ]),
     );
     const slots = [];
     for (const scenario of selected) {
       for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
-        const provisioned = provisionSlot({
+        const provisioned = provisionSlot(suite, {
           roundRoot,
           scenario,
           slot,
@@ -401,7 +415,7 @@ export function createRound({
   }
 }
 
-export function loadRound(handle, { base = SANDBOX_BASE, mutating = true } = {}) {
+export function loadRound(suite, handle, { base = suite.sandboxBase, mutating = true } = {}) {
   if (!handle) throw new Error('a round id or manifest path is required');
   const candidate = handle.includes(sep) ? resolve(handle) : resolve(base, handle, 'manifest.json');
   const manifestPath = contained(base, candidate, 'round manifest');
@@ -415,12 +429,12 @@ export function loadRound(handle, { base = SANDBOX_BASE, mutating = true } = {})
   if (manifest.schemaVersion !== 1 || manifest.requiredRuns !== REQUIRED_RUNS) {
     throw new Error(`unsupported or malformed round manifest at ${manifestPath}`);
   }
-  const suite = discoverSuite();
+  const discovered = discoverSuite(suite);
   const uniqueScenarios = [...new Set(manifest.scenarios ?? [])];
   if (
     !Array.isArray(manifest.scenarios) ||
     uniqueScenarios.length !== manifest.scenarios.length ||
-    uniqueScenarios.some((scenario) => !suite.scenarios.includes(scenario))
+    uniqueScenarios.some((scenario) => !discovered.scenarios.includes(scenario))
   ) {
     throw new Error(`round manifest has unknown or duplicate scenarios at ${manifestPath}`);
   }
@@ -571,7 +585,7 @@ function safeHostReceipt(receipt, manifest, paths) {
   return receipt;
 }
 
-function preparedDigests(paths) {
+function preparedDigests(suite, paths) {
   const config = resolve(paths.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md');
   return {
     log: digestFile(paths.callLog),
@@ -581,22 +595,27 @@ function preparedDigests(paths) {
     projectAgents: digestFile(resolve(paths.projectRoot, 'AGENTS.md')),
     projectConfig: digestFile(config),
     runMetadata: digestFile(paths.runMetadata),
-    trackerStub: digestFile(resolve(paths.skillRoot, 'scripts', 'remote-tracker.mjs')),
+    trackerStub: digestFile(resolve(paths.skillRoot, TRACKER_STUB_SKILL_PATH)),
   };
 }
 
-// The configured-reviewer scenario's echo trace is part of its sealed evidence unit, so a write to
-// it after sealing is `changed-after-seal` exactly as a write to the call log is.
-function sealDigests(paths, scenario) {
+// A paired auxiliary trace — for `merge-gate`, the configured-reviewer scenario's echo trace — is
+// part of that scenario's sealed evidence unit, so a write to it after sealing is
+// `changed-after-seal` exactly as a write to the call log is.
+function sealDigests(suite, paths, scenario) {
+  const auxiliary = auxiliaryFor(suite, scenario);
   return {
-    ...preparedDigests(paths),
+    ...preparedDigests(suite, paths),
     hostReceipt: digestFile(paths.hostReceipt),
-    ...(requiresIterateTrace(scenario) ? { iterateLog: digestFile(paths.iterateLog) } : {}),
+    ...(auxiliary ? { [auxiliary.sealDigestKey]: digestFile(auxiliaryLogPath(suite, paths)) } : {}),
   };
 }
 
-export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBOX_BASE }) {
-  const { manifest, roundRoot } = loadRound(handle, { base });
+export function sealAttempt(
+  suite,
+  { handle, scenario, slot, hostReceipt, base = suite.sandboxBase },
+) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
   const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
   return withLock(slotLock, () => {
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
@@ -612,14 +631,15 @@ export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBO
     if (!existsSync(paths.callLog) || statSync(paths.callLog).size === 0) {
       throw new Error(`${scenario}/${slot} has no non-empty call log`);
     }
-    if (requiresIterateTrace(scenario)) {
-      if (existsSync(`${paths.iterateLog}.lock`))
-        throw new Error(`iterate-trace lock is still live at ${paths.iterateLog}.lock`);
-      if (!existsSync(paths.iterateLog))
-        throw new Error(`${scenario}/${slot} has no paired iterate trace at ${paths.iterateLog}`);
+    const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+    if (auxiliaryLog) {
+      if (existsSync(`${auxiliaryLog}.lock`))
+        throw new Error(`auxiliary-trace lock is still live at ${auxiliaryLog}.lock`);
+      if (!existsSync(auxiliaryLog))
+        throw new Error(`${scenario}/${slot} has no paired auxiliary trace at ${auxiliaryLog}`);
     }
     const metadata = json(paths.runMetadata);
-    const currentPreparedDigests = preparedDigests(paths);
+    const currentPreparedDigests = preparedDigests(suite, paths);
     const preparedSubset = Object.fromEntries(
       Object.keys(state.expectedDigests).map((key) => [key, currentPreparedDigests[key]]),
     );
@@ -639,7 +659,7 @@ export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBO
     ) {
       throw new Error('slot metadata no longer matches the prepared attempt');
     }
-    const actualIdentity = scenarioBuildIdentity(scenario, paths.skillRoot);
+    const actualIdentity = scenarioBuildIdentity(suite, scenario, paths.skillRoot);
     if (JSON.stringify(actualIdentity) !== JSON.stringify(manifest.identities[scenario])) {
       throw new Error('slot build or immutable scenario inputs changed before sealing');
     }
@@ -661,23 +681,24 @@ export function sealAttempt({ handle, scenario, slot, hostReceipt, base = SANDBO
       attempt: metadata.attempt,
       sealedAt: new Date().toISOString(),
       buildDigest: actualIdentity.digest,
-      digests: sealDigests(paths, scenario),
+      digests: sealDigests(suite, paths, scenario),
     };
     atomicJson(paths.sealReceipt, receipt, { exclusive: true });
     return receipt;
   });
 }
 
-function changedAfterSeal(paths, scenario) {
+function changedAfterSeal(suite, paths, scenario) {
   if (!existsSync(paths.sealReceipt)) return false;
   const sealed = json(paths.sealReceipt);
-  if (requiresIterateTrace(scenario) && !existsSync(paths.iterateLog)) return true;
-  const current = sealDigests(paths, scenario);
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  if (auxiliaryLog && !existsSync(auxiliaryLog)) return true;
+  const current = sealDigests(suite, paths, scenario);
   return JSON.stringify(sealed.digests) !== JSON.stringify(current);
 }
 
-export function roundStatus(handle, { base = SANDBOX_BASE } = {}) {
-  const { manifest, roundRoot } = loadRound(handle, { base, mutating: false });
+export function roundStatus(suite, handle, { base = suite.sandboxBase } = {}) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base, mutating: false });
   return manifest.slots.map(({ scenario, slot }) => {
     const transitionPath = retryTransitionPath(roundRoot, scenario, slot);
     if (existsSync(transitionPath)) {
@@ -696,9 +717,9 @@ export function roundStatus(handle, { base = SANDBOX_BASE } = {}) {
     let status = 'prepared';
     if (existsSync(paths.callLog) && statSync(paths.callLog).size > 0) status = 'unsealed';
     if (existsSync(paths.sealReceipt)) {
-      if (changedAfterSeal(paths, scenario)) status = 'changed-after-seal';
+      if (changedAfterSeal(suite, paths, scenario)) status = 'changed-after-seal';
       else {
-        const evaluation = evaluateAttempt(manifest, scenario, paths);
+        const evaluation = evaluateAttempt(suite, manifest, scenario, paths);
         status = evaluation.validityProblems.length > 0 ? 'invalid' : 'sealed';
       }
     }
@@ -713,9 +734,10 @@ export function roundStatus(handle, { base = SANDBOX_BASE } = {}) {
   });
 }
 
-function evaluateAttempt(manifest, scenario, paths) {
+function evaluateAttempt(suite, manifest, scenario, paths) {
   const fixture = json(paths.fixture);
-  return evaluateEvidence({
+  const auxiliaryLog = auxiliaryLogPath(suite, paths);
+  return evaluateEvidence(suite, {
     scenario,
     logText: readFileSync(paths.callLog, 'utf8'),
     fixture,
@@ -723,7 +745,8 @@ function evaluateAttempt(manifest, scenario, paths) {
     buildIdentity: json(paths.buildIdentity),
     expectedBuildIdentity: manifest.identities[scenario],
     answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
-    iterateTraceText: existsSync(paths.iterateLog) ? readFileSync(paths.iterateLog, 'utf8') : null,
+    auxiliaryText:
+      auxiliaryLog && existsSync(auxiliaryLog) ? readFileSync(auxiliaryLog, 'utf8') : null,
   });
 }
 
@@ -798,12 +821,16 @@ function recoverRetryTransition({ roundRoot, scenario, slot }) {
   return finishRetryTransition({ roundRoot, scenario, slot, transition });
 }
 
-function reprovision({ manifest, roundRoot, scenario, slot, state, paths, reason }) {
-  if (scenario === 'unreported-checks-at-phase-four' && state.discardedAttempts >= 5) {
-    throw new Error(`${scenario}/${slot} already discarded five attempts; stop for investigation`);
+function reprovision({ suite, manifest, roundRoot, scenario, slot, state, paths, reason }) {
+  const discardLimit = suite.retryDiscardLimit(scenario);
+  if (state.discardedAttempts >= discardLimit) {
+    throw new Error(
+      `${scenario}/${slot} already discarded ${state.discardedAttempts} attempts, the limit being ` +
+        `${discardLimit}; stop for investigation`,
+    );
   }
   const next = state.currentAttempt + 1;
-  const provisioned = provisionSlot({
+  const provisioned = provisionSlot(suite, {
     roundRoot,
     scenario,
     slot,
@@ -828,16 +855,17 @@ function reprovision({ manifest, roundRoot, scenario, slot, state, paths, reason
   return finishRetryTransition({ roundRoot, scenario, slot, transition, pause: true });
 }
 
-export function retryInvalid({ handle, scenario, slot, reason, base = SANDBOX_BASE }) {
-  const { manifest, roundRoot } = loadRound(handle, { base });
+export function retryInvalid(suite, { handle, scenario, slot, reason, base = suite.sandboxBase }) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
   const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
   return withLock(slotLock, () => {
     const recovered = recoverRetryTransition({ roundRoot, scenario, slot });
     if (recovered) return recovered;
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
     if (!existsSync(paths.sealReceipt)) throw new Error('retry-invalid requires a sealed attempt');
-    if (changedAfterSeal(paths, scenario)) {
+    if (changedAfterSeal(suite, paths, scenario)) {
       return reprovision({
+        suite,
         manifest,
         roundRoot,
         scenario,
@@ -847,7 +875,7 @@ export function retryInvalid({ handle, scenario, slot, reason, base = SANDBOX_BA
         reason: reason || 'attempt changed after sealing',
       });
     }
-    const result = evaluateAttempt(manifest, scenario, paths);
+    const result = evaluateAttempt(suite, manifest, scenario, paths);
     if (result.validityProblems.length === 0) {
       throw new Error(
         result.findings.length > 0
@@ -856,6 +884,7 @@ export function retryInvalid({ handle, scenario, slot, reason, base = SANDBOX_BA
       );
     }
     return reprovision({
+      suite,
       manifest,
       roundRoot,
       scenario,
@@ -867,8 +896,11 @@ export function retryInvalid({ handle, scenario, slot, reason, base = SANDBOX_BA
   });
 }
 
-export function retryAborted({ handle, scenario, slot, assertion, base = SANDBOX_BASE }) {
-  const { manifest, roundRoot } = loadRound(handle, { base });
+export function retryAborted(
+  suite,
+  { handle, scenario, slot, assertion, base = suite.sandboxBase },
+) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
   const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
   return withLock(slotLock, () => {
     const recovered = recoverRetryTransition({ roundRoot, scenario, slot });
@@ -889,6 +921,7 @@ export function retryAborted({ handle, scenario, slot, assertion, base = SANDBOX
       throw new Error('a non-empty log must be sealed and evaluated before any retry');
     }
     return reprovision({
+      suite,
       manifest,
       roundRoot,
       scenario,
@@ -946,7 +979,7 @@ function sameGeneration(actual, expected) {
   );
 }
 
-function ensureCanonicalGeneration(candidate, scenarios, identities) {
+function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
   const findings = [];
   const allowedTopLevel = new Set([...scenarios, '.generation.json']);
   const unknownTopLevel = readdirSync(candidate, { withFileTypes: true })
@@ -966,10 +999,15 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
     if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
       throw new Error(`${scenario} candidate entry is not a regular directory`);
     }
-    const withTrace = requiresIterateTrace(scenario);
-    validateArchivedPairing(directory, withTrace);
+    const auxiliary = auxiliaryFor(suite, scenario);
+    validateArchivedPairing(
+      directory,
+      suite.auxiliaryEvidence
+        ? { suffix: suite.auxiliaryEvidence.archiveSuffix, required: auxiliary !== null }
+        : null,
+    );
     const suffixes = ['jsonl', 'build.json', 'prompt.txt', 'metadata.json'];
-    if (withTrace) suffixes.push('iterate.jsonl');
+    if (auxiliary) suffixes.push(auxiliary.archiveSuffix);
     const names = readdirSync(directory).sort();
     for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
       for (const suffix of suffixes) {
@@ -985,7 +1023,7 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
     const extra = names.filter((name) => !allowed.has(name));
     if (extra.length > 0)
       throw new Error(`${scenario} candidate has unexpected files: ${extra.join(', ')}`);
-    const fixture = json(resolve(SUITE_ROOT, 'fixtures', `${scenario}.json`));
+    const fixture = json(resolve(suite.root, 'fixtures', `${scenario}.json`));
     for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
       const target = resolve(directory, `run-${slot}`);
       const metadata = json(`${target}.metadata.json`);
@@ -998,7 +1036,7 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
       ) {
         throw new Error(`${scenario}/run-${slot} metadata does not bind its archived files`);
       }
-      const evaluation = evaluateEvidence({
+      const evaluation = evaluateEvidence(suite, {
         scenario,
         logText: readFileSync(`${target}.jsonl`, 'utf8'),
         fixture,
@@ -1006,7 +1044,9 @@ function ensureCanonicalGeneration(candidate, scenarios, identities) {
         buildIdentity: stamp,
         expectedBuildIdentity: identities[scenario],
         answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
-        iterateTraceText: withTrace ? readFileSync(`${target}.iterate.jsonl`, 'utf8') : null,
+        auxiliaryText: auxiliary
+          ? readFileSync(`${target}.${auxiliary.archiveSuffix}`, 'utf8')
+          : null,
       });
       if (evaluation.validityProblems.length > 0) {
         throw new Error(
@@ -1118,22 +1158,22 @@ function recoverPublicationLocked({ resultsDir, publicationRoot }) {
   return { recovered: true };
 }
 
-export function publicationLockPath(publicationRoot = SUITE_ROOT) {
+export function publicationLockPath(suite, publicationRoot = suite.root) {
   const key = digestOf(resolve(publicationRoot)).slice('sha256:'.length);
   return resolve(
     REPOSITORY_ROOT,
     '.effective-flow',
-    'merge-gate-eval',
+    suite.runtimeStateDir,
     'publication-locks',
     `${key}.lock`,
   );
 }
 
-export function recoverPublication({
-  resultsDir = RESULTS_DIR,
-  publicationRoot = SUITE_ROOT,
-} = {}) {
-  const lockPath = publicationLockPath(publicationRoot);
+export function recoverPublication(
+  suite,
+  { resultsDir = resultsDirOf(suite), publicationRoot = suite.root } = {},
+) {
+  const lockPath = publicationLockPath(suite, publicationRoot);
   mkdirSync(publicationRoot, { recursive: true });
   return withLock(
     lockPath,
@@ -1145,16 +1185,16 @@ export function recoverPublication({
   );
 }
 
-function validateSealedSlot(manifest, roundRoot, scenario, slot) {
+function validateSealedSlot(suite, manifest, roundRoot, scenario, slot) {
   const { paths } = currentAttempt(manifest, roundRoot, scenario, slot);
   if (!existsSync(paths.sealReceipt)) throw new Error(`${scenario}/${slot} is not sealed`);
-  if (changedAfterSeal(paths, scenario))
+  if (changedAfterSeal(suite, paths, scenario))
     throw new Error(`${scenario}/${slot} changed after sealing`);
   const sealed = json(paths.sealReceipt);
   const metadata = json(paths.runMetadata);
   const host = json(paths.hostReceipt);
   safeHostReceipt(host, manifest, paths);
-  const actualIdentity = scenarioBuildIdentity(scenario, paths.skillRoot);
+  const actualIdentity = scenarioBuildIdentity(suite, scenario, paths.skillRoot);
   if (
     sealed.scenario !== scenario ||
     sealed.slot !== slot ||
@@ -1165,7 +1205,7 @@ function validateSealedSlot(manifest, roundRoot, scenario, slot) {
   ) {
     throw new Error(`${scenario}/${slot} seal or source identity no longer matches the round`);
   }
-  const evaluation = evaluateAttempt(manifest, scenario, paths);
+  const evaluation = evaluateAttempt(suite, manifest, scenario, paths);
   if (evaluation.validityProblems.length > 0) {
     throw new Error(
       `${scenario}/${slot} is invalid evidence: ${evaluation.validityProblems.join('; ')}`,
@@ -1174,19 +1214,20 @@ function validateSealedSlot(manifest, roundRoot, scenario, slot) {
   return { scenario, slot, paths, sealed, metadata, host, findings: evaluation.findings };
 }
 
-function validateAllSealed(manifest, roundRoot) {
+function validateAllSealed(suite, manifest, roundRoot) {
   return manifest.slots.map(({ scenario, slot }) =>
-    validateSealedSlot(manifest, roundRoot, scenario, slot),
+    validateSealedSlot(suite, manifest, roundRoot, scenario, slot),
   );
 }
 
-function assertCopiedArtifacts(entry, target) {
+function assertCopiedArtifacts(suite, entry, target) {
+  const auxiliary = auxiliaryFor(suite, entry.scenario);
   const copied = {
     log: digestFile(`${target}.jsonl`),
     buildIdentity: digestFile(`${target}.build.json`),
     prompt: digestFile(`${target}.prompt.txt`),
-    ...(requiresIterateTrace(entry.scenario)
-      ? { iterateLog: digestFile(`${target}.iterate.jsonl`) }
+    ...(auxiliary
+      ? { [auxiliary.sealDigestKey]: digestFile(`${target}.${auxiliary.archiveSuffix}`) }
       : {}),
   };
   for (const [name, digest] of Object.entries(copied)) {
@@ -1196,23 +1237,26 @@ function assertCopiedArtifacts(entry, target) {
   }
 }
 
-export function publishRound({
-  handle,
-  base = SANDBOX_BASE,
-  resultsDir = RESULTS_DIR,
-  publicationRoot = SUITE_ROOT,
-}) {
-  const { manifest, roundRoot } = loadRound(handle, { base });
-  validateAllSealed(manifest, roundRoot);
+export function publishRound(
+  suite,
+  {
+    handle,
+    base = suite.sandboxBase,
+    resultsDir = resultsDirOf(suite),
+    publicationRoot = suite.root,
+  },
+) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
+  validateAllSealed(suite, manifest, roundRoot);
 
-  const suite = discoverSuite();
+  const discovered = discoverSuite(suite);
   const currentIdentities = {};
   const currentBuild = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-publish-'));
   let currentSkillRoot;
   try {
     currentSkillRoot = buildPortableSkill(currentBuild);
-    for (const scenario of suite.scenarios) {
-      const current = pristineScenarioBuildIdentity(scenario, currentSkillRoot);
+    for (const scenario of discovered.scenarios) {
+      const current = pristineScenarioBuildIdentity(suite, scenario, currentSkillRoot);
       currentIdentities[scenario] = current;
       if (
         manifest.scenarios.includes(scenario) &&
@@ -1226,7 +1270,7 @@ export function publishRound({
     throw error;
   }
 
-  const publicationLock = publicationLockPath(publicationRoot);
+  const publicationLock = publicationLockPath(suite, publicationRoot);
   const publicationJournal = resolve(publicationRoot, '.results-publication.json');
   const canonicalResults = resolve(resultsDir);
   mkdirSync(publicationRoot, { recursive: true });
@@ -1241,7 +1285,7 @@ export function publishRound({
       () => {
         pauseAtBoundary('publication-lock-held');
         recoverPublicationLocked({ resultsDir: canonicalResults, publicationRoot });
-        const evaluations = validateAllSealed(manifest, roundRoot);
+        const evaluations = validateAllSealed(suite, manifest, roundRoot);
         const generation = randomUUID();
         const candidate = resolve(publicationRoot, `.results-candidate-${generation}`);
         const backup = resolve(publicationRoot, `.results-backup-${generation}`);
@@ -1259,13 +1303,14 @@ export function publishRound({
             copyFileSync(paths.callLog, `${target}.jsonl`);
             copyFileSync(paths.buildIdentity, `${target}.build.json`);
             copyFileSync(paths.prompt, `${target}.prompt.txt`);
-            if (requiresIterateTrace(scenario)) {
-              copyFileSync(paths.iterateLog, `${target}.iterate.jsonl`);
+            const auxiliary = auxiliaryFor(suite, scenario);
+            if (auxiliary) {
+              copyFileSync(auxiliaryLogPath(suite, paths), `${target}.${auxiliary.archiveSuffix}`);
             }
             const entry = evaluations.find(
               (evaluation) => evaluation.scenario === scenario && evaluation.slot === slot,
             );
-            assertCopiedArtifacts(entry, target);
+            assertCopiedArtifacts(suite, entry, target);
             const { metadata, sealed, host } = entry;
             atomicJson(`${target}.metadata.json`, {
               schemaVersion: 1,
@@ -1282,7 +1327,12 @@ export function publishRound({
               hostAttestation: host,
             });
           }
-          const findings = ensureCanonicalGeneration(candidate, suite.scenarios, currentIdentities);
+          const findings = ensureCanonicalGeneration(
+            suite,
+            candidate,
+            discovered.scenarios,
+            currentIdentities,
+          );
           const candidateGeneration = {
             schemaVersion: 1,
             generation,
@@ -1302,12 +1352,12 @@ export function publishRound({
             phase: 'candidate-ready',
           };
           writeJournal(publicationJournal, journal);
-          validateAllSealed(manifest, roundRoot);
+          validateAllSealed(suite, manifest, roundRoot);
           const finalBuild = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-final-publish-'));
           try {
             const finalSkillRoot = buildPortableSkill(finalBuild);
-            for (const scenario of suite.scenarios) {
-              const current = pristineScenarioBuildIdentity(scenario, finalSkillRoot);
+            for (const scenario of discovered.scenarios) {
+              const current = pristineScenarioBuildIdentity(suite, scenario, finalSkillRoot);
               if (JSON.stringify(current) !== JSON.stringify(currentIdentities[scenario])) {
                 throw new Error(
                   `source or eval instrument drifted during publication: ${scenario}`,
@@ -1318,7 +1368,7 @@ export function publishRound({
             rmSync(finalBuild, { recursive: true, force: true });
           }
           pauseAtBoundary('after-final-build');
-          validateAllSealed(manifest, roundRoot);
+          validateAllSealed(suite, manifest, roundRoot);
           if (!sameGeneration(generationInfo(candidate), candidateGeneration)) {
             throw new Error('publication candidate changed before installation');
           }
@@ -1368,7 +1418,7 @@ export function publishRound({
 // inside `pnpm test`, where a stale answer turned an ordinary pull request red and the only remedy
 // was a fresh round of six scenarios times five runs. The claim the evidence supports is about the
 // build that ships, so the enforcement belongs at the release point and the *report* belongs
-// everywhere: `pnpm merge-gate-eval verify` prints the verdict on every pull request and
+// everywhere: `pnpm eval <tool> verify` prints the verdict on every pull request and
 // `--mode strict` fails only on the release pull request. The structural assertions — a stamp
 // exists, a log parses, five runs of five — stay hard in `pnpm test`, because they are properties
 // of the archived files alone rather than of the pair.
@@ -1429,14 +1479,14 @@ function archivedStamp(scenario, directory, slot) {
 // slot with its own verdict, so the distinction the per-run states exist to keep is printed rather
 // than lost. The rule that the two must not report the same way is about a run, not about this
 // rollup — see the header of `freshnessVerdict` in `build-identity.mjs`.
-function scenarioFreshness(scenario, identity, resultsDir) {
+function scenarioFreshness(suite, scenario, identity, resultsDir) {
   const directory = resolve(resultsDir, scenario);
   if (!existsSync(directory)) {
     return { scenario, state: 'absent', runs: [], drift: [] };
   }
   const runs = archivedSlots(directory).map((slot) => ({
     slot,
-    ...freshnessVerdict(scenario, archivedStamp(scenario, directory, slot), identity),
+    ...freshnessVerdict(suite, scenario, archivedStamp(scenario, directory, slot), identity),
   }));
   const firstStale = runs.find((run) => run.state === 'stale');
   const drift = firstStale?.drift ?? [];
@@ -1452,17 +1502,18 @@ function scenarioFreshness(scenario, identity, resultsDir) {
 // One walk of the corpus, with the archived generation read before it and again after it. Nothing
 // here writes and nothing here takes a lock; the reason the generation is read twice instead is in
 // `verifyFreshness` below.
-function pinnedScenarioWalk(suite, skillRoot, resultsDir) {
+function pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir) {
   const before = generationInfo(resultsDir);
-  const scenarios = suite.scenarios.map((scenario) => {
+  const scenarios = discovered.scenarios.map((scenario) => {
     // The seam a test tears the corpus through, and it belongs *inside* the loop rather than
     // between the two generation reads. A boundary outside the loop would only prove that the
     // comparison works, while the state this guards against is a walk that read one scenario from
     // the old generation and the next one from the new.
     pauseAtRepeatableBoundary('verify-scenario-read');
     return scenarioFreshness(
+      suite,
       scenario,
-      pristineScenarioBuildIdentity(scenario, skillRoot),
+      pristineScenarioBuildIdentity(suite, scenario, skillRoot),
       resultsDir,
     );
   });
@@ -1481,8 +1532,8 @@ function pinnedScenarioWalk(suite, skillRoot, resultsDir) {
 // `build-identity.mjs`: `build.mjs` swaps through fixed `dist.tmp` and `dist.bak` paths, so a build
 // that shares a destination with a concurrent one dies mid-rename — and this runs in CI beside
 // whatever else the job is doing.
-export function verifyFreshness({ resultsDir = RESULTS_DIR } = {}) {
-  const suite = discoverSuite();
+export function verifyFreshness(suite, { resultsDir = resultsDirOf(suite) } = {}) {
+  const discovered = discoverSuite(suite);
   const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-verify-'));
   try {
     const skillRoot = buildPortableSkill(outputRoot);
@@ -1505,8 +1556,8 @@ export function verifyFreshness({ resultsDir = RESULTS_DIR } = {}) {
     // it exactly as it does for an unreadable stamp — see the header above. It is deliberately not
     // a further scenario state: a state would be printed as a verdict about the gate, and this
     // says nothing about the gate at all.
-    let walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
-    if (!walk.pinned) walk = pinnedScenarioWalk(suite, skillRoot, resultsDir);
+    let walk = pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir);
+    if (!walk.pinned) walk = pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir);
     if (!walk.pinned && !walk.settledAbsent) {
       throw new Error(
         `the archived corpus changed while it was being read, twice over: ${resolve(resultsDir)}`,

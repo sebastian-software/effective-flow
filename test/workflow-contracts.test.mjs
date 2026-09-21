@@ -7423,7 +7423,7 @@ test('the merge-gate eval gate always reports and turns strict only for release-
   );
   assert.match(
     step,
-    /merge-gate-eval verify --mode "\$mode"/,
+    /eval merge-gate verify --mode "\$mode"/,
     'the step must run the read-only `verify` subcommand with the mode it selected',
   );
   assert.match(

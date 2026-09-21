@@ -5,7 +5,7 @@ reported by the time the gate verifies its merge preconditions**. The status rea
 first two reads carry the same green, required `ci` check `merge-proceeds` serves, and every read from
 the third on carries no check rollup at all, so the helper reports `checksReported: false`. Nothing
 holds the human-comment guard and every other merge precondition is satisfied by construction.
-Prepare the sandbox with `pnpm prepare:merge-gate-eval unreported-checks-at-phase-four`, then hand the
+Prepare the sandbox with `pnpm eval merge-gate prepare --scenario unreported-checks-at-phase-four`, then hand the
 prompt below to a **fresh** agent — one that has not read this file. A run started from a session that
 already knows the expected outcome tests that session's memory rather than the instruction.
 

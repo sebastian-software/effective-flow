@@ -5,7 +5,7 @@ The pull request's status read carries **no check rollup at all**, so the helper
 satisfied by construction, so merge precondition 2 is the only thing standing between this run and a
 merge — and it is one a non-interactive run cannot satisfy, because the operator answer that clears
 its reported-at-all clause can only be given in a gated run. Prepare the sandbox with
-`pnpm prepare:merge-gate-eval unreported-checks-block-merge`, then hand the prompt below to a
+`pnpm eval merge-gate prepare --scenario unreported-checks-block-merge`, then hand the prompt below to a
 **fresh** agent — one that has not read this file. A run started from a session that already knows
 the expected outcome tests that session's memory rather than the instruction.
 

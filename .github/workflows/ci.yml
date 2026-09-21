@@ -82,7 +82,7 @@ jobs:
           # summary whether the command passed or failed, and piping into `tee` would report
           # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
           status=0
-          pnpm merge-gate-eval verify --mode "$mode" > "$verdict" 2>&1 || status=$?
+          pnpm eval merge-gate verify --mode "$mode" > "$verdict" 2>&1 || status=$?
           cat "$verdict"
           {
             echo "### Merge-gate eval evidence (\`--mode $mode\`)"
