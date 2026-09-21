@@ -679,10 +679,11 @@ pass. The three new contract assertions were each proven by mutation from a `cp`
 after the review found the first versions too loose, every tightened pattern was proven **both
 ways** — the meaning-inverting probe now fails, an innocuous rewording still passes.
 
-### Deliberately outstanding at this point
+### Step 7
 
-The M-4 row of the review document carries `#TBD`. Step 7 replaces it with the pull request's real
-number on this same branch before the merge gate runs.
+The M-4 row of the review document carried `#TBD` until the pull request existed. Step 7 replaced it
+with #448 in a follow-up commit on the same branch, before the merge gate ran. No placeholder
+remains.
 
 ## Review findings
 
