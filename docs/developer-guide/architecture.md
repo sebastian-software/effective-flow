@@ -264,9 +264,13 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   refused merge's `stderr`, redacts URL userinfo, query and fragment, and obvious token forms. It
   skips the fetch for a local upstream or an invalid remote or merge ref, and classifies the
   branch as `detached`,
-  `no-upstream`, `upstream-gone`, `up-to-date`, `ahead`, `behind`, `behind-overlap`, or
-  `diverged`, where `behind-overlap` means an incoming path overlaps a staged, unstaged,
-  untracked, or ignored local path or an incoming gitlink. A failed status call, a failed, stale, or
+  `no-upstream`, `upstream-gone`, `untracked-upstream`, `up-to-date`, `ahead`, `behind`,
+  `behind-overlap`, or `diverged`, where `upstream-gone` means a tracking ref Git knows no longer
+  resolves to a commit while `untracked-upstream` means Git resolves no tracking ref at all — a
+  URL in place of a remote name, or a fetch refspec that does not map the merge ref — so a fetch
+  that succeeded is not contradicted and `fetch.stale` stays `null`, and where `behind-overlap`
+  means an incoming path overlaps a staged, unstaged, untracked, or ignored local path or an
+  incoming gitlink. A failed status call, a failed, stale, or
   skipped fetch, and every state without a possible update end the step with a notice. Only `behind`, `behind-overlap`, and
   `diverged` load the lazy `source-upstream-sync` fragment, which asks the user and, on an explicit
   confirmation, calls the helper's `fast-forward` operation: a dry run, then `--apply` against the

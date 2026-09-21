@@ -27,6 +27,7 @@ import {
   bodyItemLine,
   buildEnvelope,
   executeOperation,
+  exitCodeFor,
   languageContextValue,
   mintToken,
   serializeEnvelope,
@@ -983,6 +984,7 @@ test('error envelope: executeOperation returns the stable failure shape and neve
     'INVALID_CWD',
     'UNSAFE_MANIFEST_VALUE',
     'UNSAFE_TARGET',
+    'WRITE_FAILED',
     'DIGEST_MISMATCH',
     'SNAPSHOT_INVALID',
     'DELIMITER_MISSING',
@@ -1201,6 +1203,10 @@ test('provenance: a body item without url or author is refused missing-provenanc
     body(3, 'Null url.', { url: null }),
     body(4, 'Empty author.', { author: '' }),
     body(5, 'Absent both.', { author: undefined, url: undefined }),
+    // Whitespace carries no provenance either, so it is absent rather than present-and-unsafe:
+    // one such item is refused on its own instead of stopping the whole gate run.
+    body(6, 'Blank author.', { author: '   ' }),
+    body(7, 'Blank url.', { url: '\u00a0' }),
   ];
   const { built, text } = await buildAndValidate(
     buildInput(root, { bodyItems: [body(1, 'Kept.'), ...missing] }),
@@ -1222,7 +1228,7 @@ test('provenance: a body item without url or author is refused missing-provenanc
   // gate-internal outcome and a delimiter body stays a delimiter refusal.
   const precedence = await buildEnvelope(
     buildInput(tempRoot(t), {
-      bodyItems: [body(6, '   ', { url: null }), body(7, `x\n${DELIMITER}\ny`, { author: null })],
+      bodyItems: [body(8, '   ', { url: null }), body(9, `x\n${DELIMITER}\ny`, { author: null })],
     }),
   );
   assert.deepEqual(
@@ -1245,11 +1251,15 @@ test('provenance: a body item without url or author is refused missing-provenanc
       `durableKey=${durableKey}`,
     );
   }
-  await expectBuildCode(
+  // A whitespace-only author is absent provenance, not an unsafe value: it refuses that one item
+  // rather than stopping the run, so a single blank field cannot take the whole gate down.
+  const blankAuthor = await buildEnvelope(
     buildInput(only, { bodyItems: [body(1, 'Body.', { author: '  ' })] }),
-    'UNSAFE_MANIFEST_VALUE',
-    'whitespace author',
   );
+  assert.equal(blankAuthor.status, 'nothing-to-delegate');
+  assert.deepEqual(blankAuthor.refused, [
+    { durableKey: 'review-1#1', reason: 'missing-provenance' },
+  ]);
   await expectBuildCode(
     buildInput(only, { bodyItems: [body(1, 'Body.', { url: 'a\u200bb' })] }),
     'UNSAFE_MANIFEST_VALUE',
@@ -1370,7 +1380,10 @@ test('files: a write failing after the exclusive open leaves no partial message 
       { writeContent },
     );
     assert.equal(result.ok, false, `failOn=${failOn}`);
-    assert.equal(result.error.code, 'UNSAFE_TARGET');
+    // The exclusive open already proved the target safe, so an I/O fault after it is reported as
+    // a write failure rather than as a safety refusal. It aborts on the same exit code.
+    assert.equal(result.error.code, 'WRITE_FAILED');
+    assert.equal(exitCodeFor(result), 3);
     assert.match(result.error.message, /ENOSPC/);
     assert.deepEqual(mergeGateFiles(root), [], `failOn=${failOn}`);
   }

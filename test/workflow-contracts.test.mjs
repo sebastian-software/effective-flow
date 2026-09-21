@@ -15030,7 +15030,7 @@ test('deliver checks the upstream before recording source evidence and defers th
   );
   assert.match(
     step1Text,
-    /A failed or stale fetch, or one reported as `fetch\.skipped`, ends this check with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`, `up-to-date`, and `ahead`, with no question/,
+    /A failed or stale fetch, or one reported as `fetch\.skipped`, ends this check with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`, `untracked-upstream`, `up-to-date`, and `ahead`, with no question/,
   );
   assert.match(
     step1Text,

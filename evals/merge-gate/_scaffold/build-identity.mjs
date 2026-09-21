@@ -16,25 +16,28 @@
 // worker contract or a fragment the gate never reaches invalidated every archived round and forced a
 // re-run that could produce no new information.
 //
-// The set is therefore derived from the built tree rather than listed: the router, the gate tool and
-// the artifacts the gate delegates into as seeds, plus every `shared/` fragment reachable from any
-// of those seeds' own load pointers, transitively. The delegation targets are seeds because a gate
+// The set is therefore derived from the built tree rather than listed: the router, the gate tool,
+// the artifacts the gate delegates into and the runtime helper it executes as seeds, plus every
+// `shared/` fragment reachable from any of those seeds' own load pointers, transitively. The delegation targets are seeds because a gate
 // run reaches them — `tools/iterate.md` for a review round, and the merge-conflict-resolver and
 // code-validator worker contracts — and a set that stopped at the gate tool would leave a run bound
 // to a build whose delegated artifact had since changed. Membership is "can the gate reach it", not
 // "did this scenario open it": a scenario that never hits a conflict still binds to the resolver,
-// which is the conservative direction of the two. The seeds are the gate's own delegation surface
-// and go one hop; `iterate`'s further delegations are deliberately not seeded, because seeding them
+// which is the conservative direction of the two. The delegation seeds are the gate's own
+// delegation surface and go one hop; `iterate`'s further delegations are deliberately not seeded, because seeding them
 // would pull most of the built tree back in and undo the narrowing. The three cost little, since
 // `iterate` shares most of the gate's fragments: the delegation seeds add only themselves and the
 // further fragments unique to their reachable closures. The exact count is deliberately derived
 // below because a scenario overlay can replace one seed and change that closure. Eagerly included
 // fragments need no entry — the build inlines them into the tool body, so the tool's own hash already
-// covers them.
+// covers them. A runtime script the gate *executes* is the opposite case and does need one: nothing
+// inlines it and no pointer names it, so `scripts/delegation-envelope.mjs` and its `-core.mjs` half
+// are seeded explicitly beside the delegation targets.
 // Neither `scripts/remote-tracker.mjs` nor its `-core.mjs` half is a member: `scaffold.mjs`
 // overwrites that exact path in the copied tree with the stub before any run, and the stub is
 // already hashed separately as the `instrument` part, so no sandbox run ever loads the shipped
-// helper's content and none ever reaches the core module it imports.
+// helper's content and none ever reaches the core module it imports. That exclusion turns on the
+// stub, not on the file extension — the envelope helper carries no stub and is hashed as shipped.
 //
 // Deriving rather than listing keeps the set from drifting as fragments are added, and it keeps the
 // property the binding exists for: any change to the text the gate itself executes still invalidates
@@ -177,17 +180,31 @@ export function digestFile(path) {
 }
 
 // The seeds of the load set: the router that dispatches the invocation, the tool body that is the
-// gate itself, and the three artifacts the gate delegates into — the `iterate` workflow it hands a
-// review round to, and the two worker contracts it can select. `scripts/remote-tracker.mjs` is
-// deliberately absent, together with its `-core.mjs` half: `scaffold.mjs` replaces that path in the
-// copied tree with the stub, which is hashed as the `instrument` part instead, so a run loads
-// neither the shipped helper nor the module it imports.
+// gate itself, the three artifacts the gate delegates into — the `iterate` workflow it hands a
+// review round to, and the two worker contracts it can select — and the delegation-envelope helper
+// the gate runs to build and validate every one of those handoffs, together with the `-core.mjs`
+// half that helper imports.
+//
+// **The envelope helper is seeded rather than reached, and it has to be.** A sandbox run executes
+// the shipped `scripts/delegation-envelope.mjs`, so a change to it changes what the run does; but a
+// `.mjs` file carries no load pointer, and the tool body names it as a shell command, which is
+// ordinary prose to `LOAD_POINTER_RE`. Nothing in the derivation can therefore find it, and left
+// unseeded it was the one piece of executed text a run could change underneath the archived stamps
+// while every one of them went on reporting current.
+//
+// `scripts/remote-tracker.mjs` stays deliberately absent, together with its `-core.mjs` half, and
+// the contrast with the envelope helper is the membership rule rather than an inconsistency:
+// `scaffold.mjs` replaces that path in the copied tree with the stub, which is hashed as the
+// `instrument` part instead, so a run loads neither the shipped helper nor the module it imports.
+// Nothing replaces the envelope helper, so a run loads exactly what the build shipped.
 const LOAD_SET_SEEDS = [
   'SKILL.md',
   'tools/merge-gate.md',
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
   'workers/effective-flow-code-validator.md',
+  'scripts/delegation-envelope.mjs',
+  'scripts/delegation-envelope-core.mjs',
 ];
 
 const ITERATE_ECHO_SOURCE = resolve(import.meta.dirname, 'iterate-echo.md');
@@ -249,9 +266,10 @@ export function applyScenarioSkillOverlay(scenario, skillRoot) {
 const LOAD_POINTER_RE = /\*\*Load on demand:\*\* Read `shared\/([^`\n]+)\.md`/g;
 
 // Follows the seeds' own load pointers through the built tree, transitively, and returns the
-// relative paths a `merge-gate` run reads. Every seed is scanned rather than the gate tool alone:
-// each is markdown now that the helper is not a seed, and a delegation target carries load pointers
-// of its own.
+// relative paths a `merge-gate` run reads. Every seed is scanned rather than the gate tool alone,
+// because a delegation target carries load pointers of its own. The `.mjs` seeds are scanned with
+// the rest and contribute nothing — JavaScript carries no load pointer — which is cheaper than a
+// per-seed exemption that would have to be kept in step with which seeds are markdown.
 //
 // An absent seed or an unresolvable pointer throws rather than yielding a shorter set. That is the
 // whole safety property: a set one fragment short produces a perfectly plausible digest, and once

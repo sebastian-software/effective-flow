@@ -174,16 +174,23 @@ test('the operation-support probe still distinguishes the shipped helper from an
   );
 });
 
-// The seeds every run enters through — the router, the gate tool and the artifacts the gate
-// delegates into — plus a sample of the fragments those reach by their own pointers. A sample rather
-// than the whole expected list on purpose: the set legitimately grows the day the gate gains a
-// pointer, and pinning the full list would turn every such addition into a failure that carries no
-// information.
+// The seeds every run enters through — the router, the gate tool, the artifacts the gate delegates
+// into and the delegation-envelope helper it executes — plus a sample of the fragments those reach
+// by their own pointers. A sample rather than the whole expected list on purpose: the set
+// legitimately grows the day the gate gains a pointer, and pinning the full list would turn every
+// such addition into a failure that carries no information.
+//
+// The two envelope scripts are not a sample and are listed in full. No pointer names them, so they
+// are in the set only for as long as `LOAD_SET_SEEDS` lists them explicitly, and dropping a seed is
+// the one drift this pair of lists exists to catch: a run executes the shipped helper, so a change
+// there changes what the run does while every archived stamp goes on reporting current.
 const LOADED_BY_A_RUN = [
   'SKILL.md',
   'tools/merge-gate.md',
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
+  'scripts/delegation-envelope.mjs',
+  'scripts/delegation-envelope-core.mjs',
   'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
@@ -197,12 +204,17 @@ const LOADED_BY_A_RUN = [
 // The worker is a UI implementer rather than one of the two the gate can reach, so the entry stays a
 // statement about roles outside the gate's delegation rather than one contradicted by the seeds.
 //
-// The helper is the pointed exclusion, both halves of it. `scaffold.mjs` overwrites
+// The tracker helper is the pointed exclusion, both halves of it. `scaffold.mjs` overwrites
 // `scripts/remote-tracker.mjs` in the copied tree with the stub before any run, and the stub is
 // hashed separately as the `instrument` part, so a run never loads the shipped file's content and
 // never reaches the `-core.mjs` module it imports. Hashing either would bind every archived round to
 // a file no run reads — exactly the coupling the narrowing removed — and would additionally
 // double-count what the instrument already covers.
+//
+// It is the one script excluded, not the class: the delegation-envelope pair above is a member for
+// the mirror-image reason. Nothing stubs it, so a run executes what the build shipped. Reading
+// these two lists together is what keeps "a `.mjs` cannot be in the load set" from re-forming as a
+// rule nobody decided on.
 const NOT_LOADED_BY_A_RUN = [
   'workers/effective-flow-ui-implementer.md',
   'tools/plan.md',

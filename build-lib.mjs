@@ -637,6 +637,37 @@ function setDifference(left, right) {
   return [...left].filter((value) => !right.has(value)).sort();
 }
 
+// --- Consumer-name disjointness guard ---
+//
+// `docs/developer-guide/skill-ownership.json` names a consumer by bare name
+// (`docs`, `code-documenter`) with no discriminator for whether that name
+// belongs to a tool or to an agent, and `assertSkillOwnershipContract` keys its
+// recommendation pairs the same way (`${skill} ${consumer}`). Both are sound
+// only while `src/tools/*.md` and `src/agents/*.md` share no basename. With a
+// collision the two kinds would cross-satisfy each other: a tool's
+// `## Recommended skills` bullet would fill the pair a same-named agent's
+// `delegate` classification demands, so the agent could stop naming its owner —
+// lose its domain guidance outright — and still pass guard (b).
+//
+// Keying the pair on kind is not available as a local fix, because the manifest
+// side has no kind to key on; closing the hole that way means declaring a kind
+// per manifest consumer and migrating the manifest, the Markdown inventory and
+// the parser with it. So the assumption the bare key rests on is enforced here
+// instead of merely written down: the build fails on the collision that would
+// weaken the check, and whoever needs that collision is told what the manifest
+// has to grow first.
+export function assertDisjointConsumerNames({ toolNames, agentNames }, { context } = {}) {
+  const agents = new Set(agentNames);
+  const collisions = [...new Set(toolNames)].filter((name) => agents.has(name)).sort();
+  if (collisions.length === 0) return;
+  throw new Error(
+    `Tool and agent share the basename(s) ${collisions.join(', ')}: the skill-ownership manifest ` +
+      `identifies a consumer by bare name, so a colliding pair would cross-satisfy its "delegate" ` +
+      `obligation. Give the manifest a per-consumer kind and key the pair on it before introducing ` +
+      `this name${contextSuffix(context)}`,
+  );
+}
+
 export function assertSkillOwnershipContract(
   {
     manifest,
@@ -772,6 +803,12 @@ export function assertSkillOwnershipContract(
   // per-relationship branch makes, and a fallback member is legitimately
   // reached whenever the members ahead of it are unavailable, so that branch
   // keeps the full set.
+  //
+  // Both keys are `${skill} ${consumer}` with no discriminator for the
+  // consumer's kind, which holds only because no tool and agent share a
+  // basename. `assertDisjointConsumerNames` enforces that assumption at build
+  // time rather than leaving it as a comment a future collision could quietly
+  // invalidate; see its note for why the kind cannot be added here alone.
   const recommendedPairs = new Set();
   const leadingRecommendedPairs = new Set();
   for (const chain of recommendationChains) {
@@ -1948,6 +1985,43 @@ export function findSelfReferentialContractPhrases(text) {
     }
   }
   return hits;
+}
+
+// --- Unresolved placeholder guard ---
+//
+// Deliberately inverted: this matches the placeholder *shape*, not a list of the
+// names the build knows how to resolve. An allowlist only ever catches the names
+// it still carries, so retiring a feature and dropping its entry turns its token
+// from "unresolved" into merely "unknown" — every transform leaves an unknown
+// token alone and an allowlist guard ignores it, so a reintroduced `{{GOAL_START}}`
+// would ship verbatim into the delivered skill. Matching the shape instead makes
+// every stray placeholder self-detecting, including typos such as `{{SKIL:fix}}`,
+// and costs no allowlist entry per retired feature.
+//
+// The shape is `{{NAME}}` or `{{NAME:argument}}` with an UPPER_SNAKE name, which
+// is the vocabulary every placeholder in `src/` uses. Rendered output carries no
+// other `{{…}}` token today; a future syntax that legitimately needs one must
+// resolve it before the artifact is written rather than widen this pattern.
+export const UNRESOLVED_PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)(?::([^}\n]*))?\}\}/g;
+
+export function findUnresolvedPlaceholders(text) {
+  const findings = [];
+  const lines = normalizeLineEndings(text).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    for (const match of lines[index].matchAll(UNRESOLVED_PLACEHOLDER_RE)) {
+      findings.push({ line: index + 1, placeholder: match[0], name: match[1] });
+    }
+  }
+  return findings;
+}
+
+export function assertNoUnresolvedPlaceholders(text, { context } = {}) {
+  const findings = findUnresolvedPlaceholders(text);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, placeholder }) => `line ${line} (${placeholder})`)
+    .join(', ');
+  throw new Error(`unresolved placeholder${contextSuffix(context)}: ${details}`);
 }
 
 // --- Lazy-include directive (#99) — progressive disclosure inside a tool ---

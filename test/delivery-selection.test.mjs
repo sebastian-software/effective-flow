@@ -499,6 +499,39 @@ test('overlap folds case only when the repository ignores case', () => {
   assert.deepEqual(computeOverlap(['DOCS'], incoming, { ignoreCase: true }), ['DOCS']);
 });
 
+test('the normalization form folds on its own flag, independently of case', () => {
+  // The same name in both normalization forms. Case folding and normalization are two independent
+  // filesystem properties, so each flag folds only its own: `core.ignorecase` alone leaves an NFD
+  // and an NFC spelling distinct, and `core.precomposeunicode` alone leaves case distinct.
+  const nfc = 'docs/Übersicht.md'.normalize('NFC');
+  const nfd = 'docs/Übersicht.md'.normalize('NFD');
+  assert.notEqual(nfc, nfd);
+  const incoming = { paths: [nfc], gitlinks: [] };
+
+  assert.deepEqual(computeOverlap([nfd], incoming), []);
+  assert.deepEqual(computeOverlap([nfd], incoming, { ignoreCase: true }), []);
+  assert.deepEqual(computeOverlap([nfd], incoming, { precomposeUnicode: true }), [nfd]);
+  assert.deepEqual(computeOverlap([nfd.toUpperCase()], incoming, { precomposeUnicode: true }), []);
+  assert.deepEqual(
+    computeOverlap([nfd.toUpperCase()], incoming, { ignoreCase: true, precomposeUnicode: true }),
+    [nfd.toUpperCase()],
+  );
+  // The fast-forward snapshot scope folds the same way, so an entry beside an incoming path is
+  // captured whichever form its directory name is spelled in — but only where the checkout says
+  // the filesystem decomposes path names.
+  const local = { dirty: ['docs/Ü/local.txt'.normalize('NFD')], ignored: [] };
+  const incomingPaths = ['docs/Ü/incoming.txt'.normalize('NFC')];
+  assert.deepEqual(snapshotScope(local, incomingPaths), { dirty: [], ignored: [] });
+  assert.deepEqual(snapshotScope(local, incomingPaths, { ignoreCase: true }), {
+    dirty: [],
+    ignored: [],
+  });
+  assert.deepEqual(snapshotScope(local, incomingPaths, { precomposeUnicode: true }), {
+    dirty: local.dirty,
+    ignored: [],
+  });
+});
+
 test('an unexpected runner exception before the merge is a COMMAND_FAILED without mutation', async () => {
   const runner = () => {
     throw Object.assign(new Error('runner exploded'), { code: 'EBOOM' });
