@@ -596,7 +596,8 @@ test(
     // it was ever observed. Both this directory and the registry below are declared before the
     // `try` so they are in scope in the `finally`, following `driveVerifyWalk`.
     const gate = mkdtempSync(join(tmpdir(), 'effective-flow-round-gate-'));
-    // Every child that can park at a boundary inside the `try`, as `{ child, release, result }` —
+    // Every long-lived child spawned inside the `try` — the ones that park at a boundary and any
+    // other whose lifetime outlives the statement that spawned it — as `{ child, release, result }`,
     // the result promise captured once at the spawn site, because `childResult` attaches its `exit`
     // listener at call time and `exit` fires once: a second call on an exited child returns a
     // promise that never settles. The teardown kills and awaits these, so a failed assertion
@@ -1116,6 +1117,7 @@ test(
         },
       });
       const secondPublisherResult = childResult(secondPublisher);
+      parked.push({ child: secondPublisher, release: null, result: secondPublisherResult });
       await waitForFile(secondPublisherMarker);
       writeFileSync(serializationRelease, 'release');
       const serializedResults = await Promise.all([firstPublisherResult, secondPublisherResult]);
