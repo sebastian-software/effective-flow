@@ -437,8 +437,9 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Three dependency-free script pairs ship as consumer runtime code in the skill payload, each split
-into an I/O boundary and a pure, unit-testable core:
+Three dependency-free script subsystems ship as consumer runtime code in the skill payload, each
+split into an I/O boundary and a pure, unit-testable core. Two are a single pair; the remote
+tracker's core is split further, across five modules:
 
 - **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
 <build|validate>` with one JSON object on standard input whose `cwd` is the verified
