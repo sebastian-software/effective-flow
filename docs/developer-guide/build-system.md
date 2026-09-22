@@ -312,6 +312,18 @@ The build aborts with an error message if any of these guards is violated:
   `test/build-lib.test.mjs`. The core fragment deliberately opens at heading level four: it is
   always embedded inside a consuming tool's `###` phase heading, so an `##` heading would make the
   following phases read as its subsections.
+- **Execution-profile policy guard:** `build.mjs` loads `src/shared/execution-profiles.md` as a
+  marked policy source and runs the pure `parseExecutionProfileContract` and
+  `assertExecutionProfileContract` helpers before rendering. The guard requires exactly one pair
+  of start/end markers for each of the ten policy tables and pins their headers, row order, closed
+  vocabularies, legal state combinations, first-reason gate, terminal eligibility row, lifecycle
+  transitions, fallback/control separation, correction rules, and transfer fields. A missing
+  source, missing or duplicate marker, malformed row, duplicate or reordered decision, unknown
+  value, or illegal combination aborts the build before any rendered output reaches the atomic
+  `dist/` swap. Focused positive and mutation/error coverage lives in
+  `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. This is a policy and
+  failure-phase guard only: work package 1 neither includes the fragment in a workflow nor emits a
+  native or portable worker artifact from it.
 - **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
   validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
   end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two

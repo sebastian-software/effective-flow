@@ -87,11 +87,27 @@ For Claude Code, use the corresponding settings:
 }
 ```
 
-These are recommendations, not settings written or enforced by Effective Flow. Native
-Effective Flow workers select their own role profiles: implementers and reviewers favor
-quality, while documentation, testing, validation, and other support roles use a more
-economical profile. Portable installations do not carry native model metadata; their delegated
-workers follow the consuming manager and harness instead.
+These are caller recommendations, not settings written or enforced by Effective Flow. The caller
+still owns interpretation, orchestration, risk classification, and escalation. Native Effective
+Flow workers currently use separate role-specific assignments: implementers and reviewers favor
+the strongest configured capability, while documentation, testing, validation, and other support
+roles use a more economical assignment. Portable installations do not carry native model metadata;
+their delegated workers follow the consuming manager and harness instead.
+
+**Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
+strongest available configured implementation capability and is always the safe default. Fast
+means a distinct native lower-cost, lower-latency implementation capability for a bounded packet
+that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
+or weakens later validation and review.
+
+Work package 1 only reserves and validates that policy. It activates neither `build` nor `refactor`,
+adds no setup choice, and emits no Fast worker artifact, so current runs remain unchanged. When a
+later work package adopts the policy, Fast may be requested only for the first implementation
+attempt of an eligible native packet. Any retry, correction, validation repair, review
+incorporation, conflict resolution, or scope-growth continuation uses Quality; coupled packets also
+share Quality. Portable installations remain Quality-only in V1. See the
+[configuration reference](./configuration.md#block-executionprofiles) for the reserved default-off
+key.
 
 Claude skills can request a different caller model or effort for their current turn, but that
 selection does not persist across the next user prompt. Effective Flow deliberately leaves this
@@ -107,6 +123,13 @@ Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment variable has higher prece
 agent's own model declaration. Leave it unset when you want Effective Flow's native Claude
 workers to use their role-specific model selection. Other user, project, or invocation-level
 harness overrides may likewise affect the effective caller or worker model.
+
+The future execution-profile gate also treats the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. Effective Flow
+must check presence only—it never reads, displays, relays, or stores the variable's value—and must
+select Quality without attempting Fast. This is distinct from a Fast spawn that the host actually
+rejects: that attempted spawn consumes the one Fast attempt before the run continues once with
+Quality.
 
 ## First invocation
 

@@ -47,6 +47,30 @@ The build emits three consumer targets:
 
 The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
 
+### Execution profiles (reserved policy)
+
+`src/shared/execution-profiles.md` is the provider-neutral policy source for the **Quality** and
+**Fast** implementation intents. Quality is the safe default; Fast is reserved for a bounded first
+implementation attempt that passes the ordered fail-closed gate. Unknown evidence, coupled scope,
+every newly spawned retry or correction, missing native capability, and portable execution select
+Quality. On Claude Code, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is detected by presence only; its value
+is never read, relayed, or persisted.
+
+The strict Boolean `executionProfiles.fast.enabled` is reserved and default-off. It never contains
+a provider model name: missing or `false` is disabled, malformed/ambiguous/unreadable is invalid,
+and both fail closed to Quality. Literal `true` only admits the project to the later pilot
+lifecycle; it does not start measurement, activate a generation, or prove native capability. Setup
+remains the sole configuration writer but has no UI for this key yet.
+
+Work package 1 validates the marked policy tables before rendering but does not include the fragment
+in a workflow, emit a worker artifact, write runtime state, or change `build`/`refactor` behavior.
+The guard mechanics are documented in
+[`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration
+ownership in [`docs/developer-guide/configuration.md`](docs/developer-guide/configuration.md), and
+the durable rationale in
+[`risk-aware-model-tiering-pilot-policy.md`](docs/adr/risk-aware-model-tiering-pilot-policy.md) and
+[`native-execution-profile-representation.md`](docs/adr/native-execution-profile-representation.md).
+
 ### Placeholder / directive syntax in sources
 
 The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
