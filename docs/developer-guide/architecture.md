@@ -364,15 +364,19 @@ step.
 
 The build generates three independent outputs from the same source:
 
-| Consumer                     | Skill target                    | Worker resolution                                                                                                                                          |
-| ---------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native Claude artifact       | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, deployed by `./install-skill.sh local` and `./local-link.sh`                      |
-| Native Codex artifact        | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, deployed by `./install-skill.sh local` and `./local-link.sh`                   |
-| DALO / Skills CLI (end user) | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism |
+| Consumer                     | Skill target                    | Worker resolution                                                                                                                                                   |
+| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Claude artifact       | `dist/claude/effective-flow/`   | native base `.md` agents plus five generated `-fast` implementer sidecars under `dist/claude/agents/`, deployed by `./install-skill.sh local` and `./local-link.sh` |
+| Native Codex artifact        | `dist/codex/effective-flow/`    | native base `.toml` agents under `dist/codex/agents/`; Fast references carry per-spawn overrides instead of separate sidecars                                       |
+| DALO / Skills CLI (end user) | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism          |
 
-All outputs use the same `effective-flow-<name>` worker namespace and carry the same version
-stamp. Rendered-reference guards ensure every native reference has an exact sidecar and every
-portable reference has an exact worker contract. Portable instructions never request those
+All outputs use the same `effective-flow-<name>` base-worker namespace and carry the same version
+stamp. Each native skill directory also carries `native-agent-inventory.json`; the two inventories
+agree on the complete base-worker set, list the Claude-only Fast sidecars explicitly, and reconcile
+against the actual agent directories. They are build and installation consistency manifests, not
+proof that a running host discovered or accepted an agent. Rendered-reference guards ensure every
+native reference has an exact representation and every portable reference has an exact worker
+contract. Portable instructions never request those
 identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
 of pretending that a worker ran. In every target, the caller starts a worker with zero inherited
 turns when supported, otherwise the smallest supported history, and supplies the compact,
@@ -401,6 +405,22 @@ does not place a caller override in its router. Native worker metadata is render
 Claude and Codex sidecars.
 Portable worker contracts contain no native model metadata; their built-in/general subagents
 therefore follow the model-selection behavior of the consuming manager and harness.
+
+The native execution-profile capability is deliberately asymmetric. For the five implementation
+roles selected by the validated project-routing table, Claude receives generated `-fast` sidecars
+whose worker body, tools, color, and leaf boundary match the base role. Codex keeps only the base
+sidecar and renders Fast references as that worker with explicit `model` and `reasoning_effort`
+spawn parameters. The mappings and eligible route classification are centralized in `build.mjs`.
+Portable builds do not receive inventories, Fast sidecars, aliases, or native profile metadata and
+remain Quality-only.
+
+This capability is rendered but not adopted: `src/tools/build.md` and
+`src/tools/refactor.md` are the only sources authorized to use a Fast profile reference, and both
+remain reference-free. A native artifact or valid inventory therefore does not make a current run
+select Fast. Later workflow adoption must still execute the runtime eligibility and capability gate
+immediately before selection. On Claude Code, the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` produces `profile-unavailable` and selects Quality; an actual
+host rejection after a Fast request remains the distinct `spawn-rejected` fallback.
 
 ## Repo structure at a glance
 

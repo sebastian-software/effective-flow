@@ -41,8 +41,8 @@ The source layout **mirrors the output**, and the directory decides the category
 
 The build emits three consumer targets:
 
-- **Native Claude** (`dist/claude/`): skill plus registered agent sidecars in `dist/claude/agents/effective-flow-<name>.md`.
-- **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`.
+- **Native Claude** (`dist/claude/`): skill plus registered agent sidecars in `dist/claude/agents/effective-flow-<name>.md`. The build also generates five sanctioned `-fast` implementer sidecars and a native-agent inventory.
+- **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`. Fast intent is rendered as an explicit model and reasoning-effort override on the base worker reference rather than as another TOML sidecar; the target also carries a native-agent inventory.
 - **Portable managers** (`dist/portable/effective-flow/`): one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts. It delegates through built-in/general subagents and does not rely on managers installing native agent sidecars.
 
 The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
@@ -62,8 +62,15 @@ and both fail closed to Quality. Literal `true` only admits the project to the l
 lifecycle; it does not start measurement, activate a generation, or prove native capability. Setup
 remains the sole configuration writer but has no UI for this key yet.
 
-Work package 1 validates the marked policy tables before rendering but does not include the fragment
-in a workflow, emit a worker artifact, write runtime state, or change `build`/`refactor` behavior.
+The build now renders the native capability without adopting it in a workflow. It generates five
+Claude Fast implementer sidecars, supports Codex per-spawn `model` and `reasoning_effort`
+overrides, and emits strict native-agent inventories for installation validation. `build` and
+`refactor` still contain no profile reference, so neither requests Fast yet; portable output
+remains Quality-only and contains no native profile metadata. No setup choice or pilot runtime
+state exists at this stage. If `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present when a later
+profile-aware workflow evaluates capability, the gate records `profile-unavailable` and selects
+Quality.
+
 The guard mechanics are documented in
 [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration
 ownership in [`docs/developer-guide/configuration.md`](docs/developer-guide/configuration.md), and
@@ -73,7 +80,7 @@ the durable rationale in
 
 ### Placeholder / directive syntax in sources
 
-The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
+The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
 
 ### Adding a tool or agent
 

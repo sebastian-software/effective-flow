@@ -18,12 +18,12 @@ project's configuration or in this durable rationale.
 
 ## Decision
 
-Quality and Fast remain provider-neutral intents in the shared policy. When native profile rendering
-is implemented, Codex represents Fast with an explicit model-and-reasoning override on the first
-eligible implementation spawn. Claude Code represents Fast with a generated implementer sidecar
-whose native metadata fixes the mapped model and effort. Both paths continue to use the registered
-Quality role for exclusions, unavailability, rejection, escalation, and correction. Central build
-metadata—not workflow prose or project configuration—will own the concrete mappings.
+Quality and Fast remain provider-neutral intents in the shared policy. Native rendering represents
+Fast in Codex with an explicit model-and-reasoning override on an eligible implementation spawn.
+Claude Code represents Fast with a generated implementer sidecar whose native metadata fixes the
+mapped model and effort. Both paths continue to use the registered Quality role for exclusions,
+unavailability, rejection, escalation, and correction. Central build metadata—not workflow prose
+or project configuration—owns the concrete mappings.
 
 Native capability is part of eligibility. A missing mapping, incomplete target support, or missing
 spawn mechanism records `profile-unavailable` before any Fast attempt and selects Quality. On Claude
@@ -38,9 +38,12 @@ mechanism, but the optimization is not requested or emulated because the manager
 the native mapping and fallback contract. Behavioral correctness is shared across targets;
 performance optimization is intentionally native-only.
 
-Work package 1 records and validates this representation but creates no Codex spawn override,
-Claude Fast sidecar, or portable profile artifact. Native rendering and centralized mappings belong
-to the following work package, while workflow adoption remains later still.
+The build now renders this native capability and publishes strict native-agent inventories as
+build/install consistency manifests. It generates the sanctioned Claude Fast implementer sidecars
+and can render the Codex per-spawn override form. Portable output still contains no native profile
+artifact. Capability remains separate from activation: no workflow currently requests Fast, and a
+valid inventory does not prove runtime discovery or host acceptance. Workflow adoption remains a
+later decision and must execute the policy's runtime capability gate immediately before selection.
 
 ## Alternatives and tradeoffs
 
@@ -60,6 +63,8 @@ to the following work package, while workflow adoption remains later still.
 
 - Native Claude Code and Codex builds may realize the same Fast intent through different artifacts
   while sharing one eligibility and correction policy.
+- Native inventories allow the build and local installer to reject representation drift without
+  treating archive consistency as runtime capability or signed provenance.
 - Portable users retain correct Quality behavior but receive no V1 latency or cost optimization.
 - Host overrides and missing native support degrade safely and observably instead of silently
   changing the effective profile.

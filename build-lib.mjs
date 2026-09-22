@@ -166,7 +166,10 @@ export function getNestedList(frontmatter, section, key, { context } = {}) {
 }
 
 export function cleanDescription(desc) {
-  return desc.replace(/\{\{SKILL:([^}]+)\}\}/g, '$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+  return desc
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g, '$1');
 }
 
 export function firstSentence(text) {
@@ -198,6 +201,21 @@ export function normalizeCodexSandboxMode(mode, skillName) {
 }
 
 const CLAUDE_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+const CODEX_REASONING_EFFORT_LEVELS = new Set([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+]);
+const CODEX_MODEL_REASONING_EFFORTS = Object.freeze({
+  'gpt-5.6-sol': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+  'gpt-5.6-luna': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),
+});
+const AGENT_PROFILE_REF_RE = /\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g;
 
 export function normalizeClaudeEffort(effort, agentName, context) {
   if (!effort) {
@@ -211,6 +229,49 @@ export function normalizeClaudeEffort(effort, agentName, context) {
   }
 
   return effort;
+}
+
+export function normalizeCodexReasoningEffort(model, effort, agentName, context) {
+  if (!CODEX_REASONING_EFFORT_LEVELS.has(effort)) {
+    throw new Error(
+      `Unsupported Codex reasoning effort "${effort ?? ''}" for ${agentName}${contextSuffix(context)}`,
+    );
+  }
+  if (!CODEX_MODEL_REASONING_EFFORTS[model]?.includes(effort)) {
+    throw new Error(
+      `Unsupported Codex model/reasoning combination for ${agentName}: ${model}/${effort}${contextSuffix(context)}`,
+    );
+  }
+  return effort;
+}
+
+export function validateAgentProfileMappings(mappings, { context } = {}) {
+  assertPlainObject(mappings, 'Agent-profile mappings', context);
+  assertOnlyKeys(mappings, ['fast'], 'Agent-profile mappings', context);
+  assertPlainObject(mappings.fast, 'Agent-profile fast mapping', context);
+  assertOnlyKeys(mappings.fast, ['claude', 'codex'], 'Agent-profile fast mapping', context);
+
+  const claude = mappings.fast.claude;
+  assertPlainObject(claude, 'Agent-profile Claude fast mapping', context);
+  assertOnlyKeys(claude, ['model', 'effort'], 'Agent-profile Claude fast mapping', context);
+  if (typeof claude.model !== 'string' || claude.model.trim() === '') {
+    throw new Error(
+      `Agent-profile Claude fast model must be a non-empty string${contextSuffix(context)}`,
+    );
+  }
+  normalizeClaudeEffort(claude.effort, 'Fast profile', context);
+
+  const codex = mappings.fast.codex;
+  assertPlainObject(codex, 'Agent-profile Codex fast mapping', context);
+  assertOnlyKeys(codex, ['model', 'reasoning_effort'], 'Agent-profile Codex fast mapping', context);
+  if (typeof codex.model !== 'string' || codex.model.trim() === '') {
+    throw new Error(
+      `Agent-profile Codex fast model must be a non-empty string${contextSuffix(context)}`,
+    );
+  }
+  normalizeCodexReasoningEffort(codex.model, codex.reasoning_effort, 'Fast profile', context);
+
+  return mappings;
 }
 
 // Fail the build if any {{SKILL:X}} / {{AGENT:X}} reference points at a name
@@ -228,6 +289,204 @@ export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
       throw new Error(`Unknown agent reference {{AGENT:${m[1]}}}${contextSuffix(context)}`);
     }
   }
+  for (const m of text.matchAll(AGENT_PROFILE_REF_RE)) {
+    const [, agent, profile] = m;
+    assertNotLegacyRef('AGENT_PROFILE', agent, context);
+    if (!knownAgents.has(agent)) {
+      throw new Error(
+        `Unknown agent reference {{AGENT_PROFILE:${agent}:${profile}}}${contextSuffix(context)}`,
+      );
+    }
+    if (profile !== 'fast') {
+      throw new Error(
+        `Unknown agent profile "${profile}" in {{AGENT_PROFILE:${agent}:${profile}}}; expected "fast"${contextSuffix(context)}`,
+      );
+    }
+  }
+}
+
+const NATIVE_AGENT_INVENTORY_KEYS = Object.freeze([
+  'schemaVersion',
+  'harness',
+  'baseWorkers',
+  'fastWorkers',
+]);
+const NATIVE_AGENT_STEM_RE = /^effective-flow-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function assertCanonicalStringArray(value, label, context) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array${contextSuffix(context)}`);
+  }
+  const sorted = [...value].sort();
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== 'string' || !NATIVE_AGENT_STEM_RE.test(entry)) {
+      throw new Error(`${label} contains an invalid worker stem${contextSuffix(context)}`);
+    }
+    if (index > 0 && value[index - 1] >= entry) {
+      throw new Error(`${label} must be sorted and unique${contextSuffix(context)}`);
+    }
+    if (entry !== sorted[index]) {
+      throw new Error(`${label} must be sorted and unique${contextSuffix(context)}`);
+    }
+  }
+}
+
+function canonicalNativeAgentInventory(inventory) {
+  return `${JSON.stringify(
+    {
+      schemaVersion: inventory.schemaVersion,
+      harness: inventory.harness,
+      baseWorkers: inventory.baseWorkers,
+      fastWorkers: inventory.fastWorkers,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+export function parseNativeAgentInventory(content, { context } = {}) {
+  if (Buffer.isBuffer(content)) content = content.toString('utf8');
+  if (typeof content !== 'string') {
+    throw new Error(`Native agent inventory must be UTF-8 text${contextSuffix(context)}`);
+  }
+
+  let inventory;
+  try {
+    inventory = JSON.parse(content);
+  } catch {
+    throw new Error(`Native agent inventory must be valid JSON${contextSuffix(context)}`);
+  }
+  assertPlainObject(inventory, 'Native agent inventory', context);
+  const keys = Object.keys(inventory);
+  if (
+    keys.length !== NATIVE_AGENT_INVENTORY_KEYS.length ||
+    keys.some((key, index) => key !== NATIVE_AGENT_INVENTORY_KEYS[index])
+  ) {
+    throw new Error(
+      `Native agent inventory keys must be exactly ${NATIVE_AGENT_INVENTORY_KEYS.join(', ')} in canonical order${contextSuffix(context)}`,
+    );
+  }
+  if (inventory.schemaVersion !== 1) {
+    throw new Error(`Native agent inventory schemaVersion must be 1${contextSuffix(context)}`);
+  }
+  if (!['claude', 'codex'].includes(inventory.harness)) {
+    throw new Error(
+      `Native agent inventory harness must be claude or codex${contextSuffix(context)}`,
+    );
+  }
+  assertCanonicalStringArray(inventory.baseWorkers, 'Native baseWorkers', context);
+  assertCanonicalStringArray(inventory.fastWorkers, 'Native fastWorkers', context);
+  if (inventory.baseWorkers.length === 0) {
+    throw new Error(`Native baseWorkers must not be empty${contextSuffix(context)}`);
+  }
+  const base = new Set(inventory.baseWorkers);
+  const overlap = inventory.fastWorkers.filter((worker) => base.has(worker));
+  if (overlap.length > 0) {
+    throw new Error(`Native baseWorkers and fastWorkers must be disjoint${contextSuffix(context)}`);
+  }
+  if (content !== canonicalNativeAgentInventory(inventory)) {
+    throw new Error(`Native agent inventory bytes are not canonical${contextSuffix(context)}`);
+  }
+  return inventory;
+}
+
+function inventoryArtifactStems(artifacts, harness, context) {
+  if (!Array.isArray(artifacts)) {
+    throw new Error(`Native ${harness} artifacts must be an array${contextSuffix(context)}`);
+  }
+  const extension = harness === 'claude' ? '.md' : '.toml';
+  const stems = artifacts.map((artifact) => {
+    const artifactName = typeof artifact === 'string' ? artifact : artifact?.name;
+    if (typeof artifactName !== 'string' || !artifactName.endsWith(extension)) {
+      throw new Error(
+        `Native ${harness} artifact must use the ${extension} extension${contextSuffix(context)}`,
+      );
+    }
+    const stem = artifactName.slice(0, -extension.length);
+    if (!NATIVE_AGENT_STEM_RE.test(stem)) {
+      throw new Error(
+        `Native ${harness} artifact has an invalid worker stem${contextSuffix(context)}`,
+      );
+    }
+    if (typeof artifact === 'object' && artifact?.declaredName !== stem) {
+      throw new Error(
+        `Native ${harness} artifact declaration does not match its filename${contextSuffix(context)}`,
+      );
+    }
+    return stem;
+  });
+  const unique = [...new Set(stems)].sort();
+  if (unique.length !== stems.length) {
+    throw new Error(`Native ${harness} artifacts must be unique${contextSuffix(context)}`);
+  }
+  return unique;
+}
+
+export function reconcileNativeAgentInventories(
+  claudeInventoryOrInput,
+  codexInventoryArg,
+  options = {},
+) {
+  let claudeInventory = claudeInventoryOrInput;
+  let codexInventory = codexInventoryArg;
+  let claudeArtifacts = options.claudeArtifacts;
+  let codexArtifacts = options.codexArtifacts;
+  let context = options.context;
+  if (
+    claudeInventoryOrInput &&
+    typeof claudeInventoryOrInput === 'object' &&
+    !Array.isArray(claudeInventoryOrInput) &&
+    Object.hasOwn(claudeInventoryOrInput, 'claudeInventory')
+  ) {
+    ({ claudeInventory, codexInventory, claudeArtifacts, codexArtifacts, context } =
+      claudeInventoryOrInput);
+  }
+
+  if (claudeInventory?.harness !== 'claude' || codexInventory?.harness !== 'codex') {
+    throw new Error(
+      `Native agent inventories must be ordered claude, codex${contextSuffix(context)}`,
+    );
+  }
+  if (JSON.stringify(claudeInventory.baseWorkers) !== JSON.stringify(codexInventory.baseWorkers)) {
+    throw new Error(`Native agent inventories disagree on baseWorkers${contextSuffix(context)}`);
+  }
+  if (codexInventory.fastWorkers.length !== 0) {
+    throw new Error(`Codex native inventory must not list Fast sidecars${contextSuffix(context)}`);
+  }
+  const base = new Set(claudeInventory.baseWorkers);
+  for (const fastWorker of claudeInventory.fastWorkers) {
+    const baseWorker = fastWorker.replace(/-fast$/, '');
+    if (baseWorker === fastWorker || !base.has(baseWorker)) {
+      throw new Error(
+        `Claude Fast worker "${fastWorker}" has no declared base worker${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  if ((claudeArtifacts === undefined) !== (codexArtifacts === undefined)) {
+    throw new Error(
+      `Native artifact inventories must be supplied as a pair${contextSuffix(context)}`,
+    );
+  }
+  if (claudeArtifacts !== undefined) {
+    const actualClaude = inventoryArtifactStems(claudeArtifacts, 'claude', context);
+    const actualCodex = inventoryArtifactStems(codexArtifacts, 'codex', context);
+    const expectedClaude = [...claudeInventory.baseWorkers, ...claudeInventory.fastWorkers].sort();
+    const expectedCodex = [...codexInventory.baseWorkers].sort();
+    if (JSON.stringify(actualClaude) !== JSON.stringify(expectedClaude)) {
+      throw new Error(
+        `Claude native artifacts do not match the inventory${contextSuffix(context)}`,
+      );
+    }
+    if (JSON.stringify(actualCodex) !== JSON.stringify(expectedCodex)) {
+      throw new Error(`Codex native artifacts do not match the inventory${contextSuffix(context)}`);
+    }
+  }
+
+  return {
+    baseWorkers: [...claudeInventory.baseWorkers],
+    claudeFastWorkers: [...claudeInventory.fastWorkers],
+  };
 }
 
 // --- Central-skill ownership contract (#168) ---
@@ -2573,6 +2832,8 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 // register that exact custom-agent name; the portable manager build maps the
 // same identifier to a bundled worker contract and the built-in/general
 // subagent mechanism.
+// {{AGENT_PROFILE:X:fast}} -> the native Fast representation for the target,
+// or an explicit Quality fallback on portable managers.
 //
 // The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
 // agent prefix are passed in from the single source of truth in build.mjs, so a
@@ -2586,6 +2847,8 @@ export function transformRefs(
     skillName = 'effective-flow',
     knownTools,
     knownAgents,
+    profileMappings,
+    fastProfileAgents,
     context,
   } = {},
 ) {
@@ -2599,6 +2862,22 @@ export function transformRefs(
   }
   validateRefs(body, { knownTools, knownAgents, context });
   const agentName = (raw) => `${agentPrefix}${raw}`;
+  const profileRefs = [...body.matchAll(AGENT_PROFILE_REF_RE)];
+  if (profileRefs.length > 0) {
+    validateAgentProfileMappings(profileMappings, { context });
+    if (!(fastProfileAgents instanceof Set)) {
+      throw new Error(
+        `transformRefs requires fastProfileAgents to guard Fast-profile references${contextSuffix(context)}`,
+      );
+    }
+    for (const [, raw] of profileRefs) {
+      if (!fastProfileAgents.has(raw)) {
+        throw new Error(
+          `Agent "${raw}" is not eligible for the Fast profile${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
   const command =
     harness === 'codex' ? `$${skillName}` : harness === 'portable' ? skillName : `/${skillName}`;
   const skillInvocation = (raw) => `${command} ${raw}`;
@@ -2607,6 +2886,18 @@ export function transformRefs(
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )
+    .replace(AGENT_PROFILE_REF_RE, (_, raw) => {
+      const name = agentName(raw);
+      if (harness === 'claude') return `\`${name}-fast\``;
+      if (harness === 'codex') {
+        const { model, reasoning_effort: effort } = profileMappings.fast.codex;
+        return `\`${name}\` with \`model: "${model}"\` and \`reasoning_effort: "${effort}"\``;
+      }
+      if (harness === 'portable') {
+        return `\`${name}\` (Fast unavailable: select Quality with \`profile-unavailable\`)`;
+      }
+      throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+    })
     .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
 }
 
@@ -2833,7 +3124,7 @@ export function renderBody(resolvedBody, harness, config = {}) {
       ? transformAskCodex(resolvedBody, { context: config.context })
       : transformAskClaude(resolvedBody, { context: config.context });
   const withWorkerResolution =
-    harness === 'portable' && /\{\{AGENT:[^}]+\}\}/.test(withAsk)
+    harness === 'portable' && /\{\{AGENT(?:_PROFILE)?:[^}]+\}\}/.test(withAsk)
       ? `${PORTABLE_WORKER_DELEGATION}\n\n${withAsk.replace(/^\n/, '')}`
       : withAsk;
   return transformRefs(withWorkerResolution, harness, config);

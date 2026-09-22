@@ -193,9 +193,12 @@ The tagged state and selection policy is separately owned by
 [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md). Configuration state and
 persisted generation state are independent, so changing or removing the row must not rewrite a
 generation or clear suspension. The key has no legacy migration and stores no model name. Setup
-remains the only configuration writer, but work package 1 deliberately adds no setup UI for the
-reserved row; `build` and `refactor` do not consume it yet, and the build emits no worker artifact
-from the policy. The user-facing contract is in
+remains the only configuration writer and still exposes no setup UI for the reserved row. The build
+now emits native profile capability—five generated Claude Fast sidecars, Codex per-spawn rendering,
+and strict native inventories—but `build` and `refactor` contain no Fast-profile reference and do
+not consume this key yet. Portable output remains Quality-only. The existence of native artifacts
+or a valid inventory neither activates Fast nor proves that the running host can discover or accept
+the representation. The user-facing contract is in
 [Configuration](../user-guide/configuration.md#block-executionprofiles), while the durable rationale
 is in the [risk-aware pilot ADR](../adr/risk-aware-model-tiering-pilot-policy.md).
 

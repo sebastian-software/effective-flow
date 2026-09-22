@@ -46,83 +46,16 @@ install_skill() {
   fi
 }
 
-agent_name_from_artifact() {
-  artifact="$1"
-  harness="$2"
-  if [ "$harness" = claude ]; then
-    sed -n 's/^name:[[:space:]]*//p' "$artifact" | sed -n '1p'
-  else
-    sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)"[[:space:]]*$/\1/p' "$artifact" | sed -n '1p'
-  fi
-}
-
-# Native agents are release sidecars, not files nested inside the skill. Check
-# both complete sets before changing an existing installation so a damaged
-# archive cannot leave either harness half-updated.
-validate_native_agents() {
-  harness="$1"
-  source_dir="$2"
-  extension="$3"
-  counterpart_dir="$4"
-  counterpart_extension="$5"
-  found=false
-
-  if [ ! -d "$source_dir" ]; then
-    printf 'Native %s agent distribution not found under %s\n' "$harness" "$source_dir" >&2
-    return 1
-  fi
-
-  for artifact in "$source_dir"/*; do
-    [ -e "$artifact" ] || [ -L "$artifact" ] || continue
-    artifact_name="$(basename "$artifact")"
-    case "$artifact_name" in
-      effective-flow-*".$extension") ;;
-      *)
-        printf 'Unexpected native %s agent artifact: %s\n' "$harness" "$artifact" >&2
-        return 1
-        ;;
-    esac
-    if [ ! -f "$artifact" ] || [ -L "$artifact" ]; then
-      printf 'Native %s agent artifact must be a regular file: %s\n' "$harness" "$artifact" >&2
-      return 1
-    fi
-
-    worker_name="${artifact_name%."$extension"}"
-    worker_suffix="${worker_name#effective-flow-}"
-    case "$worker_suffix" in
-      ''|*[!a-z0-9-]*|-*|*-)
-        printf 'Malformed native %s agent filename: %s\n' "$harness" "$artifact" >&2
-        return 1
-        ;;
-    esac
-    declared_name="$(agent_name_from_artifact "$artifact" "$harness")"
-    if [ "$declared_name" != "$worker_name" ]; then
-      printf 'Native %s agent name does not match its filename: %s\n' "$harness" "$artifact" >&2
-      return 1
-    fi
-    counterpart="$counterpart_dir/$worker_name.$counterpart_extension"
-    if [ ! -f "$counterpart" ] || [ -L "$counterpart" ]; then
-      printf 'Native %s agent has no matching sidecar: %s\n' "$harness" "$counterpart" >&2
-      return 1
-    fi
-    found=true
-  done
-
-  if [ "$found" != true ]; then
-    printf 'Native %s agent distribution contains no effective-flow agents: %s\n' "$harness" "$source_dir" >&2
-    return 1
-  fi
-}
-
 validate_native_distribution() {
   if [ ! -d "$DIST_ROOT/claude/effective-flow" ] || [ ! -d "$DIST_ROOT/codex/effective-flow" ]; then
     printf 'Distribution not found under %s\n' "$DIST_ROOT" >&2
     return 1
   fi
-  validate_native_agents \
-    claude "$DIST_ROOT/claude/agents" md "$DIST_ROOT/codex/agents" toml || return 1
-  validate_native_agents \
-    codex "$DIST_ROOT/codex/agents" toml "$DIST_ROOT/claude/agents" md || return 1
+  node "$ROOT_DIR/scripts/native-agent-inventory.mjs" validate \
+    "$DIST_ROOT/claude/effective-flow/native-agent-inventory.json" \
+    "$DIST_ROOT/claude/agents" \
+    "$DIST_ROOT/codex/effective-flow/native-agent-inventory.json" \
+    "$DIST_ROOT/codex/agents" || return 1
 }
 
 validate_agent_install_target() {
@@ -182,22 +115,33 @@ remove_recorded_agents() {
   done < "$manifest"
 }
 
-# Releases before ownership manifests removed all effective-flow-* agents on
-# every install. Migrate only the exact worker names those releases shipped, and
-# only when no manifest exists yet. This catches stale agents after a worker was
-# removed without claiming similarly named foreign files.
-remove_pre_manifest_agents() {
+# Add one validated artifact name to a manifest staging file without creating
+# duplicate ownership entries.
+append_unique_agent_manifest_entry() {
+  append_name="$1"
+  append_manifest="$2"
+
+  if grep -F -x "$append_name" "$append_manifest" >/dev/null 2>&1; then
+    return 0
+  fi
+  printf '%s\n' "$append_name" >> "$append_manifest"
+}
+
+# Releases before ownership manifests removed these exact effective-flow agent
+# names on every install. When no manifest exists, carry only currently present
+# historical artifacts into the recovery manifest so a failed install retains
+# the same narrow ownership evidence without claiming similarly named files.
+append_pre_manifest_agent_ownership() {
   dest_dir="$1"
-  manifest="$2"
+  recovery_manifest="$2"
   extension="$3"
-  [ -e "$manifest" ] || [ -L "$manifest" ] || {
-    for worker in $EFFECTIVE_FLOW_OWNED_WORKERS; do
-      owned_path="$dest_dir/effective-flow-$worker.$extension"
-      if [ ! -d "$owned_path" ] || [ -L "$owned_path" ]; then
-        rm -f "$owned_path" || return 1
-      fi
-    done
-  }
+
+  for worker in $EFFECTIVE_FLOW_OWNED_WORKERS; do
+    owned_name="effective-flow-$worker.$extension"
+    owned_path="$dest_dir/$owned_name"
+    [ -e "$owned_path" ] || [ -L "$owned_path" ] || continue
+    append_unique_agent_manifest_entry "$owned_name" "$recovery_manifest" || return 1
+  done
   return 0
 }
 
@@ -208,42 +152,83 @@ install_native_agents() {
   extension="$4"
 
   mkdir -p "$dest_dir" || return 1
-  remove_pre_manifest_agents "$dest_dir" "$manifest" "$extension" || return 1
-  remove_recorded_agents "$dest_dir" "$manifest" "$extension" || return 1
-  manifest_tmp="$manifest.tmp.$$"
-  : > "$manifest_tmp" || return 1
+  recovery_manifest_tmp="$manifest.recovery.tmp.$$"
+  intended_manifest_tmp="$manifest.intended.tmp.$$"
+  if ! : > "$recovery_manifest_tmp" || ! : > "$intended_manifest_tmp"; then
+    rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+    return 1
+  fi
+
+  if [ -f "$manifest" ]; then
+    while IFS= read -r old_name || [ -n "$old_name" ]; do
+      is_owned_agent_name "$old_name" "$extension" || continue
+      if ! append_unique_agent_manifest_entry "$old_name" "$recovery_manifest_tmp"; then
+        rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+        return 1
+      fi
+    done < "$manifest"
+  elif [ ! -e "$manifest" ] && [ ! -L "$manifest" ]; then
+    if ! append_pre_manifest_agent_ownership \
+      "$dest_dir" "$recovery_manifest_tmp" "$extension"; then
+      rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+      return 1
+    fi
+  fi
+
+  for agent in "$source_dir"/effective-flow-*".$extension"; do
+    agent_name="$(basename "$agent")"
+    if ! is_owned_agent_name "$agent_name" "$extension"; then
+      rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+      printf 'Malformed native agent filename: %s\n' "$agent" >&2
+      return 1
+    fi
+    if ! append_unique_agent_manifest_entry "$agent_name" "$recovery_manifest_tmp" ||
+      ! append_unique_agent_manifest_entry "$agent_name" "$intended_manifest_tmp"; then
+      rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+      return 1
+    fi
+  done
+
+  # Persist the union of previous and intended ownership before touching an
+  # agent path. If a copy or link fails, the next run can therefore remove every
+  # sidecar this attempt may have installed, including a newly introduced Fast
+  # variant. The final atomic move below narrows ownership after full success.
+  if ! mv "$recovery_manifest_tmp" "$manifest"; then
+    rm -f "$recovery_manifest_tmp" "$intended_manifest_tmp"
+    return 1
+  fi
+  remove_recorded_agents "$dest_dir" "$manifest" "$extension" || {
+    rm -f "$intended_manifest_tmp"
+    return 1
+  }
 
   for agent in "$source_dir"/effective-flow-*".$extension"; do
     agent_name="$(basename "$agent")"
     destination="$dest_dir/$agent_name"
     if [ -d "$destination" ] && [ ! -L "$destination" ]; then
-      rm -f "$manifest_tmp"
+      rm -f "$intended_manifest_tmp"
       printf 'Cannot replace agent directory with a file: %s\n' "$destination" >&2
       return 1
     fi
     if ! rm -f "$destination"; then
-      rm -f "$manifest_tmp"
+      rm -f "$intended_manifest_tmp"
       return 1
     fi
     if [ "$INSTALL_MODE" = link ]; then
       if ! ln -s "$agent" "$destination"; then
-        rm -f "$manifest_tmp"
+        rm -f "$intended_manifest_tmp"
         return 1
       fi
     else
       if ! cp "$agent" "$destination"; then
-        rm -f "$manifest_tmp"
+        rm -f "$intended_manifest_tmp"
         return 1
       fi
     fi
-    if ! printf '%s\n' "$agent_name" >> "$manifest_tmp"; then
-      rm -f "$manifest_tmp"
-      return 1
-    fi
   done
 
-  if ! mv "$manifest_tmp" "$manifest"; then
-    rm -f "$manifest_tmp"
+  if ! mv "$intended_manifest_tmp" "$manifest"; then
+    rm -f "$intended_manifest_tmp"
     return 1
   fi
 }

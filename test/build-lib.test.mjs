@@ -18,6 +18,8 @@ import {
   firstSentence,
   normalizeCodexSandboxMode,
   normalizeClaudeEffort,
+  normalizeCodexReasoningEffort,
+  validateAgentProfileMappings,
   validateRefs,
   assertQuotedDescription,
   transformRefs,
@@ -91,6 +93,19 @@ const refConfig = {
   knownAgents: new Set(['nodejs-implementer', 'code-validator']),
 };
 
+const profileMappings = {
+  fast: {
+    claude: { model: 'sonnet', effort: 'medium' },
+    codex: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' },
+  },
+};
+
+const profileRefConfig = {
+  ...refConfig,
+  profileMappings,
+  fastProfileAgents: new Set(['nodejs-implementer']),
+};
+
 // --- Frontmatter extraction ---
 
 test('extractFrontmatter / extractBody split on the fence', () => {
@@ -159,10 +174,12 @@ test('getNestedList does not bleed past a blank line or dedent', () => {
 
 // --- cleanDescription / firstSentence ---
 
-test('cleanDescription strips SKILL/AGENT refs', () => {
+test('cleanDescription strips SKILL/AGENT/profile refs', () => {
   assert.equal(
-    cleanDescription('use {{SKILL:fix}} and {{AGENT:test-writer}}'),
-    'use fix and test-writer',
+    cleanDescription(
+      'use {{SKILL:fix}}, {{AGENT:test-writer}}, and {{AGENT_PROFILE:nodejs-implementer:fast}}',
+    ),
+    'use fix, test-writer, and nodejs-implementer',
   );
 });
 
@@ -204,6 +221,79 @@ test('normalizeClaudeEffort rejects unsupported, whitespace, and case-variant va
   }
 });
 
+test('Codex profile mappings accept only supported model/reasoning pairs', () => {
+  assert.equal(
+    normalizeCodexReasoningEffort(
+      'gpt-5.6-luna',
+      'medium',
+      'nodejs-implementer',
+      'profile fixture',
+    ),
+    'medium',
+  );
+  assert.throws(
+    () =>
+      normalizeCodexReasoningEffort(
+        'gpt-5.6-luna',
+        'ultra',
+        'nodejs-implementer',
+        'profile fixture',
+      ),
+    /Unsupported Codex model\/reasoning combination.*profile fixture/,
+  );
+  assert.throws(
+    () =>
+      normalizeCodexReasoningEffort(
+        'gpt-5.6-luna',
+        'Medium',
+        'nodejs-implementer',
+        'profile fixture',
+      ),
+    /Unsupported Codex reasoning effort.*profile fixture/,
+  );
+});
+
+test('validateAgentProfileMappings rejects incomplete, extra, or malformed mappings', () => {
+  assert.equal(validateAgentProfileMappings(profileMappings), profileMappings);
+  for (const [mapping, expected] of [
+    [{}, /Agent-profile fast mapping must be an object/],
+    [{ fast: profileMappings.fast, slow: profileMappings.fast }, /unsupported field\(s\): slow/],
+    [
+      { fast: { claude: profileMappings.fast.claude } },
+      /Agent-profile Codex fast mapping must be an object/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          claude: { ...profileMappings.fast.claude, extra: true },
+        },
+      },
+      /unsupported field\(s\): extra/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          claude: { model: '', effort: 'medium' },
+        },
+      },
+      /Claude fast model must be a non-empty string/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          codex: { model: 'gpt-5.6-luna', reasoning_effort: 'ultra' },
+        },
+      },
+      /Unsupported Codex model\/reasoning combination/,
+    ],
+  ]) {
+    assert.throws(() => validateAgentProfileMappings(mapping), expected);
+  }
+});
+
 // --- validateRefs (dead-reference guard) ---
 
 test('validateRefs accepts known refs', () => {
@@ -212,6 +302,31 @@ test('validateRefs accepts known refs', () => {
       knownTools: refConfig.knownTools,
       knownAgents: refConfig.knownAgents,
     }),
+  );
+});
+
+test('validateRefs accepts only known agents and the fast profile for profile refs', () => {
+  assert.doesNotThrow(() =>
+    validateRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', {
+      knownTools: refConfig.knownTools,
+      knownAgents: refConfig.knownAgents,
+    }),
+  );
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT_PROFILE:missing:fast}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Unknown agent reference \{\{AGENT_PROFILE:missing:fast\}\}/,
+  );
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT_PROFILE:nodejs-implementer:quality}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Unknown agent profile "quality".*expected "fast"/,
   );
 });
 
@@ -1890,6 +2005,45 @@ test('portable refs use harness-neutral tool notation', () => {
   assert.equal(transformRefs('{{SKILL:fix}}', 'portable', refConfig), 'effective-flow fix');
 });
 
+test('profile refs render the exact Claude, Codex, and portable contracts', () => {
+  const token = '{{AGENT_PROFILE:nodejs-implementer:fast}}';
+  assert.equal(
+    transformRefs(token, 'claude', profileRefConfig),
+    '`effective-flow-nodejs-implementer-fast`',
+  );
+  assert.equal(
+    transformRefs(token, 'codex', profileRefConfig),
+    '`effective-flow-nodejs-implementer` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"`',
+  );
+  assert.equal(
+    transformRefs(token, 'portable', profileRefConfig),
+    '`effective-flow-nodejs-implementer` (Fast unavailable: select Quality with `profile-unavailable`)',
+  );
+});
+
+test('profile refs reject ineligible agents and missing mapping guards', () => {
+  assert.throws(
+    () => transformRefs('{{AGENT_PROFILE:code-validator:fast}}', 'claude', profileRefConfig),
+    /Agent "code-validator" is not eligible for the Fast profile/,
+  );
+  assert.throws(
+    () =>
+      transformRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', 'claude', {
+        ...refConfig,
+        fastProfileAgents: profileRefConfig.fastProfileAgents,
+      }),
+    /Agent-profile mappings must be an object/,
+  );
+  assert.throws(
+    () =>
+      transformRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', 'claude', {
+        ...refConfig,
+        profileMappings,
+      }),
+    /requires fastProfileAgents/,
+  );
+});
+
 // Rendering must apply the same guard as validation: the known-name sets are
 // required, so transformRefs can never render an unvalidated reference (#106).
 test('transformRefs requires the known-name sets', () => {
@@ -2387,6 +2541,20 @@ test('renderBody gives portable worker refs an explicit one-contract delegation 
   assert.match(rendered, /starts no child/i);
   assert.match(rendered, /returns missing essential context to the orchestrator/i);
   assert.match(rendered, /Start `effective-flow-code-validator`\./);
+  assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
+});
+
+test('renderBody adds the portable bootstrap for a profile-only worker reference', () => {
+  const rendered = renderBody('{{AGENT_PROFILE:nodejs-implementer:fast}}\n', 'portable', {
+    ...profileRefConfig,
+    context: 'profile-only.md',
+  });
+  assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
+  assert.match(
+    rendered,
+    /`effective-flow-nodejs-implementer` \(Fast unavailable: select Quality with `profile-unavailable`\)/,
+  );
+  assert.doesNotMatch(rendered, /AGENT_PROFILE/);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
 });
 

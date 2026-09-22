@@ -214,9 +214,11 @@ malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed 
 stop new pilot measurement. Only the literal `true` admits the project to the pilot lifecycle; it
 does not start a baseline, activate Fast, or prove that the current host can enforce Fast.
 
-Work package 1 defines and validates this key but activates neither `build` nor `refactor`, emits no
-Fast worker artifact, and adds no setup question. `/effective-flow setup` therefore remains the sole
-configuration writer but does not expose this row yet. If the row is edited manually, changing or
+Native builds now contain the representation needed for a later pilot: five generated Claude Fast
+sidecars, a Codex per-spawn override form, and native inventories used to validate installation.
+That capability is not activation. Neither `build` nor `refactor` requests Fast yet, portable
+installations remain Quality-only, and `/effective-flow setup` still exposes no question for this
+row. Manually setting the row to `true` therefore changes no current workflow behavior. Changing or
 removing it does not rewrite future pilot-generation state or clear a suspension. See
 [Getting started](./getting-started.md#recommended-calling-model) for the distinction between the
 caller and implementation profiles, and the

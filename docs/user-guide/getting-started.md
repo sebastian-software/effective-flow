@@ -100,12 +100,20 @@ means a distinct native lower-cost, lower-latency implementation capability for 
 that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
 or weakens later validation and review.
 
-Work package 1 only reserves and validates that policy. It activates neither `build` nor `refactor`,
-adds no setup choice, and emits no Fast worker artifact, so current runs remain unchanged. When a
-later work package adopts the policy, Fast may be requested only for the first implementation
-attempt of an eligible native packet. Any retry, correction, validation repair, review
-incorporation, conflict resolution, or scope-growth continuation uses Quality; coupled packets also
-share Quality. Portable installations remain Quality-only in V1. See the
+Native builds now contain the enforcement representation for that policy. Claude Code receives five
+generated Fast implementer sidecars, while Codex keeps each base worker and can apply explicit
+`model` and `reasoning_effort` parameters to an individual spawn. Native inventories let the local
+installer reject missing, extra, malformed, or cross-target-inconsistent sidecars before it changes
+an installation. Those artifacts establish build and installation consistency, not runtime
+discovery or activation.
+
+No current workflow requests that representation: `build` and `refactor` have not adopted Fast,
+setup offers no profile switch, and current runs therefore remain Quality-only. When a later work
+package adopts the policy, Fast may be requested only for the first implementation attempt of an
+eligible native packet. Any retry, correction, validation repair, review incorporation, conflict
+resolution, or scope-growth continuation uses Quality; coupled packets also share Quality.
+Portable installations remain Quality-only in V1 and contain no native sidecar inventory or model
+metadata. See the
 [configuration reference](./configuration.md#block-executionprofiles) for the reserved default-off
 key.
 
@@ -124,12 +132,13 @@ agent's own model declaration. Leave it unset when you want Effective Flow's nat
 workers to use their role-specific model selection. Other user, project, or invocation-level
 harness overrides may likewise affect the effective caller or worker model.
 
-The future execution-profile gate also treats the presence of
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. Effective Flow
-must check presence only—it never reads, displays, relays, or stores the variable's value—and must
-select Quality without attempting Fast. This is distinct from a Fast spawn that the host actually
-rejects: that attempted spawn consumes the one Fast attempt before the run continues once with
-Quality.
+The runtime execution-profile gate treats the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. When a
+profile-aware workflow reaches selection, Effective Flow checks presence only—it never reads,
+displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
+without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
+attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
+with Quality. Current `build` and `refactor` runs do not reach this selection path yet.
 
 ## First invocation
 

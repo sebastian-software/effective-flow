@@ -1,5 +1,6 @@
 import {
   appendFile,
+  chmod,
   lstat,
   mkdtemp,
   mkdir,
@@ -9,6 +10,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +39,24 @@ function isolatedEnvironment(root, mode, distRoot) {
   };
 }
 
-async function createNativeDistribution(root, workers = ['alpha', 'beta']) {
+function nativeInventory(harness, baseWorkers, fastWorkers = []) {
+  return `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      harness,
+      baseWorkers: baseWorkers.map((worker) => `effective-flow-${worker}`).sort(),
+      fastWorkers: fastWorkers.map((worker) => `effective-flow-${worker}-fast`).sort(),
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+async function createNativeDistribution(
+  root,
+  workers = ['alpha', 'beta'],
+  fastWorkers = ['alpha'],
+) {
   const distRoot = join(root, 'dist');
   const claudeSkill = join(distRoot, 'claude/effective-flow');
   const codexSkill = join(distRoot, 'codex/effective-flow');
@@ -56,6 +75,11 @@ async function createNativeDistribution(root, workers = ['alpha', 'beta']) {
     writeFile(join(codexSkill, 'SKILL.md'), router),
     writeFile(join(claudeSkill, 'tools/run.md'), references),
     writeFile(join(codexSkill, 'tools/run.md'), references),
+    writeFile(
+      join(claudeSkill, 'native-agent-inventory.json'),
+      nativeInventory('claude', workers, fastWorkers),
+    ),
+    writeFile(join(codexSkill, 'native-agent-inventory.json'), nativeInventory('codex', workers)),
   ]);
   for (const worker of workers) {
     const name = `effective-flow-${worker}`;
@@ -66,6 +90,10 @@ async function createNativeDistribution(root, workers = ['alpha', 'beta']) {
         `name = "${name}"\ndescription = "Codex ${worker}"\n`,
       ),
     ]);
+  }
+  for (const worker of fastWorkers) {
+    const name = `effective-flow-${worker}-fast`;
+    await writeFile(join(claudeAgents, `${name}.md`), `---\nname: ${name}\n---\nFast ${worker}\n`);
   }
   return distRoot;
 }
@@ -78,6 +106,18 @@ async function pathExists(path) {
     if (error.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+async function createFailingCommandShim(root, command, artifactName) {
+  const binDir = join(root, 'bin');
+  const commandPath = join(binDir, command);
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    commandPath,
+    `#!/bin/sh\ncase "$*" in\n  *${artifactName}*) exit 73 ;;\nesac\nexec /bin/${command} "$@"\n`,
+  );
+  await chmod(commandPath, 0o755);
+  return binDir;
 }
 
 async function assertNativeReferencesResolve(distRoot, installRoot) {
@@ -201,8 +241,12 @@ test('copy and link install both native agent sets and report their discovery lo
         assert.equal((await lstat(path)).isSymbolicLink(), expectedLink, path);
       }
       assert.equal(
-        await readFile(join(env.CLAUDE_HOME, 'agents/.effective-flow-agents.manifest'), 'utf8'),
-        'effective-flow-alpha.md\neffective-flow-beta.md\n',
+        (await readFile(join(env.CLAUDE_HOME, 'agents/.effective-flow-agents.manifest'), 'utf8'))
+          .trim()
+          .split('\n')
+          .sort()
+          .join('\n'),
+        'effective-flow-alpha-fast.md\neffective-flow-alpha.md\neffective-flow-beta.md',
       );
       assert.equal(
         await readFile(join(env.CODEX_HOME, 'agents/.effective-flow-agents.manifest'), 'utf8'),
@@ -212,20 +256,81 @@ test('copy and link install both native agent sets and report their discovery lo
   }
 });
 
+test('copy and link record every generated Fast sidecar in the Claude ownership manifest', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-fast-install-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  const workers = [
+    'generic-implementer',
+    'generic-product-implementer',
+    'nodejs-implementer',
+    'rust-implementer',
+    'ui-implementer',
+  ];
+  const distRoot = await createNativeDistribution(sandbox, workers, workers);
+
+  for (const mode of ['copy', 'link']) {
+    await t.test(mode, async () => {
+      const installRoot = join(sandbox, mode);
+      const env = isolatedEnvironment(installRoot, mode, distRoot);
+      const result = runShell(
+        `. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist`,
+        env,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const manifest = (
+        await readFile(join(env.CLAUDE_HOME, 'agents/.effective-flow-agents.manifest'), 'utf8')
+      )
+        .trim()
+        .split('\n');
+      for (const worker of workers) {
+        const fastArtifact = `effective-flow-${worker}-fast.md`;
+        assert.ok(manifest.includes(fastArtifact), fastArtifact);
+        assert.equal(
+          await pathExists(join(env.CLAUDE_HOME, 'agents', fastArtifact)),
+          true,
+          fastArtifact,
+        );
+      }
+    });
+  }
+});
+
+test('native inventory validation is the mutation-free deployment preflight', () => {
+  const source = readFileSync(join(ROOT_DIR, 'local-common.sh'), 'utf8');
+  const validation = source.slice(
+    source.indexOf('validate_native_distribution()'),
+    source.indexOf('validate_agent_install_target()'),
+  );
+  const deployment = source.slice(
+    source.indexOf('effective_flow_deploy_from_dist()'),
+    source.indexOf('effective_flow_deploy()'),
+  );
+
+  assert.match(validation, /scripts\/native-agent-inventory\.mjs" validate/);
+  assert.doesNotMatch(validation, /grep|sed|FAST_WORKERS|generic-implementer-fast/);
+  const preflight = deployment.indexOf('validate_native_distribution');
+  assert.ok(preflight >= 0);
+  for (const mutation of ['install_skill', 'install_native_agents']) {
+    assert.ok(deployment.indexOf(mutation) > preflight, `${mutation} must follow validation`);
+  }
+});
+
 test('repeated installs remove only manifest-owned stale agents, including broken links', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-native-reinstall-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
 
   for (const mode of ['copy', 'link']) {
     await t.test(mode, async () => {
-      const firstDist = await createNativeDistribution(join(sandbox, mode, 'first'), [
-        'alpha',
-        'beta',
-      ]);
-      const secondDist = await createNativeDistribution(join(sandbox, mode, 'second'), [
-        'alpha',
-        'gamma',
-      ]);
+      const firstDist = await createNativeDistribution(
+        join(sandbox, mode, 'first'),
+        ['alpha', 'beta'],
+        ['alpha'],
+      );
+      const secondDist = await createNativeDistribution(
+        join(sandbox, mode, 'second'),
+        ['alpha', 'gamma'],
+        [],
+      );
       const installRoot = join(sandbox, mode, 'install');
       const firstEnv = isolatedEnvironment(installRoot, mode, firstDist);
       const first = runShell(
@@ -238,6 +343,7 @@ test('repeated installs remove only manifest-owned stale agents, including broke
       const codexManifest = join(firstEnv.CODEX_HOME, 'agents/.effective-flow-agents.manifest');
       await Promise.all([
         writeFile(join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-neighbor.md'), 'foreign'),
+        writeFile(join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-neighbor-fast.md'), 'foreign'),
         writeFile(join(firstEnv.CODEX_HOME, 'agents/effective-flow-neighbor.toml'), 'foreign'),
         appendFile(claudeManifest, '../outside.md\nforeign.md\n'),
         appendFile(codexManifest, '../outside.toml\nforeign.toml\n'),
@@ -269,6 +375,7 @@ test('repeated installs remove only manifest-owned stale agents, including broke
       assert.equal(third.status, 0, third.stderr);
 
       for (const stale of [
+        join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-alpha-fast.md'),
         join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-beta.md'),
         join(firstEnv.CODEX_HOME, 'agents/effective-flow-beta.toml'),
       ]) {
@@ -280,6 +387,7 @@ test('repeated installs remove only manifest-owned stale agents, including broke
       }
       for (const preserved of [
         join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-neighbor.md'),
+        join(firstEnv.CLAUDE_HOME, 'agents/effective-flow-neighbor-fast.md'),
         join(firstEnv.CODEX_HOME, 'agents/effective-flow-neighbor.toml'),
         join(firstEnv.CLAUDE_HOME, 'agents/foreign.md'),
         join(firstEnv.CODEX_HOME, 'agents/foreign.toml'),
@@ -298,6 +406,66 @@ test('repeated installs remove only manifest-owned stale agents, including broke
       assert.equal(
         await readFile(codexManifest, 'utf8'),
         'effective-flow-alpha.toml\neffective-flow-gamma.toml\n',
+      );
+    });
+  }
+});
+
+test('failed native installs retain ownership evidence for recovery without claiming neighbors', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-native-recovery-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  for (const [mode, command] of [
+    ['copy', 'cp'],
+    ['link', 'ln'],
+  ]) {
+    await t.test(mode, async () => {
+      const caseRoot = join(sandbox, mode);
+      const failingDist = await createNativeDistribution(
+        join(caseRoot, 'failing'),
+        ['alpha', 'omega'],
+        ['alpha'],
+      );
+      const recoveryDist = await createNativeDistribution(
+        join(caseRoot, 'recovery'),
+        ['alpha', 'omega'],
+        [],
+      );
+      const installRoot = join(caseRoot, 'install');
+      const failingEnv = isolatedEnvironment(installRoot, mode, failingDist);
+      const shimDir = await createFailingCommandShim(caseRoot, command, 'effective-flow-omega.md');
+      failingEnv.PATH = `${shimDir}:${process.env.PATH}`;
+      const claudeAgents = join(failingEnv.CLAUDE_HOME, 'agents');
+      const fastArtifact = 'effective-flow-alpha-fast.md';
+      const foreignArtifact = 'effective-flow-neighbor-fast.md';
+      await mkdir(claudeAgents, { recursive: true });
+      await writeFile(join(claudeAgents, foreignArtifact), 'foreign');
+
+      const failed = runShell(
+        `. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist`,
+        failingEnv,
+      );
+      assert.notEqual(failed.status, 0, 'the injected native-agent failure must stop deployment');
+      assert.equal(
+        await pathExists(join(claudeAgents, fastArtifact)),
+        true,
+        'the failure must occur after a Fast artifact is installed',
+      );
+      const manifest = join(claudeAgents, '.effective-flow-agents.manifest');
+      assert.equal(await pathExists(manifest), true, 'partial ownership evidence must be durable');
+      assert.match(await readFile(manifest, 'utf8'), new RegExp(`^${fastArtifact}$`, 'm'));
+
+      const recovered = runShell(
+        `. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist`,
+        isolatedEnvironment(installRoot, mode, recoveryDist),
+      );
+      assert.equal(recovered.status, 0, recovered.stderr);
+      assert.equal(await pathExists(join(claudeAgents, fastArtifact)), false);
+      assert.equal(await readFile(join(claudeAgents, foreignArtifact), 'utf8'), 'foreign');
+      await assertNativeReferencesResolve(recoveryDist, installRoot);
+      assert.equal(
+        await readFile(manifest, 'utf8'),
+        'effective-flow-alpha.md\neffective-flow-omega.md\n',
       );
     });
   }
@@ -348,13 +516,12 @@ test('missing or malformed native agent artifacts fail before changing installed
     {
       name: 'missing Codex sidecar directory',
       mutate: (distRoot) => rm(join(distRoot, 'codex/agents'), { recursive: true }),
-      error:
-        /Native claude agent has no matching sidecar|Native codex agent distribution not found/,
+      error: /Native agent inventory validation failed/,
     },
     {
       name: 'mismatched native sets',
       mutate: (distRoot) => rm(join(distRoot, 'codex/agents/effective-flow-beta.toml')),
-      error: /has no matching sidecar/,
+      error: /Native agent inventory validation failed/,
     },
     {
       name: 'malformed Codex metadata',
@@ -363,12 +530,34 @@ test('missing or malformed native agent artifacts fail before changing installed
           join(distRoot, 'codex/agents/effective-flow-alpha.toml'),
           'name = "effective-flow-wrong"\n',
         ),
-      error: /name does not match its filename/,
+      error: /Native agent inventory validation failed/,
     },
     {
       name: 'unexpected artifact name',
       mutate: (distRoot) => writeFile(join(distRoot, 'claude/agents/README.md'), 'unexpected'),
-      error: /Unexpected native claude agent artifact/,
+      error: /Native agent inventory validation failed/,
+    },
+    {
+      name: 'missing inventory',
+      mutate: (distRoot) => rm(join(distRoot, 'claude/effective-flow/native-agent-inventory.json')),
+      error: /Native agent inventory validation failed/,
+    },
+    {
+      name: 'orphan Claude Fast asymmetry',
+      mutate: async (distRoot) => {
+        const inventoryPath = join(distRoot, 'claude/effective-flow/native-agent-inventory.json');
+        const parsed = JSON.parse(await readFile(inventoryPath, 'utf8'));
+        parsed.fastWorkers.push('effective-flow-reviewer-fast');
+        parsed.fastWorkers.sort();
+        await Promise.all([
+          writeFile(inventoryPath, `${JSON.stringify(parsed, null, 2)}\n`),
+          writeFile(
+            join(distRoot, 'claude/agents/effective-flow-reviewer-fast.md'),
+            '---\nname: effective-flow-reviewer-fast\n---\nunsupported\n',
+          ),
+        ]);
+      },
+      error: /Native agent inventory validation failed/,
     },
   ];
 
@@ -380,8 +569,10 @@ test('missing or malformed native agent artifacts fail before changing installed
       const installRoot = join(caseRoot, 'install');
       const env = isolatedEnvironment(installRoot, 'copy', distRoot);
       const sentinel = join(env.CLAUDE_HOME, 'skills/effective-flow/sentinel');
+      const installedAgent = join(env.CLAUDE_HOME, 'agents/effective-flow-existing.md');
       await mkdir(dirname(sentinel), { recursive: true });
-      await writeFile(sentinel, 'untouched');
+      await mkdir(dirname(installedAgent), { recursive: true });
+      await Promise.all([writeFile(sentinel, 'untouched'), writeFile(installedAgent, 'untouched')]);
 
       const result = runShell(
         `. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist`,
@@ -390,6 +581,7 @@ test('missing or malformed native agent artifacts fail before changing installed
       assert.notEqual(result.status, 0, result.stdout);
       assert.match(result.stderr, entry.error);
       assert.equal(await readFile(sentinel, 'utf8'), 'untouched');
+      assert.equal(await readFile(installedAgent, 'utf8'), 'untouched');
       assert.equal(
         await pathExists(join(env.CODEX_HOME, 'agents/effective-flow-alpha.toml')),
         false,

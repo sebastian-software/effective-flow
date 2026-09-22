@@ -23,6 +23,8 @@ import {
   collectRenderedWorkerRefs,
   extractFrontmatter,
   getField,
+  parseNativeAgentInventory,
+  reconcileNativeAgentInventories,
 } from '../build-lib.mjs';
 import { stageDelivery } from './stage-delivery.mjs';
 
@@ -197,10 +199,25 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
   const claudeAgents = join(distRoot, 'claude', 'agents');
   const codexAgents = join(distRoot, 'codex', 'agents');
   const portableWorkers = join(distRoot, 'portable', 'effective-flow', 'workers');
+  const claudeInventory = parseNativeAgentInventory(
+    readFileSync(join(distRoot, 'claude', 'effective-flow', 'native-agent-inventory.json'), 'utf8'),
+    { context: 'Claude distribution inventory' },
+  );
+  const codexInventory = parseNativeAgentInventory(
+    readFileSync(join(distRoot, 'codex', 'effective-flow', 'native-agent-inventory.json'), 'utf8'),
+    { context: 'Codex distribution inventory' },
+  );
+  reconcileNativeAgentInventories(claudeInventory, codexInventory, {
+    claudeArtifacts: readdirSync(claudeAgents),
+    codexArtifacts: readdirSync(codexAgents),
+    context: 'distribution native agents',
+  });
+  assertSameMembers(claudeInventory.baseWorkers, workers, 'Claude inventory base workers');
+  assertSameMembers(codexInventory.baseWorkers, workers, 'Codex inventory base workers');
 
   assertSameMembers(
     readdirSync(claudeAgents).filter((name) => name.endsWith('.md')),
-    workers.map((name) => `${name}.md`),
+    [...claudeInventory.baseWorkers, ...claudeInventory.fastWorkers].map((name) => `${name}.md`),
     'Claude native workers',
   );
   assertSameMembers(
@@ -222,7 +239,14 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     if (error.code !== 'ENOENT') throw error;
   }
 
-  assertWorkerResolution(join(distRoot, 'claude'), claudeAgents, 'md', 'name: ', workers);
+  if (existsSync(join(distRoot, 'portable', 'effective-flow', 'native-agent-inventory.json'))) {
+    fail('portable output must not contain a native agent inventory');
+  }
+
+  assertWorkerResolution(join(distRoot, 'claude'), claudeAgents, 'md', 'name: ', [
+    ...claudeInventory.baseWorkers,
+    ...claudeInventory.fastWorkers,
+  ]);
   assertWorkerResolution(join(distRoot, 'codex'), codexAgents, 'toml', 'name = "', workers);
   assertWorkerResolution(join(distRoot, 'portable'), portableWorkers, 'md', '# ', workers);
 

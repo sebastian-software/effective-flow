@@ -43,18 +43,19 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder     | Meaning                          | Replacement                                                                          |
-| --------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
-| `{{FLOW}}`      | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)   |
-| `{{SKILL:X}}`   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
-| `{{AGENT:X}}`   | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
-| `{{VERSION}}`   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
-| `{{TOOL_LIST}}` | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                          |
+| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                                         |
+| -------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                  |
+| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                      |
+| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                |
+| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (Fast unavailable: select Quality with `profile-unavailable`) `` |
+| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                     |
+| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                         |
 
 For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
 `ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
-`{{SKILL:X}}` and `{{AGENT:X}}` references. Eager includes, lazy-include pointers, and
-`{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
+`{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
+lazy-include pointers, and `{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
 interaction syntax is target-specific before worker and tool references receive their final
 target syntax.
 
@@ -173,10 +174,25 @@ The build aborts with an error message if any of these guards is violated:
   cased, or unknown value aborts the build with the agent name and source path. The field is
   rendered deterministically next to `model` in the native Claude sidecar.
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
-  `{{AGENT:X}}` to an existing `src/agents/X.md`. A legacy `sf-` prefix (see "No legacy aliases"
-  above) is deliberately rejected with a migration message. The same guard also runs during
-  rendering (`transformRefs`), so no accepted placeholder can ever produce a non-existent
-  target.
+  `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
+  accepts only `fast`, only for an implementation worker selected by the validated routing table,
+  and only in `src/tools/build.md` or `src/tools/refactor.md`. A legacy `sf-` prefix (see "No
+  legacy aliases" above) is deliberately rejected with a migration message. The same guard also
+  runs during rendering (`transformRefs`), so no accepted placeholder can produce a non-existent
+  target. Both authorized workflow sources remain profile-reference-free in this work package.
+- **Native profile-mapping guard:** Every registered base worker must supply nonempty native model
+  and effort metadata. The centralized Fast mapping is complete for Claude and Codex, Claude effort
+  uses the supported vocabulary, and each Codex model/reasoning combination is validated. The
+  route classification covers every verified project-routing row exactly once and resolves the
+  five Fast-capable route IDs to five unique implementation workers. Missing, extra, duplicate,
+  unsupported, or colliding entries abort before the atomic swap.
+- **Native-agent inventory guard:** The build emits canonical schema-version-1
+  `native-agent-inventory.json` files inside the Claude and Codex skill targets. Both inventories
+  must use the exact key order, sorted unique worker stems, and identical base membership. Claude
+  lists the five generated Fast stems; Codex lists no Fast sidecars. The shared parser and
+  reconciler require each inventory to match its agent directory exactly, while portable output
+  must contain no inventory. The inventory proves build/install consistency, not signed provenance
+  or runtime discovery.
 - **Central-skill ownership guard (#168):** The dependency-free guard reconciles
   `docs/developer-guide/skill-ownership.json` with the dedicated table in
   `skill-ownership.md`, every token in source `## Recommended skills` fallback chains, and the
@@ -321,9 +337,10 @@ The build aborts with an error message if any of these guards is violated:
   source, missing or duplicate marker, malformed row, duplicate or reordered decision, unknown
   value, or illegal combination aborts the build before any rendered output reaches the atomic
   `dist/` swap. Focused positive and mutation/error coverage lives in
-  `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. This is a policy and
-  failure-phase guard only: work package 1 neither includes the fragment in a workflow nor emits a
-  native or portable worker artifact from it.
+  `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
+  separate from the rendered native capability: the build now emits the sanctioned Claude
+  sidecars and native inventories, but no workflow includes the policy fragment or requests Fast,
+  and portable output contains no native profile artifact.
 - **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
   validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
   end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two
@@ -670,6 +687,33 @@ Claude `opus`/`xhigh` and Codex `gpt-5.6-sol`/`high`; support roles use Claude
 `sonnet`/`medium` and Codex `gpt-5.6-luna`/`medium`. The source agent files are the canonical
 per-role assignments. Portable workers intentionally omit these native fields, so the build
 does not imply that a portable manager can enforce the same profiles.
+
+Fast-capable routes are classified centrally after the project-routing table is parsed. The five
+current routes—tooling, frontend JavaScript/TypeScript, Node.js, Rust, and generic product
+implementation—resolve to five unique base workers. For each one, the Claude renderer generates an
+`effective-flow-<name>-fast.md` sidecar from the base contract, changing only its name,
+description, model, and effort. The current generated stems are
+`effective-flow-generic-implementer-fast`, `effective-flow-ui-implementer-fast`,
+`effective-flow-nodejs-implementer-fast`, `effective-flow-rust-implementer-fast`, and
+`effective-flow-generic-product-implementer-fast`. No `src/agents/*-fast.md` source exists. Codex generates no Fast
+TOML sidecar; `{{AGENT_PROFILE:X:fast}}` instead renders the base worker with explicit per-spawn
+`model` and `reasoning_effort` parameters. The provider mappings live only in `build.mjs` and are
+validated before rendering. The current operational mapping is Claude `sonnet`/`medium` and Codex
+`gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
+configuration or the durable representation decision.
+
+The same token renders an explicit Quality/`profile-unavailable` result for portable managers,
+which still receive the normal worker-delegation bootstrap. Build guards reject native metadata,
+mapped aliases, Fast sidecar identifiers, inventories, and unresolved profile tokens in portable
+output. At present the token is authorized only in `build` and `refactor`, and neither source uses
+it: the representation exists, but no workflow adopts Fast yet.
+
+Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
+identical across harnesses; Claude's `fastWorkers` lists the five generated sidecars and Codex's is
+empty. `scripts/native-agent-inventory.mjs validate <claude-inventory> <claude-agents-dir>
+<codex-inventory> <codex-agents-dir>` exposes the shared strict validation for the local installer.
+Success is silent; usage, read, schema, canonical-byte, or reconciliation failures produce one
+stable diagnostic on standard error and exit with status 1.
 
 Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,

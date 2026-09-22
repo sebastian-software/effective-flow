@@ -50,9 +50,11 @@ persist suspension and incomplete-record controls where possible, block new Fast
 reconciliation, and require an explicit confirmed resume from suspended state. Configuration
 changes and a successful Quality run never clear that state automatically.
 
-This first work package establishes and validates policy only. It activates neither `build` nor
-`refactor`, emits no Fast worker artifact, and writes no pilot runtime state. Later work packages own
-native mappings, lifecycle persistence, guided setup actions, workflow adoption, and evaluation.
+The policy is now paired with rendered native capability: generated Claude Fast implementer
+sidecars, a Codex per-spawn override representation, and strict native inventories. This still
+activates neither `build` nor `refactor`; no workflow requests Fast, setup exposes no activation
+choice, portable output remains Quality-only, and no pilot runtime state is written. Later work
+packages own lifecycle persistence, guided setup actions, workflow adoption, and evaluation.
 
 ## Alternatives and tradeoffs
 

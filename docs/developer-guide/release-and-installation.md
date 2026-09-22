@@ -480,7 +480,11 @@ rejected before deployment helpers are loaded or installer-managed files can cha
 ```
 
 Builds the current source checkout and copies both native targets into the local harness
-directories. This is useful for testing unpublished native output during development.
+directories. This is useful for testing unpublished native output during development. Before any
+skill or agent mutation, the shared installer validates both native
+`native-agent-inventory.json` files and reconciles them with the complete Claude and Codex agent
+directories. The two inventories must agree on base workers; Claude may contain only its declared
+Fast sidecars, while Codex must contain none.
 
 ### Install and update through DALO
 
@@ -554,6 +558,18 @@ The copy and link helpers share deployment logic in `local-common.sh`; only the 
 strategy (`cp -R` vs. `ln -s`) and the final message differ. These utilities manage only the
 `effective-flow` skill child and manifest-recorded Effective Flow sidecars, leaving parent
 symlinks and unrelated neighboring skills or agents untouched.
+
+The inventory validation is strict rather than suffix-based: a `-fast` file beside a base worker
+is not enough to authorize installation. Canonical inventory bytes, schema, harness identity,
+sorted unique membership, declared names, extensions, base parity, and exact directory membership
+must all pass through the shared dependency-free Node validator. Validation success is consistency
+evidence only; it is not a signed-provenance or runtime-discovery claim.
+
+After validation, copy and link installs record every installed base and Fast sidecar in the
+existing harness ownership manifest. A later valid inventory can therefore remove an owned stale
+sidecar, while files not recorded or listed by Effective Flow remain outside that cleanup scope.
+The portable DALO and Skills CLI paths remain unchanged: they install bundled Quality worker
+contracts and do not write native agent directories.
 
 ### Build only, no deployment
 
