@@ -37,7 +37,7 @@ The source layout **mirrors the output**, and the directory decides the category
 - `src/tools/<name>.md` → `effective-flow/tools/<name>.md`. A tool is exposed via `/effective-flow <name>` only if its name is in the `EXPOSED_TOOLS` array in `build.mjs`. Tools not in that array (e.g. `apply-plan`, `apply-review`, `apply-issues`) are **internal** — built but not listed in the router; `apply` loads the right one on demand.
 - `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys. Every Claude agent requires both `model` and `effort`; Codex agents carry `model` and `model_reasoning_effort` alongside their harness-specific tools and sandbox settings.
 - `src/shared/<name>.md` — include fragments, embedded via an `include` fence.
-- `src/scripts/*.mjs` — dependency-free Node.js runtime resources copied byte-for-byte into `effective-flow/scripts/` for every target, but only if listed in `RUNTIME_SCRIPT_FILES` in `build.mjs`; an unregistered script is silently never shipped. Each one follows the same split: `<name>.mjs` is a thin JSON CLI entry point over `<name>-core.mjs`, which keeps the deterministic logic importable and testable. Most are exactly that pair; the remote tracker adds four further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`, `-github-core.mjs` and `-forgejo-core.mjs` — layered so that no module imports its core back.
+- `src/scripts/*.mjs` — dependency-free Node.js runtime resources copied byte-for-byte into `effective-flow/scripts/` for every target, but only if listed in `RUNTIME_SCRIPT_FILES` in `build.mjs`; an unregistered script is silently never shipped. Each one follows the same split: `<name>.mjs` is a thin JSON CLI entry point over `<name>-core.mjs`, which keeps the deterministic logic importable and testable. Most are exactly that pair; the remote tracker adds four further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`, `-github-core.mjs` and `-forgejo-core.mjs` — layered so that no module imports its core back. Pilot measurement is a three-file family: `pilot-measurement.mjs` is the JSON CLI, `pilot-measurement-core.mjs` owns the guarded local lifecycle and evidence operations, and `pilot-measurement-protocol.mjs` owns the immutable protocol, projections, and digest.
 
 The build emits three consumer targets:
 
@@ -62,14 +62,26 @@ and both fail closed to Quality. Literal `true` only admits the project to the l
 lifecycle; it does not start measurement, activate a generation, or prove native capability. Setup
 remains the sole configuration writer but has no UI for this key yet.
 
-The build now renders the native capability without adopting it in a workflow. It generates five
-Claude Fast implementer sidecars, supports Codex per-spawn `model` and `reasoning_effort`
-overrides, and emits strict native-agent inventories for installation validation. `build` and
-`refactor` still contain no profile reference, so neither requests Fast yet; portable output
-remains Quality-only and contains no native profile metadata. No setup choice or pilot runtime
-state exists at this stage. If `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present when a later
+The build now renders the native capability and ships the local pilot-measurement subsystem without
+adopting Fast in a workflow. It generates five Claude Fast implementer sidecars, supports Codex
+per-spawn `model` and `reasoning_effort` overrides, emits strict native-agent inventories, and
+copies the three pilot helper modules to every target. `build` and `refactor` still contain no
+profile reference, so neither requests Fast yet; portable output remains Quality-only and contains
+no native profile metadata. Setup exposes neither baseline nor activation. If
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present when a later
 profile-aware workflow evaluates capability, the gate records `profile-unavailable` and selects
 Quality.
+
+Pilot state is local/private runtime data below
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never tracked configuration or eval
+evidence. Project admission, generation lifecycle, native capability, explicit current-run detailed
+trace consent, and publication approval are separate boundaries. Minimal records exclude content
+and identity; detailed traces do not feed metrics. While a baseline or active generation exists,
+non-observer `merge-gate` runs may add anonymous period-level correction observations with no
+workflow-record link. Review freezes reservations, aggregation keeps a private decision view and a
+suppressed publication candidate, and deletion follows confirmed digest-bound purge or the narrower
+disabled/review `discard-generation` recovery path. No capability described here activates a
+workflow or setup route.
 
 The guard mechanics are documented in
 [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration
@@ -77,6 +89,8 @@ ownership in [`docs/developer-guide/configuration.md`](docs/developer-guide/conf
 the durable rationale in
 [`risk-aware-model-tiering-pilot-policy.md`](docs/adr/risk-aware-model-tiering-pilot-policy.md) and
 [`native-execution-profile-representation.md`](docs/adr/native-execution-profile-representation.md).
+The shipped measurement contract and its exact build-validated projection are documented in
+[`docs/developer-guide/model-tiering-pilot-protocol.md`](docs/developer-guide/model-tiering-pilot-protocol.md).
 
 ### Placeholder / directive syntax in sources
 
@@ -224,7 +238,7 @@ Effective Flow configuration lives in a **living "Projektsetup" ADR** (default `
 
 A convention the target project itself declares outranks that default. [`src/shared/project-adr-convention.md`](src/shared/project-adr-convention.md) resolves the ADR **file name** — never the ADR directory, never the H1 form — through three tiers: a naming rule stated in the project's `AGENTS.md`/`CLAUDE.md` or in a decision register (`DECISIONS.md` at the repository root or at `docs/DECISIONS.md` — one level below the root, never a recursive search — or a `README.md`/`index.md` at the top level of the detected ADR directory) beats a convention merely observed in the existing file names, which in turn beats the living slug default. Every declared source is read before precedence is applied, two or more speaking sources that do not all agree reach an `ask` fence before anything is written — an unanswered, skipped, or non-interactive run resolves exactly as the fence's `Inconclusive` option does, setting every declaration aside in favor of the observed evidence and only then the Effective Flow default, and reports that the fence could not be posed — and declared sources count as untrusted data: only the naming decision is extracted, and reports name every speaking source as a file path and a classified outcome instead of quoting source prose. Width is off that classification axis, so sources that agree on the axis while stating different widths do not reach the fence: the width axis is unrecognized, the observed-evidence width and then four digits apply, and the divergence is reported. The write path in `src/tools/setup.md` may therefore produce `docs/adr/0002-effective-flow-project-setup.md`, so the read paths stay tolerant — the config locator (`src/shared/config-migration.md`) and the `review` design-decision exclusion match the known project-setup slugs after stripping an optional leading `^\d+[-_]` prefix, and the locator breaks a multi-match tie by one ordered comparison, preferring the current slug over the legacy one first and only then, among files of the same slug, an unprefixed stem over a prefixed one, reporting every path and falling through when a tie survives. A tool that writes treats that reported several-match state as an explicit stop for its user rather than as "no ADR exists". That read tolerance never decides what a new file is called, and an ADR that already exists — found by the initial resolution or by the pre-write one — is written back at the path where it was found and updated in place, never duplicated at a second, convention-shaped path, with the divergence reported once rather than renamed. Writing that path is still guarded: a symlink at the target is a hard stop evaluated before the physical containment check and never softened into a reroute, and the pre-write existence check that protects a new ADR from overwriting a file already at its resolved name is unconditional rather than scoped to names that carry a number.
 
-Consequently `.effective-flow/` **in the target project** now holds runtime state only (`memory.json`, `cache.json`, `review/`, `merge-gate/` delegation messages, `.worktrees/`, wisdom files) and is **fully gitignored**. Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/effective-flow-dir-migration.md`); `/effective-flow cleanup` inventories whatever remains in a given checkout and deletes it only after a dry run and explicit confirmation. Issue-tracker labels use the `effective-flow-` prefix; the predecessor `firmo-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (one generation of read backward-compatibility), while the older `sf-` prefix is migrated once (on first remote access) to `effective-flow-` and not recognised on an ongoing basis. New labels are created with `effective-flow-` only. The tracker target itself is configurable: besides `local` and `remote`, `tracker.mode: external` points issue work at a project-management tool named by `tracker.externalTool` (with the free-text `tracker.externalToolHint` for connection discovery), for which Effective Flow ships no product-specific adapter and fails closed rather than falling back. The label vocabulary above keeps its exact strings in every target, pull requests stay on the Git forge behind `origin`, and plan files stay committed under `plan.dir`; the full contract is `src/shared/tracker-target.md`.
+Consequently `.effective-flow/` **in the target project** now holds runtime state only (`memory.json`, `cache.json`, `review/`, `merge-gate/` delegation messages, `model-tiering-pilot/` generations and evidence, `.worktrees/`, wisdom files) and is **fully gitignored**. Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/effective-flow-dir-migration.md`); `/effective-flow cleanup` inventories whatever remains in a given checkout and deletes it only after a dry run and explicit confirmation. Issue-tracker labels use the `effective-flow-` prefix; the predecessor `firmo-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (one generation of read backward-compatibility), while the older `sf-` prefix is migrated once (on first remote access) to `effective-flow-` and not recognised on an ongoing basis. New labels are created with `effective-flow-` only. The tracker target itself is configurable: besides `local` and `remote`, `tracker.mode: external` points issue work at a project-management tool named by `tracker.externalTool` (with the free-text `tracker.externalToolHint` for connection discovery), for which Effective Flow ships no product-specific adapter and fails closed rather than falling back. The label vocabulary above keeps its exact strings in every target, pull requests stay on the Git forge behind `origin`, and plan files stay committed under `plan.dir`; the full contract is `src/shared/tracker-target.md`.
 
 ## README ownership
 

@@ -310,6 +310,37 @@ missing, malformed, duplicated, or mismatched receipt leaves the merge result un
 authorizes no tracker access. Post-merge tracker failure likewise cannot roll back a
 successful merge.
 
+#### Anonymous pilot-period observation
+
+While a local pilot generation exists in `baseline` or `active`, a non-observer `merge-gate` run
+may create one anonymous period observation. It counts actual CI-repair delegations, configured-
+reviewer implementation delegations, and conflict-resolution attempts, then records the closed
+`merge|report` mode, terminal outcome, native harness family, and required-check summary. Pending
+waits, ordinary rounds, keyword-less resumes, and Phase-4 returns without implementation are not
+corrections.
+
+The gate discovers the current generation with a read-only helper call carrying the verified
+runtime root and repository identity. Zero generations is a no-op, exactly one supplies the state,
+and multiple generations fail closed without choosing one. Reservation then passes that generation
+with the separately resolved configuration state, `merge|report` mode, and `claude|codex` harness.
+
+The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
+path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
+period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
+states make observation a read-only no-op; observer-only post-merge re-entry records nothing.
+
+Reservation or finalization failure never changes whether the current run merges or reports ready.
+After a reservation, every normal, controlled, or early exit finalizes exactly once. A report-mode
+exit before the final gate batch records `reported-blocked` with unavailable required-check
+evidence; a merge-mode failure records `failed`. The helper's explicit `pilotControlOutcome`,
+`controlStatePersisted`, and value-free `alert` metadata is the only authority for claiming an
+`evidence-gap` or durable suspension. The gate never infers either from an exit code, missing
+receipt, or failed write; if persistence cannot be proven, it says so without changing the gate
+result. The subsystem exists before workflow profile adoption, so this observation capability does
+not make `build` or `refactor` select Fast. See
+[Model-tiering pilot data and privacy](model-tiering-pilot.md) for the local evidence and retention
+boundary.
+
 #### Resolving a conflict with the base
 
 A pull request whose head branch conflicts with its base used to end the run: the gate reported the
@@ -797,6 +828,8 @@ forward.
 - [Worktree and delivery](worktree-and-delivery.md) – delivery branch, completion actions
   (`pr`/`merge`/`branch`)
 - [Configuration](configuration.md) – `delivery.*` and `mergeGate.*` keys in detail
+- [Model-tiering pilot data and privacy](model-tiering-pilot.md) – anonymous period observations,
+  local evidence, consent, and retention
 - [Remote tracker](remote-tracker.md#merge-gate-operations) – the forge operations the merge gate
   needs, and their `gh` version floor
 - [Tools: Implement](tools-implement.md) – the workflows that `commit` and `pr` typically

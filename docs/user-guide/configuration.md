@@ -214,15 +214,22 @@ malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed 
 stop new pilot measurement. Only the literal `true` admits the project to the pilot lifecycle; it
 does not start a baseline, activate Fast, or prove that the current host can enforce Fast.
 
-Native builds now contain the representation needed for a later pilot: five generated Claude Fast
-sidecars, a Codex per-spawn override form, and native inventories used to validate installation.
-That capability is not activation. Neither `build` nor `refactor` requests Fast yet, portable
-installations remain Quality-only, and `/effective-flow setup` still exposes no question for this
-row. Manually setting the row to `true` therefore changes no current workflow behavior. Changing or
-removing it does not rewrite future pilot-generation state or clear a suspension. See
-[Getting started](./getting-started.md#recommended-calling-model) for the distinction between the
-caller and implementation profiles, and the
-[risk-aware pilot decision](../adr/risk-aware-model-tiering-pilot-policy.md) for the durable safety
+Native builds now contain the representation and local measurement subsystem needed for a later
+pilot: five generated Claude Fast sidecars, a Codex per-spawn override form, native inventories, and
+the dependency-free pilot helper. That capability is not activation. Neither `build` nor `refactor`
+requests Fast yet, portable installations remain Quality-only, and `/effective-flow setup` still
+exposes no question for this row. Manually setting the row to `true` therefore changes no current
+workflow behavior. Changing or removing it does not rewrite a pilot generation, clear a suspension,
+or delete evidence.
+
+Project admission is also separate from detailed-trace consent. The configuration row cannot grant
+that consent. A workflow may attest `detailOptIn: true` only after an explicit request in the current
+run; the decision is not persisted as configuration and does not carry into a later run. Minimal
+records remain local and structured either way. See [Model-tiering pilot data and
+privacy](./model-tiering-pilot.md) for the evidence, retention, review, purge, discard, and
+publication boundaries. [Getting started](./getting-started.md#recommended-calling-model) explains
+the distinction between caller and implementation profiles; the
+[risk-aware pilot decision](../adr/risk-aware-model-tiering-pilot-policy.md) records the durable safety
 boundary.
 
 ## Block `language`

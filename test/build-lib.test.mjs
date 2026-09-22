@@ -67,6 +67,12 @@ import {
   PROJECT_ROUTING_REQUIRED_ROUTES,
   parseExecutionProfileContract,
   assertExecutionProfileContract,
+  executionProfilePolicyProjection,
+  assertPilotMeasurementPolicyProjection,
+  parsePilotMeasurementDocumentationProjection,
+  assertPilotMeasurementDocumentationProjection,
+  PILOT_MEASUREMENT_DOCUMENTATION_START,
+  PILOT_MEASUREMENT_DOCUMENTATION_END,
   parseNextStepsTable,
   assertNextStepsContract,
   findNextStepsDocViolations,
@@ -82,6 +88,11 @@ import {
   assertAgentSkillRecommendationRoster,
 } from '../build-lib.mjs';
 import { auditSkillOwnership } from '../scripts/audit-skill-ownership.mjs';
+import {
+  PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION,
+  PILOT_MEASUREMENT_POLICY_PROJECTION,
+  canonicalizeJson,
+} from '../src/scripts/pilot-measurement-protocol.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
@@ -1513,6 +1524,99 @@ test('parseExecutionProfileContract rejects malformed table structure and values
         executionProfileSource.replace(/\| 1\s+\| disabled/, '| zero | disabled'),
       ),
     /state field "precedence" must be a positive integer.*"zero"/,
+  );
+});
+
+test('the pilot runtime projection exactly reconciles with the canonical execution-profile tables', () => {
+  const contract = parseExecutionProfileContract(executionProfileSource, {
+    context: 'src/shared/execution-profiles.md',
+  });
+  assert.deepEqual(executionProfilePolicyProjection(contract), PILOT_MEASUREMENT_POLICY_PROJECTION);
+  assert.doesNotThrow(() =>
+    assertPilotMeasurementPolicyProjection(contract, {
+      context: 'policy projection fixture',
+    }),
+  );
+
+  for (const mutate of [
+    (projection) => {
+      projection.generationStates[2] = 'pilot';
+    },
+    (projection) => {
+      projection.statePrecedence[8].selectedProfile = 'quality';
+    },
+    (projection) => {
+      projection.pilotControlMappings[8].suspensionReason = 'none';
+    },
+    (projection) => {
+      projection.unregistered = true;
+    },
+  ]) {
+    const projection = structuredClone(PILOT_MEASUREMENT_POLICY_PROJECTION);
+    mutate(projection);
+    assert.throws(
+      () =>
+        assertPilotMeasurementPolicyProjection(contract, {
+          projection,
+          context: 'drifted projection fixture',
+        }),
+      /runtime policy projection diverges.*drifted projection fixture/,
+    );
+  }
+});
+
+test('the marked pilot protocol guide contains the exact canonical documentation projection', () => {
+  const guide = readFileSync(
+    new URL('../docs/developer-guide/model-tiering-pilot-protocol.md', import.meta.url),
+    'utf8',
+  );
+  const projection = parsePilotMeasurementDocumentationProjection(guide, {
+    context: 'model-tiering-pilot-protocol.md',
+  });
+  assert.deepEqual(projection, PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  assert.doesNotThrow(() =>
+    assertPilotMeasurementDocumentationProjection(projection, {
+      context: 'model-tiering-pilot-protocol.md',
+    }),
+  );
+});
+
+test('the pilot protocol documentation parser rejects marker, canonicalization, and content drift', () => {
+  const canonical = canonicalizeJson(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  const mirror = (json) =>
+    `${PILOT_MEASUREMENT_DOCUMENTATION_START}\n\n\`\`\`json\n${json}\n\`\`\`\n\n${PILOT_MEASUREMENT_DOCUMENTATION_END}`;
+
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        mirror(canonical).replace(PILOT_MEASUREMENT_DOCUMENTATION_START, ''),
+      ),
+    /requires exactly one protocol start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        `${mirror(canonical)}\n${PILOT_MEASUREMENT_DOCUMENTATION_START}`,
+      ),
+    /requires exactly one protocol start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        mirror(JSON.stringify(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION)),
+      ),
+    /not canonical JSON/,
+  );
+
+  const drifted = structuredClone(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  drifted.aggregation.algorithmVersion += 1;
+  const parsed = parsePilotMeasurementDocumentationProjection(mirror(canonicalizeJson(drifted)));
+  assert.throws(
+    () =>
+      assertPilotMeasurementDocumentationProjection(parsed, {
+        context: 'drifted documentation fixture',
+      }),
+    /documentation projection diverges.*drifted documentation fixture/,
   );
 });
 

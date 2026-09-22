@@ -1,3 +1,9 @@
+import {
+  PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION,
+  PILOT_MEASUREMENT_POLICY_PROJECTION,
+  canonicalizeJson,
+} from './src/scripts/pilot-measurement-protocol.mjs';
+
 // Pure, importable transformation helpers for build.mjs.
 //
 // These functions are extracted from build.mjs so the Markdown -> skill
@@ -2278,6 +2284,159 @@ export function assertExecutionProfileContract(contract, { context } = {}) {
   ) {
     throw new Error(
       `Execution-profile transfer fields do not match the required field set${contextSuffix(context)}`,
+    );
+  }
+}
+
+export function executionProfilePolicyProjection(contract) {
+  return {
+    schema: 1,
+    profiles: contract.profiles.map(({ profile, intent }) => ({ profile, intent })),
+    configStates: [...EXECUTION_PROFILE_CONFIG_STATES],
+    generationStates: [...EXECUTION_PROFILE_GENERATION_STATES],
+    eligibilityStates: [...EXECUTION_PROFILE_ELIGIBILITY_STATES],
+    selectedProfiles: [...EXECUTION_PROFILE_SELECTED_PROFILES],
+    gateReasons: [...EXECUTION_PROFILE_GATE_REASONS],
+    statePrecedence: contract.states.map(
+      ({ precedence, configState, generationState, eligibility, selectedProfile, decision }) => ({
+        precedence,
+        configState,
+        generationState,
+        eligibility,
+        selectedProfile,
+        decision,
+      }),
+    ),
+    fallbackMappings: contract.decisionMappings.map(
+      ({ event, gateDecision, selectedProfile, fallback, fastAttemptConsumed }) => ({
+        event,
+        gateDecision,
+        selectedProfile,
+        fallback,
+        fastAttemptConsumed: fastAttemptConsumed === 'true',
+      }),
+    ),
+    fallbacks: contract.fallbacks.map(({ value }) => value),
+    pilotControlMappings: contract.controls.map(
+      ({
+        outcome,
+        suspensionReason,
+        incompleteInventory,
+        alert,
+        implementationFallback,
+        productDiff,
+      }) => ({
+        outcome,
+        suspensionReason,
+        incompleteInventory: incompleteInventory === 'true',
+        alert,
+        implementationFallback,
+        productDiff,
+      }),
+    ),
+    pilotControlOutcomes: contract.controls.map(({ outcome }) => outcome),
+  };
+}
+
+function policyProjectionMismatch(expected, actual, path = 'policyProjection') {
+  if (Object.is(expected, actual)) return null;
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return `${path} must be an array`;
+    if (actual.length !== expected.length) {
+      return `${path} must contain exactly ${expected.length} entries; found ${actual.length}`;
+    }
+    for (let index = 0; index < expected.length; index += 1) {
+      const mismatch = policyProjectionMismatch(
+        expected[index],
+        actual[index],
+        `${path}[${index}]`,
+      );
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (expected !== null && typeof expected === 'object') {
+    if (actual === null || typeof actual !== 'object' || Array.isArray(actual)) {
+      return `${path} must be an object`;
+    }
+    const expectedKeys = Object.keys(expected).sort();
+    const actualKeys = Object.keys(actual).sort();
+    if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+      return `${path} keys must be ${expectedKeys.join(', ')}; found ${actualKeys.join(', ')}`;
+    }
+    for (const key of expectedKeys) {
+      const mismatch = policyProjectionMismatch(expected[key], actual[key], `${path}.${key}`);
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  return `${path} must be ${JSON.stringify(expected)}; found ${JSON.stringify(actual)}`;
+}
+
+export function assertPilotMeasurementPolicyProjection(
+  contract,
+  { projection = PILOT_MEASUREMENT_POLICY_PROJECTION, context } = {},
+) {
+  assertExecutionProfileContract(contract, { context });
+  const expected = executionProfilePolicyProjection(contract);
+  const mismatch = policyProjectionMismatch(expected, projection);
+  if (mismatch) {
+    throw new Error(
+      `Pilot-measurement runtime policy projection diverges from the canonical execution-profile contract${contextSuffix(context)}: ${mismatch}`,
+    );
+  }
+}
+
+export const PILOT_MEASUREMENT_DOCUMENTATION_START = '<!-- pilot-measurement-protocol:start -->';
+export const PILOT_MEASUREMENT_DOCUMENTATION_END = '<!-- pilot-measurement-protocol:end -->';
+
+export function parsePilotMeasurementDocumentationProjection(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(PILOT_MEASUREMENT_DOCUMENTATION_START).length - 1;
+  const ends = normalized.split(PILOT_MEASUREMENT_DOCUMENTATION_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Pilot-measurement documentation requires exactly one protocol start and end marker${contextSuffix(context)}`,
+    );
+  }
+  const start = normalized.indexOf(PILOT_MEASUREMENT_DOCUMENTATION_START);
+  const end = normalized.indexOf(PILOT_MEASUREMENT_DOCUMENTATION_END);
+  if (end <= start) {
+    throw new Error(
+      `Pilot-measurement documentation protocol markers are out of order${contextSuffix(context)}`,
+    );
+  }
+  const block = normalized.slice(start + PILOT_MEASUREMENT_DOCUMENTATION_START.length, end).trim();
+  const fence = block.match(/^```json\n([^\n]+)\n```$/);
+  if (!fence) {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror must be one fenced canonical-JSON line${contextSuffix(context)}`,
+    );
+  }
+  let projection;
+  try {
+    projection = JSON.parse(fence[1]);
+  } catch {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror is not valid JSON${contextSuffix(context)}`,
+    );
+  }
+  if (fence[1] !== canonicalizeJson(projection)) {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror is not canonical JSON${contextSuffix(context)}`,
+    );
+  }
+  return projection;
+}
+
+export function assertPilotMeasurementDocumentationProjection(
+  projection,
+  { expected = PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION, context } = {},
+) {
+  const mismatch = policyProjectionMismatch(expected, projection, 'documentationProjection');
+  if (mismatch) {
+    throw new Error(
+      `Pilot-measurement documentation projection diverges from the shipped protocol${contextSuffix(context)}: ${mismatch}`,
     );
   }
 }

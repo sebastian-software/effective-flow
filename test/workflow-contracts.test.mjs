@@ -1842,6 +1842,13 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision:
         'the forge preflight reporting both reviewThreadReplies and reviewThreadResolution unsupported',
     },
+    {
+      fragment: 'pilot-measurement',
+      trigger:
+        /(?=[\s\S]*Phase 0)(?=[\s\S]*non-observer)(?=[\s\S]*`merge\|report`)(?=[\s\S]*Phase 1)/,
+      decision:
+        'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -1876,6 +1883,131 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       `the ${fragment} pointer must name its decision point (${decision}); got: ${when}`,
     );
   }
+});
+
+test('merge-gate reserves pilot observations only after mode resolution and before Phase 1', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const fragment = source('src/shared/pilot-measurement.md');
+  ordered(
+    gate,
+    'resolve the completion mode from `mergeGate.completion`',
+    '```lazy-include\npilot-measurement',
+    '### Phase 1: Read the state fresh and set the human-comment guard once',
+  );
+
+  const preflight = prose(
+    section(fragment, '### Phase 0 observation preflight and reservation', '\n### '),
+  );
+  assert.match(
+    preflight,
+    /after Phase 0 has resolved a non-observer `merge\|report` completion mode/,
+  );
+  assert.match(preflight, /before Phase 1 performs gate work/);
+  assert.match(
+    preflight,
+    /Only `configState=enabled` plus `generationState=baseline\|active` may reserve/,
+  );
+  assert.match(
+    preflight,
+    /Disabled or invalid configuration and `none\|suspended\|review` generation state must return a successful read-only no-op that preserves the generation/,
+  );
+  assert.match(preflight, /Observer-only execution never invokes this operation/);
+  assert.equal(
+    (fragment.match(/`start-gate-observation`/g) ?? []).length,
+    1,
+    'the fragment must name one reservation operation',
+  );
+});
+
+test('merge-gate pilot correction counters count only actual correction dispatches', () => {
+  const counters = section(
+    source('src/shared/pilot-measurement.md'),
+    '### Correction counters',
+    '\n### ',
+  );
+  assert.deepEqual(
+    [...counters.matchAll(/^- `([^`]+)`:/gm)].map((match) => match[1]),
+    ['ciRepairDelegations', 'reviewerImplementationDelegations', 'conflictResolutionAttempts'],
+  );
+  const counterProse = prose(counters);
+  assert.match(counterProse, /failed-check instruction successfully dispatched/);
+  assert.match(
+    counterProse,
+    /configured-reviewer implementation delegation successfully dispatched/,
+  );
+  assert.match(counterProse, /merge-conflict-resolver.*actually started/);
+  for (const excluded of [
+    'pending-check wait',
+    'ordinary round start',
+    'keyword-less resume',
+    'triggers',
+    'assessments',
+    'deferred/rejected items',
+    'Phase-4 returns without implementation',
+    'a clean merge',
+    '`off`',
+    'an unanswered gate',
+  ]) {
+    assert.ok(counterProse.includes(excluded), `counter exclusions must retain: ${excluded}`);
+  }
+  assert.match(counterProse, /dispatch\/start event itself is the only counter authority/);
+});
+
+test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 only', () => {
+  const finalization = prose(
+    section(source('src/shared/pilot-measurement.md'), '### Phase 6 observation finalization'),
+  );
+  assert.match(finalization, /measurement-only projection of Phase-4 conditions 2–10/);
+  assert.match(finalization, /same ordered fresh observation batch/);
+  assert.match(finalization, /existing no-check-list waiver semantics/);
+  assert.match(finalization, /`reported-ready` when all nine pass/);
+  assert.match(finalization, /`reported-blocked` with the stable domain blocker when any fails/);
+  assert.match(
+    finalization,
+    /Condition 1 remains the real merge-authorization condition and is excluded only from this measurement projection/,
+  );
+  assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
+  assert.match(
+    finalization,
+    /`failed` for a reserved merge-mode run that did not reach a verified merge/,
+  );
+});
+
+test('merge-gate finalizes a reserved observation exactly once before cleanup without changing its result', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const fragment = source('src/shared/pilot-measurement.md');
+  const phase6 = section(gate, '### Phase 6: Summary', '\n## ');
+  ordered(
+    phase6,
+    'Before step 1',
+    '`## Phase 6 observation finalization`',
+    '1. Delete the wisdom file',
+  );
+  assert.equal(
+    (fragment.match(/`finalize-gate-observation`/g) ?? []).length,
+    1,
+    'the fragment must name one finalization operation',
+  );
+  const finalization = prose(section(fragment, '### Phase 6 observation finalization'));
+  assert.match(
+    finalization,
+    /every normal, controlled, or early ending passes this section exactly once/,
+  );
+  assert.match(finalization, /unexpected workflow failure.*terminal outcome `failed`/);
+  assert.match(finalization, /enforces exactly-once finalization/);
+  assert.match(
+    finalization,
+    /finalization failure leaves the current merge\/report result unchanged/,
+  );
+  assert.match(finalization, /incomplete-evidence or `evidence-gap` control path/);
+  assert.match(finalization, /stable value-free pilot-control alert/);
+  assert.match(finalization, /Do not retry an ambiguous mutation/);
+
+  const preflight = prose(
+    section(fragment, '### Phase 0 observation preflight and reservation', '\n### '),
+  );
+  assert.match(preflight, /continue the merge gate with the same mode and outcome/);
+  assert.match(preflight, /never turn an observation failure into a merge blocker/);
 });
 
 test('the configured-reviewer route stays reachable through exact retained workflow shells', () => {
