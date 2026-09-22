@@ -86,6 +86,14 @@ const EXPECTED_WORKERS = [
   'ui-implementer',
 ];
 
+const EXPECTED_FAST_WORKERS = [
+  'generic-implementer',
+  'generic-product-implementer',
+  'nodejs-implementer',
+  'rust-implementer',
+  'ui-implementer',
+];
+
 const EXPECTED_TOOLS = [
   'apply',
   'apply-issues',
@@ -785,7 +793,7 @@ test('the no-activation detector distinguishes direct Fast requests from unrelat
   }
 });
 
-test('the build assertion precedes the actual atomic swap and runtime sources do not activate Fast', () => {
+test('the build assertion precedes the actual atomic swap and workflows do not activate Fast', () => {
   const buildSource = readFileSync(new URL('build.mjs', ROOT), 'utf8');
   const guardStart = buildSource.indexOf('// --- Shared execution-profile contract guard ---');
   const guardEnd = buildSource.indexOf('// --- Shared next-steps contract guard ---', guardStart);
@@ -811,10 +819,9 @@ test('the build assertion precedes the actual atomic swap and runtime sources do
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));
-  const sourceFiles = [
-    fileURLToPath(new URL('build.mjs', ROOT)),
-    ...collectFiles(sourceRoot),
-  ].filter((path) => !path.endsWith('/src/shared/execution-profiles.md'));
+  const sourceFiles = collectFiles(sourceRoot).filter(
+    (path) => !path.endsWith('/src/shared/execution-profiles.md'),
+  );
   for (const path of sourceFiles) {
     const source = readFileSync(path, 'utf8');
     assert.deepEqual(
@@ -834,7 +841,7 @@ test('the build assertion precedes the actual atomic swap and runtime sources do
       .map((name) => name.slice(0, -3))
       .sort(),
     EXPECTED_WORKERS,
-    'WP1 must not add or remove native worker registrations',
+    'native capability must not add or remove source worker registrations',
   );
   for (const path of collectFiles(fileURLToPath(new URL('src/tools', ROOT)))) {
     assert.doesNotMatch(
@@ -843,9 +850,16 @@ test('the build assertion precedes the actual atomic swap and runtime sources do
       `${path} must not expose or activate the reserved key`,
     );
   }
+  for (const tool of ['build', 'refactor']) {
+    assert.doesNotMatch(
+      readFileSync(new URL(`src/tools/${tool}.md`, ROOT), 'utf8'),
+      /\{\{AGENT_PROFILE:/,
+      `${tool} must remain profile-token-free until its adoption work package`,
+    );
+  }
 });
 
-test('an isolated build preserves the WP1 artifact inventory and emits no Fast activation', (t) => {
+test('an isolated build emits native capability without workflow activation', (t) => {
   const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-execution-profile-build-'));
   t.after(() => rmSync(outputRoot, { recursive: true, force: true }));
   const build = spawnSync(process.execPath, ['build.mjs'], {
@@ -866,7 +880,7 @@ test('an isolated build preserves the WP1 artifact inventory and emits no Fast a
       readdirSync(root).sort(),
       target === 'portable'
         ? ['LICENSE', 'SKILL.md', 'scripts', 'shared', 'tools', 'workers']
-        : ['LICENSE', 'SKILL.md', 'scripts', 'shared', 'tools'],
+        : ['LICENSE', 'SKILL.md', 'native-agent-inventory.json', 'scripts', 'shared', 'tools'],
       `${target} top-level artifact inventory changed`,
     );
     assert.deepEqual(
@@ -899,24 +913,37 @@ test('an isolated build preserves the WP1 artifact inventory and emits no Fast a
       name.slice('effective-flow-'.length, -'.md'.length),
     ),
   };
-  for (const [target, workers] of Object.entries(generatedWorkers)) {
-    assert.deepEqual(workers.sort(), EXPECTED_WORKERS, `${target} worker inventory changed`);
-  }
+  assert.deepEqual(
+    generatedWorkers.claude.sort(),
+    [...EXPECTED_WORKERS, ...EXPECTED_FAST_WORKERS.map((worker) => `${worker}-fast`)].sort(),
+    'Claude capability must add only the five sanctioned Fast sidecars',
+  );
+  assert.deepEqual(
+    generatedWorkers.codex.sort(),
+    EXPECTED_WORKERS,
+    'Codex must retain only independently discoverable Quality workers',
+  );
+  assert.deepEqual(
+    generatedWorkers.portable.sort(),
+    EXPECTED_WORKERS,
+    'portable membership must remain the source worker set',
+  );
 
-  for (const path of collectFiles(dist)) {
-    const artifactPath = path.slice(dist.length + 1);
-    assert.doesNotMatch(artifactPath, /(?:execution-profile|fast-(?:worker|implementer|profile))/i);
-    if (!/\.(?:md|mjs|toml)$/.test(path)) continue;
-    const output = readFileSync(path, 'utf8');
-    assert.doesNotMatch(
-      output,
-      /<!-- execution-profile-/,
-      `${path} emitted reserved policy tables`,
-    );
-    assert.deepEqual(
-      findProhibitedFastActivations(output),
-      [],
-      `${path} directly requests a Fast spawn, model, profile, or worker`,
-    );
+  for (const targetRoot of Object.values(targetRoots)) {
+    for (const path of collectFiles(targetRoot)) {
+      if (!/\.(?:md|mjs|toml)$/.test(path)) continue;
+      const output = readFileSync(path, 'utf8');
+      assert.doesNotMatch(
+        output,
+        /<!-- execution-profile-/,
+        `${path} emitted reserved policy tables`,
+      );
+      assert.deepEqual(
+        findProhibitedFastActivations(output),
+        [],
+        `${path} directly requests a Fast spawn, model, profile, or worker`,
+      );
+      assert.doesNotMatch(output, /\{\{AGENT_PROFILE:/, `${path} retained a profile token`);
+    }
   }
 });

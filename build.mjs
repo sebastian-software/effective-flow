@@ -25,6 +25,8 @@ import {
   tomlString,
   normalizeCodexSandboxMode,
   normalizeClaudeEffort,
+  normalizeCodexReasoningEffort,
+  validateAgentProfileMappings,
   validateRefs,
   assertQuotedDescription,
   renderBody,
@@ -65,6 +67,8 @@ import {
   parseSkillOwnershipRelevanceGateOwners,
   assertSkillOwnershipContract,
   assertAgentSkillRecommendationRoster,
+  parseNativeAgentInventory,
+  reconcileNativeAgentInventories,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -131,6 +135,31 @@ const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
 const CODEX_AGENTS_DIR = join(DIST_CODEX, 'agents');
 const PORTABLE_WORKERS_DIR = join(PORTABLE_SKILL_DIR, 'workers');
 const AGENT_PREFIX = 'effective-flow-';
+const FAST_PROFILE_DESCRIPTION_SUFFIX =
+  ' Fast-profile variant; use only for the first eligible implementation attempt.';
+const AGENT_PROFILE_MAPPINGS = Object.freeze({
+  fast: Object.freeze({
+    claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),
+    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),
+  }),
+});
+const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([
+  Object.freeze(['excluded-generated-vendored', 'non-implementation']),
+  Object.freeze(['documentation', 'quality-only-implementation']),
+  Object.freeze(['tooling', 'fast-capable']),
+  Object.freeze(['frontend-js-ts', 'fast-capable']),
+  Object.freeze(['node-backend-cli', 'fast-capable']),
+  Object.freeze(['rust', 'fast-capable']),
+  Object.freeze(['generic-product', 'fast-capable']),
+  Object.freeze(['ambiguous', 'non-implementation']),
+]);
+const FAST_CAPABLE_ROUTE_IDS = Object.freeze([
+  'tooling',
+  'frontend-js-ts',
+  'node-backend-cli',
+  'rust',
+  'generic-product',
+]);
 
 // The tools exposed via `/effective-flow <tool>`, grouped by user intent. The router
 // catalog renders these groups (title + optional "when" line + tools); the flat
@@ -582,6 +611,7 @@ function resolveIncludes(body, context) {
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
 let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of every tool (#99)
+let fastProfileAgents = new Set();
 
 try {
   const toolFiles = readdirSync(TOOLS_DIR)
@@ -731,6 +761,155 @@ try {
     knownAgents,
     context: projectRoutingContext,
   });
+
+  const routeClassificationIds = new Set();
+  for (const [routeId] of ROUTE_PROFILE_CLASSIFICATION_ENTRIES) {
+    if (routeClassificationIds.has(routeId)) {
+      throw new Error(`Duplicate execution-profile route classification for "${routeId}"`);
+    }
+    routeClassificationIds.add(routeId);
+  }
+  const routeProfileClassification = Object.freeze(
+    Object.fromEntries(ROUTE_PROFILE_CLASSIFICATION_ENTRIES),
+  );
+  const classifiedRoutes = Object.keys(routeProfileClassification).sort();
+  const actualRoutes = projectRoutes.map(({ route }) => route).sort();
+  if (JSON.stringify(classifiedRoutes) !== JSON.stringify(actualRoutes)) {
+    throw new Error(
+      `Execution-profile route classification must cover every project route exactly once; classified=${classifiedRoutes.join(', ')} actual=${actualRoutes.join(', ')}`,
+    );
+  }
+  const classifiedFastRoutes = Object.entries(routeProfileClassification)
+    .filter(([, classification]) => classification === 'fast-capable')
+    .map(([route]) => route)
+    .sort();
+  if (JSON.stringify(classifiedFastRoutes) !== JSON.stringify([...FAST_CAPABLE_ROUTE_IDS].sort())) {
+    throw new Error(
+      `Execution-profile Fast-capable routes must be exactly ${FAST_CAPABLE_ROUTE_IDS.join(', ')}`,
+    );
+  }
+  const allowedRouteClassifications = new Set([
+    'fast-capable',
+    'quality-only-implementation',
+    'non-implementation',
+  ]);
+  for (const route of projectRoutes) {
+    const classification = routeProfileClassification[route.route];
+    if (!allowedRouteClassifications.has(classification)) {
+      throw new Error(`Unsupported execution-profile classification for route "${route.route}"`);
+    }
+    if (classification === 'non-implementation' && route.implementer !== '') {
+      throw new Error(`Non-implementation route "${route.route}" must not name an implementer`);
+    }
+    if (classification === 'quality-only-implementation' && route.implementer === '') {
+      throw new Error(`Quality-only route "${route.route}" must name an implementer`);
+    }
+  }
+  fastProfileAgents = new Set(
+    FAST_CAPABLE_ROUTE_IDS.map((routeId) => {
+      const route = projectRoutes.find(({ route }) => route === routeId);
+      const match = route?.implementer.match(/^\{\{AGENT:([a-z0-9]+(?:-[a-z0-9]+)*)\}\}$/);
+      if (!match) {
+        throw new Error(
+          `Fast-capable route "${routeId}" must resolve to exactly one implementation worker`,
+        );
+      }
+      return match[1];
+    }),
+  );
+  if (fastProfileAgents.size !== FAST_CAPABLE_ROUTE_IDS.length) {
+    throw new Error('Fast-capable routes must resolve to unique implementation workers');
+  }
+  for (const agent of fastProfileAgents) {
+    if (!knownAgents.has(agent)) {
+      throw new Error(`Fast-capable route resolves to unknown worker "${agent}"`);
+    }
+    if (knownAgents.has(`${agent}-fast`)) {
+      throw new Error(`Generated Fast worker name collides with src/agents/${agent}-fast.md`);
+    }
+  }
+  validateAgentProfileMappings(AGENT_PROFILE_MAPPINGS, {
+    context: 'native execution-profile mappings',
+  });
+  refConfig.profileMappings = AGENT_PROFILE_MAPPINGS;
+  refConfig.fastProfileAgents = fastProfileAgents;
+
+  const profilePhaseAuthorizations = new Map([
+    [
+      'tools/build.md',
+      {
+        phase: 'Build Phase 2',
+        startHeading: '### Phase 2: Implementation',
+        endHeading: '### Phase 3: Documentation',
+      },
+    ],
+    [
+      'tools/refactor.md',
+      {
+        phase: 'Refactor Phase 3',
+        startHeading: '### Phase 3: Refactoring',
+        endHeading: '### Phase 3.5: Documentation sync',
+      },
+    ],
+  ]);
+  const profileSources = [
+    { context: 'SKILL.md', text: readFileSync(ROUTER_SRC, 'utf8') },
+    ...toolFiles.map((file) => ({
+      context: `tools/${file}`,
+      text: readFileSync(join(TOOLS_DIR, file), 'utf8'),
+    })),
+    ...agentFiles.map((file) => ({
+      context: `agents/${file}`,
+      text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
+    })),
+    ...readdirSync(SHARED_DIR)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => ({
+        context: `shared/${file}`,
+        text: readFileSync(join(SHARED_DIR, file), 'utf8'),
+      })),
+  ];
+  for (const source of profileSources) {
+    const profileSourceText = normalizeLineEndings(source.text);
+    const profileRefs = [...profileSourceText.matchAll(/\{\{AGENT_PROFILE:[^}]+\}\}/g)];
+    if (profileRefs.length === 0) continue;
+    const authorization = profilePhaseAuthorizations.get(source.context);
+    if (!authorization) {
+      throw new Error(
+        `Fast-profile references are allowed only in tools/build.md and tools/refactor.md; found one in ${source.context}`,
+      );
+    }
+
+    const headingOffsets = (heading) => {
+      const offsets = [];
+      let offset = 0;
+      for (const line of profileSourceText.split('\n')) {
+        if (line === heading) offsets.push({ start: offset, end: offset + line.length });
+        offset += line.length + 1;
+      }
+      if (offsets.length !== 1) {
+        throw new Error(
+          `${authorization.phase} authorization requires exactly one "${heading}" heading in ${source.context}`,
+        );
+      }
+      return offsets[0];
+    };
+    const phaseStart = headingOffsets(authorization.startHeading);
+    const phaseEnd = headingOffsets(authorization.endHeading);
+    if (phaseStart.end >= phaseEnd.start) {
+      throw new Error(
+        `${authorization.phase} authorization headings are out of order in ${source.context}`,
+      );
+    }
+    for (const profileRef of profileRefs) {
+      if (profileRef.index <= phaseStart.end || profileRef.index >= phaseEnd.start) {
+        throw new Error(
+          `Fast-profile references in ${source.context} are allowed only inside ${authorization.phase}`,
+        );
+      }
+    }
+    validateRefs(profileSourceText, { knownTools, knownAgents, context: source.context });
+  }
 
   // --- Shared execution-profile contract guard ---
   // This policy is intentionally not consumed or emitted yet. Validate its
@@ -1267,6 +1446,9 @@ try {
       const context = `agents/${a.name}.md`;
       if (harness === 'claude') {
         const claudeModel = getNested(a.fm, 'claude', 'model', { context });
+        if (!claudeModel) {
+          throw new Error(`Missing required claude model for ${a.name} (${context})`);
+        }
         const claudeEffort = normalizeClaudeEffort(
           getNested(a.fm, 'claude', 'effort', { context }),
           a.name,
@@ -1292,13 +1474,46 @@ try {
           agentFm += `tools: ${toolList}\n`;
         }
         agentFm += '---\n';
-        writeFileSync(
-          join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),
-          agentFm + renderGeneratedBody(a.body, 'claude', { ...refConfig, context }),
-        );
+        const renderedBody = renderGeneratedBody(a.body, 'claude', { ...refConfig, context });
+        const baseArtifact = agentFm + renderedBody;
+        writeFileSync(join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`), baseArtifact);
+
+        if (fastProfileAgents.has(a.name)) {
+          const fastName = `${claudeAgentName}-fast`;
+          const fastDescription =
+            `${cleanDescription(getField(a.fm, 'description'))}${FAST_PROFILE_DESCRIPTION_SUFFIX}`.replace(
+              /"/g,
+              '\\"',
+            );
+          const fastMapping = AGENT_PROFILE_MAPPINGS.fast.claude;
+          let fastFm = '---\n';
+          fastFm += `name: ${fastName}\n`;
+          fastFm += `description: "${fastDescription}"\n`;
+          fastFm += `model: ${fastMapping.model}\n`;
+          fastFm += `effort: ${fastMapping.effort}\n`;
+          if (claudeColor) fastFm += `color: ${claudeColor}\n`;
+          if (claudeTools) {
+            const toolList = claudeTools
+              .split(',')
+              .map((tool) => tool.trim())
+              .filter(Boolean)
+              .join(', ');
+            fastFm += `tools: ${toolList}\n`;
+          }
+          fastFm += '---\n';
+          const fastArtifact = fastFm + renderedBody;
+          if (extractBody(fastArtifact) !== extractBody(baseArtifact)) {
+            throw new Error(`Claude Fast worker body differs from its base worker: ${fastName}`);
+          }
+          writeFileSync(join(CLAUDE_AGENTS_DIR, `${fastName}.md`), fastArtifact);
+        }
       } else if (harness === 'codex') {
         const codexModel = getNested(a.fm, 'codex', 'model', { context });
         const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort', { context });
+        if (!codexModel || !codexEffort) {
+          throw new Error(`Missing required Codex model metadata for ${a.name} (${context})`);
+        }
+        normalizeCodexReasoningEffort(codexModel, codexEffort, a.name, context);
         const codexSandbox = normalizeCodexSandboxMode(
           getNested(a.fm, 'codex', 'sandbox_mode', { context }),
           a.name,
@@ -1308,8 +1523,8 @@ try {
         const codexAgentName = `${AGENT_PREFIX}${a.name}`;
         let toml = `name = ${tomlString(codexAgentName)}\n`;
         toml += `description = ${tomlString(tomlDesc)}\n`;
-        if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
-        if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
+        toml += `model = ${tomlString(codexModel)}\n`;
+        toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
         if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
         toml += `developer_instructions = '''\n${renderGeneratedBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
         writeFileSync(join(CODEX_AGENTS_DIR, `${codexAgentName}.toml`), toml);
@@ -1328,6 +1543,48 @@ try {
       }
     }
   }
+
+  const baseWorkerStems = agents.map(({ name }) => `${AGENT_PREFIX}${name}`).sort();
+  const claudeFastWorkerStems = [...fastProfileAgents]
+    .map((name) => `${AGENT_PREFIX}${name}-fast`)
+    .sort();
+  const nativeInventories = {
+    claude: {
+      schemaVersion: 1,
+      harness: 'claude',
+      baseWorkers: baseWorkerStems,
+      fastWorkers: claudeFastWorkerStems,
+    },
+    codex: {
+      schemaVersion: 1,
+      harness: 'codex',
+      baseWorkers: baseWorkerStems,
+      fastWorkers: [],
+    },
+  };
+  const nativeInventoryPaths = {
+    claude: join(CLAUDE_SKILL_DIR, 'native-agent-inventory.json'),
+    codex: join(CODEX_SKILL_DIR, 'native-agent-inventory.json'),
+  };
+  for (const harness of ['claude', 'codex']) {
+    writeFileSync(
+      nativeInventoryPaths[harness],
+      `${JSON.stringify(nativeInventories[harness], null, 2)}\n`,
+    );
+  }
+  const parsedClaudeInventory = parseNativeAgentInventory(
+    readFileSync(nativeInventoryPaths.claude, 'utf8'),
+    { context: 'generated Claude native-agent-inventory.json' },
+  );
+  const parsedCodexInventory = parseNativeAgentInventory(
+    readFileSync(nativeInventoryPaths.codex, 'utf8'),
+    { context: 'generated Codex native-agent-inventory.json' },
+  );
+  reconcileNativeAgentInventories(parsedClaudeInventory, parsedCodexInventory, {
+    claudeArtifacts: readdirSync(CLAUDE_AGENTS_DIR),
+    codexArtifacts: readdirSync(CODEX_AGENTS_DIR),
+    context: 'generated native agent distribution',
+  });
 
   // --- License shipping guard ---
   const canonicalLicense = readFileSync(LICENSE_SRC);
@@ -1406,21 +1663,23 @@ try {
       root: DIST_CLAUDE,
       workerPath: (ref) => join(CLAUDE_AGENTS_DIR, `${ref}.md`),
       metadata: (ref) => `name: ${ref}`,
+      workerNames: new Set([...baseWorkerStems, ...claudeFastWorkerStems]),
     },
     {
       name: 'codex',
       root: DIST_CODEX,
       workerPath: (ref) => join(CODEX_AGENTS_DIR, `${ref}.toml`),
       metadata: (ref) => `name = ${tomlString(ref)}`,
+      workerNames: new Set(baseWorkerStems),
     },
     {
       name: 'portable',
       root: DIST_PORTABLE,
       workerPath: (ref) => join(PORTABLE_WORKERS_DIR, `${ref}.md`),
       metadata: (ref) => `# ${ref}`,
+      workerNames: new Set(baseWorkerStems),
     },
   ];
-  const renderedWorkerNames = new Set(agents.map((agent) => `${AGENT_PREFIX}${agent.name}`));
   const foreignParameterDiagnostics = [];
 
   for (const target of targetConfigs) {
@@ -1439,7 +1698,7 @@ try {
       assertNoUnresolvedPlaceholders(content, {
         context: `rendered ${target.name} file ${relative(target.root, file)}`,
       });
-      for (const ref of collectRenderedWorkerRefs(content, AGENT_PREFIX, renderedWorkerNames)) {
+      for (const ref of collectRenderedWorkerRefs(content, AGENT_PREFIX, target.workerNames)) {
         const workerPath = target.workerPath(ref);
         if (!existsSync(workerPath)) {
           throw new Error(
@@ -1449,8 +1708,7 @@ try {
       }
     }
 
-    for (const agent of agents) {
-      const ref = `${AGENT_PREFIX}${agent.name}`;
+    for (const ref of target.workerNames) {
       const workerPath = target.workerPath(ref);
       if (!existsSync(workerPath)) {
         throw new Error(
@@ -1473,12 +1731,31 @@ try {
 
   for (const file of renderedFiles(PORTABLE_SKILL_DIR)) {
     const content = readFileSync(file, 'utf8');
-    const refs = collectRenderedWorkerRefs(content, AGENT_PREFIX, renderedWorkerNames);
+    const refs = collectRenderedWorkerRefs(content, AGENT_PREFIX, new Set(baseWorkerStems));
     if (refs.length > 0 && !content.includes('built-in general-purpose subagent mechanism')) {
       throw new Error(
         `portable worker-reference guard (#159): ${file} names workers without the built-in delegation contract`,
       );
     }
+    if (/^(?:model|effort|model_reasoning_effort|reasoning_effort)\s*[:=]/m.test(content)) {
+      throw new Error(`portable native-profile metadata guard: ${file}`);
+    }
+    for (const alias of [
+      AGENT_PROFILE_MAPPINGS.fast.claude.model,
+      AGENT_PROFILE_MAPPINGS.fast.codex.model,
+    ]) {
+      if (content.includes(alias)) {
+        throw new Error(`portable native-profile alias guard: ${file} contains ${alias}`);
+      }
+    }
+    for (const fastWorker of claudeFastWorkerStems) {
+      if (content.includes(fastWorker)) {
+        throw new Error(`portable Fast-worker guard: ${file} contains ${fastWorker}`);
+      }
+    }
+  }
+  if (existsSync(join(PORTABLE_SKILL_DIR, 'native-agent-inventory.json'))) {
+    throw new Error('portable output must not contain a native agent inventory');
   }
 
   // --- Context budget report + guard (#99) ---
@@ -1675,10 +1952,10 @@ const internalCount = tools.length - exposedCount;
 
 process.stdout.write(`Built ${SKILL_NAME} skill:\n`);
 process.stdout.write(
-  `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
+  `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${SKILL_NAME}/, ${agents.length} base + ${fastProfileAgents.size} Fast agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
 );
 process.stdout.write(
-  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${SKILL_NAME}/, ${agents.length} agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
+  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${SKILL_NAME}/, ${agents.length} base agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
 );
 process.stdout.write(
   `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${SKILL_NAME}/\n`,
