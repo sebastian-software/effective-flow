@@ -1107,6 +1107,922 @@ export function assertProjectRoutingContract(routes, { context } = {}) {
   }
 }
 
+// --- Shared execution-profile contract ---
+//
+// `src/shared/execution-profiles.md` is deliberately validated before any
+// workflow consumes it. The marked tables are the executable policy surface;
+// prose explains the policy, while these pure helpers pin its closed
+// vocabularies, order, state algebra, and handoff interface for focused tests.
+
+export const EXECUTION_PROFILE_GATE_REASONS = Object.freeze([
+  'profile-unavailable',
+  'trust-boundary',
+  'destructive-data',
+  'migration',
+  'concurrency',
+  'unsafe-code',
+  'public-compatibility',
+  'merge-conflict',
+  'unclear-ownership',
+  'cross-domain-dependency',
+  'unknown-evidence',
+]);
+
+export const EXECUTION_PROFILE_FALLBACKS = Object.freeze([
+  'none',
+  'spawn-rejected',
+  'worker-abort',
+  'missing-context',
+  'scope-growth',
+  'new-decision',
+  'requirements-mismatch',
+  'keywordless-exhausted',
+  'scope-incident',
+]);
+
+export const EXECUTION_PROFILE_PILOT_CONTROL_OUTCOMES = Object.freeze([
+  'none',
+  'finalization-failed',
+  'critical-safety-incident',
+  'critical-data-integrity-incident',
+  'critical-authorization-incident',
+  'critical-scope-incident',
+  'evidence-gap',
+  'incomplete-record',
+  'capacity-exhausted',
+  'control-state-unpersistable',
+]);
+
+export const EXECUTION_PROFILE_TRANSFER_FIELDS = Object.freeze([
+  'packetOrBucket',
+  'originalObjective',
+  'allowedScope',
+  'changedPaths',
+  'completedRequirements',
+  'incompleteRequirements',
+  'checksAndOutcomes',
+  'dirtyStateSummary',
+  'escalationReason',
+  'executionLocationReceipt',
+  'fastAttemptConsumed',
+]);
+
+const EXECUTION_PROFILE_CONFIG_STATES = Object.freeze(['disabled', 'invalid', 'enabled']);
+const EXECUTION_PROFILE_GENERATION_STATES = Object.freeze([
+  'none',
+  'baseline',
+  'active',
+  'suspended',
+  'review',
+]);
+const EXECUTION_PROFILE_ELIGIBILITY_STATES = Object.freeze([
+  'not-evaluated',
+  'eligible',
+  'excluded(reason)',
+]);
+const EXECUTION_PROFILE_SELECTED_PROFILES = Object.freeze(['quality', 'fast']);
+
+const EXECUTION_PROFILE_TABLES = Object.freeze({
+  profiles: Object.freeze({
+    marker: 'profile',
+    headers: Object.freeze(['Profile', 'Intent']),
+    fields: Object.freeze(['profile', 'intent']),
+  }),
+  configCases: Object.freeze({
+    marker: 'config',
+    headers: Object.freeze(['Input', 'Config state', 'Measurement', 'Selection']),
+    fields: Object.freeze(['input', 'configState', 'measurement', 'selection']),
+  }),
+  gate: Object.freeze({
+    marker: 'gate',
+    headers: Object.freeze(['Priority', 'Decision', 'Positive evidence required to continue']),
+    fields: Object.freeze(['priority', 'decision', 'evidence']),
+  }),
+  states: Object.freeze({
+    marker: 'state',
+    headers: Object.freeze([
+      'Precedence',
+      'Config state',
+      'Generation state',
+      'Eligibility',
+      'Selected profile',
+      'Decision',
+    ]),
+    fields: Object.freeze([
+      'precedence',
+      'configState',
+      'generationState',
+      'eligibility',
+      'selectedProfile',
+      'decision',
+    ]),
+    integerFields: Object.freeze(['precedence']),
+  }),
+  decisionMappings: Object.freeze({
+    marker: 'decision-map',
+    headers: Object.freeze([
+      'Event',
+      'Gate decision',
+      'Selected profile',
+      'Fallback',
+      'Fast attempt consumed',
+    ]),
+    fields: Object.freeze([
+      'event',
+      'gateDecision',
+      'selectedProfile',
+      'fallback',
+      'fastAttemptConsumed',
+    ]),
+  }),
+  transitions: Object.freeze({
+    marker: 'transition',
+    headers: Object.freeze(['Operation', 'From', 'To', 'Owner', 'Guard']),
+    fields: Object.freeze(['operation', 'from', 'to', 'owner', 'guard']),
+  }),
+  rules: Object.freeze({
+    marker: 'rule',
+    headers: Object.freeze(['Rule', 'Value']),
+    fields: Object.freeze(['rule', 'value']),
+  }),
+  fallbacks: Object.freeze({
+    marker: 'fallback',
+    headers: Object.freeze(['Value']),
+    fields: Object.freeze(['value']),
+  }),
+  controls: Object.freeze({
+    marker: 'control',
+    headers: Object.freeze([
+      'Outcome',
+      'Suspension reason',
+      'Incomplete inventory',
+      'Alert',
+      'Implementation fallback',
+      'Product diff',
+    ]),
+    fields: Object.freeze([
+      'outcome',
+      'suspensionReason',
+      'incompleteInventory',
+      'alert',
+      'implementationFallback',
+      'productDiff',
+    ]),
+  }),
+  transferFields: Object.freeze({
+    marker: 'transfer',
+    headers: Object.freeze(['Position', 'Field', 'Authority']),
+    fields: Object.freeze(['position', 'field', 'authority']),
+    integerFields: Object.freeze(['position']),
+  }),
+});
+
+const EXECUTION_PROFILE_EXPECTED = Object.freeze({
+  profiles: Object.freeze([
+    Object.freeze({
+      profile: 'quality',
+      intent: 'strongest-available-configured-implementation-capability',
+    }),
+    Object.freeze({
+      profile: 'fast',
+      intent: 'distinct-native-lower-cost-lower-latency-capability',
+    }),
+  ]),
+  configCases: Object.freeze([
+    Object.freeze({
+      input: 'missing',
+      configState: 'disabled',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'false',
+      configState: 'disabled',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'true',
+      configState: 'enabled',
+      measurement: 'lifecycle-gated',
+      selection: 'quality-until-active-gate',
+    }),
+    Object.freeze({
+      input: 'malformed',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'ambiguous',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'unreadable',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+  ]),
+  gate: Object.freeze([
+    Object.freeze({
+      priority: '1',
+      decision: 'profile-unavailable',
+      evidence:
+        'Native target, complete profile mapping, available spawn mechanism, and no host override that erases the distinction',
+    }),
+    Object.freeze({
+      priority: '2',
+      decision: 'trust-boundary',
+      evidence:
+        'Approved affected-domain evidence shows no authentication, authorization, or trust-boundary change',
+    }),
+    Object.freeze({
+      priority: '3',
+      decision: 'destructive-data',
+      evidence: 'Approved scope contains no destructive data operation',
+    }),
+    Object.freeze({
+      priority: '4',
+      decision: 'migration',
+      evidence: 'Approved scope contains no data, schema, or compatibility migration',
+    }),
+    Object.freeze({
+      priority: '5',
+      decision: 'concurrency',
+      evidence: 'Affected paths and approved source show no concurrency or shared-ownership change',
+    }),
+    Object.freeze({
+      priority: '6',
+      decision: 'unsafe-code',
+      evidence:
+        'Affected paths and approved source show no unsafe-language or unsafe-runtime surface',
+    }),
+    Object.freeze({
+      priority: '7',
+      decision: 'public-compatibility',
+      evidence: 'No public compatibility contract changes',
+    }),
+    Object.freeze({
+      priority: '8',
+      decision: 'merge-conflict',
+      evidence: 'No unresolved merge conflict',
+    }),
+    Object.freeze({
+      priority: '9',
+      decision: 'unclear-ownership',
+      evidence: 'Exact allowed paths and one owner per path',
+    }),
+    Object.freeze({
+      priority: '10',
+      decision: 'cross-domain-dependency',
+      evidence: 'Cross-packet and cross-domain dependencies are resolved',
+    }),
+    Object.freeze({
+      priority: '11',
+      decision: 'unknown-evidence',
+      evidence:
+        'The source passed the owning workflow approval gate; completion and repository-native validation are measurable; required decisions are closed',
+    }),
+    Object.freeze({
+      priority: 'Terminal',
+      decision: 'eligible',
+      evidence: 'Every preceding row passed',
+    }),
+  ]),
+  states: Object.freeze([
+    Object.freeze({
+      precedence: 1,
+      configState: 'disabled',
+      generationState: '*',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'fail-closed',
+    }),
+    Object.freeze({
+      precedence: 2,
+      configState: 'invalid',
+      generationState: '*',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'fail-closed',
+    }),
+    Object.freeze({
+      precedence: 3,
+      configState: 'enabled',
+      generationState: 'none',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'no-generation',
+    }),
+    Object.freeze({
+      precedence: 4,
+      configState: 'enabled',
+      generationState: 'suspended',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'admission-frozen',
+    }),
+    Object.freeze({
+      precedence: 5,
+      configState: 'enabled',
+      generationState: 'review',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'admission-frozen',
+    }),
+    Object.freeze({
+      precedence: 6,
+      configState: 'enabled',
+      generationState: 'baseline',
+      eligibility: 'excluded(reason)',
+      selectedProfile: 'quality',
+      decision: 'gate-excluded',
+    }),
+    Object.freeze({
+      precedence: 7,
+      configState: 'enabled',
+      generationState: 'baseline',
+      eligibility: 'eligible',
+      selectedProfile: 'quality',
+      decision: 'baseline-comparator',
+    }),
+    Object.freeze({
+      precedence: 8,
+      configState: 'enabled',
+      generationState: 'active',
+      eligibility: 'excluded(reason)',
+      selectedProfile: 'quality',
+      decision: 'gate-excluded',
+    }),
+    Object.freeze({
+      precedence: 9,
+      configState: 'enabled',
+      generationState: 'active',
+      eligibility: 'eligible',
+      selectedProfile: 'fast',
+      decision: 'fast-admission',
+    }),
+  ]),
+  decisionMappings: Object.freeze([
+    Object.freeze({
+      event: 'gate-selected-quality',
+      gateDecision: 'first-exclusion',
+      selectedProfile: 'quality',
+      fallback: 'none',
+      fastAttemptConsumed: 'false',
+    }),
+    Object.freeze({
+      event: 'profile-unavailable-before-spawn',
+      gateDecision: 'profile-unavailable',
+      selectedProfile: 'quality',
+      fallback: 'none',
+      fastAttemptConsumed: 'false',
+    }),
+    Object.freeze({
+      event: 'fast-spawn-rejected-after-attempt',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'spawn-rejected',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-worker-abort-after-attempt',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'worker-abort',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-missing-context-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'missing-context',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-scope-growth-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'scope-growth',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-new-decision-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'new-decision',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-requirements-mismatch-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'requirements-mismatch',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-keywordless-resume-exhausted',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'keywordless-exhausted',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-scope-incident-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'scope-incident',
+      fastAttemptConsumed: 'true',
+    }),
+  ]),
+  transitions: Object.freeze([
+    Object.freeze({
+      operation: 'begin-baseline',
+      from: 'none',
+      to: 'baseline',
+      owner: 'work-package-3',
+      guard:
+        'Valid opt-in, protocol digest displayed, local-data disclosure, and explicit confirmation',
+    }),
+    Object.freeze({
+      operation: 'activate',
+      from: 'baseline',
+      to: 'active',
+      owner: 'work-package-3',
+      guard: 'Preregistered sample and window conditions passed',
+    }),
+    Object.freeze({
+      operation: 'suspend',
+      from: 'baseline; active',
+      to: 'suspended',
+      owner: 'work-package-3',
+      guard: 'Matching pilot-control outcome persisted; store resumeTo as the exact prior state',
+    }),
+    Object.freeze({
+      operation: 'resume',
+      from: 'suspended',
+      to: 'resumeTo',
+      owner: 'work-package-3',
+      guard: 'Explicit confirmation and digest-bound clear; target comes only from stored resumeTo',
+    }),
+    Object.freeze({
+      operation: 'begin-review',
+      from: 'baseline; active; suspended',
+      to: 'review',
+      owner: 'work-package-3',
+      guard:
+        'Under lifecycle lock; reject reservations and preserve suspension and incomplete inventory',
+    }),
+    Object.freeze({
+      operation: 'reconcile-review',
+      from: 'review',
+      to: 'review',
+      owner: 'work-package-3',
+      guard: 'Drain or reconcile captured records; never reopen admission',
+    }),
+  ]),
+  rules: Object.freeze([
+    Object.freeze({ rule: 'fast-request', value: 'first-implementation-spawn' }),
+    Object.freeze({ rule: 'keywordless-resume', value: 'same-attempt' }),
+    Object.freeze({ rule: 'newly-spawned-retry', value: 'quality-only' }),
+    Object.freeze({ rule: 'correction', value: 'quality-only' }),
+    Object.freeze({ rule: 'validation-repair', value: 'quality-only' }),
+    Object.freeze({ rule: 'review-incorporation', value: 'quality-only' }),
+    Object.freeze({ rule: 'conflict-resolution', value: 'quality-only' }),
+    Object.freeze({ rule: 'scope-growth-continuation', value: 'quality-only' }),
+    Object.freeze({ rule: 'portable', value: 'quality-only' }),
+    Object.freeze({ rule: 'missing-native-capability', value: 'profile-unavailable' }),
+    Object.freeze({ rule: 'force-override-detection', value: 'presence-only' }),
+    Object.freeze({ rule: 'rejected-fast-spawn', value: 'spawn-rejected' }),
+    Object.freeze({ rule: 'escalation-checkout', value: 'same-verified-checkout' }),
+    Object.freeze({ rule: 'second-fast-attempt', value: 'forbidden' }),
+  ]),
+  controls: Object.freeze([
+    Object.freeze({
+      outcome: 'none',
+      suspensionReason: 'none',
+      incompleteInventory: 'false',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'finalization-failed',
+      suspensionReason: 'finalization-failed',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    ...[
+      'critical-safety-incident',
+      'critical-data-integrity-incident',
+      'critical-authorization-incident',
+      'critical-scope-incident',
+    ].map((outcome) =>
+      Object.freeze({
+        outcome,
+        suspensionReason: outcome,
+        incompleteInventory: 'false',
+        alert: 'none',
+        implementationFallback: 'none',
+        productDiff: 'unchanged',
+      }),
+    ),
+    Object.freeze({
+      outcome: 'evidence-gap',
+      suspensionReason: 'evidence-gap',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'incomplete-record',
+      suspensionReason: 'none',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'capacity-exhausted',
+      suspensionReason: 'capacity-exhausted',
+      incompleteInventory: 'false',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'control-state-unpersistable',
+      suspensionReason: 'none',
+      incompleteInventory: 'false',
+      alert: 'value-free',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+  ]),
+  transferFields: Object.freeze(
+    [
+      ['packetOrBucket', 'approved-routing-or-plan'],
+      ['originalObjective', 'orchestrator'],
+      ['allowedScope', 'orchestrator'],
+      ['changedPaths', 'orchestrator-fresh-git'],
+      ['completedRequirements', 'worker-claim-until-verified'],
+      ['incompleteRequirements', 'worker-claim-until-verified'],
+      ['checksAndOutcomes', 'worker-claim-until-verified'],
+      ['dirtyStateSummary', 'orchestrator-fresh-git'],
+      ['escalationReason', 'orchestrator'],
+      ['executionLocationReceipt', 'orchestrator-revalidated'],
+      ['fastAttemptConsumed', 'orchestrator'],
+    ].map(([field, authority], index) => Object.freeze({ position: index + 1, field, authority })),
+  ),
+});
+
+function executionProfileCell(value) {
+  // A backslash protects a table delimiter only when its run length is odd.
+  // Remove exactly that protecting slash after the row structure is known;
+  // preserve even slash runs and every other Markdown content verbatim.
+  return value
+    .trim()
+    .replace(/(\\+)\|/g, (match, slashes) =>
+      slashes.length % 2 === 1 ? `${slashes.slice(1)}|` : match,
+    );
+}
+
+function executionProfileCharacterIsEscaped(source, index) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function splitExecutionProfileRow(line) {
+  const source = line.trim();
+  const cells = [];
+  let cell = '';
+  let lastTokenWasDelimiter = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    // GFM tables split at every unescaped pipe. Backticks do not suppress a
+    // delimiter; they remain ordinary cell content and may be unmatched.
+    if (character === '|' && !executionProfileCharacterIsEscaped(source, index)) {
+      cells.push(cell);
+      cell = '';
+      lastTokenWasDelimiter = true;
+      continue;
+    }
+    cell += character;
+    lastTokenWasDelimiter = false;
+  }
+
+  cells.push(cell);
+
+  // Leading and trailing table delimiters produce empty edge cells. Only
+  // remove those structural cells; an explicitly empty interior cell remains
+  // visible to the row-level validation below.
+  if (source.startsWith('|')) cells.shift();
+  if (lastTokenWasDelimiter) cells.pop();
+  return cells.map(executionProfileCell);
+}
+
+function parseExecutionProfileTable(markdown, definition, context) {
+  const startMarker = `<!-- execution-profile-${definition.marker}:start -->`;
+  const endMarker = `<!-- execution-profile-${definition.marker}:end -->`;
+  const starts = markdown.split(startMarker).length - 1;
+  const ends = markdown.split(endMarker).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+  const start = markdown.indexOf(startMarker) + startMarker.length;
+  const end = markdown.indexOf(endMarker);
+  if (end <= start) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table markers are out of order${contextSuffix(context)}`,
+    );
+  }
+  const lines = markdown
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table has no data rows${contextSuffix(context)}`,
+    );
+  }
+
+  const parseRow = (line) => {
+    const cells = splitExecutionProfileRow(line);
+    if (cells.length !== definition.headers.length) {
+      throw new Error(
+        `Execution-profile ${definition.marker} row has ${cells.length} cells; expected ${definition.headers.length}${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return cells;
+  };
+
+  const headers = parseRow(lines[0]);
+  if (headers.some((header, index) => header !== definition.headers[index])) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table headers must be: ${definition.headers.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseRow(lines[1]);
+  if (separator.some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table has an invalid separator row${contextSuffix(context)}`,
+    );
+  }
+
+  return lines.slice(2).map((line) => {
+    const cells = parseRow(line);
+    if (cells.some((cell) => cell === '')) {
+      throw new Error(
+        `Execution-profile ${definition.marker} rows cannot contain empty cells${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return Object.fromEntries(
+      definition.fields.map((field, index) => {
+        const value = cells[index];
+        if (!definition.integerFields?.includes(field)) return [field, value];
+        const integer = Number(value);
+        if (!Number.isSafeInteger(integer) || integer < 1) {
+          throw new Error(
+            `Execution-profile ${definition.marker} field "${field}" must be a positive integer${contextSuffix(context)}: "${value}"`,
+          );
+        }
+        return [field, integer];
+      }),
+    );
+  });
+}
+
+export function parseExecutionProfileContract(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  return Object.fromEntries(
+    Object.entries(EXECUTION_PROFILE_TABLES).map(([name, definition]) => [
+      name,
+      parseExecutionProfileTable(normalized, definition, context),
+    ]),
+  );
+}
+
+function assertExecutionProfileUnique(rows, field, label, context) {
+  const seen = new Set();
+  for (const row of rows) {
+    const value = row[field];
+    if (seen.has(value)) {
+      throw new Error(`Duplicate execution-profile ${label} "${value}"${contextSuffix(context)}`);
+    }
+    seen.add(value);
+  }
+}
+
+function assertExecutionProfileRows(actual, expected, fields, label, context) {
+  if (actual.length !== expected.length) {
+    throw new Error(
+      `Execution-profile ${label} must contain exactly ${expected.length} rows${contextSuffix(context)}`,
+    );
+  }
+  for (const [index, expectedRow] of expected.entries()) {
+    const actualRow = actual[index];
+    for (const field of fields) {
+      if (actualRow[field] !== expectedRow[field]) {
+        throw new Error(
+          `Execution-profile ${label} row ${index + 1} must use ${field} "${expectedRow[field]}"; found "${actualRow[field]}"${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
+}
+
+export function assertExecutionProfileContract(contract, { context } = {}) {
+  if (contract === null || typeof contract !== 'object' || Array.isArray(contract)) {
+    throw new Error(`Execution-profile contract must be an object${contextSuffix(context)}`);
+  }
+  const missingTables = Object.keys(EXECUTION_PROFILE_TABLES).filter(
+    (name) => !Array.isArray(contract[name]),
+  );
+  if (missingTables.length > 0) {
+    throw new Error(
+      `Execution-profile contract is missing parsed tables: ${missingTables.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+
+  assertExecutionProfileRows(
+    contract.profiles,
+    EXECUTION_PROFILE_EXPECTED.profiles,
+    EXECUTION_PROFILE_TABLES.profiles.fields,
+    'profile vocabulary',
+    context,
+  );
+  assertExecutionProfileRows(
+    contract.configCases,
+    EXECUTION_PROFILE_EXPECTED.configCases,
+    EXECUTION_PROFILE_TABLES.configCases.fields,
+    'configuration fail-closed mapping',
+    context,
+  );
+
+  if (contract.gate.length !== EXECUTION_PROFILE_GATE_REASONS.length + 1) {
+    throw new Error(
+      `Execution-profile gate must contain ${EXECUTION_PROFILE_GATE_REASONS.length} exclusions and one terminal decision${contextSuffix(context)}`,
+    );
+  }
+  assertExecutionProfileUnique(contract.gate, 'priority', 'gate priority', context);
+  assertExecutionProfileUnique(contract.gate, 'decision', 'gate decision', context);
+  for (const [index, reason] of EXECUTION_PROFILE_GATE_REASONS.entries()) {
+    const row = contract.gate[index];
+    if (row.priority !== String(index + 1) || row.decision !== reason || !row.evidence) {
+      throw new Error(
+        `Execution-profile gate row ${index + 1} must be priority ${index + 1}, decision "${reason}", and carry positive evidence${contextSuffix(context)}`,
+      );
+    }
+  }
+  const terminal = contract.gate.at(-1);
+  if (terminal.priority !== 'Terminal' || terminal.decision !== 'eligible' || !terminal.evidence) {
+    throw new Error(
+      `Execution-profile gate must end with the distinct terminal eligible decision${contextSuffix(context)}`,
+    );
+  }
+  assertExecutionProfileRows(
+    contract.gate,
+    EXECUTION_PROFILE_EXPECTED.gate,
+    EXECUTION_PROFILE_TABLES.gate.fields,
+    'ordered gate evidence',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.states, 'precedence', 'state precedence', context);
+  for (const row of contract.states) {
+    if (!EXECUTION_PROFILE_CONFIG_STATES.includes(row.configState)) {
+      throw new Error(
+        `Unknown execution-profile config state "${row.configState}"${contextSuffix(context)}`,
+      );
+    }
+    if (
+      row.generationState !== '*' &&
+      !EXECUTION_PROFILE_GENERATION_STATES.includes(row.generationState)
+    ) {
+      throw new Error(
+        `Unknown execution-profile generation state "${row.generationState}"${contextSuffix(context)}`,
+      );
+    }
+    if (!EXECUTION_PROFILE_ELIGIBILITY_STATES.includes(row.eligibility)) {
+      throw new Error(
+        `Unknown execution-profile eligibility "${row.eligibility}"${contextSuffix(context)}`,
+      );
+    }
+    if (!EXECUTION_PROFILE_SELECTED_PROFILES.includes(row.selectedProfile)) {
+      throw new Error(
+        `Unknown execution profile "${row.selectedProfile}"${contextSuffix(context)}`,
+      );
+    }
+    if (
+      row.selectedProfile === 'fast' &&
+      !(
+        row.configState === 'enabled' &&
+        row.generationState === 'active' &&
+        row.eligibility === 'eligible'
+      )
+    ) {
+      throw new Error(`Fast requires enabled + active + eligible${contextSuffix(context)}`);
+    }
+  }
+  assertExecutionProfileRows(
+    contract.states,
+    EXECUTION_PROFILE_EXPECTED.states,
+    EXECUTION_PROFILE_TABLES.states.fields,
+    'state precedence table',
+    context,
+  );
+  assertExecutionProfileUnique(contract.decisionMappings, 'event', 'decision event', context);
+  assertExecutionProfileRows(
+    contract.decisionMappings,
+    EXECUTION_PROFILE_EXPECTED.decisionMappings,
+    EXECUTION_PROFILE_TABLES.decisionMappings.fields,
+    'decision mapping',
+    context,
+  );
+  for (const fallback of EXECUTION_PROFILE_FALLBACKS) {
+    const count = contract.decisionMappings.filter((row) => row.fallback === fallback).length;
+    const expectedCount = fallback === 'none' ? 2 : 1;
+    if (count !== expectedCount) {
+      throw new Error(
+        `Execution-profile decision mapping must map fallback "${fallback}" exactly ${expectedCount} time${expectedCount === 1 ? '' : 's'}; found ${count}${contextSuffix(context)}`,
+      );
+    }
+  }
+  assertExecutionProfileRows(
+    contract.transitions,
+    EXECUTION_PROFILE_EXPECTED.transitions,
+    EXECUTION_PROFILE_TABLES.transitions.fields,
+    'lifecycle transition interface',
+    context,
+  );
+  assertExecutionProfileRows(
+    contract.rules,
+    EXECUTION_PROFILE_EXPECTED.rules,
+    EXECUTION_PROFILE_TABLES.rules.fields,
+    'attempt and capability rules',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.fallbacks, 'value', 'fallback', context);
+  assertExecutionProfileRows(
+    contract.fallbacks,
+    EXECUTION_PROFILE_FALLBACKS.map((value) => ({ value })),
+    EXECUTION_PROFILE_TABLES.fallbacks.fields,
+    'fallback vocabulary',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.controls, 'outcome', 'pilot-control outcome', context);
+  assertExecutionProfileRows(
+    contract.controls,
+    EXECUTION_PROFILE_EXPECTED.controls,
+    EXECUTION_PROFILE_TABLES.controls.fields,
+    'pilot-control mapping',
+    context,
+  );
+  if (
+    contract.controls.some(
+      (row, index) => row.outcome !== EXECUTION_PROFILE_PILOT_CONTROL_OUTCOMES[index],
+    )
+  ) {
+    throw new Error(
+      `Execution-profile pilot-control outcomes do not match the closed vocabulary${contextSuffix(context)}`,
+    );
+  }
+
+  assertExecutionProfileUnique(contract.transferFields, 'position', 'transfer position', context);
+  assertExecutionProfileUnique(contract.transferFields, 'field', 'transfer field', context);
+  assertExecutionProfileRows(
+    contract.transferFields,
+    EXECUTION_PROFILE_EXPECTED.transferFields,
+    EXECUTION_PROFILE_TABLES.transferFields.fields,
+    'transfer interface',
+    context,
+  );
+  if (
+    contract.transferFields.some(
+      (row, index) => row.field !== EXECUTION_PROFILE_TRANSFER_FIELDS[index],
+    )
+  ) {
+    throw new Error(
+      `Execution-profile transfer fields do not match the required field set${contextSuffix(context)}`,
+    );
+  }
+}
+
 // --- Shared next-steps contract ---
 //
 // `src/shared/next-steps.md` carries the one machine-readable map of the

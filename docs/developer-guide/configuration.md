@@ -180,6 +180,25 @@ Unknown valid rows are retained across setup maintenance. The user guide's
 [configuration reference](../user-guide/configuration.md) lists all current keys, values, and
 defaults.
 
+### Reserved execution-profile key
+
+`executionProfiles.fast.enabled` is a strict Boolean owned by
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md). Missing or literal `false`
+resolves to config state `disabled`; malformed, ambiguous, or unreadable input resolves to
+`invalid`; only literal `true` resolves to `enabled`. Disabled and invalid both stop new measurement
+and select Quality. Enabled admits the project to the pilot lifecycle but neither starts the
+baseline nor permits Fast by itself.
+
+The tagged state and selection policy is separately owned by
+[`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md). Configuration state and
+persisted generation state are independent, so changing or removing the row must not rewrite a
+generation or clear suspension. The key has no legacy migration and stores no model name. Setup
+remains the only configuration writer, but work package 1 deliberately adds no setup UI for the
+reserved row; `build` and `refactor` do not consume it yet, and the build emits no worker artifact
+from the policy. The user-facing contract is in
+[Configuration](../user-guide/configuration.md#block-executionprofiles), while the durable rationale
+is in the [risk-aware pilot ADR](../adr/risk-aware-model-tiering-pilot-policy.md).
+
 ### Bot registry encoding (`mergeGate.bots`)
 
 `mergeGate.bots` is the encoding's concrete example of a comma-separated list paired with dotted

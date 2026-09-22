@@ -52,6 +52,8 @@ import {
   findRemoteTrackerRecipeViolations,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
+  parseExecutionProfileContract,
+  assertExecutionProfileContract,
   parseNextStepsTable,
   assertNextStepsContract,
   findNextStepsDocViolations,
@@ -728,6 +730,23 @@ try {
     knownTools,
     knownAgents,
     context: projectRoutingContext,
+  });
+
+  // --- Shared execution-profile contract guard ---
+  // This policy is intentionally not consumed or emitted yet. Validate its
+  // closed tables directly before rendering so later adoption cannot inherit a
+  // malformed gate, state algebra, control mapping, or transfer interface.
+  const executionProfileContext = 'shared/execution-profiles.md';
+  const executionProfilePath = join(SHARED_DIR, 'execution-profiles.md');
+  if (!existsSync(executionProfilePath)) {
+    throw new Error(`Execution-profile contract not found: ${executionProfilePath}`);
+  }
+  const executionProfileSource = normalizeLineEndings(readFileSync(executionProfilePath, 'utf8'));
+  const executionProfileContract = parseExecutionProfileContract(executionProfileSource, {
+    context: executionProfileContext,
+  });
+  assertExecutionProfileContract(executionProfileContract, {
+    context: executionProfileContext,
   });
 
   // --- Shared next-steps contract guard ---
@@ -1515,23 +1534,23 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2290,
-    iterate: 1782,
-    setup: 1753,
-    'apply-review': 1393,
-    'apply-issues': 1199,
-    cleanup: 1022,
-    refactor: 892,
+    'merge-gate': 2297,
+    iterate: 1789,
+    setup: 1760,
+    'apply-review': 1400,
+    'apply-issues': 1206,
+    cleanup: 1029,
+    refactor: 899,
     deliver: 790,
-    'plan-issue': 745,
+    'plan-issue': 752,
     review: 770,
     plan: 665,
     'apply-review-commit-mechanics': 656,
-    maintain: 692,
+    maintain: 699,
     docs: 617,
     build: 595,
-    apply: 580,
-    'apply-plan': 580,
+    apply: 587,
+    'apply-plan': 587,
     investigate: 553,
     fix: 488,
     'plan-review': 446,
@@ -1539,7 +1558,7 @@ try {
     'concept-review': 344,
     'apply-review-remote': 382,
     concept: 332,
-    commit: 250,
+    commit: 257,
     'open-plans': 147,
     'pr-review': 38,
     version: 38,

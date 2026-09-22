@@ -177,6 +177,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.forge                       | en                         |
 | language.git                         | en                         |
 | language.chat                        | en                         |
+| executionProfiles.fast.enabled       | false                      |
 | plan.dir                             | docs/plan                  |
 | concept.dir                          | docs/concept               |
 | delivery.baseBranch                  | origin/main                |
@@ -204,6 +205,23 @@ skill override rows when no override is needed. `tracker.externalTool`,
 `tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
 absent because this example pins `tracker.mode: local`; they belong to an external target only (see
 [Block `tracker`](#block-tracker)).
+
+## Block `executionProfiles`
+
+`executionProfiles.fast.enabled` is a reserved Boolean switch for the risk-aware implementation
+profile pilot. It does not contain a provider model name. Missing or `false` means disabled;
+malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to **Quality** and
+stop new pilot measurement. Only the literal `true` admits the project to the pilot lifecycle; it
+does not start a baseline, activate Fast, or prove that the current host can enforce Fast.
+
+Work package 1 defines and validates this key but activates neither `build` nor `refactor`, emits no
+Fast worker artifact, and adds no setup question. `/effective-flow setup` therefore remains the sole
+configuration writer but does not expose this row yet. If the row is edited manually, changing or
+removing it does not rewrite future pilot-generation state or clear a suspension. See
+[Getting started](./getting-started.md#recommended-calling-model) for the distinction between the
+caller and implementation profiles, and the
+[risk-aware pilot decision](../adr/risk-aware-model-tiering-pilot-policy.md) for the durable safety
+boundary.
 
 ## Block `language`
 
@@ -609,6 +627,9 @@ values are retained unless the user explicitly confirms a change. In Profile mod
 topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
 keys, while all other known and unknown rows remain untouched.
 
+The reserved `executionProfiles.fast.enabled` key is intentionally absent from this base and from
+the setup UI. Absence is its default-off form and selects Quality.
+
 | Key                                 | Value                        |
 | ----------------------------------- | ---------------------------- |
 | `review.profile`                    | `focused`                    |
@@ -670,9 +691,10 @@ changes how a run decides or how long it waits. A project upgrading from an earl
 therefore gets that one behavior change without configuring anything; see
 [Block `mergeGate`](#block-mergegate) for how to switch it off.
 
-There is no second “fast” preset. A faster solo flow is configured key by key, for example with
-`review.profile: fast`, `review.validation: quick`, and
-`applyReview.finalValidation: changedScope`.
+There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
+with `review.profile: fast`, `review.validation: quick`, and
+`applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
+reserved **Fast** implementation profile and do not activate it.
 
 ## Runtime-state safety
 

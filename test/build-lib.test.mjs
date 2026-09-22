@@ -63,6 +63,8 @@ import {
   assertProjectRoutingContract,
   classifyProjectRoutingScope,
   PROJECT_ROUTING_REQUIRED_ROUTES,
+  parseExecutionProfileContract,
+  assertExecutionProfileContract,
   parseNextStepsTable,
   assertNextStepsContract,
   findNextStepsDocViolations,
@@ -1262,6 +1264,140 @@ test('mixed project routing retains every specialist and fallback bucket in tabl
       'rust',
       'generic-product',
     ],
+  );
+});
+
+// --- Shared execution-profile contract ---
+
+const executionProfileSource = readFileSync(
+  new URL('../src/shared/execution-profiles.md', import.meta.url),
+  'utf8',
+);
+
+test('parseExecutionProfileContract reads every marked policy table and normalizes CRLF', () => {
+  const parsed = parseExecutionProfileContract(executionProfileSource, {
+    context: 'src/shared/execution-profiles.md',
+  });
+  assert.deepEqual(Object.keys(parsed), [
+    'profiles',
+    'configCases',
+    'gate',
+    'states',
+    'decisionMappings',
+    'transitions',
+    'rules',
+    'fallbacks',
+    'controls',
+    'transferFields',
+  ]);
+  assert.doesNotThrow(() =>
+    assertExecutionProfileContract(parsed, { context: 'src/shared/execution-profiles.md' }),
+  );
+  assert.deepEqual(
+    parseExecutionProfileContract(executionProfileSource.replaceAll('\n', '\r\n')),
+    parsed,
+  );
+});
+
+test('parseExecutionProfileContract follows GFM pipe escaping and preserves Markdown content', () => {
+  const replaceIntent = (intent) =>
+    executionProfileSource.replace(
+      'strongest-available-configured-implementation-capability',
+      intent,
+    );
+  for (const [name, markdown, expected] of [
+    ['escaped-pipe', 'left \\| right', 'left | right'],
+    ['backtick-wrapped-escaped-pipe', '`left \\| right`', '`left | right`'],
+    ['bold-escaped-pipe', '**left \\| right**', '**left | right**'],
+    ['unmatched-literal-backtick', '`unmatched literal', '`unmatched literal'],
+  ]) {
+    const parsed = parseExecutionProfileContract(replaceIntent(markdown), {
+      context: `${name}.md`,
+    });
+    assert.equal(parsed.profiles[0].intent, expected, name);
+  }
+
+  for (const [name, markdown] of [
+    ['unescaped-inline-code-pipe', '`left | right`'],
+    ['even-backslash-structural-pipe', 'left \\\\| right'],
+  ]) {
+    assert.throws(
+      () => parseExecutionProfileContract(replaceIntent(markdown), { context: `${name}.md` }),
+      new RegExp(`profile row has 3 cells; expected 2.*${name}\\.md`),
+    );
+  }
+});
+
+test('parseExecutionProfileContract rejects missing, duplicated, and reversed markers', () => {
+  const start = '<!-- execution-profile-profile:start -->';
+  const end = '<!-- execution-profile-profile:end -->';
+  assert.throws(
+    () => parseExecutionProfileContract(executionProfileSource.replace(start, '')),
+    /profile table requires exactly one start and end marker/,
+  );
+  assert.throws(
+    () => parseExecutionProfileContract(`${executionProfileSource}\n${start}\n`),
+    /profile table requires exactly one start and end marker/,
+  );
+  const reversed = executionProfileSource
+    .replace(start, '<!-- marker-placeholder -->')
+    .replace(end, start)
+    .replace('<!-- marker-placeholder -->', end);
+  assert.throws(
+    () => parseExecutionProfileContract(reversed, { context: 'fixture.md' }),
+    /profile table markers are out of order.*fixture\.md/,
+  );
+});
+
+test('parseExecutionProfileContract rejects malformed table structure and values', () => {
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          /<!-- execution-profile-profile:start -->[\s\S]*?<!-- execution-profile-profile:end -->/,
+          '<!-- execution-profile-profile:start -->\n<!-- execution-profile-profile:end -->',
+        ),
+      ),
+    /profile table has no data rows/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace('| Profile | Intent', '| Tier | Intent'),
+      ),
+    /profile table headers must be: Profile, Intent/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(executionProfileSource.replace('| ------- |', '| ~~~~~~~ |')),
+    /profile table has an invalid separator row/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality |',
+        ),
+      ),
+    /profile row has 1 cells; expected 2.*"\| quality \|"/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality |  |',
+        ),
+      ),
+    /profile rows cannot contain empty cells/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(/\| 1\s+\| disabled/, '| zero | disabled'),
+      ),
+    /state field "precedence" must be a positive integer.*"zero"/,
   );
 });
 
