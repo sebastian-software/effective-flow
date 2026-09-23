@@ -41,7 +41,19 @@ protocol version and digest, generation capability, capacity limits, and per-gen
 `generationId`. Without that identifier it discovers the current generation: zero directories
 returns `generationStatus=absent`, exactly one returns `present` with the generation state, and more
 than one fails closed as ambiguous. Baseline creation is namespace-serialized so a second current
-generation cannot be admitted concurrently.
+generation cannot be admitted concurrently. Namespace ownership and the initial generation tree
+are assembled in private staging directories and published only after the owner record or initial
+`state.json` and required subdirectories are complete. The namespace `generation.lock` is likewise
+published from a complete temporary file, so a new writer never exposes a partially written lock.
+
+`begin-baseline` is also the recovery boundary for interrupted initialization. Under the exact
+owned namespace it validates and removes incomplete namespace or generation staging, partial
+pre-state generation trees, and orphan initial-state temporaries before retrying. A complete
+initial generation left behind with a stale `begin-baseline` lock is returned idempotently after
+the lock owner is proved stale; a live or unproved owner remains `LOCKED`. Legacy truncated
+namespace locks are removed only after the owned namespace, regular-file identity, and unchanged
+contents have been rechecked. An arbitrary final namespace without the exact `owner.json` is never
+adopted or repaired and remains `UNSAFE_STORAGE`.
 
 Generation state is `none`, `baseline`, `active`, `suspended`, or `review`. Configuration state is
 not generation state: disabling `executionProfiles.fast.enabled` stops new measurement and Fast

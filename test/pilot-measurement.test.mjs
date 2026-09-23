@@ -299,6 +299,163 @@ test('inventory discovers zero or one current generation and rejects ambiguity',
   });
 });
 
+test('baseline initialization recovers only validated staged namespace and generation states', async (t) => {
+  await t.test('namespace staging interrupted before owner publication', async (t) => {
+    const fx = fixture(t);
+    const staging = join(
+      fx.root,
+      '.effective-flow',
+      `.model-tiering-pilot-staging-${opaqueId(41, 1)}`,
+    );
+    mkdirSync(staging);
+
+    const baseline = await beginBaseline(fx);
+    assert.equal(existsSync(staging), false);
+    assert.equal(
+      JSON.parse(readFileSync(join(generationRoot(fx, baseline.generationId), 'state.json')))
+        .generationState,
+      'baseline',
+    );
+  });
+
+  await t.test('partial published generation and truncated namespace lock', async (t) => {
+    const fx = fixture(t);
+    const first = await beginBaseline(fx);
+    const namespace = join(fx.root, '.effective-flow/model-tiering-pilot');
+    rmSync(generationRoot(fx, first.generationId), { recursive: true });
+    const partial = generationRoot(fx, first.generationId);
+    mkdirSync(partial);
+    mkdirSync(join(partial, 'records'));
+    writeFileSync(join(namespace, 'generation.lock'), '{"schema":');
+
+    const recovered = await beginBaseline(fx);
+    assert.notEqual(recovered.generationId, first.generationId);
+    assert.equal(existsSync(partial), false);
+    assert.equal(existsSync(join(namespace, 'generation.lock')), false);
+  });
+
+  await t.test('state temporary without publication is removed before retry', async (t) => {
+    const fx = fixture(t);
+    const first = await beginBaseline(fx);
+    const root = generationRoot(fx, first.generationId);
+    const state = readFileSync(join(root, 'state.json'));
+    const ownerNonce = opaqueId(42, 2);
+    renameSync(
+      join(root, 'state.json'),
+      join(root, `.tmp-begin-baseline-${first.generationId}-${ownerNonce}-${'x'.repeat(16)}`),
+    );
+    assert.equal(state.length > 0, true);
+    writeFileSync(join(fx.root, '.effective-flow/model-tiering-pilot/generation.lock'), '{');
+
+    const recovered = await beginBaseline(fx);
+    assert.notEqual(recovered.generationId, first.generationId);
+    assert.equal(existsSync(root), false);
+  });
+
+  await t.test('complete staged generation is published after a stale lock', async (t) => {
+    const fx = fixture(t);
+    const first = await beginBaseline(fx);
+    const root = generationRoot(fx, first.generationId);
+    const ownerNonce = opaqueId(43, 3);
+    const staged = join(dirname(root), `.staging-${first.generationId}-${ownerNonce}`);
+    renameSync(root, staged);
+    writeFileSync(
+      join(fx.root, '.effective-flow/model-tiering-pilot/generation.lock'),
+      `${canonicalizeJson({
+        schema: 1,
+        operation: 'begin-baseline',
+        generationId: 'namespace',
+        ownerPid: 999_999,
+        nonce: ownerNonce,
+      })}\n`,
+    );
+    const staleDeps = {
+      ...fx.deps,
+      kill: () => {
+        const error = new Error('stale');
+        error.code = 'ESRCH';
+        throw error;
+      },
+    };
+
+    const recovered = (
+      await executeOperation(
+        'begin-baseline',
+        {
+          ...fx.common,
+          configState: 'enabled',
+          fastEnabled: true,
+          protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+          protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+          confirmation: true,
+        },
+        staleDeps,
+      )
+    ).result;
+    assert.equal(recovered.generationId, first.generationId);
+    assert.equal(existsSync(staged), false);
+    assert.equal(existsSync(root), true);
+  });
+
+  await t.test(
+    'published state stays locked while the owner is live and retries idempotently once stale',
+    async (t) => {
+      const fx = fixture(t);
+      const first = await beginBaseline(fx);
+      const namespace = join(fx.root, '.effective-flow/model-tiering-pilot');
+      const ownerNonce = opaqueId(44, 4);
+      const lock = {
+        schema: 1,
+        operation: 'begin-baseline',
+        generationId: 'namespace',
+        ownerPid: process.pid,
+        nonce: ownerNonce,
+      };
+      writeFileSync(join(namespace, 'generation.lock'), `${canonicalizeJson(lock)}\n`);
+      await assert.rejects(() => beginBaseline(fx), { code: 'LOCKED' });
+
+      const staleDeps = {
+        ...fx.deps,
+        kill: () => {
+          const error = new Error('stale');
+          error.code = 'ESRCH';
+          throw error;
+        },
+      };
+      const recovered = (
+        await executeOperation(
+          'begin-baseline',
+          {
+            ...fx.common,
+            configState: 'enabled',
+            fastEnabled: true,
+            protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+            protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+            confirmation: true,
+          },
+          staleDeps,
+        )
+      ).result;
+      assert.equal(recovered.generationId, first.generationId);
+      assert.equal(existsSync(join(namespace, 'generation.lock')), false);
+    },
+  );
+
+  await t.test('concurrent initialization publishes exactly one baseline', async (t) => {
+    const fx = fixture(t);
+    const results = await Promise.allSettled([beginBaseline(fx), beginBaseline(fx)]);
+    const fulfilled = results.filter(({ status }) => status === 'fulfilled');
+    const rejected = results.filter(({ status }) => status === 'rejected');
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].reason.code, 'LOCKED');
+    assert.deepEqual(
+      readdirSync(join(fx.root, '.effective-flow/model-tiering-pilot/generations')),
+      [fulfilled[0].value.generationId],
+    );
+  });
+});
+
 test('gate observations retain only anonymous grouping axes and finalize exactly once', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);

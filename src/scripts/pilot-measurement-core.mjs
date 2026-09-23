@@ -110,6 +110,8 @@ const WRITE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRO
 const TOKEN = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
 const OPAQUE = /^[A-Za-z0-9_-]{32,128}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const NAMESPACE_STAGING = /^\.model-tiering-pilot-staging-([A-Za-z0-9_-]{32,128})$/;
+const GENERATION_STAGING = /^\.staging-([A-Za-z0-9_-]{32,128})-([A-Za-z0-9_-]{32,128})$/;
 const LIFECYCLE_LOCK_OPERATIONS = new Set([
   'activate',
   'start',
@@ -389,30 +391,188 @@ async function guardedMkdir(context, target, deps) {
   await chmod(target, 0o700);
 }
 
+async function syncDirectory(context, target, deps) {
+  await repositoryGuard(context.input, deps, { mutation: true });
+  let handle;
+  try {
+    handle = await open(target, fsConstants.O_RDONLY | O_NOFOLLOW);
+    if (!(await handle.stat()).isDirectory()) fail('UNSAFE_STORAGE');
+    await handle.sync();
+  } catch (error) {
+    if (error instanceof PilotMeasurementError) throw error;
+    fail('WRITE_FAILED', { cause: error });
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function writeExclusiveJson(context, target, value, deps) {
+  await repositoryGuard(context.input, deps, { mutation: true });
+  let handle;
+  try {
+    handle = await open(target, WRITE_FLAGS, 0o600);
+    await handle.writeFile(`${canonicalizeJson(value)}\n`, 'utf8');
+    await handle.sync();
+  } catch (error) {
+    if (error?.code === 'EEXIST') fail('INVALID_STATE', { cause: error });
+    fail('WRITE_FAILED', { cause: error });
+  } finally {
+    await handle?.close();
+  }
+  await chmod(target, 0o600);
+  await syncDirectory(context, path.dirname(target), deps);
+}
+
+async function validateNamespaceStaging(target) {
+  const entries = await safeEntries(target);
+  const names = new Set(entries.map(({ name }) => name));
+  if ([...names].some((name) => !['owner.json', 'generations', 'tombstones'].includes(name))) {
+    fail('UNSAFE_STORAGE');
+  }
+  const owner = await readJson(path.join(target, 'owner.json'), { missing: true });
+  if (owner === null) {
+    if (entries.length !== 0) fail('UNSAFE_STORAGE');
+    return false;
+  }
+  if (canonicalizeJson(owner) !== canonicalizeJson(OWNER)) fail('UNSAFE_STORAGE');
+  for (const name of ['generations', 'tombstones']) {
+    if (!names.has(name)) continue;
+    if (!(await directoryState(path.join(target, name)))) fail('UNSAFE_STORAGE');
+    if ((await safeEntries(path.join(target, name))).length !== 0) fail('UNSAFE_STORAGE');
+  }
+  return names.has('generations') && names.has('tombstones');
+}
+
+async function publishNamespace(context, deps) {
+  const staging = path.join(
+    context.runtimeDirectory,
+    `.model-tiering-pilot-staging-${randomOpaque(deps, 24)}`,
+  );
+  await guardedMkdir(context, staging, deps);
+  try {
+    await writeExclusiveJson(context, path.join(staging, 'owner.json'), OWNER, deps);
+    for (const name of ['generations', 'tombstones']) {
+      await guardedMkdir(context, path.join(staging, name), deps);
+    }
+    await syncDirectory(context, staging, deps);
+    await repositoryGuard(context.input, deps, { mutation: true });
+    if (await pathExists(context.namespace)) fail('INVALID_STATE');
+    await rename(staging, context.namespace);
+    await chmod(context.namespace, 0o700);
+    await syncDirectory(context, context.runtimeDirectory, deps);
+  } catch (error) {
+    if (error instanceof PilotMeasurementError && error.code === 'INVALID_STATE') {
+      const owner = await readJson(path.join(context.namespace, 'owner.json'), { missing: true });
+      if (owner !== null && canonicalizeJson(owner) === canonicalizeJson(OWNER)) {
+        await repositoryGuard(context.input, deps, { mutation: true });
+        await rm(staging, { recursive: true, force: false }).catch(() => {});
+        return;
+      }
+    }
+    throw error;
+  }
+}
+
+function validateNamespaceInitializationLock(value) {
+  exactObject(value, ['schema', 'operation', 'ownerPid', 'nonce']);
+  if (
+    value.schema !== 1 ||
+    value.operation !== 'initialize-namespace' ||
+    !Number.isSafeInteger(value.ownerPid) ||
+    value.ownerPid <= 0 ||
+    !OPAQUE.test(value.nonce)
+  ) {
+    fail('UNSAFE_STORAGE');
+  }
+  return value;
+}
+
+async function withNamespaceInitializationLock(context, deps, action) {
+  const target = path.join(context.runtimeDirectory, '.model-tiering-pilot.init.lock');
+  const existingIdentity = await lstat(target).catch((error) =>
+    error?.code === 'ENOENT' ? null : Promise.reject(error),
+  );
+  if (existingIdentity !== null) {
+    if (!existingIdentity.isFile() || existingIdentity.isSymbolicLink()) fail('UNSAFE_STORAGE');
+    const before = await readRegular(target, { maximum: 16 * 1024 });
+    const existing = validateNamespaceInitializationLock(JSON.parse(before));
+    if (probePid(existing.ownerPid, deps) !== 'stale-provable') fail('LOCKED');
+    await repositoryGuard(context.input, deps, { mutation: true });
+    const checked = await lstat(target);
+    const current = await readRegular(target, { maximum: 16 * 1024 });
+    if (
+      checked.dev !== existingIdentity.dev ||
+      checked.ino !== existingIdentity.ino ||
+      current !== before
+    ) {
+      fail('STALE_REVIEW');
+    }
+    await unlink(target).catch((error) => fail('WRITE_FAILED', { cause: error }));
+    await syncDirectory(context, context.runtimeDirectory, deps);
+  }
+  const value = {
+    schema: 1,
+    operation: 'initialize-namespace',
+    ownerPid: process.pid,
+    nonce: randomOpaque(deps, 24),
+  };
+  await atomicWrite(context, target, value, 'namespace-init-lock', 'namespace', deps, undefined, {
+    noReplace: true,
+    existsCode: 'LOCKED',
+  });
+  await syncDirectory(context, context.runtimeDirectory, deps);
+  try {
+    return await action();
+  } finally {
+    const current = validateNamespaceInitializationLock(await readJson(target));
+    if (current.nonce !== value.nonce || current.ownerPid !== process.pid) fail('LOCKED');
+    await repositoryGuard(context.input, deps, { mutation: true });
+    await unlink(target).catch((error) => fail('WRITE_FAILED', { cause: error }));
+    await syncDirectory(context, context.runtimeDirectory, deps);
+  }
+}
+
 async function ensureNamespace(input, deps) {
   const context = { ...(await repositoryGuard(input, deps, { mutation: true })), input };
   if (!(await directoryState(context.runtimeDirectory))) fail('MIGRATION_REQUIRED');
-  let created = false;
   if (!(await directoryState(context.namespace))) {
-    await repositoryGuard(input, deps, { mutation: true });
-    try {
-      await mkdir(context.namespace, { mode: 0o700 });
-      created = true;
-    } catch (error) {
-      if (error?.code !== 'EEXIST') fail('WRITE_FAILED', { cause: error });
-    }
-    if (!(await directoryState(context.namespace))) fail('UNSAFE_STORAGE');
+    await withNamespaceInitializationLock(context, deps, async () => {
+      if (await directoryState(context.namespace)) return;
+      const stagingEntries = (await safeEntries(context.runtimeDirectory)).filter(({ name }) =>
+        NAMESPACE_STAGING.test(name),
+      );
+      for (const entry of stagingEntries) {
+        if (!entry.isDirectory()) fail('UNSAFE_STORAGE');
+        const staging = path.join(context.runtimeDirectory, entry.name);
+        const complete = await validateNamespaceStaging(staging);
+        if (!complete) {
+          await repositoryGuard(input, deps, { mutation: true });
+          await rm(staging, { recursive: true, force: false }).catch((error) =>
+            fail('WRITE_FAILED', { cause: error }),
+          );
+          await syncDirectory(context, context.runtimeDirectory, deps);
+          continue;
+        }
+        await repositoryGuard(input, deps, { mutation: true });
+        try {
+          await rename(staging, context.namespace);
+          await syncDirectory(context, context.runtimeDirectory, deps);
+        } catch (error) {
+          if (error?.code !== 'EEXIST' && error?.code !== 'ENOTEMPTY') {
+            fail('WRITE_FAILED', { cause: error });
+          }
+        }
+        break;
+      }
+      if (!(await directoryState(context.namespace))) await publishNamespace(context, deps);
+    });
   }
   const ownerPath = path.join(context.namespace, 'owner.json');
-  if (created) {
-    await chmod(context.namespace, 0o700);
-    await atomicWrite(context, ownerPath, OWNER, 'namespace', 'namespace', deps);
-  } else {
-    const existing = await readJson(ownerPath, { missing: true });
-    if (existing === null || canonicalizeJson(existing) !== canonicalizeJson(OWNER)) {
-      fail('UNSAFE_STORAGE');
-    }
+  const existing = await readJson(ownerPath, { missing: true });
+  if (existing === null || canonicalizeJson(existing) !== canonicalizeJson(OWNER)) {
+    fail('UNSAFE_STORAGE');
   }
+  await chmod(context.namespace, 0o700);
   for (const name of ['generations', 'tombstones']) {
     const target = path.join(context.namespace, name);
     if (!(await directoryState(target))) await guardedMkdir(context, target, deps);
@@ -430,18 +590,11 @@ async function withNamespaceLock(context, operation, deps, action) {
     ownerPid: process.pid,
     nonce,
   };
-  await repositoryGuard(context.input, deps, { mutation: true });
-  let handle;
-  try {
-    handle = await open(target, WRITE_FLAGS, 0o600);
-    await handle.writeFile(`${canonicalizeJson(value)}\n`, 'utf8');
-    await handle.sync();
-  } catch (error) {
-    if (error?.code === 'EEXIST') fail('LOCKED');
-    fail('WRITE_FAILED', { cause: error });
-  } finally {
-    await handle?.close();
-  }
+  await atomicWrite(context, target, value, 'namespace-lock', 'namespace', deps, undefined, {
+    noReplace: true,
+    existsCode: 'LOCKED',
+  });
+  await syncDirectory(context, context.namespace, deps);
   const previous = context.activeLock;
   context.activeLock = value;
   try {
@@ -452,7 +605,51 @@ async function withNamespaceLock(context, operation, deps, action) {
     if (current?.nonce !== nonce || current.ownerPid !== process.pid) fail('LOCKED');
     await repositoryGuard(context.input, deps, { mutation: true });
     await unlink(target).catch((error) => fail('WRITE_FAILED', { cause: error }));
+    await syncDirectory(context, context.namespace, deps);
   }
+}
+
+function validateNamespaceLockRecord(value) {
+  exactObject(value, ['schema', 'operation', 'generationId', 'ownerPid', 'nonce']);
+  if (
+    value.schema !== 1 ||
+    value.operation !== 'begin-baseline' ||
+    value.generationId !== 'namespace' ||
+    !Number.isSafeInteger(value.ownerPid) ||
+    value.ownerPid <= 0 ||
+    !OPAQUE.test(value.nonce)
+  ) {
+    fail('UNSAFE_STORAGE');
+  }
+  return value;
+}
+
+async function recoverNamespaceLock(context, deps) {
+  const target = path.join(context.namespace, 'generation.lock');
+  const identity = await lstat(target).catch((error) =>
+    error?.code === 'ENOENT' ? null : Promise.reject(error),
+  );
+  if (identity === null) return false;
+  if (!identity.isFile() || identity.isSymbolicLink()) fail('UNSAFE_STORAGE');
+  const before = await readRegular(target, { maximum: 16 * 1024 });
+  let lock = null;
+  try {
+    lock = validateNamespaceLockRecord(JSON.parse(before));
+  } catch (error) {
+    if (!(error instanceof PilotMeasurementError) && !(error instanceof SyntaxError)) throw error;
+  }
+  if (lock !== null && probePid(lock.ownerPid, deps) !== 'stale-provable') fail('LOCKED');
+  await repositoryGuard(context.input, deps, { mutation: true });
+  const checked = await lstat(target).catch((error) =>
+    error?.code === 'ENOENT' ? fail('STALE_REVIEW') : Promise.reject(error),
+  );
+  const current = await readRegular(target, { maximum: 16 * 1024 });
+  if (checked.dev !== identity.dev || checked.ino !== identity.ino || current !== before) {
+    fail('STALE_REVIEW');
+  }
+  await unlink(target).catch((error) => fail('WRITE_FAILED', { cause: error }));
+  await syncDirectory(context, context.namespace, deps);
+  return true;
 }
 
 async function inspectNamespace(input, deps) {
@@ -505,7 +702,7 @@ async function atomicWrite(
   generationId,
   deps,
   maximum,
-  { noReplace = false } = {},
+  { noReplace = false, existsCode = 'INVALID_STATE', skipCapacity = false } = {},
 ) {
   const body = `${canonicalizeJson(value)}\n`;
   const bodyBytes = Buffer.byteLength(body);
@@ -532,7 +729,7 @@ async function atomicWrite(
   } finally {
     await handle?.close();
   }
-  if (generationId !== 'namespace' && !capacityControlWrite(operation)) {
+  if (generationId !== 'namespace' && !skipCapacity && !capacityControlWrite(operation)) {
     const root = generationPath(context, generationId);
     const replacedBytes = (await regularFileSize(target, { missing: true })) ?? 0;
     const projectedBytes = (await rawTreeBytes(root)) - replacedBytes;
@@ -553,7 +750,7 @@ async function atomicWrite(
     await chmod(target, 0o600);
   } catch (error) {
     await unlink(temporary).catch(() => {});
-    if (noReplace && error?.code === 'EEXIST') fail('INVALID_STATE', { cause: error });
+    if (noReplace && error?.code === 'EEXIST') fail(existsCode, { cause: error });
     fail('WRITE_FAILED', { cause: error });
   }
 }
@@ -926,7 +1123,11 @@ function nowIso(deps) {
 }
 
 async function ensureGenerationDirectories(context, generationId, deps) {
-  const root = generationPath(context, generationId);
+  const root = path.join(
+    context.namespace,
+    'generations',
+    `.staging-${generationId}-${context.activeLock?.nonce ?? randomOpaque(deps, 24)}`,
+  );
   await repositoryGuard(context.input, deps, { mutation: true });
   try {
     await mkdir(root, { mode: 0o700 });
@@ -939,6 +1140,107 @@ async function ensureGenerationDirectories(context, generationId, deps) {
     await guardedMkdir(context, path.join(root, name), deps);
   }
   return root;
+}
+
+function initialGenerationState(generationId, deps) {
+  return {
+    schema: STATE_SCHEMA,
+    kind: 'pilot-generation-state',
+    generationId,
+    protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+    generationState: 'baseline',
+    baselineStartedAt: nowIso(deps),
+    activatedAt: null,
+    reviewStartedAt: null,
+    nextWorkflowOrdinal: 1,
+    nextObservationOrdinal: 1,
+  };
+}
+
+async function inspectGenerationInitialization(root, generationId) {
+  const expectedDirectories = new Set([
+    'records',
+    'traces',
+    'gate-observations',
+    'summaries',
+    'locks',
+  ]);
+  let state = null;
+  const presentDirectories = new Set();
+  let temporaryCount = 0;
+  for (const entry of await safeEntries(root)) {
+    if (entry.isDirectory() && expectedDirectories.has(entry.name)) {
+      presentDirectories.add(entry.name);
+      continue;
+    }
+    if (entry.isFile() && entry.name === 'state.json') {
+      state = validatePersistedState(await readJson(path.join(root, entry.name)), generationId);
+      continue;
+    }
+    if (
+      entry.isFile() &&
+      new RegExp(
+        `^\\.tmp-begin-baseline-${escapedRegExp(generationId)}-[A-Za-z0-9_-]{32,128}-[A-Za-z0-9_-]{16}$`,
+      ).test(entry.name)
+    ) {
+      temporaryCount += 1;
+      continue;
+    }
+    fail('UNSAFE_STORAGE');
+  }
+  if (state === null) {
+    for (const name of presentDirectories) {
+      if ((await safeEntries(path.join(root, name))).length !== 0) fail('UNSAFE_STORAGE');
+    }
+    return null;
+  }
+  if (
+    state.generationState !== 'baseline' ||
+    state.activatedAt !== null ||
+    state.reviewStartedAt !== null ||
+    state.nextWorkflowOrdinal !== 1 ||
+    state.nextObservationOrdinal !== 1
+  ) {
+    fail('INVALID_STATE');
+  }
+  for (const name of expectedDirectories) {
+    if (!(await directoryState(path.join(root, name)))) fail('UNSAFE_STORAGE');
+  }
+  if (temporaryCount !== 0) fail('UNSAFE_STORAGE');
+  return state;
+}
+
+async function recoverGenerationInitialization(context, deps) {
+  const generations = path.join(context.namespace, 'generations');
+  const complete = [];
+  for (const entry of await safeEntries(generations)) {
+    const staging = GENERATION_STAGING.exec(entry.name);
+    const generationId = staging?.[1] ?? (OPAQUE.test(entry.name) ? entry.name : null);
+    if (!entry.isDirectory() || generationId === null) fail('UNSAFE_STORAGE');
+    const target = path.join(generations, entry.name);
+    const state = await inspectGenerationInitialization(target, generationId);
+    if (state === null) {
+      await repositoryGuard(context.input, deps, { mutation: true });
+      await rm(target, { recursive: true, force: false }).catch((error) =>
+        fail('WRITE_FAILED', { cause: error }),
+      );
+      await syncDirectory(context, generations, deps);
+      continue;
+    }
+    if (staging !== null) {
+      const published = generationPath(context, generationId);
+      if (await pathExists(published)) fail('INVALID_STATE');
+      await repositoryGuard(context.input, deps, { mutation: true });
+      await rename(target, published).catch((error) => fail('WRITE_FAILED', { cause: error }));
+      await syncDirectory(context, generations, deps);
+      complete.push({ generationId, state });
+    } else {
+      complete.push({ generationId, state });
+    }
+  }
+  if (complete.length > 1) fail('INVALID_STATE');
+  return complete[0] ?? null;
 }
 
 function countBySuffix(entries, suffix) {
@@ -1695,9 +1997,17 @@ async function beginBaseline(input, deps) {
     fail('INVALID_PAYLOAD');
   assertProtocol(input.protocolVersion, input.protocolDigest);
   const context = await ensureNamespace(input, deps);
+  const recoveredNamespaceLock = await recoverNamespaceLock(context, deps);
   return await withNamespaceLock(context, 'begin-baseline', deps, async () => {
-    if ((await discoverGenerationIds({ ...context, exists: true })).length !== 0) {
-      fail('INVALID_STATE');
+    const recovered = await recoverGenerationInitialization(context, deps);
+    if (recovered !== null) {
+      if (!recoveredNamespaceLock) fail('INVALID_STATE');
+      return {
+        generationId: recovered.generationId,
+        generationState: recovered.state.generationState,
+        protocolVersion: recovered.state.protocolVersion,
+        protocolDigest: recovered.state.protocolDigest,
+      };
     }
     let generationId;
     let root;
@@ -1710,19 +2020,7 @@ async function beginBaseline(input, deps) {
       }
     }
     if (root === undefined || generationId === undefined) fail('INVALID_STATE');
-    const state = {
-      schema: STATE_SCHEMA,
-      kind: 'pilot-generation-state',
-      generationId,
-      protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
-      protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
-      generationState: 'baseline',
-      baselineStartedAt: nowIso(deps),
-      activatedAt: null,
-      reviewStartedAt: null,
-      nextWorkflowOrdinal: 1,
-      nextObservationOrdinal: 1,
-    };
+    const state = initialGenerationState(generationId, deps);
     await atomicWrite(
       context,
       path.join(root, 'state.json'),
@@ -1730,7 +2028,14 @@ async function beginBaseline(input, deps) {
       'begin-baseline',
       generationId,
       deps,
+      undefined,
+      { skipCapacity: true },
     );
+    await syncDirectory(context, root, deps);
+    const published = generationPath(context, generationId);
+    await repositoryGuard(context.input, deps, { mutation: true });
+    await rename(root, published).catch((error) => fail('WRITE_FAILED', { cause: error }));
+    await syncDirectory(context, path.dirname(published), deps);
     return {
       generationId,
       generationState: 'baseline',

@@ -95,6 +95,13 @@ generation. Stale-lock and temporary-file recovery validates the generation, ope
 owner liveness, file identity, and digest before removing anything. Purge and discard use
 digest-bound tombstones, rescan retries, and reject unknown or mismatched tombstone names.
 
+Baseline initialization follows the same fail-closed rule. Ownership and initial state are built in
+staging and become current only when complete. Retrying `begin-baseline` removes validated partial
+initialization state or completes a staged generation; if a complete baseline was published before
+its stale initialization lock could be released, the retry returns that same baseline instead of
+creating another one. A live or unproved lock still blocks the retry. A final pilot directory that
+lacks the exact ownership record is treated as foreign and is never adopted automatically.
+
 Packet timing is capability-bound and may cross processes. The helper accepts a duration only when
 monotonic time, wall time, system uptime, and a packet-salted host proof remain continuous. A reboot,
 clock discontinuity, or host mismatch makes duration unavailable. Authenticated finalization or
