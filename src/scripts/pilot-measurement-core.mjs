@@ -3623,6 +3623,19 @@ function publicationCell(value, sampleSize) {
     : value;
 }
 
+function publicationRatioCell(value, sampleSize, { requireComplement = false } = {}) {
+  const minimum = BigInt(PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum);
+  const sample = BigInt(sampleSize);
+  if (value === null || sample < minimum) return { suppressed: true };
+  const scaledNumerator = BigInt(value.numerator) * sample;
+  const denominator = BigInt(value.denominator);
+  if (scaledNumerator % denominator !== 0n) return { suppressed: true };
+  const numerator = scaledNumerator / denominator;
+  return numerator < minimum || (requireComplement && sample - numerator < minimum)
+    ? { suppressed: true }
+    : value;
+}
+
 function publicationDistribution(distribution) {
   const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum;
   return Object.values(distribution).some((count) => count < minimum)
@@ -3671,7 +3684,7 @@ function publicationCohort(metrics) {
       : publicationCell(metrics.validationSuccess, metrics.validationContributorCount),
     criticalFindingsPerCompleted: completionOutcomes.suppressed
       ? { suppressed: true }
-      : publicationCell(metrics.criticalFindingsPerCompleted, metrics.completedCount),
+      : publicationRatioCell(metrics.criticalFindingsPerCompleted, metrics.completedCount),
     qualityCorrectionMedian: publicationCell(
       metrics.qualityCorrectionMedian,
       metrics.completedCount,
@@ -3700,7 +3713,11 @@ function publicationObservations(metrics) {
               ]),
             ),
             correctionMedian: group.correctionMedian,
-            checksSatisfied: publicationCell(group.checksSatisfied, group.checkContributorCount),
+            checksSatisfied: publicationRatioCell(
+              group.checksSatisfied,
+              group.checkContributorCount,
+              { requireComplement: true },
+            ),
           },
     ]),
   );

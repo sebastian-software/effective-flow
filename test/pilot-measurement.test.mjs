@@ -1921,6 +1921,150 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   assert.deepEqual(publicGroup.checksSatisfied, { suppressed: true });
 });
 
+test('publication suppresses sub-threshold ratio cells and publishes protected ratios', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const generation = generationRoot(fx, generationId);
+  const completionStatuses = ['completed', 'failed', 'aborted', 'abandoned'];
+  let ordinal = 1;
+
+  for (const cohort of ['baseline', 'pilot']) {
+    for (const completionStatus of completionStatuses) {
+      for (let index = 0; index < 5; index += 1) {
+        const value = {
+          schema: 1,
+          kind: 'workflow-record',
+          runId: opaqueId(cohort === 'baseline' ? 70 : 71, ordinal),
+          workflowCapabilityHash: canonicalDigest({ capability: `ratio-${ordinal}` }),
+          generationId,
+          protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+          cohort,
+          configState: 'enabled',
+          generationState: cohort === 'baseline' ? 'baseline' : 'active',
+          workflow: 'build',
+          harnessFamily: 'codex',
+          ordinal,
+          packets: [
+            {
+              packetId: opaqueId(72, ordinal),
+              selectedProfile: cohort === 'baseline' ? 'quality' : 'fast',
+              wouldBeFastEligible: true,
+              firstGateReason: null,
+              implementationDuration: { status: 'available', milliseconds: 100 },
+              fallback: 'none',
+              escalated: false,
+              costProxy: {
+                status: 'available',
+                kind: 'executor-unit',
+                unit: 'microcredit',
+                value: '10',
+              },
+            },
+          ],
+          validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
+          review: {
+            status: 'completed',
+            severityCounts: {
+              critical:
+                completionStatus === 'completed' &&
+                (cohort === 'pilot' || (cohort === 'baseline' && index === 0))
+                  ? 1
+                  : 0,
+              important: 0,
+              note: 0,
+            },
+          },
+          completionStatus,
+          qualityCorrectionRounds: 0,
+          detailTrace: false,
+        };
+        writeFileSync(
+          join(generation, 'records', `${value.runId}.json`),
+          `${canonicalizeJson(value)}\n`,
+        );
+        ordinal += 1;
+      }
+    }
+  }
+
+  const statePath = join(generation, 'state.json');
+  const collectionState = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(
+    statePath,
+    `${canonicalizeJson({ ...collectionState, nextWorkflowOrdinal: ordinal })}\n`,
+  );
+
+  const observationCases = [
+    { mode: 'merge', results: [true, true, true, true, true, false] },
+    { mode: 'report', results: [true, true, true, true, true, false, false, false, false, false] },
+  ];
+  for (const { mode, results } of observationCases) {
+    for (const requiredChecksSatisfied of results) {
+      const reservation = (
+        await executeOperation(
+          'start-gate-observation',
+          {
+            ...fx.common,
+            generationId,
+            configState: 'enabled',
+            generationState: 'baseline',
+            mode,
+            harnessFamily: 'codex',
+          },
+          fx.deps,
+        )
+      ).result;
+      await executeOperation(
+        'finalize-gate-observation',
+        {
+          ...fx.common,
+          generationId,
+          observationId: reservation.observationId,
+          capability: reservation.capability,
+          terminalOutcome: 'reported-ready',
+          ciRepairCorrections: 0,
+          reviewerCorrections: 0,
+          conflictCorrections: 0,
+          checksReported: true,
+          requiredCheckCount: 1,
+          requiredChecksSatisfied,
+        },
+        fx.deps,
+      );
+    }
+  }
+
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(statePath, `${canonicalizeJson({ ...state, generationState: 'review' })}\n`);
+  const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+  await executeOperation(
+    'aggregate',
+    { ...fx.common, generationId, expectedInventoryDigest: inventory.result.inventoryDigest },
+    fx.deps,
+  );
+
+  const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
+  const publication = JSON.parse(readFileSync(join(generation, 'summaries/publication.json')));
+  assert.deepEqual(privateView.cohorts.baseline.criticalFindingsPerCompleted, {
+    numerator: '1',
+    denominator: '5',
+  });
+  assert.deepEqual(publication.cohorts.baseline.criticalFindingsPerCompleted, {
+    suppressed: true,
+  });
+  assert.deepEqual(publication.cohorts.pilot.criticalFindingsPerCompleted, {
+    numerator: '1',
+    denominator: '1',
+  });
+
+  const baselineGroups = publication.observations.baseline.groups;
+  assert.deepEqual(baselineGroups['merge:codex'].checksSatisfied, { suppressed: true });
+  assert.deepEqual(baselineGroups['report:codex'].checksSatisfied, {
+    numerator: '1',
+    denominator: '2',
+  });
+});
+
 test('publication suppresses complementary 5+1 observation groups while retaining the total', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
