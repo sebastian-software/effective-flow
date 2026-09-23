@@ -1571,7 +1571,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
   );
 });
 
-test('aggregation uses actual contributors and retains named outcome distributions', async (t) => {
+test('aggregation preserves private counts and atomically suppresses public 5+1 distributions', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
   const generation = generationRoot(fx, generationId);
@@ -1582,38 +1582,43 @@ test('aggregation uses actual contributors and retains named outcome distributio
     workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
     generationId,
     protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
-    cohort: 'baseline',
+    cohort: 'pilot',
     configState: 'enabled',
-    generationState: 'baseline',
+    generationState: 'active',
     workflow: 'build',
     harnessFamily: 'codex',
     ordinal,
     packets: [
       {
         packetId: Buffer.alloc(24, ordinal + 30).toString('base64url'),
-        selectedProfile: 'quality',
+        selectedProfile: 'fast',
         wouldBeFastEligible: true,
         firstGateReason: null,
         implementationDuration:
-          ordinal === 1 ? { status: 'available', milliseconds: 100 } : { status: 'unavailable' },
-        fallback: 'none',
-        escalated: false,
+          ordinal === 6
+            ? { status: 'unavailable' }
+            : { status: 'available', milliseconds: ordinal * 100 },
+        fallback: ordinal === 6 ? 'spawn-rejected' : 'none',
+        escalated: ordinal === 6,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
       },
     ],
     validation:
-      ordinal === 1
-        ? { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 }
-        : { status: 'not-required', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
+      ordinal === 6
+        ? { status: 'failed', requiredCount: 1, totalCount: 1, satisfiedCount: 0 }
+        : { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
     review:
-      ordinal === 1
-        ? { status: 'completed', severityCounts: { critical: 1, important: 1, note: 0 } }
-        : { status: 'unavailable', severityCounts: { critical: 0, important: 0, note: 0 } },
-    completionStatus: 'completed',
+      ordinal === 6
+        ? { status: 'unavailable', severityCounts: { critical: 0, important: 0, note: 0 } }
+        : {
+            status: 'completed',
+            severityCounts: { critical: ordinal === 1 ? 1 : 0, important: 0, note: 0 },
+          },
+    completionStatus: ordinal === 6 ? 'failed' : 'completed',
     qualityCorrectionRounds: ordinal % 2,
     detailTrace: false,
   });
-  for (let ordinal = 1; ordinal <= 5; ordinal += 1) {
+  for (let ordinal = 1; ordinal <= 6; ordinal += 1) {
     const value = record(ordinal);
     writeFileSync(
       join(generation, 'records', `${value.runId}.json`),
@@ -1625,10 +1630,17 @@ test('aggregation uses actual contributors and retains named outcome distributio
   const collectionState = JSON.parse(readFileSync(collectionStatePath, 'utf8'));
   writeFileSync(
     collectionStatePath,
-    `${canonicalizeJson({ ...collectionState, nextWorkflowOrdinal: 6 })}\n`,
+    `${canonicalizeJson({ ...collectionState, nextWorkflowOrdinal: 7 })}\n`,
   );
 
-  const outcomes = ['merged', 'reported-ready', 'reported-blocked', 'failed', 'reported-ready'];
+  const outcomes = [
+    'reported-ready',
+    'reported-ready',
+    'reported-ready',
+    'reported-ready',
+    'reported-ready',
+    'failed',
+  ];
   for (const [index, terminalOutcome] of outcomes.entries()) {
     const reservation = (
       await executeOperation(
@@ -1652,9 +1664,9 @@ test('aggregation uses actual contributors and retains named outcome distributio
         observationId: reservation.observationId,
         capability: reservation.capability,
         terminalOutcome,
-        ciRepairCorrections: index === 0 ? 1 : 0,
-        reviewerCorrections: index === 1 ? 2 : 0,
-        conflictCorrections: index === 2 ? 3 : 0,
+        ciRepairCorrections: index === 5 ? 1 : 0,
+        reviewerCorrections: index === 5 ? 2 : 0,
+        conflictCorrections: index === 5 ? 3 : 0,
         checksReported: index === 0,
         requiredCheckCount: index === 0 ? 1 : 'unavailable',
         requiredChecksSatisfied: index === 0 ? true : 'unavailable',
@@ -1673,46 +1685,59 @@ test('aggregation uses actual contributors and retains named outcome distributio
   );
   const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
   const publication = JSON.parse(readFileSync(join(generation, 'summaries/publication.json')));
-  const cohort = privateView.cohorts.baseline;
+  const cohort = privateView.cohorts.pilot;
   assert.deepEqual(cohort.completionOutcomes, {
     abandoned: 0,
     aborted: 0,
     completed: 5,
-    failed: 0,
+    failed: 1,
   });
-  assert.deepEqual(cohort.durationOutcomes, { available: 1, unavailable: 4 });
+  assert.deepEqual(cohort.durationOutcomes, { available: 5, unavailable: 1 });
   assert.deepEqual(cohort.validationOutcomes, {
-    failed: 0,
-    'not-required': 4,
-    passed: 1,
+    failed: 1,
+    'not-required': 0,
+    passed: 5,
     unavailable: 0,
   });
-  assert.deepEqual(cohort.reviewOutcomes, { completed: 1, 'not-run': 0, unavailable: 4 });
+  assert.deepEqual(cohort.reviewOutcomes, { completed: 5, 'not-run': 0, unavailable: 1 });
   assert.deepEqual(
     Object.keys(cohort.fallbackOutcomes).sort(),
     [...PILOT_MEASUREMENT_POLICY_PROJECTION.fallbacks].sort(),
   );
   assert.equal(cohort.fallbackOutcomes.none, 5);
-  assert.deepEqual(publication.cohorts.baseline.validationSuccess, { suppressed: true });
-  assert.deepEqual(publication.cohorts.baseline.durationMedianMs, { suppressed: true });
-  assert.deepEqual(publication.cohorts.baseline.criticalFindingsPerCompleted, {
-    numerator: '1',
-    denominator: '5',
-  });
+  assert.equal(cohort.fallbackOutcomes['spawn-rejected'], 1);
+  const publicCohort = publication.cohorts.pilot;
+  assert.equal(publicCohort.workflowCount, 6);
+  assert.equal(publicCohort.packetCount, 6);
+  assert.equal(publicCohort.attemptedFastCount, 6);
+  assert.deepEqual(publicCohort.completedCount, { suppressed: true });
+  assert.deepEqual(publicCohort.completionOutcomes, { suppressed: true });
+  assert.deepEqual(publicCohort.fallbackOutcomes, { suppressed: true });
+  assert.deepEqual(publicCohort.durationOutcomes, { suppressed: true });
+  assert.deepEqual(publicCohort.validationOutcomes, { suppressed: true });
+  assert.deepEqual(publicCohort.reviewOutcomes, { suppressed: true });
+  assert.deepEqual(publicCohort.fallbackOccurrences, { suppressed: true });
+  assert.deepEqual(publicCohort.fastWithoutEscalation, { suppressed: true });
+  assert.deepEqual(publicCohort.workflowCompletion, { suppressed: true });
+  assert.deepEqual(publicCohort.validationSuccess, { suppressed: true });
+  assert.deepEqual(publicCohort.durationMedianMs, { numerator: '300', denominator: '1' });
+  assert.deepEqual(publicCohort.criticalFindingsPerCompleted, { suppressed: true });
 
   const group = privateView.observations.baseline.groups['merge:codex'];
   assert.deepEqual(group.terminalOutcomes, {
     failed: 1,
-    merged: 1,
-    'reported-blocked': 1,
-    'reported-ready': 2,
+    merged: 0,
+    'reported-blocked': 0,
+    'reported-ready': 5,
   });
   assert.deepEqual(group.corrections, {
-    ciRepair: { 0: 4, 1: 1 },
-    configuredReviewer: { 0: 4, 2: 1 },
-    conflictResolution: { 0: 4, 3: 1 },
+    ciRepair: { 0: 5, 1: 1 },
+    configuredReviewer: { 0: 5, 2: 1 },
+    conflictResolution: { 0: 5, 3: 1 },
   });
   const publicGroup = publication.observations.baseline.groups['merge:codex'];
+  assert.equal(publicGroup.observationCount, 6);
+  assert.deepEqual(publicGroup.terminalOutcomes, { suppressed: true });
   assert.deepEqual(publicGroup.corrections, {
     ciRepair: { suppressed: true },
     configuredReviewer: { suppressed: true },

@@ -3600,55 +3600,54 @@ function publicationCell(value, sampleSize) {
 }
 
 function publicationDistribution(distribution) {
-  return Object.fromEntries(
-    Object.entries(distribution).map(([key, count]) => [key, publicationCell(count, count)]),
-  );
+  const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum;
+  return Object.values(distribution).some((count) => count < minimum)
+    ? { suppressed: true }
+    : { ...distribution };
 }
 
 function publicationDynamicDistribution(distribution) {
-  const published = {};
-  let hasSuppressedValues = false;
-  for (const [key, count] of Object.entries(distribution)) {
-    if (count < PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum) {
-      hasSuppressedValues = true;
-    } else {
-      published[key] = count;
-    }
-  }
-  if (hasSuppressedValues) published.suppressed = true;
-  return published;
+  return publicationDistribution(distribution);
 }
 
 function publicationCohort(metrics) {
   const allSuppressed =
     metrics.workflowCount < PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum;
   if (allSuppressed) return { suppressed: true };
+  const completionOutcomes = publicationDistribution(metrics.completionOutcomes);
+  const fallbackOutcomes = publicationDistribution(metrics.fallbackOutcomes);
+  const durationOutcomes = publicationDistribution(metrics.durationOutcomes);
+  const validationOutcomes = publicationDistribution(metrics.validationOutcomes);
+  const reviewOutcomes = publicationDistribution(metrics.reviewOutcomes);
   return {
     suppressed: false,
     workflowCount: publicationCell(metrics.workflowCount, metrics.workflowCount),
-    completedCount: publicationCell(metrics.completedCount, metrics.completedCount),
+    completedCount: completionOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.completedCount, metrics.completedCount),
     packetCount: publicationCell(metrics.packetCount, metrics.packetCount),
     eligiblePacketCount: publicationCell(metrics.eligiblePacketCount, metrics.eligiblePacketCount),
     attemptedFastCount: publicationCell(metrics.attemptedFastCount, metrics.attemptedFastCount),
-    completionOutcomes: publicationDistribution(metrics.completionOutcomes),
-    fallbackOutcomes: publicationDistribution(metrics.fallbackOutcomes),
-    durationOutcomes: publicationDistribution(metrics.durationOutcomes),
-    validationOutcomes: publicationDistribution(metrics.validationOutcomes),
-    reviewOutcomes: publicationDistribution(metrics.reviewOutcomes),
-    fallbackOccurrences: publicationCell(metrics.fallbackOccurrences, metrics.attemptedFastCount),
-    fastWithoutEscalation: publicationCell(
-      metrics.fastWithoutEscalation,
-      metrics.attemptedFastCount,
-    ),
-    workflowCompletion: publicationCell(metrics.workflowCompletion, metrics.workflowCount),
-    validationSuccess: publicationCell(
-      metrics.validationSuccess,
-      metrics.validationContributorCount,
-    ),
-    criticalFindingsPerCompleted: publicationCell(
-      metrics.criticalFindingsPerCompleted,
-      metrics.completedCount,
-    ),
+    completionOutcomes,
+    fallbackOutcomes,
+    durationOutcomes,
+    validationOutcomes,
+    reviewOutcomes,
+    fallbackOccurrences: fallbackOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.fallbackOccurrences, metrics.attemptedFastCount),
+    fastWithoutEscalation: fallbackOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.fastWithoutEscalation, metrics.attemptedFastCount),
+    workflowCompletion: completionOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.workflowCompletion, metrics.workflowCount),
+    validationSuccess: validationOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.validationSuccess, metrics.validationContributorCount),
+    criticalFindingsPerCompleted: completionOutcomes.suppressed
+      ? { suppressed: true }
+      : publicationCell(metrics.criticalFindingsPerCompleted, metrics.completedCount),
     qualityCorrectionMedian: publicationCell(
       metrics.qualityCorrectionMedian,
       metrics.completedCount,

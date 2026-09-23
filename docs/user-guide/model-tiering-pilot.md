@@ -71,10 +71,12 @@ Neither view is published automatically. Publishing even the suppressed aggregat
 separate review and approval. Detailed traces never feed the metrics and remain private inventory
 bound into the review digest.
 
-The publication candidate suppresses each undersized cell rather than exposing a larger object
-merely because one sibling metric has enough evidence. Neither aggregate view carries a generation
-identifier; the local review wrapper owns that binding. Evaluation enforces the required cohort,
-metric-stratum, ordinal-half, and period-observation sizes. Gate observations compare like
+The publication candidate suppresses an entire fixed or dynamic distribution when any member is
+undersized, so a visible sibling and linked total cannot disclose the hidden count by subtraction.
+Duplicate child counts and ratios are suppressed with the distribution; only enclosing totals may
+remain visible when the distribution has no visible child counts. Neither aggregate view carries a
+generation identifier; the local review wrapper owns that binding. Evaluation enforces the required
+cohort, metric-stratum, ordinal-half, and period-observation sizes. Gate observations compare like
 `merge|report` and native harness groups, while cost compares the baseline's would-be-Fast Quality
 work with the pilot's attempted-Fast work only when kind and unit are identical. Insufficient or
 incompatible evidence is unavailable.

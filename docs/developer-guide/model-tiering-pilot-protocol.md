@@ -125,7 +125,10 @@ stratum, ordinal-half, and period-observation minima; insufficient or incompatib
 unpaired.
 
 Review binds an inventory digest before aggregation. The private pre-suppression decision view is
-used for evaluation; the publication candidate suppresses each undersized cell independently. The
+used for evaluation. In the publication candidate, a fixed or dynamic distribution is visible only
+when every member meets the suppression minimum; otherwise the entire distribution is replaced by
+one suppression marker. Duplicate child counts and ratios are suppressed with their distribution;
+only enclosing totals remain visible because no child count is then available for subtraction. The
 private and public metric views contain no `generationId`; that binding exists only in the review
 wrapper. Evaluation and purge share one validator that requires the current protocol, aggregation
 and grouping versions, recomputed private/public/review digests, and unchanged evidence/state.
