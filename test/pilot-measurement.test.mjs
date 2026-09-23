@@ -1300,6 +1300,180 @@ test('lock-directory temporaries require exact stale-owner recovery authority', 
   assert.equal(existsSync(target), false);
 });
 
+test('unpublished staged lock temporaries require complete stale-owner self-proof', async (t) => {
+  function staleOwnerDeps(fx, beforeProbe = () => {}) {
+    return {
+      ...fx.deps,
+      kill: () => {
+        beforeProbe();
+        const error = new Error('stale owner');
+        error.code = 'ESRCH';
+        throw error;
+      },
+    };
+  }
+
+  async function stagedLock(
+    t,
+    {
+      operation = 'aggregate',
+      ownerNonce = 'R'.repeat(32),
+      suffix = '2'.repeat(16),
+      directory = 'locks',
+      recordSource = (base) => base,
+    } = {},
+  ) {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    const locks = join(generationRoot(fx, generationId), 'locks');
+    const temporaryName = `.tmp-${operation}-${generationId}-${ownerNonce}-${suffix}`;
+    const base = {
+      schema: 1,
+      operation,
+      generationId,
+      ownerPid: 2_147_483_647,
+      nonce: ownerNonce,
+    };
+    const record = recordSource(base);
+    const contents = typeof record === 'string' ? record : `${canonicalizeJson(record)}\n`;
+    const target = join(generationRoot(fx, generationId), directory, temporaryName);
+    writeFileSync(target, contents);
+    const expectedDigest = `sha256:${createHash('sha256').update(contents).digest('hex')}`;
+    return {
+      fx,
+      locks,
+      target,
+      contents,
+      input: {
+        ...fx.common,
+        generationId,
+        temporaryName,
+        ownerNonce,
+        expectedDigest,
+        confirmation: true,
+      },
+    };
+  }
+
+  for (const [label, operation, ownerNonce] of [
+    ['lifecycle operation', 'aggregate', 'L'.repeat(32)],
+    ['packet operation', 'start-packet', 'P'.repeat(32)],
+  ]) {
+    await t.test(`inventories and removes a complete ${label}`, async (t) => {
+      const { fx, locks, target, contents, input } = await stagedLock(t, {
+        operation,
+        ownerNonce,
+        suffix: '1'.repeat(16),
+      });
+
+      assert.deepEqual(readdirSync(locks), [input.temporaryName]);
+      const inventory = await executeOperation(
+        'inventory',
+        { ...fx.common, generationId: input.generationId },
+        fx.deps,
+      );
+      assert.deepEqual(inventory.result.orphanTemporaries, [
+        {
+          directory: 'locks',
+          temporaryName: input.temporaryName,
+          digest: input.expectedDigest,
+          ownerNonce,
+        },
+      ]);
+
+      await assert.rejects(
+        () =>
+          executeOperation(
+            'reconcile-temporary',
+            { ...input, expectedDigest: `sha256:${'0'.repeat(64)}` },
+            staleOwnerDeps(fx),
+          ),
+        { code: 'STALE_REVIEW' },
+      );
+      assert.equal(readFileSync(target, 'utf8'), contents);
+
+      const reconciled = await executeOperation('reconcile-temporary', input, staleOwnerDeps(fx));
+      assert.deepEqual(reconciled.result, {
+        status: 'removed',
+        temporaryDigest: input.expectedDigest,
+      });
+      assert.equal(existsSync(target), false);
+      assert.deepEqual(readdirSync(locks), []);
+    });
+  }
+
+  for (const [label, directory, recordSource, expectedCode, depsFor] of [
+    [
+      'live embedded owner',
+      'locks',
+      (base) => ({ ...base, ownerPid: process.pid }),
+      'LOCKED',
+      (fx) => ({ ...fx.deps, kill: () => {} }),
+    ],
+    [
+      'filename and record operation mismatch',
+      'locks',
+      (base) => ({ ...base, operation: 'start' }),
+      'UNSAFE_STORAGE',
+      staleOwnerDeps,
+    ],
+    [
+      'filename and record nonce mismatch',
+      'locks',
+      (base) => ({ ...base, nonce: 'N'.repeat(32) }),
+      'UNSAFE_STORAGE',
+      staleOwnerDeps,
+    ],
+    [
+      'filename and record generation mismatch',
+      'locks',
+      (base) => ({ ...base, generationId: 'G'.repeat(32) }),
+      'UNSAFE_STORAGE',
+      staleOwnerDeps,
+    ],
+    [
+      'non-exact record schema',
+      'locks',
+      (base) => ({ ...base, extra: true }),
+      'INVALID_PAYLOAD',
+      staleOwnerDeps,
+    ],
+    ['malformed record', 'locks', () => '{\n', 'UNSAFE_STORAGE', staleOwnerDeps],
+    ['self-proof outside the lock directory', 'records', (base) => base, 'LOCKED', staleOwnerDeps],
+  ]) {
+    await t.test(`refuses ${label}`, async (t) => {
+      const { fx, target, contents, input } = await stagedLock(t, { directory, recordSource });
+
+      await assert.rejects(() => executeOperation('reconcile-temporary', input, depsFor(fx)), {
+        code: expectedCode,
+      });
+      assert.equal(readFileSync(target, 'utf8'), contents);
+    });
+  }
+
+  await t.test('refuses a same-content replacement after stale-owner review', async (t) => {
+    const { fx, locks, target, contents, input } = await stagedLock(t, {
+      ownerNonce: 'S'.repeat(32),
+      suffix: '3'.repeat(16),
+    });
+
+    await assert.rejects(
+      () =>
+        executeOperation(
+          'reconcile-temporary',
+          input,
+          staleOwnerDeps(fx, () => {
+            const replacement = join(locks, '.replacement');
+            writeFileSync(replacement, contents);
+            renameSync(replacement, target);
+          }),
+        ),
+      { code: 'STALE_REVIEW' },
+    );
+    assert.equal(readFileSync(target, 'utf8'), contents);
+  });
+});
+
 test('minimal lifecycle reserves, times, and finalizes exactly once without retaining capabilities', async (t) => {
   const fx = fixture(t);
   const baseline = await beginBaseline(fx);

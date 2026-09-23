@@ -787,18 +787,16 @@ async function acquireLock(context, generationId, operation, deps, lockName = 'l
   const target = path.join(locks, lockName);
   const nonce = randomOpaque(deps, 24);
   const value = { schema: 1, operation, generationId, ownerPid: process.pid, nonce };
-  await repositoryGuard(context.input, deps, { mutation: true });
-  let handle;
-  try {
-    handle = await open(target, WRITE_FLAGS, 0o600);
-    await handle.writeFile(`${canonicalizeJson(value)}\n`, 'utf8');
-    await handle.sync();
-  } catch (error) {
-    if (error?.code === 'EEXIST') fail('LOCKED');
-    fail('WRITE_FAILED', { cause: error });
-  } finally {
-    await handle?.close();
-  }
+  await atomicWrite(
+    { ...context, activeLock: value },
+    target,
+    value,
+    operation,
+    generationId,
+    deps,
+    undefined,
+    { noReplace: true, existsCode: 'LOCKED', skipCapacity: true },
+  );
   const after = await classifyLocks();
   const conflicts =
     lockName === 'lifecycle.lock'
@@ -827,6 +825,24 @@ function validateLockRecord(value, generationId, lockName) {
     (lockName === 'lifecycle.lock'
       ? !LIFECYCLE_LOCK_OPERATIONS.has(value.operation)
       : packetLock === null || !['start-packet', 'finish-packet'].includes(value.operation))
+  ) {
+    fail('UNSAFE_STORAGE');
+  }
+  return value;
+}
+
+function validateStagedLockRecord(value, generationId, temporaryName) {
+  const identity = temporaryIdentity(temporaryName, generationId);
+  exactObject(value, ['schema', 'operation', 'generationId', 'ownerPid', 'nonce']);
+  if (
+    value.schema !== 1 ||
+    value.operation !== identity.operation ||
+    value.generationId !== generationId ||
+    !Number.isSafeInteger(value.ownerPid) ||
+    value.ownerPid <= 0 ||
+    value.nonce !== identity.ownerNonce ||
+    (!LIFECYCLE_LOCK_OPERATIONS.has(value.operation) &&
+      !['start-packet', 'finish-packet'].includes(value.operation))
   ) {
     fail('UNSAFE_STORAGE');
   }
@@ -3257,7 +3273,11 @@ async function reconcileTemporary(input, deps) {
       ownerLock = lock;
     }
   }
-  if (ownerLock === null || probePid(ownerLock.ownerPid, deps) !== 'stale-provable') fail('LOCKED');
+  if (ownerLock === null) {
+    if (path.dirname(target) !== path.join(root, 'locks')) fail('LOCKED');
+    ownerLock = validateStagedLockRecord(await readJson(target), input.generationId, temporaryName);
+  }
+  if (probePid(ownerLock.ownerPid, deps) !== 'stale-provable') fail('LOCKED');
   await repositoryGuard(input, deps, { mutation: true });
   const checked = await lstat(target).catch((error) =>
     error?.code === 'ENOENT' ? fail('STALE_REVIEW') : Promise.reject(error),
