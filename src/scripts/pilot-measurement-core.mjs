@@ -1944,11 +1944,14 @@ async function scanTombstones(context, generationId) {
   const entries = await safeEntries(path.join(context.namespace, 'tombstones'), { missing: true });
   const normal = [];
   const discard = [];
-  const grammar = /^([A-Za-z0-9_-]{32,128})-(discard-)?sha256-([0-9a-f]{64})$/;
+  const grammar = /^[A-Za-z0-9_-]{32,128}-(?:discard-)?sha256-[0-9a-f]{64}$/;
+  const prefix = `${generationId}-`;
+  const relativeGrammar = /^(discard-)?sha256-[0-9a-f]{64}$/;
   for (const entry of entries) {
-    const match = grammar.exec(entry.name);
-    if (!entry.isDirectory() || match === null) fail('UNSAFE_STORAGE');
-    if (match[1] === generationId) (match[2] === undefined ? normal : discard).push(entry.name);
+    if (!entry.isDirectory() || !grammar.test(entry.name)) fail('UNSAFE_STORAGE');
+    if (!entry.name.startsWith(prefix)) continue;
+    const match = relativeGrammar.exec(entry.name.slice(prefix.length));
+    if (match !== null) (match[1] === undefined ? normal : discard).push(entry.name);
   }
   return { normal: normal.sort(), discard: discard.sort() };
 }

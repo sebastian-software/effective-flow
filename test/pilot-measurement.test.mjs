@@ -2158,6 +2158,72 @@ test('purge and guarded discard remove only the reviewed generation and are retr
   assert.equal(readFileSync(unrelated, 'utf8'), 'preserve\n');
 });
 
+test('hyphenated generation tombstones preserve discard retry identity', async (t) => {
+  const fx = fixture(t);
+  await beginBaseline(fx);
+  const generationId = `generation-id-with-hyphens-${'G'.repeat(32)}`;
+  const tombstones = join(fx.root, '.effective-flow/model-tiering-pilot/tombstones');
+  const normalDigest = `sha256:${'1'.repeat(64)}`;
+  const discardDigest = `sha256:${'2'.repeat(64)}`;
+  const normalTombstone = join(tombstones, `${generationId}-${normalDigest.replace(':', '-')}`);
+  const discardTombstone = join(
+    tombstones,
+    `${generationId}-discard-${discardDigest.replace(':', '-')}`,
+  );
+
+  mkdirSync(normalTombstone);
+  const normalInventory = await executeOperation(
+    'inventory',
+    { ...fx.common, generationId },
+    fx.deps,
+  );
+  rmSync(normalTombstone, { recursive: true });
+
+  mkdirSync(discardTombstone);
+  const discardInventory = await executeOperation(
+    'inventory',
+    { ...fx.common, generationId },
+    fx.deps,
+  );
+  const discardInput = {
+    ...fx.common,
+    generationId,
+    configState: 'disabled',
+    dryRun: false,
+    decision: 'stop',
+    confirmation: true,
+  };
+  const mismatchedRetry = await executeOperation(
+    'discard-generation',
+    { ...discardInput, fullInventoryDigest: `sha256:${'3'.repeat(64)}` },
+    fx.deps,
+  ).then(
+    () => ({ status: 'resolved' }),
+    (error) => ({ status: 'rejected', code: error.code }),
+  );
+  const matchingRetry = await executeOperation(
+    'discard-generation',
+    { ...discardInput, fullInventoryDigest: discardDigest },
+    fx.deps,
+  );
+  const idempotentRetry = await executeOperation(
+    'discard-generation',
+    { ...discardInput, fullInventoryDigest: discardDigest },
+    fx.deps,
+  );
+
+  assert.deepEqual(mismatchedRetry, { status: 'rejected', code: 'STALE_REVIEW' });
+  assert.equal(normalInventory.result.normalTombstones, 1);
+  assert.equal(normalInventory.result.discardTombstones, 0);
+  assert.equal(discardInventory.result.normalTombstones, 0);
+  assert.equal(discardInventory.result.discardTombstones, 1);
+  assert.equal(matchingRetry.result.generationStatus, 'absent');
+  assert.equal(matchingRetry.result.discardTombstones, 0);
+  assert.equal(existsSync(discardTombstone), false);
+  assert.equal(idempotentRetry.result.generationStatus, 'absent');
+  assert.equal(idempotentRetry.result.discardTombstones, 0);
+});
+
 test('guarded discard refuses a live packet writer during its read-only review', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
