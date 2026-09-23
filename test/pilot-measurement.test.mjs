@@ -1747,6 +1747,68 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   assert.deepEqual(publicGroup.checksSatisfied, { suppressed: true });
 });
 
+test('publication suppresses complementary 5+1 observation groups while retaining the total', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const generation = generationRoot(fx, generationId);
+
+  for (let index = 0; index < 6; index += 1) {
+    const mode = index < 5 ? 'merge' : 'report';
+    const reservation = (
+      await executeOperation(
+        'start-gate-observation',
+        {
+          ...fx.common,
+          generationId,
+          configState: 'enabled',
+          generationState: 'baseline',
+          mode,
+          harnessFamily: 'codex',
+        },
+        fx.deps,
+      )
+    ).result;
+    await executeOperation(
+      'finalize-gate-observation',
+      {
+        ...fx.common,
+        generationId,
+        observationId: reservation.observationId,
+        capability: reservation.capability,
+        terminalOutcome: 'reported-ready',
+        ciRepairCorrections: 0,
+        reviewerCorrections: 0,
+        conflictCorrections: 0,
+        checksReported: false,
+        requiredCheckCount: 'unavailable',
+        requiredChecksSatisfied: 'unavailable',
+      },
+      fx.deps,
+    );
+  }
+
+  const statePath = join(generation, 'state.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(statePath, `${canonicalizeJson({ ...state, generationState: 'review' })}\n`);
+  const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+  await executeOperation(
+    'aggregate',
+    { ...fx.common, generationId, expectedInventoryDigest: inventory.result.inventoryDigest },
+    fx.deps,
+  );
+
+  const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
+  const publication = JSON.parse(readFileSync(join(generation, 'summaries/publication.json')));
+  assert.equal(privateView.observations.baseline.observationCount, 6);
+  assert.equal(privateView.observations.baseline.groups['merge:codex'].observationCount, 5);
+  assert.equal(privateView.observations.baseline.groups['report:codex'].observationCount, 1);
+
+  const publicObservations = publication.observations.baseline;
+  assert.equal(publicObservations.observationCount, 6);
+  assert.deepEqual(publicObservations.groups['merge:codex'], { suppressed: true });
+  assert.deepEqual(publicObservations.groups['report:codex'], { suppressed: true });
+});
+
 test('evaluation applies metric minima to actual validation contributors', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);

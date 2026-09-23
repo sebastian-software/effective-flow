@@ -3657,28 +3657,32 @@ function publicationCohort(metrics) {
 }
 
 function publicationObservations(metrics) {
+  const suppressGroups = Object.values(metrics.groups).some(
+    (group) => group.observationCount < PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum,
+  );
+  const groups = Object.fromEntries(
+    Object.entries(metrics.groups).map(([key, group]) => [
+      key,
+      suppressGroups
+        ? { suppressed: true }
+        : {
+            suppressed: false,
+            observationCount: group.observationCount,
+            terminalOutcomes: publicationDistribution(group.terminalOutcomes),
+            corrections: Object.fromEntries(
+              Object.entries(group.corrections).map(([correction, distribution]) => [
+                correction,
+                publicationDynamicDistribution(distribution),
+              ]),
+            ),
+            correctionMedian: group.correctionMedian,
+            checksSatisfied: publicationCell(group.checksSatisfied, group.checkContributorCount),
+          },
+    ]),
+  );
   return {
     observationCount: publicationCell(metrics.observationCount, metrics.observationCount),
-    groups: Object.fromEntries(
-      Object.entries(metrics.groups).map(([key, group]) => [
-        key,
-        group.observationCount < PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum
-          ? { suppressed: true }
-          : {
-              suppressed: false,
-              observationCount: group.observationCount,
-              terminalOutcomes: publicationDistribution(group.terminalOutcomes),
-              corrections: Object.fromEntries(
-                Object.entries(group.corrections).map(([correction, distribution]) => [
-                  correction,
-                  publicationDynamicDistribution(distribution),
-                ]),
-              ),
-              correctionMedian: group.correctionMedian,
-              checksSatisfied: publicationCell(group.checksSatisfied, group.checkContributorCount),
-            },
-      ]),
-    ),
+    groups,
   };
 }
 
