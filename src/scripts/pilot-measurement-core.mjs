@@ -2936,8 +2936,10 @@ async function finalizeGateObservation(input, deps) {
   const requiredCheckCount = unavailableOrInteger(input.requiredCheckCount);
   const requiredChecksSatisfied = unavailableOrBoolean(input.requiredChecksSatisfied);
   if (
-    !input.checksReported &&
-    (requiredCheckCount !== 'unavailable' || requiredChecksSatisfied !== 'unavailable')
+    (!input.checksReported &&
+      (requiredCheckCount !== 'unavailable' || requiredChecksSatisfied !== 'unavailable')) ||
+    (input.checksReported && requiredCheckCount === 'unavailable') ||
+    (input.checksReported && requiredChecksSatisfied === 'unavailable')
   ) {
     fail('INVALID_PAYLOAD');
   }

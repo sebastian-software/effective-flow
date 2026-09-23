@@ -509,6 +509,78 @@ test('gate observations retain only anonymous grouping axes and finalize exactly
   assert.doesNotMatch(readFileSync(observationPath, 'utf8'), new RegExp(reserved.capability));
 });
 
+test('gate observation check evidence rejects unavailable fields without consuming reservations', async (t) => {
+  for (const [label, evidence] of [
+    [
+      'required check count unavailable',
+      { requiredCheckCount: 'unavailable', requiredChecksSatisfied: true },
+    ],
+    [
+      'required check satisfaction unavailable',
+      { requiredCheckCount: 2, requiredChecksSatisfied: 'unavailable' },
+    ],
+  ]) {
+    await t.test(label, async (t) => {
+      const fx = fixture(t);
+      const { generationId } = await beginBaseline(fx);
+      const reserved = (
+        await executeOperation(
+          'start-gate-observation',
+          {
+            ...fx.common,
+            generationId,
+            configState: 'enabled',
+            generationState: 'baseline',
+            mode: 'report',
+            harnessFamily: 'codex',
+          },
+          fx.deps,
+        )
+      ).result;
+      const observationPath = join(
+        generationRoot(fx, generationId),
+        'gate-observations',
+        `${reserved.observationId}.json`,
+      );
+      const reservation = readFileSync(observationPath, 'utf8');
+      const finalizeInput = {
+        ...fx.common,
+        generationId,
+        observationId: reserved.observationId,
+        capability: reserved.capability,
+        terminalOutcome: 'reported-ready',
+        ciRepairCorrections: 0,
+        reviewerCorrections: 0,
+        conflictCorrections: 0,
+        checksReported: true,
+      };
+
+      await assert.rejects(
+        () =>
+          executeOperation('finalize-gate-observation', { ...finalizeInput, ...evidence }, fx.deps),
+        { code: 'INVALID_PAYLOAD' },
+      );
+      assert.equal(readFileSync(observationPath, 'utf8'), reservation);
+
+      await assert.doesNotReject(() =>
+        executeOperation(
+          'finalize-gate-observation',
+          {
+            ...finalizeInput,
+            requiredCheckCount: 2,
+            requiredChecksSatisfied: true,
+          },
+          fx.deps,
+        ),
+      );
+      const observation = JSON.parse(readFileSync(observationPath, 'utf8'));
+      assert.equal(observation.kind, 'gate-observation');
+      assert.equal(observation.requiredCheckCount, 2);
+      assert.equal(observation.requiredChecksSatisfied, true);
+    });
+  }
+});
+
 test('inventory binds unknown evidence as raw bytes while admission rejects it', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);
