@@ -1837,9 +1837,9 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
     packets: [
       {
         packetId: Buffer.alloc(24, ordinal + 30).toString('base64url'),
-        selectedProfile: 'fast',
-        wouldBeFastEligible: true,
-        firstGateReason: null,
+        selectedProfile: ordinal === 1 ? 'quality' : 'fast',
+        wouldBeFastEligible: ordinal !== 1,
+        firstGateReason: ordinal === 1 ? 'profile-unavailable' : null,
         implementationDuration:
           ordinal === 6
             ? { status: 'unavailable' }
@@ -1932,6 +1932,8 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
   const publication = JSON.parse(readFileSync(join(generation, 'summaries/publication.json')));
   const cohort = privateView.cohorts.pilot;
+  assert.equal(cohort.eligiblePacketCount, 5);
+  assert.equal(cohort.attemptedFastCount, 5);
   assert.deepEqual(cohort.completionOutcomes, {
     abandoned: 0,
     aborted: 0,
@@ -1955,7 +1957,8 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   const publicCohort = publication.cohorts.pilot;
   assert.equal(publicCohort.workflowCount, 6);
   assert.equal(publicCohort.packetCount, 6);
-  assert.equal(publicCohort.attemptedFastCount, 6);
+  assert.deepEqual(publicCohort.eligiblePacketCount, { suppressed: true });
+  assert.deepEqual(publicCohort.attemptedFastCount, { suppressed: true });
   assert.deepEqual(publicCohort.completedCount, { suppressed: true });
   assert.deepEqual(publicCohort.completionOutcomes, { suppressed: true });
   assert.deepEqual(publicCohort.fallbackOutcomes, { suppressed: true });
@@ -2003,6 +2006,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
   for (const cohort of ['baseline', 'pilot']) {
     for (const completionStatus of completionStatuses) {
       for (let index = 0; index < 5; index += 1) {
+        const subsetMember = completionStatus === 'completed' || completionStatus === 'failed';
         const value = {
           schema: 1,
           kind: 'workflow-record',
@@ -2019,9 +2023,9 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
           packets: [
             {
               packetId: opaqueId(72, ordinal),
-              selectedProfile: cohort === 'baseline' ? 'quality' : 'fast',
-              wouldBeFastEligible: true,
-              firstGateReason: null,
+              selectedProfile: cohort === 'baseline' || !subsetMember ? 'quality' : 'fast',
+              wouldBeFastEligible: subsetMember,
+              firstGateReason: subsetMember ? null : 'profile-unavailable',
               implementationDuration: { status: 'available', milliseconds: 100 },
               fallback: 'none',
               escalated: false,
@@ -2128,6 +2132,9 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
     numerator: '1',
     denominator: '1',
   });
+  assert.equal(publication.cohorts.baseline.eligiblePacketCount, 10);
+  assert.equal(publication.cohorts.pilot.eligiblePacketCount, 10);
+  assert.equal(publication.cohorts.pilot.attemptedFastCount, 10);
 
   const baselineGroups = publication.observations.baseline.groups;
   assert.deepEqual(baselineGroups['merge:codex'].checksSatisfied, { suppressed: true });

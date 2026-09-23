@@ -3625,6 +3625,11 @@ function publicationCell(value, sampleSize) {
     : value;
 }
 
+function publicationSubsetCell(value, total) {
+  const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum;
+  return value < minimum || total - value < minimum ? { suppressed: true } : value;
+}
+
 function publicationRatioCell(value, sampleSize, { requireComplement = false } = {}) {
   const minimum = BigInt(PILOT_MEASUREMENT_PROTOCOL.aggregation.suppressionMinimum);
   const sample = BigInt(sampleSize);
@@ -3665,8 +3670,8 @@ function publicationCohort(metrics) {
       ? { suppressed: true }
       : publicationCell(metrics.completedCount, metrics.completedCount),
     packetCount: publicationCell(metrics.packetCount, metrics.packetCount),
-    eligiblePacketCount: publicationCell(metrics.eligiblePacketCount, metrics.eligiblePacketCount),
-    attemptedFastCount: publicationCell(metrics.attemptedFastCount, metrics.attemptedFastCount),
+    eligiblePacketCount: publicationSubsetCell(metrics.eligiblePacketCount, metrics.packetCount),
+    attemptedFastCount: publicationSubsetCell(metrics.attemptedFastCount, metrics.packetCount),
     completionOutcomes,
     fallbackOutcomes,
     durationOutcomes,
