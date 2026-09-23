@@ -341,6 +341,16 @@ The build aborts with an error message if any of these guards is violated:
   separate from the rendered native capability: the build now emits the sanctioned Claude
   sidecars and native inventories, but no workflow includes the policy fragment or requests Fast,
   and portable output contains no native profile artifact.
+- **Pilot-measurement projection guards:** The execution-profile contract is projected into
+  `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
+  drift in that closed policy subset. The same module exports a measurement-only documentation
+  projection that deliberately excludes the execution-profile policy projection. The marked block
+  in `docs/developer-guide/model-tiering-pilot-protocol.md` must contain exactly one fenced,
+  one-line canonical JSON value between the two protocol markers.
+  `parsePilotMeasurementDocumentationProjection` and
+  `assertPilotMeasurementDocumentationProjection` reject missing or repeated markers, malformed
+  fences or JSON, noncanonical serialization, key/order drift, and any value mismatch before
+  rendering.
 - **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
   validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
   end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two
@@ -466,9 +476,10 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Three dependency-free script subsystems ship as consumer runtime code in the skill payload, each
-split into an I/O boundary and a pure, unit-testable core. Two are a single pair; the remote
-tracker's core is split further, across five modules:
+Four dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains thirteen files: two two-file subsystems, the remote tracker's six-file family,
+and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
+core or protocol modules:
 
 - **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
 <build|validate>` with one JSON object on standard input whose `cwd` is the verified
@@ -497,6 +508,19 @@ tracker's core is split further, across five modules:
   unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
   that flag. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
+- **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
+  with one closed-schema JSON object on standard input. The entry point emits one stable JSON
+  envelope and uses nonzero exit codes for structured failures. The core owns guarded local
+  lifecycle, record, detailed-trace, anonymous gate-observation, reconciliation, aggregation,
+  evaluation, purge, and discard operations under
+  `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`; the protocol module owns the
+  immutable version, digest, limits, timing, metrics, gates, and enum registries. Reads never
+  authenticate through an identity-bearing field; workflow, packet, and observation mutations use
+  operation-scoped capabilities, while lifecycle transitions require explicit digest-bound
+  confirmation. Detailed traces require explicit current-run consent. This capability ships before
+  activation: setup exposes no pilot action, and `build` and `refactor` request no Fast profile. The
+  exact developer contract and build-validated projection are in the
+  [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
@@ -505,8 +529,9 @@ absent commands become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads re
 diagnostics, but body writes are reported as non-atomic because GitHub does not support conditional
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
-pull-request creation. The CLI-level test spawns the real entry point; the build and distribution
-checks prove that all three installed payloads contain identical, usable scripts.
+pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
+checks prove that all three installed payloads contain all thirteen identical, usable scripts and
+that the pilot helper reports its protocol from an isolated distribution.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
 current-task capability directly, and Claude Code renames its own session through the host's

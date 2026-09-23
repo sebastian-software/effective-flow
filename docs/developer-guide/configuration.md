@@ -19,7 +19,8 @@ language: `# Effective Flow project setup` with `## Configuration`, or
 `# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
 envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
 runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `worktree-runs/`,
-and `merge-gate/` (the gate's delegation messages); the entire directory is gitignored with one `.effective-flow/` line.
+`merge-gate/` (the gate's delegation messages), and `model-tiering-pilot/` (local pilot generations
+and their evidence); the entire directory is gitignored with one `.effective-flow/` line.
 
 This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
@@ -195,12 +196,23 @@ persisted generation state are independent, so changing or removing the row must
 generation or clear suspension. The key has no legacy migration and stores no model name. Setup
 remains the only configuration writer and still exposes no setup UI for the reserved row. The build
 now emits native profile capability—five generated Claude Fast sidecars, Codex per-spawn rendering,
-and strict native inventories—but `build` and `refactor` contain no Fast-profile reference and do
-not consume this key yet. Portable output remains Quality-only. The existence of native artifacts
+strict native inventories, and a local measurement helper—but `build` and `refactor` contain no
+Fast-profile reference and do not consume this key yet. Setup exposes neither baseline nor
+activation actions. Portable output remains Quality-only. The existence of native artifacts
 or a valid inventory neither activates Fast nor proves that the running host can discover or accept
-the representation. The user-facing contract is in
-[Configuration](../user-guide/configuration.md#block-executionprofiles), while the durable rationale
-is in the [risk-aware pilot ADR](../adr/risk-aware-model-tiering-pilot-policy.md).
+the representation.
+
+Pilot generation state and evidence are owned below
+`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never by a tracked configuration row.
+Disabling the key stops new measurement and Fast admission but does not delete a generation, clear
+suspension, or authorize purge. The row also cannot authorize a detailed trace: only an explicit
+request in the current workflow run can produce the `detailOptIn: true` attestation, and that
+consent does not carry forward. The runtime helper owns lifecycle and evidence mutations; setup
+remains the sole writer of the tracked ADR. The
+[protocol guide](model-tiering-pilot-protocol.md) documents runtime ownership, the user-facing
+[Configuration](../user-guide/configuration.md#block-executionprofiles) explains project admission,
+and the [risk-aware pilot ADR](../adr/risk-aware-model-tiering-pilot-policy.md) records the durable
+rationale.
 
 ### Bot registry encoding (`mergeGate.bots`)
 

@@ -56,6 +56,9 @@ import {
   assertProjectRoutingContract,
   parseExecutionProfileContract,
   assertExecutionProfileContract,
+  assertPilotMeasurementPolicyProjection,
+  parsePilotMeasurementDocumentationProjection,
+  assertPilotMeasurementDocumentationProjection,
   parseNextStepsTable,
   assertNextStepsContract,
   findNextStepsDocViolations,
@@ -92,6 +95,9 @@ const RUNTIME_SCRIPT_FILES = [
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
   'remote-tracker-github-core.mjs',
+  'pilot-measurement.mjs',
+  'pilot-measurement-core.mjs',
+  'pilot-measurement-protocol.mjs',
 ];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
@@ -912,9 +918,9 @@ try {
   }
 
   // --- Shared execution-profile contract guard ---
-  // This policy is intentionally not consumed or emitted yet. Validate its
-  // closed tables directly before rendering so later adoption cannot inherit a
-  // malformed gate, state algebra, control mapping, or transfer interface.
+  // This Markdown policy remains canonical and workflow adoption stays absent.
+  // Validate its closed tables and the shipped pilot runtime projection before
+  // rendering so neither consumer can inherit a malformed or drifted contract.
   const executionProfileContext = 'shared/execution-profiles.md';
   const executionProfilePath = join(SHARED_DIR, 'execution-profiles.md');
   if (!existsSync(executionProfilePath)) {
@@ -926,6 +932,23 @@ try {
   });
   assertExecutionProfileContract(executionProfileContract, {
     context: executionProfileContext,
+  });
+  assertPilotMeasurementPolicyProjection(executionProfileContract, {
+    context: `${executionProfileContext} ↔ scripts/pilot-measurement-protocol.mjs`,
+  });
+
+  const pilotProtocolGuideContext = 'docs/developer-guide/model-tiering-pilot-protocol.md';
+  const pilotProtocolGuidePath = join(ROOT_DIR, pilotProtocolGuideContext);
+  if (!existsSync(pilotProtocolGuidePath)) {
+    throw new Error(`Pilot-measurement protocol guide not found: ${pilotProtocolGuidePath}`);
+  }
+  const pilotProtocolGuide = normalizeLineEndings(readFileSync(pilotProtocolGuidePath, 'utf8'));
+  const pilotDocumentationProjection = parsePilotMeasurementDocumentationProjection(
+    pilotProtocolGuide,
+    { context: pilotProtocolGuideContext },
+  );
+  assertPilotMeasurementDocumentationProjection(pilotDocumentationProjection, {
+    context: `${pilotProtocolGuideContext} ↔ scripts/pilot-measurement-protocol.mjs`,
   });
 
   // --- Shared next-steps contract guard ---
@@ -1612,11 +1635,11 @@ try {
       const source = readFileSync(join(RUNTIME_SCRIPTS_DIR, file));
       const shipped = join(skillDir, 'scripts', file);
       if (!existsSync(shipped)) {
-        throw new Error(`remote-tracker shipping guard (#169): ${target} is missing ${shipped}`);
+        throw new Error(`runtime helper shipping guard: ${target} is missing ${shipped}`);
       }
       if (!source.equals(readFileSync(shipped))) {
         throw new Error(
-          `remote-tracker shipping guard (#169): ${target} copy differs from src/scripts/${file}`,
+          `runtime helper shipping guard: ${target} copy differs from src/scripts/${file}`,
         );
       }
     }
@@ -1811,7 +1834,7 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2297,
+    'merge-gate': 2320,
     iterate: 1789,
     setup: 1760,
     'apply-review': 1400,

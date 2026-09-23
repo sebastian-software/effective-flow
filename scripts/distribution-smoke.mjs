@@ -30,6 +30,21 @@ import { stageDelivery } from './stage-delivery.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const AGENT_PREFIX = 'effective-flow-';
+const RUNTIME_SCRIPT_FILES = [
+  'delegation-envelope.mjs',
+  'delegation-envelope-core.mjs',
+  'delivery-selection.mjs',
+  'delivery-selection-core.mjs',
+  'remote-tracker.mjs',
+  'remote-tracker-core.mjs',
+  'remote-tracker-shared-core.mjs',
+  'remote-tracker-decomposition-core.mjs',
+  'remote-tracker-forgejo-core.mjs',
+  'remote-tracker-github-core.mjs',
+  'pilot-measurement.mjs',
+  'pilot-measurement-core.mjs',
+  'pilot-measurement-protocol.mjs',
+];
 const TRUSTED_AUTOMATION = [
   join('.github', 'workflows', 'close-develop-issues.yml'),
   join('.github', 'scripts', 'close-develop-issues.mjs'),
@@ -257,17 +272,19 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       `${target} license`,
     );
     const scripts = join(distRoot, target, 'effective-flow', 'scripts');
-    for (const file of [
-      'remote-tracker.mjs',
-      'remote-tracker-core.mjs',
-      'remote-tracker-shared-core.mjs',
-      'remote-tracker-decomposition-core.mjs',
-      'remote-tracker-forgejo-core.mjs',
-      'remote-tracker-github-core.mjs',
-      'delegation-envelope.mjs',
-      'delegation-envelope-core.mjs',
-    ]) {
-      if (!lstatSync(join(scripts, file)).isFile()) fail(`${target} is missing scripts/${file}`);
+    assertSameMembers(
+      readdirSync(scripts).filter((name) => name.endsWith('.mjs')),
+      RUNTIME_SCRIPT_FILES,
+      `${target} runtime scripts`,
+    );
+    for (const file of RUNTIME_SCRIPT_FILES) {
+      const shipped = join(scripts, file);
+      if (!lstatSync(shipped).isFile()) fail(`${target} is missing scripts/${file}`);
+      assertSameFile(
+        shipped,
+        join(ROOT_DIR, 'src', 'scripts', file),
+        `${target} runtime script ${file}`,
+      );
     }
     for (const file of ['session-title.mjs', 'session-title-core.mjs']) {
       if (existsSync(join(scripts, file))) fail(`${target} must not ship scripts/${file}`);
@@ -306,6 +323,20 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       fail(`${target} delegation envelope did not refuse an invalid payload with a JSON envelope`);
     }
     assertDelegationEnvelopeRoundTrip(target, join(scripts, 'delegation-envelope.mjs'));
+    const protocolHelper = spawnSync(
+      process.execPath,
+      [join(scripts, 'pilot-measurement.mjs'), 'protocol'],
+      {
+        cwd: ROOT_DIR,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: '{}',
+      },
+    );
+    const protocol = parseJson(protocolHelper.stdout.trim(), `${target} pilot protocol`);
+    if (protocolHelper.status !== 0 || protocol.ok !== true || protocol.operation !== 'protocol') {
+      fail(`${target} pilot protocol failed\n${protocolHelper.stdout}${protocolHelper.stderr}`);
+    }
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>

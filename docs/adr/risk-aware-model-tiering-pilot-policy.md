@@ -50,11 +50,30 @@ persist suspension and incomplete-record controls where possible, block new Fast
 reconciliation, and require an explicit confirmed resume from suspended state. Configuration
 changes and a successful Quality run never clear that state automatically.
 
-The policy is now paired with rendered native capability: generated Claude Fast implementer
-sidecars, a Codex per-spawn override representation, and strict native inventories. This still
-activates neither `build` nor `refactor`; no workflow requests Fast, setup exposes no activation
-choice, portable output remains Quality-only, and no pilot runtime state is written. Later work
-packages own lifecycle persistence, guided setup actions, workflow adoption, and evaluation.
+The policy is now paired with rendered native capability and a local measurement subsystem:
+generated Claude Fast implementer sidecars, a Codex per-spawn override representation, strict
+native inventories, and a dependency-free runtime helper with preregistered lifecycle, evidence,
+aggregation, evaluation, purge, and exceptional discard operations. Evidence remains private below
+`.effective-flow/model-tiering-pilot/`. Minimal structured records exclude content and identity;
+optional detailed traces require an explicit request in the current run and never inherit consent
+from project configuration. While a baseline or active generation exists, `merge-gate` may record
+anonymous period-level correction observations, but those observations carry no workflow-record or
+forge/repository identity and cannot be linked to a `build` or `refactor` run.
+
+Lifecycle capability still does not activate the pilot. Neither `build` nor `refactor` requests
+Fast, setup exposes no baseline or activation action, and portable output remains Quality-only.
+Configuration, generation state, trace consent, native capability, and publication approval remain
+separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
+separately approved publication of a suppressed candidate. Normal purge is digest-bound and
+review-gated. Exceptional discard is available only for malformed or unknown owned evidence after
+configuration is disabled, review has begun, and a separate `change` or `stop` confirmation is
+bound to the opaque inventory; it emits no aggregate and cannot result in Keep.
+
+Generation discovery has closed zero, one, or ambiguous-multiple outcomes and never selects among
+several candidates. Lifecycle transitions, capacity suspension, timing cleanup, recovery, and
+deletion are crash-safe and fail closed. Aggregate evaluation compares only preregistered compatible
+strata, treats insufficient evidence as unavailable, suppresses publication per cell, and keeps the
+generation identifier in the private review binding rather than either metric view.
 
 ## Alternatives and tradeoffs
 
@@ -80,6 +99,10 @@ packages own lifecycle persistence, guided setup actions, workflow adoption, and
   and unsupported work.
 - Retained-state escalation avoids discarding useful edits, but the Quality continuation must treat
   the diff and worker report as unverified intermediate evidence.
+- Local evidence has an explicit review, retention, purge, and exceptional-discard lifecycle;
+  disabling configuration alone never deletes it.
+- Anonymous merge-gate observations strengthen period-level operational evidence without creating
+  per-run linkage to implementation records.
 - The exact gate order, state algebra, fallback/control vocabularies, and transfer fields are
   executable policy guarded by the build; this ADR records why those boundaries exist rather than
   duplicating their full values.
@@ -98,6 +121,8 @@ rewriting the durable policy.
 - [Execution-profile configuration](../user-guide/configuration.md#block-executionprofiles)
 - [Configuration ownership](../developer-guide/configuration.md#reserved-execution-profile-key)
 - [Build-system guard](../developer-guide/build-system.md#guards)
+- [Pilot data and privacy](../user-guide/model-tiering-pilot.md)
+- [Pilot protocol](../developer-guide/model-tiering-pilot-protocol.md)
 - [Native execution-profile representation](./native-execution-profile-representation.md)
 
 This is a living decision. Update this file in place when the current policy changes; repository

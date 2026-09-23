@@ -130,6 +130,9 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'delegation-envelope.mjs',
   'delivery-selection-core.mjs',
   'delivery-selection.mjs',
+  'pilot-measurement-core.mjs',
+  'pilot-measurement-protocol.mjs',
+  'pilot-measurement.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
@@ -812,15 +815,32 @@ test('the build assertion precedes the actual atomic swap and workflows do not a
   const guard = buildSource.slice(guardStart, guardEnd);
   assert.match(guard, /parseExecutionProfileContract\(executionProfileSource/);
   assert.match(guard, /assertExecutionProfileContract\(executionProfileContract/);
+  assert.match(guard, /assertPilotMeasurementPolicyProjection\(executionProfileContract/);
+  assert.match(guard, /parsePilotMeasurementDocumentationProjection\(/);
+  assert.match(guard, /assertPilotMeasurementDocumentationProjection\(/);
   assert.doesNotMatch(
     guard,
     /writeFileSync|copyFileSync|resolveEagerIncludes|resolveLazyIncludes|renderBody|renameSync/,
     'the guard may validate but must not render, copy, or swap the reserved fragment',
   );
 
+  const runtimeRegistration = buildSource.match(/const RUNTIME_SCRIPT_FILES = \[([\s\S]*?)\n\];/);
+  assert.ok(runtimeRegistration, 'build.mjs must declare the runtime-script allowlist');
+  const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 13);
+  assert.deepEqual(
+    registeredRuntimeScripts.sort(),
+    EXPECTED_RUNTIME_SCRIPTS,
+    'build.mjs must register exactly the 13 approved runtime scripts',
+  );
+
   const sourceRoot = fileURLToPath(new URL('src', ROOT));
   const sourceFiles = collectFiles(sourceRoot).filter(
-    (path) => !path.endsWith('/src/shared/execution-profiles.md'),
+    (path) =>
+      !path.endsWith('/src/shared/execution-profiles.md') &&
+      !path.endsWith('/src/scripts/pilot-measurement-protocol.mjs'),
   );
   for (const path of sourceFiles) {
     const source = readFileSync(path, 'utf8');
@@ -896,6 +916,13 @@ test('an isolated build emits native capability without workflow activation', (t
       EXPECTED_RUNTIME_SCRIPTS,
       `${target} runtime-script inventory changed`,
     );
+    for (const file of EXPECTED_RUNTIME_SCRIPTS) {
+      assert.deepEqual(
+        readFileSync(join(root, 'scripts', file)),
+        readFileSync(new URL(`src/scripts/${file}`, ROOT)),
+        `${target} scripts/${file} must be byte-identical to its source`,
+      );
+    }
     assert.ok(
       !readdirSync(join(root, 'shared')).includes('execution-profiles.md'),
       `${target} must not emit the reserved execution-profile fragment`,
@@ -938,11 +965,13 @@ test('an isolated build emits native capability without workflow activation', (t
         /<!-- execution-profile-/,
         `${path} emitted reserved policy tables`,
       );
-      assert.deepEqual(
-        findProhibitedFastActivations(output),
-        [],
-        `${path} directly requests a Fast spawn, model, profile, or worker`,
-      );
+      if (!path.endsWith('/pilot-measurement-protocol.mjs')) {
+        assert.deepEqual(
+          findProhibitedFastActivations(output),
+          [],
+          `${path} directly requests a Fast spawn, model, profile, or worker`,
+        );
+      }
       assert.doesNotMatch(output, /\{\{AGENT_PROFILE:/, `${path} retained a profile token`);
     }
   }

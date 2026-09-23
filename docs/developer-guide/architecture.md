@@ -422,6 +422,40 @@ immediately before selection. On Claude Code, the presence of
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` produces `profile-unavailable` and selects Quality; an actual
 host rejection after a Fast request remains the distinct `spawn-rejected` fallback.
 
+## Local pilot measurement boundary
+
+The shipped pilot runtime is a fourth dependency-free script subsystem. Its entry point, core,
+and protocol modules are copied byte-for-byte into every target, but all evidence belongs to the
+verified runtime root at `.effective-flow/model-tiering-pilot/`; none belongs in `src/`, `dist/`,
+the merge-gate behavioral-evaluation archive, or the tracked project-setup ADR. The protocol module
+is the executable authority for bounded schemas, limits, timing, aggregation, metrics, adoption
+gates, and enums. The build reconciles its policy projection with
+`src/shared/execution-profiles.md` and its documentation projection with the marked mirror in the
+[protocol guide](model-tiering-pilot-protocol.md).
+
+Configuration, lifecycle state, and native representation are intentionally independent. The
+strict `executionProfiles.fast.enabled` row admits a project to the lifecycle, a generation owns
+baseline/active/suspended/review state, and native inventories prove only that artifacts agree with
+their installation. No one layer activates another. In particular, setup exposes no pilot action
+and `build` and `refactor` still contain no Fast-profile reference. The subsystem can therefore be
+built and tested without changing current workflow selection.
+
+Minimal workflow records and optional detailed traces are separate channels. A trace requires an
+explicit request in the current run; project configuration cannot confer that consent and no
+consent identity or text is retained. `merge-gate` has a third, deliberately unlinkable channel:
+while a baseline or active generation exists, non-observer runs may contribute anonymous
+period-level correction observations, but never a workflow-record identifier. The runtime fails
+toward Quality, preserves incomplete evidence for reconciliation, and separates private aggregate
+evaluation from any later publication approval.
+
+The storage layer is crash-safe and capability-bound. Namespace serialization admits at most one
+current generation; lifecycle locks exclude packet writers during review and deletion, while
+separate packet locks permit unrelated timers to overlap. Suspension transitions freeze every
+admission path until complete. Timing receipts bind cross-process intervals to the packet and prove
+monotonic, wall-clock, boot, and salted-host continuity. Review binds evidence plus private/public
+aggregate digests, and deletion uses exclusive digest-named tombstones with fail-closed retry
+inventory rather than unscoped recursive cleanup.
+
 ## Repo structure at a glance
 
 ```text

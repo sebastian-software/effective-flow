@@ -16,14 +16,16 @@ is no runtime application – you edit `src/`, never `dist/`.
    placeholder syntax, build guards, and the unit test suite.
 3. [Configuration](configuration.md) – the Effective Flow configuration in the living
    project-setup ADR, with the developer-oriented overview of all config blocks.
-4. [Plan conventions](plan-conventions.md) – naming scheme, canonical status markers, and
+4. [Model-tiering pilot protocol](model-tiering-pilot-protocol.md) – the local measurement
+   lifecycle, evidence boundary, aggregation rules, and build-validated protocol mirror.
+5. [Plan conventions](plan-conventions.md) – naming scheme, canonical status markers, and
    archiving of the plan files under `<plan.dir>/`.
-5. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
+6. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
    and central skill expertise (layered contract), including the loosely coupled inventory of
    actual Effective Flow relationships.
-6. [Release and installation](release-and-installation.md) – versioning via release-please,
+7. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
-7. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
+8. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
    artifact contracts; the configured project and surface languages select new output while
    existing artifact languages remain valid.
 
@@ -39,6 +41,8 @@ is no runtime application – you edit `src/`, never `dist/`.
   per-skill classification.
 - [User Guide](../user-guide/README.md) – using Effective Flow (installation, tool reference,
   configuration, troubleshooting).
+- [Model-tiering pilot data and privacy](../user-guide/model-tiering-pilot.md) – the user-facing
+  consent, retention, review, deletion, and publication boundary.
 - [Architecture and consistency review](../review/2026-08-31-architecture-and-consistency-review.md)
   – point-in-time audit of the repository at `3b44300` against the central skills; it is kept as
   the record it was, and its implementation-status table tracks which findings have since landed.

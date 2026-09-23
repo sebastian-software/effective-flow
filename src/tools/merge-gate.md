@@ -697,6 +697,8 @@ At the start, generate a session ID (e.g. via timestamp) and use
   any qualifying sighting reported a check list. Append or merge this record after every applicable
   fresh read and never shorten it from a later snapshot
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
+- when a pilot observation was reserved, its three anonymous correction counters; never its
+  observation identifier or capability
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
@@ -796,6 +798,19 @@ input object's top-level `cwd`; setting only the process or tool working directo
    - `ask` or an unset key in a **non-interactive delegation** cannot pose the question, so that
      combination – and only that combination – behaves as `report`. Name
      `mergeGate.completion: merge` as the setting that would authorize a merge in such a run.
+
+```lazy-include
+pilot-measurement
+when: Phase 0 has resolved a non-observer `merge|report` mode, immediately before Phase 1 begins
+```
+
+At that point apply `## Phase 0 observation preflight and reservation` in the loaded
+`pilot-measurement` fragment. For the rest of the run apply its correction-counter rules to the
+matching dispatch/start events; none of those counters affects gate control flow. Once a
+reservation exists, every path that would otherwise end early must first apply the fragment's
+Phase-6 finalization exactly once. In particular, a controlled `report`-mode ending before Phase 4
+uses its `reported-blocked` pre-Phase-4 rule and unavailable check evidence rather than returning
+without an observation.
 
 ```lazy-include
 merge-gate-provider-settled-threads
@@ -1261,6 +1276,12 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 
 ### Phase 6: Summary
 
+Before step 1, if Phase 0 reserved a pilot observation and no earlier controlled ending finalized
+it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement` fragment. This
+ordering is mandatory: finalization needs the counters and final status evidence that step 1
+deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
+reservation exactly once.
+
 1. Delete the wisdom file, and every delegation message file and snapshot this run wrote that is
    still present – after a sender stop, the one whose delegation never went out.
 2. Report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
@@ -1400,6 +1421,9 @@ when: Phase 5.5 begins because a fresh read proves the merge or observer-only mo
 - Count an `implemented` body finding only where the head moved in that round.
 - `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
   merge commit, the bot trigger, and the delegated `{{SKILL:iterate}}` rounds still run.
+- After a pilot observation reservation, no controlled or exceptional path returns before the
+  observation finalizer has run exactly once. Observation or pilot-control failure never changes
+  the merge/report result and never activates an execution profile.
 - Never fall back to a prompt-driven poll loop when a wait times out; report, and ask once per run –
   a later round that times out again reports the pending checks and asks nothing.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
