@@ -3532,18 +3532,19 @@ function observationMetrics(observations, cohort) {
 
 function compatibleCostRatio(baseline, pilot) {
   const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.metricStratumMinimum;
-  const common = Object.keys(baseline.costGroups).filter((key) =>
-    Object.hasOwn(pilot.costGroups, key),
-  );
+  const baselineKeys = Object.keys(baseline.costGroups);
+  const pilotKeys = Object.keys(pilot.costGroups);
   if (
-    common.length !== 1 ||
+    baselineKeys.length !== 1 ||
+    pilotKeys.length !== 1 ||
+    baselineKeys[0] !== pilotKeys[0] ||
     baseline.costUnavailableCount !== 0 ||
     pilot.costUnavailableCount !== 0
   ) {
     return null;
   }
-  const baselineGroup = baseline.costGroups[common[0]];
-  const pilotGroup = pilot.costGroups[common[0]];
+  const baselineGroup = baseline.costGroups[baselineKeys[0]];
+  const pilotGroup = pilot.costGroups[pilotKeys[0]];
   if (baselineGroup.count < minimum || pilotGroup.count < minimum) return null;
   return rational(
     BigInt(pilotGroup.median.numerator) * BigInt(baselineGroup.median.denominator),

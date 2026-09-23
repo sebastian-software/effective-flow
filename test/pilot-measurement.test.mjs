@@ -2056,11 +2056,96 @@ test('evaluation applies metric minima to actual validation contributors', async
   const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
   assert.equal(privateView.cohorts.baseline.cohortMinimumMet, true);
   assert.equal(privateView.cohorts.pilot.cohortMinimumMet, true);
+  assert.deepEqual(privateView.evaluationInputs.compatibleCostMedianRatio, {
+    numerator: '1',
+    denominator: '1',
+  });
   assert.equal(privateView.evaluationInputs.validationSuccessDelta, null);
   assert.deepEqual(privateView.evaluationInputs.criticalReviewFindingDelta, {
     numerator: '0',
     denominator: '1',
   });
+});
+
+test('evaluation rejects a shared cost group when either cohort has incompatible extras', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  const generation = generationRoot(fx, generationId);
+  let ordinal = 1;
+  for (const cohort of ['baseline', 'pilot']) {
+    for (let index = 0; index < 20; index += 1) {
+      const runId = Buffer.alloc(24, ordinal).toString('base64url');
+      const unit =
+        index < 10 ? 'microcredit' : cohort === 'baseline' ? 'baseline-credit' : 'pilot-credit';
+      const record = {
+        schema: 1,
+        kind: 'workflow-record',
+        runId,
+        workflowCapabilityHash: canonicalDigest({ capability: `cost-group-${ordinal}` }),
+        generationId,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+        cohort,
+        configState: 'enabled',
+        generationState: cohort === 'baseline' ? 'baseline' : 'active',
+        workflow: 'build',
+        harnessFamily: 'codex',
+        ordinal,
+        packets: [
+          {
+            packetId: Buffer.alloc(24, ordinal + 90).toString('base64url'),
+            selectedProfile: cohort === 'baseline' ? 'quality' : 'fast',
+            wouldBeFastEligible: true,
+            firstGateReason: null,
+            implementationDuration: { status: 'available', milliseconds: 100 },
+            fallback: 'none',
+            escalated: false,
+            costProxy: {
+              status: 'available',
+              kind: 'executor-unit',
+              unit,
+              value: '10',
+            },
+          },
+        ],
+        validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
+        review: {
+          status: 'completed',
+          severityCounts: { critical: 0, important: 0, note: 0 },
+        },
+        completionStatus: 'completed',
+        qualityCorrectionRounds: 0,
+        detailTrace: false,
+      };
+      writeFileSync(join(generation, 'records', `${runId}.json`), `${canonicalizeJson(record)}\n`);
+      ordinal += 1;
+    }
+  }
+  const statePath = join(generation, 'state.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(
+    statePath,
+    `${canonicalizeJson({
+      ...state,
+      generationState: 'review',
+      nextWorkflowOrdinal: ordinal,
+    })}\n`,
+  );
+  const inventory = await executeOperation('inventory', { ...fx.common, generationId }, fx.deps);
+  await executeOperation(
+    'aggregate',
+    { ...fx.common, generationId, expectedInventoryDigest: inventory.result.inventoryDigest },
+    fx.deps,
+  );
+  const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
+  assert.deepEqual(Object.keys(privateView.cohorts.baseline.costGroups), [
+    'executor-unit:baseline-credit',
+    'executor-unit:microcredit',
+  ]);
+  assert.deepEqual(Object.keys(privateView.cohorts.pilot.costGroups), [
+    'executor-unit:microcredit',
+    'executor-unit:pilot-credit',
+  ]);
+  assert.equal(privateView.evaluationInputs.compatibleCostMedianRatio, null);
 });
 
 test('purge and guarded discard remove only the reviewed generation and are retry-idempotent', async (t) => {
