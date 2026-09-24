@@ -15,7 +15,10 @@ first matching step wins:
 0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
    checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
    mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
-   A tracked ADR's `visibility | hidden` row is never honoured: report and ignore it.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
    `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
    `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
@@ -43,7 +46,7 @@ the migration happen exclusively in {{SKILL:setup}}.
 
 ```lazy-include
 config-migration-edge-cases
-when: the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present
+when: step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present
 ```
 
 ### Table encoding (binding for writers and readers)

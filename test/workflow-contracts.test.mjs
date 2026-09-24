@@ -16334,6 +16334,66 @@ test('config locator step 0 honours the local project-setup.md only with visibil
   }
 });
 
+test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed instead of falling through', () => {
+  const core = source('src/shared/config-migration.md');
+  const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
+  const step0 = boundedSlice(locator, '0. Local hidden configuration.', '1. AGENTS.md marker.');
+  assert.match(
+    step0,
+    /A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the first `git worktree list --porcelain` record/,
+  );
+  assert.match(
+    step0,
+    /in a Git checkout where that fails it stops with a report and never falls through to standard mode/,
+  );
+  assert.match(
+    [...core.matchAll(LAZY_INCLUDE_RE)].find(
+      (m) => m[1].trim() === 'config-migration-edge-cases',
+    )[2],
+    /step 0 must resolve `RUNTIME_STATE_ROOT` itself/,
+  );
+
+  const edge = prose(
+    boundedSlice(
+      source('src/shared/config-migration-edge-cases.md'),
+      '**Resolving the root for step 0.**',
+      '| Situation',
+    ),
+  );
+  assert.match(
+    edge,
+    /take only the first record, which must begin with exactly one non-empty `worktree <path>` line/,
+  );
+  assert.match(edge, /a missing, empty, or duplicate path field, or a `bare` line, rejects it/);
+  assert.match(
+    edge,
+    /`git rev-parse --show-toplevel` from it to resolve back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match the one from the current checkout/,
+  );
+  assert.match(
+    edge,
+    /any failed check stops the reader with a report naming the failed check and making no write/,
+  );
+  assert.match(edge, /never uses `EXECUTION_ROOT` or the current directory as a substitute/);
+
+  const visibility = prose(boundedSlice(source('src/tools/setup.md'), '**Visibility.**', '```ask'));
+  assert.match(
+    visibility,
+    /a run from a linked worktree detects the main checkout's hidden configuration and never writes tracked configuration over it/,
+  );
+  assert.match(
+    visibility,
+    /when step 0 stops because that root cannot be verified, this run stops too, before any question or write/,
+  );
+
+  for (const tool of ['open-plans', 'apply-plan']) {
+    assert.match(
+      prose(source(`src/tools/${tool}.md`)),
+      /resolve `<plan\.dir>` through the config locator[^.]*; in hidden mode it lies below the `RUNTIME_STATE_ROOT` that locator step 0 verifies, even from a linked worktree/i,
+      tool,
+    );
+  }
+});
+
 test('hidden mode forced values are enforced by the resolver, not by individual tools', () => {
   const edge = source('src/shared/config-migration-edge-cases.md');
   const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');

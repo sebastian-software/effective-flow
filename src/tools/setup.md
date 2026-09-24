@@ -178,7 +178,11 @@ when: the normalized invocation has no argument or its single argument is `profi
 **Visibility.** Every mode then resolves the visibility before Step 1, because Step 1 already
 differs between the two values: Profile after its `Chat` and `Profile` asks, Express and Guided as
 their first question, `{{SKILL:setup}} hidden` not at all. Pre-select `Hidden` when the locator's
-step 0 finds a local file declaring `visibility | hidden`, otherwise `Standard`. Explain first: hidden
+step 0 finds a local file declaring `visibility | hidden`, otherwise `Standard`. Step 0 reads that
+file only below the `RUNTIME_STATE_ROOT` it resolves and verifies itself, so a run from a linked
+worktree detects the main checkout's hidden configuration and never writes tracked configuration
+over it; when step 0 stops because that root cannot be verified, this run stops too, before any
+question or write. Explain first: hidden
 mode is for a repository whose team has not adopted Effective Flow — the configuration, plans, and
 concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, no review findings
 are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names

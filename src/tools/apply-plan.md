@@ -68,7 +68,8 @@ If the project has an `AGENTS.md`, read it before evaluating the plan and honor 
 
 ### Phase 1: Resolve and validate the plan reference
 
-1. Read the user argument.
+1. Read the user argument, then resolve `<plan.dir>` through the config locator; in hidden mode it
+   lies below the `RUNTIME_STATE_ROOT` that locator step 0 verifies, even from a linked worktree.
 2. If no argument is present:
    - check `<plan.dir>/` for open plans with status `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`
    - output a short list of the open plans with number, title and path

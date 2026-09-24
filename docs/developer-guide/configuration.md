@@ -165,7 +165,9 @@ which carries the situation table, the forced values, and the no-trace rule.
 
 - **Location.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, in the ADR envelope and
   table encoding. It is read from the verified main checkout only; a same-named file below a linked
-  `EXECUTION_ROOT` is reported as ignored. It deliberately does not reuse the retired JSON file name,
+  `EXECUTION_ROOT` is reported as ignored. A reader that has not yet verified that root resolves it
+  itself from the first `git worktree list --porcelain` record before step 0 and, in a Git checkout
+  where that fails, stops instead of falling through to standard mode. It deliberately does not reuse the retired JSON file name,
   which stays the runtime-safety sentinel.
 - **Activation.** The file wins only when it declares `visibility | hidden`. It then wins over steps
   1–4, and a tracked marker or ADR that also resolves is reported once as shadowed and never read.

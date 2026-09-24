@@ -15,6 +15,21 @@ encoding as the project setup ADR, from the verified `RUNTIME_STATE_ROOT` only; 
 below a linked `EXECUTION_ROOT` is never inspected as configuration, and when a run notices one
 there it reports it as ignored. Reading it creates nothing and touches no Git.
 
+**Resolving the root for step 0.** A reader that has not already established a verified
+`RUNTIME_STATE_ROOT` — through the execution-location contract or the apply-source detection —
+resolves it read-only before it looks for the local file, so no reader depends on having loaded
+that contract first. Run `git worktree list --porcelain` from the current checkout and take only
+the first record, which must begin with exactly one non-empty `worktree <path>` line; a missing,
+empty, or duplicate path field, or a `bare` line, rejects it. Canonicalize that path physically and
+require it to exist as a directory, then require `git rev-parse --show-toplevel` from it to resolve
+back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match
+the one from the current checkout. Only that verified path is `RUNTIME_STATE_ROOT`. A directory
+that is not a Git checkout has no step 0 and resolves through steps 1–4. In a Git checkout,
+any failed check stops the reader with a report naming the failed check and making no write: a
+fall-through to standard mode would let a linked worktree miss a hidden configuration, read tracked
+defaults, or let {{SKILL:setup}} write tracked configuration over a hidden main checkout. The
+reader never uses `EXECUTION_ROOT` or the current directory as a substitute.
+
 | Situation                                                | Result                                                                                                    |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | local file declares `visibility \| hidden`               | hidden mode; the local file is the whole configuration and wins over steps 1–4                            |

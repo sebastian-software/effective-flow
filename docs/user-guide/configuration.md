@@ -96,7 +96,8 @@ Every config-reading tool uses the following order and stops at the first valid 
 
 0. **Local hidden configuration.** `.effective-flow/project-setup.md` in the main checkout wins
    only when it declares `visibility | hidden`; see [Hidden mode](#hidden-mode). A local file
-   without that row is reported and skipped. It is never read from a linked worktree.
+   without that row is reported and skipped. It is never read from a linked worktree: a run there
+   locates the main checkout first and stops with a report when it cannot verify it.
 1. **Convention-file marker.** Read `**Effective Flow project setup:** <path>` from `AGENTS.md`,
    otherwise `CLAUDE.md` or a comparable convention file. The former
    `**Firmo project setup:** <path>` spelling remains readable for one compatibility generation.

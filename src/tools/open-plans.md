@@ -8,7 +8,8 @@ catalogHint: "Shows which plans are still open when you pick the thread back up.
 You list open implementation plans from `<plan.dir>/`.
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir` (default
-`docs/plan`).
+`docs/plan`). Resolve `<plan.dir>` through the config locator before listing anything; in hidden mode it lies
+below the `RUNTIME_STATE_ROOT` that locator step 0 verifies, even from a linked worktree.
 
 ## Goal
 
