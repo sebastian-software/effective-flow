@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
+  EAGER_INCLUDE_RE,
+  LAZY_INCLUDE_RE,
   collectIncludeNames,
   extractBody,
   renderBody,
@@ -294,4 +296,123 @@ test('deliver owns only its partial-diff lifecycle and retains artifacts on inco
     /remove[^\n]*harness-managed source checkout/i,
     'deliver must never remove the harness-owned source checkout',
   );
+});
+
+// --- Worktree-record obligation guard (#380) ---
+//
+// The host set is derived, never listed: every tool whose include graph reaches
+// `worktree-integration` (eager or lazy, directly or through shared fragments)
+// can create a worktree and must therefore carry the eager obligation fragment.
+
+const OBLIGATION = 'worktree-record-obligation';
+const OBLIGATION_SENTENCE =
+  'Every worktree this run created must end with its record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed or cleanup-failed; anything else is reported.';
+const OBLIGATION_TRIGGER = 'Run the worktree-record exit self-check.';
+const flatten = (text) => text.replace(/\s+/g, ' ');
+
+function includeGraphReaches(body, target, seen = new Set()) {
+  const { eager, lazy } = collectIncludeNames(body);
+  for (const name of [...eager, ...lazy]) {
+    if (name === target) return true;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    if (includeGraphReaches(readShared(name), target, seen)) return true;
+  }
+  return false;
+}
+
+const toolBody = (name) => extractBody(readSource('tools', `${name}.md`));
+const obligationHosts = [...toolNames]
+  .sort()
+  .filter((name) => includeGraphReaches(toolBody(name), 'worktree-integration'));
+
+test('every tool that can reach worktree-integration eagerly carries the record obligation', () => {
+  assert.ok(obligationHosts.length > 0, 'derived obligation host set must not be empty');
+  assert.ok(
+    obligationHosts.includes('merge-gate'),
+    `derived obligation host set must contain merge-gate, got: ${obligationHosts.join(', ')}`,
+  );
+
+  for (const name of obligationHosts) {
+    const body = toolBody(name);
+    const eagerObligations = [...body.matchAll(EAGER_INCLUDE_RE)].filter(
+      (match) => match[1].trim() === OBLIGATION,
+    );
+    assert.equal(
+      eagerObligations.length,
+      1,
+      `${name} must eagerly include ${OBLIGATION} exactly once (column-0 include fence)`,
+    );
+
+    const runtimeSafety = [...body.matchAll(LAZY_INCLUDE_RE)].find(
+      (match) => match[1].trim() === 'runtime-state-safety',
+    );
+    assert.ok(runtimeSafety, `${name} must lazily include runtime-state-safety`);
+    assert.ok(
+      eagerObligations[0].index > runtimeSafety.index,
+      `${name} must include ${OBLIGATION} after its lazy runtime-state-safety include`,
+    );
+  }
+});
+
+test('the record obligation fragment pins the allowed exit states and its own limits', () => {
+  const fragment = readShared(OBLIGATION);
+  const flat = flatten(fragment);
+  const { eager, lazy } = collectIncludeNames(fragment);
+
+  assert.equal(eager.size + lazy.size, 0, `${OBLIGATION} must carry no include fence`);
+  assert.doesNotMatch(fragment, /```(?:lazy-)?include/);
+  assert.match(fragment, /\.effective-flow\/worktree-runs\//);
+  assert.match(
+    flat,
+    /reading the deferred `worktree-integration` fragment is mandatory, not a judgement call/,
+    'missing mandatory-load statement',
+  );
+
+  assert.ok(flat.includes(OBLIGATION_SENTENCE), 'fixed self-check sentence changed or missing');
+  assert.doesNotMatch(OBLIGATION_SENTENCE, /\{\{/);
+
+  const parsed = OBLIGATION_SENTENCE.match(
+    /end with its (record deleted and the worktree unregistered), or with its record in ([^;]+);/,
+  );
+  assert.ok(parsed, 'fixed sentence must list the allowed end states');
+  const allowed = new Set([
+    'deleted and unregistered',
+    ...parsed[2].split(/,\s*|\s+or\s+/).map((state) => state.trim()),
+  ]);
+  assert.deepEqual(
+    [...allowed].sort(),
+    ['aborted', 'cleanup-failed', 'cleanup-ready', 'deleted and unregistered', 'failed'].sort(),
+  );
+  assert.equal(allowed.has('cleanup-in-progress'), false);
+  assert.match(flat, /Report a `cleanup-in-progress` record\./);
+
+  assert.match(flat, /never removes or claims/);
+  assert.match(flat, /never creates or backfills/);
+});
+
+test('the record obligation survives every harness render of every host tool', () => {
+  for (const name of obligationHosts) {
+    const context = `tools/${name}.md`;
+    const eagerResolved = resolveEagerIncludes(toolBody(name), {
+      context,
+      readFragment: readShared,
+    });
+    const { body: resolved } = resolveLazyIncludes(eagerResolved, { context });
+
+    const sentences = new Set();
+    for (const harness of ['claude', 'codex', 'portable']) {
+      const rendered = flatten(
+        renderBody(resolved, harness, { ...renderConfig, context: `${context} (${harness})` }),
+      );
+      const where = `${name} (${harness})`;
+      assert.ok(rendered.includes('.effective-flow/worktree-runs/'), `record path in ${where}`);
+      assert.ok(rendered.includes(OBLIGATION_SENTENCE), `fixed sentence in ${where}`);
+      assert.ok(rendered.includes(OBLIGATION_TRIGGER), `self-check trigger in ${where}`);
+      sentences.add(
+        rendered.match(/Every worktree this run created must end with [^;]+;[^.]+\./)[0],
+      );
+    }
+    assert.equal(sentences.size, 1, `${name} renders a different fixed sentence per harness`);
+  }
 });

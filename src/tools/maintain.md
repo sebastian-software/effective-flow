@@ -161,8 +161,13 @@ when: the run reaches its completion report
 skill-discovery
 ```
 
-2. Determine the effective delivery/worktree mode and verified execution-location receipt per
-   "Delivery and worktree integration", then run any applicable owned setup **before** baseline
+```include
+worktree-record-obligation
+```
+
+2. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree
+   is created – then determine the effective delivery/worktree mode and verified
+   execution-location receipt per "Delivery and worktree integration", then run any applicable owned setup **before** baseline
    and updates. Pass the receipt through all following phases, revalidate it at each
    write-capable boundary and root every operation there so the per-group commits land on the
    intended delivery branch.
@@ -259,7 +264,8 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
 3. Confirm that the behavior stayed unchanged (baseline comparison green).
 4. Delete the wisdom file.
 5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Hand only the **admitted residual** Phase-4 finding set to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If Phase 4 did not run at all (pure dependency bumps without code adaptation), declare **no** complete finding set, so an automatic PR review reviews the pull request itself. Name the delivery branch, the final checkout state, and the result in the summary.
-6. Emit the next-step block per `next-steps` as the last element of the report.
+6. Run the worktree-record exit self-check. Include its result in the report.
+7. Emit the next-step block per `next-steps` as the last element of the report.
 
 ```include
 pre-commit-gate

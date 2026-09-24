@@ -334,6 +334,26 @@ instead of restating repository identity, path containment, ignore, or tracked-s
 delivery and component-worktree creation paths both register through this shared contract;
 user-created, reused, and harness-managed worktrees remain outside Effective Flow ownership.
 
+Seven tools can create an Effective Flow-owned worktree: `build`, `fix`, `docs`, `refactor`,
+`maintain`, `iterate` and `merge-gate`. They reach `worktree-integration` only through a lazy
+pointer, so each also eagerly includes
+[`src/shared/worktree-record-obligation.md`](../../src/shared/worktree-record-obligation.md). That
+short fragment makes loading `worktree-integration` mandatory before any `git worktree add`, requires
+the record write immediately after the `effective-flow-created` receipt, and adds an exit
+self-check that each tool triggers with one line in its completion step. The self-check derives its
+set from durable state – the linked worktrees at the run's `SESSION_ID` path in
+`git worktree list --porcelain` and the records matching the run's `sessionId` and `workflow` – and
+accepts only a deleted record with an unregistered worktree, or a record in `cleanup-ready`,
+`aborted`, `failed` or `cleanup-failed`. It sets a record left `active` to `aborted` or `failed`
+once, reports an unrecorded registered worktree as a manual-reconciliation defect, and never
+removes or claims a worktree or backfills a record. `iterate`'s pull-request checkout follows the
+same adapter as `merge-gate`: in place when the invocation checkout is clean and on the head
+branch, otherwise one owned worktree for the existing head branch without `-b`, recorded at once
+and closed through the handback after the push. A guard test in
+`test/worktree-lifecycle-contract.test.mjs` derives the host set from every tool that includes
+`worktree-integration` eagerly, lazily or transitively, and requires the eager obligation include
+in each.
+
 After receipt creation, each owned worktree gets a versioned record under
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. The record binds the session or component,
 workflow and purpose, canonical repository and worktree identities, branch and creation OID,
