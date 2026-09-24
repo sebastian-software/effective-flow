@@ -274,7 +274,9 @@ With `visibility: hidden` (see [Configuration](./configuration.md#hidden-mode)),
 trace of Effective Flow in the branch, its history, or the pull request:
 
 - Branch names use the empty default prefix, `<skill>/<slug>`. A prefix containing
-  `effective-flow` is rejected.
+  `effective-flow` is rejected, and a slug derived from a title that names Effective Flow is
+  cleaned of the name when the branch is built (falling back to `change`), with the adjustment
+  reported.
 - Plans and concepts stay under `.effective-flow/` in the main checkout. Workers read the plan by
   its absolute path there, and the delivery branch carries no path below `.effective-flow/`.
 - No commit message, branch name, pull-request title or body, or summary comment references a path
