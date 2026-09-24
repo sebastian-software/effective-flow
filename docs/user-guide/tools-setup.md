@@ -120,8 +120,9 @@ A hidden setup run:
 2. Stops if `git ls-files -- .effective-flow/` lists anything, because `info/exclude` cannot hide a
    tracked file. Untracking those paths is your decision.
 3. Appends the single line `.effective-flow/` to `<common-dir>/info/exclude` unless it is already
-   there, creating the file if needed. Existing lines are never rewritten, and a second run adds
-   nothing.
+   there, creating the file if needed. A symlinked `info/` or `exclude`, or an `exclude` that is not
+   a regular file, stops the run before anything is written. Existing lines are never rewritten, and
+   a second run adds nothing.
 4. Verifies the entry with `git check-ignore`. A tracked `.gitignore` negation that outranks it is
    reported and stops the run; setup does not edit `.gitignore`.
 5. Writes the configuration to `.effective-flow/project-setup.md` in the main checkout, using the

@@ -241,11 +241,16 @@ written. Evaluate in this order and stop without any write at the first failed p
 2. **No tracked runtime content.** `git ls-files -- .effective-flow/` must list nothing. `info/exclude`
    cannot hide a tracked file, so any listed path stops the run with every path named; untracking
    them is the user's decision.
-3. **Add the entry idempotently.** If `<common-dir>/info/exclude` already has a line that is exactly
-   `.effective-flow/`, change nothing. Otherwise create the `info/` directory and the file if they
-   are missing and append the single line `.effective-flow/` in one append write, preceded by a line
-   break only where the file's last line lacks one. Never rewrite, reorder, or remove an existing
-   line, and never add a second entry.
+3. **Add the entry idempotently.** First check without following links (`test -L` before `test -d`
+   or `test -f`): `<common-dir>/info` must be a real directory, not a symlink, and `info/exclude`,
+   when present, a regular file, not a symlink, FIFO, device, or directory; both must physically
+   canonicalize inside the canonical common directory. Any violation stops the run with the path
+   named and nothing written. If `<common-dir>/info/exclude` already has a line that is exactly
+   `.effective-flow/`, change nothing. Otherwise create a missing `info/` with a plain `mkdir` and a
+   missing file exclusively (`O_CREAT|O_EXCL`), and append the single line `.effective-flow/` in one
+   `O_APPEND|O_NOFOLLOW` write, preceded by a line break only where the file's last line lacks one;
+   without a no-follow open, repeat the link check immediately before and after that one append.
+   Never rewrite, reorder, or remove an existing line, and never add a second entry.
 4. **Verify.** Run the non-verbose predicates `git check-ignore --no-index -- .effective-flow/config.json`
    and `git check-ignore --no-index -- .effective-flow/project-setup.md`; both must exit `0`, and any
    other exit blocks with the `-v` diagnostics only after the block. A tracked `.gitignore` negation

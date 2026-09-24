@@ -16210,6 +16210,14 @@ test('hidden setup writes the ignore entry into the common-dir info/exclude and 
   assert.match(step1, /any listed path stops the run with every path named/);
   assert.match(step1, /already has a line that is exactly `\.effective-flow\/`, change nothing/);
   assert.match(step1, /never add a second entry/);
+  // The append must not follow a symlink out of the Git metadata directory.
+  assert.match(
+    step1,
+    /`<common-dir>\/info` must be a real directory, not a symlink, and `info\/exclude`, when present, a regular file, not a symlink, FIFO, device, or directory/,
+  );
+  assert.match(step1, /Any violation stops the run with the path named and nothing written/);
+  assert.match(step1, /`O_APPEND\|O_NOFOLLOW` write/);
+  ordered(step1, 'must be a real directory, not a symlink', 'in one `O_APPEND|O_NOFOLLOW` write');
   assert.match(
     step1,
     /`git check-ignore --no-index -- \.effective-flow\/config\.json` and `git check-ignore --no-index -- \.effective-flow\/project-setup\.md`; both must exit `0`/,
