@@ -15,10 +15,10 @@
     "prepare:eval": "node evals/prepare.mjs"
   },
   "devDependencies": {
-    "oxfmt": "^0.62.0"
+    "oxfmt": "^0.70.0"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@11.17.0"
+  "packageManager": "pnpm@12.5.1"
 }
