@@ -16452,6 +16452,14 @@ test('pr in hidden mode references no plan file, no .effective-flow/ path, and n
     prose(source('src/tools/deliver.md')),
     /this run hands that constraint on to `\{\{SKILL:commit\}\}` and `\{\{SKILL:pr\}\}`/,
   );
+  // A head branch naming the tool is refused before step 7 pushes it, not only by pr-create.
+  const step2 = prose(
+    boundedSlice(pr, '2. **Check preconditions:**', '3. **Verify the prepared head:**'),
+  );
+  assert.match(
+    step2,
+    /In hidden mode \(`visibility: hidden`\), the exact head branch name must not name Effective Flow .*?On a match, stop before any fetch or push, name the branch, and tell the user to rename it/,
+  );
 });
 
 test('tracker-bound workflows fail closed in hidden mode before any tracker access', () => {

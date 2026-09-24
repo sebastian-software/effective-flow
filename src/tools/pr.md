@@ -140,6 +140,7 @@ base-branch-resolution
      successful commit-only evidence. Resolve the supplied branch and require it still equals the
      supplied OID. Unrelated dirt in `RUNTIME_STATE_ROOT` is not PR content and does not replace or
      weaken this exact ref check.
+   - In hidden mode (`visibility: hidden`), the exact head branch name must not name Effective Flow — the helper's disclosure rule: `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow`. On a match, stop before any fetch or push, name the branch, and tell the user to rename it (`git branch -m`): hidden mode forbids that ref on the forge.
 3. **Verify the prepared head:** Preserve the resolved head OID as the immutable handoff boundary.
    Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
    squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
