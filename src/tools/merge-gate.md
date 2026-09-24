@@ -159,7 +159,8 @@ loaded before the first write below `.effective-flow/`.
 
 Provision that checkout the way `{{SKILL:iterate}}` does: fetch the pull request's **existing** head
 branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
-a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force.
+a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force. Reading
+the deferred `worktree-integration` fragment is mandatory before that worktree is created.
 
 ```lazy-include
 worktree-integration
@@ -169,6 +170,10 @@ when: Phase 2 step 1 must provision a checkout because the fresh read reports th
 ```lazy-include
 merge-gate-checkout-boundary
 when: Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`, which is the same moment `worktree-integration` is loaded
+```
+
+```include
+worktree-record-obligation
 ```
 
 ```include
@@ -690,7 +695,8 @@ At the start, generate a session ID (e.g. via timestamp) and use
   resolution record including every adjacent file with the check that demanded it, both verification
   verdicts, and the resulting merge commit or the abort reason
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
-  record handle and that record's last transition
+  record handle and that record's last transition, plus this run's worktree-record exit self-check
+  result
 - every candidate from "Unconfigured automatic-reviewer advisory", keyed by the established
   bot-typed one-suffix equivalence and carrying its `missing reviewer` or `missing check`
   classification, first observed or configured login, compact thread/review evidence, and whether
@@ -1284,7 +1290,7 @@ reservation exactly once.
 
 1. Delete the wisdom file, and every delegation message file and snapshot this run wrote that is
    still present – after a sender stop, the one whose delegation never went out.
-2. Report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
+2. Run the worktree-record exit self-check. Then report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
    comment onto the pull request:** the gate has none of its own, and `{{SKILL:iterate}}`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
    instead. The merge itself is visible on the pull request anyway. Report:
@@ -1300,8 +1306,11 @@ reservation exactly once.
      human can check whether a named failure genuinely justified an adjacent change – the gate
      verified that the evidence is present, never that it is convincing. Report it even when
      everything went well;
+   - per round, the provisioned-checkout line from the wisdom record with this run's
+     worktree-record exit self-check result;
    - the delegated `{{SKILL:iterate}}` rounds and their results, including the summary content each
-     one handed back instead of posting; every item or instruction `build` refused, with its reason;
+     one handed back instead of posting, which carries that round's worktree-record exit self-check
+     result relayed verbatim; every item or instruction `build` refused, with its reason;
      and, where a delegation could not be built or validated, the sender-side stop with the helper's
      error code;
    - **every inert returned outcome** – one naming an identifier no round recorded – by its

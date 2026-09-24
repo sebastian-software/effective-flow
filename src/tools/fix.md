@@ -198,9 +198,14 @@ options:
 skill-discovery
 ```
 
+```include
+worktree-record-obligation
+```
+
 ### Phase 3: Fix
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+0. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree is
+   created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
    roots every operation there.
@@ -268,13 +273,15 @@ items, then pass the residual batch through “Gated residual review-finding rep
    - begin the note with `✅` and name at least the date and workflow
 4. Delete the wisdom file.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
-6. Summarize:
+6. Run the worktree-record exit self-check.
+7. Summarize:
    - root cause
    - changes
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
-7. Emit the next-step block per `next-steps` as the last element of the report.
+   - worktree-record exit self-check result
+8. Emit the next-step block per `next-steps` as the last element of the report.
 
 ```include
 pre-commit-gate

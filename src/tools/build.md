@@ -264,9 +264,14 @@ options:
 skill-discovery
 ```
 
+```include
+worktree-record-obligation
+```
+
 ### Phase 2: Implementation
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+0. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree is
+   created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt to every worker in phases 2–6 (implementation, docs, tests, validation, review);
    each write-capable boundary revalidates it and roots every operation there.
@@ -419,8 +424,9 @@ Rules for the findings report:
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
-7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
-8. Emit the next-step block per `next-steps` as the last element of the report.
+7. Run the worktree-record exit self-check.
+8. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
+9. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Rules
 

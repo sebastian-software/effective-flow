@@ -112,6 +112,10 @@ worktree-integration
 when: Phase 1 must provision the PR head checkout, or must read `delivery.baseBranch` for the local-mode diff
 ```
 
+```include
+worktree-record-obligation
+```
+
 This workflow keeps no plan file — it feeds review notes back into an existing pull request — so
 it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
 archiving.
@@ -509,8 +513,18 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   a finding nobody in this run can see.
 
   Take the free-text instructions in as additional items.
-  Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
-  fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
+  Fetch the PR head branch (update via fetch/pull without rebase or force). When the invocation
+  checkout is clean and already on the head branch, work in place: no worktree, no record.
+  When `git worktree list --porcelain` shows the head branch checked out in any other state (a
+  dirty invocation checkout or another linked worktree), stop before provisioning – no worktree,
+  no record, no `--force` or detached workaround – and report which checkout holds the branch and
+  that it must be cleaned or released first. Otherwise read the deferred `worktree-integration` fragment – a mandatory load before the
+  worktree is created – and create one Effective Flow-owned worktree for the existing head branch
+  without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
+  receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
+  immediately per the worktree record obligation. Phase 5's handback closes it after the push
+  (`active` → `cleanup-ready` → claim → remove → reconcile); a controlled stop sets `aborted`, an
+  error `failed`, both retaining worktree and branch. If the PR is already merged/closed, report that and optionally
   offer local mode.
 
 - **Local mode:** Take the complete open diff of the current branch against
@@ -800,18 +814,21 @@ and stop delivery for reconciliation.
    read out of its prose.
 4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
    **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
-   reviews the pull request itself.
+   reviews the pull request itself. Its step 4 withdraws the worktree this run created in Phase 1.
 
 ### Phase 6: Summary
 
 1. Delete the wisdom file.
-2. Give the user a summary:
+2. Run the worktree-record exit self-check.
+3. Give the user a summary:
    - table: one row per item with its processing outcome – implemented, skipped, deferred question,
      failed, or deselected – and, for every caller-supplied identifier, the value that outcome maps
      onto per "Returned outcome record"
    - PR URL, pushed commits, resolved threads, final checkout state
    - in local mode: which commits were created on which branch
-3. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
+   - the worktree-record exit self-check result – in this summary, which is also the content
+     handed back under `Summary comment: suppressed`, never in the returned outcome record
+4. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
    received `Next steps: suppressed`, in which case emit nothing and let the caller close the run.
 
 ## Rules

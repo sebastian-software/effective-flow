@@ -121,7 +121,10 @@ worktree is removed against; and `base-branch-resolution`, the single rule that 
 includes `base-branch-resolution`, which is why that rule is a fragment rather than prose in one
 host: `pr` does not include `worktree-integration`, so a bare cross-reference would point at text
 absent from its built output. Rendering each of those direct eager includes places the same
-contract in all native and portable targets.
+contract in all native and portable targets. Because `worktree-integration` itself is lazy, every
+tool that can create a worktree through it also eagerly carries `worktree-record-obligation`, which
+keeps the load, the lifecycle-record write and the exit self-check in the always-loaded core
+without pulling in either of the larger fragments.
 
 A shared fragment may equally contain a `lazy-include` fence, and a deferred fragment is not a
 leaf: `worktree-integration` defers `pr-review-integration` at its own decision point. Nested
@@ -576,7 +579,9 @@ and directive syntax").
   would hide it from exactly the orchestrated agents that are handed a value and never resolve
   one. The fragment is split out of `language-rules` — which still embeds it, so every consumer of
   the resolver keeps the rule — precisely so the locale rule travels with the writer rather than
-  with the resolver.
+  with the resolver. `worktree-record-obligation` is eager in every worktree-creating tool because
+  its failure mode is silently not running: a skipped lazy pointer leaves a worktree without a
+  lifecycle record, which `cleanup` can never remove.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
