@@ -515,7 +515,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   Take the free-text instructions in as additional items.
   Fetch the PR head branch (update via fetch/pull without rebase or force). When the invocation
   checkout is clean and already on the head branch, work in place: no worktree, no record.
-  Otherwise read the deferred `worktree-integration` fragment – a mandatory load before the
+  When `git worktree list --porcelain` shows the head branch checked out in any other state (a
+  dirty invocation checkout or another linked worktree), stop before provisioning – no worktree,
+  no record, no `--force` or detached workaround – and report which checkout holds the branch and
+  that it must be cleaned or released first. Otherwise read the deferred `worktree-integration` fragment – a mandatory load before the
   worktree is created – and create one Effective Flow-owned worktree for the existing head branch
   without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
   receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
