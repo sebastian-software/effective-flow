@@ -70,7 +70,8 @@ If the Effective Flow configuration (project setup ADR) pins corresponding value
 Missing values have these defaults:
 
 - `delivery.baseBranch`: derived from `origin/HEAD`, else `"origin/main"`
-- `delivery.branchPrefix`: `"effective-flow"`
+- `delivery.branchPrefix`: `"effective-flow"` (in hidden mode empty, and never a value containing
+  `effective-flow`; the configuration building block forces it)
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
 - `delivery.returnBranch`: `"auto"` (the resolved local base branch)
 - `delivery.prReview`: `"ask"` (a gated run asks once per created pull request)
@@ -151,7 +152,9 @@ When delivery or worktree is active:
    if the user confirms the chosen mode or the workflow creates a safe
    partial-diff PR by the procedure described below.
 4. Construct delivery branch names: `<delivery.branchPrefix>/<skill>/<slug>`, e.g.
-   `effective-flow/build/user-login`. Derive the slug from the plan title, the task description,
+   `effective-flow/build/user-login`; an empty prefix, the hidden-mode default and valid in every
+   mode, drops the prefix segment and its slash: `<skill>/<slug>`, e.g. `build/user-login`. Derive
+   the slug from the plan title, the task description,
    the issue or finding. If the branch name already exists, append a
    numeric suffix and report the chosen name.
 
@@ -322,6 +325,9 @@ investigations remain purely local in any case (see "Issue-tracker integration" 
   under `.effective-flow/review/`, investigation reports under `.effective-flow/investigation/`,
   config migration status and wisdom files. Their operational paths are absolute handles below
   `RUNTIME_STATE_ROOT`, even while tracked work executes elsewhere.
+- **Hidden mode exception:** with `visibility: hidden` the plan is not committed either. It lives
+  only below the forced `plan.dir` in the main repo, workers read it there by its absolute path
+  under `RUNTIME_STATE_ROOT`, and the delivery branch carries no path below `.effective-flow/`.
 
 ### Abort handback before implementation
 
@@ -385,10 +391,13 @@ stop and report the conflict instead of overwriting history.
    `plan-archival`, which every workflow that keeps a plan file loads through its own deferred
    pointer. Hand it the inputs it declares: `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` from this
    run's verified receipt, `plan.dir`, the plan file's repository-relative path, the plan's complete
-   language, the delivery shape, and — only when this run recorded one — the delivery branch's
+   language, the delivery shape, whether hidden mode (`visibility: hidden`) is active, and — only when this run recorded one — the delivery branch's
    creation OID. Marking and move are **committed along with it** by step 2 and are thereby part of the
    PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the main repo.
-   If the workflow kept no plan file, this step does not apply.
+   If the workflow kept no plan file, this step does not apply. **Hidden mode**
+   (`visibility: hidden`) is the exception: `plan-archival`'s hidden arm marks and moves the plan in the main
+   checkout only, takes nothing into `EXECUTION_ROOT`, stages nothing, and contributes no plan state
+   to step 2.
 2. **Ensure committed handoff:** Preserve every verified commit already created by the implementing
    workflow, such as `{{SKILL:maintain}}`'s per-group commits. Verify that each expected commit is
    still reachable in order from the exact delivery branch and never amend, squash, reorder, or

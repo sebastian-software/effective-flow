@@ -2,7 +2,7 @@
 
 Plan files are created via `/effective-flow plan` (purely planning, no code) and live under
 `<plan.dir>/`, configurable via `plan.dir` in the Effective Flow configuration (project-setup
-ADR, default `docs/plan`). This
+ADR, default `docs/plan`; forced to `.effective-flow/plan` in hidden mode). This
 document describes the naming scheme, the status markers, and the lifecycle of the plan files.
 The source is [`src/tools/plan.md`](../../src/tools/plan.md); agent behavior rules for plan files
 are canonical in [`AGENTS.md`](../../AGENTS.md), section "Plan files (`docs/plan/`)".
@@ -90,6 +90,12 @@ part of the same pull request or merge. Which primitive that takes depends on wh
 already tracked in the delivery checkout's index.
 `src/shared/plan-archival.md` owns that state model, the detection behind it, and the cleanup of
 the redundant copy in the main checkout.
+In hidden mode (`visibility: hidden`) `plan.dir` is forced to `.effective-flow/plan` in the main
+checkout and the plan is never tracked, so the plan-archival contract's hidden arm applies instead.
+It checks that the plan is ignored and untracked, moves it to `<plan.dir>/archive/` in
+`RUNTIME_STATE_ROOT` with a no-clobber move, and sets the status marker. It stages nothing, takes
+nothing into `EXECUTION_ROOT`, and skips the main-checkout cleanup, because that copy is the only
+one. An existing archive target stops archival with both paths reported.
 `/effective-flow open-plans` lists only the top level of `<plan.dir>/`, not the archive;
 resolvers for plan references (path, file name, legacy number, or title slug), by contrast,
 search both `<plan.dir>/` and `<plan.dir>/archive/`.

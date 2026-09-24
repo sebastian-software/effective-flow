@@ -44,6 +44,10 @@ as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, swit
 (`git rm --cached`, leave the file content on disk). The exact procedure including
 idempotency marking is in {{SKILL:setup}}.
 
+In hidden mode (`visibility: hidden`) this migration never runs: setup writes no tracked ADR, no
+marker, and no `.gitignore` line, and it untracks nothing. A legacy `config.json` may still seed
+the values shown as current, stays on disk unchanged, and is reported as not migrated.
+
 Outside {{SKILL:setup}}, **no** migration takes place: The deterministic
 read path creates nothing and touches no Git; on a missing ADR it reads instead a
 still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise

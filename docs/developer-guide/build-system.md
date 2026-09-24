@@ -260,10 +260,11 @@ The build aborts with an error message if any of these guards is violated:
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
   misread as one. Three subsystems carry this today: the pairs `delegation-envelope.mjs`/
   `delegation-envelope-core.mjs` and `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
-  the remote tracker, a six-file family whose thin entry point `remote-tracker.mjs` sits over
-  `remote-tracker-core.mjs` and its four siblings `remote-tracker-shared-core.mjs`,
-  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs` and
-  `remote-tracker-forgejo-core.mjs`. The remote-tracker's runtime prompts are
+  the remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
+  `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
+  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
+  `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
+  processed-thread ledger). The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
@@ -469,7 +470,14 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
    the smallest supported history, plus the compact, self-contained handoff defined in
    [`AGENTS.md`](../../AGENTS.md), section "Delegation".
-7. Run `node build.mjs`. The guards described above cover missing sources, missing include
+7. If the tool writes into the repository or onto the forge, decide how it behaves in hidden mode
+   (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)). Its artifacts
+   must stay under the forced local directories and out of every staged path. Its commit messages,
+   branch names, pull-request text, and forge comments must not reference `.effective-flow/` or
+   name Effective Flow. Forge comments go through the remote helper with `visibility` passed, so no
+   marker is stamped. A step that can only work against a forge or external tracker stops before its
+   first tracker access and names hidden mode instead of writing labels or markers.
+8. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, a Claude agent without `effort`, unsupported Codex sandbox modes, a missing or
    unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with no budget
    entry.

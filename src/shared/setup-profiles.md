@@ -156,3 +156,18 @@ category, terminal flag, and writability. Retain no credential or unrelated conn
 Step 6 must show this evidence and, after confirmation, freshly replay the exact proposed tool/hint,
 connection/context, and every validity-affecting state property immediately before writing. Drift
 invalidates the preview: stop, or rebuild the complete preview and obtain a new confirmation.
+
+### Hidden visibility
+
+`{{SKILL:setup}}` asks its Visibility question after the two common questions and before Step 1.
+With `Hidden`, the configuration building block forces `plan.dir`, `concept.dir`, `tracker.mode =
+local`, `delivery.prReview = off`, and an empty default `delivery.branchPrefix`, so the selected
+overlay yields on those keys:
+
+| Profile          | In hidden mode                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Fully local      | unchanged; its `tracker.mode = local` already matches the forced value                                                            |
+| Forge + issues   | keeps its forge delivery values (`delivery.completion = pr`, the verified origin base) while issue tracking stays `local`         |
+| External + forge | incompatible, because its whole purpose is the external tracker: stop without mutation and name `Fully local` or `Forge + issues` |
+
+Ask no question whose key is forced, and skip the external-only integration interview entirely.

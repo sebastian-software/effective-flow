@@ -417,3 +417,154 @@ test('non-verbose check-ignore is the predicate and verbose mode is diagnostics 
   ]);
   assert.equal(statSync(join(root, 'source.txt')).isFile(), true);
 });
+
+// Hidden mode ignores `.effective-flow/` through the Git common directory's `info/exclude` instead
+// of a tracked `.gitignore`. These fixtures mirror setup's "Step 1 (hidden)": the common directory
+// is resolved through `git rev-parse --git-common-dir` (never a literal `.git/info/exclude`), and the
+// single line is appended idempotently. The guard above must then pass unchanged, because
+// `check-ignore --no-index` honours `info/exclude` exactly like `.gitignore`.
+//
+// `addHiddenExclude` is a test helper, not production code: setup's write is prose an agent carries
+// out. Assertions on where it writes and that it appends once are therefore fixture checks — they
+// prove the fixture models setup's contract, so the guard assertions after them mean something —
+// and each is labelled as such. Only the guard, `check-ignore`, and Git status assertions exercise
+// production behaviour.
+function commonExcludePath(root) {
+  return join(
+    realpathSync(
+      resolve(root, git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')),
+    ),
+    'info',
+    'exclude',
+  );
+}
+
+function addHiddenExclude(root) {
+  const path = commonExcludePath(root);
+  mkdirSync(dirname(path), { recursive: true });
+  const current = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  if (current.split('\n').includes('.effective-flow/')) return path;
+  const separator = current === '' || current.endsWith('\n') ? '' : '\n';
+  writeFileSync(path, `${current}${separator}.effective-flow/\n`);
+  return path;
+}
+
+function excludeEntries(path) {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line === '.effective-flow/');
+}
+
+test('hidden mode: an info/exclude entry alone passes the guard and leaves Git status empty', (t) => {
+  const root = createRepository(t);
+  assert.equal(existsSync(join(root, '.gitignore')), false);
+
+  const excludePath = addHiddenExclude(root);
+  addHiddenExclude(root);
+  assert.deepEqual(
+    excludeEntries(excludePath),
+    ['.effective-flow/'],
+    'fixture check: the exclude helper appends its line once',
+  );
+
+  for (const path of ['.effective-flow/config.json', '.effective-flow/project-setup.md']) {
+    assert.equal(runGit(root, ['check-ignore', '--no-index', '--', path]).status, 0, path);
+  }
+  guardedWrite(root, '.effective-flow/project-setup.md', '| visibility | hidden |\n');
+  guardedWrite(root, '.effective-flow/plan/archive/2026-09-24-x.md', 'plan\n');
+
+  assert.equal(existsSync(join(root, '.gitignore')), false);
+  assert.equal(git(root, 'status', '--porcelain', '--untracked-files=all'), '');
+});
+
+test('hidden mode: the common-dir info/exclude also covers a linked worktree', (t) => {
+  const root = createRepository(t);
+  const linkedRoot = join(dirname(root), `${root.split('/').at(-1)}-hidden-linked`);
+  git(root, 'worktree', 'add', linkedRoot, '-b', 'build/hidden', 'HEAD');
+  t.after(() => rmSync(linkedRoot, { recursive: true, force: true }));
+
+  // Fixture checks: resolved from the linked worktree, the helper's exclude path is still the main
+  // repository's one file, never the linked worktree's private git directory.
+  const fromLinked = addHiddenExclude(linkedRoot);
+  assert.equal(fromLinked, commonExcludePath(root), 'fixture check: common-dir exclude path');
+  const linkedGitDir = realpathSync(
+    resolve(linkedRoot, git(linkedRoot, 'rev-parse', '--path-format=absolute', '--git-dir')),
+  );
+  assert.notEqual(
+    join(linkedGitDir, 'info', 'exclude'),
+    fromLinked,
+    'fixture check: not the linked git dir',
+  );
+  assert.equal(
+    existsSync(join(linkedGitDir, 'info', 'exclude')),
+    false,
+    'fixture check: linked git dir untouched',
+  );
+  assert.deepEqual(
+    excludeEntries(fromLinked),
+    ['.effective-flow/'],
+    'fixture check: the exclude helper appends its line once',
+  );
+
+  const repositoryIdentity = realpathSync(
+    resolve(root, git(root, 'rev-parse', '--git-common-dir')),
+  );
+  for (const checkout of [root, linkedRoot]) {
+    checkRuntimeStateSafety(checkout, '.effective-flow/project-setup.md', {
+      expectedRoot: checkout,
+      expectedRepositoryIdentity: repositoryIdentity,
+    });
+  }
+  guardedWrite(root, '.effective-flow/merge-gate/thread-ledger.json', '{}\n', {
+    expectedRoot: root,
+    expectedRepositoryIdentity: repositoryIdentity,
+  });
+
+  assert.equal(git(root, 'status', '--porcelain', '--untracked-files=all'), '');
+  assert.equal(git(linkedRoot, 'status', '--porcelain', '--untracked-files=all'), '');
+  git(root, 'worktree', 'remove', linkedRoot);
+});
+
+test('hidden mode: without an exclude line or .gitignore entry the guard blocks', (t) => {
+  const root = createRepository(t);
+  const excludePath = commonExcludePath(root);
+  mkdirSync(dirname(excludePath), { recursive: true });
+  writeFileSync(excludePath, '# git ls-files --others --exclude-from=.git/info/exclude\n');
+
+  assertBlockedWithoutMutation(
+    root,
+    '.effective-flow/project-setup.md',
+    undefined,
+    /config\.json is not ignored/,
+  );
+  assert.equal(existsSync(join(root, '.effective-flow')), false);
+});
+
+test('hidden mode: info/exclude cannot hide tracked runtime content or outrank a .gitignore negation', (t) => {
+  const tracked = createRepository(t, {
+    trackedRuntimeFiles: { '.effective-flow/memory.json': '{"tracked":true}\n' },
+  });
+  addHiddenExclude(tracked);
+  assert.equal(
+    runGit(tracked, ['check-ignore', '--no-index', '--', '.effective-flow/config.json']).status,
+    0,
+  );
+  assertBlockedWithoutMutation(
+    tracked,
+    '.effective-flow/project-setup.md',
+    undefined,
+    /tracked runtime paths: \.effective-flow\/memory\.json/,
+  );
+
+  // A tracked `.gitignore` outranks `info/exclude`. Only a directory-level negation can do so here:
+  // a file-level `!.effective-flow/config.json` cannot re-include a file whose parent directory is
+  // excluded, so it would not reach the guard at all.
+  const negated = createRepository(t, { gitignore: '!.effective-flow/\n' });
+  addHiddenExclude(negated);
+  assertBlockedWithoutMutation(
+    negated,
+    '.effective-flow/project-setup.md',
+    undefined,
+    /config\.json is not ignored/,
+  );
+});

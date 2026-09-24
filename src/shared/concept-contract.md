@@ -8,7 +8,9 @@ status it carries, and which sections it consists of.
 
 `<concept.dir>` is the concept directory from the Effective Flow configuration (project-setup ADR)
 `concept.dir` (default `docs/concept`). Concepts are project documentation and are committed like
-plans; they are not runtime state.
+plans; they are not runtime state. In hidden mode (`visibility: hidden`) the configuration forces
+`concept.dir` to the local concept directory below the main checkout's private runtime directory:
+concepts then live only in `RUNTIME_STATE_ROOT` and are never staged or committed.
 
 - Create `<concept.dir>/` on the first write if it is missing.
 - `<concept.dir>` and `<plan.dir>` must be **separate directories**, compared as canonical paths

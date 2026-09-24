@@ -14,6 +14,8 @@ The target is the place that owns issue identity for a run. `tracker.mode` selec
 | `remote`       | the issue tracker of your `origin` remote (GitHub or Forgejo) |
 | `external`     | the tool named by `tracker.externalTool`                      |
 
+In [hidden mode](#hidden-mode) the target is always `local`.
+
 ## Local mode (default)
 
 Without further configuration (`tracker.mode: local`), review and findings processing behave
@@ -363,6 +365,10 @@ local report" – you request it per run.
 `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing while the mode is
 `local` or `remote`. They are kept in the ADR and reported once as ignored.
 
+In [hidden mode](#hidden-mode) none of these steps can select `remote` or `external`: an issue
+argument or an explicit wish for the forge or an external tool stops the run before any tracker
+access instead.
+
 Independently of the target: [investigations](./tools-understand.md) remain purely local under
 `.effective-flow/investigation/` – they are never committed and never created as an issue – and
 of the Effective Flow artifacts only the plan file is committed (see
@@ -650,6 +656,71 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   merge style or permission carries `mutationMayHaveSucceeded: false`. Only a merge whose outcome the
   adapter could not observe at all carries `true` there: a transport failure, and a `5xx` the forge
   answered with, which is that same unobservable outcome with a status line in front of it.
+
+## Hidden mode
+
+With `visibility: hidden` (see [Configuration](./configuration.md#hidden-mode)), nothing on the
+forge may identify Effective Flow. The tracker is pinned to `local`, and the workflows that only
+work against a forge or external tracker stop before any probe, label migration, or write, with one
+message naming hidden mode:
+
+- `plan-issue`;
+- issue-driven `apply` (container, epic, or finding issues);
+- `review` with an argument or wish that requests the forge or an external tool. A local review
+  report works as usual.
+
+Planning from pasted issue text stays available through `/effective-flow plan "<text>"`. When
+`apply` processes a rejected finding in hidden mode, it writes no tracked ADR. It records the
+decision in the local review report and reports that hidden mode withheld the ADR.
+
+Pull-request work still reaches the forge, but without markers:
+
+- The remote helper takes a `visibility` input on `pr-comment-build`, `pr-review-comment-build`,
+  `review-create`, and `review-thread-reply`. With `hidden`, it stamps no
+  `<!-- effective-flow-… -->` marker and refuses a body that names the tool (`effective-flow`, its
+  `_`/`.`/joined spellings, or `Effective Flow`). The issue comment builders
+  (`planning-comment-build`, `apply-comment-build`) refuse hidden mode outright, because their
+  marker is the tracker's only record. An absent `visibility` means `standard`, so standard output
+  is byte-for-byte unchanged.
+- The five publishing operations `issue-comment`, `issue-comment-update`, `pr-comment`,
+  `pr-update-body`, and `pr-create` accept the same `visibility` input. With `hidden`, they refuse
+  (`INVALID_PAYLOAD`) any title, body, or head branch that carries an `<!-- effective-flow-… -->`
+  marker or names the tool, before anything is sent.
+- `delivery.prReview` is forced to `off`, so no findings are published after a delivery. An
+  explicit `review` of a pull request reports its findings in chat instead of posting them.
+- `iterate` still replies to review threads and posts its summary comment, unmarked and without
+  naming Effective Flow or any `.effective-flow/` path.
+
+Without a marker, `iterate` cannot recognize the threads it already answered from the pull request
+itself. It keeps that record in a local ledger instead,
+`.effective-flow/merge-gate/thread-ledger.json` in the main checkout. The ledger is keyed by
+repository, pull-request number, and thread or comment ID, and it is never tracked or published.
+A comment matches by its node `id` as well as by its numeric `databaseId`, so a reply recorded from
+a posted result's REST ID is still recognized in a later `review-threads-read`.
+Two local helper operations, which need no `--apply`, maintain it:
+
+| Operation              | What it does                                                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `thread-ledger-lookup` | Reads the ledger and creates nothing. Classifies each thread of a `review-threads-read` result as `resolved`, `recorded`, or `pending`; only `pending` threads are worked on |
+| `thread-ledger-record` | Adds thread and comment IDs after a reply was actually posted. Replaces the file atomically and is idempotent: an ID recorded twice keeps its first entry                    |
+
+Degradation is reported rather than guessed away. Threads the forge reports as resolved are always
+skipped, whatever the ledger says.
+
+- **Missing ledger.** This is normal on a first hidden run. If unresolved threads already hold a
+  comment by your login but have no record, for example because `.effective-flow/` was deleted,
+  they are still worked on. The summary names them as possibly answered before.
+- **Corrupt ledger.** The lookup treats the ledger as empty and reports it. Recording then fails
+  with `LEDGER_CORRUPT` and leaves the file untouched for you to inspect or remove.
+- **Held lock.** Recording holds `.effective-flow/merge-gate/thread-ledger.lock` while it
+  rewrites the ledger. A lock that is already present fails the record with `LEDGER_LOCKED`; it is
+  never broken, whatever its age. The run continues without recording and reports the lock path,
+  so you can remove it once no other run is active.
+- **Unsafe target.** A symlinked runtime directory or ledger file (`UNSAFE_TARGET`) stops ledger
+  use for the rest of the run. The replies themselves are unaffected.
+
+`merge-gate` publishes no text naming Effective Flow in hidden mode and leaves the ledger in place.
+`cleanup` treats it as current runtime state.
 
 ## Interplay with issue-driven tools
 

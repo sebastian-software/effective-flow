@@ -103,6 +103,12 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
 - **Do not write config.** This skill does not itself write carried-over config values into the project setup ADR — `{{SKILL:setup}}` is responsible for that (see Phase 3).
 - **Do not edit `.gitignore`.** Inventory and report outdated entries, then route normalization
   to `{{SKILL:setup}}`, the sole repair owner.
+- **Never touch hidden mode's ignore entry.** The `.effective-flow/` line in
+  `$(git rev-parse --git-common-dir)/info/exclude` is the active counterpart that hidden mode relies
+  on, never a legacy remnant: inventory it and leave it untouched. The local hidden configuration
+  `.effective-flow/project-setup.md` is current configuration, not a legacy `config.json`, and the
+  hidden-mode processed-thread ledger `.effective-flow/merge-gate/thread-ledger.json` that
+  `{{SKILL:iterate}}` keeps is current runtime state, never a leftover.
 - **Delete only with consent.** Every deletion happens only after a dry run and explicit confirmation.
 
 ## Legacy classes
@@ -152,6 +158,9 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
+   - **`info/exclude`:** read `$(git rev-parse --git-common-dir)/info/exclude` read-only and note
+     whether it carries the `.effective-flow/` line. Inventory that line as the **active
+     counterpart** of hidden mode, never as a legacy remnant and never as a removal candidate.
    - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker-forge.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
 5. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
@@ -349,6 +358,8 @@ Report to the user:
 - what was carried over (files to `.effective-flow/`) and which config values `{{SKILL:setup}}` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed
 - which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair, not this run
+- whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
+  hidden mode's active ignore entry that this run left untouched
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - worktrees removed successfully, with their checkout identities and retained/deleted branch
   outcomes
@@ -386,6 +397,7 @@ report that found neither matches no row and emits nothing.
 - Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.
 - Never edit `.gitignore`; inventory and report outdated entries and route repair to
   `{{SKILL:setup}}`.
+- Leave the `.effective-flow/` line in `info/exclude` untouched; it is active, not legacy.
 - For label cleanup, first add `effective-flow-`, then detach `firmo-` from the issue; the label definition remains.
 - Never classify a worktree from age, last-modified time, base-directory shape, branch prefix, or
   apparent emptiness. There is no TTL, heartbeat, stale-after threshold, or automatic crash

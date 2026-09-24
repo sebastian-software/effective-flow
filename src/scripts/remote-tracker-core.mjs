@@ -35,6 +35,8 @@ import {
   requireNumber,
   requireObject,
   requireString,
+  markBody,
+  resolveVisibility,
   stampMarker,
   teaApiReadPlan,
 } from './remote-tracker-shared-core.mjs';
@@ -65,6 +67,7 @@ import {
 } from './remote-tracker-decomposition-core.mjs';
 import { buildForgejoCommandPlan } from './remote-tracker-forgejo-core.mjs';
 import { buildGithubCommandPlan, buildReviewPayload } from './remote-tracker-github-core.mjs';
+import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
 
 // `remote-tracker-core.mjs` stays the single public entry point of the tracker helper: every
 // symbol it exported before the modules below were split out is still exported from here.
@@ -93,6 +96,10 @@ export const ERROR_CODES = Object.freeze([
   'AMBIGUOUS_TARGET',
   'STALE_WRITE',
   'COMMAND_FAILED',
+  'UNSAFE_TARGET',
+  'WRITE_FAILED',
+  'LEDGER_CORRUPT',
+  'LEDGER_LOCKED',
 ]);
 
 const MUTATIONS = new Set([
@@ -897,10 +904,27 @@ export function buildFindingPayload(input, options = {}) {
   };
 }
 
-export function buildCommentPayload(kind, input) {
+// In hidden mode (`visibility: hidden`) only the two pull-request kinds build at all, and they build
+// without a marker: the result's `marker` is then `null` and the body is refused when it names the
+// tool. The two issue kinds fail closed instead, because their marker is the tracker's only record
+// and hidden mode pins the tracker to `local` — reaching them there is a workflow error, not a
+// request for an unmarked tracker comment.
+const HIDDEN_COMMENT_KINDS = Object.freeze(['pr', 'pr-review']);
+
+export function buildCommentPayload(kind, input, options = {}) {
   const marker = commentMarker(kind);
   requireObject(input, 'comment');
+  const visibility = resolveVisibility(options.visibility ?? input.visibility);
+  if (visibility === 'hidden' && !HIDDEN_COMMENT_KINDS.includes(kind)) {
+    fail('INVALID_PAYLOAD', `${kind} comments are not written in hidden mode`, {
+      kind,
+      reason: 'hidden-mode-tracker-write',
+    });
+  }
   const content = publishableText(input.body, 'comment.body');
+  if (visibility === 'hidden') {
+    return { kind, marker: null, body: markBody(marker, content, visibility, 'comment.body') };
+  }
   const body = stampMarker(marker, content);
   if (kind === 'planning') {
     const decomposition = parseDecompositionRecords(body);
@@ -3457,7 +3481,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
   }
 }
 
-function localOperation(operation, input) {
+// `options` carries no default on purpose: the merge-gate eval scaffold derives the supported
+// operation names from this function's body by locating its first `{`.
+function localOperation(operation, input, options) {
   switch (operation) {
     case 'remote-parse':
       return () => parseRemote(input.remote, input);
@@ -3476,7 +3502,8 @@ function localOperation(operation, input) {
     case 'epic-build':
       return () => buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':
-      return () => buildCommentPayload('planning', input.comment ?? input);
+      return () =>
+        buildCommentPayload('planning', input.comment ?? input, { visibility: input.visibility });
     case 'decomposition-records-build':
       return () => buildDecompositionRecords(input.decomposition ?? input);
     case 'decomposition-records-parse':
@@ -3490,14 +3517,17 @@ function localOperation(operation, input) {
     case 'decomposition-child-workflow-parse':
       return () => parseDecompositionChildWorkflow(input.workflow ?? input);
     case 'apply-comment-build':
-      return () => buildCommentPayload('apply', input.comment ?? input);
+      return () =>
+        buildCommentPayload('apply', input.comment ?? input, { visibility: input.visibility });
     case 'pr-comment-build':
-      return () => buildCommentPayload('pr', input.comment ?? input);
+      return () =>
+        buildCommentPayload('pr', input.comment ?? input, { visibility: input.visibility });
     // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
     // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
     // completed work, so the fallback would feed the tool its own findings back.
     case 'pr-review-comment-build':
-      return () => buildCommentPayload('pr-review', input.comment ?? input);
+      return () =>
+        buildCommentPayload('pr-review', input.comment ?? input, { visibility: input.visibility });
     case 'finding-deduplicate':
       return () => deduplicateFindings(input.existingIssues, input.findings);
     case 'label-query-variants':
@@ -3514,6 +3544,14 @@ function localOperation(operation, input) {
       return () => buildIssueLifecycleReceipt(input, input.context ?? input);
     case 'issue-lifecycle-receipt-parse':
       return () => parseIssueLifecycleReceipt(input.body, input.context ?? input);
+    // The hidden-mode processed-thread ledger. Both are local runtime-state operations, not forge
+    // mutations: they touch only `<cwd>/.effective-flow/merge-gate/`, so they run without `--apply`
+    // like every other local operation, and the caller's runtime-state write-safety guard is what
+    // authorizes the record write.
+    case 'thread-ledger-lookup':
+      return () => lookupThreadLedgerFile(input);
+    case 'thread-ledger-record':
+      return () => recordThreadLedgerFile(input, { clock: options?.clock });
     default:
       return undefined;
   }
@@ -4089,10 +4127,10 @@ export async function executeOperation(operation, input = {}, options = {}) {
   requireObject(input);
   const dryRun = MUTATIONS.has(operation) && options.apply !== true;
   try {
-    const runLocal = localOperation(operation, input);
+    const runLocal = localOperation(operation, input, options);
     if (runLocal !== undefined) {
       if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
-      return { ok: true, operation, provider: null, data: runLocal(), dryRun: false };
+      return { ok: true, operation, provider: null, data: await runLocal(), dryRun: false };
     }
     if (!REMOTE_OPERATIONS.has(operation)) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });

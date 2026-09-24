@@ -1429,6 +1429,8 @@ reservation exactly once.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – every wait, repair, Phase-2 restart, and Phase-4 return into Phase 3 consumes one.
 - Post no summary comment of your own; the run summary goes to the user in chat.
+- In hidden mode (`visibility: hidden`), publish no text naming Effective Flow, and leave
+  `{{SKILL:iterate}}`'s processed-thread ledger in place: it is not a delegation message.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger
   comments, or in any other published text.
 - Start no project validation such as linting, tests, or builds yourself: the pull request's own

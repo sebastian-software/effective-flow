@@ -129,7 +129,9 @@ active whenever work happens in the worktree or on a dedicated delivery branch �
 default case, therefore, always. The delivery branch is named
 `<delivery.branchPrefix>/<skill>/<slug>` (e.g. `effective-flow/build/user-login`), derived from
 the plan title, task description, issue, or finding; on a name collision Effective Flow appends
-a numeric suffix and reports the chosen name.
+a numeric suffix and reports the chosen name. An empty `delivery.branchPrefix` drops the prefix and
+its slash, giving `<skill>/<slug>` (e.g. `build/user-login`). Empty is valid in every mode and is the
+default in [hidden mode](#hidden-mode).
 
 `delivery.baseBranch` serves as the starting point. Without that key, Effective Flow derives the
 default from the repository: `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
@@ -165,7 +167,8 @@ creating a branch or changing any index, commit, remote, or forge state.
 
 After selection, `deliver` proposes an ordered partition into coherent commits and asks you to
 confirm the exact paths, order, and tentative commit effect for every group. It then refreshes the
-configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch in an
+configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch (or
+`deliver/<slug>` with an empty prefix) in an
 Effective Flow-owned worktree. Only the confirmed states are transferred. The source checkout may
 be dirty, detached, on the base branch, or harness-managed; once `deliver` has recorded its
 evidence, it remains unchanged, including its index and all non-selected files. The only earlier
@@ -189,7 +192,7 @@ delivery branch, Effective Flow asks, instead of silently staging, stashing, or 
 ### What gets committed and what stays local
 
 Of the Effective Flow artifacts, **only the plan file** is committed – and even that only if the
-workflow led one. All other `.effective-flow/` artifacts (`memory.json`, `cache.json`, local
+workflow led one, and never in [hidden mode](#hidden-mode). All other `.effective-flow/` artifacts (`memory.json`, `cache.json`, local
 review reports, investigations, the worktrees themselves) remain pure bookkeeping in the main
 repo and are never carried into the delivery branch. Report-name collision checks and finding
 number reads/writes also inspect only that main-checkout runtime directory.
@@ -256,6 +259,29 @@ level. The redundant, still untracked copy left behind in your main checkout is 
 archived state is safely in the delivery branch and the copy has not changed in the meantime –
 that copy is what would otherwise make a later `git pull` refuse. Details on the plan format are
 in [Understanding tools](./tools-understand.md).
+
+In [hidden mode](#hidden-mode) the plan lives only in your main checkout under
+`.effective-flow/plan/`, so there is nothing to commit. Whatever the delivery shape, Effective Flow
+marks the plan implemented and moves it to `.effective-flow/plan/archive/` in the main checkout
+with a no-clobber move. It first checks that the plan is ignored and untracked. It stages nothing,
+takes nothing into the delivery branch, and does not remove the main-checkout copy, because that
+copy is the only one. If a file already exists at the archive path, it stops, reports both paths,
+and changes nothing.
+
+## Hidden mode
+
+With `visibility: hidden` (see [Configuration](./configuration.md#hidden-mode)), delivery leaves no
+trace of Effective Flow in the branch, its history, or the pull request:
+
+- Branch names use the empty default prefix, `<skill>/<slug>`. A prefix containing
+  `effective-flow` is rejected.
+- Plans and concepts stay under `.effective-flow/` in the main checkout. Workers read the plan by
+  its absolute path there, and the delivery branch carries no path below `.effective-flow/`.
+- No commit message, branch name, pull-request title or body, or summary comment references a path
+  under `.effective-flow/` or names Effective Flow. `/effective-flow pr` references no plan file.
+- `delivery.prReview` is forced to `off`, so no review findings are posted on the pull request, and
+  comments posted by `iterate` carry no marker (see
+  [Remote tracker](./remote-tracker.md#hidden-mode)).
 
 ## Interplay with `/effective-flow pr`
 

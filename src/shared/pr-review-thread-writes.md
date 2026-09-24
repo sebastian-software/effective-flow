@@ -18,6 +18,9 @@ later `{{SKILL:iterate}}` run reads to recognize a thread it has already answere
 reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
 second time.
 
+In hidden mode (`visibility: hidden`), pass that value: nothing is stamped, and
+`{{SKILL:iterate}}`'s processed-thread ledger records the answered thread instead.
+
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,

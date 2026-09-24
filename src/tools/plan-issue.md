@@ -91,6 +91,8 @@ If the project contains an `AGENTS.md`, read it early in the workflow and observ
 
 This skill is **inherently tracker-bound**: it always works against the resolved tracker target, and the local/remote switch is **not** evaluated. Resolve the target per "Tracker target" in the following building block. On the forge target it uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, and write rules of the loaded `tracker-target` contract apply, including its fail-closed abort before the first write.
 
+**Hidden mode stops this skill.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0), stop before any tracker access or write — no probe, label migration, comment, label, or child issue — with one message: hidden mode is active, it pins the tracker to `local`, and this skill works only against a forge or external tracker. Planning from a pasted issue text stays available through `{{SKILL:plan}} <text>`.
+
 ```include
 issue-tracker
 ```

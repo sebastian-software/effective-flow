@@ -24,6 +24,9 @@ import {
   mergeSubject,
   mutationPlan,
   prNumber,
+  publishedRef,
+  publishedText,
+  publishingVisibility,
   requireNumber,
   requireString,
   teaApiReadPlan,
@@ -213,7 +216,7 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         'comment',
         String(issueNumber(input)),
         ...teaJson,
-        assertPublishable(payload.body, 'payload.body'),
+        publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
       ]);
     case 'issue-comment-update':
       return mutationPlan(
@@ -227,7 +230,9 @@ export function buildForgejoCommandPlan(operation, input, repository) {
           '--data',
           '@-',
         ],
-        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
       );
     case 'issue-labels':
     case 'issue-label-add': {
@@ -304,11 +309,11 @@ export function buildForgejoCommandPlan(operation, input, repository) {
           'create',
           ...teaTarget,
           '--title',
-          assertPublishable(payload.title, 'payload.title'),
+          publishedText(payload.title, 'payload.title', publishingVisibility(input, payload)),
           '--description',
-          assertPublishable(payload.body, 'payload.body'),
+          publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
           '--head',
-          requireString(payload.head, 'payload.head'),
+          publishedRef(payload.head, 'payload.head', publishingVisibility(input, payload)),
           '--base',
           requireString(payload.base, 'payload.base'),
           ...(payload.draft === true ? ['--draft'] : []),
@@ -325,7 +330,7 @@ export function buildForgejoCommandPlan(operation, input, repository) {
           String(prNumber(input)),
           ...teaTarget,
           '--description',
-          assertPublishable(payload.body, 'payload.body'),
+          publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
         ],
         undefined,
         { expectsJson: false },
@@ -335,7 +340,7 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         'comment',
         String(prNumber(input)),
         ...teaJson,
-        assertPublishable(payload.body, 'payload.body'),
+        publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
       ]);
     // Call 1 of the review-thread walk, and the only one this builder can answer. Neither forge
     // exposes a flat review-comment listing — Forgejo's router declares

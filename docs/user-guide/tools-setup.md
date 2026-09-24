@@ -10,7 +10,8 @@ gitignored runtime directory, creates or updates the living project-setup ADR, a
 canonical `**Effective Flow project setup:** <path>` marker in `AGENTS.md` or another existing
 convention file. The standard wizard applies one of three common workflow profiles after asking
 only for the chat language and the profile. **Express** and **Guided** remain available as explicit
-modes.
+modes. **Hidden mode** instead keeps the whole configuration local and untracked; see
+[Hidden mode](#hidden-mode).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
 planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
@@ -28,10 +29,12 @@ The accepted invocations are:
 /effective-flow setup profile
 /effective-flow setup express
 /effective-flow setup guided
+/effective-flow setup hidden
 ```
 
-The first two forms enter Profile mode. An unknown or additional argument reports these forms and
-stops before changing `.gitignore`, configuration, convention files, or runtime state.
+The first two forms enter Profile mode. `hidden` enters Express with the visibility already set to
+hidden. An unknown or additional argument reports these five forms and stops before changing
+`.gitignore`, configuration, convention files, or runtime state.
 
 **Input/output:** Profile mode first asks **Chat**, then **Profile**. Local and forge profiles need
 no further configuration answers; the external profile additionally asks only for the external
@@ -93,6 +96,57 @@ profile does not turn every planning request into a remote issue.
 `/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly.
 `/effective-flow setup guided` enters the existing per-setting interview and its optional Advanced
 settings directly. Neither invocation asks for a profile first.
+
+### Visibility question
+
+Every mode then asks **Visibility** before it touches `.gitignore` or any configuration: Profile
+after Chat and Profile, Express and Guided as their first question. `/effective-flow setup hidden`
+skips the question. `Standard` is the tracked ADR, marker, and `.gitignore` setup described on this
+page. `Hidden` switches the run to [hidden mode](#hidden-mode). The question pre-selects `Hidden`
+when a hidden local configuration already exists, and `Standard` otherwise. A run that cannot ask
+keeps the pre-selected value and reports it.
+
+### Hidden mode
+
+Hidden mode is for a repository whose team has not adopted Effective Flow. The configuration,
+plans, and concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, no review
+findings are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file
+names Effective Flow. [Configuration](configuration.md#hidden-mode) lists the forced values.
+
+A hidden setup run:
+
+1. Resolves the Git common directory with `git rev-parse --git-common-dir`. A directory that is not
+   a Git repository cannot be hidden, and setup stops there.
+2. Stops if `git ls-files -- .effective-flow/` lists anything, because `info/exclude` cannot hide a
+   tracked file. Untracking those paths is your decision.
+3. Appends the single line `.effective-flow/` to `<common-dir>/info/exclude` unless it is already
+   there, creating the file if needed. A symlinked `info/` or `exclude`, or an `exclude` that is not
+   a regular file, stops the run before anything is written. Existing lines are never rewritten, and
+   a second run adds nothing.
+4. Verifies the entry with `git check-ignore`. A tracked `.gitignore` negation that outranks it is
+   reported and stops the run; setup does not edit `.gitignore`.
+5. Writes the configuration to `.effective-flow/project-setup.md` in the main checkout, using the
+   ADR envelope and table encoding plus the row `visibility | hidden`.
+
+It never writes or edits `.gitignore`, a tracked ADR, `AGENTS.md`, or `CLAUDE.md`, and it skips the
+ADR-convention resolution, the marker, the legacy JSON migration, and the `CLAUDE.md` offer. It asks
+no question whose key is forced, such as the plan and concept directories, PR review, or tracker. A
+`delivery.branchPrefix` containing `effective-flow` is rejected. Among the profiles, Fully local is
+unchanged and Forge issues and development keeps its pull-request delivery while issue tracking
+stays local. External issues and forge development is incompatible with hidden mode, so setup stops
+and names the other two. The report lists the `info/exclude` path, the local configuration path,
+every forced value and overridden row, and every tracked ADR, marker, or `.gitignore` line it left
+untouched.
+
+**Switching modes.** Standard to hidden: the hidden run writes the local file, which wins from the
+next read on. The tracked ADR, its marker, and the `.gitignore` line stay exactly as they are and
+are reported as shadowed; removing them, or rewriting history that already contains them, is up to
+you. Hidden to standard: answer `Standard` while the local file exists. Setup runs the normal
+standard path, seeded from the local values without `visibility` and the forced rows. After the
+tracked write succeeds, it asks whether to delete `.effective-flow/project-setup.md`. Keeping the
+file keeps hidden mode active. The `info/exclude` line stays in either case, because it still
+ignores runtime state. Local plans and concepts are never moved; setup lists their paths so you can
+move them into the tracked `plan.dir` and `concept.dir` yourself.
 
 Setup follows an ADR file-naming convention your project has already decided on instead of
 imposing its own. Before writing, it looks for a naming rule stated in `AGENTS.md`, `CLAUDE.md`,
@@ -297,7 +351,11 @@ An `active` record may represent either work still in progress or a run interrup
 there is no timeout or heartbeat that guesses which one it is.
 
 Cleanup creates **no** commit or backup and never changes current ADR values or a global skill
-installation. It never edits `.gitignore`. It may copy confirmed runtime files into
+installation. It never edits `.gitignore`. It reports the `.effective-flow/` line in the Git common
+directory's `info/exclude` as the active entry [hidden mode](#hidden-mode) relies on and never
+removes it. The same holds for the hidden local configuration `.effective-flow/project-setup.md`
+and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
+state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/` or remove a confirmed legacy config from that directory; otherwise it
 preserves active runtime state. A true no-op means there are no migration actions and no eligible
 worktrees, but the remaining-worktree report still appears.

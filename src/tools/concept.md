@@ -38,6 +38,11 @@ when: the Effective Flow configuration is read for the first time or an old conf
 ```
 
 ```lazy-include
+runtime-state-safety
+when: a hidden-mode concept write targets a path below `.effective-flow/`
+```
+
+```lazy-include
 concept-contract
 when: a concept artifact's directory, file name, status, or sections are resolved or written
 ```

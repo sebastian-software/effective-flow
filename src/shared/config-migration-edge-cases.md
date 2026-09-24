@@ -1,11 +1,70 @@
 ## Configuration edge cases and read compatibility
 
-These are the circumstance-gated parts of the Effective Flow configuration contract: the legacy
-marker and slug tolerances of the config locator, the ranking that resolves a several-match scan,
-the transitional JSON fallback, the two `tracker.*` state keys only an `external` target
-resolves, and the stop contract for retired rows. The ordered resolution steps and the table
+These are the circumstance-gated parts of the Effective Flow configuration contract: the hidden
+mode of locator step 0, the legacy marker and slug tolerances of the config locator, the ranking
+that resolves a several-match scan, the transitional JSON fallback, the two `tracker.*` state keys
+only an `external` target resolves, and the stop contract for retired rows. The ordered resolution steps and the table
 encoding they extend live in the "Effective Flow configuration (project setup ADR)" building block
 (`config-migration.md`), which every source that loads this one carries.
+
+### Hidden mode (locator step 0)
+
+The local file `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` is a personal,
+per-checkout configuration that {{SKILL:setup}} alone writes. It is read with the same table
+encoding as the project setup ADR, from the verified `RUNTIME_STATE_ROOT` only; a same-named file
+below a linked `EXECUTION_ROOT` is never inspected as configuration, and when a run notices one
+there it reports it as ignored. Reading it creates nothing and touches no Git.
+
+**Resolving the root for step 0.** A reader that has not already established a verified
+`RUNTIME_STATE_ROOT` — through the execution-location contract or the apply-source detection —
+resolves it read-only before it looks for the local file, so no reader depends on having loaded
+that contract first. Run `git worktree list --porcelain` from the current checkout and take only
+the first record, which must begin with exactly one non-empty `worktree <path>` line; a missing,
+empty, or duplicate path field, or a `bare` line, rejects it. Canonicalize that path physically and
+require it to exist as a directory, then require `git rev-parse --show-toplevel` from it to resolve
+back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match
+the one from the current checkout. Only that verified path is `RUNTIME_STATE_ROOT`. A directory
+that is not a Git checkout has no step 0 and resolves through steps 1–4. In a Git checkout,
+any failed check stops the reader with a report naming the failed check and making no write: a
+fall-through to standard mode would let a linked worktree miss a hidden configuration, read tracked
+defaults, or let {{SKILL:setup}} write tracked configuration over a hidden main checkout. The
+reader never uses `EXECUTION_ROOT` or the current directory as a substitute.
+
+| Situation                                                | Result                                                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| local file declares `visibility \| hidden`               | hidden mode; the local file is the whole configuration and wins over steps 1–4                            |
+| local file present without `visibility \| hidden`        | not honoured: report the file once and resolve through steps 1–4 as if it were absent                     |
+| hidden mode **and** a tracked marker or ADR resolves     | the local file wins; name the tracked marker/ADR once as shadowed and never read a value from it          |
+| a tracked ADR declares `visibility \| hidden`            | invalid by construction (hidden configuration is never tracked): report the row, ignore it, stay standard |
+| unreadable or ambiguous local file declaring hidden mode | the safe-default rule of the core applies per affected key; hidden mode itself stays active               |
+
+A standard-mode {{SKILL:setup}} run resolves the ADR it reads and writes through steps 1–4 only; a
+step-0 file is then a read-only seed and never its write target. Hidden plan and concept writes
+use absolute handles under the verified `RUNTIME_STATE_ROOT`, never a path relative to a linked
+`EXECUTION_ROOT`, and apply "Runtime-state write safety" to the target and its parent directories.
+
+**Forced values.** In hidden mode the resolver, not the individual tool, enforces these values.
+A row in the local file that contradicts one is reported once per run as overridden and never
+honoured; a missing row takes the forced value silently.
+
+| Key                     | Value in hidden mode                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `plan.dir`              | `.effective-flow/plan`                                                                                            |
+| `concept.dir`           | `.effective-flow/concept`                                                                                         |
+| `tracker.mode`          | `local`                                                                                                           |
+| `delivery.prReview`     | `off`                                                                                                             |
+| `delivery.branchPrefix` | empty by default; a value containing `effective-flow` (any letter case) is rejected and the empty default applies |
+
+Every other key resolves from the local file exactly as it would from the ADR. Hidden mode also
+fixes the tracker target: an issue reference or per-run signal that would otherwise select the
+forge or an external tool does not override it. A workflow that can only work against such a
+target stops before its first tracker access or write, naming hidden mode, and never falls back to
+writing labels or markers.
+
+**No trace in Git or forge prose.** In hidden mode no commit message, branch name, pull-request
+title or body, or tracker-facing summary references a path under `.effective-flow/` — a plan or
+concept file included — or names Effective Flow (`effective-flow`, `Effective Flow`). A run that
+delegates a commit or a pull request hands this constraint on with the delegation.
 
 ### Legacy setup marker (locator step 1)
 
@@ -26,7 +85,7 @@ legacy slug `firmo-project-setup` after stripping an optional leading `^\d+[-_]`
 **and** its body carries a canonical configuration envelope (see step 2 of the core). Both the
 numeric prefix and the legacy slug are read-side tolerance; they do not decide
 what a new file is named. That tolerance widens the scan to a family of names, so **several**
-files can match inside this one step; "the first matching step wins" ranks the four steps, not
+files can match inside this one step; "the first matching step wins" ranks the five steps, not
 the matches within a step. Rank the matches by one **ordered** comparison rather than by two
 independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
 `firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed

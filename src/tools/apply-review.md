@@ -207,6 +207,8 @@ apply-source-detection
 
 If the resolved tracker target is the forge or an external tool (the argument is an epic/container or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration, the external-target contract, and the complete remote flow (phase 1–8 remote), and replaces or supplements the corresponding local steps. Only on the `local` target (report file under `.effective-flow/review/`) is it not loaded.
 
+**Hidden mode stops the remote flow.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0) and the argument is an epic/container or finding issue, stop before loading the sub-file and before any tracker access or write, with one message: hidden mode is active, it pins the tracker to `local`, and remote apply-review would write tracker labels and markers. A local report file is processed normally.
+
 ## Workflow
 
 ### Phase 1: Read and validate the report
@@ -358,6 +360,8 @@ skill-discovery
 ```
 
 For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
+
+**In hidden mode** (`visibility: hidden`) no tracked ADR is written, neither by `effective-product` nor by the fallback below: hand the candidate over for classification only, record a permanent decision in the local review report instead, and report in the status update that hidden mode withheld the ADR and which decision it would have recorded.
 
 1. **Form the decision candidate.** From the finding and the developer note, summarize a candidate: a descriptive title, context (report filename + finding ID or issue/epic number), the rejection rationale (full note/`wontfix` text) and a traceable **backlink** to the source finding.
 2. **Delegate to `effective-product`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.

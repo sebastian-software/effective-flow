@@ -57,6 +57,12 @@ phase at all. The three state names are stable identifiers and are never transla
 A merged or closed pull request, or one belonging to another repository, is reported read-only; no
 comment is written.
 
+**Hidden mode (`visibility: hidden`) publishes nothing onto the pull request.** Without the marker,
+the idempotency check below cannot recognize this fragment's own earlier findings, so every rerun
+would post them again. The automatic trigger is already off, because hidden mode forces
+`delivery.prReview: off`. On the explicit entry point, report the findings in chat instead and state
+that hidden mode withheld the publication.
+
 ### Rooted ref reads
 
 Resolve all reviewed content from explicit refs, run from `RUNTIME_STATE_ROOT` — the verified main

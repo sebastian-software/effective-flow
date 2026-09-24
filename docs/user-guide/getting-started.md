@@ -227,6 +227,14 @@ downgrades silently. Use `/effective-flow setup guided` when you need provider o
 per-setting control, and `/effective-flow setup express` when you deliberately want the
 safe-default path without the profile questions.
 
+After the profile, setup asks **Visibility**. Keep `Standard` for a project that adopts Effective
+Flow: its configuration then lives in a tracked ADR. Choose `Hidden`, or run
+`/effective-flow setup hidden`, when you use Effective Flow alone in a repository whose team has not
+adopted it. Configuration, plans, and concepts then stay in the untracked `.effective-flow/`
+directory, which is ignored through Git's `info/exclude`. Branch names, commits, pull requests, and
+forge comments do not mention Effective Flow. See
+[Hidden mode](configuration.md#hidden-mode) for what changes.
+
 The tracker choice governs work that already has an issue reference. A natural-language
 `/effective-flow plan "…"` call still writes a local plan under `plan.dir`; choosing a forge or
 external profile does not automatically create a remote issue for it. See

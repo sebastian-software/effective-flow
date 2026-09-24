@@ -1165,7 +1165,7 @@ test('every lazy-include fragment referenced by a tool or shared fragment has a 
   }
 });
 
-test('setup routes only the empty, profile, express, and guided invocations before mutation', () => {
+test('setup routes only the empty, profile, express, guided, and hidden invocations before mutation', () => {
   const setup = source('src/tools/setup.md');
   const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
 
@@ -1178,10 +1178,17 @@ test('setup routes only the empty, profile, express, and guided invocations befo
   assert.match(step0, /`\{\{SKILL:setup\}\} guided` selects \*\*Guided\*\*/);
   assert.match(
     prose(step0),
-    /An additional or unknown argument prints all four accepted forms above and stops without mutation/,
+    /An additional or unknown argument prints all five accepted forms above and stops without mutation/,
   );
   assert.match(step0, /Do not reinterpret it as free text and do not ask a setup-mode question/);
-  assert.match(prose(step0), /Express and Guided do not load it and proceed directly to Step 1/);
+  assert.match(
+    step0,
+    /`\{\{SKILL:setup\}\} hidden` selects \*\*Express\*\* with the visibility fixed/,
+  );
+  assert.match(
+    prose(step0),
+    /Express and Guided do not load it; they go on to the Visibility question and then to Step 1/,
+  );
 
   const pointers = new Map(
     [...step0.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
@@ -16178,5 +16185,518 @@ test('goal-completion states every invariant of the completion contract', () => 
     fragment,
     near('per-finding, per-issue, per-source and per-reviewer', 'authoritative', 150),
     'invariant 11: more specific per-finding/per-issue/per-source/per-reviewer rules stay authoritative',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// Hidden mode (`visibility: hidden`): a per-checkout configuration that leaves no trace in tracked
+// files, Git history, or forge prose. Each assertion pins one load-bearing rule of the mechanism.
+// ---------------------------------------------------------------------------------------------
+
+test('hidden setup writes the ignore entry into the common-dir info/exclude and never into .gitignore', () => {
+  const setup = source('src/tools/setup.md');
+  const step1 = prose(boundedSlice(setup, '### Step 1 (hidden):', '### Step 2:'));
+
+  assert.match(step1, /`\.gitignore` is never read for a decision and never written/);
+  assert.match(
+    step1,
+    /`git rev-parse --path-format=absolute --git-common-dir`, never a literal `\.git\/info\/exclude`/,
+  );
+  assert.match(
+    step1,
+    /A non-Git directory, or a failing command, cannot be hidden: stop and explain/,
+  );
+  assert.match(step1, /`git ls-files -- \.effective-flow\/` must list nothing/);
+  assert.match(step1, /any listed path stops the run with every path named/);
+  assert.match(step1, /already has a line that is exactly `\.effective-flow\/`, change nothing/);
+  assert.match(step1, /never add a second entry/);
+  // The append must not follow a symlink out of the Git metadata directory.
+  assert.match(
+    step1,
+    /`<common-dir>\/info` must be a real directory, not a symlink, and `info\/exclude`, when present, a regular file, not a symlink, FIFO, device, or directory/,
+  );
+  assert.match(step1, /Any violation stops the run with the path named and nothing written/);
+  assert.match(step1, /`O_APPEND\|O_NOFOLLOW` write/);
+  ordered(step1, 'must be a real directory, not a symlink', 'in one `O_APPEND|O_NOFOLLOW` write');
+  assert.match(
+    step1,
+    /`git check-ignore --no-index -- \.effective-flow\/config\.json` and `git check-ignore --no-index -- \.effective-flow\/project-setup\.md`; both must exit `0`/,
+  );
+  assert.match(
+    step1,
+    /A tracked `\.gitignore` negation outranks `info\/exclude`: report its line and stop rather than editing it/,
+  );
+  // The non-Git and tracked-content stops come before the only write.
+  ordered(
+    step1,
+    '1. Git only.',
+    '2. No tracked runtime content.',
+    '3. Add the entry idempotently.',
+  );
+  assert.match(
+    prose(section(setup, '### Step 1: .gitignore entry')),
+    /In hidden mode, skip this step: "Step 1 \(hidden\)" below replaces it/,
+  );
+});
+
+test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a tracked ADR', () => {
+  const setup = source('src/tools/setup.md');
+  const rules = prose(section(setup, '## Rules', '\n## '));
+  assert.match(
+    rules,
+    /Never write or edit `\.gitignore`, a tracked ADR, `AGENTS\.md`, or `CLAUDE\.md` in hidden mode, and never write `visibility \| hidden` into a tracked file/,
+  );
+  assert.match(
+    rules,
+    /In hidden mode, change only the `\.effective-flow\/` line in the Git common directory's `info\/exclude` and the local `\.effective-flow\/project-setup\.md`/,
+  );
+
+  const step6 = prose(boundedSlice(setup, '### Step 6: Merge and write', '### Step 7:'));
+  assert.match(
+    step6,
+    /skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks nothing, and poses no `CLAUDE\.md` fence\. It never writes or edits `AGENTS\.md` or `CLAUDE\.md`/,
+  );
+  const hiddenWrite = prose(
+    boundedSlice(setup, '#### Writing the hidden local configuration', '#### Mode switches'),
+  );
+  assert.match(hiddenWrite, /Write no tracked file\./);
+  assert.match(hiddenWrite, /reported as shadowed or untouched, never edited or deleted/);
+  assert.match(
+    hiddenWrite,
+    /Apply "Runtime-state write safety" to the exact target `<RUNTIME_STATE_ROOT>\/\.effective-flow\/project-setup\.md`/,
+  );
+  assert.match(hiddenWrite, /no `delivery\.branchPrefix` containing `effective-flow`/);
+
+  // The CLAUDE.md fence is gated off in hidden mode.
+  const claudeFence = askContracts(setup, 'setup').find((ask) =>
+    /the run is not in hidden mode/.test(ask.when),
+  );
+  assert.ok(
+    claudeFence,
+    'the CLAUDE.md import fence must be gated on "the run is not in hidden mode"',
+  );
+});
+
+test('hidden → standard switch keeps the info/exclude line and never moves local plans', () => {
+  const setup = source('src/tools/setup.md');
+  const switches = prose(boundedSlice(setup, '#### Mode switches', '### Step 7:'));
+  assert.match(switches, /are left exactly as they are and reported once as shadowed/);
+  assert.match(switches, /Keep the `\.effective-flow\/` line in `info\/exclude` in every case/);
+  assert.match(switches, /Never move local plans or concepts/);
+  assert.match(switches, /remove only that file/);
+});
+
+test('config locator step 0 honours the local project-setup.md only with visibility hidden, from the main checkout', () => {
+  const core = source('src/shared/config-migration.md');
+  const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
+  ordered(locator, '0. Local hidden configuration.', '1. AGENTS.md marker.');
+  assert.match(
+    locator,
+    /`<RUNTIME_STATE_ROOT>\/\.effective-flow\/project-setup\.md` \(main checkout only, table encoding below\) wins only if it declares `visibility \| hidden`/,
+  );
+  assert.match(
+    locator,
+    /A tracked ADR's `visibility \| hidden` row is never honoured: report and ignore it/,
+  );
+  assert.match(
+    [...core.matchAll(LAZY_INCLUDE_RE)].find(
+      (m) => m[1].trim() === 'config-migration-edge-cases',
+    )[2],
+    /the local `\.effective-flow\/project-setup\.md` of step 0 exists or a `visibility` row is present/,
+  );
+
+  const edge = source('src/shared/config-migration-edge-cases.md');
+  const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
+  assert.match(
+    prose(hidden),
+    /from the verified `RUNTIME_STATE_ROOT` only; a same-named file below a linked `EXECUTION_ROOT` is never inspected as configuration/,
+  );
+  assert.match(prose(hidden), /Reading it creates nothing and touches no Git/);
+  const situations = [
+    [
+      'local file declares `visibility \\| hidden`',
+      /hidden mode; the local file is the whole configuration and wins over steps 1–4/,
+    ],
+    [
+      'local file present without `visibility \\| hidden`',
+      /not honoured: report the file once and resolve through steps 1–4 as if it were absent/,
+    ],
+    [
+      'hidden mode **and** a tracked marker or ADR resolves',
+      /the local file wins; name the tracked marker\/ADR once as shadowed and never read a value from it/,
+    ],
+    ['a tracked ADR declares `visibility \\| hidden`', /report the row, ignore it, stay standard/],
+  ];
+  for (const [situation, result] of situations) {
+    const row = hidden.split('\n').find((line) => line.startsWith(`| ${situation} `));
+    assert.ok(row, `missing hidden-mode situation row: ${situation}`);
+    assert.match(row, result, situation);
+  }
+});
+
+test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed instead of falling through', () => {
+  const core = source('src/shared/config-migration.md');
+  const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
+  const step0 = boundedSlice(locator, '0. Local hidden configuration.', '1. AGENTS.md marker.');
+  assert.match(
+    step0,
+    /A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the first `git worktree list --porcelain` record/,
+  );
+  assert.match(
+    step0,
+    /in a Git checkout where that fails it stops with a report and never falls through to standard mode/,
+  );
+  assert.match(
+    [...core.matchAll(LAZY_INCLUDE_RE)].find(
+      (m) => m[1].trim() === 'config-migration-edge-cases',
+    )[2],
+    /step 0 must resolve `RUNTIME_STATE_ROOT` itself/,
+  );
+
+  const edge = prose(
+    boundedSlice(
+      source('src/shared/config-migration-edge-cases.md'),
+      '**Resolving the root for step 0.**',
+      '| Situation',
+    ),
+  );
+  assert.match(
+    edge,
+    /take only the first record, which must begin with exactly one non-empty `worktree <path>` line/,
+  );
+  assert.match(edge, /a missing, empty, or duplicate path field, or a `bare` line, rejects it/);
+  assert.match(
+    edge,
+    /`git rev-parse --show-toplevel` from it to resolve back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match the one from the current checkout/,
+  );
+  assert.match(
+    edge,
+    /any failed check stops the reader with a report naming the failed check and making no write/,
+  );
+  assert.match(edge, /never uses `EXECUTION_ROOT` or the current directory as a substitute/);
+
+  const visibility = prose(boundedSlice(source('src/tools/setup.md'), '**Visibility.**', '```ask'));
+  assert.match(
+    visibility,
+    /a run from a linked worktree detects the main checkout's hidden configuration and never writes tracked configuration over it/,
+  );
+  assert.match(
+    visibility,
+    /when step 0 stops because that root cannot be verified, this run stops too, before any question or write/,
+  );
+
+  for (const tool of ['open-plans', 'apply-plan']) {
+    assert.match(
+      prose(source(`src/tools/${tool}.md`)),
+      /resolve `<plan\.dir>` through the config locator[^.]*; in hidden mode it lies below the `RUNTIME_STATE_ROOT` that locator step 0 verifies, even from a linked worktree/i,
+      tool,
+    );
+  }
+});
+
+test('hidden mode forced values are enforced by the resolver, not by individual tools', () => {
+  const edge = source('src/shared/config-migration-edge-cases.md');
+  const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
+  assert.match(
+    prose(hidden),
+    /In hidden mode the resolver, not the individual tool, enforces these values/,
+  );
+  assert.match(prose(hidden), /reported once per run as overridden and never honoured/);
+
+  const forced = boundedSlice(hidden, '| Key ', '\n\n');
+  const value = (key) => rowCells(tableRow(forced, `\`${key}\``))[1];
+  assert.equal(value('plan.dir'), '`.effective-flow/plan`');
+  assert.equal(value('concept.dir'), '`.effective-flow/concept`');
+  assert.equal(value('tracker.mode'), '`local`');
+  assert.equal(value('delivery.prReview'), '`off`');
+  assert.match(
+    value('delivery.branchPrefix'),
+    /^empty by default; a value containing `effective-flow` \(any letter case\) is rejected and the empty default applies$/,
+  );
+  assert.deepEqual(firstColumnCells(forced).slice(2), [
+    '`plan.dir`',
+    '`concept.dir`',
+    '`tracker.mode`',
+    '`delivery.prReview`',
+    '`delivery.branchPrefix`',
+  ]);
+
+  assert.match(
+    prose(hidden),
+    /an issue reference or per-run signal that would otherwise select the forge or an external tool does not override it/,
+  );
+  assert.match(
+    prose(hidden),
+    /no commit message, branch name, pull-request title or body, or tracker-facing summary references a path under `\.effective-flow\/` — a plan or concept file included — or names Effective Flow/,
+  );
+});
+
+test('an empty delivery prefix drops the prefix segment: branches read <skill>/<slug>', () => {
+  const worktree = prose(source('src/shared/worktree-integration.md'));
+  assert.match(
+    worktree,
+    /an empty prefix, the hidden-mode default and valid in every mode, drops the prefix segment and its slash: `<skill>\/<slug>`, e\.g\. `build\/user-login`/,
+  );
+  assert.match(
+    worktree,
+    /`delivery\.branchPrefix`: `"effective-flow"` \(in hidden mode empty, and never a value containing `effective-flow`/,
+  );
+  assert.match(
+    prose(source('src/tools/deliver.md')),
+    /or `deliver\/<slug>` when the prefix is empty \(the hidden-mode default\)/,
+  );
+});
+
+test('plan archival hidden arm: main checkout only, no staging, no cleanup, no clobber, collision stop', () => {
+  const archival = source('src/shared/plan-archival.md');
+  assert.match(
+    prose(section(archival, '### Detection')),
+    /In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the hidden arm below/,
+  );
+  const arm = prose(boundedSlice(archival, '### Hidden arm', '### Report vocabulary'));
+  assert.match(
+    arm,
+    /Every operation runs in `RUNTIME_STATE_ROOT`, passed explicitly, whatever the delivery shape/,
+  );
+  assert.match(
+    arm,
+    /apply "Runtime-state write safety" to `<plan\.dir>\/archive` and to `A` \(ignore state, containment, no symlinks\)/,
+  );
+  assert.match(
+    arm,
+    /`git -C <RUNTIME_STATE_ROOT> ls-files -z -- ':\(literal\)<P>' ':\(literal\)<A>'` to list nothing/,
+  );
+  assert.match(arm, /If a file already exists at `A`, stop: report both paths and change nothing/);
+  assert.match(arm, /never overwrite, never pick one/);
+  assert.match(arm, /plain no-clobber move \(`mv -n`\)/);
+  assert.match(
+    arm,
+    /A move that `-n` declined because `A` appeared in the meantime is the collision stop/,
+  );
+  assert.match(
+    arm,
+    /The hidden arm stages nothing, takes nothing into `EXECUTION_ROOT`, adds no plan state to the handback commit, and runs no main-checkout cleanup: removing the only copy would lose the plan/,
+  );
+
+  const worktree = prose(source('src/shared/worktree-integration.md'));
+  assert.match(
+    worktree,
+    /marks and moves the plan in the main checkout only, takes nothing into `EXECUTION_ROOT`, stages nothing, and contributes no plan state to step 2/,
+  );
+  assert.match(worktree, /the delivery branch carries no path below `\.effective-flow\/`/);
+});
+
+test('hidden concepts and initial-state plans live only in RUNTIME_STATE_ROOT', () => {
+  assert.match(
+    prose(source('src/shared/concept-contract.md')),
+    /concepts then live only in `RUNTIME_STATE_ROOT` and are never staged or committed/,
+  );
+  assert.match(
+    prose(source('src/shared/initial-state-documentation.md')),
+    /the initial-state plan lives only there and is never staged, committed, or taken into a delivery branch/,
+  );
+});
+
+test('pr in hidden mode references no plan file, no .effective-flow/ path, and never names Effective Flow', () => {
+  const pr = source('src/tools/pr.md');
+  const step9 = prose(
+    boundedSlice(
+      pr,
+      '9. **Derive the PR title and description',
+      '**PR title must be a valid Conventional Commit**',
+    ),
+  );
+  assert.match(
+    step9,
+    /Hidden mode \(`visibility: hidden` .*?\): reference no plan file, and let neither the title nor the body contain a path under `\.effective-flow\/` or name Effective Flow \(`effective-flow`, `Effective Flow`\)\. Derive both from the changes alone/,
+  );
+  // The hidden rule follows the plan-reference rule it overrides.
+  ordered(step9, 'reference an associated plan file', 'Hidden mode');
+  assert.match(
+    prose(pr),
+    /In hidden mode, never reference a plan file, a path under `\.effective-flow\/`, or Effective Flow by name in the PR title or description/,
+  );
+  assert.match(
+    prose(source('src/tools/deliver.md')),
+    /this run hands that constraint on to `\{\{SKILL:commit\}\}` and `\{\{SKILL:pr\}\}`/,
+  );
+  // A head branch naming the tool is refused before step 7 pushes it, not only by pr-create.
+  const step2 = prose(
+    boundedSlice(pr, '2. **Check preconditions:**', '3. **Verify the prepared head:**'),
+  );
+  assert.match(
+    step2,
+    /In hidden mode \(`visibility: hidden`\), the exact head branch name must not name Effective Flow .*?On a match, stop before any fetch or push, name the branch, and tell the user to rename it/,
+  );
+});
+
+test('tracker-bound workflows fail closed in hidden mode before any tracker access', () => {
+  for (const tool of ['plan-issue', 'apply-issues']) {
+    const text = prose(source(`src/tools/${tool}.md`));
+    assert.match(
+      text,
+      /Hidden mode stops this skill\. When the configuration resolves `visibility: hidden` .*?, stop before any tracker access or write — no probe, label migration, comment, label/,
+      tool,
+    );
+    assert.match(text, /hidden mode is active, it pins the tracker to `local`/, tool);
+  }
+
+  const applyReview = prose(source('src/tools/apply-review.md'));
+  assert.match(
+    applyReview,
+    /Hidden mode stops the remote flow\. .*?stop before loading the sub-file and before any tracker access or write/,
+  );
+  ordered(applyReview, 'Hidden mode stops the remote flow.', '## Workflow');
+  assert.match(applyReview, /A local report file is processed normally/);
+  assert.match(
+    applyReview,
+    /In hidden mode \(`visibility: hidden`\) no tracked ADR is written, neither by `effective-product` nor by the fallback below/,
+  );
+  assert.match(applyReview, /record a permanent decision in the local review report instead/);
+
+  const review = prose(source('src/tools/review.md'));
+  assert.match(
+    review,
+    /Hidden mode \(`visibility: hidden`.*?\) pins the target to `local`: if an argument or per-run signal nevertheless requests the forge or an external tool, stop before any probe, tracker access, or write/,
+  );
+});
+
+test('hidden → standard setup never writes the step-0 file: it resolves through locator steps 1–4 only', () => {
+  const switches = prose(
+    boundedSlice(source('src/tools/setup.md'), '#### Mode switches', '### Step 7:'),
+  );
+  assert.match(
+    switches,
+    /In this run Step 2 item 2 and Step 6 items 3 and 4 resolve the project setup ADR through locator steps 1 to 4 only: the step-0 file is a read-only seed, never a write target/,
+  );
+  const hidden = prose(
+    boundedSlice(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Hidden mode (locator step 0)',
+      '### Legacy setup marker',
+    ),
+  );
+  assert.match(hidden, /resolves the ADR it reads and writes through steps 1–4 only/);
+});
+
+test('issue-driven apply stops in hidden mode before stage B tracker classification', () => {
+  const phase1 = prose(
+    boundedSlice(source('src/tools/apply.md'), '### Phase 1: Classify the source', '3. Handle'),
+  );
+  assert.match(
+    phase1,
+    /Hidden mode stops issue-driven apply\. .*?stop before stage B and any tracker access or write — no probe, label migration, or classification/,
+  );
+  assert.match(phase1, /hidden mode is active, it pins the tracker to `local`/);
+  ordered(phase1, 'Hidden mode stops issue-driven apply.', '2. Apply the "apply-source detection"');
+  assert.match(
+    prose(section(source('src/shared/issue-tracker.md'), '### Determine mode')),
+    /In hidden mode \(config locator step 0\) no argument overrides the forced `local` target: an issue reference stops the run instead/,
+  );
+});
+
+test('open-plans resolves plan.dir through the config locator, hidden step 0 included', () => {
+  const pointer = [...source('src/tools/open-plans.md').matchAll(LAZY_INCLUDE_RE)].find(
+    (m) => m[1].trim() === 'config-migration',
+  );
+  assert.ok(pointer, 'open-plans must carry a deferred config-migration pointer');
+  assert.match(pointer[2], /`<plan\.dir>` is about to be resolved/);
+});
+
+test('hidden plan and concept writes are anchored to RUNTIME_STATE_ROOT and write-guarded', () => {
+  const hidden = prose(
+    boundedSlice(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Hidden mode (locator step 0)',
+      '### Legacy setup marker',
+    ),
+  );
+  assert.match(
+    hidden,
+    /Hidden plan and concept writes use absolute handles under the verified `RUNTIME_STATE_ROOT`.*?apply "Runtime-state write safety"/,
+  );
+  for (const [tool, pattern] of [
+    ['plan', /a hidden-mode plan write targets a path below `\.effective-flow\/`/],
+    ['concept', /a hidden-mode concept write targets a path below `\.effective-flow\/`/],
+  ]) {
+    const pointer = [...source(`src/tools/${tool}.md`).matchAll(LAZY_INCLUDE_RE)].find(
+      (m) => m[1].trim() === 'runtime-state-safety',
+    );
+    assert.ok(pointer, `${tool} must carry a deferred runtime-state-safety pointer`);
+    assert.match(pointer[2], pattern, tool);
+  }
+  const arm = prose(
+    boundedSlice(source('src/shared/plan-archival.md'), '### Hidden arm', '### Report vocabulary'),
+  );
+  assert.match(
+    arm,
+    /If `P` does not exist in `RUNTIME_STATE_ROOT`, stop: report the missing path and change nothing/,
+  );
+  ordered(arm, 'Set the canonical status marker of `P`', 'move `P` to `A`');
+});
+
+test('cleanup treats the info/exclude line, project-setup.md, and the thread ledger as current state', () => {
+  const cleanup = source('src/tools/cleanup.md');
+  const boundary = prose(section(cleanup, '## Hard scope boundary', '\n## '));
+  assert.match(boundary, /never a legacy remnant: inventory it and leave it untouched/);
+  assert.match(
+    boundary,
+    /`\.effective-flow\/project-setup\.md` is current configuration, not a legacy `config\.json`/,
+  );
+  assert.match(
+    boundary,
+    /`\.effective-flow\/merge-gate\/thread-ledger\.json` that `\{\{SKILL:iterate\}\}` keeps is current runtime state, never a leftover/,
+  );
+
+  const discovery = prose(section(cleanup, '### Phase 1: Discovery / inventory'));
+  assert.match(discovery, /never as a legacy remnant and never as a removal candidate/);
+  assert.match(
+    prose(section(cleanup, '## Rules', '\n## ')),
+    /Leave the `\.effective-flow\/` line in `info\/exclude` untouched; it is active, not legacy/,
+  );
+});
+
+test('iterate uses the processed-thread ledger in hidden mode and explicit PR review publishes nothing', () => {
+  const iterate = source('src/tools/iterate.md');
+  const pointer = [...iterate.matchAll(LAZY_INCLUDE_RE)].find(
+    (match) => match[1].trim() === 'pr-thread-ledger',
+  );
+  assert.ok(pointer, 'iterate must carry a lazy pointer to pr-thread-ledger');
+  assert.match(pointer[2], /hidden mode \(`visibility: hidden`\) is resolved/);
+  assert.match(
+    prose(iterate),
+    /In hidden mode \(`visibility: hidden`\) no marker is evidence: take both exclusions from the loaded `pr-thread-ledger` lookup instead/,
+  );
+  assert.match(
+    prose(iterate),
+    /In hidden mode it stamps none: record each posted reply per the loaded `pr-thread-ledger`/,
+  );
+  assert.match(
+    prose(iterate),
+    /unmarked in hidden mode, never naming Effective Flow or a path below `\.effective-flow\/`/,
+  );
+
+  const ledger = prose(source('src/shared/pr-thread-ledger.md'));
+  assert.match(
+    ledger,
+    /`\.effective-flow\/merge-gate\/thread-ledger\.json` below `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(ledger, /It is never tracked, never staged, and never published/);
+  assert.match(ledger, /Record only a posted reply/);
+  assert.match(ledger, /Never repair, rewrite, or delete it yourself/);
+
+  const integration = prose(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    integration,
+    /Hidden mode \(`visibility: hidden`\) publishes nothing onto the pull request/,
+  );
+  assert.match(
+    integration,
+    /On the explicit entry point, report the findings in chat instead and state that hidden mode withheld the publication/,
+  );
+
+  assert.match(
+    prose(source('src/tools/merge-gate.md')),
+    /leave `\{\{SKILL:iterate\}\}`'s processed-thread ledger in place: it is not a delegation message/,
   );
 });

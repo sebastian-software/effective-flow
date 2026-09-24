@@ -1,7 +1,8 @@
 # Effective Flow configuration
 
-The tracked Effective Flow configuration is a living project-setup ADR, not runtime state. This
-page summarizes the developer contract; the binding sources are
+The tracked Effective Flow configuration is a living project-setup ADR, not runtime state. The one
+exception is [hidden mode](#hidden-mode), whose configuration is a local, untracked file. This page
+summarizes the developer contract; the binding sources are
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md) for lookup and encoding,
 [`src/shared/config-setup-migration.md`](../../src/shared/config-setup-migration.md) for the
 language keys and the legacy-config migration,
@@ -19,8 +20,11 @@ language: `# Effective Flow project setup` with `## Configuration`, or
 `# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
 envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
 runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `worktree-runs/`,
-`merge-gate/` (the gate's delegation messages), and `model-tiering-pilot/` (local pilot generations
-and their evidence); the entire directory is gitignored with one `.effective-flow/` line.
+`merge-gate/` (the gate's delegation messages, plus `iterate`'s hidden-mode
+`merge-gate/thread-ledger.json`), `model-tiering-pilot/` (local pilot generations and their
+evidence), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`
+directories. The entire directory is ignored with one `.effective-flow/` line: in `.gitignore` in
+standard mode, or in the Git common directory's `info/exclude` in hidden mode.
 
 This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
@@ -32,7 +36,9 @@ worktree checks both the sentinel `.effective-flow/config.json` and the concrete
 non-verbose `git check-ignore --no-index -- <path>`, then independently requires
 `git ls-files -- .effective-flow/` to succeed with empty output. Missing Git, a non-repository,
 a not-ignored path, tracked runtime state, or a command error preserves all state and routes to
-`/effective-flow setup`. Ordinary workflows never repair `.gitignore`; setup is the sole owner.
+`/effective-flow setup`. `git check-ignore --no-index` honours `info/exclude` exactly like
+`.gitignore`, so hidden mode needs no separate predicate. Ordinary workflows never repair
+`.gitignore` or `info/exclude`; setup is the sole owner of both.
 
 Before its first authorized runtime write, every writing workflow also runs the marker-driven
 legacy-directory prerequisite from
@@ -112,6 +118,8 @@ configuration values into the project-setup ADR.
 
 Readers resolve configuration in this order:
 
+0. the local hidden configuration `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, only
+   when it declares `visibility | hidden` (see [Hidden mode](#hidden-mode));
 1. the canonical marker in `AGENTS.md`, otherwise `CLAUDE.md` or a comparable convention file;
 2. the default path, followed by a scan of the detected ADR directory (`docs/adr/`,
    `docs/decisions/`, or `adr/`);
@@ -124,7 +132,7 @@ compatibility generation. Step 2 matches a candidate on its stem after stripping
 leading `^\d+[-_]` prefix and additionally requires one of the canonical configuration envelopes,
 so a project-setup ADR written under a project's own numeric naming convention still resolves as
 configuration. That tolerance widens the scan to a family of names, so several files can match
-inside this one step; "the first matching step wins" ranks the four steps, not the matches within
+inside this one step; "the first matching step wins" ranks the five steps, not the matches within
 a step. The matches are ranked by one ordered comparison rather than two independent preferences:
 the current slug `effective-flow-project-setup` is preferred over the legacy `firmo-project-setup`
 first, and only among files carrying the same slug is an unprefixed stem preferred over a prefixed
@@ -140,10 +148,52 @@ question, which asks which of the reported ADRs is authoritative rather than off
 another one.
 
 This deterministic read path creates nothing and touches no Git. `/effective-flow setup` is the
-only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, offers the
-one-line `CLAUDE.md` that imports `AGENTS.md`, or migrates a legacy config. Readers with no ADR
+only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, writes the
+`info/exclude` line or the local hidden configuration, offers the one-line `CLAUDE.md` that imports
+`AGENTS.md`, or migrates a legacy config. Readers with no ADR
 may consume legacy values for the current run and direct the user to setup; they do not perform
 migration themselves.
+
+## Hidden mode
+
+Hidden mode (`visibility: hidden`) runs Effective Flow in a repository without leaving a trace in
+tracked files or on the forge. Its contract is split between the eager locator step 0 in
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md) and the deferred
+"Hidden mode (locator step 0)" section of
+[`src/shared/config-migration-edge-cases.md`](../../src/shared/config-migration-edge-cases.md),
+which carries the situation table, the forced values, and the no-trace rule.
+
+- **Location.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, in the ADR envelope and
+  table encoding. It is read from the verified main checkout only; a same-named file below a linked
+  `EXECUTION_ROOT` is reported as ignored. A reader that has not yet verified that root resolves it
+  itself from the first `git worktree list --porcelain` record before step 0 and, in a Git checkout
+  where that fails, stops instead of falling through to standard mode. It deliberately does not reuse the retired JSON file name,
+  which stays the runtime-safety sentinel.
+- **Activation.** The file wins only when it declares `visibility | hidden`. It then wins over steps
+  1–4, and a tracked marker or ADR that also resolves is reported once as shadowed and never read.
+  A local file without that row is reported and skipped. A `visibility` row in a tracked ADR is
+  invalid by construction: it is reported, ignored, and never activates hidden mode.
+- **Forced values.** The resolver, not each tool, enforces `plan.dir = .effective-flow/plan`,
+  `concept.dir = .effective-flow/concept`, `tracker.mode = local`, `delivery.prReview = off`, and
+  an empty default `delivery.branchPrefix`. A prefix containing `effective-flow` in any letter case
+  is rejected. A contradicting row is reported once per run as overridden. The tracker target is
+  pinned as well: an issue reference or per-run signal cannot override it. The tracker-bound
+  workflows (`plan-issue`, `apply-issues`, remote `apply-review`, and `review` with a forge or
+  external target) stop before any tracker access. `apply-review` writes no tracked ADR for a
+  rejected finding.
+- **No trace.** No commit message, branch name, pull-request title or body, or tracker-facing
+  summary references a path under `.effective-flow/` or names Effective Flow. A workflow that
+  delegates a commit or pull request hands the constraint on. The remote helper enforces the forge
+  half: with `visibility: hidden` it stamps no marker and refuses a body that names the tool. The
+  processed-thread ledger in
+  [`src/shared/pr-thread-ledger.md`](../../src/shared/pr-thread-ledger.md) replaces the `iterate`
+  marker as the record of answered threads.
+- **Setup.** Only `/effective-flow setup hidden` or the Visibility answer `Hidden` writes the local
+  file. Setup appends `.effective-flow/` to `$(git rev-parse --git-common-dir)/info/exclude`
+  idempotently, verifies it with `git check-ignore --no-index`, and writes no `.gitignore`, ADR,
+  marker, `AGENTS.md`, or `CLAUDE.md`. It skips the legacy-config migration, which leaves a legacy
+  source on disk as a read-only seed. Switching back to standard deletes the local file only after a
+  confirmation, keeps the `info/exclude` line, and never moves local plans or concepts.
 
 ## Bilingual envelope and canonical table encoding
 
