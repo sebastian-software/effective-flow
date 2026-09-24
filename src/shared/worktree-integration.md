@@ -155,9 +155,9 @@ When delivery or worktree is active:
    `effective-flow/build/user-login`; an empty prefix, the hidden-mode default and valid in every
    mode, drops the prefix segment and its slash: `<skill>/<slug>`, e.g. `build/user-login`. Derive
    the slug from the plan title, the task description,
-   the issue or finding. If the branch name already exists, append a
-   numeric suffix and report the chosen name. In hidden mode (`visibility: hidden`), before that suffix, remove from the slug every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow` —
-   together with the letters or digits attached to it up to the nearest hyphen, collapse repeated or edge hyphens, use `change` if nothing remains, and report the original and the chosen slug in one line.
+   the issue or finding. In hidden mode (`visibility: hidden`), sanitize the slug before any existence check: remove from the slug every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow` —
+   together with the letters or digits attached to it up to the nearest hyphen, collapse repeated or edge hyphens, repeat both until the slug no longer matches the rule, use `change` if nothing remains, and report the original and the chosen slug in one line.
+   If the resulting branch name already exists, append a numeric suffix and report the chosen name.
 
 ### Run-owned delivery state
 
