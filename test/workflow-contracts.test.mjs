@@ -16447,6 +16447,39 @@ test('an empty delivery prefix drops the prefix segment: branches read <skill>/<
   );
 });
 
+test('hidden mode sanitizes the delivery slug at construction: disclosure rule, attached fragment, change fallback, one-line report', () => {
+  const step = prose(
+    boundedSlice(
+      source('src/shared/worktree-integration.md'),
+      '4. Construct delivery branch names',
+      '### Run-owned delivery state',
+    ),
+  );
+  assert.match(
+    step,
+    /In hidden mode \(`visibility: hidden`\), before that suffix, remove from the slug every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `\.`, case-insensitive, or `Effective Flow` — together with the letters or digits attached to it up to the nearest hyphen/,
+  );
+  assert.match(step, /collapse repeated or edge hyphens, use `change` if nothing remains/);
+  assert.match(step, /report the original and the chosen slug in one line/);
+  const deliver = prose(
+    boundedSlice(source('src/tools/deliver.md'), '2. Derive a collision-safe', '3. Create a fresh'),
+  );
+  assert.match(
+    deliver,
+    /In hidden mode, sanitize the slug first, as step 4 "Construct delivery branch names" of `worktree-integration` does: remove every match of the helper's disclosure rule/,
+  );
+  assert.match(deliver, /with the letters or digits attached to it up to the nearest hyphen/);
+  assert.match(deliver, /collapse repeated or edge hyphens, use `change` if nothing remains/);
+  assert.match(deliver, /report the original and the chosen slug in one line/);
+  // `deliver` does not load `worktree-integration`, so it states the disclosure rule itself; all
+  // three sites must carry the exact wording `pr` step 2 uses, so none can drift from the helper.
+  const rule =
+    "the helper's disclosure rule(?::| —) `effective` and `flow` joined directly or by `-`, `_`, or `\\.`, case-insensitive, or `Effective Flow`";
+  for (const text of [prose(source('src/tools/pr.md')), step, deliver]) {
+    assert.match(text, new RegExp(rule));
+  }
+});
+
 test('plan archival hidden arm: main checkout only, no staging, no cleanup, no clobber, collision stop', () => {
   const archival = source('src/shared/plan-archival.md');
   assert.match(

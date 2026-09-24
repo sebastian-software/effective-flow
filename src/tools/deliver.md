@@ -198,7 +198,7 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
    exact OID before creating delivery artifacts.
 2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
-   the prefix is empty (the hidden-mode default). Verify both the proposed
+   the prefix is empty (the hidden-mode default). In hidden mode, sanitize the slug first, as step 4 "Construct delivery branch names" of `worktree-integration` does: remove every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow` — with the letters or digits attached to it up to the nearest hyphen, collapse repeated or edge hyphens, use `change` if nothing remains, and report the original and the chosen slug in one line. Verify both the proposed
    branch and absolute worktree path are unused in refs and `git worktree list --porcelain`.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate
