@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -41,6 +51,17 @@ import {
   ISSUE_STATE_WAIT_MS,
   supersedeFollowUpAdmissionReceipt,
 } from '../src/scripts/remote-tracker-core.mjs';
+import {
+  emptyThreadLedger,
+  ledgerRepository,
+  lookupThreadLedger,
+  parseThreadLedger,
+  readThreadLedger,
+  recordThreadLedgerEntries,
+  recordThreadLedgerFile,
+  threadLedgerKey,
+  writeThreadLedger,
+} from '../src/scripts/remote-tracker-ledger-core.mjs';
 
 const githubRepository = {
   host: 'github.com',
@@ -4783,6 +4804,787 @@ test('review-thread-reply rejects an empty body instead of publishing a marker-o
       (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.body',
       `body ${JSON.stringify(body)} must be rejected`,
     );
+  }
+});
+
+// --- Hidden mode: marker-free forge bodies and the local processed-thread ledger ---------------
+
+const iterateMarker = '<!-- effective-flow-iterate -->';
+
+test('standard mode keeps stamping both markers exactly as before, with or without the key', async () => {
+  for (const visibility of [undefined, null, 'standard', ' Standard ']) {
+    const extra = visibility === undefined ? {} : { visibility };
+    const pr = await executeOperation('pr-comment-build', { body: 'Summary', ...extra });
+    assert.equal(pr.ok, true);
+    assert.equal(pr.data.marker, 'effective-flow-iterate');
+    assert.equal(pr.data.body, `${iterateMarker}\nSummary`);
+    const fallback = await executeOperation('pr-review-comment-build', { body: 'x', ...extra });
+    assert.equal(fallback.data.body, `${prReviewMarker}\nx`);
+    const reply = buildCommandPlan(
+      'review-thread-reply',
+      { number: 7, commentId: 42, payload: { body: 'Fixed.' }, ...extra },
+      githubRepository,
+    );
+    assert.equal(JSON.parse(reply.stdin).body, `${iterateMarker}\nFixed.`);
+    const review = buildReviewPayload(
+      { body: 'Summary', comments: [{ path: 'a.js', line: 1, body: 'Note' }] },
+      extra,
+    );
+    assert.equal(review.body, `${prReviewMarker}\nSummary`);
+    assert.equal(review.comments[0].body, `${prReviewMarker}\nNote`);
+  }
+});
+
+test('hidden mode builds pull-request comment bodies without any marker', async () => {
+  for (const operation of ['pr-comment-build', 'pr-review-comment-build']) {
+    const envelope = await executeOperation(operation, {
+      body: '  first line\nsecond line  ',
+      visibility: 'hidden',
+    });
+    assert.equal(envelope.ok, true, operation);
+    assert.equal(envelope.data.marker, null);
+    assert.equal(envelope.data.body, 'first line\nsecond line');
+    assert.doesNotMatch(envelope.data.body, /<!--/);
+  }
+  // The visibility may also travel inside the nested `comment` object.
+  const nested = await executeOperation('pr-comment-build', {
+    comment: { body: 'Nested', visibility: 'hidden' },
+  });
+  assert.equal(nested.data.body, 'Nested');
+});
+
+test('hidden mode submits reviews and thread replies without any marker', () => {
+  const reply = buildCommandPlan(
+    'review-thread-reply',
+    { number: 7, commentId: 42, visibility: 'hidden', payload: { body: 'Fixed in 1a2b3c.' } },
+    githubRepository,
+  );
+  assert.deepEqual(JSON.parse(reply.stdin), { body: 'Fixed in 1a2b3c.' });
+
+  const inPayload = buildCommandPlan(
+    'review-thread-reply',
+    { number: 7, commentId: 42, payload: { body: 'Done.', visibility: 'hidden' } },
+    githubRepository,
+  );
+  assert.deepEqual(JSON.parse(inPayload.stdin), { body: 'Done.' });
+
+  const review = buildCommandPlan(
+    'review-create',
+    {
+      number: 7,
+      visibility: 'hidden',
+      payload: { body: 'Summary', comments: [{ path: 'a.js', line: 2, body: 'Note' }] },
+    },
+    githubRepository,
+  );
+  const submitted = JSON.parse(review.stdin);
+  assert.equal(submitted.body, 'Summary');
+  assert.equal(submitted.comments[0].body, 'Note');
+  assert.doesNotMatch(review.stdin, /effective-flow/);
+});
+
+test('hidden mode refuses a body that names the tool, a hand-written marker included', async () => {
+  const disclosing = [
+    `${iterateMarker}\nFixed.`,
+    '> <!-- effective-flow-pr-review -->\n> quoted\n\nanswer',
+    'Handled by Effective Flow.',
+    'see effective_flow docs',
+    'EffectiveFlow did this',
+  ];
+  for (const body of disclosing) {
+    const envelope = await executeOperation('pr-comment-build', { body, visibility: 'hidden' });
+    assert.equal(envelope.ok, false, body);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(envelope.error.details.reason, 'hidden-mode-disclosure');
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          'review-thread-reply',
+          { number: 7, commentId: 42, visibility: 'hidden', payload: { body } },
+          githubRepository,
+        ),
+      (error) => error.details.reason === 'hidden-mode-disclosure',
+    );
+    assert.throws(
+      () =>
+        buildReviewPayload(
+          { body: 'Summary', comments: [{ path: 'a.js', line: 1, body }] },
+          { visibility: 'hidden' },
+        ),
+      (error) =>
+        error.details.reason === 'hidden-mode-disclosure' &&
+        error.details.field === 'payload.comments[0].body',
+    );
+  }
+  // Ordinary English is not the product name.
+  const plain = await executeOperation('pr-comment-build', {
+    body: 'This keeps an effective flow of data through the parser.',
+    visibility: 'hidden',
+  });
+  assert.equal(plain.ok, true);
+});
+
+test('hidden mode fails closed for the two issue-tracker comment kinds', async () => {
+  for (const operation of ['planning-comment-build', 'apply-comment-build']) {
+    const envelope = await executeOperation(operation, { body: 'x', visibility: 'hidden' });
+    assert.equal(envelope.ok, false, operation);
+    assert.equal(envelope.error.details.reason, 'hidden-mode-tracker-write');
+  }
+  assert.throws(
+    () => buildCommentPayload('apply', { body: 'x' }, { visibility: 'hidden' }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+test('an unknown visibility value is rejected instead of silently defaulting', async () => {
+  const envelope = await executeOperation('pr-comment-build', { body: 'x', visibility: 'hiden' });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.deepEqual(envelope.error.details.supported, ['standard', 'hidden']);
+});
+
+const ledgerRepo = { host: 'GitHub.com', owner: 'Example', repository: 'Flow.git' };
+
+test('ledger keys fold the repository case and keep thread and comment IDs verbatim', () => {
+  assert.equal(ledgerRepository(ledgerRepo), 'github.com/example/flow');
+  assert.equal(
+    threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'thread', id: 'PRRT_kwDOAbC' }),
+    'github.com/example/flow#12/thread/PRRT_kwDOAbC',
+  );
+  assert.equal(
+    threadLedgerKey({ repository: ledgerRepo, pr: '12', kind: 'comment', id: 991 }),
+    'github.com/example/flow#12/comment/991',
+  );
+  // Two spellings of one repository are one record; different PRs or IDs are different records.
+  assert.equal(
+    threadLedgerKey({
+      repository: { host: 'github.com', owner: 'example', repository: 'flow' },
+      pr: 12,
+      kind: 'thread',
+      id: 'PRRT_kwDOAbC',
+    }),
+    threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'thread', id: 'PRRT_kwDOAbC' }),
+  );
+  assert.notEqual(
+    threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'thread', id: 'a' }),
+    threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'thread', id: 'A' }),
+  );
+  for (const id of ['', 'a/b', 'a#b', 'a b', 'x'.repeat(257)]) {
+    assert.throws(
+      () => threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'thread', id }),
+      (error) => error.code === 'INVALID_PAYLOAD',
+      JSON.stringify(id),
+    );
+  }
+  assert.throws(
+    () => threadLedgerKey({ repository: ledgerRepo, pr: 12, kind: 'review', id: 'a' }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+  assert.throws(
+    () => threadLedgerKey({ repository: ledgerRepo, pr: 0, kind: 'thread', id: 'a' }),
+    (error) => error.code === 'INVALID_REFERENCE',
+  );
+});
+
+test('ledger lookup skips recorded and resolved threads and leaves the rest pending', () => {
+  const { ledger, added } = recordThreadLedgerEntries(
+    emptyThreadLedger(),
+    { repository: ledgerRepo, pr: 12, threads: ['T1'], comments: [77] },
+    '2026-09-24T00:00:00.000Z',
+  );
+  assert.equal(added.length, 2);
+  const lookup = lookupThreadLedger(ledger, {
+    repository: ledgerRepo,
+    pr: 12,
+    threads: [
+      { id: 'T1', isResolved: false, comments: [] },
+      { id: 'T2', isResolved: false, comments: [{ id: '77' }] },
+      { id: 'T3', isResolved: true, comments: [] },
+      { id: 'T4', isResolved: false, comments: [{ id: 78 }] },
+    ],
+  });
+  assert.deepEqual(
+    lookup.threads.map(({ id, status, skip }) => [id, status, skip]),
+    [
+      ['T1', 'recorded', true],
+      ['T2', 'recorded', true],
+      ['T3', 'resolved', true],
+      ['T4', 'pending', false],
+    ],
+  );
+  assert.deepEqual(lookup.skipped, ['T1', 'T2', 'T3']);
+  assert.deepEqual(lookup.pending, ['T4']);
+
+  // The same IDs on another PR or repository are not recorded there.
+  const otherPr = lookupThreadLedger(ledger, {
+    repository: ledgerRepo,
+    pr: 13,
+    threads: [{ id: 'T1' }],
+  });
+  assert.deepEqual(otherPr.pending, ['T1']);
+});
+
+test('recording is idempotent and never mutates the ledger it was given', () => {
+  const first = recordThreadLedgerEntries(
+    emptyThreadLedger(),
+    { repository: ledgerRepo, pr: 12, threads: ['T1', 'T1'] },
+    'first',
+  );
+  assert.deepEqual(first.added, ['github.com/example/flow#12/thread/T1']);
+  const frozen = structuredClone(first.ledger);
+  const second = recordThreadLedgerEntries(
+    first.ledger,
+    { repository: ledgerRepo, pr: 12, threads: ['T1'] },
+    'second',
+  );
+  assert.deepEqual(second.added, []);
+  assert.deepEqual(second.present, ['github.com/example/flow#12/thread/T1']);
+  assert.equal(second.ledger.entries['github.com/example/flow#12/thread/T1'].recordedAt, 'first');
+  assert.deepEqual(first.ledger, frozen);
+  assert.throws(
+    () => recordThreadLedgerEntries(emptyThreadLedger(), { repository: ledgerRepo, pr: 12 }, 'x'),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+test('ledger parsing reports damage as a state instead of throwing', () => {
+  assert.equal(parseThreadLedger('{"version":1,"entries":{}}').state, 'ok');
+  for (const text of [
+    'not json',
+    '[]',
+    '{"version":2,"entries":{}}',
+    '{"version":1,"entries":[]}',
+    '{"version":1,"entries":{"__proto__":{}}}',
+    '{"version":1,"entries":{"github.com/a/b#1/thread/T":1}}',
+  ]) {
+    assert.equal(parseThreadLedger(text).state, 'corrupt', text);
+  }
+});
+
+function ledgerRoot() {
+  return mkdtempSync(join(tmpdir(), 'effective-flow-ledger-'));
+}
+
+const ledgerPath = (root) => join(root, '.effective-flow', 'merge-gate', 'thread-ledger.json');
+
+test('thread-ledger-record writes atomically below merge-gate and lookup then skips the thread', async () => {
+  const root = ledgerRoot();
+  try {
+    const clock = () => Date.parse('2026-09-24T10:00:00.000Z');
+    const recorded = await executeOperation(
+      'thread-ledger-record',
+      { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] },
+      { clock },
+    );
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    assert.equal(recorded.dryRun, false);
+    assert.equal(recorded.data.written, true);
+    const stored = JSON.parse(readFileSync(ledgerPath(root), 'utf8'));
+    assert.deepEqual(stored, {
+      version: 1,
+      entries: {
+        'github.com/example/flow#12/thread/T1': { recordedAt: '2026-09-24T10:00:00.000Z' },
+      },
+    });
+    assert.equal(statSync(ledgerPath(root)).mode & 0o777, 0o600);
+    // No temporary file survives the rename.
+    assert.deepEqual(
+      readdirSync(join(root, '.effective-flow', 'merge-gate')).filter((name) =>
+        name.includes('.tmp-'),
+      ),
+      [],
+    );
+
+    const again = await executeOperation(
+      'thread-ledger-record',
+      { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] },
+      { clock },
+    );
+    assert.equal(again.data.written, false);
+
+    const lookup = await executeOperation('thread-ledger-lookup', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: [
+        { id: 'T1', isResolved: false },
+        { id: 'T2', isResolved: false },
+      ],
+    });
+    assert.equal(lookup.ok, true);
+    assert.equal(lookup.data.ledger.state, 'ok');
+    assert.equal(lookup.data.degraded, false);
+    assert.deepEqual(lookup.data.skipped, ['T1']);
+    assert.deepEqual(lookup.data.pending, ['T2']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a missing ledger still skips resolved threads and reports a probable loss as degraded', async () => {
+  const root = ledgerRoot();
+  try {
+    const input = {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      viewer: 'Me',
+      threads: [
+        { id: 'T1', isResolved: true, comments: [{ id: 1, author: { login: 'me' } }] },
+        { id: 'T2', isResolved: false, comments: [{ id: 2, author: { login: 'reviewer' } }] },
+      ],
+    };
+    const first = await executeOperation('thread-ledger-lookup', input);
+    assert.equal(first.ok, true);
+    assert.equal(first.data.ledger.state, 'missing');
+    // A first hidden-mode run has no ledger yet and nothing of its own on the pull request.
+    assert.equal(first.data.degraded, false);
+    assert.deepEqual(first.data.skipped, ['T1']);
+    assert.deepEqual(first.data.pending, ['T2']);
+    // A lookup creates nothing.
+    assert.equal(existsSync(join(root, '.effective-flow')), false);
+
+    // An unresolved thread already holding a reply by the viewer, but absent from the ledger, is
+    // not skipped - authorship alone does not prove the thread was handled - but it is reported.
+    input.threads.push({
+      id: 'T3',
+      isResolved: false,
+      comments: [
+        { id: 3, author: { login: 'reviewer' } },
+        { id: 4, author: { login: 'me' } },
+      ],
+    });
+    const lost = await executeOperation('thread-ledger-lookup', input);
+    assert.equal(lost.data.degraded, true);
+    assert.deepEqual(lost.data.pending, ['T2', 'T3']);
+    assert.deepEqual(lost.data.unrecordedViewerReplies, ['T3']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a corrupt ledger is reported, read as empty, and never overwritten by a record', async () => {
+  const root = ledgerRoot();
+  try {
+    mkdirSync(join(root, '.effective-flow', 'merge-gate'), { recursive: true });
+    writeFileSync(ledgerPath(root), '{ torn');
+    const lookup = await executeOperation('thread-ledger-lookup', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: [
+        { id: 'T1', isResolved: false },
+        { id: 'T2', isResolved: true },
+      ],
+    });
+    assert.equal(lookup.ok, true);
+    assert.equal(lookup.data.ledger.state, 'corrupt');
+    assert.equal(lookup.data.degraded, true);
+    assert.deepEqual(lookup.data.skipped, ['T2']);
+    assert.deepEqual(lookup.data.pending, ['T1']);
+
+    const record = await executeOperation('thread-ledger-record', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: ['T1'],
+    });
+    assert.equal(record.ok, false);
+    assert.equal(record.error.code, 'LEDGER_CORRUPT');
+    assert.equal(readFileSync(ledgerPath(root), 'utf8'), '{ torn');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the ledger refuses a symlinked runtime directory or ledger file and a relative cwd', async () => {
+  const root = ledgerRoot();
+  const elsewhere = ledgerRoot();
+  try {
+    symlinkSync(elsewhere, join(root, '.effective-flow'));
+    const input = { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] };
+    const linkedDir = await executeOperation('thread-ledger-record', input);
+    assert.equal(linkedDir.ok, false);
+    assert.equal(linkedDir.error.code, 'UNSAFE_TARGET');
+    assert.deepEqual(readdirSync(elsewhere), []);
+
+    rmSync(join(root, '.effective-flow'));
+    mkdirSync(join(root, '.effective-flow', 'merge-gate'), { recursive: true });
+    const decoy = join(elsewhere, 'decoy.json');
+    writeFileSync(decoy, '{"version":1,"entries":{}}');
+    symlinkSync(decoy, ledgerPath(root));
+    const linkedFile = await executeOperation('thread-ledger-lookup', {
+      ...input,
+      threads: [{ id: 'T1' }],
+    });
+    assert.equal(linkedFile.ok, false);
+    assert.equal(linkedFile.error.code, 'UNSAFE_TARGET');
+    const recordThroughLink = await executeOperation('thread-ledger-record', input);
+    assert.equal(recordThroughLink.ok, false);
+    assert.equal(recordThroughLink.error.code, 'UNSAFE_TARGET');
+    assert.equal(readFileSync(decoy, 'utf8'), '{"version":1,"entries":{}}');
+
+    const relative = await executeOperation('thread-ledger-lookup', {
+      ...input,
+      cwd: '.',
+      threads: [],
+    });
+    assert.equal(relative.ok, false);
+    assert.equal(relative.error.code, 'INVALID_PAYLOAD');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('a failed ledger write leaves the previous ledger and no temporary file behind', async () => {
+  const root = ledgerRoot();
+  try {
+    await recordThreadLedgerFile(
+      { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] },
+      { clock: () => 0 },
+    );
+    const before = readFileSync(ledgerPath(root), 'utf8');
+    await assert.rejects(
+      writeThreadLedger(root, emptyThreadLedger(), {
+        write: async () => {
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+        },
+      }),
+      (error) => error.code === 'WRITE_FAILED',
+    );
+    assert.equal(readFileSync(ledgerPath(root), 'utf8'), before);
+    assert.deepEqual(
+      readdirSync(join(root, '.effective-flow', 'merge-gate')).filter((name) =>
+        name.includes('.tmp-'),
+      ),
+      [],
+    );
+    assert.equal((await readThreadLedger(root)).state, 'ok');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the ledger write path refuses a pre-placed symlinked ledger file or merge-gate directory', async () => {
+  const root = ledgerRoot();
+  const elsewhere = ledgerRoot();
+  try {
+    // A ledger file that is a symlink to a decoy: writeThreadLedger must not follow it.
+    mkdirSync(join(root, '.effective-flow', 'merge-gate'), { recursive: true });
+    const decoy = join(elsewhere, 'decoy.json');
+    writeFileSync(decoy, 'decoy\n');
+    symlinkSync(decoy, ledgerPath(root));
+    await assert.rejects(
+      writeThreadLedger(root, emptyThreadLedger()),
+      (error) => error.code === 'UNSAFE_TARGET',
+    );
+    assert.equal(readFileSync(decoy, 'utf8'), 'decoy\n');
+    assert.deepEqual(
+      readdirSync(join(root, '.effective-flow', 'merge-gate')).filter(
+        (name) => name !== 'thread-ledger.json',
+      ),
+      [],
+    );
+
+    // A symlinked `merge-gate/` directory below a real `.effective-flow/`.
+    rmSync(join(root, '.effective-flow'), { recursive: true });
+    mkdirSync(join(root, '.effective-flow'));
+    const decoyDir = join(elsewhere, 'decoy-dir');
+    mkdirSync(decoyDir);
+    symlinkSync(decoyDir, join(root, '.effective-flow', 'merge-gate'));
+    await assert.rejects(
+      writeThreadLedger(root, emptyThreadLedger()),
+      (error) => error.code === 'UNSAFE_TARGET',
+    );
+    const recorded = await executeOperation('thread-ledger-record', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: ['T1'],
+    });
+    assert.equal(recorded.ok, false);
+    assert.equal(recorded.error.code, 'UNSAFE_TARGET');
+    assert.deepEqual(readdirSync(decoyDir), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('a record through a symlinked ledger file fails UNSAFE_TARGET and releases its lock', async () => {
+  const root = ledgerRoot();
+  const elsewhere = ledgerRoot();
+  try {
+    mkdirSync(join(root, '.effective-flow', 'merge-gate'), { recursive: true });
+    const decoy = join(elsewhere, 'decoy.json');
+    writeFileSync(decoy, '{"version":1,"entries":{}}');
+    symlinkSync(decoy, ledgerPath(root));
+    const envelope = await executeOperation('thread-ledger-record', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: ['T1'],
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'UNSAFE_TARGET');
+    assert.equal(readFileSync(decoy, 'utf8'), '{"version":1,"entries":{}}');
+    assert.equal(
+      existsSync(join(root, '.effective-flow', 'merge-gate', 'thread-ledger.lock')),
+      false,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('a rename or re-check failure maps to WRITE_FAILED or UNSAFE_TARGET, never a raw error', async () => {
+  const root = ledgerRoot();
+  try {
+    const mergeGate = join(root, '.effective-flow', 'merge-gate');
+    // The target turns into a non-empty directory while the temporary file is written: the rename
+    // over it fails and is reported as WRITE_FAILED, with no temporary file left behind.
+    await assert.rejects(
+      writeThreadLedger(root, emptyThreadLedger(), {
+        write: async (handle, text) => {
+          mkdirSync(join(ledgerPath(root), 'occupied'), { recursive: true });
+          await handle.writeFile(text, 'utf8');
+        },
+      }),
+      (error) => error.code === 'WRITE_FAILED',
+    );
+    assert.deepEqual(
+      readdirSync(mergeGate).filter((name) => name.includes('.tmp-')),
+      [],
+    );
+    rmSync(ledgerPath(root), { recursive: true });
+
+    // The whole runtime directory vanishes while writing: the re-check finds no directory and
+    // refuses instead of throwing a raw ENOENT from realpath or rename.
+    await assert.rejects(
+      writeThreadLedger(root, emptyThreadLedger(), {
+        write: async (handle, text) => {
+          await handle.writeFile(text, 'utf8');
+          rmSync(join(root, '.effective-flow'), { recursive: true, force: true });
+        },
+      }),
+      (error) => error.code === 'UNSAFE_TARGET',
+    );
+    assert.equal(existsSync(join(root, '.effective-flow')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a held ledger lock fails the record closed and is never broken', async () => {
+  const root = ledgerRoot();
+  try {
+    await recordThreadLedgerFile(
+      { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] },
+      { clock: () => 0 },
+    );
+    const before = readFileSync(ledgerPath(root), 'utf8');
+    const lock = join(root, '.effective-flow', 'merge-gate', 'thread-ledger.lock');
+    // A lock left by some other, possibly long-dead, run - the age says nothing.
+    writeFileSync(lock, '{"ownerPid":1,"nonce":"foreign"}\n');
+    const envelope = await executeOperation('thread-ledger-record', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 13,
+      threads: ['T9'],
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'LEDGER_LOCKED');
+    // The reported path is the canonical one (macOS resolves the temporary root below /private).
+    assert.ok(
+      envelope.error.details.path.endsWith('/.effective-flow/merge-gate/thread-ledger.lock'),
+    );
+    assert.equal(readFileSync(ledgerPath(root), 'utf8'), before);
+    assert.equal(readFileSync(lock, 'utf8'), '{"ownerPid":1,"nonce":"foreign"}\n');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('concurrent records on different pull requests never lose an addition', async () => {
+  const root = ledgerRoot();
+  try {
+    // A second record that starts while the first is between its read and its rename is refused
+    // instead of reading the old ledger and overwriting the first one's entry.
+    let inner;
+    const outer = await recordThreadLedgerFile(
+      { cwd: root, repository: ledgerRepo, pr: 12, threads: ['T1'] },
+      {
+        clock: () => 0,
+        write: async (handle, text) => {
+          inner = await recordThreadLedgerFile(
+            { cwd: root, repository: ledgerRepo, pr: 13, threads: ['T2'] },
+            { clock: () => 0 },
+          ).catch((error) => error);
+          await handle.writeFile(text, 'utf8');
+        },
+      },
+    );
+    assert.equal(outer.written, true);
+    assert.equal(inner.code, 'LEDGER_LOCKED');
+    const lockPath = join(root, '.effective-flow', 'merge-gate', 'thread-ledger.lock');
+    assert.equal(existsSync(lockPath), false);
+
+    // Unsynchronized in-process races: every record either lands in the final ledger or fails
+    // with LEDGER_LOCKED; none succeeds and then disappears.
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, index) =>
+        recordThreadLedgerFile(
+          { cwd: root, repository: ledgerRepo, pr: 20 + index, threads: [`R${index}`] },
+          { clock: () => 0 },
+        ),
+      ),
+    );
+    const { entries } = JSON.parse(readFileSync(ledgerPath(root), 'utf8'));
+    assert.ok(Object.hasOwn(entries, 'github.com/example/flow#12/thread/T1'));
+    results.forEach((result, index) => {
+      const key = `github.com/example/flow#${20 + index}/thread/R${index}`;
+      if (result.status === 'fulfilled') {
+        assert.ok(Object.hasOwn(entries, key), `${key} was reported written but is missing`);
+      } else {
+        assert.equal(result.reason.code, 'LEDGER_LOCKED');
+      }
+    });
+    assert.equal(existsSync(lockPath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a malformed record creates no runtime directory', async () => {
+  const root = ledgerRoot();
+  try {
+    const envelope = await executeOperation('thread-ledger-record', {
+      cwd: root,
+      repository: ledgerRepo,
+      pr: 12,
+      threads: ['a/b'],
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(existsSync(join(root, '.effective-flow')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ledger lookup matches a recorded comment by node id or by numeric databaseId', () => {
+  const { ledger } = recordThreadLedgerEntries(
+    emptyThreadLedger(),
+    { repository: ledgerRepo, pr: 12, comments: [4242] },
+    'x',
+  );
+  const lookup = lookupThreadLedger(ledger, {
+    repository: ledgerRepo,
+    pr: 12,
+    threads: [
+      { id: 'T1', isResolved: false, comments: [{ id: 'PRRC_node', databaseId: 4242 }] },
+      { id: 'T2', isResolved: false, comments: [{ id: 'PRRC_other', databaseId: 4243 }] },
+    ],
+  });
+  assert.deepEqual(lookup.skipped, ['T1']);
+  assert.deepEqual(lookup.pending, ['T2']);
+});
+
+test('hidden mode refuses a review body that names the tool', () => {
+  for (const body of ['Reviewed by Effective Flow.', `${prReviewMarker}\nSummary`]) {
+    assert.throws(
+      () => buildReviewPayload({ body }, { visibility: 'hidden' }),
+      (error) =>
+        error.details.reason === 'hidden-mode-disclosure' && error.details.field === 'payload.body',
+      body,
+    );
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          'review-create',
+          { number: 7, visibility: 'hidden', payload: { body } },
+          githubRepository,
+        ),
+      (error) => error.details.reason === 'hidden-mode-disclosure',
+      body,
+    );
+  }
+});
+
+// Every publishing mutation, on both forges, with the field that carries the disclosure.
+const publishingCases = [
+  { operation: 'issue-comment', input: { number: 7 }, fields: { body: 'payload.body' } },
+  {
+    operation: 'issue-comment-update',
+    input: { number: 7, commentId: 42 },
+    fields: { body: 'payload.body' },
+  },
+  { operation: 'pr-comment', input: { number: 7 }, fields: { body: 'payload.body' } },
+  { operation: 'pr-update-body', input: { number: 7 }, fields: { body: 'payload.body' } },
+  {
+    operation: 'pr-create',
+    input: {},
+    fields: { title: 'payload.title', body: 'payload.body', head: 'payload.head' },
+  },
+];
+
+function publishingPayload(overrides = {}) {
+  return { title: 'fix: tidy', body: 'Plain text.', head: 'fix/tidy', base: 'main', ...overrides };
+}
+
+test('hidden mode refuses every publishing mutation whose posted text names the tool', () => {
+  for (const repository of [githubRepository, forgejoRepository]) {
+    for (const { operation, input, fields } of publishingCases) {
+      const clean = buildCommandPlan(
+        operation,
+        { ...input, visibility: 'hidden', payload: publishingPayload() },
+        repository,
+      );
+      assert.doesNotMatch(JSON.stringify(clean), /effective[-_]?flow/i, operation);
+      for (const [key, field] of Object.entries(fields)) {
+        const leaking = key === 'head' ? 'effective-flow/fix/tidy' : 'Built with Effective Flow.';
+        for (const where of ['input', 'payload']) {
+          const payload = publishingPayload({ [key]: leaking });
+          const hiddenInput =
+            where === 'input'
+              ? { ...input, visibility: 'hidden', payload }
+              : { ...input, payload: { ...payload, visibility: 'hidden' } };
+          assert.throws(
+            () => buildCommandPlan(operation, hiddenInput, repository),
+            (error) =>
+              error.code === 'INVALID_PAYLOAD' &&
+              error.details.reason === 'hidden-mode-disclosure' &&
+              error.details.field === field,
+            `${repository.provider} ${operation} ${key} (${where})`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('standard mode leaves every publishing mutation byte-identical', () => {
+  for (const repository of [githubRepository, forgejoRepository]) {
+    for (const { operation, input, fields } of publishingCases) {
+      const naming = publishingPayload(
+        Object.fromEntries(
+          Object.keys(fields).map((key) => [
+            key,
+            key === 'head' ? 'effective-flow/fix/tidy' : 'Built with Effective Flow.',
+          ]),
+        ),
+      );
+      const plain = buildCommandPlan(operation, { ...input, payload: naming }, repository);
+      for (const visibility of ['standard', null]) {
+        assert.deepEqual(
+          buildCommandPlan(operation, { ...input, visibility, payload: naming }, repository),
+          plain,
+          `${repository.provider} ${operation} ${visibility}`,
+        );
+      }
+    }
   }
 });
 

@@ -137,6 +137,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
   'remote-tracker-github-core.mjs',
+  'remote-tracker-ledger-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker.mjs',
 ];
@@ -829,11 +830,11 @@ test('the build assertion precedes the actual atomic swap and workflows do not a
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 13);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 14);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 13 approved runtime scripts',
+    'build.mjs must register exactly the 14 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

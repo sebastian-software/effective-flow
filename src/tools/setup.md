@@ -1,15 +1,16 @@
 ---
-description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
+description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. A hidden mode (`setup hidden` or the Visibility question) instead keeps the whole configuration in a local, untracked `.effective-flow/project-setup.md`, ignored through the Git common directory's `info/exclude`, and writes no tracked file. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
 catalogHint: "Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard."
 ---
 
 # Effective Flow Setup
 
-You prepare a target project for using Effective Flow: a `.gitignore` entry for the pure runtime directory `.effective-flow/` and interactive maintenance of the Effective Flow configuration in a living **project setup ADR** (by default `docs/adr/effective-flow-project-setup.md`, unless the project declares its own ADR naming convention) that a marker in `AGENTS.md` points to.
+You prepare a target project for using Effective Flow: a `.gitignore` entry for the pure runtime directory `.effective-flow/` and interactive maintenance of the Effective Flow configuration in a living **project setup ADR** (by default `docs/adr/effective-flow-project-setup.md`, unless the project declares its own ADR naming convention) that a marker in `AGENTS.md` points to. In **hidden mode** the entry goes into the Git common directory's `info/exclude` and the configuration into the local, untracked `.effective-flow/project-setup.md` instead, and no tracked file is written.
 
 ## Goal
 
-- enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
+- enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established) — or, in hidden mode, into the Git common directory's `info/exclude` instead
+- in hidden mode (`visibility: hidden`), keep the configuration only in the main checkout's local, untracked configuration file of locator step 0 and leave `.gitignore`, any tracked ADR, `AGENTS.md`, and `CLAUDE.md` alone
 - write the Effective Flow configuration through the selected setup mode into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`); afterwards offer a one-line `CLAUDE.md` that imports `AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults; use **Profile** as the standard two-question path and retain
@@ -33,7 +34,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker
+when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker, or to write or delete the hidden local configuration
 ```
 
 ```lazy-include
@@ -90,6 +91,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
+- **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; hidden mode forces `plan.dir`, `concept.dir`, `tracker.mode`, `delivery.prReview`, and an empty default `delivery.branchPrefix` (a prefix containing `effective-flow` in any letter case is rejected) as that building block's deferred part lists them.
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 
 ### Safe defaults (the single base)
@@ -132,6 +134,12 @@ deliberately carries **no** `language.chat` row and Express adds none, though it
 existing one like any other override, so interactive replies keep mirroring the user until a row
 is set. The legacy `plan.markerLanguage` is never written as a current setting.
 
+`visibility` is not part of this base either: a standard setup writes no `visibility` row, whose
+absence means `standard`. Only the hidden local file carries `visibility | hidden`, together with the
+forced rows `plan.dir | .effective-flow/plan`, `concept.dir | .effective-flow/concept`,
+`tracker.mode | local` and `delivery.prReview | off`, and a `delivery.branchPrefix` row only when the
+user chose a valid non-empty prefix.
+
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
 so Express writes no row for them and an unconfigured project gets the gate's own defaults:
@@ -149,23 +157,52 @@ mutation. Trim surrounding whitespace and fold ASCII case only. Accept exactly t
 
 - `{{SKILL:setup}}` and `{{SKILL:setup}} profile` select **Profile**;
 - `{{SKILL:setup}} express` selects **Express**;
-- `{{SKILL:setup}} guided` selects **Guided**.
+- `{{SKILL:setup}} guided` selects **Guided**;
+- `{{SKILL:setup}} hidden` selects **Express** with the visibility fixed to `hidden`, so the
+  Visibility question below is not asked.
 
-An additional or unknown argument prints all four accepted forms above and stops without mutation.
+An additional or unknown argument prints all five accepted forms above and stops without mutation.
 Do not reinterpret it as free text and do not ask a setup-mode question. Record the resolved mode
 once and carry it through the summary.
 
 For Profile mode, resolve the entry chat language read-only under the shared chat-language rule,
 then load and follow the profile contract below immediately. Its `Chat` and `Profile` asks are the
 first two substantive configuration questions and both precede Step 1. Express and Guided do not
-load it and proceed directly to Step 1.
+load it; they go on to the Visibility question and then to Step 1.
 
 ```lazy-include
 setup-profiles
 when: the normalized invocation has no argument or its single argument is `profile`
 ```
 
+**Visibility.** Every mode then resolves the visibility before Step 1, because Step 1 already
+differs between the two values: Profile after its `Chat` and `Profile` asks, Express and Guided as
+their first question, `{{SKILL:setup}} hidden` not at all. Pre-select `Hidden` when the locator's
+step 0 finds a local file declaring `visibility | hidden`, otherwise `Standard`. Explain first: hidden
+mode is for a repository whose team has not adopted Effective Flow — the configuration, plans, and
+concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, no review findings
+are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names
+Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
+
+```ask
+when: the invocation is not `hidden` and the setup mode's earlier questions are answered
+header: Visibility
+question: Should Effective Flow stay invisible in this repository's tracked files and on the forge?
+options:
+  - label: Standard
+    description: visibility = standard (default) — tracked project setup ADR, AGENTS.md marker, and a .gitignore entry
+  - label: Hidden
+    description: visibility = hidden — local configuration in .effective-flow/project-setup.md, ignored through info/exclude; no tracked file is written
+```
+
+A `Hidden` answer (or the `hidden` invocation) switches this run to the **hidden arm**: Step 1
+becomes "Step 1 (hidden)" below, and Steps 2 to 8 apply their hidden-mode exceptions. A `Standard`
+answer while a hidden local file exists is the switch back to standard mode described under "Mode
+switches".
+
 ### Step 1: .gitignore entry
+
+In hidden mode, skip this step: "Step 1 (hidden)" below replaces it.
 
 Target state: the entire runtime directory `.effective-flow/` (excluding the `config.json` migration — the config now lives in the ADR; runtime files like `memory.json`, `cache.json`, `review/`, `.worktrees/`) is ignored. The single line achieves this:
 
@@ -192,7 +229,40 @@ There is **no** `!.effective-flow/config.json` exception pattern anymore: the Ef
 3. If the target state is already established: change nothing and report that briefly.
 4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The ADR and convention-marker creation continue independently, but no `.effective-flow/` runtime marker may be written.
 
+### Step 1 (hidden): `info/exclude` entry
+
+In hidden mode this replaces Step 1 above; `.gitignore` is never read for a decision and never
+written. Evaluate in this order and stop without any write at the first failed precondition:
+
+1. **Git only.** Resolve the common directory with
+   `git rev-parse --path-format=absolute --git-common-dir`, never a literal `.git/info/exclude`, so a
+   linked worktree, a `--separate-git-dir` checkout, or a submodule reaches the one file every
+   worktree reads. A non-Git directory, or a failing command, cannot be hidden: stop and explain.
+2. **No tracked runtime content.** `git ls-files -- .effective-flow/` must list nothing. `info/exclude`
+   cannot hide a tracked file, so any listed path stops the run with every path named; untracking
+   them is the user's decision.
+3. **Add the entry idempotently.** If `<common-dir>/info/exclude` already has a line that is exactly
+   `.effective-flow/`, change nothing. Otherwise create the `info/` directory and the file if they
+   are missing and append the single line `.effective-flow/` in one append write, preceded by a line
+   break only where the file's last line lacks one. Never rewrite, reorder, or remove an existing
+   line, and never add a second entry.
+4. **Verify.** Run the non-verbose predicates `git check-ignore --no-index -- .effective-flow/config.json`
+   and `git check-ignore --no-index -- .effective-flow/project-setup.md`; both must exit `0`, and any
+   other exit blocks with the `-v` diagnostics only after the block. A tracked `.gitignore` negation
+   outranks `info/exclude`: report its line and stop rather than editing it.
+5. **Report the tracked leftovers, touch none.** If `.gitignore` still names `.effective-flow/`, for
+   example after an earlier standard setup, report that this tracked line still mentions Effective
+   Flow and that removing it is the user's decision. A tracked `AGENTS.md`/`CLAUDE.md` marker or
+   project setup ADR stays untouched as well and is reported as shadowed by the local file.
+
 ### Step 2: Determine the ADR location and read the existing config
+
+**Hidden mode** skips items 1 and 3 (no ADR directory and no naming convention is resolved) and
+reads the current values in item 2 through the locator: the local file of step 0 when it exists;
+otherwise a resolved tracked ADR, or a transitional JSON source, only as a read-only seed that is
+never written, untracked, or migrated. A several-match result seeds nothing and is reported;
+because hidden mode writes no tracked ADR it does not end the run. Items 4 and 5 apply to whichever
+source was read.
 
 1. **Detect the ADR directory.** Look for an existing ADR convention (following the
    search globs of `{{SKILL:review}}`): `docs/adr/`, `docs/decisions/`, `adr/`. Use an
@@ -292,6 +362,9 @@ options:
   and confirmation in Step 6 remain the write authority.
 
 ### Step 4: Core switches (guided path only)
+
+In hidden mode the **PR review** and **Tracker** questions below are not asked: their values are
+forced (`delivery.prReview = off`, `tracker.mode = local`). State the forced values once instead.
 
 These core switches determine the everyday behavior. **Before** each question, provide a short,
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
@@ -482,13 +555,13 @@ config value or default as the pre-selection:
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `language`: the project language and seven overrides already asked in Step 4 — carry over
-4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
+4. `plan` (skipped in hidden mode, whose directories are forced): `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
    `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
    canonicalized before they are written; reject values that resolve to the same directory or nest
    one inside the other instead of writing them.
 5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`, `delivery.mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when the merge gate in block 9 merges it; with `squash` the pull-request title becomes the commit subject and therefore the release signal)
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
+7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block: see below.
 
@@ -497,7 +570,7 @@ Anyone who wants the former "fast solo workflow" sets, for example, `review.prof
 
 Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but a retired `prReview.*` row may still stand in an ADR, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
 
-Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that.
+Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that. In hidden mode, `delivery.branchPrefix` defaults to empty (branches then read `<skill>/<slug>`), and a value containing `effective-flow` in any letter case is rejected: ask again, or keep the empty default and report that.
 
 #### Block 9: the merge gate (`mergeGate.*`)
 
@@ -641,6 +714,11 @@ options:
   are; the gate keeps working and keeps reporting the collapse.
 
 ### Step 6: Merge and write
+
+**Hidden mode** runs items 1 and 2 unchanged, with `visibility | hidden` and the forced values shown
+in the before/after list, replaces items 3 and 4 with "Writing the hidden local configuration" below,
+and skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks nothing, and poses no
+`CLAUDE.md` fence. It never writes or edits `AGENTS.md` or `CLAUDE.md`.
 
 1. Build the target configuration non-destructively. Express and Guided retain their existing merge
    order. For Profile, use `safe defaults → freshly read existing known and unknown values →
@@ -995,7 +1073,8 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      marker-already-in-`AGENTS.md` state above — not the content-bearing one this rule now sits
      under — and never report the import as written.
 
-This fence is deliberately **unconditional** rather than guided-path only, for the reason
+This fence is deliberately **unconditional** rather than guided-path only — hidden mode aside, which
+skips item 7 as stated at the top of this step — for the reason
 `project-adr-convention` gives for its own: it decides whether a file is written to the project
 root rather than a presentation detail. Profile, Express, and Guided all pose it, and a run that
 cannot pose it — unanswered, skipped, or non-interactive — writes nothing and reports that the
@@ -1004,7 +1083,7 @@ not extend here: setup cannot work without a marker host, while nothing requires
 import.
 
 ```ask
-when: the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration
+when: the run is not in hidden mode, the `CLAUDE.md` state recorded by item 5 is absent or a pure prose pointer, including the marker-bearing pointer a half-completed conversion leaves behind, and item 6 did not report an incomplete migration
 header: CLAUDE.md
 question: Should setup add a one-line CLAUDE.md that imports AGENTS.md, so Claude Code loads this project's guidance in every session?
 options:
@@ -1044,6 +1123,57 @@ recorded these retired rows, rewrite them **in place** in this same confirmed Ex
 This skill is the **only** writer of the configuration. Every other run that meets a retired row
 stops or reports under the configuration building block's retired-key rule and points here; it
 never resolves a value through that row and never rewrites the ADR itself.
+
+#### Writing the hidden local configuration
+
+1. Immediately before writing, re-read the local file freshly from `RUNTIME_STATE_ROOT`. If it
+   appeared, disappeared, or changed since Step 2, rebuild the target from the fresh values and
+   obtain a new confirmation; never write over a change this run has not shown.
+2. Apply "Runtime-state write safety" to the exact target
+   `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, then write it through a same-directory
+   temporary file plus rename, as Step 6 item 5 describes that primitive, and remove the temporary file on
+   any failure.
+3. Use the envelope of Step 6 item 4 in the language `language.documentation.technical` resolves to
+   (`# Effective Flow project setup`, `## Status` + `Active`, `## Context`, `## Configuration`,
+   `| Key | Value |`, or the German envelope), the same row encoding, and this context sentence in
+   that language: the file holds this checkout's hidden Effective Flow configuration, is ignored
+   through the Git common directory's `info/exclude`, and is never tracked. Preserve unknown rows of
+   an existing local file, but carry no seeded row that contradicts a forced value and no
+   `delivery.branchPrefix` containing `effective-flow`; name every such dropped row in the
+   before/after list.
+4. Write no tracked file. A tracked ADR, marker, or `.gitignore` line found during the run is
+   reported as shadowed or untouched, never edited or deleted.
+
+#### Mode switches
+
+- **Standard → hidden.** The hidden arm above is the whole switch: the local file is written and
+  wins from the next read on. The tracked project setup ADR, its marker, and the `.gitignore` line
+  are left exactly as they are and reported once as shadowed; removing them, and rewriting history
+  an earlier standard setup already committed, is the user's decision.
+- **Hidden → standard.** A `Standard` answer while the locator's step 0 finds a hidden local file
+  runs the ordinary Steps 1 to 8. Seed the current values from the local file without its
+  `visibility` row and without the forced rows, which fall back to their standard defaults unless
+  the user sets them. In this run Step 2 item 2 and Step 6 items 3 and 4 resolve the project setup
+  ADR through locator steps 1 to 4 only: the step-0 file is a read-only seed, never a write target,
+  so the write creates or updates the tracked ADR. Only after the confirmed Step 6 write succeeded,
+  ask the fence below.
+
+```ask
+when: the run switched from hidden to standard mode and the standard configuration write succeeded
+header: Local config
+question: Delete the local hidden configuration .effective-flow/project-setup.md now, so the tracked configuration takes effect?
+options:
+  - label: Delete
+    description: Remove only that file; the info/exclude line stays and keeps ignoring runtime state
+  - label: Keep
+    description: Keep the file; hidden mode stays active because the locator's step 0 still wins
+```
+
+On `Delete`, apply "Runtime-state write safety" to that exact target and remove only that file. Keep
+the `.effective-flow/` line in `info/exclude` in every case: it is harmless and still ignores
+runtime state. Never move local plans or concepts: list every file below `.effective-flow/plan/` and
+`.effective-flow/concept/` by path so the user can decide whether to move them into the tracked
+`plan.dir` and `concept.dir`.
 
 ### Step 7: Session rename capability (optional)
 
@@ -1123,6 +1253,14 @@ harness for one.
 
 Report to the user:
 
+- the resolved visibility; in hidden mode, instead of the `.gitignore`, ADR, marker, convention, and
+  `CLAUDE.md` bullets below: the absolute `info/exclude` path and whether its `.effective-flow/` line
+  was added or already present, the verification result, the path of the local configuration, every
+  forced value and every contradicting row it overrode, every tracked ADR, marker, or `.gitignore`
+  line reported as shadowed or untouched, and that no tracked file was written
+- for a mode switch: which direction, whether the local file was deleted or kept (and that a kept
+  file leaves hidden mode active), that the `info/exclude` line stays, and every local plan and
+  concept path left in place
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
 - which mode was chosen (Profile, Express, or Guided); for Profile, the selected topology, chat
   choice, profile-owned final values and detected provider/base, and for Guided whether advanced
@@ -1200,6 +1338,11 @@ with nothing staged matches no row and emits nothing.
 
 ## Rules
 
+- In hidden mode, change only the `.effective-flow/` line in the Git common directory's
+  `info/exclude` and the local `.effective-flow/project-setup.md` (and, on a hidden → standard switch,
+  delete that file only after its fence). Never write or edit `.gitignore`, a tracked ADR,
+  `AGENTS.md`, or `CLAUDE.md` in hidden mode, and never write `visibility | hidden` into a tracked
+  file.
 - Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
   Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the

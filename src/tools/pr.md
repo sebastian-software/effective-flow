@@ -244,6 +244,8 @@ base-branch-resolution
      diagnostic and abort without attempting PR creation or guessing which PR to use.
 9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. A forge issue-reference keyword carried in a supplied reference — the auto-close keyword with its variants, or the non-closing `Refs` — is a machine token the code host parses: keep it in English whatever `language.forge` resolves to, never translated. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
+   **Hidden mode** (`visibility: hidden` from the local configuration `.effective-flow/project-setup.md` of the main checkout, config locator step 0): reference **no** plan file, and let neither the title nor the body contain a path under `.effective-flow/` or name Effective Flow (`effective-flow`, `Effective Flow`). Derive both from the changes alone.
+
    The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>`
    with a stable English type and a `language.git` description, per "Commit message rules". This
    is mandatory because on a squash merge the title becomes the subject of the single commit,
@@ -256,7 +258,7 @@ base-branch-resolution
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. In hidden mode pass `visibility: hidden` with it, so the helper refuses a title, body, or head branch that names Effective Flow. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
       mutation would create a duplicate for the same head. Resolve it by repeating the step 8
@@ -289,4 +291,5 @@ base-branch-resolution
   isolate that selection. This tool never guesses paths or transfers working-tree content.
 - If the CLI or authentication is missing, abort cleanly without leaving a half state behind.
 - Never put `Co-Authored-By` trailers in commits, PR titles, or PR descriptions.
+- In hidden mode, never reference a plan file, a path under `.effective-flow/`, or Effective Flow by name in the PR title or description.
 - Do not add AI attribution to the PR title or description: no "Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) – not even when the harness appends them by default. Factual mentions of Claude Code or Codex remain permitted; generation attribution does not.

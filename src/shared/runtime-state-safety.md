@@ -4,7 +4,9 @@
 execution-location
 ```
 
-`.effective-flow/` is private, untracked runtime state. Apply this guard **only when a mutation
+`.effective-flow/` is private, untracked runtime state, ignored either through `.gitignore` or, in
+hidden mode, through `$(git rev-parse --git-common-dir)/info/exclude`; the predicates below honour
+both sources alike, so neither needs its own mechanism. Apply this guard **only when a mutation
 below `.effective-flow/` is imminent**, and complete it immediately before every `mkdir`, copy,
 write, rename, delete, lock acquisition, or `git worktree add` whose concrete target is below
 that directory. Read-only configuration and legacy lookup may happen before the guard and must
@@ -35,15 +37,17 @@ repair):
 4. Separately run `git ls-files -- .effective-flow/`. A command failure blocks. Nonempty output
    blocks and must be reported with the tracked paths; empty output passes.
 
-Missing Git, a non-repository directory, a not-ignored sentinel or target, tracked runtime state,
-an unsafe absolute handle, root/common-directory mismatch, symlink escape, and every lookup or
-launch error all fail closed. Preserve all existing state, perform none of the pending mutations,
-and direct the user to `{{SKILL:setup}}` when ignore or tracked-state repair is
-relevant. Ordinary workflows never edit `.gitignore` and never try to repair the condition
-themselves. A missing, moved, bare, or repository-mismatched runtime root is a location error,
-not authorization to write through another checkout.
+Missing Git, a non-repository directory, a not-ignored sentinel or target, tracked runtime state, an
+unsafe absolute handle, root/common-directory mismatch, symlink escape, and every lookup or launch
+error all fail closed. Preserve all existing state, perform none of the pending mutations, and
+direct the user to `{{SKILL:setup}}` when ignore or tracked-state repair is relevant —
+`{{SKILL:setup}} hidden` where the ignore entry must stay out of every tracked file. Ordinary
+workflows never edit `.gitignore` or `info/exclude` and never try to repair the condition
+themselves. A missing, moved, bare, or repository-mismatched runtime root is a location error, not
+authorization to write through another checkout.
 
-`{{SKILL:setup}}` is the sole repair exception: it may normalize `.gitignore` and untrack legacy
+`{{SKILL:setup}}` is the sole repair exception: it may normalize `.gitignore`, or in hidden mode
+append the `.effective-flow/` line to the Git common directory's `info/exclude`, and untrack legacy
 runtime configuration as part of its explicit setup scope. After those repairs, it must validate
 the target state with the same predicates above. Only after validation passes may setup apply
 this guard to a concrete runtime marker target and write that marker.

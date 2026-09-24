@@ -168,7 +168,11 @@ worktree state.
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
    `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
    contract. `deliver` reports that its explicit PR intent replaces any different configured
-   `delivery.completion`; it does not change the stored value.
+   `delivery.completion`; it does not change the stored value. Record whether hidden mode
+   (`visibility: hidden`, config locator step 0) is active: then no derived commit message, branch
+   name, or pull-request title or body may name Effective Flow or reference a path under
+   `.effective-flow/`, and this run hands that constraint on to `{{SKILL:commit}}` and
+   `{{SKILL:pr}}`.
 3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
    `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
    later comparison. Do not write it to tracked files or runtime state.
@@ -193,7 +197,8 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
    exact OID before creating delivery artifacts.
-2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name. Verify both the proposed
+2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
+   the prefix is empty (the hidden-mode default). Verify both the proposed
    branch and absolute worktree path are unused in refs and `git worktree list --porcelain`.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate

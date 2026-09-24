@@ -351,9 +351,9 @@ reading repository contents and writing issues.
 
 Every target's minimal skill payload includes `scripts/remote-tracker.mjs`,
 `scripts/delivery-selection.mjs`, and `scripts/delegation-envelope.mjs`, each beside its importable
-`-core.mjs` sibling, next to the router, tools, and shared resources. The remote tracker ships four
+`-core.mjs` sibling, next to the router, tools, and shared resources. The remote tracker ships five
 further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`,
-`-github-core.mjs` and `-forgejo-core.mjs` — which the same registration and byte-identity guards
+`-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — which the same registration and byte-identity guards
 cover. Installed skills therefore
 require Node.js 22 or newer at runtime. None of them has third-party runtime dependencies;
 existing `gh` or `tea` installations remain the remote-tracker's credential and transport boundary.

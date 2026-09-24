@@ -298,6 +298,69 @@ export function stampMarker(marker, content) {
   return text.startsWith(`<!-- ${marker} -->`) ? text : `<!-- ${marker} -->\n${text}`;
 }
 
+// The two values of the `visibility` configuration key. `standard` is the default and the only
+// value under which a marker is stamped; `hidden` is the mode in which nothing on the forge may
+// identify the tool. An absent value is `standard`, so every caller that predates hidden mode keeps
+// its byte-for-byte output.
+export const VISIBILITY_VALUES = Object.freeze(['standard', 'hidden']);
+
+export function resolveVisibility(value, field = 'visibility') {
+  if (value === undefined || value === null) return 'standard';
+  const visibility = typeof value === 'string' ? value.trim().toLowerCase() : value;
+  if (!VISIBILITY_VALUES.includes(visibility)) {
+    fail('INVALID_PAYLOAD', `${field} must be one of ${VISIBILITY_VALUES.join(', ')}`, {
+      field,
+      value,
+      supported: [...VISIBILITY_VALUES],
+    });
+  }
+  return visibility;
+}
+
+// Product naming a hidden-mode body must not carry. The slug forms (`effective-flow`,
+// `effective_flow`, `effectiveflow`) are matched case-insensitively because they are identifiers
+// and every marker contains one; the spaced form is matched only as the product's title-cased name,
+// because "an effective flow of data" is ordinary English a review reply may legitimately contain.
+const PRODUCT_NAME_PATTERNS = Object.freeze([/effective[-_.]?flow/i, /\bEffective\s+Flow\b/]);
+
+export function assertUndisclosed(text, field) {
+  if (PRODUCT_NAME_PATTERNS.some((pattern) => pattern.test(text))) {
+    fail('INVALID_PAYLOAD', `${field} names the tool, which hidden mode forbids`, {
+      field,
+      reason: 'hidden-mode-disclosure',
+    });
+  }
+  return text;
+}
+
+// The one place that decides whether a published body carries its marker. Standard mode stamps it
+// exactly as `stampMarker` always has. Hidden mode stamps nothing and instead refuses a body that
+// names the tool — a hand-written marker included, since every marker contains the product slug —
+// so a caller cannot reintroduce through the body what the mode just left out.
+export function markBody(marker, content, visibility, field) {
+  if (resolveVisibility(visibility) === 'standard') return stampMarker(marker, content);
+  return assertUndisclosed(content.trim(), field);
+}
+
+// The publishing operations' counterpart of `markBody`: text a mutation posts verbatim (a comment,
+// a pull-request title or body, a head branch name). Standard mode returns exactly what
+// `assertPublishable` / `requireString` always returned, so its output stays byte-identical; hidden
+// mode additionally refuses text that names the tool. The visibility comes from the operation input
+// or its payload, the same two places `review-thread-reply` reads it from.
+export function publishingVisibility(input, payload) {
+  return resolveVisibility(input.visibility ?? payload?.visibility);
+}
+
+export function publishedText(value, field, visibility) {
+  const text = assertPublishable(value, field);
+  return visibility === 'hidden' ? assertUndisclosed(text, field) : text;
+}
+
+export function publishedRef(value, field, visibility) {
+  const text = requireString(value, field);
+  return visibility === 'hidden' ? assertUndisclosed(text, field) : text;
+}
+
 export function publishableText(value, field) {
   const text = assertPublishable(value, field);
   if (text.trim() === '') fail('INVALID_PAYLOAD', `${field} must not be empty`, { field });

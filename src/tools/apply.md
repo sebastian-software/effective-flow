@@ -96,6 +96,11 @@ when: the run's subject is fixed and a session title is about to be applied or e
 ### Phase 1: Classify the source
 
 1. Read the user argument.
+   **Hidden mode stops issue-driven apply.** When the configuration resolves `visibility: hidden`
+   (config locator step 0) and stage A classifies the argument as an issue reference, stop before
+   stage B and any tracker access or write — no probe, label migration, or classification — with
+   one message: hidden mode is active, it pins the tracker to `local`, and issue-driven apply works
+   only against a forge or external tracker. Plans and local report files stay available.
 2. Apply the "apply-source detection": stage A (syntactic) and — for an
    issue reference — stage B (tracker). Stage B needs the resolved tracker target from
    "Tracker target": on the forge target the host/CLI detection and availability check from

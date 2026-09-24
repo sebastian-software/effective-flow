@@ -124,6 +124,11 @@ pr-review-comments
 pr-review-thread-writes
 ```
 
+```lazy-include
+pr-thread-ledger
+when: hidden mode (`visibility: hidden`) is resolved and Phase 2 classification or a Phase 5 reply is imminent
+```
+
 ```include
 review-bot-state
 ```
@@ -599,6 +604,8 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
    output, not third-party input — unless the user names those threads explicitly. The
    {{SKILL:merge-gate}} gate needs no exclusion of its own: it writes nothing into a review thread,
    so no thread on a pull request is ever the gate's own reply.
+   In hidden mode (`visibility: hidden`) no marker is evidence: take both exclusions from the
+   loaded `pr-thread-ledger` lookup instead, which excludes every `resolved` and `recorded` thread.
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
      unchanged default and the only behavior an interactive invocation ever sees.
@@ -607,8 +614,8 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
    - **`threads=<id>,<id>`** — exactly the threads whose ID is in the list, plus the free text only
      when the delegation supplied free text as well. A caller-supplied ID names its thread
      explicitly, so the marker-based exclusions above do not remove it; a `resolved` thread and a
-     thread already carrying an `<!-- effective-flow-iterate -->` reply stay excluded, because this
-     workflow already addressed them.
+     thread already carrying an `<!-- effective-flow-iterate -->` reply (in hidden mode: one the
+     ledger reports `recorded`) stay excluded, because this workflow already addressed them.
    - **An empty selection is a valid result.** If the filter matches no item — every named thread
      was resolved between the caller's read and this delegation — continue with **no** items:
      report the empty selection, implement nothing, push nothing, reply to nothing, resolve
@@ -778,9 +785,13 @@ and stop delivery for reconciliation.
    and report the required manual resolution. If the reply is unsupported too, write nothing into
    the thread, leave it unresolved, and report reply and resolution as manual – in a gate-delegated
    run the return carries that, since the summary comment is suppressed. The helper stamps the marker
-   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand.
+   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand. In hidden mode it
+   stamps none: record each posted reply per the loaded `pr-thread-ledger`, and let no reply name
+   Effective Flow.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
-   `<!-- effective-flow-iterate -->`): which items
+   `<!-- effective-flow-iterate -->`; unmarked in hidden mode, never naming Effective Flow or a
+   path below `.effective-flow/`, with `visibility: hidden` passed to both the comment build and
+   the `pr-comment` mutation): which items
    were implemented or skipped and which pure questions are open/deferred (without a
    substantive auto-reply). **Skip this step entirely when Phase 0 received
    `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the

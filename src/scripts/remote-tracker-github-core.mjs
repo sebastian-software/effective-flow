@@ -20,16 +20,20 @@ import {
   ghRepoArgs,
   issueNumber,
   jsonStdin,
+  markBody,
   mergeMethod,
   mergeSubject,
   mutationPlan,
   payloadInteger,
   prNumber,
   publishableText,
+  publishedRef,
+  publishedText,
+  publishingVisibility,
   requireNumber,
   requireObject,
   requireString,
-  stampMarker,
+  resolveVisibility,
 } from './remote-tracker-shared-core.mjs';
 import {
   childIssuePayload,
@@ -42,9 +46,17 @@ import {
 // that these markers are never written by hand: the merge gate's guard matches them as exact
 // strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
 // read as a human's, blocking the merge on this tool's own output.
-function buildThreadReplyBody(payload) {
+//
+// Hidden mode (`visibility: hidden`) is the one exception: the reply is published without a marker,
+// and `iterate` records the answered thread in its local processed-thread ledger instead.
+function buildThreadReplyBody(payload, visibility) {
   const marker = commentMarker('pr');
-  return stampMarker(marker, publishableText(payload.body, 'payload.body'));
+  return markBody(
+    marker,
+    publishableText(payload.body, 'payload.body'),
+    visibility,
+    'payload.body',
+  );
 }
 
 const REVIEW_EVENTS = Object.freeze(['COMMENT']);
@@ -77,8 +89,11 @@ function reviewCommentSide(value, field) {
 // without body text carries nothing to publish and would be rejected by the provider anyway.
 // Body and comment bodies are stamped with the `pr-review` marker from the marker table, so no
 // caller has to hand-write it and repeat suppression cannot be defeated by a reworded marker.
-export function buildReviewPayload(input) {
+// In hidden mode (`visibility: hidden`, from `options` or the payload) no marker is stamped and a
+// body that names the tool is refused instead.
+export function buildReviewPayload(input, options = {}) {
   requireObject(input, 'payload');
+  const visibility = resolveVisibility(options.visibility ?? input.visibility);
   const event =
     input.event === undefined || input.event === null
       ? 'COMMENT'
@@ -91,7 +106,12 @@ export function buildReviewPayload(input) {
     });
   }
   const marker = commentMarker('pr-review');
-  const body = stampMarker(marker, publishableText(input.body, 'payload.body'));
+  const body = markBody(
+    marker,
+    publishableText(input.body, 'payload.body'),
+    visibility,
+    'payload.body',
+  );
   const comments = input.comments ?? [];
   if (!Array.isArray(comments)) {
     fail('INVALID_PAYLOAD', 'payload.comments must be an array', {
@@ -108,7 +128,12 @@ export function buildReviewPayload(input) {
         path: requireString(comment.path, `${field}.path`),
         line: payloadInteger(comment.line, `${field}.line`),
         side: reviewCommentSide(comment.side, `${field}.side`),
-        body: stampMarker(marker, publishableText(comment.body, `${field}.body`)),
+        body: markBody(
+          marker,
+          publishableText(comment.body, `${field}.body`),
+          visibility,
+          `${field}.body`,
+        ),
       };
     }),
   };
@@ -301,7 +326,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
           '--input',
           '-',
         ],
-        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
       );
     case 'issue-comment-update': {
       issueNumber(input);
@@ -316,7 +343,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
           '--input',
           '-',
         ],
-        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
       );
     }
     case 'issue-labels':
@@ -435,9 +464,13 @@ export function buildGithubCommandPlan(operation, input, repository) {
         'gh',
         ['api', ...hostArgs, '-X', 'POST', ghEndpoint('pulls'), '--input', '-'],
         jsonStdin({
-          title: assertPublishable(payload.title, 'payload.title'),
-          body: assertPublishable(payload.body, 'payload.body'),
-          head: requireString(payload.head, 'payload.head'),
+          title: publishedText(
+            payload.title,
+            'payload.title',
+            publishingVisibility(input, payload),
+          ),
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+          head: publishedRef(payload.head, 'payload.head', publishingVisibility(input, payload)),
           base: requireString(payload.base, 'payload.base'),
           draft: payload.draft === true,
         }),
@@ -446,7 +479,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
       return mutationPlan(
         'gh',
         ['api', ...hostArgs, '-X', 'PATCH', ghEndpoint(`pulls/${prNumber(input)}`), '--input', '-'],
-        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
       );
     case 'pr-comment':
       return mutationPlan(
@@ -460,7 +495,9 @@ export function buildGithubCommandPlan(operation, input, repository) {
           '--input',
           '-',
         ],
-        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
       );
     // The merge carries the head the caller verified. `--match-head-commit` makes the provider
     // itself reject a moved head, so the guard survives even if the local precondition read and
@@ -496,7 +533,7 @@ export function buildGithubCommandPlan(operation, input, repository) {
           '--input',
           '-',
         ],
-        jsonStdin(buildReviewPayload(payload)),
+        jsonStdin(buildReviewPayload(payload, { visibility: input.visibility })),
       );
     case 'review-threads-read': {
       const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId url body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
@@ -520,7 +557,12 @@ export function buildGithubCommandPlan(operation, input, repository) {
           '--input',
           '-',
         ],
-        jsonStdin({ body: buildThreadReplyBody(payload) }),
+        jsonStdin({
+          body: buildThreadReplyBody(
+            payload,
+            resolveVisibility(input.visibility ?? payload.visibility),
+          ),
+        }),
       );
     case 'review-thread-resolve': {
       const query = `mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`;

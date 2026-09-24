@@ -37,7 +37,7 @@ when: an internal sub-agent's result is returned
 
 ```lazy-include
 runtime-state-safety
-when: a legacy runtime directory migration is about to mutate `.effective-flow/`
+when: a legacy runtime directory migration is about to mutate `.effective-flow/`, or a hidden-mode plan write targets a path below `.effective-flow/`
 ```
 
 ```lazy-include

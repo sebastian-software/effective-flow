@@ -294,6 +294,11 @@ still-present old marker `<!-- firmo-iterate -->` from an earlier run is recogni
 is exclusively `<!-- effective-flow-iterate -->`. This keeps a second `{{SKILL:iterate}}` run on the
 same PR clean.
 
+**Hidden mode (`visibility: hidden`)** writes no marker: pass that `visibility` on every comment
+build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body` call, and let no
+published text name Effective Flow; the helper refuses such text on each of them. A marker is then
+no evidence; `{{SKILL:iterate}}` reads its processed-thread ledger instead.
+
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –

@@ -237,6 +237,16 @@ and may be cleaned up only after fresh ownership and state verification. Cleanup
 alters `RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
 worktree removal.
 
+### Hidden-mode boundary
+
+Hidden mode (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)) moves
+configuration, plans, and concepts below `RUNTIME_STATE_ROOT/.effective-flow/`, so they share the
+runtime-state boundary above. Workers read a hidden plan by its absolute main-checkout path. The
+delivery branch never carries a path below `.effective-flow/`, and plan archival runs only in the
+main checkout. The ignore entry lives in the Git common directory's `info/exclude`, which every
+linked worktree shares, so the existing `git check-ignore --no-index` predicates hold in each
+worktree without a tracked `.gitignore` line.
+
 ## Delivery orchestration boundaries
 
 Delivery is split across one orchestrator and two narrow leaf tools:

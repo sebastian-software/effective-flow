@@ -94,6 +94,8 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 This skill is **inherently tracker-bound**: it always works against the resolved tracker target. The local/remote switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. Resolve the target per "Tracker target" in the following shared building block. On the forge target this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, classification, container, and write rules of the loaded `tracker-target` contract apply instead, and a missing connection or capability aborts before the first write. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
 
+**Hidden mode stops this skill.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0), stop before any tracker access or write — no probe, label migration, comment, label, or status transition — with one message: hidden mode is active, it pins the tracker to `local`, and this skill works only against a forge or external tracker. Planning from a pasted issue text stays available through `{{SKILL:plan}} <text>`.
+
 ```include
 config-migration
 ```

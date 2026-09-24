@@ -36,6 +36,11 @@ plan-status
 ```
 
 ```lazy-include
+config-migration
+when: `<plan.dir>` is about to be resolved, so the config locator (including its hidden-mode step 0 and forced values) decides it
+```
+
+```lazy-include
 next-steps
 when: the run reaches its completion report
 ```
