@@ -226,7 +226,21 @@
                               "status": "COMPLETED",
                               "conclusion": "SUCCESS",
                               "detailsUrl": "https://github.com/example/flow/actions/runs/1",
-                              "isRequired": true
+                              "isRequired": true,
+                              "databaseId": 49210387651,
+                              "startedAt": "2026-09-01T09:01:10Z",
+                              "completedAt": "2026-09-01T09:04:32Z",
+                              "checkSuite": {
+                                "app": {
+                                  "slug": "github-actions"
+                                },
+                                "workflowRun": {
+                                  "event": "pull_request",
+                                  "workflow": {
+                                    "name": "CI"
+                                  }
+                                }
+                              }
                             }
                           ]
                         }
@@ -258,20 +272,23 @@
             "url": "https://github.com/example/flow/pull/42",
             "checksReported": true,
             "checkCount": 1,
+            "supersededCheckCount": 0,
             "checks": [
               {
                 "name": "ci",
                 "status": "COMPLETED",
                 "conclusion": "SUCCESS",
                 "url": "https://github.com/example/flow/actions/runs/1",
-                "required": true
+                "required": true,
+                "startedAt": "2026-09-01T09:01:10.000Z",
+                "completedAt": "2026-09-01T09:04:32.000Z"
               }
             ]
           },
           "command": {
             "executable": "gh",
             "args": ["api", "graphql", "--input", "-"],
-            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{event workflow{name}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
           },
           "conditionalWriteAvailable": false
         },

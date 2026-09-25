@@ -107,6 +107,9 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
    - a matching entry with `status: COMPLETED` → **has run**, whatever its `conclusion`. A red review
      is a review: the conclusion states what the reviewer found, not whether it ran, and reading it
      as "has not run" would trigger a reviewer that already answered.
+   - **more than one matching entry** → any match with `status: PENDING` means **running**, otherwise
+     **has run**. `pr-status-read` reports only the latest run per check identity, so several entries
+     match only when distinct identities share the name.
    - **no matching entry in a reported list** → **not started**. A context that never appears is
      indistinguishable from one that is about to appear: a misconfigured value, an app that is not
      installed, and a queued run whose status is only set once a worker claims it all look the same

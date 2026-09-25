@@ -163,7 +163,15 @@ function ghHostArgs(repository) {
 // a second request, so the two values it correlates describe the same instant. `contexts` reports
 // its `totalCount` alongside its nodes so a truncated page can be detected — see
 // `flattenPullRequestStatus` in `remote-tracker-core.mjs`, which is where that count is acted on.
-const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}`;
+//
+// The rollup reports every run on the head commit, including runs a later run of the same check
+// superseded, and states no order among them. Each `CheckRun` therefore also selects `databaseId`,
+// which rises with every re-run and orders the runs of one check, and its check suite's app slug
+// plus the workflow run's triggering event and workflow name, which together identify the check
+// whose runs may supersede one another; `latestCheckRuns` in `remote-tracker-core.mjs` keeps only
+// the latest run per identity. `startedAt`/`completedAt`, and a status context's `createdAt`, give
+// each reported check its instants.
+const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{event workflow{name}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;

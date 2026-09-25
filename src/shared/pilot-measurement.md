@@ -119,8 +119,8 @@ terminal outcome `failed`; it never discards product changes or changes the gate
    - `failed` for a reserved merge-mode run that did not reach a verified merge and for an
      unhandled workflow failure after reservation.
 2. Derive check evidence only from the final normalized `pr-status-read`. An unreported check list
-   is unavailable. With `mergeGate.requireAllChecks: true`, the required-check count is every
-   reported check. With `false`, count only checks carrying `required: true`; any missing
+   is unavailable. The count is taken from that deduplicated list, the latest run per check identity.
+   With `mergeGate.requireAllChecks: true`, the required-check count is every reported check. With `false`, count only checks carrying `required: true`; any missing
    requiredness fails closed under the gate's existing rule. Record the corresponding
    `checksReported`, `requiredCheckCount`, and `requiredChecksSatisfied` values without check names.
 3. Invoke `finalize-gate-observation` once. Its stdin object contains exactly these keys; the

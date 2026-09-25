@@ -399,7 +399,7 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
      comment per delegated round accumulates on someone's pull request — so an unsuppressed run
      publishes onto a discussion surface the caller is deliberately keeping bounded.
      {{SKILL:merge-gate}} is the example: it may delegate up to `mergeGate.maxRounds` rounds and
-     bounds its own items to one trigger comment per configured bot per verified head, and a gate
+     bounds its own items to one trigger comment per configured bot per verified head plus one re-trigger per changes-requested verdict, and a gate
      authenticated as a **different** account than this run additionally reads that summary as
      someone else's writing.
 

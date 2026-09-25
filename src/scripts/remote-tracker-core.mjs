@@ -2737,6 +2737,78 @@ function normalizeCheck(item) {
   };
 }
 
+// The identity whose runs supersede one another, for a GitHub `CheckRun` only. A re-run keeps the
+// check's name, its workflow, and the workflow run's triggering event; the event belongs to the
+// identity because a `push` run and a `pull_request` run of one workflow test different trees, and
+// the workflow because two workflows may define a job of the same name — either way a green run
+// must not hide a red one of a different check. A run outside GitHub Actions has no workflow run,
+// and its app slug takes that place. A status context, a Forgejo status, and a run whose identity
+// fields are not all stated return nothing and are never collapsed, so an incomplete payload is
+// reported in full rather than merged on a guess.
+function checkRunIdentity(node) {
+  if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
+  const suite = node.checkSuite;
+  const run = suite?.workflowRun;
+  if (run !== null && run !== undefined) {
+    const workflow = run.workflow?.name;
+    return typeof workflow === 'string' && typeof run.event === 'string'
+      ? JSON.stringify(['workflow', node.name, workflow, run.event])
+      : undefined;
+  }
+  const slug = suite?.app?.slug;
+  return typeof slug === 'string' ? JSON.stringify(['app', node.name, slug]) : undefined;
+}
+
+// `pr-status-read` only: the rollup reports every run on the head commit, including runs a later run
+// of the same check superseded, so a red run that was re-run green would block the gate forever at
+// an unmoved head. Per identity only the run with the highest `databaseId` is kept — whatever its
+// state, so a latest run that is pending or failed blocks exactly as before — and the kept entries
+// stay in rollup order. The id is compared as a number: it exceeds 32 bits but is a safe integer.
+// A group fails closed to today's full report when any of its runs lacks a safe-integer id, or when
+// the highest id is not unique, because neither case says which run is the latest. `pr-checks-wait`
+// shares `normalizeCheck` but not this step; its output stays unchanged.
+function latestCheckRuns(rollup) {
+  const groups = new Map();
+  rollup.forEach((node, index) => {
+    const identity = checkRunIdentity(node);
+    if (identity === undefined) return;
+    const members = groups.get(identity);
+    if (members === undefined) groups.set(identity, [index]);
+    else members.push(index);
+  });
+  const superseded = new Set();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const ids = members.map((index) => rollup[index].databaseId);
+    if (!ids.every((id) => Number.isSafeInteger(id))) continue;
+    const highest = Math.max(...ids);
+    if (ids.filter((id) => id === highest).length !== 1) continue;
+    members.forEach((index, position) => {
+      if (ids[position] !== highest) superseded.add(index);
+    });
+  }
+  return {
+    nodes: rollup.filter((_, index) => !superseded.has(index)),
+    supersededCount: superseded.size,
+  };
+}
+
+// One `pr-status-read` check: the shared record plus the instants the provider states, each omitted
+// when absent or unparseable, like `conclusion`. A GitHub status context has a single instant, its
+// creation, which is both ends; a Forgejo record arrives with both already set by
+// `forgejoCheckRecord`. Kept apart from `normalizeCheck` so `pr-checks-wait` reports no timestamps.
+function statusCheck(item) {
+  const check = normalizeCheck(item);
+  const created = item.__typename === 'StatusContext' ? item.createdAt : undefined;
+  const startedAt = normalizeTimestamp(item.startedAt, created);
+  const completedAt = normalizeTimestamp(item.completedAt, created);
+  return {
+    ...check,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(completedAt === undefined ? {} : { completedAt }),
+  };
+}
+
 // The head commit is identified by its object name, never by its position in the commit list.
 // GitHub returns the first page of commits, so on a pull request with more than one page the last
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
@@ -2859,10 +2931,12 @@ function flattenPullRequestStatus(raw) {
 // `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
 // `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
 // one shape for both providers, and the record deliberately carries only `name`, `status`,
-// `conclusion` and `url`: no raw Gitea key (`context`, `target_url`, `status`, `id`,
-// `description`) survives into the envelope. The record's own `status` key is the normalized
-// output field `normalizeCheck` reads back; despite the shared name it is unrelated to the raw
-// input key above.
+// `conclusion`, `url`, and the `startedAt`/`completedAt` pair taken from `created_at`: no raw Gitea
+// key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
+// envelope. The combined status endpoint already returns one status per context, so nothing here
+// is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
+// is the normalized output field `normalizeCheck` reads back; despite the shared name it is
+// unrelated to the raw input key above.
 //
 // `warning` and `skipped` are non-success **completed** checks and therefore block under
 // `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
@@ -2898,6 +2972,11 @@ function forgejoCheckRecord(item, index) {
   const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
+  // A commit status has one instant, its creation, which stands for both ends as it does for a
+  // GitHub status context. The Go zero instant is the marshalled "never set", so it states none.
+  const created = isGoZeroInstant(item.created_at)
+    ? undefined
+    : normalizeTimestamp(item.created_at);
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
   // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
   // default, never looser.
@@ -2906,6 +2985,7 @@ function forgejoCheckRecord(item, index) {
     status: mapped.status,
     ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
     ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(created === undefined ? {} : { startedAt: created, completedAt: created }),
   };
 }
 
@@ -3001,7 +3081,8 @@ function normalizePullRequestStatus(item, repository) {
   // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
   // field, and an unstated mergeability fails closed everywhere it is consumed.
   const mergeable = upperCaseField(item.mergeable);
-  const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
+  const { nodes: latest, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
+  const checks = latest.map(statusCheck);
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
@@ -3027,6 +3108,8 @@ function normalizePullRequestStatus(item, repository) {
     // merge a commit whose CI never ran.
     checksReported: Array.isArray(rollup),
     checkCount: checks.length,
+    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was.
+    supersededCheckCount: supersededCount,
     checks,
   };
 }

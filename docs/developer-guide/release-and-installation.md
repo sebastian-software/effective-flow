@@ -78,8 +78,17 @@ so the component suffix may change — the same step runs `--mode strict`, and a
 absent corpus fails the check. There is no waiver: without a current round there is no release.
 
 A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
-the release branch, which release-please owns and force-pushes. Pushing to `develop` makes
-release-please refresh its pull request, which re-runs CI and clears the gate. Start the round when
+the release branch, which release-please owns and force-pushes. Merging that pull request into
+`develop` does not by itself re-run the release pull request's CI: a re-record lands as a commit
+type release-please ignores, such as `test:`, and release-please does not refresh its pull request
+for it. The release pull request then needs a fresh `pull_request` event — close and reopen it.
+The first such event can still test a stale merge commit, so before trusting the strict verdict,
+check that the merge ref the run checked out already contains the re-record, and close and reopen
+once more if it does not. Closing without a merge leaves no blocking check behind: the
+`Close referenced issues` workflow guards each of its steps rather than its job, so an unmerged
+close concludes `SUCCESS` instead of leaving a `SKIPPED` run that `merge-gate` would block on.
+That holds once a release has delivered the workflow to `main`, because `pull_request_target` runs
+the default branch's copy (see "Trusted default-branch automation" below). Start the round when
 `verify` first reports stale rather than when the release pull request turns red; see
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and how
 one is recorded.

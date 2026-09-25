@@ -373,6 +373,16 @@ staleness is now visible, with its list of moved files, from the pull request th
 the round as an ordinary pull request into `develop`; never commit evidence onto the release branch,
 which release-please owns and force-pushes.
 
+Merging the re-record does not by itself re-run the release pull request's CI. It lands as a commit
+type release-please ignores, such as `test:`, and release-please does not refresh its pull request
+for it, so the strict step keeps its old red verdict. Give the release pull request a fresh
+`pull_request` event by closing and reopening it. The first such event can still test a stale merge
+commit: before reading a strict failure as stale evidence, check that the merge ref the run checked
+out already contains the re-record, and close and reopen once more if it does not. The close itself
+leaves no blocking check behind, because the `Close referenced issues` workflow guards each step
+rather than its job and so concludes `SUCCESS` on a close without a merge – once a release has
+delivered that workflow to `main`, since `pull_request_target` runs the default branch's copy.
+
 ### Evidence units and invalid runs
 
 An ordinary published run is `run-<n>.jsonl` and `run-<n>.build.json` bound by `run-<n>.prompt.txt`

@@ -6926,7 +6926,7 @@ test("iterate's review-in-flight guard is exempted by the switch, never by a fil
   );
 });
 
-test('the gate branches on three reviewer states and triggers only on "not started"', () => {
+test('the gate branches on three reviewer states and triggers only on "not started" or a stale verdict', () => {
   const phase3 = flat(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
 
   // Three states, not two. Under a check-based signal the old "has run" / "has not run" split is
@@ -6961,6 +6961,307 @@ test('the gate branches on three reviewer states and triggers only on "not start
     phase3,
     near('(?:unprovable|cannot be established)', 'not started', 200),
     'an unprovable reviewer state must count as not started, never as an assumed pass',
+  );
+
+  // A reviewer that has run is never triggered as "not started" again. The one post the has-run
+  // step may make is the stale-verdict re-trigger, and it comes before any item is handed over,
+  // so an ordinary has-run round still posts nothing (#466).
+  const hasRun = boundedSlice(phase3, '**When the bot has run:**', '**Exclude every item');
+  assert.match(
+    hasRun,
+    /first apply the stale-verdict re-trigger below, then hand its unresolved threads/,
+    'the has-run step must run the stale-verdict re-trigger before handing items to iterate',
+  );
+  assert.match(
+    hasRun,
+    near(
+      '\\*\\*Stale verdict: re-trigger once per verdict',
+      '`mergeGate\\.bots\\.<login>\\.trigger`',
+      200,
+    ),
+    'the only trigger in the has-run step must be the stale-verdict re-trigger',
+  );
+  assert.equal(
+    hasRun.split('`mergeGate.bots.<login>.trigger`').length - 1,
+    1,
+    'the has-run step must name the trigger key exactly once, for the stale-verdict re-trigger',
+  );
+});
+
+test('Phase 3 re-triggers a stale changes-requested verdict once, after a later SUCCESS re-run', () => {
+  // At an unmoved head a changes-requested verdict could never be refreshed: the reviewer counts
+  // as "has run" once its check completed, so step 3 never triggers it again (#466). The
+  // re-trigger is bounded on every side, because each loosening either loops or fires on
+  // ordinary slow CI.
+  const retrigger = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '**Stale verdict: re-trigger once per verdict',
+      '**Exclude every item',
+    ),
+  );
+
+  assert.match(
+    retrigger,
+    near('changes-requested', 'provable `submittedAt`', 120),
+    'the re-trigger needs a changes-requested verdict with a provable submission time',
+  );
+  // Started after, not completed after: a slow first run that finishes after the verdict was
+  // not re-run because of it.
+  assert.match(
+    retrigger,
+    near('`startedAt` strictly later than that `submittedAt`', 'concluded `SUCCESS`', 80),
+    'only a check started strictly after the verdict and concluded SUCCESS may qualify',
+  );
+  assert.match(
+    retrigger,
+    /reviewer's own configured `\.check` does not count/,
+    "the reviewer's own check must not count as a re-run",
+  );
+  assert.match(
+    retrigger,
+    /`SKIPPED` or `NEUTRAL` conclusion does not count/,
+    'a skipped or neutral re-run must not count',
+  );
+  assert.match(
+    retrigger,
+    /check without `startedAt` does not count/,
+    'a check without a start time must not count',
+  );
+  assert.match(
+    retrigger,
+    /latest run per check identity/,
+    'the re-run must be read from the deduplicated pr-status-read list',
+  );
+
+  // The bound: one re-trigger per verdict, recognized by step 3's own body and author rule.
+  assert.match(
+    retrigger,
+    near(
+      'no own trigger comment exists whose `createdAt` is not older than that `submittedAt`',
+      'at most one re-trigger per changes-requested verdict',
+      200,
+    ),
+    'the re-trigger must be bounded to once per changes-requested verdict',
+  );
+  assert.match(
+    retrigger,
+    /body and author rule of step 3's idempotency check/,
+    'the earlier re-trigger must be identified by the existing idempotency rule',
+  );
+  assert.match(
+    retrigger,
+    near('only the literal trigger text', 'same PR-comment mutation', 80),
+    'the re-trigger must post only the literal trigger text through the same mutation',
+  );
+  assert.match(
+    retrigger,
+    near('single wait of step 4', 're-read once', 60),
+    'the re-trigger must reuse the single wait and one re-read',
+  );
+
+  // The run-level ceiling holds by construction: one trigger comment per bot per round, so a
+  // round that already triggered the bot in step 3 posts no re-trigger for it.
+  assert.match(
+    retrigger,
+    near(
+      'A round posts at most one trigger comment per configured bot',
+      "in a round where step 3 already posted this bot's trigger, post no re-trigger",
+      200,
+    ),
+    'a round that triggered the bot in step 3 must post no re-trigger for it',
+  );
+
+  // A reviewer still working after the re-trigger is step 4's timeout, never an iterate round.
+  assert.match(
+    retrigger,
+    near(
+      'A re-read that observes the reviewer as running',
+      "ends the run with step 4's report, carrying the stale-verdict item and the re-trigger's `createdAt`",
+      20,
+    ),
+    'a reviewer running after the re-trigger must end the run with the stale-verdict report',
+  );
+  assert.match(
+    retrigger,
+    /hands nothing to `\{\{SKILL:iterate\}\}`/,
+    'a reviewer running after the re-trigger must hand nothing to iterate',
+  );
+
+  // The answer: a completed reviewer check is already there and proves nothing.
+  assert.match(
+    retrigger,
+    near(
+      'The reviewer has answered',
+      "new submitted review at `VERIFIED_HEAD_SHA` whose `submittedAt` is later than the re-trigger comment's `createdAt`",
+      80,
+    ),
+    'only a new review after the re-trigger counts as an answer',
+  );
+  assert.match(
+    retrigger,
+    /reviewer check that was already `COMPLETED` is not an answer/,
+    'an already completed reviewer check must not count as an answer',
+  );
+
+  // Unlike step 3, the re-trigger fails towards posting nothing: an unrecognizable earlier
+  // re-trigger would otherwise post on every run.
+  const unprovable = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '**Unlike step 3, an unprovable comparison posts nothing here.**',
+      '**The stale-verdict report state.**',
+    ),
+  );
+  assert.match(unprovable, /"staleness unprovable"/, 'an unprovable comparison must be reported');
+  assert.match(
+    unprovable,
+    near('Post nothing either', 'no trigger text is configured', 60),
+    'a missing trigger text must post nothing',
+  );
+  assert.match(
+    unprovable,
+    /this verdict's re-trigger was already posted/,
+    'an already re-triggered verdict must post nothing',
+  );
+
+  // Branch (b) is report wording only; condition 10 clears exactly as before.
+  const state = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '**The stale-verdict report state.**',
+      '**Exclude every item',
+    ),
+  );
+  assert.match(
+    state,
+    near('report wording only', "condition 10's clearing rules are unchanged", 40),
+    'the stale-verdict state must not change how condition 10 clears',
+  );
+  assert.match(
+    state,
+    /COMMENTED-only review never clears it/,
+    'a COMMENTED-only answer must never clear the verdict',
+  );
+  assert.match(
+    state,
+    /did not answer within the wait – it is still has run with no review newer than the re-trigger/,
+    'not answering must mean has run with no review newer than the re-trigger',
+  );
+  assert.match(
+    state,
+    near(
+      'does not replace the changes-requested verdict',
+      'stale with the reason "already posted"',
+      80,
+    ),
+    'an answer that leaves the verdict standing must stay stale as already posted',
+  );
+});
+
+test('the stale-verdict state is reported with its evidence and the gate allows its re-trigger', () => {
+  const item = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'))
+    .split(/ - (?=every )/)
+    .find((entry) => entry.startsWith('every stale changes-requested verdict'));
+  assert.ok(item, 'Phase 6 must carry a stale-verdict report item');
+  for (const [pattern, message] of [
+    [/the reviewer, the verdict's submission time/, 'the reviewer and the verdict time'],
+    [/each check re-run after it/, 'every check re-run after the verdict'],
+    [/when the re-trigger was posted/, 'when a re-trigger was posted'],
+    [
+      /why none was posted – no trigger configured, staleness unprovable, or already posted/,
+      'why no re-trigger was posted',
+    ],
+    [/recommendation to re-trigger the reviewer by hand/, 'the manual re-trigger recommendation'],
+  ]) {
+    assert.match(item, pattern, `the stale-verdict item must name ${message}`);
+  }
+  assert.doesNotMatch(
+    item,
+    /ordinary unassessed verdict[^;]*clears/,
+    'the report item must not present itself as a clearing rule',
+  );
+
+  const gate = prose(source('src/tools/merge-gate.md'));
+  assert.match(
+    gate,
+    near(
+      'per configured bot per verified head',
+      'one re-trigger per changes-requested verdict at that head',
+      80,
+    ),
+    'the per-head trigger bound must allow one re-trigger per changes-requested verdict',
+  );
+  assert.match(
+    gate,
+    near(
+      'one re-trigger per changes-requested verdict',
+      '`mergeGate.maxRounds` × configured bots',
+      120,
+    ),
+    'the re-trigger must stay under the run-level ceiling',
+  );
+  assert.match(
+    gate,
+    near(
+      '`mergeGate.maxRounds` × configured bots per run',
+      'a round posts at most one trigger comment per bot',
+      40,
+    ),
+    'the run-level ceiling must rest on one trigger comment per bot per round',
+  );
+  assert.match(
+    gate,
+    near('precise blocking condition', 'stale-verdict item', 80),
+    'the blocked-state report must point at the stale-verdict item',
+  );
+});
+
+test('reviewer state resolves several matching checks and pr-status-read keeps the latest run', () => {
+  const precedence = prose(section(source('src/shared/review-bot-state.md'), '### Precedence'));
+  assert.match(
+    precedence,
+    near('more than one matching entry', 'any match with `status: PENDING` means running', 60),
+    'several matches must read as running while any of them is pending',
+  );
+  assert.match(
+    precedence,
+    near('any match with `status: PENDING` means running', 'otherwise has run', 20),
+    'several settled matches must read as has run',
+  );
+  assert.match(
+    precedence,
+    near('more than one matching entry', 'only the latest run per check identity', 200),
+    'the multi-match rule must rest on the deduplicated pr-status-read list',
+  );
+
+  const status = prose(
+    section(source('src/shared/pr-review-comments.md'), '### Read the pull-request status'),
+  );
+  for (const [pattern, message] of [
+    [/only the latest run per check identity/, 'keeps only the latest run per identity'],
+    [
+      /name plus workflow name and triggering event, or name plus app slug/,
+      'defines the check-run identity',
+    ],
+    [/highest `databaseId`/, 'orders runs by databaseId'],
+    [
+      /lacking a usable `databaseId`, or tied on the highest one, is not collapsed/,
+      'fails closed without a unique databaseId',
+    ],
+    [/commit-status context keeps its own identity/, 'keeps status contexts separate'],
+    [/`startedAt` and `completedAt`/, 'carries the run timestamps'],
+    [/`supersededCheckCount`/, 'reports the superseded count'],
+  ]) {
+    assert.match(status, pattern, `pr-status-read ${message}`);
+  }
+  const wait = prose(
+    section(source('src/shared/pr-review-comments.md'), '### Wait for pending checks'),
+  );
+  assert.match(
+    wait,
+    /not deduplicated and without timestamps/,
+    'pr-checks-wait must state that its list is neither deduplicated nor timestamped',
   );
 });
 

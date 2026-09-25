@@ -263,12 +263,13 @@
             "url": "https://github.com/example/flow/pull/42",
             "checksReported": false,
             "checkCount": 0,
+            "supersededCheckCount": 0,
             "checks": []
           },
           "command": {
             "executable": "gh",
             "args": ["api", "graphql", "--input", "-"],
-            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{event workflow{name}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
           },
           "conditionalWriteAvailable": false
         },

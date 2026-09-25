@@ -97,8 +97,10 @@ hash—not the raw capability—is persisted alongside the opaque observation ID
 Finalization authenticates that capability and accepts exactly the identifier,
 capability, closed terminal outcome, three correction counters, `checksReported`, and the typed
 `requiredCheckCount` and `requiredChecksSatisfied` values in addition to the runtime/generation
-binding. It is exactly-once and response-loss-idempotent. Every post-reservation normal, controlled,
-or early workflow exit calls it once. A pre-Phase-4 stop in report mode records `reported-blocked`
+binding. `requiredCheckCount` is taken from the final `pr-status-read` check list after its
+deduplication, so it counts the latest run per check identity and never a superseded run. It is
+exactly-once and response-loss-idempotent. Every post-reservation normal, controlled, or early
+workflow exit calls it once. A pre-Phase-4 stop in report mode records `reported-blocked`
 with unavailable check evidence; a reserved merge-mode run without a verified merge records
 `failed` rather than silently dropping the observation.
 

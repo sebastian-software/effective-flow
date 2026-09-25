@@ -244,9 +244,53 @@ entries that denote the same reviewer – two spellings of one account are one r
      and its observed state as the blocking condition. A timeout here is always a report, never a
      merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
      run watched working is still a reviewer whose notes nobody has answered.
-5. **When the bot has run:** hand its unresolved threads to `{{SKILL:iterate}} <PR>` with the item
-   filter set to **exactly those thread IDs**. `{{SKILL:iterate}}` classifies them, implements the
-   valid ones as new commits, replies, and resolves them.
+5. **When the bot has run:** first apply the stale-verdict re-trigger below, then hand its
+   unresolved threads to `{{SKILL:iterate}} <PR>` with the item filter set to **exactly those thread
+   IDs**. `{{SKILL:iterate}}` classifies them, implements the valid ones as new commits, replies, and
+   resolves them.
+   - **Stale verdict: re-trigger once per verdict, before any item is handed over.** Step 3 never
+     triggers a reviewer that has run, so a changes-requested verdict at an unmoved head would never
+     be refreshed. Post the `mergeGate.bots.<login>.trigger` text once more when all three hold on
+     the fresh read:
+     - the reviewer's latest review at `VERIFIED_HEAD_SHA`, resolved through the supersession rule of
+       the loaded "Automatic reviewer state", is changes-requested and has a provable `submittedAt`;
+     - at least one **other** check's latest run – an entry of the `pr-status-read` list, which
+       reports the latest run per check identity – has a `startedAt` strictly later than that
+       `submittedAt` and concluded `SUCCESS`, so it was re-run after the review. An entry matching
+       the reviewer's own configured `.check` does not count, a `SKIPPED` or `NEUTRAL` conclusion
+       does not count, and a check without `startedAt` does not count;
+     - no own trigger comment exists whose `createdAt` is not older than that `submittedAt`, identified
+       by the body and author rule of step 3's idempotency check. This is the bound: **at most one
+       re-trigger per changes-requested verdict**.
+
+     **A round posts at most one trigger comment per configured bot**, which is what holds the
+     `mergeGate.maxRounds` × configured bots ceiling: in a round where step 3 already posted this
+     bot's trigger, post no re-trigger – the verdict then answers that trigger anyway.
+
+     Post only the literal trigger text, through the same PR-comment mutation step 3 uses, then apply
+     the single wait of step 4 and re-read once. **The reviewer has answered** only when that re-read
+     shows a new submitted review at `VERIFIED_HEAD_SHA` whose `submittedAt` is later than the
+     re-trigger comment's `createdAt`; a reviewer check that was already `COMPLETED` is not an answer.
+     A re-read that observes the reviewer as **running** ends the run with step 4's report, carrying
+     the stale-verdict item and the re-trigger's `createdAt`, and hands nothing to `{{SKILL:iterate}}`.
+     Otherwise continue this step on the re-read. A new changes-requested answer is a new verdict, re-triggered
+     only when a check is re-run after it again, so an unmoved head with settled checks cannot loop.
+
+   - **Unlike step 3, an unprovable comparison posts nothing here.** Report "staleness unprovable"
+     instead when the verdict has no `submittedAt`, when a comment with the trigger body has no
+     `createdAt` or no establishable author, or when no check qualifies only because it lacks
+     `startedAt`: a re-trigger that cannot recognize its own earlier comment would post on every run.
+     Post nothing either when no trigger text is configured for that login, or when this verdict's
+     re-trigger was already posted.
+   - **The stale-verdict report state.** When a check was re-run after the verdict, or staleness is
+     unprovable, and no re-trigger was posted or the reviewer did not answer within the wait – it is
+     still **has run** with no review newer than the re-trigger – record the stale-verdict state for
+     Phase 6 and hand the verdict's items over as below. An answer that does not replace the
+     changes-requested verdict, such as a COMMENTED-only review, leaves it stale with the reason
+     "already posted". This is report
+     wording only: condition 10's clearing rules are unchanged – an approval or a dismissal clears
+     the verdict through the existing supersession rule, a COMMENTED-only review never clears it, and
+     at an unmoved head without an approval the set-aside confirmation stays the only clearing path.
    - **Exclude every item the durable confirmation record of "The set-aside confirmation" holds** –
      a thread by its forge thread ID, a body finding by its review id and ordinal – from both halves
      of that item set, however the phase was entered. The fresh read still reports them: a
@@ -688,6 +732,11 @@ the residual is accepted and made visible rather than closed.
   `.trigger` or `.check` to different values, that conflict named with both values and named as
   what blocked the merge on that reviewer;
 
+- **every stale changes-requested verdict** Phase 3 recorded, named as that state rather than as an
+  ordinary unassessed verdict: the reviewer, the verdict's submission time, each check re-run after
+  it with its start time, and either when the re-trigger was posted and that the reviewer did not
+  answer, or why none was posted – no trigger configured, staleness unprovable, or already posted
+  for this verdict – together with a recommendation to re-trigger the reviewer by hand;
 - **every bot finding this run assessed but did not implement**, named here rather than answered
   in its thread;
 - **every provider-settled thread and every thread still blocking on a forge without thread

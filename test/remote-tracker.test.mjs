@@ -5957,6 +5957,7 @@ test('pr-status-read reads head, base, merge state, and checks in a single GitHu
     url: 'https://github.com/example/flow/pull/12',
     checksReported: true,
     checkCount: 3,
+    supersededCheckCount: 0,
     checks: [
       {
         name: 'unit',
@@ -6738,6 +6739,707 @@ test('pr-merge fails closed when the head moved and merges only the verified com
   assert.deepEqual(mergeRunner.calls[1].args.slice(-2), ['--match-head-commit', verifiedHead]);
 });
 
+// The superseded-run dedup of `pr-status-read` (issue #466). GitHub's `statusCheckRollup` reports
+// every run on the head commit, including runs a later run of the same check superseded, so a red
+// run that was re-run green kept blocking the gate forever at an unmoved head. The read keeps only
+// the latest run per check identity; `pr-checks-wait` shares `normalizeCheck` and stays unchanged.
+
+// The dedup contract fixes which instant each check carries, not how it is spelled, so these tests
+// compare `startedAt` and `completedAt` as instants. A non-string value is left alone and fails the
+// comparison, because an absent timestamp has to be absent rather than `null`.
+function instant(value) {
+  return new Date(value).toISOString();
+}
+
+function checksAsInstants(checks) {
+  return checks.map((check) => ({
+    ...check,
+    ...(typeof check.startedAt === 'string' ? { startedAt: instant(check.startedAt) } : {}),
+    ...(typeof check.completedAt === 'string' ? { completedAt: instant(check.completedAt) } : {}),
+  }));
+}
+
+// The `requireAllChecks: true` criterion as the merge gate applies it to every reported check.
+function blockingChecks(checks) {
+  return checks.filter(
+    (check) => !(check.status === 'COMPLETED' && check.conclusion === 'SUCCESS'),
+  );
+}
+
+// One check run in the shape the extended `PR_STATUS_QUERY` selection returns. `workflow: null`
+// is a run without a workflow run, which GraphQL states as `workflowRun: null`; `databaseId`
+// accepts `undefined` to omit the key entirely.
+function checkRun(
+  name,
+  {
+    status = 'COMPLETED',
+    conclusion = 'SUCCESS',
+    databaseId,
+    startedAt = '2026-09-25T12:00:00Z',
+    completedAt = '2026-09-25T12:01:00Z',
+    workflow = 'CI',
+    event = 'pull_request',
+    app = 'github-actions',
+  } = {},
+) {
+  return {
+    __typename: 'CheckRun',
+    name,
+    status,
+    conclusion,
+    ...(databaseId === undefined ? {} : { databaseId }),
+    startedAt,
+    completedAt,
+    checkSuite: {
+      app: { slug: app },
+      workflowRun: workflow === null ? null : { event, workflow: { name: workflow } },
+    },
+  };
+}
+
+async function readRollup(statusCheckRollup) {
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: prStatusStdout(verifiedHead, { statusCheckRollup }), stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  return envelope.data.result;
+}
+
+// The real rollup of #440 at `c671492`, read with the extended query on 2026-09-25: fifteen check
+// runs of five identities, three runs each, plus the one `recensor/review` status context. Names,
+// states, ordering fields and identities only; every URL is left out. The node order is GitHub's.
+const PR_440_ROLLUP = Object.freeze([
+  {
+    __typename: 'CheckRun',
+    name: 'Format, test and build',
+    status: 'COMPLETED',
+    conclusion: 'FAILURE',
+    databaseId: 108015653791,
+    startedAt: '2026-09-25T09:18:52Z',
+    completedAt: '2026-09-25T09:20:59Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Format, test and build',
+    status: 'COMPLETED',
+    conclusion: 'FAILURE',
+    databaseId: 108040379753,
+    startedAt: '2026-09-25T10:43:32Z',
+    completedAt: '2026-09-25T10:45:31Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Close referenced issues',
+    status: 'COMPLETED',
+    conclusion: 'SKIPPED',
+    databaseId: 108040376137,
+    startedAt: '2026-09-25T10:42:39Z',
+    completedAt: '2026-09-25T10:42:39Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Close referenced issues',
+    status: 'COMPLETED',
+    conclusion: 'SKIPPED',
+    databaseId: 108070974955,
+    startedAt: '2026-09-25T12:27:38Z',
+    completedAt: '2026-09-25T12:27:37Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Format, test and build',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108070977288,
+    startedAt: '2026-09-25T12:27:40Z',
+    completedAt: '2026-09-25T12:29:42Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Close referenced issues',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108072587078,
+    startedAt: '2026-09-25T12:32:48Z',
+    completedAt: '2026-09-25T12:32:53Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Generated README',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108015649637,
+    startedAt: '2026-09-25T09:18:51Z',
+    completedAt: '2026-09-25T09:18:57Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Generated README',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108040379987,
+    startedAt: '2026-09-25T10:43:47Z',
+    completedAt: '2026-09-25T10:43:57Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Generated README',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108070977473,
+    startedAt: '2026-09-25T12:27:40Z',
+    completedAt: '2026-09-25T12:27:50Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Shellcheck',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108015653823,
+    startedAt: '2026-09-25T09:18:52Z',
+    completedAt: '2026-09-25T09:18:58Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Shellcheck',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108040379917,
+    startedAt: '2026-09-25T10:43:36Z',
+    completedAt: '2026-09-25T10:43:46Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Shellcheck',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108070977477,
+    startedAt: '2026-09-25T12:27:40Z',
+    completedAt: '2026-09-25T12:27:46Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Manager compatibility',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108015653668,
+    startedAt: '2026-09-25T09:18:52Z',
+    completedAt: '2026-09-25T09:19:07Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Manager compatibility',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108040379915,
+    startedAt: '2026-09-25T10:43:20Z',
+    completedAt: '2026-09-25T10:43:35Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'CheckRun',
+    name: 'Manager compatibility',
+    status: 'COMPLETED',
+    conclusion: 'SUCCESS',
+    databaseId: 108070977627,
+    startedAt: '2026-09-25T12:27:40Z',
+    completedAt: '2026-09-25T12:27:56Z',
+    checkSuite: {
+      app: { slug: 'github-actions' },
+      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+    },
+  },
+  {
+    __typename: 'StatusContext',
+    context: 'recensor/review',
+    state: 'SUCCESS',
+    createdAt: '2026-09-25T09:22:31Z',
+  },
+]);
+
+// The latest run of `Close referenced issues` on #440. It concluded SUCCESS when the rollup was
+// read; while the gate was blocked, the latest run of that identity was a SKIPPED one left by an
+// unmerged close, so the historical variant replays that conclusion on this same run.
+const PR_440_LATEST_CLOSE_RUN = 108072587078;
+
+function pr440Rollup(latestCloseConclusion) {
+  return PR_440_ROLLUP.map((node) =>
+    node.databaseId === PR_440_LATEST_CLOSE_RUN
+      ? { ...node, conclusion: latestCloseConclusion }
+      : structuredClone(node),
+  );
+}
+
+test('pr-status-read requests the ordering, identity, and timestamp fields the dedup needs', () => {
+  const { query } = JSON.parse(
+    buildCommandPlan('pr-status-read', { number: 12 }, githubRepository).stdin,
+  );
+  const checkRunStart = query.indexOf('... on CheckRun');
+  const statusContextStart = query.indexOf('... on StatusContext');
+  assert.ok(checkRunStart >= 0 && statusContextStart > checkRunStart, 'both fragments present');
+  const checkRunFragment = query.slice(checkRunStart, statusContextStart);
+  const statusContextFragment = query.slice(statusContextStart);
+
+  // `databaseId` orders the runs of one identity; the timestamps travel into each check.
+  for (const field of ['databaseId', 'startedAt', 'completedAt']) {
+    assert.match(checkRunFragment, new RegExp(`\\b${field}\\b`), `CheckRun lacks ${field}`);
+  }
+  // The identity: the check suite's app, and its workflow run's triggering event and workflow name.
+  assert.match(checkRunFragment, /\bcheckSuite\s*\{/);
+  assert.match(checkRunFragment, /\bapp\s*\{\s*slug\s*\}/);
+  assert.match(checkRunFragment, /\bworkflowRun\s*\{/);
+  assert.match(checkRunFragment, /\bevent\b/);
+  assert.match(checkRunFragment, /\bworkflow\s*\{\s*name\s*\}/);
+  // A status context has no run and no suite; its one instant is its creation.
+  assert.match(statusContextFragment, /\bcreatedAt\b/);
+});
+
+test('pr-status-read collapses the real #440 rollup to the latest run per check identity', async () => {
+  const expectedChecks = (closeConclusion) => [
+    {
+      name: 'Format, test and build',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T12:27:40Z'),
+      completedAt: instant('2026-09-25T12:29:42Z'),
+    },
+    {
+      name: 'Close referenced issues',
+      status: 'COMPLETED',
+      conclusion: closeConclusion,
+      startedAt: instant('2026-09-25T12:32:48Z'),
+      completedAt: instant('2026-09-25T12:32:53Z'),
+    },
+    {
+      name: 'Generated README',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T12:27:40Z'),
+      completedAt: instant('2026-09-25T12:27:50Z'),
+    },
+    {
+      name: 'Shellcheck',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T12:27:40Z'),
+      completedAt: instant('2026-09-25T12:27:46Z'),
+    },
+    {
+      name: 'Manager compatibility',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T12:27:40Z'),
+      completedAt: instant('2026-09-25T12:27:56Z'),
+    },
+    // The status context carries its creation instant as both ends.
+    {
+      name: 'recensor/review',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T09:22:31Z'),
+      completedAt: instant('2026-09-25T09:22:31Z'),
+    },
+  ];
+
+  // Historical: the latest `Close referenced issues` run was SKIPPED. After the dedup the two failed
+  // `Format, test and build` runs are gone, and that SKIPPED run is the one check still blocking.
+  const historical = await readRollup(pr440Rollup('SKIPPED'));
+  assert.equal(historical.checkCount, 6);
+  assert.equal(historical.supersededCheckCount, 10);
+  assert.deepEqual(checksAsInstants(historical.checks), expectedChecks('SKIPPED'));
+  assert.deepEqual(
+    blockingChecks(historical.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'Close referenced issues', conclusion: 'SKIPPED' }],
+  );
+
+  // As observed: that run concluded SUCCESS, so every remaining check satisfies the criterion.
+  const observed = await readRollup(pr440Rollup('SUCCESS'));
+  assert.equal(observed.checkCount, 6);
+  assert.equal(observed.supersededCheckCount, 10);
+  assert.deepEqual(checksAsInstants(observed.checks), expectedChecks('SUCCESS'));
+  assert.deepEqual(blockingChecks(observed.checks), []);
+});
+
+test('pr-status-read reports a superseded FAILURE re-run green as one COMPLETED/SUCCESS entry', async () => {
+  const result = await readRollup([
+    checkRun('unit', {
+      conclusion: 'FAILURE',
+      databaseId: 100,
+      startedAt: '2026-09-25T10:00:00Z',
+      completedAt: '2026-09-25T10:05:00Z',
+    }),
+    checkRun('unit', {
+      conclusion: 'SUCCESS',
+      databaseId: 200,
+      startedAt: '2026-09-25T11:00:00Z',
+      completedAt: '2026-09-25T11:04:00Z',
+    }),
+  ]);
+  assert.equal(result.checkCount, 1);
+  assert.equal(result.supersededCheckCount, 1);
+  assert.deepEqual(checksAsInstants(result.checks), [
+    {
+      name: 'unit',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T11:00:00Z'),
+      completedAt: instant('2026-09-25T11:04:00Z'),
+    },
+  ]);
+});
+
+test('pr-status-read keeps the latest run whatever its state, wherever it sits in the rollup', async () => {
+  // A re-run still in progress blocks exactly as a pending check does today, although an older run
+  // of it succeeded. It has no completion instant yet, so it reports none.
+  const pending = await readRollup([
+    checkRun('unit', { conclusion: 'SUCCESS', databaseId: 100 }),
+    checkRun('unit', {
+      status: 'IN_PROGRESS',
+      conclusion: null,
+      databaseId: 200,
+      startedAt: '2026-09-25T13:00:00Z',
+      completedAt: null,
+    }),
+  ]);
+  assert.equal(pending.supersededCheckCount, 1);
+  assert.deepEqual(checksAsInstants(pending.checks), [
+    { name: 'unit', status: 'PENDING', startedAt: instant('2026-09-25T13:00:00Z') },
+  ]);
+
+  // The latest run comes first in the node list, and its id is the larger number but the smaller
+  // string, so neither the rollup position nor a string comparison may pick the older green run.
+  const failed = await readRollup([
+    checkRun('unit', {
+      conclusion: 'FAILURE',
+      databaseId: 108_000_000_000,
+      startedAt: '2026-09-25T14:00:00Z',
+      completedAt: '2026-09-25T14:02:00Z',
+    }),
+    checkRun('unit', { conclusion: 'SUCCESS', databaseId: 99_999_999_999 }),
+  ]);
+  assert.equal(failed.checkCount, 1);
+  assert.equal(failed.supersededCheckCount, 1);
+  assert.deepEqual(checksAsInstants(failed.checks), [
+    {
+      name: 'unit',
+      status: 'COMPLETED',
+      conclusion: 'FAILURE',
+      startedAt: instant('2026-09-25T14:00:00Z'),
+      completedAt: instant('2026-09-25T14:02:00Z'),
+    },
+  ]);
+});
+
+test('pr-status-read keeps same-named jobs of different workflows or events apart', async () => {
+  // Each pair has the red run first and a later green one, so a name-only identity would let the
+  // green run of another workflow, or of the other event's tree, hide the red one.
+  const workflows = await readRollup([
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, workflow: 'CI' }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, workflow: 'Release' }),
+  ]);
+  assert.equal(workflows.checkCount, 2);
+  assert.equal(workflows.supersededCheckCount, 0);
+  assert.deepEqual(
+    workflows.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'build', conclusion: 'FAILURE' },
+      { name: 'build', conclusion: 'SUCCESS' },
+    ],
+  );
+
+  const events = await readRollup([
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 3, event: 'push' }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 4, event: 'pull_request' }),
+  ]);
+  assert.equal(events.checkCount, 2);
+  assert.equal(events.supersededCheckCount, 0);
+  assert.deepEqual(
+    events.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'build', conclusion: 'FAILURE' },
+      { name: 'build', conclusion: 'SUCCESS' },
+    ],
+  );
+});
+
+test('pr-status-read identifies a check run without a workflow run by name and app slug', async () => {
+  const twoApps = await readRollup([
+    checkRun('scan', { conclusion: 'FAILURE', databaseId: 1, workflow: null, app: 'scanner-a' }),
+    checkRun('scan', { conclusion: 'SUCCESS', databaseId: 2, workflow: null, app: 'scanner-b' }),
+  ]);
+  assert.equal(twoApps.checkCount, 2);
+  assert.equal(twoApps.supersededCheckCount, 0);
+  assert.deepEqual(
+    twoApps.checks.map(({ conclusion }) => conclusion),
+    ['FAILURE', 'SUCCESS'],
+  );
+
+  const oneApp = await readRollup([
+    checkRun('scan', { conclusion: 'FAILURE', databaseId: 1, workflow: null, app: 'scanner-a' }),
+    checkRun('scan', { conclusion: 'SUCCESS', databaseId: 2, workflow: null, app: 'scanner-a' }),
+  ]);
+  assert.equal(oneApp.checkCount, 1);
+  assert.equal(oneApp.supersededCheckCount, 1);
+  assert.deepEqual(
+    oneApp.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'scan', conclusion: 'SUCCESS' }],
+  );
+});
+
+test('pr-status-read fails closed to reporting every run of a group with an unusable databaseId', async () => {
+  // Missing, null, and beyond the safe-integer range: none of them orders a run, so the `unit`
+  // group is reported as today while the well-ordered `lint` group next to it is still collapsed.
+  for (const unusable of [undefined, null, 2 ** 53]) {
+    const result = await readRollup([
+      checkRun('unit', { conclusion: 'FAILURE', databaseId: 1 }),
+      checkRun('lint', { conclusion: 'FAILURE', databaseId: 5 }),
+      checkRun('unit', { conclusion: 'SUCCESS', databaseId: unusable }),
+      checkRun('lint', { conclusion: 'SUCCESS', databaseId: 6 }),
+    ]);
+    assert.equal(result.checkCount, 3, `databaseId ${unusable}`);
+    assert.equal(result.supersededCheckCount, 1, `databaseId ${unusable}`);
+    assert.deepEqual(
+      result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+      [
+        { name: 'unit', conclusion: 'FAILURE' },
+        { name: 'unit', conclusion: 'SUCCESS' },
+        { name: 'lint', conclusion: 'SUCCESS' },
+      ],
+      `databaseId ${unusable}`,
+    );
+  }
+});
+
+test('pr-status-read fails closed to reporting every run of a group whose highest databaseId ties', async () => {
+  // Two runs share the highest id, so neither is known to be the latest: the whole `unit` group,
+  // its older lower-id run included, is reported and nothing in it counts as superseded.
+  const result = await readRollup([
+    checkRun('unit', { conclusion: 'FAILURE', databaseId: 1 }),
+    checkRun('unit', { conclusion: 'FAILURE', databaseId: 9 }),
+    checkRun('unit', { conclusion: 'SUCCESS', databaseId: 9 }),
+  ]);
+  assert.equal(result.checkCount, 3);
+  assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(
+    result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'unit', conclusion: 'FAILURE' },
+      { name: 'unit', conclusion: 'FAILURE' },
+      { name: 'unit', conclusion: 'SUCCESS' },
+    ],
+  );
+});
+
+test('pr-status-read reports a check run with an incomplete check suite in full, unmerged', async () => {
+  // Neither run states an identity, so neither may be merged with the other or with the
+  // well-formed same-named run next to it, although its id is the highest.
+  const incomplete = [
+    ['checkSuite: null', null],
+    [
+      'workflowRun.workflow: null',
+      { app: { slug: 'github-actions' }, workflowRun: { event: 'pull_request', workflow: null } },
+    ],
+  ];
+  for (const [label, checkSuite] of incomplete) {
+    const result = await readRollup([
+      checkRun('unit', { conclusion: 'FAILURE', databaseId: 1 }),
+      { ...checkRun('unit', { conclusion: 'SUCCESS', databaseId: 2 }), checkSuite },
+      { ...checkRun('unit', { conclusion: 'SUCCESS', databaseId: 3 }), checkSuite },
+    ]);
+    assert.equal(result.checkCount, 3, label);
+    assert.equal(result.supersededCheckCount, 0, label);
+    assert.deepEqual(
+      result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+      [
+        { name: 'unit', conclusion: 'FAILURE' },
+        { name: 'unit', conclusion: 'SUCCESS' },
+        { name: 'unit', conclusion: 'SUCCESS' },
+      ],
+      label,
+    );
+  }
+});
+
+test('pr-status-read keeps a status context apart from a same-named check run and passes it through', async () => {
+  const result = await readRollup([
+    checkRun('unit', {
+      conclusion: 'SUCCESS',
+      databaseId: 7,
+      startedAt: '2026-09-25T09:00:00Z',
+      completedAt: '2026-09-25T09:03:00Z',
+    }),
+    {
+      __typename: 'StatusContext',
+      context: 'unit',
+      state: 'FAILURE',
+      createdAt: '2026-09-25T09:10:00Z',
+    },
+    // A status context is never collapsed, not even with another context of the same string.
+    {
+      __typename: 'StatusContext',
+      context: 'unit',
+      state: 'SUCCESS',
+      createdAt: '2026-09-25T09:20:00Z',
+    },
+  ]);
+  assert.equal(result.checkCount, 3);
+  assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(checksAsInstants(result.checks), [
+    {
+      name: 'unit',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T09:00:00Z'),
+      completedAt: instant('2026-09-25T09:03:00Z'),
+    },
+    {
+      name: 'unit',
+      status: 'COMPLETED',
+      conclusion: 'FAILURE',
+      startedAt: instant('2026-09-25T09:10:00Z'),
+      completedAt: instant('2026-09-25T09:10:00Z'),
+    },
+    {
+      name: 'unit',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      startedAt: instant('2026-09-25T09:20:00Z'),
+      completedAt: instant('2026-09-25T09:20:00Z'),
+    },
+  ]);
+});
+
+test('pr-status-read states supersededCheckCount right after checkCount, as 0 when nothing collapsed', async () => {
+  for (const statusCheckRollup of [null, [], [checkRun('unit', { databaseId: 1 })]]) {
+    const result = await readRollup(statusCheckRollup);
+    const keys = Object.keys(result);
+    assert.equal(result.supersededCheckCount, 0, JSON.stringify(statusCheckRollup));
+    assert.equal(keys.indexOf('supersededCheckCount'), keys.indexOf('checkCount') + 1);
+  }
+});
+
+test('pr-checks-wait neither collapses same-named checks nor reports their timestamps', async () => {
+  // `gh pr checks` already reports the latest run per name, and its identity stays name-only. The
+  // dedup and the timestamps belong to `pr-status-read` alone, although both reads share
+  // `normalizeCheck`, so a payload carrying repeated names and extra fields reads exactly as before.
+  const checks = {
+    status: 1,
+    stdout: JSON.stringify([
+      {
+        name: 'unit',
+        state: 'FAILURE',
+        bucket: 'fail',
+        link: 'https://ci.example.test/1',
+        workflow: 'CI',
+        event: 'push',
+        startedAt: '2026-09-25T10:00:00Z',
+        completedAt: '2026-09-25T10:05:00Z',
+      },
+      {
+        name: 'unit',
+        state: 'SUCCESS',
+        bucket: 'pass',
+        link: 'https://ci.example.test/2',
+        workflow: 'CI',
+        event: 'pull_request',
+        startedAt: '2026-09-25T11:00:00Z',
+        completedAt: '2026-09-25T11:04:00Z',
+      },
+    ]),
+    stderr: '',
+  };
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12, timeoutMinutes: 1 },
+    { runner: fakeRunner([checks, checks]), skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.result, {
+    number: 12,
+    repository: 'example/flow',
+    complete: true,
+    timedOut: false,
+    checksReported: true,
+    checkCount: 2,
+    checks: [
+      {
+        name: 'unit',
+        status: 'COMPLETED',
+        conclusion: 'FAILURE',
+        url: 'https://ci.example.test/1',
+      },
+      {
+        name: 'unit',
+        status: 'COMPLETED',
+        conclusion: 'SUCCESS',
+        url: 'https://ci.example.test/2',
+      },
+    ],
+  });
+});
+
 test('pr-checks-wait watches with the supplied bound and never filters the watch itself', () => {
   const plan = buildCommandPlan(
     'pr-checks-wait',
@@ -7349,6 +8051,7 @@ test('Forgejo pr-status-read composes three tea api reads addressed by the head 
     url: 'https://code.example.test/team/flow/pulls/12',
     checksReported: true,
     checkCount: 1,
+    supersededCheckCount: 0,
     // Only `name`, `status`, `conclusion` and `url`: no raw Gitea key (`context`, `target_url`,
     // `state`, `id`, `description`) survives into the envelope, and `required` stays absent because
     // Forgejo states no requiredness anywhere.
@@ -7601,6 +8304,65 @@ test('an observed Forgejo status payload maps its finished check to COMPLETED/SU
       url: '/fastner/proxmox/actions/runs/1/jobs/0',
     },
   ]);
+});
+
+test('Forgejo pr-status-read carries created_at as both instants and states supersededCheckCount 0', async () => {
+  // The combined status endpoint already returns one status per context, so nothing is collapsed;
+  // only the output shape follows GitHub's. `created_at` is Gitea's `structs.CommitStatus` field,
+  // and a status without it reports no instant rather than a guessed one.
+  const { envelope } = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: [
+        {
+          id: 3,
+          context: 'ci/build',
+          status: 'success',
+          target_url: 'https://code.example.test/team/flow/actions/7',
+          created_at: '2026-09-25T14:27:40+02:00',
+          updated_at: '2026-09-25T14:29:42+02:00',
+        },
+        { id: 4, context: 'ci/lint', status: 'failure' },
+      ],
+      totalCount: 2,
+    }),
+  );
+  assert.equal(envelope.ok, true);
+  const result = envelope.data.result;
+  assert.equal(result.checkCount, 2);
+  assert.equal(result.supersededCheckCount, 0);
+  const keys = Object.keys(result);
+  assert.equal(keys.indexOf('supersededCheckCount'), keys.indexOf('checkCount') + 1);
+  assert.deepEqual(checksAsInstants(result.checks), [
+    {
+      name: 'ci/build',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      url: 'https://code.example.test/team/flow/actions/7',
+      startedAt: instant('2026-09-25T12:27:40Z'),
+      completedAt: instant('2026-09-25T12:27:40Z'),
+    },
+    { name: 'ci/lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+  ]);
+
+  // Go's zero instant is the marshalled "never set", so it states no instant at all.
+  const zero = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: [
+        { id: 5, context: 'ci/zero', status: 'success', created_at: '0001-01-01T00:00:00Z' },
+      ],
+      totalCount: 1,
+    }),
+  );
+  assert.equal(zero.envelope.ok, true);
+  assert.deepEqual(zero.envelope.data.result.checks, [
+    { name: 'ci/zero', status: 'COMPLETED', conclusion: 'SUCCESS' },
+  ]);
+
+  // An unreported rollup states the count as well.
+  const unreported = await forgejoStatus(forgejoStatusResults());
+  assert.equal(unreported.envelope.ok, true);
+  assert.equal(unreported.envelope.data.result.checksReported, false);
+  assert.equal(unreported.envelope.data.result.supersededCheckCount, 0);
 });
 
 test('a Forgejo entry carrying only `state` still maps through the fallback', async () => {
