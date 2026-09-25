@@ -7525,9 +7525,18 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
       'gives a status context or Forgejo status only its completedAt',
     ],
     [/`supersededCheckCount`/, 'reports the superseded count'],
+    [
+      /carries its `createdAt` as `completedAt` only, with no `startedAt`/,
+      'gives a status context only its createdAt as completedAt',
+    ],
   ]) {
     assert.match(status, pattern, `pr-status-read ${message}`);
   }
+  assert.doesNotMatch(
+    status,
+    /as both timestamps/,
+    'pr-status-read never gives a status context both timestamps',
+  );
   const wait = prose(
     section(source('src/shared/pr-review-comments.md'), '### Wait for pending checks'),
   );

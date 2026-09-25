@@ -181,7 +181,7 @@ The check list holds **only the latest run per check identity**: name plus workf
 workflow names are not unique) and triggering event, or name plus app slug where the run states `workflowRun: null`. The run
 with the highest `databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the highest
 one, is not collapsed, nor is a run with an incomplete identity (no workflow id, no event, a check suite without a stated workflow run, or no check suite or app slug). A commit-status context keeps its own identity, is never merged with a check run, and
-carries its `createdAt` as both timestamps. `supersededCheckCount` counts the dropped runs (`0` on
+carries its `createdAt` as `completedAt` only, with no `startedAt`. `supersededCheckCount` counts the dropped runs (`0` on
 Forgejo, which already returns one status per context).
 
 `headCommittedAt` is the reference side of every "newer than the current head" question, paired with
