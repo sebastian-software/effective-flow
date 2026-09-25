@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.65.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.64.0...effective-flow-v1.65.0) (2026-09-25)
+
+
+### Features
+
+* add a hidden mode that keeps Effective Flow out of the repository ([#459](https://github.com/sebastian-software/effective-flow/issues/459)) ([7ebba7a](https://github.com/sebastian-software/effective-flow/commit/7ebba7a4b9fe411105a179a2abc2cf41148fa86b))
+* add pilot measurement lifecycle ([8c2e2f9](https://github.com/sebastian-software/effective-flow/commit/8c2e2f991fb847b2841c6cd47437f010b31063fc))
+* declare the central skills authoritative for commit and ADR conventions ([#454](https://github.com/sebastian-software/effective-flow/issues/454)) ([c628f3f](https://github.com/sebastian-software/effective-flow/commit/c628f3fa72058213a1bf24d339da24a2417f55a1))
+* define execution profile activation contract ([#456](https://github.com/sebastian-software/effective-flow/issues/456)) ([7d1dcd5](https://github.com/sebastian-software/effective-flow/commit/7d1dcd55d6e15047f1c3dd6d05c7d310d258599c))
+* delegate diagnostic depth to effective-delivery ([#448](https://github.com/sebastian-software/effective-flow/issues/448)) ([1a49994](https://github.com/sebastian-software/effective-flow/commit/1a499941b59fc269fb337dbf4611b23674c617f5))
+* gate merge-gate eval freshness at the release pull request ([#445](https://github.com/sebastian-software/effective-flow/issues/445)) ([dcd2897](https://github.com/sebastian-software/effective-flow/commit/dcd28974f5fae9ab5c8032d3921aec2b9da2c8bc))
+* render native execution profiles ([32e6288](https://github.com/sebastian-software/effective-flow/commit/32e628820a48973eb313a54e6e2d7fc021293c86))
+
+
+### Bug Fixes
+
+* bound the gate's own trigger comments per head and scope the check-wait question ([#446](https://github.com/sebastian-software/effective-flow/issues/446)) ([cecb5e5](https://github.com/sebastian-software/effective-flow/commit/cecb5e54fb731ca540a9a48f32cb0f543005a888))
+* close the eleven remaining review notes ([#451](https://github.com/sebastian-software/effective-flow/issues/451)) ([45950b0](https://github.com/sebastian-software/effective-flow/commit/45950b029db939e0cfcac29d2f2864573a393c97))
+* document the Forgejo account class and drop a fallback that cannot fire ([#442](https://github.com/sebastian-software/effective-flow/issues/442)) ([139273e](https://github.com/sebastian-software/effective-flow/commit/139273e684b148fb14d0e41006e009a2c0d4c33d))
+* keep the product name out of hidden-mode branch slugs ([#460](https://github.com/sebastian-software/effective-flow/issues/460)) ([864ed65](https://github.com/sebastian-software/effective-flow/commit/864ed65d3865f5aba341d77a180213a2c8f74d2b))
+* make every worktree-creating tool write its lifecycle record ([#462](https://github.com/sebastian-software/effective-flow/issues/462)) ([d7e0f91](https://github.com/sebastian-software/effective-flow/commit/d7e0f91a47b25845ef29043301a13a9b056431e3))
+* scan file names and normative documentation for the retired brand ([#439](https://github.com/sebastian-software/effective-flow/issues/439)) ([b3716ca](https://github.com/sebastian-software/effective-flow/commit/b3716cac6b4055cad964b492f455e344d43893ac))
+* stop merge-gate before provisioning when the head branch is occupied ([#463](https://github.com/sebastian-software/effective-flow/issues/463)) ([d0046fb](https://github.com/sebastian-software/effective-flow/commit/d0046fba5ac4f2784e47f308b78f06c597638cf5))
+* synchronise the eval round test on a release sentinel, not a fixed hold ([#447](https://github.com/sebastian-software/effective-flow/issues/447)) ([bf749fb](https://github.com/sebastian-software/effective-flow/commit/bf749fb26176bafcc80775d4d6c65600afec8be2))
+
 ## [1.64.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.63.0...effective-flow-v1.64.0) (2026-09-19)
 
 
