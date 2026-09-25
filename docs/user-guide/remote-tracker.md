@@ -555,7 +555,12 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   at all is reported by name rather than treated as passed. A reviewer that has run is not triggered
   again at the same head, with one exception: when its latest verdict requests changes and another
   check run was re-run after that verdict and came back green, the gate re-posts the trigger once
-  for that verdict, and reports the verdict as stale if the reviewer does not answer. A commit
+  for that verdict, and reports the verdict as stale if the reviewer does not answer. The re-run
+  must have replaced an earlier run of the same check, which `pr-status-read` reports as
+  `supersededRuns` of at least `1` on that entry; a check whose first run merely started after the
+  verdict never qualifies, and neither does a job re-run inside one workflow run, which GitHub's
+  rollup cannot distinguish from a first run, so such a verdict is not re-triggered and keeps
+  blocking like any changes-requested verdict. A commit
   status never counts as a re-run, so on Forgejo, where every check is a commit status, this never
   fires.
 - **`pr-checks-wait` runs two `gh` commands, not one.** `gh` rejects `--watch` together with
@@ -644,7 +649,11 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   slug – which fails closed to reporting every run. The
   truncation check runs first, and `checkCount` counts the entries that remain. The record adds
   `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
-  whose combined status already holds one entry per context), and a check run carries `startedAt`
+  whose combined status already holds one entry per context), and every check entry carries an
+  integer `supersededRuns`: how many earlier runs of its check identity that entry replaced.
+  It is `1` or more only on the kept entry of a collapsed group, and `0` for a check's only run,
+  for every entry of a group that was not collapsed, for a commit-status context, and always on
+  Forgejo; `supersededCheckCount` is the sum over all entries. A check run carries `startedAt`
   and `completedAt` where the provider supplies them; a commit status (a GitHub status context or a
   Forgejo status) carries only `completedAt`, its creation time.
   `pr-checks-wait` is unchanged and carries neither.

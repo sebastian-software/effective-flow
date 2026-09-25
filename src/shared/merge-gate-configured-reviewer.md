@@ -259,11 +259,17 @@ entries that denote the same reviewer – two spellings of one account are one r
        the loaded "Automatic reviewer state", is changes-requested and has a provable `submittedAt`;
      - at least one **other** check's latest run – an entry of the `pr-status-read` list, which
        reports the latest run per check identity – has a `startedAt` strictly later than that
-       `submittedAt` and concluded `SUCCESS`, so it was re-run after the review. An entry matching
-       the reviewer's own configured `.check` does not count, a `SKIPPED` or `NEUTRAL` conclusion
-       does not count, and a check without `startedAt` does not count. That covers every commit
-       status context and every Forgejo status: they report only `completedAt`, the time their final
-       status was posted, so a slow first run that finishes after the verdict never qualifies;
+       `submittedAt`, concluded `SUCCESS`, and states `supersededRuns` of at least 1: it replaced
+       an earlier run of the same check identity, so it was re-run after the review. An entry
+       matching the reviewer's own configured `.check` does not count, a `SKIPPED` or `NEUTRAL`
+       conclusion does not count, and a check without `startedAt` does not count. That covers every
+       commit status context and every Forgejo status: they report only `completedAt`, the time their
+       final status was posted, so a slow first run that finishes after the verdict never qualifies. A
+       check's first run that merely starts after the verdict – a queued or dependency-gated job –
+       states `supersededRuns: 0` and does not qualify, nor does an entry of a group
+       `pr-status-read` could not collapse. GitHub's rollup already drops the superseded attempts of
+       a re-run within one workflow run, so such an in-run re-run also states `0` and does not
+       qualify: that fails closed to no re-trigger, which is accepted;
      - no own trigger comment exists whose `createdAt` is not older than that `submittedAt`, identified
        by the body and author rule of step 3's idempotency check. This is the bound: **at most one
        re-trigger per changes-requested verdict**.
@@ -281,21 +287,22 @@ entries that denote the same reviewer – two spellings of one account are one r
      A re-read that observes the reviewer as **running** ends the run with step 4's report, carrying
      the stale-verdict item and the re-trigger's `createdAt`, and hands nothing to `{{SKILL:iterate}}`.
      Otherwise continue this step on the re-read. A new changes-requested answer is a new verdict,
-     re-triggered only when a check other than the reviewer's own is started after it and concludes
+     re-triggered only when a check other than the reviewer's own is re-run after it and concludes
      `SUCCESS`, so an unmoved head with settled checks cannot loop – given the own-check exclusion
-     and the started-after and `SUCCESS` conditions. A repository workflow triggered by the review
-     event itself, such as `pull_request_review`, starts a new run after every verdict and can
-     requalify each one; that is bounded to one re-trigger per verdict and by `mergeGate.maxRounds`
-     per run, not prevented.
+     and the re-run and `SUCCESS` conditions. A repository workflow triggered by the review event
+     itself, such as `pull_request_review`, starts a new run after every verdict that supersedes its
+     previous run, so from its second run on it can requalify each one; that is bounded to one
+     re-trigger per verdict and by `mergeGate.maxRounds` per run, not prevented.
 
    - **Unlike step 3, an unprovable comparison posts nothing here.** Report "staleness unprovable"
      instead only when the other conditions otherwise hold and one comparison cannot be made: the
-     verdict has no `submittedAt` while another check with `startedAt` concluded `SUCCESS`, or a
-     comment with the trigger body has no `createdAt` or no establishable author. A re-trigger that
-     cannot recognize its own earlier comment would post on every run. These comment-provenance gaps
-     are evaluated only when a qualifying re-run check exists. An entry without `startedAt` – every
-     status context and every Forgejo status – never counts and never by itself makes staleness
-     unprovable: with no qualifying check the verdict is simply not stale. Post nothing either when no
+     verdict has no `submittedAt` while another check with `startedAt` and `supersededRuns` of at
+     least 1 concluded `SUCCESS`, or a comment with the trigger body has no `createdAt` or no
+     establishable author. A re-trigger that cannot recognize its own earlier comment would post on
+     every run. These comment-provenance gaps are evaluated only when a qualifying re-run check
+     exists. An entry without `startedAt` – every status context and every Forgejo status – or with
+     `supersededRuns: 0` never counts and never by itself makes staleness unprovable: with no
+     qualifying check the verdict is simply not stale. Post nothing either when no
      trigger text is configured for that login, or when this verdict's re-trigger was already posted.
    - **No configured `.check`, no re-trigger.** The own-check exclusion of the second condition is
      what keeps the reviewer's own signal out of the qualifying checks, and without a configured
@@ -303,7 +310,7 @@ entries that denote the same reviewer – two spellings of one account are one r
      run after submitting its review would qualify its own signal as a re-run and be re-triggered at
      every changes-requested verdict, across every gate run at an unmoved head. Post nothing then;
      this rule is evaluated before the other reasons and replaces them. When the verdict is
-     changes-requested at `VERIFIED_HEAD_SHA` and a check started after it concluded `SUCCESS` –
+     changes-requested at `VERIFIED_HEAD_SHA` and a check re-run after it concluded `SUCCESS` –
      which may be the reviewer's own – record the stale-verdict state with the reason "no `.check`
      configured to exclude the reviewer's own signal", together with a recommendation to configure
      `.check` or to re-trigger the reviewer by hand. This is report wording only: a bot without

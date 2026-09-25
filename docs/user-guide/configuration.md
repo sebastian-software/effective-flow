@@ -469,7 +469,11 @@ running** from one that has **not started**: it waits for the former and trigger
 One exception applies to a reviewer with `.check` configured that has already run: when its latest
 verdict at the unchanged head requests changes, and another check run (never a commit status) was
 re-run after that verdict and came back green, the verdict is stale, so the gate posts the trigger
-once more for that verdict and waits once. A reviewer that does not answer with a new review, or a
+once more for that verdict and waits once. A re-run here means a run that replaced an earlier run
+of the same check; a check whose first run merely started after the verdict, such as a queued or
+dependency-gated job, does not count. A job re-run inside the same workflow run cannot be told apart
+from a first run, so it does not count either: the verdict is then not treated as stale, is not
+re-triggered, and keeps blocking like any changes-requested verdict. A reviewer that does not answer with a new review, or a
 stale verdict the gate cannot re-trigger – no trigger configured, no `.check` configured, a
 timestamp or author it cannot prove, or the re-trigger already posted – is reported as a stale
 verdict with a recommendation to re-trigger by hand; the verdict still blocks as before.

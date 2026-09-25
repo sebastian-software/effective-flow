@@ -2786,8 +2786,10 @@ function checkRunIdentity(node) {
 // workflow run, but GitHub's rollup already lists only that job's latest attempt, so two same-named
 // runs of one workflow run are distinct jobs sharing a display name, and GraphQL exposes no per-job
 // id that could order them. Only runs of different workflow runs supersede one another. The
-// app-slug fallback carries no workflow-run id and collapses as before. `pr-checks-wait` shares
-// `normalizeCheck` but not this step; its output stays unchanged.
+// app-slug fallback carries no workflow-run id and collapses as before. Each kept run also carries
+// how many runs of its identity it superseded: at least 1 only for the kept run of a collapsed group,
+// 0 everywhere else, so a caller can tell a re-run from a first run that merely started late.
+// `pr-checks-wait` shares `normalizeCheck` but not this step; its output stays unchanged.
 function latestCheckRuns(rollup) {
   const groups = new Map();
   rollup.forEach((node, index) => {
@@ -2799,6 +2801,7 @@ function latestCheckRuns(rollup) {
     else members.push(member);
   });
   const superseded = new Set();
+  const supersededBy = new Map();
   for (const members of groups.values()) {
     if (members.length < 2) continue;
     const runIds = members
@@ -2811,10 +2814,13 @@ function latestCheckRuns(rollup) {
     if (ids.filter((id) => id === highest).length !== 1) continue;
     members.forEach((member, position) => {
       if (ids[position] !== highest) superseded.add(member.index);
+      else supersededBy.set(member.index, members.length - 1);
     });
   }
   return {
-    nodes: rollup.filter((_, index) => !superseded.has(index)),
+    runs: rollup.flatMap((node, index) =>
+      superseded.has(index) ? [] : [{ node, supersededRuns: supersededBy.get(index) ?? 0 }],
+    ),
     supersededCount: superseded.size,
   };
 }
@@ -3113,8 +3119,8 @@ function normalizePullRequestStatus(item, repository) {
   // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
   // field, and an unstated mergeability fails closed everywhere it is consumed.
   const mergeable = upperCaseField(item.mergeable);
-  const { nodes: latest, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
-  const checks = latest.map(statusCheck);
+  const { runs, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
+  const checks = runs.map(({ node, supersededRuns }) => ({ ...statusCheck(node), supersededRuns }));
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
@@ -3140,7 +3146,8 @@ function normalizePullRequestStatus(item, repository) {
     // merge a commit whose CI never ran.
     checksReported: Array.isArray(rollup),
     checkCount: checks.length,
-    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was.
+    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was. It
+    // equals the sum of the per-check `supersededRuns`.
     supersededCheckCount: supersededCount,
     checks,
   };

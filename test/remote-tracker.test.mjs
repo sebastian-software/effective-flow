@@ -5964,13 +5964,15 @@ test('pr-status-read reads head, base, merge state, and checks in a single GitHu
         status: 'COMPLETED',
         conclusion: 'SUCCESS',
         url: 'https://github.com/example/flow/actions/runs/1',
+        supersededRuns: 0,
       },
-      { name: 'lint', status: 'PENDING' },
+      { name: 'lint', status: 'PENDING', supersededRuns: 0 },
       {
         name: 'ci/legacy',
         status: 'COMPLETED',
         conclusion: 'FAILURE',
         url: 'https://ci.example.test/9',
+        supersededRuns: 0,
       },
     ],
   });
@@ -6766,6 +6768,25 @@ function blockingChecks(checks) {
   );
 }
 
+// Every `pr-status-read` check states `supersededRuns` as its last key: a non-negative safe integer,
+// at least 1 only on the kept run of a collapsed group. The per-check values are the one place the
+// dropped runs are attributed, so they must add up to the top-level `supersededCheckCount`. Returns
+// the values in check order so a test can pin each entry.
+function supersededRunsOf(result) {
+  const values = result.checks.map((check) => {
+    assert.ok(Number.isSafeInteger(check.supersededRuns), JSON.stringify(check));
+    assert.ok(check.supersededRuns >= 0, JSON.stringify(check));
+    assert.equal(Object.keys(check).at(-1), 'supersededRuns', JSON.stringify(check));
+    return check.supersededRuns;
+  });
+  assert.equal(
+    values.reduce((sum, value) => sum + value, 0),
+    result.supersededCheckCount,
+    'the per-check supersededRuns sum to supersededCheckCount',
+  );
+  return values;
+}
+
 // Workflow-run ids handed out by `checkRun` when a call names none, so every such call lands in a
 // workflow run of its own, the way a re-run on an unmoved head does.
 let nextWorkflowRunId = 36_200_000_000;
@@ -7140,6 +7161,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:29:42Z'),
+      supersededRuns: 2,
     },
     {
       name: 'Close referenced issues',
@@ -7147,6 +7169,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       conclusion: closeConclusion,
       startedAt: instant('2026-09-25T12:32:48Z'),
       completedAt: instant('2026-09-25T12:32:53Z'),
+      supersededRuns: 2,
     },
     {
       name: 'Generated README',
@@ -7154,6 +7177,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:27:50Z'),
+      supersededRuns: 2,
     },
     {
       name: 'Shellcheck',
@@ -7161,6 +7185,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:27:46Z'),
+      supersededRuns: 2,
     },
     {
       name: 'Manager compatibility',
@@ -7168,6 +7193,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:27:56Z'),
+      supersededRuns: 2,
     },
     // The status context carries its creation instant as its completion only: it has no start.
     {
@@ -7175,6 +7201,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
       completedAt: instant('2026-09-25T09:22:31Z'),
+      supersededRuns: 0,
     },
   ];
 
@@ -7184,6 +7211,9 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
   assert.equal(historical.checkCount, 6);
   assert.equal(historical.supersededCheckCount, 10);
   assert.deepEqual(checksAsInstants(historical.checks), expectedChecks('SKIPPED'));
+  // Each of the five check-run identities kept its latest of three runs; the status context is
+  // never collapsed. The kept entries account for every dropped run.
+  assert.deepEqual(supersededRunsOf(historical), [2, 2, 2, 2, 2, 0]);
   assert.deepEqual(
     blockingChecks(historical.checks).map(({ name, conclusion }) => ({ name, conclusion })),
     [{ name: 'Close referenced issues', conclusion: 'SKIPPED' }],
@@ -7194,6 +7224,7 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
   assert.equal(observed.checkCount, 6);
   assert.equal(observed.supersededCheckCount, 10);
   assert.deepEqual(checksAsInstants(observed.checks), expectedChecks('SUCCESS'));
+  assert.deepEqual(supersededRunsOf(observed), [2, 2, 2, 2, 2, 0]);
   assert.deepEqual(blockingChecks(observed.checks), []);
 });
 
@@ -7214,6 +7245,7 @@ test('pr-status-read reports a superseded FAILURE re-run green as one COMPLETED/
   ]);
   assert.equal(result.checkCount, 1);
   assert.equal(result.supersededCheckCount, 1);
+  assert.deepEqual(supersededRunsOf(result), [1]);
   assert.deepEqual(checksAsInstants(result.checks), [
     {
       name: 'unit',
@@ -7221,6 +7253,7 @@ test('pr-status-read reports a superseded FAILURE re-run green as one COMPLETED/
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T11:00:00Z'),
       completedAt: instant('2026-09-25T11:04:00Z'),
+      supersededRuns: 1,
     },
   ]);
 });
@@ -7240,7 +7273,12 @@ test('pr-status-read keeps the latest run whatever its state, wherever it sits i
   ]);
   assert.equal(pending.supersededCheckCount, 1);
   assert.deepEqual(checksAsInstants(pending.checks), [
-    { name: 'unit', status: 'PENDING', startedAt: instant('2026-09-25T13:00:00Z') },
+    {
+      name: 'unit',
+      status: 'PENDING',
+      startedAt: instant('2026-09-25T13:00:00Z'),
+      supersededRuns: 1,
+    },
   ]);
 
   // The latest run comes first in the node list, and its id is the larger number but the smaller
@@ -7263,6 +7301,7 @@ test('pr-status-read keeps the latest run whatever its state, wherever it sits i
       conclusion: 'FAILURE',
       startedAt: instant('2026-09-25T14:00:00Z'),
       completedAt: instant('2026-09-25T14:02:00Z'),
+      supersededRuns: 1,
     },
   ]);
 });
@@ -7276,6 +7315,7 @@ test('pr-status-read keeps same-named jobs of different workflows or events apar
   ]);
   assert.equal(workflows.checkCount, 2);
   assert.equal(workflows.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(workflows), [0, 0]);
   assert.deepEqual(
     workflows.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7290,6 +7330,7 @@ test('pr-status-read keeps same-named jobs of different workflows or events apar
   ]);
   assert.equal(events.checkCount, 2);
   assert.equal(events.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(events), [0, 0]);
   assert.deepEqual(
     events.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7329,6 +7370,7 @@ test('pr-status-read keeps same-named jobs of two workflows that share a name ap
   ]);
   assert.equal(result.checkCount, 2);
   assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(result), [0, 0]);
   assert.deepEqual(
     result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7353,6 +7395,7 @@ test('pr-status-read keeps two same-named jobs of one workflow run apart', async
   ]);
   assert.equal(result.checkCount, 2);
   assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(result), [0, 0]);
   assert.deepEqual(
     result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7376,6 +7419,8 @@ test('pr-status-read collapses runs of distinct workflow runs but not a group ho
   ]);
   assert.equal(distinct.checkCount, 1);
   assert.equal(distinct.supersededCheckCount, 2);
+  // The kept run states both runs it replaced.
+  assert.deepEqual(supersededRunsOf(distinct), [2]);
   assert.deepEqual(
     distinct.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [{ name: 'build', conclusion: 'SUCCESS' }],
@@ -7393,6 +7438,10 @@ test('pr-status-read collapses runs of distinct workflow runs but not a group ho
   ]);
   assert.equal(mixed.checkCount, 4);
   assert.equal(mixed.supersededCheckCount, 1);
+  // Every entry of the uncollapsed `build` group states 0, the later workflow run's `build`
+  // included, although it started after the others: it is not provably a re-run. Only the kept
+  // `lint` run states the one run it replaced.
+  assert.deepEqual(supersededRunsOf(mixed), [0, 0, 0, 1]);
   assert.deepEqual(
     mixed.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7415,6 +7464,7 @@ test('pr-status-read identifies a check run without a workflow run by name and a
   ]);
   assert.equal(twoApps.checkCount, 2);
   assert.equal(twoApps.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(twoApps), [0, 0]);
   assert.deepEqual(
     twoApps.checks.map(({ conclusion }) => conclusion),
     ['FAILURE', 'SUCCESS'],
@@ -7426,6 +7476,7 @@ test('pr-status-read identifies a check run without a workflow run by name and a
   ]);
   assert.equal(oneApp.checkCount, 1);
   assert.equal(oneApp.supersededCheckCount, 1);
+  assert.deepEqual(supersededRunsOf(oneApp), [1]);
   assert.deepEqual(
     oneApp.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [{ name: 'scan', conclusion: 'SUCCESS' }],
@@ -7444,6 +7495,8 @@ test('pr-status-read fails closed to reporting every run of a group with an unus
     ]);
     assert.equal(result.checkCount, 3, `databaseId ${unusable}`);
     assert.equal(result.supersededCheckCount, 1, `databaseId ${unusable}`);
+    // Both `unit` runs state 0, the one without a usable id included; only `lint` collapsed.
+    assert.deepEqual(supersededRunsOf(result), [0, 0, 1], `databaseId ${unusable}`);
     assert.deepEqual(
       result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
       [
@@ -7466,6 +7519,8 @@ test('pr-status-read fails closed to reporting every run of a group whose highes
   ]);
   assert.equal(result.checkCount, 3);
   assert.equal(result.supersededCheckCount, 0);
+  // Neither tied run is known to have replaced anything, so no entry claims a superseded run.
+  assert.deepEqual(supersededRunsOf(result), [0, 0, 0]);
   assert.deepEqual(
     result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [
@@ -7546,6 +7601,8 @@ test('pr-status-read reports a check run with an incomplete check suite in full,
     ]);
     assert.equal(result.checkCount, 3, label);
     assert.equal(result.supersededCheckCount, 0, label);
+    // A run with an incomplete identity, and the well-formed singleton beside it, state 0.
+    assert.deepEqual(supersededRunsOf(result), [0, 0, 0], label);
     assert.deepEqual(
       result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
       [
@@ -7582,6 +7639,7 @@ test('pr-status-read keeps a status context apart from a same-named check run an
   ]);
   assert.equal(result.checkCount, 3);
   assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(result), [0, 0, 0]);
   assert.deepEqual(checksAsInstants(result.checks), [
     {
       name: 'unit',
@@ -7589,6 +7647,7 @@ test('pr-status-read keeps a status context apart from a same-named check run an
       conclusion: 'SUCCESS',
       startedAt: instant('2026-09-25T09:00:00Z'),
       completedAt: instant('2026-09-25T09:03:00Z'),
+      supersededRuns: 0,
     },
     // A status context's one instant is the posting of its final state, a completion time. It has
     // no start, so it can never pass for a check re-run after a review.
@@ -7597,12 +7656,14 @@ test('pr-status-read keeps a status context apart from a same-named check run an
       status: 'COMPLETED',
       conclusion: 'FAILURE',
       completedAt: instant('2026-09-25T09:10:00Z'),
+      supersededRuns: 0,
     },
     {
       name: 'unit',
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
       completedAt: instant('2026-09-25T09:20:00Z'),
+      supersededRuns: 0,
     },
   ]);
   // `deepEqual` already rejects an extra key; this states the rule on its own so a regression names
@@ -7614,12 +7675,53 @@ test('pr-status-read keeps a status context apart from a same-named check run an
   }
 });
 
+test('pr-status-read states supersededRuns 0 on a first run that merely starts after the others', async () => {
+  // A queued or dependency-gated job's first run starts long after its siblings and can conclude
+  // SUCCESS after a review was submitted. It replaced no earlier run, so it must not read as a
+  // re-run: the stale-verdict re-trigger keys on `supersededRuns`, not on `startedAt` alone.
+  const result = await readRollup([
+    checkRun('unit', {
+      databaseId: 1,
+      startedAt: '2026-09-25T09:00:00Z',
+      completedAt: '2026-09-25T09:05:00Z',
+    }),
+    checkRun('deploy-preview', {
+      databaseId: 2,
+      startedAt: '2026-09-25T18:00:00Z',
+      completedAt: '2026-09-25T18:04:00Z',
+    }),
+  ]);
+  assert.equal(result.checkCount, 2);
+  assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(result), [0, 0]);
+
+  // The same late job, once re-run in a later workflow run, is a re-run: its kept run states 1.
+  const rerun = await readRollup([
+    checkRun('deploy-preview', {
+      conclusion: 'FAILURE',
+      databaseId: 2,
+      startedAt: '2026-09-25T18:00:00Z',
+      completedAt: '2026-09-25T18:04:00Z',
+    }),
+    checkRun('deploy-preview', {
+      databaseId: 3,
+      startedAt: '2026-09-25T19:00:00Z',
+      completedAt: '2026-09-25T19:04:00Z',
+    }),
+  ]);
+  assert.deepEqual(supersededRunsOf(rerun), [1]);
+});
+
 test('pr-status-read states supersededCheckCount right after checkCount, as 0 when nothing collapsed', async () => {
   for (const statusCheckRollup of [null, [], [checkRun('unit', { databaseId: 1 })]]) {
     const result = await readRollup(statusCheckRollup);
     const keys = Object.keys(result);
     assert.equal(result.supersededCheckCount, 0, JSON.stringify(statusCheckRollup));
     assert.equal(keys.indexOf('supersededCheckCount'), keys.indexOf('checkCount') + 1);
+    assert.deepEqual(
+      supersededRunsOf(result),
+      result.checks.map(() => 0),
+    );
   }
 });
 
@@ -7681,6 +7783,10 @@ test('pr-checks-wait neither collapses same-named checks nor reports their times
       },
     ],
   });
+  // `supersededRuns` belongs to `pr-status-read` alone, like the dedup it describes.
+  for (const check of result.data.result.checks) {
+    assert.equal(Object.hasOwn(check, 'supersededRuns'), false, check.name);
+  }
 });
 
 test('pr-checks-wait watches with the supplied bound and never filters the watch itself', () => {
@@ -8304,6 +8410,7 @@ test('Forgejo pr-status-read composes three tea api reads addressed by the head 
         status: 'COMPLETED',
         conclusion: 'SUCCESS',
         url: 'https://code.example.test/team/flow/actions/7',
+        supersededRuns: 0,
       },
     ],
   });
@@ -8511,6 +8618,7 @@ test('every Gitea commit-status state maps to one check record', async () => {
       name: `ci/${index}`,
       status,
       ...(conclusion === undefined ? {} : { conclusion }),
+      supersededRuns: 0,
     })),
   );
 });
@@ -8545,6 +8653,7 @@ test('an observed Forgejo status payload maps its finished check to COMPLETED/SU
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
       url: '/fastner/proxmox/actions/runs/1/jobs/0',
+      supersededRuns: 0,
     },
   ]);
 });
@@ -8574,6 +8683,7 @@ test('Forgejo pr-status-read carries created_at as completedAt only and states s
   const result = envelope.data.result;
   assert.equal(result.checkCount, 2);
   assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(result), [0, 0]);
   const keys = Object.keys(result);
   assert.equal(keys.indexOf('supersededCheckCount'), keys.indexOf('checkCount') + 1);
   assert.deepEqual(checksAsInstants(result.checks), [
@@ -8583,8 +8693,9 @@ test('Forgejo pr-status-read carries created_at as completedAt only and states s
       conclusion: 'SUCCESS',
       url: 'https://code.example.test/team/flow/actions/7',
       completedAt: instant('2026-09-25T12:27:40Z'),
+      supersededRuns: 0,
     },
-    { name: 'ci/lint', status: 'COMPLETED', conclusion: 'FAILURE' },
+    { name: 'ci/lint', status: 'COMPLETED', conclusion: 'FAILURE', supersededRuns: 0 },
   ]);
   // No Forgejo status carries a start, not even one whose `created_at` is set.
   for (const check of result.checks) {
@@ -8602,7 +8713,7 @@ test('Forgejo pr-status-read carries created_at as completedAt only and states s
   );
   assert.equal(zero.envelope.ok, true);
   assert.deepEqual(zero.envelope.data.result.checks, [
-    { name: 'ci/zero', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    { name: 'ci/zero', status: 'COMPLETED', conclusion: 'SUCCESS', supersededRuns: 0 },
   ]);
 
   // An unreported rollup states the count as well.
@@ -8626,8 +8737,8 @@ test('a Forgejo entry carrying only `state` still maps through the fallback', as
   );
   assert.equal(envelope.ok, true);
   assert.deepEqual(envelope.data.result.checks, [
-    { name: 'ci/legacy', status: 'COMPLETED', conclusion: 'FAILURE' },
-    { name: 'ci/shadowed', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    { name: 'ci/legacy', status: 'COMPLETED', conclusion: 'FAILURE', supersededRuns: 0 },
+    { name: 'ci/shadowed', status: 'COMPLETED', conclusion: 'SUCCESS', supersededRuns: 0 },
   ]);
 });
 

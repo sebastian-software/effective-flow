@@ -172,7 +172,7 @@ dropped.
 Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
 in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
 the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
-one, URL, and for a check run `startedAt` and `completedAt` where supplied, while a status context or Forgejo status carries `completedAt` only), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
+one, URL, and for a check run `startedAt` and `completedAt` where supplied, while a status context or Forgejo status carries `completedAt` only, and `supersededRuns`), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
 timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
 — exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
 deliberate: both values must be read at the same instant to be consistent.
@@ -182,7 +182,7 @@ workflow names are not unique) and triggering event, or name plus app slug where
 with the highest `databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the highest
 one, is not collapsed, nor is a group holding two runs of one workflow run (distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt), nor is a run with an incomplete identity (no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite or app slug). A commit-status context keeps its own identity, is never merged with a check run, and
 carries its `createdAt` as `completedAt` only, with no `startedAt`. `supersededCheckCount` counts the dropped runs (`0` on
-Forgejo, which already returns one status per context).
+Forgejo, which already returns one status per context). Every check states `supersededRuns`, the number of earlier runs of its identity it replaced: at least 1 only for the kept run of a collapsed group, `0` for a singleton, for every entry of a group not collapsed, for a run with an incomplete identity, and for every status context or Forgejo status; the per-check values sum to `supersededCheckCount`.
 
 `headCommittedAt` is the reference side of every "newer than the current head" question, paired with
 the `createdAt` of a comment, thread, or reply. Both sides are required: with either one absent the

@@ -7054,6 +7054,23 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     near('`startedAt` strictly later than that `submittedAt`', 'concluded `SUCCESS`', 80),
     'only a check started strictly after the verdict and concluded SUCCESS may qualify',
   );
+  // Started after the verdict is not re-run after it: a queued or dependency-gated job's first run
+  // can start late and succeed with nothing re-run. Only an entry that replaced an earlier run of
+  // its own identity, as `pr-status-read` states per check, proves a re-run.
+  assert.match(
+    retrigger,
+    near('concluded `SUCCESS`', 'states `supersededRuns` of at least 1', 20),
+    'a qualifying check must also state supersededRuns of at least 1',
+  );
+  assert.match(
+    retrigger,
+    near(
+      '`supersededRuns` of at least 1',
+      'replaced an earlier run of the same check identity',
+      20,
+    ),
+    'supersededRuns of at least 1 must be tied to a superseded earlier run of the same check',
+  );
   assert.match(
     retrigger,
     /reviewer's own configured `\.check` does not count/,
@@ -7091,6 +7108,25 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     secondCondition,
     near('every commit status context and every Forgejo status', 'report only `completedAt`', 30),
     'a status context and a Forgejo status must be stated to report only completedAt',
+  );
+  assert.match(
+    secondCondition,
+    near(
+      "check's first run that merely starts after the verdict",
+      'states `supersededRuns: 0` and does not qualify',
+      80,
+    ),
+    'a first run that merely starts after the verdict must not qualify',
+  );
+  assert.match(
+    secondCondition,
+    near('nor does an entry of a group', 'could not collapse', 40),
+    'an entry of an uncollapsed group must not qualify',
+  );
+  assert.match(
+    secondCondition,
+    near('in-run re-run also states `0`', 'fails closed to no re-trigger', 60),
+    'an in-run re-run the rollup hides must fail closed to no re-trigger',
   );
   assert.match(
     retrigger,
@@ -7188,6 +7224,26 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
       100,
     ),
     'an entry without startedAt must never by itself make staleness unprovable',
+  );
+  // A first run that merely started late is not a re-run, so it is no evidence of staleness and
+  // no gap in its proof either.
+  assert.match(
+    unprovable,
+    near(
+      'or with `supersededRuns: 0`',
+      'never counts and never by itself makes staleness unprovable',
+      20,
+    ),
+    'an entry with supersededRuns 0 must never by itself make staleness unprovable',
+  );
+  assert.match(
+    unprovable,
+    near(
+      'verdict has no `submittedAt` while another check with `startedAt` and `supersededRuns` of at least 1',
+      'concluded `SUCCESS`',
+      20,
+    ),
+    'a missing submittedAt is unprovable only beside a SUCCESS re-run with supersededRuns >= 1',
   );
   assert.match(
     unprovable,
@@ -7301,6 +7357,15 @@ test('a reviewer without a configured .check is never re-triggered on a stale ve
   );
   assert.match(
     noCheck,
+    near(
+      'changes-requested at `VERIFIED_HEAD_SHA`',
+      'a check re-run after it concluded `SUCCESS`',
+      20,
+    ),
+    'the missing-.check report must key on a check re-run after the verdict',
+  );
+  assert.match(
+    noCheck,
     /with the reason "no `\.check` configured to exclude the reviewer's own signal"/,
     'a stale verdict without .check must be reported with its own reason',
   );
@@ -7337,9 +7402,10 @@ test('a reviewer without a configured .check is never re-triggered on a stale ve
 });
 
 test('the stale-verdict no-loop claim is qualified and names what only bounds a review-event workflow', () => {
-  // "Cannot loop" holds only because of the own-check exclusion and the started-after and SUCCESS
-  // conditions. A workflow triggered by the review event starts a new run after every verdict and
-  // requalifies each one; that is bounded, not prevented, and the text must say so.
+  // "Cannot loop" holds only because of the own-check exclusion and the re-run and SUCCESS
+  // conditions. A workflow triggered by the review event starts a new run after every verdict that
+  // supersedes its previous one, so from its second run on it requalifies each verdict; that is
+  // bounded, not prevented, and the text must say so.
   const retrigger = prose(
     boundedSlice(
       configuredReviewerSection('## Phase 3: Automatic reviewer round'),
@@ -7349,14 +7415,19 @@ test('the stale-verdict no-loop claim is qualified and names what only bounds a 
   );
   assert.match(
     retrigger,
-    near("check other than the reviewer's own is started after it", 'concludes `SUCCESS`', 20),
-    'a new verdict must requalify only through another check started after it that succeeds',
+    near("check other than the reviewer's own is re-run after it", 'concludes `SUCCESS`', 20),
+    'a new verdict must requalify only through another check re-run after it that succeeds',
+  );
+  assert.doesNotMatch(
+    retrigger,
+    /check other than the reviewer's own is started after it/,
+    'a check merely started after the new verdict must no longer requalify it',
   );
   assert.match(
     retrigger,
     near(
       'cannot loop',
-      'given the own-check exclusion and the started-after and `SUCCESS` conditions',
+      'given the own-check exclusion and the re-run and `SUCCESS` conditions',
       10,
     ),
     'the no-loop claim must be qualified by the conditions it rests on',
@@ -7368,8 +7439,13 @@ test('the stale-verdict no-loop claim is qualified and names what only bounds a 
   );
   assert.match(
     retrigger,
-    near('`pull_request_review`', 'requalify each one', 80),
-    'a review-event workflow must be named as able to requalify every verdict',
+    near('`pull_request_review`', 'supersedes its previous run', 60),
+    'a review-event workflow must be named as superseding its previous run',
+  );
+  assert.match(
+    retrigger,
+    near('from its second run on', 'requalify each one', 30),
+    'a review-event workflow must be named as able to requalify every verdict from its second run',
   );
   assert.match(
     retrigger,
@@ -7529,6 +7605,31 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
       'gives a status context or Forgejo status only its completedAt',
     ],
     [/`supersededCheckCount`/, 'reports the superseded count'],
+    [/Every check states `supersededRuns`/, 'states supersededRuns on every check'],
+    [
+      near(
+        'the number of earlier runs of its identity it replaced',
+        'at least 1 only for the kept run of a collapsed group',
+        20,
+      ),
+      'defines supersededRuns as the replaced runs, at least 1 only on a collapsed group',
+    ],
+    [
+      /`0` for a singleton, for every entry of a group not collapsed, for a run with an incomplete identity, and for every status context or Forgejo status/,
+      'states supersededRuns 0 wherever no run was superseded',
+    ],
+    [
+      /the per-check values sum to `supersededCheckCount`/,
+      'ties the per-check values to the top-level count',
+    ],
+    [
+      near(
+        'a status context or Forgejo status carries `completedAt` only',
+        'and `supersededRuns`',
+        20,
+      ),
+      'lists supersededRuns among the fields of every check',
+    ],
     [
       /carries its `createdAt` as `completedAt` only, with no `startedAt`/,
       'gives a status context only its createdAt as completedAt',

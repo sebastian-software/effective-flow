@@ -278,7 +278,8 @@
                 "url": "https://github.com/example/flow/actions/runs/1",
                 "required": true,
                 "startedAt": "2026-09-08T10:01:10.000Z",
-                "completedAt": "2026-09-08T10:04:32.000Z"
+                "completedAt": "2026-09-08T10:04:32.000Z",
+                "supersededRuns": 0
               }
             ]
           },

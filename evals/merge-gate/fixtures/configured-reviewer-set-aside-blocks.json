@@ -303,7 +303,8 @@
                 "url": "https://github.com/example/flow/actions/runs/1",
                 "required": true,
                 "startedAt": "2026-09-01T09:01:10.000Z",
-                "completedAt": "2026-09-01T09:04:32.000Z"
+                "completedAt": "2026-09-01T09:04:32.000Z",
+                "supersededRuns": 0
               },
               {
                 "name": "recensor",
@@ -312,7 +313,8 @@
                 "url": "https://github.com/example/flow/checks/recensor",
                 "required": false,
                 "startedAt": "2026-09-01T09:01:14.000Z",
-                "completedAt": "2026-09-01T10:19:58.000Z"
+                "completedAt": "2026-09-01T10:19:58.000Z",
+                "supersededRuns": 0
               }
             ]
           },
