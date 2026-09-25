@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.65.0...effective-flow-v1.66.0) (2026-09-25)
+
+
+### Features
+
+* pin the merge-gate eval profile to gpt-6-sol at medium effort ([#465](https://github.com/sebastian-software/effective-flow/issues/465)) ([fc84de8](https://github.com/sebastian-software/effective-flow/commit/fc84de8447f9cf5f565f4ecd9bc320214b070f84))
+
 ## [1.65.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.64.0...effective-flow-v1.65.0) (2026-09-25)
 
 
