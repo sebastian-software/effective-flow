@@ -15,8 +15,10 @@ file and carry no pointer. The reason is reachability, not rendering: a pointer 
 "Handback and completion action" would sit in the region that in-place execution without delivery is
 told to skip, and that is the one mode which archives unconditionally today.
 
-This fragment carries no runtime-state write guard, because it needs none: the private runtime
-directory is outside its scope entirely — it neither reads from nor writes to it. Its one destructive
+This fragment carries no runtime-state write guard, because it needs none: outside hidden mode the
+private runtime directory is outside its scope entirely — it neither reads from nor writes to it.
+The hidden arm below is the one exception and applies "Runtime-state write safety" (the
+`runtime-state-safety` building block) to its archive directory and target. Its one destructive
 act is on a **project** file: the redundant untracked plan copy in the main checkout, whose
 preconditions and whose relationship to the worktree-cleanup prohibition are stated under
 "Main-checkout cleanup".
@@ -32,13 +34,15 @@ configuration:
 - the plan file's repository-relative path.
 - the plan's complete language, for the status marker.
 - the delivery shape: worktree, in-place with delivery, or in-place without delivery.
+- whether hidden mode (`visibility: hidden`) is active; when it is, only the hidden arm applies.
 - optionally, the delivery branch's creation OID, when the run recorded one. It refines one report
   line and decides nothing. An absent creation OID is not an error and never blocks: three of the
   delivery shapes record none, and a cosmetic detail may not decide whether a plan is archived.
 
 ### Detection
 
-Derive the two paths from the supplied basis, and check the basis first. If the basis already lies
+In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the
+hidden arm below. Otherwise derive the two paths from the supplied basis, and check the basis first. If the basis already lies
 under `<plan.dir>/archive/`, this run has nothing to archive — take the archived-basis arm below and
 derive nothing. Otherwise `<file>.md` is the basis's file name, `P` is `<plan.dir>/<file>.md` and `A`
 is `<plan.dir>/archive/<file>.md`, both repository-relative. Deriving `A` from an archived basis
@@ -229,9 +233,40 @@ complete language; this contract changes only when and where it is written, neve
   cleanup runs here too: `P` and `A` are different paths in the same tree, so the redundant copy is
   present exactly as in every other shape.
 
+### Hidden arm
+
+With `visibility: hidden` the resolved `plan.dir` lies below the private runtime directory of the
+main checkout and the plan was never tracked, so there is nothing to take over and the main-checkout
+copy is the **only** copy. Every operation runs in `RUNTIME_STATE_ROOT`, passed explicitly, whatever
+the delivery shape — worktree, in-place with delivery, and in-place without delivery alike:
+
+1. If the basis already lies under `<plan.dir>/archive/`, take the archived-basis result and change
+   nothing. Otherwise derive `P` and `A` exactly as under "Detection", as absolute paths under
+   `RUNTIME_STATE_ROOT`.
+2. If `P` does not exist in `RUNTIME_STATE_ROOT`, stop: report the missing path and change nothing.
+3. Require `git -C <RUNTIME_STATE_ROOT> ls-files -z -- ':(literal)<P>' ':(literal)<A>'` to list
+   nothing, and apply "Runtime-state write safety" to `<plan.dir>/archive` and to `A` (ignore state,
+   containment, no symlinks). Any other result blocks archival and is reported: a plan that is not
+   ignored, or is tracked, would leave a trace this arm exists to prevent.
+4. If a file already exists at `A`, stop: report both paths and change nothing. This is the
+   collision rule of this contract; never overwrite, never pick one.
+5. Set the canonical status marker of `P` to the implemented value of the plan's own language by
+   writing a temporary file beside `P` and renaming it over `P`. The order is mark → move, the
+   hidden counterpart of read → take over → mark: a failure before the move leaves an
+   implemented-marked plan at top level, which a retry archives, never an archived plan still marked
+   open.
+6. Run `mkdir -p <plan.dir>/archive`, then move `P` to `A` with a plain no-clobber move
+   (`mv -n`) and verify that `A` exists and `P` is gone. A move that `-n` declined because `A`
+   appeared in the meantime is the collision stop: report both paths and that `P` already carries
+   the implemented marker; nothing else changed.
+
+The hidden arm stages nothing, takes nothing into `EXECUTION_ROOT`, adds no plan state to the
+handback commit, and runs **no** main-checkout cleanup: removing the only copy would lose the plan.
+Its report line names the archive path in the main checkout, or the stop with both paths.
+
 ### Report vocabulary
 
-Exactly one archival line per run, in one of five shapes:
+Exactly one archival line per run, in one of five shapes (the hidden arm reports its own line):
 
 - archived a tracked plan (State A), with the archive path;
 - archived as a new file (State C), with the archive path;

@@ -394,9 +394,35 @@ no skill directory or none fits, this step is a no-op — continue without an er
 7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
+
 ### Phase 2: Implementation
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+0. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree is
+   created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt to every worker in phases 2–6 (implementation, docs, tests, validation, review);
    each write-capable boundary revalidates it and roots every operation there.
@@ -560,8 +586,9 @@ Rules for the findings report:
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
-7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
-8. Emit the next-step block per `next-steps` as the last element of the report.
+7. Run the worktree-record exit self-check.
+8. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
+9. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Rules
 

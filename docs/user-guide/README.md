@@ -25,6 +25,8 @@ New to Effective Flow? Read in this order:
      tool's possible follow-ups in one table.
    - [Configuration](configuration.md) – the complete project-setup ADR reference and profile
      overlay mappings.
+   - [Model-tiering pilot data and privacy](model-tiering-pilot.md) – local evidence, detailed
+     consent, review, retention, deletion, and publication boundaries.
    - [Worktree and delivery](worktree-and-delivery.md) – parallel work in
      Git worktrees, delivery branch, pull request/merge/branch completion.
    - [Remote tracker](remote-tracker.md) – keep issue-backed work on GitHub/Forgejo or an
@@ -48,6 +50,7 @@ New to Effective Flow? Read in this order:
 | [tools-deliver.md](tools-deliver.md)                 | Tool reference: local delivery, commit, PR & merge gate |
 | [tools-setup.md](tools-setup.md)                     | Tool reference: profiles, setup, cleanup & version      |
 | [configuration.md](configuration.md)                 | Project-setup ADR and profile overlay reference         |
+| [model-tiering-pilot.md](model-tiering-pilot.md)     | Pilot data, privacy, retention, and deletion            |
 | [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types             |
 | [remote-tracker.md](remote-tracker.md)               | Forge and external issue routing                        |
 | [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                        |

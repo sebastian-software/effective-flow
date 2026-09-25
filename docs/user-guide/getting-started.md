@@ -87,11 +87,35 @@ For Claude Code, use the corresponding settings:
 }
 ```
 
-These are recommendations, not settings written or enforced by Effective Flow. Native
-Effective Flow workers select their own role profiles: implementers and reviewers favor
-quality, while documentation, testing, validation, and other support roles use a more
-economical profile. Portable installations do not carry native model metadata; their delegated
-workers follow the consuming manager and harness instead.
+These are caller recommendations, not settings written or enforced by Effective Flow. The caller
+still owns interpretation, orchestration, risk classification, and escalation. Native Effective
+Flow workers currently use separate role-specific assignments: implementers and reviewers favor
+the strongest configured capability, while documentation, testing, validation, and other support
+roles use a more economical assignment. Portable installations do not carry native model metadata;
+their delegated workers follow the consuming manager and harness instead.
+
+**Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
+strongest available configured implementation capability and is always the safe default. Fast
+means a distinct native lower-cost, lower-latency implementation capability for a bounded packet
+that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
+or weakens later validation and review.
+
+Native builds now contain the enforcement representation for that policy. Claude Code receives five
+generated Fast implementer sidecars, while Codex keeps each base worker and can apply explicit
+`model` and `reasoning_effort` parameters to an individual spawn. Native inventories let the local
+installer reject missing, extra, malformed, or cross-target-inconsistent sidecars before it changes
+an installation. Those artifacts establish build and installation consistency, not runtime
+discovery or activation.
+
+No current workflow requests that representation: `build` and `refactor` have not adopted Fast,
+setup offers no profile switch, and current runs therefore remain Quality-only. When a later work
+package adopts the policy, Fast may be requested only for the first implementation attempt of an
+eligible native packet. Any retry, correction, validation repair, review incorporation, conflict
+resolution, or scope-growth continuation uses Quality; coupled packets also share Quality.
+Portable installations remain Quality-only in V1 and contain no native sidecar inventory or model
+metadata. See the
+[configuration reference](./configuration.md#block-executionprofiles) for the reserved default-off
+key.
 
 Claude skills can request a different caller model or effort for their current turn, but that
 selection does not persist across the next user prompt. Effective Flow deliberately leaves this
@@ -107,6 +131,14 @@ Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment variable has higher prece
 agent's own model declaration. Leave it unset when you want Effective Flow's native Claude
 workers to use their role-specific model selection. Other user, project, or invocation-level
 harness overrides may likewise affect the effective caller or worker model.
+
+The runtime execution-profile gate treats the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. When a
+profile-aware workflow reaches selection, Effective Flow checks presence only—it never reads,
+displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
+without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
+attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
+with Quality. Current `build` and `refactor` runs do not reach this selection path yet.
 
 ## First invocation
 
@@ -194,6 +226,14 @@ profiles require a verifiable GitHub or Forgejo `origin`; setup never guesses th
 downgrades silently. Use `/effective-flow setup guided` when you need provider overrides or other
 per-setting control, and `/effective-flow setup express` when you deliberately want the
 safe-default path without the profile questions.
+
+After the profile, setup asks **Visibility**. Keep `Standard` for a project that adopts Effective
+Flow: its configuration then lives in a tracked ADR. Choose `Hidden`, or run
+`/effective-flow setup hidden`, when you use Effective Flow alone in a repository whose team has not
+adopted it. Configuration, plans, and concepts then stay in the untracked `.effective-flow/`
+directory, which is ignored through Git's `info/exclude`. Branch names, commits, pull requests, and
+forge comments do not mention Effective Flow. See
+[Hidden mode](configuration.md#hidden-mode) for what changes.
 
 The tracker choice governs work that already has an issue reference. A natural-language
 `/effective-flow plan "…"` call still writes a local plan under `plan.dir`; choosing a forge or

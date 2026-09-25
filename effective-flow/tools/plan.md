@@ -72,7 +72,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a legacy runtime directory migration is about to mutate `.effective-flow/`.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a legacy runtime directory migration is about to mutate `.effective-flow/`, or a hidden-mode plan write targets a path below `.effective-flow/`.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 

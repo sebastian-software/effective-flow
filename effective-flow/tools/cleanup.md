@@ -527,26 +527,32 @@ legacy directories remains an explicit, user-confirmed responsibility of `effect
 
 ## Effective Flow configuration (project setup ADR)
 
-The tracked truth for the Effective Flow configuration is a living ADR "Effective
-Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
-ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
-is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
-pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
-completely gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective Flow project
+setup" (default slug `effective-flow-project-setup`, see fragment "Living ADR model"). It carries
+the config parameters with minimal prose as a **Markdown table**. There is **no**
+`.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a private runtime
+directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`), completely ignored through
+`.gitignore` or, in hidden mode, the Git common directory's `info/exclude`.
 
 ### Config locator (resolution order)
 
 When reading the configuration, the project setup ADR is resolved in this order; the
 first matching step wins:
 
+0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
+   checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
+   mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
-   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
-   equivalent on read; the spelling stays here because it is the **detection** predicate, while
-   what that recognition then triggers belongs to the deferred building block below. If the
-   marker points to a path under which **no** ADR lives
-   (dead/stale marker), do not stay there, but fall through in this order and report the stale
-   marker (correction in effective-flow setup).
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
+   `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
+   read; the spelling stays here because it is the **detection** predicate, while what that
+   recognition then triggers belongs to the deferred building block below. If the marker points to a
+   path under which **no** ADR lives (dead/stale marker), do not stay there, but fall through in
+   this order and report the stale marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
    file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
@@ -562,10 +568,10 @@ first matching step wins:
 
 The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
 transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
-the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
-in the Git-touching path of effective-flow setup.
+the run (see "Table encoding"). Creating the ADR, the markers, the local hidden configuration and
+the migration happen exclusively in effective-flow setup.
 
-**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -580,6 +586,13 @@ English in both envelopes, including `(empty)`. Writers (effective-flow setup, m
 language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
+- **`executionProfiles.fast.enabled`** → strict Boolean and fail-closed. A missing row or literal
+  `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
+  Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
+  literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
+  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
+  is not yet an interactive setup choice.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -591,9 +604,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.
@@ -614,9 +626,8 @@ value cell). Example excerpt (interface sketch, not full content):
 | worktree.enabled                  | true    |
 ```
 
-If the table is invalid or ambiguous (missing key, unknown encoding): use a
-safe default for the run, inform the user about the affected key,
-do **not** guess.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a safe default for the
+run, inform the user about the affected key, do **not** guess.
 
 ## Issue-tracker integration (remote mode)
 
@@ -670,7 +681,7 @@ Reading the Effective Flow configuration from the project setup ADR (including t
 
 At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`. In hidden mode (config locator step 0) no argument overrides the forced `local` target: an issue reference stops the run instead.
 2. **Per-run wish of the user:** A **generic** wish for issue/tracker work ("as issues", "publish to the tracker") activates the **configured** target and never redirects a run to a different one; without a configured target it selects `remote`. Only a wish that explicitly names the forge (GitHub, Forgejo, `origin`) selects `remote`, and only a wish that explicitly names the configured external tool selects `external`. If the user explicitly requests local work ("local", "without issues", "report only"), `local` is active — that stays the escape hatch on every target.
 3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
 4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.
@@ -723,6 +734,12 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
 - **Do not write config.** This skill does not itself write carried-over config values into the project setup ADR — `effective-flow setup` is responsible for that (see Phase 3).
 - **Do not edit `.gitignore`.** Inventory and report outdated entries, then route normalization
   to `effective-flow setup`, the sole repair owner.
+- **Never touch hidden mode's ignore entry.** The `.effective-flow/` line in
+  `$(git rev-parse --git-common-dir)/info/exclude` is the active counterpart that hidden mode relies
+  on, never a legacy remnant: inventory it and leave it untouched. The local hidden configuration
+  `.effective-flow/project-setup.md` is current configuration, not a legacy `config.json`, and the
+  hidden-mode processed-thread ledger `.effective-flow/merge-gate/thread-ledger.json` that
+  `effective-flow iterate` keeps is current runtime state, never a leftover.
 - **Delete only with consent.** Every deletion happens only after a dry run and explicit confirmation.
 
 ## Legacy classes
@@ -772,6 +789,9 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
+   - **`info/exclude`:** read `$(git rev-parse --git-common-dir)/info/exclude` read-only and note
+     whether it carries the `.effective-flow/` line. Inventory that line as the **active
+     counterpart** of hidden mode, never as a legacy remnant and never as a removal candidate.
    - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker-forge.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
 5. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
@@ -945,6 +965,8 @@ Report to the user:
 - what was carried over (files to `.effective-flow/`) and which config values `effective-flow setup` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed
 - which outdated `.gitignore` lines remain and that `effective-flow setup` owns their repair, not this run
+- whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
+  hidden mode's active ignore entry that this run left untouched
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - worktrees removed successfully, with their checkout identities and retained/deleted branch
   outcomes
@@ -982,6 +1004,7 @@ report that found neither matches no row and emits nothing.
 - Do not write config yourself; config carry-over runs through `effective-flow setup`.
 - Never edit `.gitignore`; inventory and report outdated entries and route repair to
   `effective-flow setup`.
+- Leave the `.effective-flow/` line in `info/exclude` untouched; it is active, not legacy.
 - For label cleanup, first add `effective-flow-`, then detach `firmo-` from the issue; the label definition remains.
 - Never classify a worktree from age, last-modified time, base-directory shape, branch prefix, or
   apparent emptiness. There is no TTL, heartbeat, stale-after threshold, or automatic crash

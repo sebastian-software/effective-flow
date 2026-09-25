@@ -46,3 +46,7 @@ Documentation of the project state before the first feature workflow.
 4. If an initial plan file was created, record it in the wisdom file.
 
 Important: The plan file in the completion phase gets its date-slug name according to `Plan file convention`.
+
+In hidden mode (`visibility: hidden`) `<plan.dir>` is the forced local plan directory in the main
+checkout (`RUNTIME_STATE_ROOT`): the initial-state plan lives only there and is never staged,
+committed, or taken into a delivery branch.

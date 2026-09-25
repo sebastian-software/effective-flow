@@ -67,6 +67,8 @@ If no task tool is available, give the user a short progress update after each c
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a hidden-mode concept write targets a path below `.effective-flow/`.
+
 **Load on demand:** Read `shared/concept-contract.md`, when a concept artifact's directory, file name, status, or sections are resolved or written.
 
 **Load on demand:** Read `shared/session-title.md`, when the run's subject is fixed and whether a session title is due must be decided.

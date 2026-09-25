@@ -640,10 +640,10 @@ subject to every drift check, invariant, verification step, and abort boundary b
    envelope (`ok: false`) ends this check with one notice line naming its error code; continue
    without an update. A failed or stale fetch, or one reported as `fetch.skipped`, ends this check
    with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`,
-   `up-to-date`, and `ahead`, with no question. Only `behind`, `behind-overlap`, and `diverged`
-   proceed to the fragment below, and only when the fetch was not attempted, or `fetch.ok` is true
-   and `fetch.stale` is false. A local upstream (`branch.<name>.remote = .`) is compared without
-   fetching, so its fetch is not attempted.
+   `untracked-upstream`, `up-to-date`, and `ahead`, with no question. Only `behind`,
+   `behind-overlap`, and `diverged` proceed to the fragment below, and only when the fetch was not
+   attempted, or `fetch.ok` is true and `fetch.stale` is false. A local upstream
+   (`branch.<name>.remote = .`) is compared without fetching, so its fetch is not attempted.
 
 **Load on demand:** Read `shared/source-upstream-sync.md`, when upstream-status reports behind, behind-overlap, or diverged.
 
@@ -653,7 +653,11 @@ worktree state.
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
    `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
    contract. `deliver` reports that its explicit PR intent replaces any different configured
-   `delivery.completion`; it does not change the stored value.
+   `delivery.completion`; it does not change the stored value. Record whether hidden mode
+   (`visibility: hidden`, config locator step 0) is active: then no derived commit message, branch
+   name, or pull-request title or body may name Effective Flow or reference a path under
+   `.effective-flow/`, and this run hands that constraint on to `effective-flow commit` and
+   `effective-flow pr`.
 3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
    `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
    later comparison. Do not write it to tracked files or runtime state.
@@ -678,7 +682,8 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
    exact OID before creating delivery artifacts.
-2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name. Verify both the proposed
+2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
+   the prefix is empty (the hidden-mode default). In hidden mode, sanitize the slug first, as step 4 "Construct delivery branch names" of `worktree-integration` does: remove every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow` — with the letters or digits attached to it up to the nearest hyphen, collapse repeated or edge hyphens, repeat both until the slug no longer matches the rule, use `change` if nothing remains, and report the original and the chosen slug in one line. Verify both the proposed
    branch and absolute worktree path are unused in refs and `git worktree list --porcelain`.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate

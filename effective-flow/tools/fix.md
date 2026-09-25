@@ -179,6 +179,8 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 
 This building block describes the read-only core of a bug and behavior investigation. The investigation steps described here are themselves read-only: they change no code and write no tests; a reproduction happens within these steps only through observation – running existing checks, describing logs and behavior – or through a documented reproduction guide. Whether the embedding workflow additionally produces a reproduction test is decided by that workflow itself (e.g. `effective-flow fix` additionally writes a failing test); `effective-flow investigate`, by contrast, stays fully read-only.
 
+Diagnostic depth — competing hypotheses, a discriminating reproduction, epistemic labels, outcome classes and the intervention level — follows `effective-delivery` wherever that skill is available: it is the authority for how deep a diagnosis goes. Its rules on where an investigation report lives, on when it may be saved, on how it is returned in the conversation, on runtime directories, on hypothesis ledgers and on mandatory report paths do **not** apply here, because the embedding workflow's report path, its transient wisdom file, its routing and its own scope stay binding. Steps 1 and 4 below are the baseline that skill deepens and the minimal fallback when it is absent; steps 2 and 3 stay active in every run.
+
 ### Investigate symptom and code
 
 1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
@@ -374,9 +376,35 @@ no skill directory or none fits, this step is a no-op — continue without an er
 7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
+
 ### Phase 3: Fix
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+0. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree is
+   created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
    roots every operation there.
@@ -455,13 +483,15 @@ items, then pass the residual batch through “Gated residual review-finding rep
    - begin the note with `✅` and name at least the date and workflow
 4. Delete the wisdom file.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
-6. Summarize:
+6. Run the worktree-record exit self-check.
+7. Summarize:
    - root cause
    - changes
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
-7. Emit the next-step block per `next-steps` as the last element of the report.
+   - worktree-record exit self-check result
+8. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Pre-commit gate
 

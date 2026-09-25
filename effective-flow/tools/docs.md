@@ -516,9 +516,35 @@ Ask the user: **Documentation plan approved?**
 - Yes -- Approval granted, the workflow continues with Phase 2
 - Adjust -- Enter feedback as free text
 
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
+
 ### Phase 2: Implementation
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+0. Read the deferred `worktree-integration` fragment now – a mandatory load before any worktree is
+   created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 2–3 (implementation and validation); each write-capable boundary
    revalidates it and roots every operation there.
@@ -581,13 +607,15 @@ Ask the user: **Documentation plan approved?**
      corresponding prose for the no-findings case
 3. Delete the wisdom file.
 4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Declare to that handback that this workflow supplies **no** complete finding set — it has no review phase at all — so an automatic PR review reviews the pull request itself. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
-5. Summarize:
+5. Run the worktree-record exit self-check.
+6. Summarize:
    - changed documentation areas
    - checked sources
    - validation performed
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
-6. Emit the next-step block per `next-steps` as the last element of the report.
+   - worktree-record exit self-check result
+7. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Pre-commit gate
 

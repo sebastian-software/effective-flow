@@ -38,6 +38,9 @@ session changes into coherent commits on a fresh branch and opens a pull request
 - **Runs without configuration, grows with it.** Effective Flow works right after
   installation; anyone who wants to control review depth, worktree behavior or
   issue-tracker integration does so through the living Effective Flow project-setup ADR.
+  In a repository whose team has not adopted Effective Flow, `setup hidden` keeps the
+  configuration, plans and concepts local and untracked, and leaves no trace in commits,
+  branches or pull requests.
 
 ## Language support
 

@@ -100,26 +100,32 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 ## Effective Flow configuration (project setup ADR)
 
-The tracked truth for the Effective Flow configuration is a living ADR "Effective
-Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
-ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
-is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
-pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
-completely gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective Flow project
+setup" (default slug `effective-flow-project-setup`, see fragment "Living ADR model"). It carries
+the config parameters with minimal prose as a **Markdown table**. There is **no**
+`.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a private runtime
+directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`), completely ignored through
+`.gitignore` or, in hidden mode, the Git common directory's `info/exclude`.
 
 ### Config locator (resolution order)
 
 When reading the configuration, the project setup ADR is resolved in this order; the
 first matching step wins:
 
+0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
+   checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
+   mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
-   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
-   equivalent on read; the spelling stays here because it is the **detection** predicate, while
-   what that recognition then triggers belongs to the deferred building block below. If the
-   marker points to a path under which **no** ADR lives
-   (dead/stale marker), do not stay there, but fall through in this order and report the stale
-   marker (correction in effective-flow setup).
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
+   `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
+   read; the spelling stays here because it is the **detection** predicate, while what that
+   recognition then triggers belongs to the deferred building block below. If the marker points to a
+   path under which **no** ADR lives (dead/stale marker), do not stay there, but fall through in
+   this order and report the stale marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
    file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
@@ -135,10 +141,10 @@ first matching step wins:
 
 The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
 transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
-the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
-in the Git-touching path of effective-flow setup.
+the run (see "Table encoding"). Creating the ADR, the markers, the local hidden configuration and
+the migration happen exclusively in effective-flow setup.
 
-**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -153,6 +159,13 @@ English in both envelopes, including `(empty)`. Writers (effective-flow setup, m
 language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
+- **`executionProfiles.fast.enabled`** → strict Boolean and fail-closed. A missing row or literal
+  `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
+  Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
+  literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
+  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
+  is not yet an interactive setup choice.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -164,9 +177,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.
@@ -187,9 +199,8 @@ value cell). Example excerpt (interface sketch, not full content):
 | worktree.enabled                  | true    |
 ```
 
-If the table is invalid or ambiguous (missing key, unknown encoding): use a
-safe default for the run, inform the user about the affected key,
-do **not** guess.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a safe default for the
+run, inform the user about the affected key, do **not** guess.
 
 **Load on demand:** Read `shared/durable-follow-up-gate.md`, when a valid_out_of_scope review item is about to be classified for durable work or terminal closure.
 
@@ -356,6 +367,31 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 
 **Load on demand:** Read `shared/worktree-integration.md`, when Phase 1 must provision the PR head checkout, or must read `delivery.baseBranch` for the local-mode diff.
 
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
+
 This workflow keeps no plan file — it feeds review notes back into an existing pull request — so
 it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
 archiving.
@@ -455,7 +491,8 @@ requests, read CLI credentials, or invent a fallback. In particular:
 Reads execute immediately. Mutations are dry runs by default: inspect the returned executable,
 argument vector, and redacted input preview, obtain every workflow-specific approval that still
 applies, and only then repeat the same operation with `--apply`. A dry run never changes Git,
-tracker state, memory, labels, issues, pull requests, comments, or review threads.
+tracker state, memory, labels, issues, pull requests, comments, or review threads. Redaction covers
+credential shapes, not quoted content: the preview echoes review and comment bodies verbatim.
 
 ### Remote helper
 
@@ -564,9 +601,9 @@ A delegating caller may suppress that comment, and `effective-flow merge-gate` d
 delegates. Four grounds carry that, none of them about how a later read classifies the author. One
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
-request receives the same content in the gate's own chat summary. The gate's stated guarantee — a
-gate-initiated run leaves **at most one** item of its own on the pull request, its trigger comment —
-is false the moment a delegated round adds a second. And a gate authenticated as a **different**
+request receives the same content in the gate's own chat summary. The gate's stated bound — its own
+items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
 dropped.
@@ -632,12 +669,13 @@ operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
-report the still-pending checks and ask the user once instead.
+report the still-pending checks and ask the user instead – **once per run**, not once per repeated
+wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
@@ -697,6 +735,11 @@ still-present old marker `<!-- firmo-iterate -->` from an earlier run is recogni
 is exclusively `<!-- effective-flow-iterate -->`. This keeps a second `effective-flow iterate` run on the
 same PR clean.
 
+**Hidden mode (`visibility: hidden`)** writes no marker: pass that `visibility` on every comment
+build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body` call, and let no
+published text name Effective Flow; the helper refuses such text on each of them. A marker is then
+no evidence; `effective-flow iterate` reads its processed-thread ledger instead.
+
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
@@ -737,6 +780,9 @@ later `effective-flow iterate` run reads to recognize a thread it has already an
 reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
 second time.
 
+In hidden mode (`visibility: hidden`), pass that value: nothing is stamped, and
+`effective-flow iterate`'s processed-thread ledger records the answered thread instead.
+
 ### Resolve a thread
 
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
@@ -765,6 +811,8 @@ references in its text, and report the reduced fidelity; do not improvise a prov
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
 `effective-flow iterate` reads as its own already-processed work.
+
+**Load on demand:** Read `shared/pr-thread-ledger.md`, when hidden mode (`visibility: hidden`) is resolved and Phase 2 classification or a Phase 5 reply is imminent.
 
 ## Automatic reviewer state
 
@@ -1300,7 +1348,7 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
      comment per delegated round accumulates on someone's pull request — so an unsuppressed run
      publishes onto a discussion surface the caller is deliberately keeping bounded.
      effective-flow merge-gate is the example: it may delegate up to `mergeGate.maxRounds` rounds and
-     guarantees that a gated run leaves at most one item of its own on the pull request, and a gate
+     bounds its own items to one trigger comment per configured bot per verified head, and a gate
      authenticated as a **different** account than this run additionally reads that summary as
      someone else's writing.
 
@@ -1414,8 +1462,18 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   a finding nobody in this run can see.
 
   Take the free-text instructions in as additional items.
-  Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
-  fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
+  Fetch the PR head branch (update via fetch/pull without rebase or force). When the invocation
+  checkout is clean and already on the head branch, work in place: no worktree, no record.
+  When `git worktree list --porcelain` shows the head branch checked out in any other state (a
+  dirty invocation checkout or another linked worktree), stop before provisioning – no worktree,
+  no record, no `--force` or detached workaround – and report which checkout holds the branch and
+  that it must be cleaned or released first. Otherwise read the deferred `worktree-integration` fragment – a mandatory load before the
+  worktree is created – and create one Effective Flow-owned worktree for the existing head branch
+  without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
+  receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
+  immediately per the worktree record obligation. Phase 5's handback closes it after the push
+  (`active` → `cleanup-ready` → claim → remove → reconcile); a controlled stop sets `aborted`, an
+  error `failed`, both retaining worktree and branch. If the PR is already merged/closed, report that and optionally
   offer local mode.
 
 - **Local mode:** Take the complete open diff of the current branch against
@@ -1501,6 +1559,8 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
    output, not third-party input — unless the user names those threads explicitly. The
    effective-flow merge-gate gate needs no exclusion of its own: it writes nothing into a review thread,
    so no thread on a pull request is ever the gate's own reply.
+   In hidden mode (`visibility: hidden`) no marker is evidence: take both exclusions from the
+   loaded `pr-thread-ledger` lookup instead, which excludes every `resolved` and `recorded` thread.
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
      unchanged default and the only behavior an interactive invocation ever sees.
@@ -1509,8 +1569,8 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
    - **`threads=<id>,<id>`** — exactly the threads whose ID is in the list, plus the free text only
      when the delegation supplied free text as well. A caller-supplied ID names its thread
      explicitly, so the marker-based exclusions above do not remove it; a `resolved` thread and a
-     thread already carrying an `<!-- effective-flow-iterate -->` reply stay excluded, because this
-     workflow already addressed them.
+     thread already carrying an `<!-- effective-flow-iterate -->` reply (in hidden mode: one the
+     ledger reports `recorded`) stay excluded, because this workflow already addressed them.
    - **An empty selection is a valid result.** If the filter matches no item — every named thread
      was resolved between the caller's read and this delegation — continue with **no** items:
      report the empty selection, implement nothing, push nothing, reply to nothing, resolve
@@ -1674,9 +1734,13 @@ and stop delivery for reconciliation.
    and report the required manual resolution. If the reply is unsupported too, write nothing into
    the thread, leave it unresolved, and report reply and resolution as manual – in a gate-delegated
    run the return carries that, since the summary comment is suppressed. The helper stamps the marker
-   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand.
+   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand. In hidden mode it
+   stamps none: record each posted reply per the loaded `pr-thread-ledger`, and let no reply name
+   Effective Flow.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
-   `<!-- effective-flow-iterate -->`): which items
+   `<!-- effective-flow-iterate -->`; unmarked in hidden mode, never naming Effective Flow or a
+   path below `.effective-flow/`, with `visibility: hidden` passed to both the comment build and
+   the `pr-comment` mutation): which items
    were implemented or skipped and which pure questions are open/deferred (without a
    substantive auto-reply). **Skip this step entirely when Phase 0 received
    `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the
@@ -1685,18 +1749,21 @@ and stop delivery for reconciliation.
    read out of its prose.
 4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
    **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
-   reviews the pull request itself.
+   reviews the pull request itself. Its step 4 withdraws the worktree this run created in Phase 1.
 
 ### Phase 6: Summary
 
 1. Delete the wisdom file.
-2. Give the user a summary:
+2. Run the worktree-record exit self-check.
+3. Give the user a summary:
    - table: one row per item with its processing outcome – implemented, skipped, deferred question,
      failed, or deselected – and, for every caller-supplied identifier, the value that outcome maps
      onto per "Returned outcome record"
    - PR URL, pushed commits, resolved threads, final checkout state
    - in local mode: which commits were created on which branch
-3. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
+   - the worktree-record exit self-check result – in this summary, which is also the content
+     handed back under `Summary comment: suppressed`, never in the returned outcome record
+4. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
    received `Next steps: suppressed`, in which case emit nothing and let the caller close the run.
 
 ## Rules
@@ -1711,6 +1778,16 @@ Before every commit, the checks configured in the project must pass without erro
 
 ## Commit message rules
 
+`effective-delivery` owns commit-message craft and is authoritative when present: deriving the
+message from the staged diff, choosing a recognized type from the actual change, the
+subject-boundary test, and when a body is owed. It states classification by effect in its general
+form — `chore:` is no escape hatch for a user-visible change — but neither of the two refinements
+below, which therefore **override** it: deployment-effective **config/env/secrets/CI** is not
+`chore:`, and the **squash PR title** is the release signal and carries the same classification.
+The two bans below are scope constraints rather than a second copy: this
+repository states unconditionally what the skill makes conditional on a repository, host, or user
+requirement.
+
 - Resolve `language.git` through the shared language rule and write the human-readable subject
   description and body in that language. Preserve a valid user-supplied message. Conventional
   Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
@@ -1719,9 +1796,7 @@ Before every commit, the checks configured in the project must pass without erro
 - **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
 - If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
 - **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- **Minimal fallback when `effective-delivery` is absent or undiscovered** — the floor that keeps such a run able to write an acceptable message, and not a second copy of the skill's guidance on choosing between types: take the type from the Conventional Commit set `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`; state concretely what was changed and why; and never settle for a generic message such as `update files` or `misc changes`. Several sources embed this fragment without recommending the skill, so the floor carries that substance itself rather than deferring it.
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 

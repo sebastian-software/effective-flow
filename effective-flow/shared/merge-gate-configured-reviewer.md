@@ -208,7 +208,8 @@ entries that denote the same reviewer – two spellings of one account are one r
      no marker, no preamble, no signature – posted through the helper's PR-comment mutation. Two
      things still need that exact body: this step's own idempotency check below, which compares the
      body against the configured text, and keeping the raw comment from announcing which tool
-     composed it. The guard is no longer one of them – it reads no body at all, and it excludes this
+     composed it. In hidden mode pass the resolved `visibility: hidden` to that mutation, so the
+     helper's disclosure check covers the trigger text as well. The guard is no longer one of them – it reads no body at all, and it excludes this
      comment on the next run by its author alone. Do **not** use the `pr` comment-kind builder – it
      stamps `<!-- effective-flow-iterate -->`, the marker `effective-flow iterate` reads as its own
      already processed work, and any marker at all would defeat both purposes above.

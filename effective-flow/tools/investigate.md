@@ -291,6 +291,10 @@ legacy directories remains an explicit, user-confirmed responsibility of `effect
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
+## Recommended skills
+
+- `effective-delivery`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance on analysis, diagnosis, and report formats.
@@ -313,6 +317,8 @@ reviews, not to investigations. Of the Effective Flow artifacts, only plans are 
 ## Investigation method
 
 This building block describes the read-only core of a bug and behavior investigation. The investigation steps described here are themselves read-only: they change no code and write no tests; a reproduction happens within these steps only through observation – running existing checks, describing logs and behavior – or through a documented reproduction guide. Whether the embedding workflow additionally produces a reproduction test is decided by that workflow itself (e.g. `effective-flow fix` additionally writes a failing test); `effective-flow investigate`, by contrast, stays fully read-only.
+
+Diagnostic depth — competing hypotheses, a discriminating reproduction, epistemic labels, outcome classes and the intervention level — follows `effective-delivery` wherever that skill is available: it is the authority for how deep a diagnosis goes. Its rules on where an investigation report lives, on when it may be saved, on how it is returned in the conversation, on runtime directories, on hypothesis ledgers and on mandatory report paths do **not** apply here, because the embedding workflow's report path, its transient wisdom file, its routing and its own scope stay binding. Steps 1 and 4 below are the baseline that skill deepens and the minimal fallback when it is absent; steps 2 and 3 stay active in every run.
 
 ### Investigate symptom and code
 
@@ -439,6 +445,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
 3. Work strictly read-only; write no code and no tests.
 
 ### Phase 3: Diagnosis
+
+The numbered points below are the report's output contract; the diagnostic depth behind them follows the recommended owner named in "Investigation method", while the report's own classification vocabulary — the `**Classification:**` field of the Phase 5 template — stays Effective Flow's.
 
 1. Formulate the root-cause hypotheses with evidence and a confidence per hypothesis.
 2. Explicitly record rejected hypotheses, including the reason for rejection.

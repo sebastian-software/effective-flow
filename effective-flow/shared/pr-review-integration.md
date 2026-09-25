@@ -109,7 +109,8 @@ requests, read CLI credentials, or invent a fallback. In particular:
 Reads execute immediately. Mutations are dry runs by default: inspect the returned executable,
 argument vector, and redacted input preview, obtain every workflow-specific approval that still
 applies, and only then repeat the same operation with `--apply`. A dry run never changes Git,
-tracker state, memory, labels, issues, pull requests, comments, or review threads.
+tracker state, memory, labels, issues, pull requests, comments, or review threads. Redaction covers
+credential shapes, not quoted content: the preview echoes review and comment bodies verbatim.
 
 ### Remote helper
 
@@ -218,9 +219,9 @@ A delegating caller may suppress that comment, and `effective-flow merge-gate` d
 delegates. Four grounds carry that, none of them about how a later read classifies the author. One
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
-request receives the same content in the gate's own chat summary. The gate's stated guarantee — a
-gate-initiated run leaves **at most one** item of its own on the pull request, its trigger comment —
-is false the moment a delegated round adds a second. And a gate authenticated as a **different**
+request receives the same content in the gate's own chat summary. The gate's stated bound — its own
+items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
 dropped.
@@ -286,12 +287,13 @@ operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
-report the still-pending checks and ask the user once instead.
+report the still-pending checks and ask the user instead – **once per run**, not once per repeated
+wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
@@ -351,6 +353,11 @@ still-present old marker `<!-- firmo-iterate -->` from an earlier run is recogni
 is exclusively `<!-- effective-flow-iterate -->`. This keeps a second `effective-flow iterate` run on the
 same PR clean.
 
+**Hidden mode (`visibility: hidden`)** writes no marker: pass that `visibility` on every comment
+build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body` call, and let no
+published text name Effective Flow; the helper refuses such text on each of them. A marker is then
+no evidence; `effective-flow iterate` reads its processed-thread ledger instead.
+
 ### No history rewriting
 
 New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
@@ -390,6 +397,9 @@ never write that marker by hand (see idempotency). This matters beyond tidiness:
 later `effective-flow iterate` run reads to recognize a thread it has already answered, so an unstamped
 reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
 second time.
+
+In hidden mode (`visibility: hidden`), pass that value: nothing is stamped, and
+`effective-flow iterate`'s processed-thread ledger records the answered thread instead.
 
 ### Resolve a thread
 
@@ -555,6 +565,12 @@ phase at all. The three state names are stable identifiers and are never transla
 
 A merged or closed pull request, or one belonging to another repository, is reported read-only; no
 comment is written.
+
+**Hidden mode (`visibility: hidden`) publishes nothing onto the pull request.** Without the marker,
+the idempotency check below cannot recognize this fragment's own earlier findings, so every rerun
+would post them again. The automatic trigger is already off, because hidden mode forces
+`delivery.prReview: off`. On the explicit entry point, report the findings in chat instead and state
+that hidden mode withheld the publication.
 
 ### Rooted ref reads
 

@@ -85,26 +85,32 @@ The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow
 
 ## Effective Flow configuration (project setup ADR)
 
-The tracked truth for the Effective Flow configuration is a living ADR "Effective
-Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
-ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
-is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
-pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
-completely gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective Flow project
+setup" (default slug `effective-flow-project-setup`, see fragment "Living ADR model"). It carries
+the config parameters with minimal prose as a **Markdown table**. There is **no**
+`.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a private runtime
+directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`), completely ignored through
+`.gitignore` or, in hidden mode, the Git common directory's `info/exclude`.
 
 ### Config locator (resolution order)
 
 When reading the configuration, the project setup ADR is resolved in this order; the
 first matching step wins:
 
+0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
+   checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
+   mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
-   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
-   equivalent on read; the spelling stays here because it is the **detection** predicate, while
-   what that recognition then triggers belongs to the deferred building block below. If the
-   marker points to a path under which **no** ADR lives
-   (dead/stale marker), do not stay there, but fall through in this order and report the stale
-   marker (correction in effective-flow setup).
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
+   `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
+   read; the spelling stays here because it is the **detection** predicate, while what that
+   recognition then triggers belongs to the deferred building block below. If the marker points to a
+   path under which **no** ADR lives (dead/stale marker), do not stay there, but fall through in
+   this order and report the stale marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
    file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
@@ -120,10 +126,10 @@ first matching step wins:
 
 The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
 transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
-the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
-in the Git-touching path of effective-flow setup.
+the run (see "Table encoding"). Creating the ADR, the markers, the local hidden configuration and
+the migration happen exclusively in effective-flow setup.
 
-**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -138,6 +144,13 @@ English in both envelopes, including `(empty)`. Writers (effective-flow setup, m
 language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
+- **`executionProfiles.fast.enabled`** → strict Boolean and fail-closed. A missing row or literal
+  `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
+  Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
+  literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
+  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
+  is not yet an interactive setup choice.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -149,9 +162,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.
@@ -172,9 +184,8 @@ value cell). Example excerpt (interface sketch, not full content):
 | worktree.enabled                  | true    |
 ```
 
-If the table is invalid or ambiguous (missing key, unknown encoding): use a
-safe default for the run, inform the user about the affected key,
-do **not** guess.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a safe default for the
+run, inform the user about the affected key, do **not** guess.
 
 **Load on demand:** Read `shared/durable-follow-up-gate.md`, when a local or legacy review finding is re-evaluated before task creation or delegation.
 
@@ -244,6 +255,25 @@ The layered contract therefore applies (see `skill-discovery.md`):
   calling tool itself authors according to the **minimal fallback structure**
   below — **no** silent invention of a second convention.
 
+**What this declaration has to answer.** `effective-product` permits a living lifecycle only where
+the repository declares five things first ("Living records" in its `references/adr-format.md`).
+This building block answers all five, so a reader can verify the declaration instead of taking it
+on trust:
+
+1. **The living or mutable lifecycle** — under "Living ADR model" and "Form and location"
+   (`**Mutability:**`): an existing ADR is updated in place when the decision changes.
+2. **Filename identity and location** — under "Form and location" for the default form, resolved
+   per project by "Project-declared ADR naming convention" below.
+3. **The status vocabulary** — under "Form and location" (`**Status:**`): `Active`, `Superseded`,
+   `Not implemented`, with `Aktiv`, `Abgelöst`, `Nicht umgesetzt` as equal German forms.
+4. **Whether a record carries an update date or a short change note** — **neither.** An Effective
+   Flow living ADR carries no update date and no change note; repository history carries its
+   earlier states. That is the tradeoff a living lifecycle accepts by design, and this item
+   declares current practice rather than changing it.
+5. **Which narrow records may own configuration values** — exactly one, the project-setup ADR,
+   whose key/value table is itself the owning tracked configuration artifact. Declared in
+   `AGENTS.md`, "Configuration and ADRs", and not restated here.
+
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
 convention in the target repo (the skill follows it) or toggles `effective-product` deliberately
 via the `skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
@@ -286,6 +316,13 @@ durable architectural effect stays in the review report or tracker artifact and 
 an ADR.
 
 ## Project-declared ADR naming convention
+
+`effective-product` owns ADR craft and is authoritative for it; on naming it follows the
+repository's declared convention rather than imposing one of its own. That deferral presupposes a
+project that **has** a declared convention, so determining it where the scheme is unknown is the
+deferring side's work, not the owner's. This section is that mechanism: Effective Flow writes ADRs
+into arbitrary target projects and therefore has to resolve an unfamiliar scheme before it can
+hand the skill a convention to follow. Resolution is orchestration, which Effective Flow keeps.
 
 The naming **convention** — the resolved form, the tier that resolved it, and the zero-pad width
 where that form carries numbers — is resolved once per run, before any ADR is written. Each
@@ -500,6 +537,16 @@ approximated, which is what bounds the cost of that judgment.
 
 ## Commit message rules
 
+`effective-delivery` owns commit-message craft and is authoritative when present: deriving the
+message from the staged diff, choosing a recognized type from the actual change, the
+subject-boundary test, and when a body is owed. It states classification by effect in its general
+form — `chore:` is no escape hatch for a user-visible change — but neither of the two refinements
+below, which therefore **override** it: deployment-effective **config/env/secrets/CI** is not
+`chore:`, and the **squash PR title** is the release signal and carries the same classification.
+The two bans below are scope constraints rather than a second copy: this
+repository states unconditionally what the skill makes conditional on a repository, host, or user
+requirement.
+
 - Resolve `language.git` through the shared language rule and write the human-readable subject
   description and body in that language. Preserve a valid user-supplied message. Conventional
   Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
@@ -508,9 +555,7 @@ approximated, which is what bounds the cost of that judgment.
 - **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
 - If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
 - **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- **Minimal fallback when `effective-delivery` is absent or undiscovered** — the floor that keeps such a run able to write an acceptable message, and not a second copy of the skill's guidance on choosing between types: take the type from the Conventional Commit set `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`; state concretely what was changed and why; and never settle for a generic message such as `update files` or `misc changes`. Several sources embed this fragment without recommending the skill, so the floor carries that substance itself rather than deferring it.
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
@@ -884,6 +929,8 @@ argument type; report which target the argument selected.
 
 If the resolved tracker target is the forge or an external tool (the argument is an epic/container or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration, the external-target contract, and the complete remote flow (phase 1–8 remote), and replaces or supplements the corresponding local steps. Only on the `local` target (report file under `.effective-flow/review/`) is it not loaded.
 
+**Hidden mode stops the remote flow.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0) and the argument is an epic/container or finding issue, stop before loading the sub-file and before any tracker access or write, with one message: hidden mode is active, it pins the tracker to `local`, and remote apply-review would write tracker labels and markers. A local report file is processed normally.
+
 ## Workflow
 
 ### Phase 1: Read and validate the report
@@ -1070,6 +1117,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
 For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
+
+**In hidden mode** (`visibility: hidden`) no tracked ADR is written, neither by `effective-product` nor by the fallback below: hand the candidate over for classification only, record a permanent decision in the local review report instead, and report in the status update that hidden mode withheld the ADR and which decision it would have recorded.
 
 1. **Form the decision candidate.** From the finding and the developer note, summarize a candidate: a descriptive title, context (report filename + finding ID or issue/epic number), the rejection rationale (full note/`wontfix` text) and a traceable **backlink** to the source finding.
 2. **Delegate to `effective-product`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.

@@ -135,26 +135,32 @@ mandate binds here is the two worker-role delegations above, not the gate's own 
 
 ## Effective Flow configuration (project setup ADR)
 
-The tracked truth for the Effective Flow configuration is a living ADR "Effective
-Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
-ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
-is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
-pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
-completely gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective Flow project
+setup" (default slug `effective-flow-project-setup`, see fragment "Living ADR model"). It carries
+the config parameters with minimal prose as a **Markdown table**. There is **no**
+`.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a private runtime
+directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`), completely ignored through
+`.gitignore` or, in hidden mode, the Git common directory's `info/exclude`.
 
 ### Config locator (resolution order)
 
 When reading the configuration, the project setup ADR is resolved in this order; the
 first matching step wins:
 
+0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
+   checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
+   mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
-   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
-   equivalent on read; the spelling stays here because it is the **detection** predicate, while
-   what that recognition then triggers belongs to the deferred building block below. If the
-   marker points to a path under which **no** ADR lives
-   (dead/stale marker), do not stay there, but fall through in this order and report the stale
-   marker (correction in effective-flow setup).
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
+   `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
+   read; the spelling stays here because it is the **detection** predicate, while what that
+   recognition then triggers belongs to the deferred building block below. If the marker points to a
+   path under which **no** ADR lives (dead/stale marker), do not stay there, but fall through in
+   this order and report the stale marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
    file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
@@ -170,10 +176,10 @@ first matching step wins:
 
 The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
 transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
-the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
-in the Git-touching path of effective-flow setup.
+the run (see "Table encoding"). Creating the ADR, the markers, the local hidden configuration and
+the migration happen exclusively in effective-flow setup.
 
-**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -188,6 +194,13 @@ English in both envelopes, including `(empty)`. Writers (effective-flow setup, m
 language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
+- **`executionProfiles.fast.enabled`** → strict Boolean and fail-closed. A missing row or literal
+  `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
+  Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
+  literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
+  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
+  is not yet an interactive setup choice.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -199,9 +212,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.
@@ -222,9 +234,8 @@ value cell). Example excerpt (interface sketch, not full content):
 | worktree.enabled                  | true    |
 ```
 
-If the table is invalid or ambiguous (missing key, unknown encoding): use a
-safe default for the run, inform the user about the affected key,
-do **not** guess.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a safe default for the
+run, inform the user about the affected key, do **not** guess.
 
 ## Issue implementation lifecycle
 
@@ -440,11 +451,37 @@ loaded before the first write below `.effective-flow/`.
 
 Provision that checkout the way `effective-flow iterate` does: fetch the pull request's **existing** head
 branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
-a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force.
+a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force. Reading
+the deferred `worktree-integration` fragment is mandatory before that worktree is created.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`.
 
 **Load on demand:** Read `shared/merge-gate-checkout-boundary.md`, when Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`, which is the same moment `worktree-integration` is loaded.
+
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
 
 ## PR review comment integration
 
@@ -541,7 +578,8 @@ requests, read CLI credentials, or invent a fallback. In particular:
 Reads execute immediately. Mutations are dry runs by default: inspect the returned executable,
 argument vector, and redacted input preview, obtain every workflow-specific approval that still
 applies, and only then repeat the same operation with `--apply`. A dry run never changes Git,
-tracker state, memory, labels, issues, pull requests, comments, or review threads.
+tracker state, memory, labels, issues, pull requests, comments, or review threads. Redaction covers
+credential shapes, not quoted content: the preview echoes review and comment bodies verbatim.
 
 ### Remote helper
 
@@ -650,9 +688,9 @@ A delegating caller may suppress that comment, and `effective-flow merge-gate` d
 delegates. Four grounds carry that, none of them about how a later read classifies the author. One
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
-request receives the same content in the gate's own chat summary. The gate's stated guarantee — a
-gate-initiated run leaves **at most one** item of its own on the pull request, its trigger comment —
-is false the moment a delegated round adds a second. And a gate authenticated as a **different**
+request receives the same content in the gate's own chat summary. The gate's stated bound — its own
+items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
 dropped.
@@ -718,12 +756,13 @@ operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
 turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
-report the still-pending checks and ask the user once instead.
+report the still-pending checks and ask the user instead – **once per run**, not once per repeated
+wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
 **Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
 `UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
@@ -782,6 +821,11 @@ still-present old marker `<!-- firmo-iterate -->` from an earlier run is recogni
 `<!-- effective-flow-iterate -->` on read (no double processing of in-flight threads); newly written
 is exclusively `<!-- effective-flow-iterate -->`. This keeps a second `effective-flow iterate` run on the
 same PR clean.
+
+**Hidden mode (`visibility: hidden`)** writes no marker: pass that `visibility` on every comment
+build, `review-create`, `review-thread-reply`, `pr-comment`, and `pr-update-body` call, and let no
+published text name Effective Flow; the helper refuses such text on each of them. A marker is then
+no evidence; `effective-flow iterate` reads its processed-thread ledger instead.
 
 ### No history rewriting
 
@@ -1574,13 +1618,16 @@ At the start, generate a session ID (e.g. via timestamp) and use
   resolution record including every adjacent file with the check that demanded it, both verification
   verdicts, and the resulting merge commit or the abort reason
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
-  record handle and that record's last transition
+  record handle and that record's last transition, plus this run's worktree-record exit self-check
+  result
 - every candidate from "Unconfigured automatic-reviewer advisory", keyed by the established
   bot-typed one-suffix equivalence and carrying its `missing reviewer` or `missing check`
   classification, first observed or configured login, compact thread/review evidence, and whether
   any qualifying sighting reported a check list. Append or merge this record after every applicable
   fresh read and never shorten it from a later snapshot
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
+- when a pilot observation was reserved, its three anonymous correction counters; never its
+  observation identifier or capability
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
   every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
   retain that every delegated `effective-flow iterate` round carried `Summary comment: suppressed`, so it
@@ -1680,6 +1727,16 @@ input object's top-level `cwd`; setting only the process or tool working directo
    - `ask` or an unset key in a **non-interactive delegation** cannot pose the question, so that
      combination – and only that combination – behaves as `report`. Name
      `mergeGate.completion: merge` as the setting that would authorize a merge in such a run.
+
+**Load on demand:** Read `shared/pilot-measurement.md`, when Phase 0 has resolved a non-observer `merge|report` mode, immediately before Phase 1 begins.
+
+At that point apply `## Phase 0 observation preflight and reservation` in the loaded
+`pilot-measurement` fragment. For the rest of the run apply its correction-counter rules to the
+matching dispatch/start events; none of those counters affects gate control flow. Once a
+reservation exists, every path that would otherwise end early must first apply the fragment's
+Phase-6 finalization exactly once. In particular, a controlled `report`-mode ending before Phase 4
+uses its `reported-blocked` pre-Phase-4 rule and unavailable check evidence rather than returning
+without an observation.
 
 **Load on demand:** Read `shared/merge-gate-provider-settled-threads.md`, when the forge preflight reports both `reviewThreadReplies` and `reviewThreadResolution` unsupported, before Phase 3 selects bot threads.
 
@@ -1844,18 +1901,32 @@ the later decision replaces it rather than standing beside it. Resolving such a 
 deliberately did not act on. The chat summary is where that outcome belongs.
 
 The consequence, stated plainly: **the gate's only own write onto the pull request's discussion is
-the trigger comment** of Phase 3, and a **gate-initiated run leaves at most that one item of its own
-there** – because the delegated run's summary comment is suppressed (see "Delegation contract") and
-its thread replies are resolved along with their threads. At most, not exactly: Phase 3 posts no
-trigger for a bot it observed as **running**. Every reply for a finding that _is_ implemented is
-written and resolved by `effective-flow iterate`, as before, and those replies leave the guard untouched:
-in manual mode the identity rule excludes them, in app mode the bot rule does.
+the trigger comment** of Phase 3 – because the delegated run's summary comment is suppressed (see
+"Delegation contract") and its thread replies are resolved along with their threads. **That bound is
+per head, not per run: at most one trigger comment per configured bot per verified head**, up to
+`mergeGate.maxRounds` × configured bots per run. Phase 3's idempotency rule says so: a trigger
+counts as posted only while its `createdAt` is not older than `headCommittedAt`, so an implementing
+round moves the head past it and the next Phase-3 entry **must** trigger that bot again. Never read
+the bound as licence to skip that re-post – a bot left "not started" blocks the merge, deadlocking
+the run into a report. The per-head figure is the rule, not an invariant: where that idempotency
+comparison is **unprovable** – a timestamp is absent, or the trigger's author cannot be established
+at all – Phase 3 deliberately treats the trigger as not yet posted and posts it again, so two
+Phase-3 entries against one unchanged head can leave that bot two comments. The fallback is
+deliberate in the same direction as the re-post: a redundant mention costs one extra bot run, a
+wrongly suppressed one costs the merge. The run-level ceiling is unaffected, because it counts
+Phase-3 entries rather than proofs. Downwards the figure is firm: Phase 3 posts no trigger for a bot
+it observed as **running**. Every reply for a finding that _is_ implemented is written and resolved by
+`effective-flow iterate`, as before, and those replies leave the guard untouched: in manual mode the
+identity rule excludes them, in app mode the bot rule does.
 
 **This bounds the discussion surface, not the branch.** The gate also writes to the head **branch** –
-the two kinds of base-into-head merge – and those writes are bounded by "Git write boundary", not
-here. No guard rule reads the at-most-one guarantee back: suppressing the delegated run's summary
-comment (see "Delegation contract") is what sustains it, and that suppression is a contract of this
-file rather than a consequence of how the next run classifies anything.
+the two kinds of base-into-head merge – bounded by "Git write boundary", not here. No guard rule
+reads the per-head bound back: suppressing the delegated run's summary comment (see "Delegation
+contract") is what sustains it, and that suppression is a contract of this file rather than a
+consequence of how the next run classifies anything. Its noise argument – up to
+`mergeGate.maxRounds` summary comments is noise on someone's pull request – visibly applies to the
+gate's own triggers too, and is not pretended away: the summary survives in the chat report, whereas
+a re-trigger is the only way to make a bot re-review a moved head.
 
 ### Phase 2: Check gate (bounded)
 
@@ -1909,7 +1980,14 @@ run can push an unbounded number of commits onto someone's pull request.
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
    - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
-     to a prompt-driven poll loop. Report the still-pending checks by name and ask the user once.
+     to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
+     per run, not once per round** – with `mergeGate.maxRounds` at 10 and a 20-minute
+     `mergeGate.checkWaitMinutes` a per-round reading would interrupt a human ten times, each after
+     a twenty-minute block, and `mergeGate.completion`'s entry gate is the once-per-run precedent.
+     Record in the wisdom file that it was posed: **a later round whose wait times out again asks
+     nothing**, reports the pending checks by name, ends its round under "A round runs forward
+     only", and continues under "Round accounting" – so `mergeGate.maxRounds` bounds the
+     repetition, not a repeated question.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
 3. **Failed checks.** Delegate to `effective-flow iterate <PR>` an instruction derived from the failing
    check names and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
@@ -1954,8 +2032,8 @@ that blocks an outdated branch fails the merge closed server-side instead. An un
 request – so a genuine conflict there loops to `mergeGate.maxRounds` and ends with a report instead
 of taking the fast "stop and report the conflict" path. Where the check list itself is
 **unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
-report that and ask once per step 2's rule before proceeding, and an unanswered or non-interactive
-run ends there without merging.
+report that and ask per step 2's rule – **once per run**, and a later round reports without asking
+again – before proceeding, and an unanswered or non-interactive run ends there without merging.
 
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
@@ -2108,9 +2186,15 @@ ends this phase without heuristic tracker access.
 
 ### Phase 6: Summary
 
+Before step 1, if Phase 0 reserved a pilot observation and no earlier controlled ending finalized
+it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement` fragment. This
+ordering is mandatory: finalization needs the counters and final status evidence that step 1
+deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
+reservation exactly once.
+
 1. Delete the wisdom file, and every delegation message file and snapshot this run wrote that is
    still present – after a sender stop, the one whose delegation never went out.
-2. Report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
+2. Run the worktree-record exit self-check. Then report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
    comment onto the pull request:** the gate has none of its own, and `effective-flow iterate`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
    instead. The merge itself is visible on the pull request anyway. Report:
@@ -2126,8 +2210,11 @@ ends this phase without heuristic tracker access.
      human can check whether a named failure genuinely justified an adjacent change – the gate
      verified that the evidence is present, never that it is convincing. Report it even when
      everything went well;
+   - per round, the provisioned-checkout line from the wisdom record with this run's
+     worktree-record exit self-check result;
    - the delegated `effective-flow iterate` rounds and their results, including the summary content each
-     one handed back instead of posting; every item or instruction `build` refused, with its reason;
+     one handed back instead of posting, which carries that round's worktree-record exit self-check
+     result relayed verbatim; every item or instruction `build` refused, with its reason;
      and, where a delegation could not be built or validated, the sender-side stop with the helper's
      error code;
    - **every inert returned outcome** – one naming an identifier no round recorded – by its
@@ -2247,10 +2334,16 @@ ends this phase without heuristic tracker access.
 - Count an `implemented` body finding only where the head moved in that round.
 - `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
   merge commit, the bot trigger, and the delegated `effective-flow iterate` rounds still run.
-- Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
+- After a pilot observation reservation, no controlled or exceptional path returns before the
+  observation finalizer has run exactly once. Observation or pilot-control failure never changes
+  the merge/report result and never activates an execution profile.
+- Never fall back to a prompt-driven poll loop when a wait times out; report, and ask once per run –
+  a later round that times out again reports the pending checks and asks nothing.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – every wait, repair, Phase-2 restart, and Phase-4 return into Phase 3 consumes one.
 - Post no summary comment of your own; the run summary goes to the user in chat.
+- In hidden mode (`visibility: hidden`), publish no text naming Effective Flow, and leave
+  `effective-flow iterate`'s processed-thread ledger in place: it is not a delegation message.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger
   comments, or in any other published text.
 - Start no project validation such as linting, tests, or builds yourself: the pull request's own

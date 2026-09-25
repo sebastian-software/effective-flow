@@ -67,6 +67,16 @@ If no task tool is available, give the user a short progress update after each c
 
 ## Commit message rules
 
+`effective-delivery` owns commit-message craft and is authoritative when present: deriving the
+message from the staged diff, choosing a recognized type from the actual change, the
+subject-boundary test, and when a body is owed. It states classification by effect in its general
+form — `chore:` is no escape hatch for a user-visible change — but neither of the two refinements
+below, which therefore **override** it: deployment-effective **config/env/secrets/CI** is not
+`chore:`, and the **squash PR title** is the release signal and carries the same classification.
+The two bans below are scope constraints rather than a second copy: this
+repository states unconditionally what the skill makes conditional on a repository, host, or user
+requirement.
+
 - Resolve `language.git` through the shared language rule and write the human-readable subject
   description and body in that language. Preserve a valid user-supplied message. Conventional
   Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
@@ -75,9 +85,7 @@ If no task tool is available, give the user a short progress update after each c
 - **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
 - If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
 - **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- **Minimal fallback when `effective-delivery` is absent or undiscovered** — the floor that keeps such a run able to write an acceptable message, and not a second copy of the skill's guidance on choosing between types: take the type from the Conventional Commit set `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`; state concretely what was changed and why; and never settle for a generic message such as `update files` or `misc changes`. Several sources embed this fragment without recommending the skill, so the floor carries that substance itself rather than deferring it.
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
@@ -285,6 +293,7 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
      successful commit-only evidence. Resolve the supplied branch and require it still equals the
      supplied OID. Unrelated dirt in `RUNTIME_STATE_ROOT` is not PR content and does not replace or
      weaken this exact ref check.
+   - In hidden mode (`visibility: hidden`), the exact head branch name must not name Effective Flow — the helper's disclosure rule: `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow`. On a match, stop before any fetch or push, name the branch, and tell the user to rename it (`git branch -m`): hidden mode forbids that ref on the forge.
 3. **Verify the prepared head:** Preserve the resolved head OID as the immutable handoff boundary.
    Do not create or switch a branch, stage or commit content, stash changes, amend commits, rebase,
    squash, or force-update a ref. A direct invocation records its exact clean `HEAD`; a returning
@@ -389,6 +398,8 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
      diagnostic and abort without attempting PR creation or guessing which PR to use.
 9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. A forge issue-reference keyword carried in a supplied reference — the auto-close keyword with its variants, or the non-closing `Refs` — is a machine token the code host parses: keep it in English whatever `language.forge` resolves to, never translated. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
+   **Hidden mode** (`visibility: hidden` from the local configuration `.effective-flow/project-setup.md` of the main checkout, config locator step 0): reference **no** plan file, and let neither the title nor the body contain a path under `.effective-flow/` or name Effective Flow (`effective-flow`, `Effective Flow`). Derive both from the changes alone.
+
    The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>`
    with a stable English type and a `language.git` description, per "Commit message rules". This
    is mandatory because on a squash merge the title becomes the subject of the single commit,
@@ -401,7 +412,7 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. In hidden mode pass `visibility: hidden` with it, so the helper refuses a title, body, or head branch that names Effective Flow. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
       mutation would create a duplicate for the same head. Resolve it by repeating the step 8
@@ -434,4 +445,5 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
   isolate that selection. This tool never guesses paths or transfers working-tree content.
 - If the CLI or authentication is missing, abort cleanly without leaving a half state behind.
 - Never put `Co-Authored-By` trailers in commits, PR titles, or PR descriptions.
+- In hidden mode, never reference a plan file, a path under `.effective-flow/`, or Effective Flow by name in the PR title or description.
 - Do not add AI attribution to the PR title or description: no "Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) – not even when the harness appends them by default. Factual mentions of Claude Code or Codex remain permitted; generation attribution does not.

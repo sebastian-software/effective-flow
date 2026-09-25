@@ -3,7 +3,8 @@
 Effective Flow works without project configuration: every tool starts from its own safe defaults.
 To keep project-specific choices in Git, use one living **Effective Flow project-setup ADR**. The
 default path is `docs/adr/effective-flow-project-setup.md`; a marker in the project convention
-file can select another path.
+file can select another path. In a repository whose team has not adopted Effective Flow,
+[hidden mode](#hidden-mode) keeps the whole configuration in a local, untracked file instead.
 
 This page is the complete reference for the ADR location, table encoding, configuration keys,
 defaults, and migration behavior. The guides [Worktree and delivery](./worktree-and-delivery.md),
@@ -93,6 +94,10 @@ files, rewrite the ADR, or touch Git.
 
 Every config-reading tool uses the following order and stops at the first valid source:
 
+0. **Local hidden configuration.** `.effective-flow/project-setup.md` in the main checkout wins
+   only when it declares `visibility | hidden`; see [Hidden mode](#hidden-mode). A local file
+   without that row is reported and skipped. It is never read from a linked worktree: a run there
+   locates the main checkout first and stops with a report when it cannot verify it.
 1. **Convention-file marker.** Read `**Effective Flow project setup:** <path>` from `AGENTS.md`,
    otherwise `CLAUDE.md` or a comparable convention file. The former
    `**Firmo project setup:** <path>` spelling remains readable for one compatibility generation.
@@ -115,6 +120,58 @@ Every config-reading tool uses the following order and stops at the first valid 
 
 If a table is invalid or ambiguous, the tool uses a safe default for the affected key, reports
 the problem, and does not guess or rewrite the source.
+
+## Hidden mode
+
+Hidden mode lets you use Effective Flow in a repository without leaving anything that identifies
+it in the tracked history or on the forge surfaces your team sees. It is meant for working alone
+with Effective Flow in a repository that has not adopted it. Only
+[`/effective-flow setup hidden`](./tools-setup.md#hidden-mode), or the answer `Hidden` to setup's
+Visibility question, turns it on; no other tool activates it.
+
+In hidden mode:
+
+- The configuration lives in `.effective-flow/project-setup.md` in the main checkout. It uses the
+  same envelope and table encoding as the project-setup ADR and carries the row
+  `visibility | hidden`. Plans and concepts live under `.effective-flow/plan` and
+  `.effective-flow/concept`.
+- `.effective-flow/` is ignored through one `.effective-flow/` line in the Git common directory's
+  `info/exclude` (`git rev-parse --git-common-dir`), which every linked worktree reads.
+  `.gitignore` is not written.
+- No `AGENTS.md` or `CLAUDE.md` is written or edited, and no marker is needed, because the locator
+  finds the local file at its fixed path.
+- If a tracked project-setup ADR or marker also exists, the local file wins. The tracked source is
+  reported once as shadowed and none of its values is read.
+
+The configuration resolver enforces these values. A contradicting row in the local file is reported
+once per run as overridden and never honoured. A missing row takes the forced value silently:
+
+| Key                     | Value in hidden mode                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `plan.dir`              | `.effective-flow/plan`                                                               |
+| `concept.dir`           | `.effective-flow/concept`                                                            |
+| `tracker.mode`          | `local`                                                                              |
+| `delivery.prReview`     | `off`                                                                                |
+| `delivery.branchPrefix` | empty by default; a value containing `effective-flow` in any letter case is rejected |
+
+Every other key resolves from the local file exactly as it would from the ADR. The tracker target is
+pinned as well: an issue reference or a per-run signal cannot switch it to the forge or an external
+tool. The issue workflows that only work against such a target (`plan-issue`, issue-driven `apply`,
+remote `review`) stop before any tracker access and name hidden mode. You can still plan from pasted
+issue text with `/effective-flow plan "<text>"`.
+
+Hidden mode also keeps Effective Flow out of Git and forge prose. No commit message, branch name,
+pull-request title or body, or tracker-facing summary mentions a path under `.effective-flow/` or
+names Effective Flow. Pull-request comments, review replies, and reviews are posted without the
+`<!-- effective-flow-… -->` markers. See [Worktree and delivery](./worktree-and-delivery.md#hidden-mode)
+for branch names and plan archival, and [Remote tracker](./remote-tracker.md#hidden-mode) for
+marker-free forge writes.
+
+The `visibility` key has two values, `standard` (the default, written as no row at all) and
+`hidden`. A tracked ADR can never switch hidden mode on. A `visibility | hidden` row there is
+reported and ignored, because hidden configuration must never be tracked. If the local file is
+unreadable or ambiguous for a key, the safe default applies to that key and hidden mode stays
+active.
 
 ## Table encoding
 
@@ -177,6 +234,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.forge                       | en                         |
 | language.git                         | en                         |
 | language.chat                        | en                         |
+| executionProfiles.fast.enabled       | false                      |
 | plan.dir                             | docs/plan                  |
 | concept.dir                          | docs/concept               |
 | delivery.baseBranch                  | origin/main                |
@@ -204,6 +262,32 @@ skill override rows when no override is needed. `tracker.externalTool`,
 `tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
 absent because this example pins `tracker.mode: local`; they belong to an external target only (see
 [Block `tracker`](#block-tracker)).
+
+## Block `executionProfiles`
+
+`executionProfiles.fast.enabled` is a reserved Boolean switch for the risk-aware implementation
+profile pilot. It does not contain a provider model name. Missing or `false` means disabled;
+malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to **Quality** and
+stop new pilot measurement. Only the literal `true` admits the project to the pilot lifecycle; it
+does not start a baseline, activate Fast, or prove that the current host can enforce Fast.
+
+Native builds now contain the representation and local measurement subsystem needed for a later
+pilot: five generated Claude Fast sidecars, a Codex per-spawn override form, native inventories, and
+the dependency-free pilot helper. That capability is not activation. Neither `build` nor `refactor`
+requests Fast yet, portable installations remain Quality-only, and `/effective-flow setup` still
+exposes no question for this row. Manually setting the row to `true` therefore changes no current
+workflow behavior. Changing or removing it does not rewrite a pilot generation, clear a suspension,
+or delete evidence.
+
+Project admission is also separate from detailed-trace consent. The configuration row cannot grant
+that consent. A workflow may attest `detailOptIn: true` only after an explicit request in the current
+run; the decision is not persisted as configuration and does not carry into a later run. Minimal
+records remain local and structured either way. See [Model-tiering pilot data and
+privacy](./model-tiering-pilot.md) for the evidence, retention, review, purge, discard, and
+publication boundaries. [Getting started](./getting-started.md#recommended-calling-model) explains
+the distinction between caller and implementation profiles; the
+[risk-aware pilot decision](../adr/risk-aware-model-tiering-pilot-policy.md) records the durable safety
+boundary.
 
 ## Block `language`
 
@@ -469,10 +553,14 @@ dedicated delivery branch.
 | Key            | Values                             | Default          | Meaning                                                            |
 | -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
 | `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                              |
-| `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
+| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 | `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+
+An empty `branchPrefix` drops the prefix segment and its slash, so branches read `<skill>/<slug>`
+(for example `build/user-login`). Empty is valid in every mode and is the default in
+[hidden mode](#hidden-mode), which also rejects any prefix containing `effective-flow`.
 
 An absent `baseBranch` takes `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
 where that ref does not resolve. A configured value is used as written, and a run that finds it
@@ -609,6 +697,15 @@ values are retained unless the user explicitly confirms a change. In Profile mod
 topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
 keys, while all other known and unknown rows remain untouched.
 
+The reserved `executionProfiles.fast.enabled` key is intentionally absent from this base and from
+the setup UI. Absence is its default-off form and selects Quality.
+
+`visibility` is absent too: a standard setup writes no `visibility` row, and absence means
+`standard`. Only the hidden local file carries `visibility | hidden`. That file also gets the forced
+rows `plan.dir`, `concept.dir`, `tracker.mode`, and `delivery.prReview`, plus a
+`delivery.branchPrefix` row when you chose a valid non-empty prefix (see
+[Hidden mode](#hidden-mode)).
+
 | Key                                 | Value                        |
 | ----------------------------------- | ---------------------------- |
 | `review.profile`                    | `focused`                    |
@@ -670,23 +767,27 @@ changes how a run decides or how long it waits. A project upgrading from an earl
 therefore gets that one behavior change without configuring anything; see
 [Block `mergeGate`](#block-mergegate) for how to switch it off.
 
-There is no second “fast” preset. A faster solo flow is configured key by key, for example with
-`review.profile: fast`, `review.validation: quick`, and
-`applyReview.finalValidation: changedScope`.
+There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
+with `review.profile: fast`, `review.validation: quick`, and
+`applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
+reserved **Fast** implementation profile and do not activate it.
 
 ## Runtime-state safety
 
 Effective Flow writes below `.effective-flow/` only when that whole directory is ignored and no
-path below it is tracked. Immediately before each runtime-state mutation, the owning Git
+path below it is tracked. The ignore may come from `.gitignore` or, in
+[hidden mode](#hidden-mode), from the Git common directory's `info/exclude`; the checks treat both
+sources the same way. Immediately before each runtime-state mutation, the owning Git
 worktree checks both a sentinel and the concrete target with non-verbose `git check-ignore`, and
 also checks the Git index. If Git is unavailable, the directory is not ignored, any runtime path
 is tracked, or a check fails, the workflow leaves existing state untouched and directs you to
-`/effective-flow setup`. Other workflows never edit `.gitignore` themselves.
+`/effective-flow setup`, or to `/effective-flow setup hidden` when the ignore entry must stay out of
+every tracked file. Other workflows never edit `.gitignore` or `info/exclude` themselves.
 
 ## How `/effective-flow setup` maintains configuration
 
 [`/effective-flow setup`](./tools-setup.md) is the Git-touching owner of project configuration.
-It first normalizes `.gitignore` to the single runtime-directory entry:
+In standard mode it first normalizes `.gitignore` to the single runtime-directory entry:
 
 ```gitignore
 .effective-flow/
@@ -715,6 +816,12 @@ marker. As the last part of that write it also offers a one-line `CLAUDE.md` imp
 that step adds no configuration key. A new ADR uses `language.documentation.technical`; an
 existing ADR retains its envelope and prose language. Ordinary config readers do none of these
 operations.
+
+In [hidden mode](#hidden-mode), setup instead adds the `.effective-flow/` line to the Git common
+directory's `info/exclude`, verifies it with `git check-ignore`, and writes only the local
+`.effective-flow/project-setup.md`. It writes no ADR, marker, `.gitignore` line, or `CLAUDE.md`.
+It stops without writing when the directory is not a Git repository or when anything below
+`.effective-flow/` is already tracked, because `info/exclude` cannot hide a tracked file.
 
 ### Migrating `plan.markerLanguage`
 

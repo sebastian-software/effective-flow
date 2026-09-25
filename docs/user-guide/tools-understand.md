@@ -55,11 +55,17 @@ fits.
 
 **Input/output:** Input is the description of the observed behavior. Output is
 `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` with symptom, reproduction,
-root-cause hypotheses including confidence and discarded hypotheses. The diagnosis report is the
-requested primary artifact; it contains an executable follow-up only when the derived recommendation
-is admitted by the durable-work gate. Investigation reports are always local: they are never committed and never
-tracked as an issue, on no tracker target. Their prose follows `language.workflow`;
-the internal runtime/wisdom schema remains language-stable.
+root-cause hypotheses including confidence and discarded hypotheses. Those points are the report's
+output contract; how deep the diagnosis behind them goes follows the authoritative guidance of the
+central `effective-delivery` skill, which governs how the run reasons — over competing hypotheses,
+a discriminating reproduction, epistemic labels, outcome classes and an intervention level —
+before it fills the report's fields. Effective Flow retains the report path, the transient wisdom
+file, the routing, and the scope of the run; without the skill a deliberately minimal baseline
+applies. The diagnosis report is the requested primary artifact; it contains an executable
+follow-up only when the derived recommendation is admitted by the durable-work gate. Investigation
+reports are always local: they are never committed and never tracked as an issue, on no tracker
+target. Their prose follows `language.workflow`; the internal runtime/wisdom schema remains
+language-stable.
 
 **Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing

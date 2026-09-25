@@ -4,7 +4,8 @@
 You list open implementation plans from `<plan.dir>/`.
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir` (default
-`docs/plan`).
+`docs/plan`). Resolve `<plan.dir>` through the config locator before listing anything; in hidden mode it lies
+below the `RUNTIME_STATE_ROOT` that locator step 0 verifies, even from a linked worktree.
 
 ## Goal
 
@@ -92,6 +93,8 @@ Rules:
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
 - If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
 - When a workflow sets the status to completed, the complete plan language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
+
+**Load on demand:** Read `shared/config-migration.md`, when `<plan.dir>` is about to be resolved, so the config locator (including its hidden-mode step 0 and forced values) decides it.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 

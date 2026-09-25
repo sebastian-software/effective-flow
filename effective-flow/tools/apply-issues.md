@@ -92,6 +92,16 @@ The per-issue delegation to the target workflow skill is **workflow-to-workflow*
 
 ## Commit message rules
 
+`effective-delivery` owns commit-message craft and is authoritative when present: deriving the
+message from the staged diff, choosing a recognized type from the actual change, the
+subject-boundary test, and when a body is owed. It states classification by effect in its general
+form — `chore:` is no escape hatch for a user-visible change — but neither of the two refinements
+below, which therefore **override** it: deployment-effective **config/env/secrets/CI** is not
+`chore:`, and the **squash PR title** is the release signal and carries the same classification.
+The two bans below are scope constraints rather than a second copy: this
+repository states unconditionally what the skill makes conditional on a repository, host, or user
+requirement.
+
 - Resolve `language.git` through the shared language rule and write the human-readable subject
   description and body in that language. Preserve a valid user-supplied message. Conventional
   Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
@@ -100,9 +110,7 @@ The per-issue delegation to the target workflow skill is **workflow-to-workflow*
 - **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
 - If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
 - **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- **Minimal fallback when `effective-delivery` is absent or undiscovered** — the floor that keeps such a run able to write an acceptable message, and not a second copy of the skill's guidance on choosing between types: take the type from the Conventional Commit set `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`; state concretely what was changed and why; and never settle for a generic message such as `update files` or `misc changes`. Several sources embed this fragment without recommending the skill, so the floor carries that substance itself rather than deferring it.
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
@@ -171,28 +179,36 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 This skill is **inherently tracker-bound**: it always works against the resolved tracker target. The local/remote switch from `effective-flow review`/``tools/apply-review.md`` is **not** evaluated. Resolve the target per "Tracker target" in the following shared building block. On the forge target this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, classification, container, and write rules of the loaded `tracker-target` contract apply instead, and a missing connection or capability aborts before the first write. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
 
+**Hidden mode stops this skill.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0), stop before any tracker access or write — no probe, label migration, comment, label, or status transition — with one message: hidden mode is active, it pins the tracker to `local`, and this skill works only against a forge or external tracker. Planning from a pasted issue text stays available through `effective-flow plan <text>`.
+
 ## Effective Flow configuration (project setup ADR)
 
-The tracked truth for the Effective Flow configuration is a living ADR "Effective
-Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
-ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
-is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
-pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
-completely gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective Flow project
+setup" (default slug `effective-flow-project-setup`, see fragment "Living ADR model"). It carries
+the config parameters with minimal prose as a **Markdown table**. There is **no**
+`.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a private runtime
+directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`), completely ignored through
+`.gitignore` or, in hidden mode, the Git common directory's `info/exclude`.
 
 ### Config locator (resolution order)
 
 When reading the configuration, the project setup ADR is resolved in this order; the
 first matching step wins:
 
+0. **Local hidden configuration.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (main
+   checkout only, table encoding below) wins only if it declares `visibility | hidden` — **hidden
+   mode**, whose forced values the deferred building block enforces; otherwise report it, go on.
+   A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the
+   first `git worktree list --porcelain` record (deferred building block); in a Git checkout where
+   that fails it stops with a report and never falls through to standard mode. A tracked ADR's
+   `visibility | hidden` row is never honoured: report and ignore it.
 1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
-   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
-   under `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as
-   equivalent on read; the spelling stays here because it is the **detection** predicate, while
-   what that recognition then triggers belongs to the deferred building block below. If the
-   marker points to a path under which **no** ADR lives
-   (dead/stale marker), do not stay there, but fall through in this order and report the stale
-   marker (correction in effective-flow setup).
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR under
+   `<path>`. The legacy spelling `**Firmo project setup:** <path>` is recognized as equivalent on
+   read; the spelling stays here because it is the **detection** predicate, while what that
+   recognition then triggers belongs to the deferred building block below. If the marker points to a
+   path under which **no** ADR lives (dead/stale marker), do not stay there, but fall through in
+   this order and report the stale marker (correction in effective-flow setup).
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
    detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR. A
    file matches that scan when its stem equals `effective-flow-project-setup`, **and** its body
@@ -208,10 +224,10 @@ first matching step wins:
 
 The deterministic read path of any tool is non-blocking in that it reads the ADR (or the
 transitional fallback) but itself creates no file and mutates no Git; a retired row can still stop
-the run (see "Table encoding"). Creating the ADR, the markers and the migration happen exclusively
-in the Git-touching path of effective-flow setup.
+the run (see "Table encoding"). Creating the ADR, the markers, the local hidden configuration and
+the migration happen exclusively in effective-flow setup.
 
-**Load on demand:** Read `shared/config-migration-edge-cases.md`, when the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
+**Load on demand:** Read `shared/config-migration-edge-cases.md`, when step 0 must resolve `RUNTIME_STATE_ROOT` itself, the local `.effective-flow/project-setup.md` of step 0 exists or a `visibility` row is present, the locator finds no ADR whose stem is exactly the current slug, its scan matches several files, a legacy setup marker or legacy slug is present, the transitional `.effective-flow/config.json` / `.firmo/config.json` fallback must be read, or a `tracker.mode: external` run resolves `tracker.externalStartedState` or `tracker.externalDoneState`, or a retired row named under "Table encoding" is present.
 
 ### Table encoding (binding for writers and readers)
 
@@ -226,6 +242,13 @@ English in both envelopes, including `(empty)`. Writers (effective-flow setup, m
 language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
+- **`executionProfiles.fast.enabled`** → strict Boolean and fail-closed. A missing row or literal
+  `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
+  Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
+  literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
+  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
+  is not yet an interactive setup choice.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -237,9 +260,8 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
-- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
-  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
-  per the rule above.
+- **`delivery.prReview`** → the literal string `ask`, `always`, or `off`; a missing line resolves to
+  `ask` through the rule above. What the value governs is the owning workflow's, not this fragment's.
 - **Retired rows** → `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` and a row
   whose key begins with `prReview.` are never read; their presence can stop a run, the one exception
   to the safe-default rule below, under the deferred building block's retired-key contract.
@@ -260,9 +282,8 @@ value cell). Example excerpt (interface sketch, not full content):
 | worktree.enabled                  | true    |
 ```
 
-If the table is invalid or ambiguous (missing key, unknown encoding): use a
-safe default for the run, inform the user about the affected key,
-do **not** guess.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a safe default for the
+run, inform the user about the affected key, do **not** guess.
 
 ## Issue-tracker integration (remote mode)
 
@@ -316,7 +337,7 @@ Reading the Effective Flow configuration from the project setup ADR (including t
 
 At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`. In hidden mode (config locator step 0) no argument overrides the forced `local` target: an issue reference stops the run instead.
 2. **Per-run wish of the user:** A **generic** wish for issue/tracker work ("as issues", "publish to the tracker") activates the **configured** target and never redirects a run to a different one; without a configured target it selects `remote`. Only a wish that explicitly names the forge (GitHub, Forgejo, `origin`) selects `remote`, and only a wish that explicitly names the configured external tool selects `external`. If the user explicitly requests local work ("local", "without issues", "report only"), `local` is active — that stays the escape hatch on every target.
 3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
 4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.

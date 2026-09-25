@@ -23,7 +23,12 @@ Everything else in that fragment stays off:
 
 **The checkout's lifecycle is closed by this workflow.** Prefer the invocation checkout when it
 already has the head branch checked out and clean: work in place, create no worktree, and create no
-lifecycle record. Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
+lifecycle record. When `git worktree list --porcelain` shows the head branch checked out in any
+other state – a dirty invocation checkout or another linked worktree – stop before provisioning:
+create no worktree and no record, use no `--force` or detached workaround, merge nothing, and report
+which checkout holds the branch and that it must be cleaned or released first. Git refuses to attach
+a branch that is already checked out elsewhere without `--force`, which this workflow never uses.
+Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
 its version 1 lifecycle record, and close that record in the same run: after the push of Phase 2
 step 1 is confirmed, transition `active` to `cleanup-ready` and run the shared
 claim/remove/reconcile sequence; on a controlled stop before the push – including a conflict this run

@@ -26,6 +26,7 @@ export const DELEGATION_ENVELOPE_ERROR_CODES = Object.freeze([
   'INVALID_CWD',
   'UNSAFE_MANIFEST_VALUE',
   'UNSAFE_TARGET',
+  'WRITE_FAILED',
   'DIGEST_MISMATCH',
   'SNAPSHOT_INVALID',
   'DELIMITER_MISSING',
@@ -47,6 +48,9 @@ const EXIT_CODES = Object.freeze({
   INVALID_CWD: 2,
   UNSAFE_MANIFEST_VALUE: 2,
   UNSAFE_TARGET: 3,
+  // An I/O fault aborts the run exactly as an unsafe target does, so it keeps that exit code and
+  // only the error code tells the operator which of the two happened.
+  WRITE_FAILED: 3,
 });
 
 export const DELIMITER = '--- caller-supplied item text follows ---';
@@ -272,8 +276,12 @@ export function normalizeBuildInput(input) {
     }
     const reviewId = requireManifestValue(normalizeForgeId(item.reviewId), `${label}.reviewId`);
     // Absent provenance is refused per item later, never synthesized; present but unsafe fails.
+    // A whitespace-only value carries no provenance either, so it counts as absent and stays a
+    // per-item refusal instead of stopping the whole run as a sender-contract error.
     const provenance = (field) =>
-      item[field] === undefined || item[field] === null || item[field] === ''
+      item[field] === undefined ||
+      item[field] === null ||
+      (typeof item[field] === 'string' && item[field].trim() === '')
         ? null
         : requireManifestValue(item[field], `${label}.${field}`);
     const author = provenance('author');
@@ -732,7 +740,9 @@ async function writeExclusive(target, content, write = writeContent) {
     } catch {
       // The handle no longer yields an identity: remove nothing rather than guess.
     }
-    fail('UNSAFE_TARGET', `cannot write ${target}: ${error?.code ?? error?.message}`);
+    // The exclusive open already proved the target safe, so a failure here is an I/O fault
+    // (ENOSPC, EIO, a full quota) and is reported as one rather than as a safety refusal.
+    fail('WRITE_FAILED', `cannot write ${target}: ${error?.code ?? error?.message}`);
   } finally {
     await handle.close();
   }
