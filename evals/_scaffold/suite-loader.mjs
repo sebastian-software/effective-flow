@@ -17,6 +17,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isValidProfilePin } from './profile.mjs';
 
 const EVALS_ROOT = resolve(import.meta.dirname, '..');
 const SUITE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -59,6 +60,10 @@ const REQUIRED_FIELDS = {
       (name) => typeof value?.[name] === 'function',
     ),
   retryDiscardLimit: (value) => typeof value === 'function',
+  // The execution profile `prepare` and `publish` hold every round to. Required for the same reason
+  // as `auxiliaryEvidence`: a suite that forgot its pin would otherwise read exactly like one that
+  // deliberately pins nothing, so "no pin" is spelled `expectedProfile: null`.
+  expectedProfile: isValidProfilePin,
 };
 
 // Path comparison that survives a checkout reached through a symlink: the suite declares its
