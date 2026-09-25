@@ -171,8 +171,8 @@ function ghHostArgs(repository) {
 // whose runs may supersede one another; `latestCheckRuns` in `remote-tracker-core.mjs` keeps only
 // the latest run per identity. The workflow is selected by its `databaseId` rather than its name
 // because workflow names are not unique: two workflow files may both declare `name: CI`.
-// `startedAt`/`completedAt`, and a status context's `createdAt`, give each reported check its
-// instants.
+// `startedAt`/`completedAt` give a check run its instants, and a status context's `createdAt` gives
+// it only its completion instant.
 const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {

@@ -551,11 +551,13 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 - **A configured reviewer check is read from the same check list, not from a separate call.** The
   context named in `mergeGate.bots.<login>.check` is matched against the normalized check list that
   `pr-status-read` already returns. A GitHub commit status (such as `recensor/review`) and a check
-  run are indistinguishable there, so either form works, and a context that never appears at all is
-  reported by name rather than treated as passed. A reviewer that has run is not triggered again at
-  the same head, with one exception: when its latest verdict requests changes and another check was
-  re-run after that verdict and came back green, the gate re-posts the trigger once for that verdict,
-  and reports the verdict as stale if the reviewer does not answer.
+  run are matched the same way by name there, so either form works, and a context that never appears
+  at all is reported by name rather than treated as passed. A reviewer that has run is not triggered
+  again at the same head, with one exception: when its latest verdict requests changes and another
+  check run was re-run after that verdict and came back green, the gate re-posts the trigger once
+  for that verdict, and reports the verdict as stale if the reviewer does not answer. A commit
+  status never counts as a re-run, so on Forgejo, where every check is a commit status, this never
+  fires.
 - **`pr-checks-wait` runs two `gh` commands, not one.** `gh` rejects `--watch` together with
   `--json` outright, so a single call can no longer do both jobs. The operation first watches the
   checks to their natural conclusion (or the supplied timeout) and discards that step's exit
@@ -637,8 +639,9 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   run, or no check suite or app slug – which fails closed to reporting every run. The
   truncation check runs first, and `checkCount` counts the entries that remain. The record adds
   `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
-  whose combined status already holds one entry per context), and each check carries `startedAt` and
-  `completedAt` where the provider supplies them; a commit status reports its creation time as both.
+  whose combined status already holds one entry per context), and a check run carries `startedAt`
+  and `completedAt` where the provider supplies them; a commit status (a GitHub status context or a
+  Forgejo status) carries only `completedAt`, its creation time.
   `pr-checks-wait` is unchanged and carries neither.
 - **`pr-checks-wait` may report `forcedKill: true`.** If the watching child process ignores a clean
   `SIGTERM` and has to be escalated to `SIGKILL` after a one-second grace period, the result carries

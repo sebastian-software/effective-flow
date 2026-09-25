@@ -221,7 +221,7 @@ the run may merge at the end or only report merge-readiness, then drives an orde
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers the ones that have not started – and, once per verdict, one that has run whose
-   changes-requested verdict went stale because another check was re-run green after it – waits,
+   changes-requested verdict went stale because another check run was re-run green after it – waits,
    and then delegates their findings to `/effective-flow iterate`, which fixes the valid ones,
    replies, and resolves the threads. On
    Forgejo, which supports neither thread write, the reviewer's own later approval settles a thread
@@ -441,9 +441,9 @@ differently:
   a fresh request, discard the one in flight.
 - **Not started** – no evidence that the reviewer has run or is running for the current head. This
   is the state that gets the trigger comment, followed by a wait. The one exception is a reviewer
-  that **has run** with a stale changes-requested verdict: another check was re-run after the
-  verdict and came back green at the unchanged head, so the gate re-posts the trigger once for that
-  verdict and reports the verdict as stale if no new review follows.
+  that **has run** with a stale changes-requested verdict: another check run (not a commit status)
+  was re-run after the verdict and came back green at the unchanged head, so the gate re-posts the
+  trigger once for that verdict and reports the verdict as stale if no new review follows.
 - **Has run** – a configured check reached a terminal state against the current head, or the
   reviewer's own output – a comment, a review thread, a thread reply, or a **submitted review** – is
   newer than the head commit. The gate proceeds to its findings. Note what

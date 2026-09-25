@@ -258,7 +258,9 @@ entries that denote the same reviewer – two spellings of one account are one r
        reports the latest run per check identity – has a `startedAt` strictly later than that
        `submittedAt` and concluded `SUCCESS`, so it was re-run after the review. An entry matching
        the reviewer's own configured `.check` does not count, a `SKIPPED` or `NEUTRAL` conclusion
-       does not count, and a check without `startedAt` does not count;
+       does not count, and a check without `startedAt` does not count. That covers every commit
+       status context and every Forgejo status: they report only `completedAt`, the time their final
+       status was posted, so a slow first run that finishes after the verdict never qualifies;
      - no own trigger comment exists whose `createdAt` is not older than that `submittedAt`, identified
        by the body and author rule of step 3's idempotency check. This is the bound: **at most one
        re-trigger per changes-requested verdict**.
@@ -277,11 +279,14 @@ entries that denote the same reviewer – two spellings of one account are one r
      only when a check is re-run after it again, so an unmoved head with settled checks cannot loop.
 
    - **Unlike step 3, an unprovable comparison posts nothing here.** Report "staleness unprovable"
-     instead when the verdict has no `submittedAt`, when a comment with the trigger body has no
-     `createdAt` or no establishable author, or when no check qualifies only because it lacks
-     `startedAt`: a re-trigger that cannot recognize its own earlier comment would post on every run.
-     Post nothing either when no trigger text is configured for that login, or when this verdict's
-     re-trigger was already posted.
+     instead only when the other conditions otherwise hold and one comparison cannot be made: the
+     verdict has no `submittedAt` while another check with `startedAt` concluded `SUCCESS`, or a
+     comment with the trigger body has no `createdAt` or no establishable author. A re-trigger that
+     cannot recognize its own earlier comment would post on every run. These comment-provenance gaps
+     are evaluated only when a qualifying re-run check exists. An entry without `startedAt` – every
+     status context and every Forgejo status – never counts and never by itself makes staleness
+     unprovable: with no qualifying check the verdict is simply not stale. Post nothing either when no
+     trigger text is configured for that login, or when this verdict's re-trigger was already posted.
    - **The stale-verdict report state.** When a check was re-run after the verdict, or staleness is
      unprovable, and no re-trigger was posted or the reviewer did not answer within the wait – it is
      still **has run** with no review newer than the re-trigger – record the stale-verdict state for

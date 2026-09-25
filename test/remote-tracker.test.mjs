@@ -7098,12 +7098,11 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
       startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:27:56Z'),
     },
-    // The status context carries its creation instant as both ends.
+    // The status context carries its creation instant as its completion only: it has no start.
     {
       name: 'recensor/review',
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
-      startedAt: instant('2026-09-25T09:22:31Z'),
       completedAt: instant('2026-09-25T09:22:31Z'),
     },
   ];
@@ -7419,21 +7418,28 @@ test('pr-status-read keeps a status context apart from a same-named check run an
       startedAt: instant('2026-09-25T09:00:00Z'),
       completedAt: instant('2026-09-25T09:03:00Z'),
     },
+    // A status context's one instant is the posting of its final state, a completion time. It has
+    // no start, so it can never pass for a check re-run after a review.
     {
       name: 'unit',
       status: 'COMPLETED',
       conclusion: 'FAILURE',
-      startedAt: instant('2026-09-25T09:10:00Z'),
       completedAt: instant('2026-09-25T09:10:00Z'),
     },
     {
       name: 'unit',
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
-      startedAt: instant('2026-09-25T09:20:00Z'),
       completedAt: instant('2026-09-25T09:20:00Z'),
     },
   ]);
+  // `deepEqual` already rejects an extra key; this states the rule on its own so a regression names
+  // it: the check run keeps its `startedAt`, and neither status context carries one at all.
+  assert.equal(Object.hasOwn(result.checks[0], 'startedAt'), true);
+  for (const statusContext of result.checks.slice(1)) {
+    assert.equal(Object.hasOwn(statusContext, 'startedAt'), false);
+    assert.equal(typeof statusContext.completedAt, 'string');
+  }
 });
 
 test('pr-status-read states supersededCheckCount right after checkCount, as 0 when nothing collapsed', async () => {
@@ -8371,10 +8377,11 @@ test('an observed Forgejo status payload maps its finished check to COMPLETED/SU
   ]);
 });
 
-test('Forgejo pr-status-read carries created_at as both instants and states supersededCheckCount 0', async () => {
+test('Forgejo pr-status-read carries created_at as completedAt only and states supersededCheckCount 0', async () => {
   // The combined status endpoint already returns one status per context, so nothing is collapsed;
   // only the output shape follows GitHub's. `created_at` is Gitea's `structs.CommitStatus` field,
-  // and a status without it reports no instant rather than a guessed one.
+  // the posting of the final state, so it is a completion time and never a start. A status without
+  // it reports no instant rather than a guessed one.
   const { envelope } = await forgejoStatus(
     forgejoStatusResults({
       statuses: [
@@ -8403,11 +8410,14 @@ test('Forgejo pr-status-read carries created_at as both instants and states supe
       status: 'COMPLETED',
       conclusion: 'SUCCESS',
       url: 'https://code.example.test/team/flow/actions/7',
-      startedAt: instant('2026-09-25T12:27:40Z'),
       completedAt: instant('2026-09-25T12:27:40Z'),
     },
     { name: 'ci/lint', status: 'COMPLETED', conclusion: 'FAILURE' },
   ]);
+  // No Forgejo status carries a start, not even one whose `created_at` is set.
+  for (const check of result.checks) {
+    assert.equal(Object.hasOwn(check, 'startedAt'), false, check.name);
+  }
 
   // Go's zero instant is the marshalled "never set", so it states no instant at all.
   const zero = await forgejoStatus(

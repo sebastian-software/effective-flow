@@ -172,7 +172,7 @@ dropped.
 Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
 in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
 the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
-one, URL, `startedAt` and `completedAt` where supplied), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
+one, URL, and for a check run `startedAt` and `completedAt` where supplied, while a status context or Forgejo status carries `completedAt` only), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
 timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
 — exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
 deliberate: both values must be read at the same instant to be consistent.

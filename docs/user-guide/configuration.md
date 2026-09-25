@@ -467,11 +467,12 @@ which of the two you meant.
 `recensor/review` or `Greptile Review`. With it, the gate can tell a reviewer that is **still
 running** from one that has **not started**: it waits for the former and triggers only the latter.
 One exception applies to a reviewer that has already run: when its latest verdict at the unchanged
-head requests changes, and another check was re-run after that verdict and came back green, the
-verdict is stale, so the gate posts the trigger once more for that verdict and waits once. A
-reviewer that does not answer with a new review, or a stale verdict the gate cannot re-trigger – no
-trigger configured, a timestamp it cannot prove, or the re-trigger already posted – is reported as a
-stale verdict with a recommendation to re-trigger by hand; the verdict still blocks as before.
+head requests changes, and another check run (never a commit status) was re-run after that verdict
+and came back green, the verdict is stale, so the gate posts the trigger once more for that verdict
+and waits once. A reviewer that does not answer with a new review, or a stale verdict the gate
+cannot re-trigger – no trigger configured, a timestamp it cannot prove, or the re-trigger already
+posted – is reported as a stale verdict with a recommendation to re-trigger by hand; the verdict
+still blocks as before.
 Leave it unset only for a reviewer that publishes no such check; Greptile publishes the `Greptile
 Review` check and should use that exact context. Without `.check`, the gate keeps its previous
 two-state behavior for that reviewer. See

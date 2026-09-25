@@ -2801,14 +2801,19 @@ function latestCheckRuns(rollup) {
 }
 
 // One `pr-status-read` check: the shared record plus the instants the provider states, each omitted
-// when absent or unparseable, like `conclusion`. A GitHub status context has a single instant, its
-// creation, which is both ends; a Forgejo record arrives with both already set by
-// `forgejoCheckRecord`. Kept apart from `normalizeCheck` so `pr-checks-wait` reports no timestamps.
+// when absent or unparseable, like `conclusion`. A GitHub status context has one instant, the
+// posting of its final state, which is a completion time, so it reports `completedAt` only: a start
+// time it does not have would let a slow first run pass for a re-run after a review. A Forgejo
+// record arrives with its `completedAt` already set by `forgejoCheckRecord`. Kept apart from
+// `normalizeCheck` so `pr-checks-wait` reports no timestamps.
 function statusCheck(item) {
   const check = normalizeCheck(item);
-  const created = item.__typename === 'StatusContext' ? item.createdAt : undefined;
-  const startedAt = normalizeTimestamp(item.startedAt, created);
-  const completedAt = normalizeTimestamp(item.completedAt, created);
+  const isStatusContext = item.__typename === 'StatusContext';
+  const startedAt = isStatusContext ? undefined : normalizeTimestamp(item.startedAt);
+  const completedAt = normalizeTimestamp(
+    item.completedAt,
+    isStatusContext ? item.createdAt : undefined,
+  );
   return {
     ...check,
     ...(startedAt === undefined ? {} : { startedAt }),
@@ -2938,7 +2943,7 @@ function flattenPullRequestStatus(raw) {
 // `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
 // `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
 // one shape for both providers, and the record deliberately carries only `name`, `status`,
-// `conclusion`, `url`, and the `startedAt`/`completedAt` pair taken from `created_at`: no raw Gitea
+// `conclusion`, `url`, and only a `completedAt` taken from `created_at`: no raw Gitea
 // key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
 // envelope. The combined status endpoint already returns one status per context, so nothing here
 // is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
@@ -2979,8 +2984,9 @@ function forgejoCheckRecord(item, index) {
   const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
-  // A commit status has one instant, its creation, which stands for both ends as it does for a
-  // GitHub status context. The Go zero instant is the marshalled "never set", so it states none.
+  // A commit status has one instant, the posting of its final state, which is a completion time
+  // and not a start, so it is reported as `completedAt` only, as for a GitHub status context. The
+  // Go zero instant is the marshalled "never set", so it states none.
   const created = isGoZeroInstant(item.created_at)
     ? undefined
     : normalizeTimestamp(item.created_at);
@@ -2992,7 +2998,7 @@ function forgejoCheckRecord(item, index) {
     status: mapped.status,
     ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
     ...(typeof url === 'string' && url !== '' ? { url } : {}),
-    ...(created === undefined ? {} : { startedAt: created, completedAt: created }),
+    ...(created === undefined ? {} : { completedAt: created }),
   };
 }
 

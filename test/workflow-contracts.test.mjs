@@ -7028,6 +7028,29 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     /check without `startedAt` does not count/,
     'a check without a start time must not count',
   );
+  // A commit status has one instant, the posting of its final state, so it carries no start.
+  // Without that rule a slow first status that finishes after the verdict would pass for a re-run.
+  const secondCondition = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '- at least one **other** check',
+      '- no own trigger comment exists',
+    ),
+  );
+  assert.match(
+    secondCondition,
+    near(
+      'a check without `startedAt` does not count',
+      'every commit status context and every Forgejo status',
+      40,
+    ),
+    'the missing-start exclusion must cover every status context and every Forgejo status',
+  );
+  assert.match(
+    secondCondition,
+    near('every commit status context and every Forgejo status', 'report only `completedAt`', 30),
+    'a status context and a Forgejo status must be stated to report only completedAt',
+  );
   assert.match(
     retrigger,
     /latest run per check identity/,
@@ -7114,6 +7137,32 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     ),
   );
   assert.match(unprovable, /"staleness unprovable"/, 'an unprovable comparison must be reported');
+  // A missing start is the normal shape of a commit status, not a gap in the proof: treating it as
+  // one reported every Forgejo verdict, and every GitHub verdict beside a status context, as stale.
+  assert.match(
+    unprovable,
+    near(
+      'An entry without `startedAt`',
+      'never counts and never by itself makes staleness unprovable',
+      100,
+    ),
+    'an entry without startedAt must never by itself make staleness unprovable',
+  );
+  assert.match(
+    unprovable,
+    near('An entry without `startedAt`', 'every status context and every Forgejo status', 10),
+    'the entry without startedAt must be named as every status context and Forgejo status',
+  );
+  assert.match(
+    unprovable,
+    /comment-provenance gaps are evaluated only when a qualifying re-run check exists/,
+    'comment-provenance gaps must count only once a qualifying re-run check exists',
+  );
+  assert.doesNotMatch(
+    unprovable,
+    /only because it lacks `startedAt`/,
+    'a check lacking startedAt must no longer be a reason for staleness unprovable',
+  );
   assert.match(
     unprovable,
     near('Post nothing either', 'no trigger text is configured', 60),
@@ -7255,6 +7304,14 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
     ],
     [/commit-status context keeps its own identity/, 'keeps status contexts separate'],
     [/`startedAt` and `completedAt`/, 'carries the run timestamps'],
+    [
+      near(
+        'for a check run `startedAt` and `completedAt`',
+        'a status context or Forgejo status carries `completedAt` only',
+        60,
+      ),
+      'gives a status context or Forgejo status only its completedAt',
+    ],
     [/`supersededCheckCount`/, 'reports the superseded count'],
   ]) {
     assert.match(status, pattern, `pr-status-read ${message}`);
