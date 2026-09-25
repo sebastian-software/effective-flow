@@ -28,6 +28,7 @@ import {
   scenarioBuildIdentity,
 } from './build-identity.mjs';
 import { evaluateEvidence } from './evaluate.mjs';
+import { assertProfileMatchesPin, normalizeProfile, PROFILE_KEYS, sameKeys } from './profile.mjs';
 import { validateArchivedPairing } from './run-evidence.mjs';
 import { provisionSlot, TRACKER_STUB_SKILL_PATH } from './scaffold.mjs';
 import { auxiliaryLogPath, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
@@ -42,7 +43,6 @@ const LAUNCH_PPID = process.ppid;
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
 const PHYSICAL_REPOSITORY_ROOT = realpathSync(REPOSITORY_ROOT);
-const PROFILE_KEYS = ['harness', 'model', 'reasoningEffort', 'reportedVersion', 'toolPolicy'];
 const PREPARED_DIGEST_KEYS = [
   'buildIdentity',
   'fixture',
@@ -91,10 +91,6 @@ function atomicJson(path, value, { exclusive = false } = {}) {
     throw new Error(`refusing to replace immutable file ${path}`);
   }
   renameSync(temporary, path);
-}
-
-function sameKeys(value, keys) {
-  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
 }
 
 function sameProfile(left, right) {
@@ -310,27 +306,9 @@ function pauseAtRepeatableBoundary(name) {
   rmSync(release, { force: true });
 }
 
-export function normalizeProfile(profile = {}) {
-  const unknown = Object.keys(profile).filter((key) => !PROFILE_KEYS.includes(key));
-  if (unknown.length > 0)
-    throw new Error(`execution profile has unknown fields: ${unknown.join(', ')}`);
-  const normalized = {};
-  for (const key of PROFILE_KEYS) {
-    const value = profile[key] ?? 'unknown';
-    if (typeof value !== 'string' || value.trim() === '') {
-      throw new Error(`execution profile ${key} must be a non-empty string`);
-    }
-    if (
-      /(?:session|thread|task)[_-]?id|https?:\/\/|account|e-?mail|@/i.test(value) ||
-      /(?:^|[\s=])(?:\/Users\/|\/home\/|~[\\/])/.test(value)
-    ) {
-      throw new Error(`execution profile ${key} contains a sensitive or link-like value`);
-    }
-    normalized[key] = value.trim();
-  }
-  if (!sameKeys(normalized, PROFILE_KEYS)) throw new Error('execution profile has unknown fields');
-  return normalized;
-}
+// The profile rules live in the unhashed `profile.mjs`, which `suite-loader.mjs` shares; re-exported
+// so the round coordinator's public surface stays what it was before they moved.
+export { normalizeProfile };
 
 function sourceRevision() {
   return execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -350,6 +328,10 @@ export function createRound(
 ) {
   const selected = selectScenarios(suite, scenarios);
   const normalizedProfile = normalizeProfile(profile);
+  // The pin is checked before anything is created or built, so a deviating or omitted pinned flag
+  // leaves no round root behind. It is read from the `suite` argument, never from an import, so
+  // the suite a round is created for is the suite whose pin it is held to.
+  assertProfileMatchesPin(suite.expectedProfile, normalizedProfile, 'the round profile');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(roundId)) throw new Error(`invalid round id ${roundId}`);
   const roundRoot = contained(base, resolve(base, roundId), 'round root');
   mkdirSync(resolve(base), { recursive: true });
@@ -1036,6 +1018,17 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
       ) {
         throw new Error(`${scenario}/run-${slot} metadata does not bind its archived files`);
       }
+      // Every slot of the candidate generation, newly published and carried forward alike, has to
+      // have been recorded with the pinned profile. The instrument binding is the primary guard:
+      // a pin edit changes the hashed suite configuration, so a carried-forward stamp from before
+      // it already fails the identity check below. This assertion is the defense in depth that
+      // still holds against hand-edited metadata or a future change to the hash membership. The
+      // top-level `profile` is the one to check: sealing guarantees it equals the host receipt's.
+      assertProfileMatchesPin(
+        suite.expectedProfile,
+        metadata.profile,
+        `${scenario}/run-${slot} archived profile`,
+      );
       const evaluation = evaluateEvidence(suite, {
         scenario,
         logText: readFileSync(`${target}.jsonl`, 'utf8'),

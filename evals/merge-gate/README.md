@@ -32,9 +32,11 @@ final publication of canonical results is serialized.
 The instrument is shared with every other behavioural eval suite and lives one level up, under
 `evals/_scaffold/`; what is specific to this suite lives here. `suite.config.mjs` is the seam
 between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
-tracker stub, its `iterate`-echo overlay policy and its sandbox namespace, and the shared scaffold
-reads all of it from there rather than naming a tool. It is hashed as one of the suite's instrument
-files, because every one of those bindings decides what a slot sees. The scenario registry is the
+tracker stub, its `iterate`-echo overlay policy, its sandbox namespace and the execution profile
+every round is pinned to, and the shared scaffold reads all of it from there rather than naming a
+tool. It is hashed as one of the suite's instrument files, because every one of those bindings
+decides what a slot sees — and, for the pin, so that changing the recording profile stales the
+archived rounds recorded under the old one. The scenario registry is the
 one declaration that does not, so it sits in `scenario-registry.mjs` and is hashed by nothing —
 adding a scenario therefore costs its own evidence and no other scenario's. `validateSuite` holds
 both halves, and neither is safe alone.
@@ -83,8 +85,14 @@ question belongs to `pnpm eval merge-gate verify`.
 
 ### 1. Prepare every slot from one build
 
-Replace the uppercase values below with the non-sensitive execution profile the host will use for
-every slot in this round:
+The suite pins part of the execution profile in `suite.config.mjs` (`expectedProfile`): harness
+`codex-cli`, model `gpt-6-sol`, reasoning effort `medium`. Replace the uppercase values below with
+the non-sensitive execution profile the host will use for every slot in this round; the three pinned
+flags must carry exactly those values, while the reported version and the tool policy stay free and
+record what the host actually used. The pinned model is in the Codex CLI model catalog from
+`codex-cli 0.156.1` onwards, so that is the minimum version a round can be recorded with; it is
+documented rather than enforced, because pinning the CLI version would owe a full round for every
+CLI update.
 
 ```sh
 pnpm eval merge-gate prepare \
@@ -111,8 +119,13 @@ pnpm eval merge-gate prepare \
 
 The command builds once for the whole round, records one execution profile in an immutable manifest,
 and prints the manifest path followed by one tab-separated row per slot. The last column is the
-rendered prompt path. Omitted profile values are recorded explicitly as `"unknown"`; they are not
-inferred later. Preserve the manifest path: every later command accepts either it or the printed
+rendered prompt path. An omitted value of an unpinned key (`--reported-version`, `--tool-policy`) is
+recorded explicitly as `"unknown"`; it is not inferred later. A pinned key is never recorded that
+way: `prepare` compares the normalized profile with the pin before it creates the round root or
+builds anything, and exits non-zero naming every deviating key with its expected and declared value
+— an omitted pinned flag normalizes to `"unknown"` and is rejected like any other mismatch, and the
+comparison is exact, so `GPT-6-SOL` does not match. The profile is an operator attestation: the pin
+enforces what is declared and archived, not what the host really ran. Preserve the manifest path: every later command accepts either it or the printed
 round identifier through `--round`.
 
 Every scenario prompt states the slot project twice: as the execution root and as the literal
@@ -132,13 +145,23 @@ byte count and SHA-256 digest, then returns one controlled `deferred` outcome fo
 caller-minted identifier. Its build identity hashes the echo and the trace helper at the paths the
 run executes, in place of production `iterate`.
 
+Because `suite.config.mjs` is hashed, editing the pin stales every archived stamp at once. The first
+round after a pin change therefore has to cover the full corpus: a subset round would carry forward
+scenarios recorded under the old profile, and publication refuses them twice over: through the instrument
+digest, and — first in evaluation order — through the profile check. The pin governs only this recording; the models the
+shipped native Codex workers declare (`codex.model` in `src/agents/*.md`) are configured separately
+and may differ from it.
+
 Preparation may run concurrently in different checkouts or for different rounds. Every round has
 its own collision-resistant directory under `/tmp/effective-flow-merge-gate-eval/rounds/`, and every
 `(scenario, slot, attempt)` owns its own skill copy, project checkout, fixture, trace, and locks.
 
 ### 2. Launch fresh sessions at the host boundary
 
-For every row, the calling host must start a **new, non-forked session** with:
+The recording host needs a Codex CLI that carries the pinned model — `codex-cli 0.156.1` or newer —
+before the first slot is launched; upgrade it there (for example `brew upgrade --cask codex`, or the
+npm equivalent) and declare the version it reports through `--reported-version`. For every row, the
+calling host must start a **new, non-forked session** with:
 
 - the slot's `project/` directory as its initial working root;
 - the contents of that slot's `prompt.txt` as its only task input; and
@@ -260,7 +283,9 @@ pnpm eval merge-gate publish --round ROUND_ID_OR_MANIFEST
 
 Publication builds the current source once more to reject drift, carries forward unselected
 scenarios, stages the complete candidate, and validates exact five-slot coverage and every archived
-artifact before replacing `results/`. The candidate contains logs, build stamps, rendered prompts,
+artifact before replacing `results/`. Every slot of the candidate generation, newly published or
+carried forward, must also carry an archived top-level `profile` that matches the suite's pin; one
+deviating slot rejects the whole generation and leaves `results/` untouched. The candidate contains logs, build stamps, rendered prompts,
 and safe metadata, plus the echo trace for every configured-reviewer slot. A valid behavioural finding is still published, is printed to stderr, and makes
 the command exit nonzero; the ordinary eval test then reports the same red outcome. Structurally
 invalid or incomplete evidence replaces nothing.
@@ -377,7 +402,9 @@ claim checkable by someone who did not perform the runs.
 
 `pnpm prepare:eval <tool> <scenario>` remains temporarily available. It prints a deprecation
 notice and forwards to `pnpm eval <tool> prepare --scenario <scenario>`, producing a complete
-five-slot round. It no longer archives a previous log or owns any lifecycle logic.
+five-slot round. It no longer archives a previous log or owns any lifecycle logic. It forwards no
+profile flags either, so for a suite that pins its profile, as this one does, the forwarded
+`prepare` always rejects the round; use `pnpm eval merge-gate prepare` with the pinned flags instead.
 
 ### Cost is quota and wall-clock time
 

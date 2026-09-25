@@ -142,6 +142,24 @@ const suite = {
   retryDiscardLimit(scenario) {
     return scenario === 'unreported-checks-at-phase-four' ? 5 : Number.POSITIVE_INFINITY;
   },
+  // The execution profile every round of this suite is recorded with. `prepare` refuses a round
+  // whose declared profile deviates on any key named here — an omitted flag is recorded as
+  // "unknown" and so deviates too — and `publish` refuses a generation in which any archived slot
+  // does. The profile is an operator attestation: this enforces what is declared and archived, not
+  // what the host actually ran.
+  //
+  // `reportedVersion` and `toolPolicy` are deliberately not pinned. The CLI version moves often, and
+  // pinning it would cost a full re-recorded round for every CLI update; the minimum version that
+  // carries this model is documented in the README instead. The tool policy is an operational
+  // detail of the recording host rather than a property of the measurement.
+  //
+  // This file is hashed, so editing the pin deliberately stales every archived stamp: the first
+  // round after a pin change has to cover the whole corpus, which the instrument digest enforces.
+  expectedProfile: Object.freeze({
+    harness: 'codex-cli',
+    model: 'gpt-6-sol',
+    reasoningEffort: 'medium',
+  }),
 };
 
 export default suite;

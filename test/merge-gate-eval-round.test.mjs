@@ -42,10 +42,13 @@ import { loadSuite, suiteConfigPath, validateSuite } from '../evals/_scaffold/su
 import { findings as evaluatorFindings } from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 
+// The attested receipt profile of every sealed test slot. The keys the suite pins come from the pin
+// itself, so the fixture drives the real suite with a profile `prepare` and `publish` accept; the
+// unpinned keys stay synthetic, which also shows that they are free.
 const PROFILE = {
-  harness: 'test-harness',
-  model: 'test-model',
-  reasoningEffort: 'test-effort',
+  harness: suite.expectedProfile.harness,
+  model: suite.expectedProfile.model,
+  reasoningEffort: suite.expectedProfile.reasoningEffort,
   reportedVersion: 'test-version',
   toolPolicy: 'test-policy',
 };
@@ -182,6 +185,11 @@ function copyRestampedResults(resultsDir) {
         const metadataPath = stampPath.replace(/\.build\.json$/, '.metadata.json');
         const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
         metadata.buildDigest = identity.digest;
+        // The archive was recorded under whatever profile the suite pinned at the time, and the
+        // publication path holds every carried-forward slot to the current pin. Rewriting both
+        // copies — sealing keeps them equal — keeps these tests about the stamps they re-point.
+        metadata.profile = { ...PROFILE };
+        metadata.hostAttestation.profile = { ...PROFILE };
         writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
       }
     }
@@ -345,6 +353,43 @@ test('the suite contract is checked once at load rather than discovered field by
       () => validateSuite({ ...suite, [field]: [] }, label),
       new RegExp(`${field} missing or malformed`),
       `an empty ${field} is accepted, and an empty one hashes to a plausible digest of nothing`,
+    );
+  }
+});
+
+// The pin is a required field, like `auxiliaryEvidence`, so a suite that forgot it cannot read like
+// one that deliberately pins nothing. Every malformed form is refused at load: the comparison runs
+// exactly on normalized values, so a pin no normalized profile can equal would reject every round
+// at `prepare` instead of failing once, here, with the field named.
+test('the suite contract requires an explicit, well-formed execution profile pin', () => {
+  const label = 'probe';
+  const { expectedProfile: _removed, ...withoutPin } = suite;
+  assert.throws(
+    () => validateSuite(withoutPin, label),
+    /expectedProfile missing or malformed/,
+    'a suite that omits expectedProfile is accepted as one that deliberately pins nothing',
+  );
+  assert.doesNotThrow(() => validateSuite({ ...suite, expectedProfile: null }, label));
+  assert.doesNotThrow(() => validateSuite({ ...suite, expectedProfile: { model: 'gpt-6-sol' } }));
+
+  const malformed = {
+    'an unknown key': { ...suite.expectedProfile, sessionId: 'abc' },
+    'an empty object': {},
+    'an empty string value': { model: '' },
+    'a whitespace-padded value': { model: ' gpt-6-sol ' },
+    'the "unknown" placeholder': { model: 'unknown' },
+    'an address-like value': { model: 'operator@example.com' },
+    'a link-like value': { model: 'https://example.com/gpt-6-sol' },
+    'a non-string value': { model: 6 },
+    'a bare string': 'gpt-6-sol',
+    'an array': ['gpt-6-sol'],
+    'undefined spelled out': undefined,
+  };
+  for (const [description, pin] of Object.entries(malformed)) {
+    assert.throws(
+      () => validateSuite({ ...suite, expectedProfile: pin }, label),
+      /expectedProfile missing or malformed/,
+      `a pin with ${description} is accepted`,
     );
   }
 });
@@ -529,8 +574,10 @@ test('round resolution rejects an intermediate symlink escape', () => {
 test('unknown profiles stay explicit and built roots and slot state are physically contained', () => {
   const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-contained-'));
   const base = resolve(temporary, 'rounds');
+  // An empty profile is the unpinned "unknown" path, which only a suite that pins nothing accepts.
+  const unpinned = { ...suite, expectedProfile: null };
   try {
-    const prepared = createRound(suite, {
+    const prepared = createRound(unpinned, {
       scenarios: ['guard-blocks-merge'],
       profile: {},
       base,
@@ -542,7 +589,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     delete omitted.profile.model;
     assert.throws(
       () =>
-        sealAttempt(suite, {
+        sealAttempt(unpinned, {
           handle: prepared.manifestPath,
           scenario: 'guard-blocks-merge',
           slot: 1,
@@ -558,7 +605,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     rmSync(paths.state);
     symlinkSync(outsideState, paths.state);
     assert.throws(
-      () => roundStatus(suite, prepared.manifestPath, { base }),
+      () => roundStatus(unpinned, prepared.manifestPath, { base }),
       /symlinked.*slot state/,
     );
     rmSync(paths.state);
@@ -572,7 +619,7 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     const altered = { ...prepared.manifest, builtSkillRoot: linkedBuild };
     writeFileSync(prepared.manifestPath, `${JSON.stringify(altered, null, 2)}\n`);
     assert.throws(
-      () => loadRound(suite, prepared.manifestPath, { base }),
+      () => loadRound(unpinned, prepared.manifestPath, { base }),
       /built skill root is missing, symlinked, or not a directory/,
     );
   } finally {
@@ -581,6 +628,98 @@ test('unknown profiles stay explicit and built roots and slot state are physical
     rmSync(temporary, { recursive: true, force: true });
   }
 });
+
+// `prepare` refuses a round whose declared profile deviates from the suite's pin on any pinned key,
+// and an omitted flag deviates too: it is recorded as "unknown", which no pin may expect. The check
+// runs before the round root is created, so a refused round leaves nothing under the sandbox base
+// that a later `prepare` of the same id would trip over.
+test('createRound rejects a deviating or omitted pinned profile key before creating anything', () => {
+  const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-pin-'));
+  const base = resolve(temporary, 'rounds');
+  try {
+    const pinned = Object.keys(suite.expectedProfile);
+    assert.deepEqual(pinned.sort(), ['harness', 'model', 'reasoningEffort']);
+    for (const key of pinned) {
+      const expected = suite.expectedProfile[key];
+      const cases = {
+        // Upper-cased, so the case also shows the comparison is exact rather than case-folded.
+        deviating: [{ ...PROFILE, [key]: expected.toUpperCase() }, expected.toUpperCase()],
+        omitted: [
+          Object.fromEntries(Object.entries(PROFILE).filter(([name]) => name !== key)),
+          'unknown',
+        ],
+      };
+      for (const [kind, [profile, actual]] of Object.entries(cases)) {
+        const roundId = `pin-${kind}-${key.toLowerCase()}`;
+        assert.throws(
+          () => createRound(suite, { scenarios: ['guard-blocks-merge'], profile, base, roundId }),
+          (error) => {
+            assert.equal(
+              error.message,
+              `the round profile does not match the suite's pinned execution profile: ${key} expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+            );
+            return true;
+          },
+          `a round with a ${kind} ${key} is prepared`,
+        );
+        assert.equal(existsSync(resolve(base, roundId)), false, `${kind} ${key} left a round root`);
+      }
+    }
+    // Not even the base: the pin is checked before anything at all is written.
+    assert.equal(existsSync(base), false);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+// The other direction: only the pinned keys are held, so the unpinned version and tool policy stay
+// free, and a pinned value the operator typed with surrounding whitespace matches once normalized.
+test(
+  'createRound accepts the pinned profile with any unpinned version and tool policy',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-pin-accept-'));
+    const base = resolve(temporary, 'rounds');
+    try {
+      const declared = {
+        ...suite.expectedProfile,
+        model: ` ${suite.expectedProfile.model} `,
+        reportedVersion: 'codex-cli 9.9.9-arbitrary',
+        toolPolicy: 'whatever-the-host-allowed',
+      };
+      const prepared = createRound(suite, {
+        scenarios: ['guard-blocks-merge'],
+        profile: declared,
+        base,
+        roundId: 'pin-accepted',
+      });
+      assert.deepEqual(prepared.manifest.profile, {
+        ...suite.expectedProfile,
+        reportedVersion: 'codex-cli 9.9.9-arbitrary',
+        toolPolicy: 'whatever-the-host-allowed',
+      });
+
+      // Omitted unpinned keys are recorded as "unknown" and still accepted.
+      const unpinnedOmitted = createRound(suite, {
+        scenarios: ['guard-blocks-merge'],
+        profile: { ...suite.expectedProfile },
+        base,
+        roundId: 'pin-accepted-unknowns',
+      });
+      assert.deepEqual(unpinnedOmitted.manifest.profile, {
+        ...suite.expectedProfile,
+        reportedVersion: 'unknown',
+        toolPolicy: 'unknown',
+      });
+    } finally {
+      for (const roundId of ['pin-accepted', 'pin-accepted-unknowns']) {
+        const manifest = resolve(base, roundId, 'manifest.json');
+        if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      }
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
 
 test('the pure evaluator separates invalid evidence from a behavioural finding', () => {
   const projectRoot = '/tmp/round/project';
@@ -1553,6 +1692,83 @@ test(
       );
     } finally {
       const manifest = resolve(base, 'drifted-carry-forward', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// The publication half of the pin. The instrument binding already stales every carried-forward stamp
+// recorded before a pin change, so this case has to get past it deliberately: the archive is
+// re-stamped to the current identity by `copyRestampedResults`, and only then is one carried-forward
+// slot's profile hand-edited back to another model — both copies, because sealing keeps them equal.
+// Its stamp still matches the current build, so the pin assertion in `ensureCanonicalGeneration` is
+// the only guard left that can refuse it.
+//
+// The successful counterpart, a pinned round published over a correctly rewritten carried-forward
+// archive, is the in-process publication in `one immutable round provisions, seals, retries, and
+// publishes isolated slots`.
+test(
+  'publishRound refuses a carried-forward run whose archived profile deviates from the pin',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-pin-publish-'));
+    const base = resolve(temporary, 'rounds');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    try {
+      const prepared = createRound(suite, {
+        scenarios: ['guard-blocks-merge'],
+        profile: PROFILE,
+        base,
+        roundId: 'deviating-carry-forward',
+      });
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', slot, 1);
+        writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
+        sealAttempt(suite, {
+          handle: prepared.manifestPath,
+          scenario: 'guard-blocks-merge',
+          slot,
+          hostReceipt: hostReceipt(paths.projectRoot),
+          base,
+        });
+      }
+
+      mkdirSync(publicationRoot, { recursive: true });
+      copyRestampedResults(resultsDir);
+      const deviating = resolve(resultsDir, 'merge-proceeds', 'run-1.metadata.json');
+      const metadata = JSON.parse(readFileSync(deviating, 'utf8'));
+      metadata.profile = { ...metadata.profile, model: 'gpt-5.6-sol' };
+      metadata.hostAttestation.profile = {
+        ...metadata.hostAttestation.profile,
+        model: 'gpt-5.6-sol',
+      };
+      writeFileSync(deviating, `${JSON.stringify(metadata, null, 2)}\n`);
+      const before = treeDigests(resultsDir);
+
+      assert.throws(
+        () =>
+          publishRound(suite, { handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
+        (error) => {
+          assert.ok(
+            error.message.endsWith(
+              `merge-proceeds/run-1 archived profile does not match the suite's pinned execution profile: model expected ${JSON.stringify(suite.expectedProfile.model)}, got "gpt-5.6-sol"`,
+            ),
+            error.message,
+          );
+          return true;
+        },
+      );
+      // Refused before promotion: the standing corpus is byte-identical, and no candidate, backup
+      // or publication journal is left behind to be recovered into place later.
+      assert.deepEqual(treeDigests(resultsDir), before);
+      assert.deepEqual(
+        readdirSync(publicationRoot).filter((name) => name !== 'results'),
+        [],
+      );
+    } finally {
+      const manifest = resolve(base, 'deviating-carry-forward', 'manifest.json');
       if (existsSync(manifest)) chmodSync(manifest, 0o644);
       rmSync(temporary, { recursive: true, force: true });
     }

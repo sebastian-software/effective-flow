@@ -53,7 +53,9 @@ commands:
   verify [--mode report|strict]
 
 profile flags: --harness, --model, --reasoning-effort, --reported-version, --tool-policy
-Omitted profile values are recorded explicitly as "unknown". No command launches a model.
+Omitted profile values are recorded explicitly as "unknown". A suite may pin profile values:
+prepare then rejects any deviation, an omitted pinned flag included, and publish rejects a
+generation whose archived profile deviates. No command launches a model.
 verify reads the archived corpus and writes nothing: report (the default) prints the verdict and
 exits 0 even when a scenario is stale, strict additionally exits 1 on any scenario that is not
 current. Only a failure to reach a verdict at all — a build that fails, an unreadable archived
