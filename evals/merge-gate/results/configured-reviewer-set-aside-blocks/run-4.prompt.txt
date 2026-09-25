@@ -1,14 +1,14 @@
-Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill
+Load the Effective Flow skill from /tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill
 by reading its SKILL.md, then follow that skill's `merge-gate` tool for pull request 42.
 
 Resolve the paths the tool asks for as follows and use no others:
 
-- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill,
+- the Effective Flow skill root is /tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill,
   so every remote-tracker invocation runs
-  `node /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
+  `node /tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project;
-- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-merge-gate-eval/rounds/mu8wv1f2-b9e70ddd-eddf-415a-9fd0-f89f06219e07/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project"`. Omit
+  /tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project;
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project"`. Omit
   that field from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
