@@ -7197,14 +7197,173 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
     /did not answer within the wait – it is still has run with no review newer than the re-trigger/,
     'not answering must mean has run with no review newer than the re-trigger',
   );
+  // An answer that leaves the verdict standing was re-triggered and answered, so it is reported as
+  // exactly that. "already posted" is what a later run says when it finds this verdict's
+  // re-trigger in place; reusing it here would hide that the reviewer did answer.
   assert.match(
     state,
     near(
       'does not replace the changes-requested verdict',
-      'stale with the reason "already posted"',
-      80,
+      '"re-triggered at `<createdAt>`; answered without replacing the verdict"',
+      120,
     ),
-    'an answer that leaves the verdict standing must stay stale as already posted',
+    'an answer that leaves the verdict standing must be reported as answered without replacing it',
+  );
+  assert.doesNotMatch(
+    state,
+    /leaves it stale with the reason "already posted"/,
+    'an answered re-trigger must not be reported with the reason "already posted"',
+  );
+});
+
+test('a reviewer without a configured .check is never re-triggered on a stale verdict', () => {
+  // The own-check exclusion is the only thing keeping the reviewer's own status out of the
+  // qualifying re-run checks, and `.check` is optional. Without one, a reviewer that posts its own
+  // status after submitting its review would qualify its own signal as a re-run, be re-triggered at
+  // every changes-requested verdict, and loop across gate runs at an unmoved head — breaking both
+  // step 1's "no change" promise for such a bot and the no-loop claim.
+  const phase3 = prose(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
+  const retrigger = boundedSlice(
+    phase3,
+    'Stale verdict: re-trigger once per verdict',
+    '- at least one other check',
+  );
+  assert.match(
+    retrigger,
+    near(
+      '`mergeGate\\.bots\\.<login>\\.trigger`',
+      'only for a reviewer with a configured `\\.check`',
+      40,
+    ),
+    'the stale-verdict re-trigger must require a configured .check',
+  );
+  assert.match(
+    retrigger,
+    near('configured `\\.check`', 'effective, non-conflicting value', 160),
+    'the required .check must be the de-duplicated effective value',
+  );
+
+  const noCheck = boundedSlice(
+    phase3,
+    'No configured `.check`, no re-trigger.',
+    'The stale-verdict report state.',
+  );
+  assert.match(
+    noCheck,
+    near('without a configured `mergeGate\\.bots\\.<login>\\.check`', 'Post nothing then', 300),
+    'a reviewer without .check must get no re-trigger',
+  );
+  assert.match(
+    noCheck,
+    /evaluated before the other reasons and replaces them/,
+    'the missing-.check rule must take precedence over the other no-post reasons',
+  );
+  assert.match(
+    noCheck,
+    /with the reason "no `\.check` configured to exclude the reviewer's own signal"/,
+    'a stale verdict without .check must be reported with its own reason',
+  );
+  assert.match(
+    noCheck,
+    near('recommendation to configure `\\.check`', 're-trigger the reviewer by hand', 40),
+    'the missing-.check report must recommend configuring .check or a manual re-trigger',
+  );
+
+  // Step 1 promises an existing project without `.check` sees no change; that promise now
+  // explicitly covers the re-trigger.
+  const step1 = boundedSlice(phase3, 'A bot without one', 'An unprovable state is not started');
+  assert.match(
+    step1,
+    near('sees no change', 'stale-verdict re-trigger of step 5 posts nothing for such a bot', 40),
+    'step 1 must keep its no-change promise and name that step 5 posts no re-trigger for such a bot',
+  );
+
+  // The Phase-6 item carries the new reason and the configure-.check recommendation.
+  const item = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'))
+    .split(/ - (?=every )/)
+    .find((entry) => entry.startsWith('every stale changes-requested verdict'));
+  assert.ok(item, 'Phase 6 must carry a stale-verdict report item');
+  assert.match(
+    item,
+    /no `\.check` configured to exclude the reviewer's own signal/,
+    'the Phase-6 item must name the missing-.check reason',
+  );
+  assert.match(
+    item,
+    /configure `mergeGate\.bots\.<login>\.check` where none is configured/,
+    'the Phase-6 item must recommend configuring .check where none is configured',
+  );
+});
+
+test('the stale-verdict no-loop claim is qualified and names what only bounds a review-event workflow', () => {
+  // "Cannot loop" holds only because of the own-check exclusion and the started-after and SUCCESS
+  // conditions. A workflow triggered by the review event starts a new run after every verdict and
+  // requalifies each one; that is bounded, not prevented, and the text must say so.
+  const retrigger = prose(
+    boundedSlice(
+      configuredReviewerSection('## Phase 3: Automatic reviewer round'),
+      '**Stale verdict: re-trigger once per verdict',
+      '**Unlike step 3, an unprovable comparison posts nothing here.**',
+    ),
+  );
+  assert.match(
+    retrigger,
+    near("check other than the reviewer's own is started after it", 'concludes `SUCCESS`', 20),
+    'a new verdict must requalify only through another check started after it that succeeds',
+  );
+  assert.match(
+    retrigger,
+    near(
+      'cannot loop',
+      'given the own-check exclusion and the started-after and `SUCCESS` conditions',
+      10,
+    ),
+    'the no-loop claim must be qualified by the conditions it rests on',
+  );
+  assert.doesNotMatch(
+    retrigger,
+    /only when a check is re-run after it again, so an unmoved head with settled checks cannot loop\./,
+    'the unqualified no-loop claim must not return',
+  );
+  assert.match(
+    retrigger,
+    near('`pull_request_review`', 'requalify each one', 80),
+    'a review-event workflow must be named as able to requalify every verdict',
+  );
+  assert.match(
+    retrigger,
+    near(
+      'bounded to one re-trigger per verdict and by `mergeGate\\.maxRounds` per run',
+      'not prevented',
+      10,
+    ),
+    'the review-event case must be stated as bounded, not prevented',
+  );
+
+  // A stale verdict in a round whose step 3 already triggered the bot is still reported, with
+  // its own reason, in Phase 3 and in the Phase-6 item.
+  assert.match(
+    retrigger,
+    near(
+      "in a round where step 3 already posted this bot's trigger, post no re-trigger",
+      'with the reason "already triggered this round"',
+      160,
+    ),
+    'a stale verdict in a round step 3 already triggered must be reported as already triggered',
+  );
+  const item = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'))
+    .split(/ - (?=every )/)
+    .find((entry) => entry.startsWith('every stale changes-requested verdict'));
+  assert.ok(item, 'Phase 6 must carry a stale-verdict report item');
+  assert.match(
+    item,
+    /already triggered this round/,
+    'the Phase-6 item must name the already-triggered-this-round reason',
+  );
+  assert.match(
+    item,
+    /"re-triggered at `<createdAt>`; answered without replacing the verdict"/,
+    'the Phase-6 item must name an answer that did not replace the verdict',
   );
 });
 
@@ -7218,7 +7377,7 @@ test('the stale-verdict state is reported with its evidence and the gate allows 
     [/each check re-run after it/, 'every check re-run after the verdict'],
     [/when the re-trigger was posted/, 'when a re-trigger was posted'],
     [
-      /why none was posted – no trigger configured, staleness unprovable, or already posted/,
+      /why none was posted – no trigger configured, no `\.check` configured to exclude the reviewer's own signal, staleness unprovable, already posted for this verdict, or already triggered this round/,
       'why no re-trigger was posted',
     ],
     [/recommendation to re-trigger the reviewer by hand/, 'the manual re-trigger recommendation'],
