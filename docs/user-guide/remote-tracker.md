@@ -633,10 +633,15 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   the app slug when the run states `workflowRun: null` – and "latest" is the run with the highest
   `databaseId`, whatever its state: a re-run that is still pending or failed keeps blocking.
   Same-named jobs of different workflows, or of one workflow's `push` and `pull_request` runs, stay
-  separate entries, and a commit-status context is never merged with a check run. A group in which any run
-  lacks a usable `databaseId`, or whose highest `databaseId` is tied, is not collapsed, and neither is a
-  run with an incomplete identity – no workflow id, no event, a check suite without a stated workflow
-  run, or no check suite or app slug – which fails closed to reporting every run. The
+  separate entries, and a commit-status context is never merged with a check run. Only runs of
+  different workflow runs supersede one another: a re-run attempt of a job stays in its workflow
+  run, and GitHub's rollup already lists only that job's latest attempt, so a group holding two runs
+  of one workflow run holds distinct jobs that share a display name, and it is not collapsed – the
+  check name is only a display name, and GitHub exposes no per-job id that could order them. A group
+  in which any run lacks a usable `databaseId`, or whose highest `databaseId` is tied, is not
+  collapsed either, and neither is a run with an incomplete identity – no workflow id, no
+  workflow-run id, no event, a check suite without a stated workflow run, or no check suite or app
+  slug – which fails closed to reporting every run. The
   truncation check runs first, and `checkCount` counts the entries that remain. The record adds
   `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
   whose combined status already holds one entry per context), and a check run carries `startedAt`

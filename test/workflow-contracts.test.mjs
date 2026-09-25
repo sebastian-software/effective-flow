@@ -7492,7 +7492,7 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
   );
   assert.match(
     precedence,
-    /a missing or tied `databaseId`, or an incomplete identity, keeps every run of that group/,
+    /a missing or tied `databaseId`, two same-named runs of one workflow run, or an incomplete identity, keeps every run of that group/,
     'the multi-match rationale must name why a group stays uncollapsed',
   );
 
@@ -7506,8 +7506,12 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
       'defines the check-run identity by workflow id',
     ],
     [
-      /nor is a run with an incomplete identity \(no workflow id, no event, a check suite without a stated workflow run, or no check suite or app slug\)/,
+      /nor is a run with an incomplete identity \(no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite or app slug\)/,
       'fails closed on an incomplete identity',
+    ],
+    [
+      /nor is a group holding two runs of one workflow run \(distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt\)/,
+      'leaves two same-named runs of one workflow run uncollapsed',
     ],
     [/highest `databaseId`/, 'orders runs by databaseId'],
     [

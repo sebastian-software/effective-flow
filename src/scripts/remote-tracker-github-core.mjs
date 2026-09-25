@@ -170,10 +170,13 @@ function ghHostArgs(repository) {
 // plus the workflow run's triggering event and workflow id, which together identify the check
 // whose runs may supersede one another; `latestCheckRuns` in `remote-tracker-core.mjs` keeps only
 // the latest run per identity. The workflow is selected by its `databaseId` rather than its name
-// because workflow names are not unique: two workflow files may both declare `name: CI`.
+// because workflow names are not unique: two workflow files may both declare `name: CI`. The
+// workflow run's own `databaseId` is selected so two same-named runs of ONE workflow run can be
+// recognized and left uncollapsed: they are distinct jobs sharing a display name, since the rollup
+// already drops the superseded attempts of a re-run, and GraphQL exposes no per-job id to order them.
 // `startedAt`/`completedAt` give a check run its instants, and a status context's `createdAt` gives
 // it only its completion instant.
-const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
+const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;

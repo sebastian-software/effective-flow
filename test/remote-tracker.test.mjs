@@ -6766,9 +6766,15 @@ function blockingChecks(checks) {
   );
 }
 
+// Workflow-run ids handed out by `checkRun` when a call names none, so every such call lands in a
+// workflow run of its own, the way a re-run on an unmoved head does.
+let nextWorkflowRunId = 36_200_000_000;
+
 // One check run in the shape the extended `PR_STATUS_QUERY` selection returns. `workflow` is the
 // workflow's numeric `databaseId`, not its name: two workflow files may declare the same `name:`,
 // so only the id tells them apart. The default is the id of this repository's `CI` workflow.
+// `run` is the workflow run's own `databaseId`; by default each call gets a distinct one, so two
+// calls model two workflow runs, and only a shared `run` models two jobs of one workflow run.
 // `workflow: null` is a run without a workflow run, which GraphQL states as `workflowRun: null`;
 // `databaseId` accepts `undefined` to omit the key entirely.
 function checkRun(
@@ -6780,6 +6786,7 @@ function checkRun(
     startedAt = '2026-09-25T12:00:00Z',
     completedAt = '2026-09-25T12:01:00Z',
     workflow = 308827072,
+    run = nextWorkflowRunId++,
     event = 'pull_request',
     app = 'github-actions',
   } = {},
@@ -6794,7 +6801,8 @@ function checkRun(
     completedAt,
     checkSuite: {
       app: { slug: app },
-      workflowRun: workflow === null ? null : { event, workflow: { databaseId: workflow } },
+      workflowRun:
+        workflow === null ? null : { databaseId: run, event, workflow: { databaseId: workflow } },
     },
   };
 }
@@ -6818,7 +6826,9 @@ async function readRollup(statusCheckRollup) {
 // runs of five identities, three runs each, plus the one `recensor/review` status context. Names,
 // states, ordering fields and identities only; every URL is left out. The node order is GitHub's.
 // Each workflow is identified by its `databaseId` as read on 2026-09-25: `CI` is 308827072,
-// `README` 357764743 and `Close develop issues` 317435306.
+// `README` 357764743 and `Close develop issues` 317435306. Each workflow run's own `databaseId`
+// was read with the query extended by it: the three runs of every identity belong to three
+// distinct workflow runs, each at `runAttempt` 1, so they supersede one another.
 const PR_440_ROLLUP = Object.freeze([
   {
     __typename: 'CheckRun',
@@ -6830,7 +6840,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:20:59Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36117726769,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6843,7 +6857,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:45:31Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36125443385,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6856,7 +6874,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:42:39Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
+      workflowRun: {
+        databaseId: 36125441553,
+        event: 'pull_request_target',
+        workflow: { databaseId: 317435306 },
+      },
     },
   },
   {
@@ -6869,7 +6891,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:37Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
+      workflowRun: {
+        databaseId: 36135038088,
+        event: 'pull_request_target',
+        workflow: { databaseId: 317435306 },
+      },
     },
   },
   {
@@ -6882,7 +6908,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:29:42Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36135039835,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6895,7 +6925,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:32:53Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
+      workflowRun: {
+        databaseId: 36135534084,
+        event: 'pull_request_target',
+        workflow: { databaseId: 317435306 },
+      },
     },
   },
   {
@@ -6908,7 +6942,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:18:57Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
+      workflowRun: {
+        databaseId: 36117725957,
+        event: 'pull_request',
+        workflow: { databaseId: 357764743 },
+      },
     },
   },
   {
@@ -6921,7 +6959,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:57Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
+      workflowRun: {
+        databaseId: 36125443437,
+        event: 'pull_request',
+        workflow: { databaseId: 357764743 },
+      },
     },
   },
   {
@@ -6934,7 +6976,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:50Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
+      workflowRun: {
+        databaseId: 36135039807,
+        event: 'pull_request',
+        workflow: { databaseId: 357764743 },
+      },
     },
   },
   {
@@ -6947,7 +6993,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:18:58Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36117726769,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6960,7 +7010,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:46Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36125443385,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6973,7 +7027,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:46Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36135039835,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6986,7 +7044,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:19:07Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36117726769,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -6999,7 +7061,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:35Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36125443385,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -7012,7 +7078,11 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:56Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      workflowRun: {
+        databaseId: 36135039835,
+        event: 'pull_request',
+        workflow: { databaseId: 308827072 },
+      },
     },
   },
   {
@@ -7051,10 +7121,11 @@ test('pr-status-read requests the ordering, identity, and timestamp fields the d
     assert.match(checkRunFragment, new RegExp(`\\b${field}\\b`), `CheckRun lacks ${field}`);
   }
   // The identity: the check suite's app, and its workflow run's triggering event and workflow id.
-  // The workflow's name is not unique, so the query selects its `databaseId` in its place.
+  // The workflow's name is not unique, so the query selects its `databaseId` in its place. The
+  // workflow run's own `databaseId` tells two same-named jobs of one workflow run from a re-run.
   assert.match(checkRunFragment, /\bcheckSuite\s*\{/);
   assert.match(checkRunFragment, /\bapp\s*\{\s*slug\s*\}/);
-  assert.match(checkRunFragment, /\bworkflowRun\s*\{/);
+  assert.match(checkRunFragment, /\bworkflowRun\s*\{\s*databaseId\b/);
   assert.match(checkRunFragment, /\bevent\b/);
   assert.match(checkRunFragment, /\bworkflow\s*\{\s*databaseId\s*\}/);
   // A status context has no run and no suite; its one instant is its creation.
@@ -7237,14 +7308,22 @@ test('pr-status-read keeps same-named jobs of two workflows that share a name ap
       ...checkRun('build', { conclusion: 'FAILURE', databaseId: 1 }),
       checkSuite: {
         app: { slug: 'github-actions' },
-        workflowRun: { event: 'pull_request', workflow: { name: 'CI', databaseId: 308827072 } },
+        workflowRun: {
+          databaseId: 36300000001,
+          event: 'pull_request',
+          workflow: { name: 'CI', databaseId: 308827072 },
+        },
       },
     },
     {
       ...checkRun('build', { conclusion: 'SUCCESS', databaseId: 2 }),
       checkSuite: {
         app: { slug: 'github-actions' },
-        workflowRun: { event: 'pull_request', workflow: { name: 'CI', databaseId: 357764743 } },
+        workflowRun: {
+          databaseId: 36300000002,
+          event: 'pull_request',
+          workflow: { name: 'CI', databaseId: 357764743 },
+        },
       },
     },
   ]);
@@ -7259,6 +7338,72 @@ test('pr-status-read keeps same-named jobs of two workflows that share a name ap
   );
   assert.deepEqual(
     blockingChecks(result.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'build', conclusion: 'FAILURE' }],
+  );
+});
+
+test('pr-status-read keeps two same-named jobs of one workflow run apart', async () => {
+  // A check's name is only a job's display name, so two distinct jobs of one workflow run and
+  // event may share it. A re-run attempt stays in its workflow run too, but GitHub's rollup lists
+  // only a job's latest attempt, so two same-named runs of one workflow run are distinct jobs, and
+  // GraphQL states no per-job id that could order them. The later green job must not hide the red.
+  const result = await readRollup([
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, run: 36300000010 }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, run: 36300000010 }),
+  ]);
+  assert.equal(result.checkCount, 2);
+  assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(
+    result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'build', conclusion: 'FAILURE' },
+      { name: 'build', conclusion: 'SUCCESS' },
+    ],
+  );
+  assert.deepEqual(
+    blockingChecks(result.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'build', conclusion: 'FAILURE' }],
+  );
+});
+
+test('pr-status-read collapses runs of distinct workflow runs but not a group holding one run twice', async () => {
+  // Plain supersession: three workflow runs on an unmoved head, one run of `build` each, so the
+  // highest id is the latest and the two older runs are superseded.
+  const distinct = await readRollup([
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, run: 36300000020 }),
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 2, run: 36300000021 }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 3, run: 36300000022 }),
+  ]);
+  assert.equal(distinct.checkCount, 1);
+  assert.equal(distinct.supersededCheckCount, 2);
+  assert.deepEqual(
+    distinct.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'build', conclusion: 'SUCCESS' }],
+  );
+
+  // One workflow run contributes two same-named jobs, so which of them the later workflow run's
+  // `build` re-ran is unknown: the whole group is reported, and nothing in it counts as superseded,
+  // while the well-ordered `lint` group next to it still collapses.
+  const mixed = await readRollup([
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, run: 36300000030 }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, run: 36300000030 }),
+    checkRun('lint', { conclusion: 'FAILURE', databaseId: 3, run: 36300000030 }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 4, run: 36300000031 }),
+    checkRun('lint', { conclusion: 'SUCCESS', databaseId: 5, run: 36300000031 }),
+  ]);
+  assert.equal(mixed.checkCount, 4);
+  assert.equal(mixed.supersededCheckCount, 1);
+  assert.deepEqual(
+    mixed.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'build', conclusion: 'FAILURE' },
+      { name: 'build', conclusion: 'SUCCESS' },
+      { name: 'build', conclusion: 'SUCCESS' },
+      { name: 'lint', conclusion: 'SUCCESS' },
+    ],
+  );
+  assert.deepEqual(
+    blockingChecks(mixed.checks).map(({ name, conclusion }) => ({ name, conclusion })),
     [{ name: 'build', conclusion: 'FAILURE' }],
   );
 });
@@ -7336,18 +7481,23 @@ test('pr-status-read reports a check run with an incomplete check suite in full,
   // well-formed same-named run next to it, although its id is the highest. A suite without the
   // `workflowRun` key says nothing about a workflow run; only `workflowRun: null` states there is
   // none and so falls back to the app slug. A workflow named but not identified by a numeric id,
-  // and a run without a triggering event, are just as incomplete.
+  // a run without a triggering event, and a workflow run without a numeric id of its own, which
+  // could not tell two same-named jobs of it from a re-run, are just as incomplete. Every case
+  // lacks exactly one field, so each names the one gap that keeps its runs apart.
   const incomplete = [
     ['checkSuite: null', null],
     [
       'workflowRun.workflow: null',
-      { app: { slug: 'github-actions' }, workflowRun: { event: 'pull_request', workflow: null } },
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: { databaseId: 36300000040, event: 'pull_request', workflow: null },
+      },
     ],
     [
       'workflowRun.event: null',
       {
         app: { slug: 'github-actions' },
-        workflowRun: { event: null, workflow: { databaseId: 308827072 } },
+        workflowRun: { databaseId: 36300000040, event: null, workflow: { databaseId: 308827072 } },
       },
     ],
     ['workflowRun key absent', { app: { slug: 'github-actions' } }],
@@ -7355,14 +7505,36 @@ test('pr-status-read reports a check run with an incomplete check suite in full,
       'workflowRun.workflow without databaseId',
       {
         app: { slug: 'github-actions' },
-        workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+        workflowRun: { databaseId: 36300000040, event: 'pull_request', workflow: { name: 'CI' } },
       },
     ],
     [
       'workflowRun.workflow.databaseId as a string',
       {
         app: { slug: 'github-actions' },
-        workflowRun: { event: 'pull_request', workflow: { databaseId: '308827072' } },
+        workflowRun: {
+          databaseId: 36300000040,
+          event: 'pull_request',
+          workflow: { databaseId: '308827072' },
+        },
+      },
+    ],
+    [
+      'workflowRun without databaseId',
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
+      },
+    ],
+    [
+      'workflowRun.databaseId as a string',
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: {
+          databaseId: '36300000040',
+          event: 'pull_request',
+          workflow: { databaseId: 308827072 },
+        },
       },
     ],
   ];

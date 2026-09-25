@@ -108,7 +108,7 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
    - **more than one matching entry** → any match with `status: PENDING` means **running**, otherwise
      **has run**. `pr-status-read` reports only the latest run per check identity, so several entries
      match when distinct identities share the name or a group stays uncollapsed: a missing or tied
-     `databaseId`, or an incomplete identity, keeps every run of that group in the list.
+     `databaseId`, two same-named runs of one workflow run, or an incomplete identity, keeps every run of that group in the list.
    - **no matching entry in a reported list** → **not started**. A context that never appears is
      indistinguishable from one that is about to appear: a misconfigured value, an app that is not
      installed, and a queued run whose status is only set once a worker claims it all look the same
