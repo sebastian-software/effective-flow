@@ -2741,21 +2741,28 @@ function normalizeCheck(item) {
 // check's name, its workflow, and the workflow run's triggering event; the event belongs to the
 // identity because a `push` run and a `pull_request` run of one workflow test different trees, and
 // the workflow because two workflows may define a job of the same name — either way a green run
-// must not hide a red one of a different check. A run outside GitHub Actions has no workflow run,
-// and its app slug takes that place. A status context, a Forgejo status, and a run whose identity
-// fields are not all stated return nothing and are never collapsed, so an incomplete payload is
-// reported in full rather than merged on a guess.
+// must not hide a red one of a different check. The workflow is identified by its numeric
+// `databaseId`, not its name: two workflow files may declare the same `name:`, so a name would
+// merge their runs. A run outside GitHub Actions, which GraphQL states as `workflowRun: null`, has
+// no workflow run, and its app slug takes that place. A status context, a Forgejo status, and a run
+// whose identity is incomplete return nothing and are never collapsed, so an incomplete payload is
+// reported in full rather than merged on a guess: no check suite, a suite without the
+// `workflowRun` key (which states nothing, unlike `null`), a workflow run without a safe-integer
+// workflow id or without a string event, and a fallback run without an app slug.
 function checkRunIdentity(node) {
   if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
   const suite = node.checkSuite;
-  const run = suite?.workflowRun;
-  if (run !== null && run !== undefined) {
-    const workflow = run.workflow?.name;
-    return typeof workflow === 'string' && typeof run.event === 'string'
-      ? JSON.stringify(['workflow', node.name, workflow, run.event])
+  if (suite === null || typeof suite !== 'object' || !Object.hasOwn(suite, 'workflowRun')) {
+    return undefined;
+  }
+  const run = suite.workflowRun;
+  if (run !== null) {
+    const workflowId = run?.workflow?.databaseId;
+    return Number.isSafeInteger(workflowId) && typeof run?.event === 'string'
+      ? JSON.stringify(['workflow', node.name, workflowId, run.event])
       : undefined;
   }
-  const slug = suite?.app?.slug;
+  const slug = suite.app?.slug;
   return typeof slug === 'string' ? JSON.stringify(['app', node.name, slug]) : undefined;
 }
 

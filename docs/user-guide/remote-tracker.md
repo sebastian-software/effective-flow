@@ -626,12 +626,15 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 - **`pr-status-read` ignores superseded check runs.** GitHub's rollup lists every run on the head
   commit, including runs a later re-run replaced, so a check that failed once and passed on re-run
   would otherwise block the gate forever at an unmoved head. The read now keeps only the latest run
-  per check identity – the check name plus its workflow name and triggering event, or the name plus
-  the app slug when the run belongs to no workflow – and "latest" is the run with the highest
+  per check identity – the check name plus its workflow id (the workflow's `databaseId`, not its
+  name, because two workflow files may declare the same name) and triggering event, or the name plus
+  the app slug when the run states `workflowRun: null` – and "latest" is the run with the highest
   `databaseId`, whatever its state: a re-run that is still pending or failed keeps blocking.
   Same-named jobs of different workflows, or of one workflow's `push` and `pull_request` runs, stay
   separate entries, and a commit-status context is never merged with a check run. A group in which any run
-  lacks a usable `databaseId` is not collapsed, which fails closed to reporting every run. The
+  lacks a usable `databaseId`, or whose highest `databaseId` is tied, is not collapsed, and neither is a
+  run with an incomplete identity – no workflow id, no event, a check suite without a stated workflow
+  run, or no check suite or app slug – which fails closed to reporting every run. The
   truncation check runs first, and `checkCount` counts the entries that remain. The record adds
   `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
   whose combined status already holds one entry per context), and each check carries `startedAt` and

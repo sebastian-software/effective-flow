@@ -6766,9 +6766,11 @@ function blockingChecks(checks) {
   );
 }
 
-// One check run in the shape the extended `PR_STATUS_QUERY` selection returns. `workflow: null`
-// is a run without a workflow run, which GraphQL states as `workflowRun: null`; `databaseId`
-// accepts `undefined` to omit the key entirely.
+// One check run in the shape the extended `PR_STATUS_QUERY` selection returns. `workflow` is the
+// workflow's numeric `databaseId`, not its name: two workflow files may declare the same `name:`,
+// so only the id tells them apart. The default is the id of this repository's `CI` workflow.
+// `workflow: null` is a run without a workflow run, which GraphQL states as `workflowRun: null`;
+// `databaseId` accepts `undefined` to omit the key entirely.
 function checkRun(
   name,
   {
@@ -6777,7 +6779,7 @@ function checkRun(
     databaseId,
     startedAt = '2026-09-25T12:00:00Z',
     completedAt = '2026-09-25T12:01:00Z',
-    workflow = 'CI',
+    workflow = 308827072,
     event = 'pull_request',
     app = 'github-actions',
   } = {},
@@ -6792,7 +6794,7 @@ function checkRun(
     completedAt,
     checkSuite: {
       app: { slug: app },
-      workflowRun: workflow === null ? null : { event, workflow: { name: workflow } },
+      workflowRun: workflow === null ? null : { event, workflow: { databaseId: workflow } },
     },
   };
 }
@@ -6815,6 +6817,8 @@ async function readRollup(statusCheckRollup) {
 // The real rollup of #440 at `c671492`, read with the extended query on 2026-09-25: fifteen check
 // runs of five identities, three runs each, plus the one `recensor/review` status context. Names,
 // states, ordering fields and identities only; every URL is left out. The node order is GitHub's.
+// Each workflow is identified by its `databaseId` as read on 2026-09-25: `CI` is 308827072,
+// `README` 357764743 and `Close develop issues` 317435306.
 const PR_440_ROLLUP = Object.freeze([
   {
     __typename: 'CheckRun',
@@ -6826,7 +6830,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:20:59Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6839,7 +6843,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:45:31Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6852,7 +6856,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:42:39Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
     },
   },
   {
@@ -6865,7 +6869,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:37Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
     },
   },
   {
@@ -6878,7 +6882,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:29:42Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6891,7 +6895,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:32:53Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request_target', workflow: { name: 'Close develop issues' } },
+      workflowRun: { event: 'pull_request_target', workflow: { databaseId: 317435306 } },
     },
   },
   {
@@ -6904,7 +6908,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:18:57Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
     },
   },
   {
@@ -6917,7 +6921,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:57Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
     },
   },
   {
@@ -6930,7 +6934,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:50Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'README' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 357764743 } },
     },
   },
   {
@@ -6943,7 +6947,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:18:58Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6956,7 +6960,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:46Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6969,7 +6973,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:46Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6982,7 +6986,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T09:19:07Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -6995,7 +6999,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T10:43:35Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -7008,7 +7012,7 @@ const PR_440_ROLLUP = Object.freeze([
     completedAt: '2026-09-25T12:27:56Z',
     checkSuite: {
       app: { slug: 'github-actions' },
-      workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      workflowRun: { event: 'pull_request', workflow: { databaseId: 308827072 } },
     },
   },
   {
@@ -7046,12 +7050,13 @@ test('pr-status-read requests the ordering, identity, and timestamp fields the d
   for (const field of ['databaseId', 'startedAt', 'completedAt']) {
     assert.match(checkRunFragment, new RegExp(`\\b${field}\\b`), `CheckRun lacks ${field}`);
   }
-  // The identity: the check suite's app, and its workflow run's triggering event and workflow name.
+  // The identity: the check suite's app, and its workflow run's triggering event and workflow id.
+  // The workflow's name is not unique, so the query selects its `databaseId` in its place.
   assert.match(checkRunFragment, /\bcheckSuite\s*\{/);
   assert.match(checkRunFragment, /\bapp\s*\{\s*slug\s*\}/);
   assert.match(checkRunFragment, /\bworkflowRun\s*\{/);
   assert.match(checkRunFragment, /\bevent\b/);
-  assert.match(checkRunFragment, /\bworkflow\s*\{\s*name\s*\}/);
+  assert.match(checkRunFragment, /\bworkflow\s*\{\s*databaseId\s*\}/);
   // A status context has no run and no suite; its one instant is its creation.
   assert.match(statusContextFragment, /\bcreatedAt\b/);
 });
@@ -7196,8 +7201,8 @@ test('pr-status-read keeps same-named jobs of different workflows or events apar
   // Each pair has the red run first and a later green one, so a name-only identity would let the
   // green run of another workflow, or of the other event's tree, hide the red one.
   const workflows = await readRollup([
-    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, workflow: 'CI' }),
-    checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, workflow: 'Release' }),
+    checkRun('build', { conclusion: 'FAILURE', databaseId: 1, workflow: 308827072 }),
+    checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, workflow: 357764743 }),
   ]);
   assert.equal(workflows.checkCount, 2);
   assert.equal(workflows.supersededCheckCount, 0);
@@ -7221,6 +7226,41 @@ test('pr-status-read keeps same-named jobs of different workflows or events apar
       { name: 'build', conclusion: 'FAILURE' },
       { name: 'build', conclusion: 'SUCCESS' },
     ],
+  );
+});
+
+test('pr-status-read keeps same-named jobs of two workflows that share a name apart', async () => {
+  // Two workflow files may both declare `name: CI`, so the workflow's name cannot tell their runs
+  // apart. The red run of one comes first and a later green run of the other follows under the
+  // same job name and event; only the workflow id keeps the green run from hiding the red one.
+  const result = await readRollup([
+    {
+      ...checkRun('build', { conclusion: 'FAILURE', databaseId: 1 }),
+      checkSuite: {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: 'pull_request', workflow: { name: 'CI', databaseId: 308827072 } },
+      },
+    },
+    {
+      ...checkRun('build', { conclusion: 'SUCCESS', databaseId: 2 }),
+      checkSuite: {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: 'pull_request', workflow: { name: 'CI', databaseId: 357764743 } },
+      },
+    },
+  ]);
+  assert.equal(result.checkCount, 2);
+  assert.equal(result.supersededCheckCount, 0);
+  assert.deepEqual(
+    result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'build', conclusion: 'FAILURE' },
+      { name: 'build', conclusion: 'SUCCESS' },
+    ],
+  );
+  assert.deepEqual(
+    blockingChecks(result.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'build', conclusion: 'FAILURE' }],
   );
 });
 
@@ -7294,12 +7334,37 @@ test('pr-status-read fails closed to reporting every run of a group whose highes
 
 test('pr-status-read reports a check run with an incomplete check suite in full, unmerged', async () => {
   // Neither run states an identity, so neither may be merged with the other or with the
-  // well-formed same-named run next to it, although its id is the highest.
+  // well-formed same-named run next to it, although its id is the highest. A suite without the
+  // `workflowRun` key says nothing about a workflow run; only `workflowRun: null` states there is
+  // none and so falls back to the app slug. A workflow named but not identified by a numeric id,
+  // and a run without a triggering event, are just as incomplete.
   const incomplete = [
     ['checkSuite: null', null],
     [
       'workflowRun.workflow: null',
       { app: { slug: 'github-actions' }, workflowRun: { event: 'pull_request', workflow: null } },
+    ],
+    [
+      'workflowRun.event: null',
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: null, workflow: { databaseId: 308827072 } },
+      },
+    ],
+    ['workflowRun key absent', { app: { slug: 'github-actions' } }],
+    [
+      'workflowRun.workflow without databaseId',
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: 'pull_request', workflow: { name: 'CI' } },
+      },
+    ],
+    [
+      'workflowRun.workflow.databaseId as a string',
+      {
+        app: { slug: 'github-actions' },
+        workflowRun: { event: 'pull_request', workflow: { databaseId: '308827072' } },
+      },
     ],
   ];
   for (const [label, checkSuite] of incomplete) {

@@ -177,10 +177,10 @@ timestamp as an RFC-3339 string. A value the provider does not expose is absent 
 — exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
 deliberate: both values must be read at the same instant to be consistent.
 
-The check list holds **only the latest run per check identity**: name plus workflow name and
-triggering event, or name plus app slug where there is no workflow run. The run with the highest
-`databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the
-highest one, is not collapsed. A commit-status context keeps its own identity, is never merged with a check run, and
+The check list holds **only the latest run per check identity**: name plus workflow id (the workflow's `databaseId`, since
+workflow names are not unique) and triggering event, or name plus app slug where the run states `workflowRun: null`. The run
+with the highest `databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the highest
+one, is not collapsed, nor is a run with an incomplete identity (no workflow id, no event, a check suite without a stated workflow run, or no check suite or app slug). A commit-status context keeps its own identity, is never merged with a check run, and
 carries its `createdAt` as both timestamps. `supersededCheckCount` counts the dropped runs (`0` on
 Forgejo, which already returns one status per context).
 
