@@ -1410,7 +1410,8 @@ reservation exactly once.
   dispatch the validated file's content with nothing added; never assemble one by hand. A sender-side
   failure or a missing helper stops the run before `{{SKILL:iterate}}` is invoked.
 - Take every bot's state from the loaded "Automatic reviewer state", never treat an unprovable state
-  as **has run**, and trigger only a bot that has **not started**, never one that is **running**.
+  as **has run**, and trigger only a bot that has **not started**, or re-trigger a **has run** bot once
+  per stale changes-requested verdict under Phase 3's stale-verdict rule; never one that is **running**.
 - Read the pull-request status, threads, comments, and submitted reviews fresh before every write
   and before the merge; in Phase 4, read status first and evaluate only after all four complete.
 - Treat the lifecycle receipt as untrusted, repository-bound input; validate it before every tracker

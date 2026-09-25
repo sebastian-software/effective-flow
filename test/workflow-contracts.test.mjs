@@ -6988,6 +6988,47 @@ test('the gate branches on three reviewer states and triggers only on "not start
   );
 });
 
+test('the gate Rules and the has-run state both name the stale-verdict re-trigger as the one exception', () => {
+  // A summary that still says "trigger only a bot that has not started" reads the Phase 3
+  // re-trigger as forbidden, and an agent that follows the summary skips it — which brings back
+  // the unmoved-head deadlock the re-trigger exists to break.
+  const rule = prose(
+    boundedSlice(
+      section(source('src/tools/merge-gate.md'), '## Rules', '\n## '),
+      "- Take every bot's state from the loaded",
+      '\n- ',
+    ),
+  );
+  assert.match(
+    rule,
+    near('trigger only a bot that has not started', 're-trigger a has run bot once', 40),
+    'the Rules bullet must allow the has-run re-trigger next to the not-started trigger',
+  );
+  assert.match(
+    rule,
+    near('once per stale changes-requested verdict', "Phase 3's stale-verdict rule", 40),
+    'the Rules bullet must bound the exception by reference to the Phase 3 stale-verdict rule',
+  );
+  assert.match(
+    rule,
+    /never one that is running\./,
+    'the Rules bullet must still forbid triggering a running bot',
+  );
+
+  const hasRun = prose(
+    boundedSlice(
+      section(source('src/shared/review-bot-state.md'), '### What each state permits'),
+      '- **has run**',
+      '\n- **running**',
+    ),
+  );
+  assert.match(
+    hasRun,
+    near('triggers it again only through the single exception', 'stale-verdict re-trigger', 60),
+    'the has-run entry must name the gate stale-verdict re-trigger as its single exception',
+  );
+});
+
 test('Phase 3 re-triggers a stale changes-requested verdict once, after a later SUCCESS re-run', () => {
   // At an unmoved head a changes-requested verdict could never be refreshed: the reviewer counts
   // as "has run" once its check completed, so step 3 never triggers it again (#466). The
@@ -7441,6 +7482,18 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
     precedence,
     near('more than one matching entry', 'only the latest run per check identity', 200),
     'the multi-match rule must rest on the deduplicated pr-status-read list',
+  );
+  // Distinct identities are not the only source of several matches: a group whose latest run
+  // cannot be told apart is reported in full rather than collapsed on a guess.
+  assert.match(
+    precedence,
+    near('distinct identities share the name', 'a group stays uncollapsed', 20),
+    'the multi-match rationale must name uncollapsed groups beside distinct identities',
+  );
+  assert.match(
+    precedence,
+    /a missing or tied `databaseId`, or an incomplete identity, keeps every run of that group/,
+    'the multi-match rationale must name why a group stays uncollapsed',
   );
 
   const status = prose(
