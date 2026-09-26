@@ -551,8 +551,18 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 - **A configured reviewer check is read from the same check list, not from a separate call.** The
   context named in `mergeGate.bots.<login>.check` is matched against the normalized check list that
   `pr-status-read` already returns. A GitHub commit status (such as `recensor/review`) and a check
-  run are indistinguishable there, so either form works, and a context that never appears at all is
-  reported by name rather than treated as passed.
+  run are matched the same way by name there, so either form works, and a context that never appears
+  at all is reported by name rather than treated as passed. A reviewer that has run is not triggered
+  again at the same head, with one exception: when its latest verdict requests changes and another
+  check run was re-run after that verdict and came back green, the gate re-posts the trigger once
+  for that verdict, and reports the verdict as stale if the reviewer does not answer. The re-run
+  must have replaced an earlier run of the same check, which `pr-status-read` reports as
+  `supersededRuns` of at least `1` on that entry; a check whose first run merely started after the
+  verdict never qualifies, and neither does a job re-run inside one workflow run, which GitHub's
+  rollup cannot distinguish from a first run, so such a verdict is not re-triggered and keeps
+  blocking like any changes-requested verdict. A commit
+  status never counts as a re-run, so on Forgejo, where every check is a commit status, this never
+  fires.
 - **`pr-checks-wait` runs two `gh` commands, not one.** `gh` rejects `--watch` together with
   `--json` outright, so a single call can no longer do both jobs. The operation first watches the
   checks to their natural conclusion (or the supplied timeout) and discards that step's exit
@@ -620,6 +630,38 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   `INVALID_PAYLOAD` naming both the total and the returned count rather than evaluating a merge
   criterion on a partial check list. A pull request that genuinely exceeds that ceiling therefore
   fails this read until the query learns to page.
+- **`pr-status-read` ignores superseded check runs.** GitHub's rollup lists every run on the head
+  commit, including runs a later re-run replaced, so a check that failed once and passed on re-run
+  would otherwise block the gate forever at an unmoved head. The read now keeps only the latest run
+  per check identity – the check name plus its workflow id (the workflow's `databaseId`, not its
+  name, because two workflow files may declare the same name) and triggering event, or the name plus
+  the app slug when the run states `workflowRun: null`, scoped by its check suite's `databaseId` –
+  and "latest" is the run with the highest `databaseId`, whatever its state: a re-run that is still
+  pending or failed keeps blocking.
+  Same-named jobs of different workflows, or of one workflow's `push` and `pull_request` runs, stay
+  separate entries, and a commit-status context is never merged with a check run. Only runs of
+  different workflow runs supersede one another: a re-run attempt of a job stays in its workflow
+  run, and GitHub's rollup already lists only that job's latest attempt, so a group holding two runs
+  of one workflow run holds distinct jobs that share a display name, and it is not collapsed – the
+  check name is only a display name, and GitHub exposes no per-job id that could order them. A run
+  outside GitHub Actions follows the same rule with its check suite in place of the workflow run: a
+  GitHub App may create several same-named check runs in one check suite, and nothing in the query
+  orders them as re-runs, so a group holding two runs of one check suite is not collapsed, and only
+  runs of different check suites supersede one another. A GitHub Actions run ignores its check-suite
+  id. A group in which any run lacks a usable `databaseId`, or whose highest
+  `databaseId` is tied, is not collapsed either, and neither is a run with an incomplete identity –
+  no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no
+  check suite, app slug, or check-suite id – which fails closed to reporting every run. The
+  truncation check runs first, and `checkCount` counts the entries that remain. The record adds
+  `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
+  whose combined status already holds one entry per context), and every check entry carries an
+  integer `supersededRuns`: how many earlier runs of its check identity that entry replaced.
+  It is `1` or more only on the kept entry of a collapsed group, and `0` for a check's only run,
+  for every entry of a group that was not collapsed, for a commit-status context, and always on
+  Forgejo; `supersededCheckCount` is the sum over all entries. A check run carries `startedAt`
+  and `completedAt` where the provider supplies them; a commit status (a GitHub status context or a
+  Forgejo status) carries only `completedAt`, its creation time.
+  `pr-checks-wait` is unchanged and carries neither.
 - **`pr-checks-wait` may report `forcedKill: true`.** If the watching child process ignores a clean
   `SIGTERM` and has to be escalated to `SIGKILL` after a one-second grace period, the result carries
   that flag; a clean bounded stop simply omits it.

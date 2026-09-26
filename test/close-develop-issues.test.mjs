@@ -284,6 +284,83 @@ test('workflow has the narrow trusted-event trigger, guard, and permission contr
   assert.doesNotMatch(workflow, /\bsecrets\./);
 });
 
+// The lines of the block a `key:` line opens: every following line indented deeper than the key,
+// with blank lines kept inside the block. Returns the key's own indentation alongside.
+function indentedBlock(lines, keyPattern, fromIndex = 0) {
+  const start = lines.findIndex((line, index) => index >= fromIndex && keyPattern.test(line));
+  assert.ok(start >= 0, `workflow has no line matching ${keyPattern}`);
+  const indent = lines[start].search(/\S/);
+  const body = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() !== '' && line.search(/\S/) <= indent) break;
+    body.push(line);
+  }
+  return { start, indent, body };
+}
+
+// The job's direct keys and its steps, each step as its own direct keys: nested `with:` values and
+// the script body are never mistaken for a job- or step-level `if:`.
+function closeIssuesJob(workflow) {
+  const lines = workflow.split('\n');
+  const jobs = indentedBlock(lines, /^jobs:\s*$/);
+  const job = indentedBlock(lines, /^\s+close-issues:\s*$/, jobs.start + 1);
+  const content = job.body.filter((line) => line.trim() !== '');
+  const keyIndent = content[0].search(/\S/);
+  const jobKeys = content
+    .filter((line) => line.search(/\S/) === keyIndent)
+    .map((line) => line.trim());
+
+  const steps = [];
+  const stepsBlock = indentedBlock(job.body, /^\s+steps:\s*$/);
+  const stepLines = stepsBlock.body.filter((line) => line.trim() !== '');
+  const dashIndent = stepLines[0].search(/\S/);
+  for (const line of stepLines) {
+    const column = line.search(/\S/);
+    if (column === dashIndent && line.trim().startsWith('- ')) {
+      steps.push([line.trim().slice(2).trim()]);
+    } else if (column === dashIndent + 2) {
+      steps.at(-1).push(line.trim());
+    }
+  }
+  return { jobKeys, steps };
+}
+
+const MERGED_GUARD =
+  /^if:\s*(?:\$\{\{\s*)?github\.event\.pull_request\.merged\s*==\s*true\s*(?:\}\})?\s*$/;
+
+test('workflow guards each step, not the job, so an unmerged close concludes SUCCESS', () => {
+  // A job-level `if:` that is false skips the whole job, and GitHub reports a skipped job as a
+  // SKIPPED check on the head commit. Every close without a merge — including the close/reopen
+  // that refreshes a release pull request — therefore left a SKIPPED `Close referenced issues`
+  // run, which blocks the merge gate under `requireAllChecks: true` (#466). Guarding the steps
+  // instead lets the job run and succeed while checking out and executing nothing.
+  const { jobKeys, steps } = closeIssuesJob(readFileSync(WORKFLOW_PATH, 'utf8'));
+
+  assert.ok(jobKeys.includes('name: Close referenced issues'), 'job keys were not found');
+  assert.deepEqual(
+    jobKeys.filter((key) => key.startsWith('if:')),
+    [],
+    'the close-issues job must carry no job-level if',
+  );
+
+  assert.equal(steps.length, 2, 'the job runs exactly the checkout and the script step');
+  const checkout = steps.find((keys) =>
+    keys.some((key) => /^uses:\s*actions\/checkout@/.test(key)),
+  );
+  const script = steps.find((keys) =>
+    keys.some((key) => /^uses:\s*actions\/github-script@/.test(key)),
+  );
+  for (const [label, keys] of [
+    ['checkout', checkout],
+    ['script', script],
+  ]) {
+    assert.ok(keys, `the ${label} step was not found`);
+    const guards = keys.filter((key) => key.startsWith('if:'));
+    assert.equal(guards.length, 1, `the ${label} step must carry exactly one if`);
+    assert.match(guards[0], MERGED_GUARD, `the ${label} step must run only for a merged close`);
+  }
+});
+
 test('workflow pins actions and checks out only the trusted event commit', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
   const actionReferences = [...workflow.matchAll(/^\s+uses:\s*([^\s#]+)/gm)].map(

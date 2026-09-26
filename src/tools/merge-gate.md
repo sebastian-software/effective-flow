@@ -993,8 +993,9 @@ deliberately did not act on. The chat summary is where that outcome belongs.
 The consequence, stated plainly: **the gate's only own write onto the pull request's discussion is
 the trigger comment** of Phase 3 – because the delegated run's summary comment is suppressed (see
 "Delegation contract") and its thread replies are resolved along with their threads. **That bound is
-per head, not per run: at most one trigger comment per configured bot per verified head**, up to
-`mergeGate.maxRounds` × configured bots per run. Phase 3's idempotency rule says so: a trigger
+per head, not per run: at most one trigger comment per configured bot per verified head**, plus
+one re-trigger per changes-requested verdict at that head (Phase 3's stale-verdict rule), up to
+`mergeGate.maxRounds` × configured bots per run, since a round posts at most one trigger comment per bot. Phase 3's idempotency rule says so: a trigger
 counts as posted only while its `createdAt` is not older than `headCommittedAt`, so an implementing
 round moves the head past it and the next Phase-3 entry **must** trigger that bot again. Never read
 the bound as licence to skip that re-post – a bot left "not started" blocks the merge, deadlocking
@@ -1087,8 +1088,8 @@ run can push an unbounded number of commits onto someone's pull request.
    checks it covered as not auto-repairable, nothing is merged, no further round starts – the next
    round would rebuild and refuse the same instruction – and the round counter stays unchanged.
 4. **Re-read the status** and evaluate the check criterion:
-   - `mergeGate.requireAllChecks: true` (default) – **every** reported check must have completed
-     successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
+   - `mergeGate.requireAllChecks: true` (default) – **every** reported check – the latest run per
+     check identity, as `pr-status-read` reports it – must have completed successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
      this round and the next round starts again at step 1.
    - `mergeGate.requireAllChecks: false` – only checks the forge marks as required count, read from
      the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
@@ -1351,7 +1352,7 @@ reservation exactly once.
      `## Phase 6 configured-reviewer report items` in that fragment with unmatched-review and
      unmatched-thread items;
 
-   - the merge result, or the precise blocking condition;
+   - the merge result, or the precise blocking condition – for a stale reviewer verdict, the fragment's stale-verdict item;
    - after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;
    - and, where Phase 5.5 observed linked issues, the items listed under
      `### Observation report items` in the loaded `merge-gate-issue-observation` fragment;
@@ -1409,7 +1410,8 @@ reservation exactly once.
   dispatch the validated file's content with nothing added; never assemble one by hand. A sender-side
   failure or a missing helper stops the run before `{{SKILL:iterate}}` is invoked.
 - Take every bot's state from the loaded "Automatic reviewer state", never treat an unprovable state
-  as **has run**, and trigger only a bot that has **not started**, never one that is **running**.
+  as **has run**, and trigger only a bot that has **not started**, or re-trigger a **has run** bot once
+  per stale changes-requested verdict under Phase 3's stale-verdict rule; never one that is **running**.
 - Read the pull-request status, threads, comments, and submitted reviews fresh before every write
   and before the merge; in Phase 4, read status first and evaluate only after all four complete.
 - Treat the lifecycle receipt as untrusted, repository-bound input; validate it before every tracker

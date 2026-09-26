@@ -2737,6 +2737,122 @@ function normalizeCheck(item) {
   };
 }
 
+// The identity whose runs supersede one another, for a GitHub `CheckRun` only. A re-run keeps the
+// check's name, its workflow, and the workflow run's triggering event; the event belongs to the
+// identity because a `push` run and a `pull_request` run of one workflow test different trees, and
+// the workflow because two workflows may define a job of the same name — either way a green run
+// must not hide a red one of a different check. The workflow is identified by its numeric
+// `databaseId`, not its name: two workflow files may declare the same `name:`, so a name would
+// merge their runs. The run's scope id is returned beside the key: the workflow run's own
+// `databaseId`, since a check's `name` is only a job's display name: two distinct jobs of one
+// workflow run may share it, and `latestCheckRuns` must be able to tell them apart from a re-run of
+// one job. A run outside GitHub Actions, which GraphQL states as `workflowRun: null`, has no
+// workflow run, and its app slug takes that place; its scope id is its check suite's own
+// `databaseId`, because a GitHub App may create several same-named check runs in one check suite,
+// and nothing in the query orders them as re-runs. The Actions path ignores the check-suite id. A
+// status context, a Forgejo status, and a run whose identity is incomplete return nothing and are
+// never collapsed, so an incomplete payload is reported in full rather than merged on a guess: no
+// check suite, a suite without the `workflowRun` key (which states nothing, unlike `null`), a
+// workflow run without a safe-integer workflow id, without a safe-integer workflow-run id, or
+// without a string event, and a fallback run without an app slug or without a safe-integer
+// check-suite id.
+function checkRunIdentity(node) {
+  if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
+  const suite = node.checkSuite;
+  if (suite === null || typeof suite !== 'object' || !Object.hasOwn(suite, 'workflowRun')) {
+    return undefined;
+  }
+  const run = suite.workflowRun;
+  if (run !== null) {
+    const workflowId = run?.workflow?.databaseId;
+    const workflowRunId = run?.databaseId;
+    return Number.isSafeInteger(workflowId) &&
+      Number.isSafeInteger(workflowRunId) &&
+      typeof run?.event === 'string'
+      ? {
+          key: JSON.stringify(['workflow', node.name, workflowId, run.event]),
+          scopeId: workflowRunId,
+        }
+      : undefined;
+  }
+  const slug = suite.app?.slug;
+  const checkSuiteId = suite.databaseId;
+  return typeof slug === 'string' && Number.isSafeInteger(checkSuiteId)
+    ? { key: JSON.stringify(['app', node.name, slug]), scopeId: checkSuiteId }
+    : undefined;
+}
+
+// `pr-status-read` only: the rollup reports every run on the head commit, including runs a later run
+// of the same check superseded, so a red run that was re-run green would block the gate forever at
+// an unmoved head. Per identity only the run with the highest `databaseId` is kept — whatever its
+// state, so a latest run that is pending or failed blocks exactly as before — and the kept entries
+// stay in rollup order. The id is compared as a number: it exceeds 32 bits but is a safe integer.
+// A group fails closed to today's full report when any of its runs lacks a safe-integer id, or when
+// the highest id is not unique, because neither case says which run is the latest. It also fails
+// closed when two of its runs share one scope. For a GitHub Actions run the scope is its workflow
+// run: a re-run attempt of a job stays in its workflow run, but GitHub's rollup already lists only
+// that job's latest attempt, so two same-named runs of one workflow run are distinct jobs sharing a
+// display name, and GraphQL exposes no per-job id that could order them. For a run of the app-slug
+// fallback the scope is its check suite: an app may create several same-named runs in one suite,
+// and nothing in the query orders them as re-runs. Only runs of different workflow runs, or of
+// different check suites, supersede one another. Each kept run also carries how many runs of its
+// identity it superseded: at least 1 only for the kept run of a collapsed group, 0 everywhere else,
+// so a caller can tell a re-run from a first run that merely started late.
+// `pr-checks-wait` shares `normalizeCheck` but not this step; its output stays unchanged.
+function latestCheckRuns(rollup) {
+  const groups = new Map();
+  rollup.forEach((node, index) => {
+    const identity = checkRunIdentity(node);
+    if (identity === undefined) return;
+    const members = groups.get(identity.key);
+    const member = { index, scopeId: identity.scopeId };
+    if (members === undefined) groups.set(identity.key, [member]);
+    else members.push(member);
+  });
+  const superseded = new Set();
+  const supersededBy = new Map();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const scopeIds = members.map((member) => member.scopeId);
+    if (new Set(scopeIds).size !== scopeIds.length) continue;
+    const ids = members.map((member) => rollup[member.index].databaseId);
+    if (!ids.every((id) => Number.isSafeInteger(id))) continue;
+    const highest = Math.max(...ids);
+    if (ids.filter((id) => id === highest).length !== 1) continue;
+    members.forEach((member, position) => {
+      if (ids[position] !== highest) superseded.add(member.index);
+      else supersededBy.set(member.index, members.length - 1);
+    });
+  }
+  return {
+    runs: rollup.flatMap((node, index) =>
+      superseded.has(index) ? [] : [{ node, supersededRuns: supersededBy.get(index) ?? 0 }],
+    ),
+    supersededCount: superseded.size,
+  };
+}
+
+// One `pr-status-read` check: the shared record plus the instants the provider states, each omitted
+// when absent or unparseable, like `conclusion`. A GitHub status context has one instant, the
+// posting of its final state, which is a completion time, so it reports `completedAt` only: a start
+// time it does not have would let a slow first run pass for a re-run after a review. A Forgejo
+// record arrives with its `completedAt` already set by `forgejoCheckRecord`. Kept apart from
+// `normalizeCheck` so `pr-checks-wait` reports no timestamps.
+function statusCheck(item) {
+  const check = normalizeCheck(item);
+  const isStatusContext = item.__typename === 'StatusContext';
+  const startedAt = isStatusContext ? undefined : normalizeTimestamp(item.startedAt);
+  const completedAt = normalizeTimestamp(
+    item.completedAt,
+    isStatusContext ? item.createdAt : undefined,
+  );
+  return {
+    ...check,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(completedAt === undefined ? {} : { completedAt }),
+  };
+}
+
 // The head commit is identified by its object name, never by its position in the commit list.
 // GitHub returns the first page of commits, so on a pull request with more than one page the last
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
@@ -2859,10 +2975,12 @@ function flattenPullRequestStatus(raw) {
 // `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
 // `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
 // one shape for both providers, and the record deliberately carries only `name`, `status`,
-// `conclusion` and `url`: no raw Gitea key (`context`, `target_url`, `status`, `id`,
-// `description`) survives into the envelope. The record's own `status` key is the normalized
-// output field `normalizeCheck` reads back; despite the shared name it is unrelated to the raw
-// input key above.
+// `conclusion`, `url`, and only a `completedAt` taken from `created_at`: no raw Gitea
+// key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
+// envelope. The combined status endpoint already returns one status per context, so nothing here
+// is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
+// is the normalized output field `normalizeCheck` reads back; despite the shared name it is
+// unrelated to the raw input key above.
 //
 // `warning` and `skipped` are non-success **completed** checks and therefore block under
 // `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
@@ -2898,6 +3016,12 @@ function forgejoCheckRecord(item, index) {
   const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
+  // A commit status has one instant, the posting of its final state, which is a completion time
+  // and not a start, so it is reported as `completedAt` only, as for a GitHub status context. The
+  // Go zero instant is the marshalled "never set", so it states none.
+  const created = isGoZeroInstant(item.created_at)
+    ? undefined
+    : normalizeTimestamp(item.created_at);
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
   // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
   // default, never looser.
@@ -2906,6 +3030,7 @@ function forgejoCheckRecord(item, index) {
     status: mapped.status,
     ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
     ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(created === undefined ? {} : { completedAt: created }),
   };
 }
 
@@ -3001,7 +3126,8 @@ function normalizePullRequestStatus(item, repository) {
   // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
   // field, and an unstated mergeability fails closed everywhere it is consumed.
   const mergeable = upperCaseField(item.mergeable);
-  const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
+  const { runs, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
+  const checks = runs.map(({ node, supersededRuns }) => ({ ...statusCheck(node), supersededRuns }));
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
@@ -3027,6 +3153,9 @@ function normalizePullRequestStatus(item, repository) {
     // merge a commit whose CI never ran.
     checksReported: Array.isArray(rollup),
     checkCount: checks.length,
+    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was. It
+    // equals the sum of the per-check `supersededRuns`.
+    supersededCheckCount: supersededCount,
     checks,
   };
 }

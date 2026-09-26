@@ -161,7 +161,7 @@ delegates. Four grounds carry that, none of them about how a later read classifi
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
 request receives the same content in the gate's own chat summary. The gate's stated bound — its own
-items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+items are trigger comments, **at most one per configured bot per verified head** plus one re-trigger per changes-requested verdict at that head — is exceeded the
 moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
@@ -172,10 +172,17 @@ dropped.
 Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
 in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
 the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
-one, URL), the forge's own merge state, and `headCommittedAt` — the head commit's committer
+one, URL, and for a check run `startedAt` and `completedAt` where supplied, while a status context or Forgejo status carries `completedAt` only, and `supersededRuns`), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
 timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
 — exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
 deliberate: both values must be read at the same instant to be consistent.
+
+The check list holds **only the latest run per check identity**: name plus workflow id (the workflow's `databaseId`, since
+workflow names are not unique) and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`. The run
+with the highest `databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the highest
+one, is not collapsed, nor is a group holding two runs of one workflow run (distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt), nor is a group holding two runs of one check suite (an app may create several same-named runs in one suite, and nothing orders them as re-runs), nor is a run with an incomplete identity (no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite, app slug, or check-suite id). A commit-status context keeps its own identity, is never merged with a check run, and
+carries its `createdAt` as `completedAt` only, with no `startedAt`. `supersededCheckCount` counts the dropped runs (`0` on
+Forgejo, which already returns one status per context). Every check states `supersededRuns`, the number of earlier runs of its identity it replaced: at least 1 only for the kept run of a collapsed group, `0` for a singleton, for every entry of a group not collapsed, for a run with an incomplete identity, and for every status context or Forgejo status; the per-check values sum to `supersededCheckCount`.
 
 `headCommittedAt` is the reference side of every "newer than the current head" question, paired with
 the `createdAt` of a comment, thread, or reply. Both sides are required: with either one absent the
@@ -223,7 +230,7 @@ what supersedes a standing verdict, so neither tool restates that rule.
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
 inside the provider CLI until the checks are complete or the supplied timeout elapses and returns
-the same normalized check list; a timeout is a normalized timeout result, not an error. It is a read
+the normalized check list, not deduplicated and without timestamps; a timeout is a normalized timeout result, not an error. It is a read
 operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model

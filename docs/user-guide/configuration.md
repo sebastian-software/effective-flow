@@ -381,12 +381,12 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------ |
 | `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness             |
 | `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base      |
-| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every reported check green, not only the forge's required ones   |
+| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones |
 | `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks                      |
 | `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                       |
 | `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer |
 | `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers       |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted to re-trigger that reviewer when it has not started yet   |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale |
 | `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run            |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
@@ -466,9 +466,22 @@ which of the two you meant.
 `bots.<login>.check` names a commit status or check run that reviewer publishes, for example
 `recensor/review` or `Greptile Review`. With it, the gate can tell a reviewer that is **still
 running** from one that has **not started**: it waits for the former and triggers only the latter.
+One exception applies to a reviewer with `.check` configured that has already run: when its latest
+verdict at the unchanged head requests changes, and another check run (never a commit status) was
+re-run after that verdict and came back green, the verdict is stale, so the gate posts the trigger
+once more for that verdict and waits once. A re-run here means a run that replaced an earlier run
+of the same check; a check whose first run merely started after the verdict, such as a queued or
+dependency-gated job, does not count. A job re-run inside the same workflow run cannot be told apart
+from a first run, so it does not count either: the verdict is then not treated as stale, is not
+re-triggered, and keeps blocking like any changes-requested verdict. A reviewer that does not answer with a new review, or a
+stale verdict the gate cannot re-trigger – no trigger configured, no `.check` configured, a
+timestamp or author it cannot prove, or the re-trigger already posted – is reported as a stale
+verdict with a recommendation to re-trigger by hand; the verdict still blocks as before.
 Leave it unset only for a reviewer that publishes no such check; Greptile publishes the `Greptile
 Review` check and should use that exact context. Without `.check`, the gate keeps its previous
-two-state behavior for that reviewer. See
+two-state behavior for that reviewer and never re-triggers a stale verdict, because the reviewer's
+own status could otherwise pass for a re-run; it reports such a verdict as stale and recommends
+configuring `.check`. See
 [Three reviewer states, not two](./tools-deliver.md#three-reviewer-states-not-two).
 
 When the gate conservatively observes a bot-typed submitted review or review thread whose login is

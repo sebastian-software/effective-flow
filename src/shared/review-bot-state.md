@@ -68,18 +68,17 @@ account-class condition: collapse is decided before any read, and a configuratio
 account class to condition on. It needs none because a pair collapses only when one of the two
 spellings carries `[bot]` and therefore names the bot form of the other — two rows, two spellings of
 one bot account, whatever a surface later reports about either. A project may already list both
-spellings as a workaround; after this rule they
-de-duplicate to a single reviewer, which is the intended outcome — one round, one mention, one wait.
-**The surviving key is the first of the collapsing entries in `mergeGate.bots` list order**, and
-every `.trigger` and `.check` lookup for that reviewer uses that one configured spelling. A value set
-on exactly one of them is adopted for the collapsed reviewer: an unset key disagrees with nothing.
-Report the collapse, so a maintainer can drop the redundant entry instead of keeping a line that no
-longer does anything. If both entries set the same key to **different** values, that is a
-configuration conflict. Report it naming the key and both values, and treat that reviewer as
-unconfigured for triggering and for check lookup: post no trigger, and resolve its state without the
-primary signal of rule 1. A gate then blocks the merge on that reviewer. Never pick one of the two
-values and never combine them — a guessed trigger text and a guessed check context each decide a
-different action, and neither is the one the project configured.
+spellings as a workaround; after this rule they de-duplicate to a single reviewer, which is the
+intended outcome — one round, one mention, one wait. **The surviving key is the first of the
+collapsing entries in `mergeGate.bots` list order**, and every `.trigger` and `.check` lookup for
+that reviewer uses that one configured spelling. A value set on exactly one of them is adopted for
+the collapsed reviewer: an unset key disagrees with nothing. Report the collapse, so a maintainer can
+drop the redundant entry instead of keeping a line that no longer does anything. If both entries set
+the same key to **different** values, that is a configuration conflict. Report it naming the key and
+both values, and treat that reviewer as unconfigured for triggering and for check lookup: post no
+trigger, and resolve its state without the primary signal of rule 1. A gate then blocks the merge on
+that reviewer. Never pick one of the two values and never combine them — a guessed trigger text and a
+guessed check context each decide a different action, and neither is the one the project configured.
 
 ### The three states
 
@@ -88,10 +87,9 @@ different action, and neither is the one the project configured.
 - **not started** — nothing proves the reviewer has begun for the current head.
 - **has run** — the reviewer has produced its verdict for the current head.
 
-**running** and **not started** both mean the reviewer's output for this head is not there yet; they
-differ only in what a consumer may do about it. Only the primary signal below can establish
-**running** — a consumer that receives **not started** therefore learns that nothing is proven, not
-that nothing is happening.
+**running** and **not started** both mean the reviewer's output for this head is not there yet; they differ
+only in what a consumer may do about it. Only the primary signal below can establish **running** — a consumer
+that receives **not started** therefore learns that nothing is proven, not that nothing is happening.
 
 ### Precedence
 
@@ -107,6 +105,10 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
    - a matching entry with `status: COMPLETED` → **has run**, whatever its `conclusion`. A red review
      is a review: the conclusion states what the reviewer found, not whether it ran, and reading it
      as "has not run" would trigger a reviewer that already answered.
+   - **more than one matching entry** → any match with `status: PENDING` means **running**, otherwise
+     **has run**. `pr-status-read` reports only the latest run per check identity, so several entries
+     match when distinct identities share the name or a group stays uncollapsed: a missing or tied
+     `databaseId`, two same-named runs of one workflow run or check suite, or an incomplete identity, keeps every run of that group in the list.
    - **no matching entry in a reported list** → **not started**. A context that never appears is
      indistinguishable from one that is about to appear: a misconfigured value, an app that is not
      installed, and a queued run whose status is only set once a worker claims it all look the same
@@ -229,7 +231,8 @@ The state is shared; what it gates is not. Each entry therefore states what is t
 itself first, and what each consumer role does with it second.
 
 - **has run** — the reviewer's output for this head exists and may be read, classified, and answered.
-  A gate counts this reviewer's merge precondition as satisfied; a guard lets its run continue.
+  A gate counts this reviewer's merge precondition as satisfied and triggers it again only through the
+  single exception its own stale-verdict re-trigger states; a guard lets its run continue.
 - **running** — the reviewer's output is coming, and no consumer may ask it to start again. A trigger
   aimed at a reviewer already working either queues a redundant second run or, for a reviewer that
   reads a mention as a fresh request, discards the one in flight. A gate waits and keeps the merge
