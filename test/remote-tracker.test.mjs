@@ -6791,16 +6791,22 @@ function supersededRunsOf(result) {
 // workflow run of its own, the way a re-run on an unmoved head does.
 let nextWorkflowRunId = 36_200_000_000;
 
+// Check-suite ids handed out by `checkRun` when a call names none, so every such call lands in a
+// check suite of its own.
+let nextCheckSuiteId = 98_000_000_000;
+
 // One check run in the shape the extended `PR_STATUS_QUERY` selection returns. `workflow` is the
 // workflow's numeric `databaseId`, not its name: two workflow files may declare the same `name:`,
 // so only the id tells them apart. The default is the id of this repository's `CI` workflow.
 // `run` is the workflow run's own `databaseId`; by default each call gets a distinct one, so two
 // calls model two workflow runs, and only a shared `run` models two jobs of one workflow run.
+// `suite` is the check suite's own `databaseId`, likewise distinct per call by default, so only a
+// shared `suite` models two check runs one GitHub App created in one check suite; it matters only
+// for a run outside GitHub Actions. `suite: undefined`, passed explicitly, omits the key.
 // `workflow: null` is a run without a workflow run, which GraphQL states as `workflowRun: null`;
 // `databaseId` accepts `undefined` to omit the key entirely.
-function checkRun(
-  name,
-  {
+function checkRun(name, options = {}) {
+  const {
     status = 'COMPLETED',
     conclusion = 'SUCCESS',
     databaseId,
@@ -6810,8 +6816,8 @@ function checkRun(
     run = nextWorkflowRunId++,
     event = 'pull_request',
     app = 'github-actions',
-  } = {},
-) {
+  } = options;
+  const suite = Object.hasOwn(options, 'suite') ? options.suite : nextCheckSuiteId++;
   return {
     __typename: 'CheckRun',
     name,
@@ -6821,6 +6827,7 @@ function checkRun(
     startedAt,
     completedAt,
     checkSuite: {
+      ...(suite === undefined ? {} : { databaseId: suite }),
       app: { slug: app },
       workflowRun:
         workflow === null ? null : { databaseId: run, event, workflow: { databaseId: workflow } },
@@ -7143,8 +7150,9 @@ test('pr-status-read requests the ordering, identity, and timestamp fields the d
   }
   // The identity: the check suite's app, and its workflow run's triggering event and workflow id.
   // The workflow's name is not unique, so the query selects its `databaseId` in its place. The
-  // workflow run's own `databaseId` tells two same-named jobs of one workflow run from a re-run.
-  assert.match(checkRunFragment, /\bcheckSuite\s*\{/);
+  // workflow run's own `databaseId` tells two same-named jobs of one workflow run from a re-run,
+  // and the check suite's own `databaseId` does the same for a run outside GitHub Actions.
+  assert.match(checkRunFragment, /\bcheckSuite\s*\{\s*databaseId\b/);
   assert.match(checkRunFragment, /\bapp\s*\{\s*slug\s*\}/);
   assert.match(checkRunFragment, /\bworkflowRun\s*\{\s*databaseId\b/);
   assert.match(checkRunFragment, /\bevent\b/);
@@ -7470,9 +7478,23 @@ test('pr-status-read identifies a check run without a workflow run by name and a
     ['FAILURE', 'SUCCESS'],
   );
 
+  // One app's two same-named runs in two distinct check suites, the way a re-requested suite on an
+  // unmoved head looks: the later suite's run supersedes the earlier one.
   const oneApp = await readRollup([
-    checkRun('scan', { conclusion: 'FAILURE', databaseId: 1, workflow: null, app: 'scanner-a' }),
-    checkRun('scan', { conclusion: 'SUCCESS', databaseId: 2, workflow: null, app: 'scanner-a' }),
+    checkRun('scan', {
+      conclusion: 'FAILURE',
+      databaseId: 1,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 11,
+    }),
+    checkRun('scan', {
+      conclusion: 'SUCCESS',
+      databaseId: 2,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 12,
+    }),
   ]);
   assert.equal(oneApp.checkCount, 1);
   assert.equal(oneApp.supersededCheckCount, 1);
@@ -7481,6 +7503,154 @@ test('pr-status-read identifies a check run without a workflow run by name and a
     oneApp.checks.map(({ name, conclusion }) => ({ name, conclusion })),
     [{ name: 'scan', conclusion: 'SUCCESS' }],
   );
+});
+
+test('pr-status-read keeps two same-named runs of one app in one check suite apart', async () => {
+  // A GitHub App may create several check runs of one name inside one check suite, and GraphQL
+  // states no per-run id that orders them as a re-run. The later green run must not hide the red
+  // one: the whole `scan` group is reported, a third run of a later suite included, and nothing in
+  // it counts as superseded, while the well-ordered `lint` group of the same app still collapses.
+  const result = await readRollup([
+    checkRun('scan', {
+      conclusion: 'FAILURE',
+      databaseId: 1,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 21,
+    }),
+    checkRun('scan', {
+      conclusion: 'SUCCESS',
+      databaseId: 2,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 21,
+    }),
+    checkRun('lint', {
+      conclusion: 'FAILURE',
+      databaseId: 3,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 21,
+    }),
+    checkRun('scan', {
+      conclusion: 'SUCCESS',
+      databaseId: 4,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 22,
+    }),
+    checkRun('lint', {
+      conclusion: 'SUCCESS',
+      databaseId: 5,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 22,
+    }),
+  ]);
+  assert.equal(result.checkCount, 4);
+  assert.equal(result.supersededCheckCount, 1);
+  assert.deepEqual(supersededRunsOf(result), [0, 0, 0, 1]);
+  assert.deepEqual(
+    result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+    [
+      { name: 'scan', conclusion: 'FAILURE' },
+      { name: 'scan', conclusion: 'SUCCESS' },
+      { name: 'scan', conclusion: 'SUCCESS' },
+      { name: 'lint', conclusion: 'SUCCESS' },
+    ],
+  );
+  assert.deepEqual(
+    blockingChecks(result.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'scan', conclusion: 'FAILURE' }],
+  );
+
+  // The minimal collision: two runs of one suite and nothing else.
+  const pair = await readRollup([
+    checkRun('scan', {
+      conclusion: 'FAILURE',
+      databaseId: 1,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 31,
+    }),
+    checkRun('scan', {
+      conclusion: 'SUCCESS',
+      databaseId: 2,
+      workflow: null,
+      app: 'scanner-a',
+      suite: 31,
+    }),
+  ]);
+  assert.equal(pair.checkCount, 2);
+  assert.equal(pair.supersededCheckCount, 0);
+  assert.deepEqual(supersededRunsOf(pair), [0, 0]);
+  assert.deepEqual(
+    blockingChecks(pair.checks).map(({ name, conclusion }) => ({ name, conclusion })),
+    [{ name: 'scan', conclusion: 'FAILURE' }],
+  );
+});
+
+test('pr-status-read ignores the check-suite id of a GitHub Actions run', async () => {
+  // A GitHub Actions run is told apart by its workflow run, so its check-suite id plays no role:
+  // runs of two workflow runs collapse whether their suite ids are shared, missing, or unusable.
+  for (const [label, suite] of [
+    ['shared check-suite id', 41],
+    ['check suite without databaseId', undefined],
+    ['checkSuite.databaseId: null', null],
+    ['checkSuite.databaseId as a string', '41'],
+  ]) {
+    const result = await readRollup([
+      checkRun('build', { conclusion: 'FAILURE', databaseId: 1, run: 36300000050, suite }),
+      checkRun('build', { conclusion: 'SUCCESS', databaseId: 2, run: 36300000051, suite }),
+    ]);
+    assert.equal(result.checkCount, 1, label);
+    assert.equal(result.supersededCheckCount, 1, label);
+    assert.deepEqual(supersededRunsOf(result), [1], label);
+    assert.deepEqual(
+      result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+      [{ name: 'build', conclusion: 'SUCCESS' }],
+      label,
+    );
+  }
+});
+
+test('pr-status-read reports app runs without a usable check-suite id in full, unmerged', async () => {
+  // A run outside GitHub Actions is told apart from a same-named run of its app's same check suite
+  // only by the suite's own `databaseId`. Without a safe-integer id its identity is incomplete, so
+  // the red run is never merged into the later green one.
+  for (const [label, suite] of [
+    ['check suite without databaseId', undefined],
+    ['checkSuite.databaseId: null', null],
+    ['checkSuite.databaseId as a string', '98000000001'],
+  ]) {
+    const result = await readRollup([
+      checkRun('scan', {
+        conclusion: 'FAILURE',
+        databaseId: 1,
+        workflow: null,
+        app: 'scanner-a',
+        suite,
+      }),
+      checkRun('scan', {
+        conclusion: 'SUCCESS',
+        databaseId: 2,
+        workflow: null,
+        app: 'scanner-a',
+        suite,
+      }),
+    ]);
+    assert.equal(result.checkCount, 2, label);
+    assert.equal(result.supersededCheckCount, 0, label);
+    assert.deepEqual(supersededRunsOf(result), [0, 0], label);
+    assert.deepEqual(
+      result.checks.map(({ name, conclusion }) => ({ name, conclusion })),
+      [
+        { name: 'scan', conclusion: 'FAILURE' },
+        { name: 'scan', conclusion: 'SUCCESS' },
+      ],
+      label,
+    );
+  }
 });
 
 test('pr-status-read fails closed to reporting every run of a group with an unusable databaseId', async () => {

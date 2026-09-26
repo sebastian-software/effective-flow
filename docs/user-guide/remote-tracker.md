@@ -635,18 +635,23 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   would otherwise block the gate forever at an unmoved head. The read now keeps only the latest run
   per check identity – the check name plus its workflow id (the workflow's `databaseId`, not its
   name, because two workflow files may declare the same name) and triggering event, or the name plus
-  the app slug when the run states `workflowRun: null` – and "latest" is the run with the highest
-  `databaseId`, whatever its state: a re-run that is still pending or failed keeps blocking.
+  the app slug when the run states `workflowRun: null`, scoped by its check suite's `databaseId` –
+  and "latest" is the run with the highest `databaseId`, whatever its state: a re-run that is still
+  pending or failed keeps blocking.
   Same-named jobs of different workflows, or of one workflow's `push` and `pull_request` runs, stay
   separate entries, and a commit-status context is never merged with a check run. Only runs of
   different workflow runs supersede one another: a re-run attempt of a job stays in its workflow
   run, and GitHub's rollup already lists only that job's latest attempt, so a group holding two runs
   of one workflow run holds distinct jobs that share a display name, and it is not collapsed – the
-  check name is only a display name, and GitHub exposes no per-job id that could order them. A group
-  in which any run lacks a usable `databaseId`, or whose highest `databaseId` is tied, is not
-  collapsed either, and neither is a run with an incomplete identity – no workflow id, no
-  workflow-run id, no event, a check suite without a stated workflow run, or no check suite or app
-  slug – which fails closed to reporting every run. The
+  check name is only a display name, and GitHub exposes no per-job id that could order them. A run
+  outside GitHub Actions follows the same rule with its check suite in place of the workflow run: a
+  GitHub App may create several same-named check runs in one check suite, and nothing in the query
+  orders them as re-runs, so a group holding two runs of one check suite is not collapsed, and only
+  runs of different check suites supersede one another. A GitHub Actions run ignores its check-suite
+  id. A group in which any run lacks a usable `databaseId`, or whose highest
+  `databaseId` is tied, is not collapsed either, and neither is a run with an incomplete identity –
+  no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no
+  check suite, app slug, or check-suite id – which fails closed to reporting every run. The
   truncation check runs first, and `checkCount` counts the entries that remain. The record adds
   `supersededCheckCount` (always present, `0` when nothing was dropped and always `0` on Forgejo,
   whose combined status already holds one entry per context), and every check entry carries an

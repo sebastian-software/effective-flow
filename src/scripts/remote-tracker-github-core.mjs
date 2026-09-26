@@ -174,9 +174,13 @@ function ghHostArgs(repository) {
 // workflow run's own `databaseId` is selected so two same-named runs of ONE workflow run can be
 // recognized and left uncollapsed: they are distinct jobs sharing a display name, since the rollup
 // already drops the superseded attempts of a re-run, and GraphQL exposes no per-job id to order them.
+// The check suite's own `databaseId` does the same for a run outside GitHub Actions, which states
+// `workflowRun: null` and is identified by its app slug instead: a GitHub App may create several
+// same-named check runs in ONE check suite, and nothing here orders them as re-runs, so only runs of
+// different suites may supersede one another. A GitHub Actions run ignores its suite id.
 // `startedAt`/`completedAt` give a check run its instants, and a status context's `createdAt` gives
 // it only its completion instant.
-const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
+const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{databaseId app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
 
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;

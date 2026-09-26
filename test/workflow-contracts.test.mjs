@@ -7568,7 +7568,7 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
   );
   assert.match(
     precedence,
-    /a missing or tied `databaseId`, two same-named runs of one workflow run, or an incomplete identity, keeps every run of that group/,
+    /a missing or tied `databaseId`, two same-named runs of one workflow run or check suite, or an incomplete identity, keeps every run of that group/,
     'the multi-match rationale must name why a group stays uncollapsed',
   );
 
@@ -7578,16 +7578,20 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
   for (const [pattern, message] of [
     [/only the latest run per check identity/, 'keeps only the latest run per identity'],
     [
-      /name plus workflow id \(the workflow's `databaseId`, since workflow names are not unique\) and triggering event, or name plus app slug where the run states `workflowRun: null`/,
-      'defines the check-run identity by workflow id',
+      /name plus workflow id \(the workflow's `databaseId`, since workflow names are not unique\) and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`/,
+      'defines the check-run identity by workflow id, or by app slug and check suite',
     ],
     [
-      /nor is a run with an incomplete identity \(no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite or app slug\)/,
+      /nor is a run with an incomplete identity \(no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite, app slug, or check-suite id\)/,
       'fails closed on an incomplete identity',
     ],
     [
       /nor is a group holding two runs of one workflow run \(distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt\)/,
       'leaves two same-named runs of one workflow run uncollapsed',
+    ],
+    [
+      /nor is a group holding two runs of one check suite \(an app may create several same-named runs in one suite, and nothing orders them as re-runs\)/,
+      'leaves two same-named runs of one check suite uncollapsed',
     ],
     [/highest `databaseId`/, 'orders runs by databaseId'],
     [

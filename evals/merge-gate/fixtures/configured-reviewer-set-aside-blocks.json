@@ -235,6 +235,7 @@
                               "startedAt": "2026-09-01T09:01:10Z",
                               "completedAt": "2026-09-01T09:04:32Z",
                               "checkSuite": {
+                                "databaseId": 98010233393,
                                 "app": {
                                   "slug": "github-actions"
                                 },
@@ -258,6 +259,7 @@
                               "startedAt": "2026-09-01T09:01:14Z",
                               "completedAt": "2026-09-01T10:19:58Z",
                               "checkSuite": {
+                                "databaseId": 98010241762,
                                 "app": {
                                   "slug": "recensor"
                                 },
@@ -321,7 +323,7 @@
           "command": {
             "executable": "gh",
             "args": ["api", "graphql", "--input", "-"],
-            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
+            "stdin": "{\"query\":\"query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{databaseId app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}\",\"variables\":{\"owner\":\"example\",\"repo\":\"flow\",\"number\":42}}\n"
           },
           "conditionalWriteAvailable": false
         },

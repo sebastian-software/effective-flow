@@ -2743,16 +2743,19 @@ function normalizeCheck(item) {
 // the workflow because two workflows may define a job of the same name — either way a green run
 // must not hide a red one of a different check. The workflow is identified by its numeric
 // `databaseId`, not its name: two workflow files may declare the same `name:`, so a name would
-// merge their runs. The workflow run's own `databaseId` is returned beside the key, because a
-// check's `name` is only a job's display name: two distinct jobs of one workflow run may share it,
-// and `latestCheckRuns` must be able to tell them apart from a re-run of one job. A run outside
-// GitHub Actions, which GraphQL states as `workflowRun: null`, has no workflow run, and its app slug
-// takes that place; it carries no workflow-run id. A status context, a Forgejo status, and a run
-// whose identity is incomplete return nothing and are never collapsed, so an incomplete payload is
-// reported in full rather than merged on a guess: no check suite, a suite without the
-// `workflowRun` key (which states nothing, unlike `null`), a workflow run without a safe-integer
-// workflow id, without a safe-integer workflow-run id, or without a string event, and a fallback
-// run without an app slug.
+// merge their runs. The run's scope id is returned beside the key: the workflow run's own
+// `databaseId`, since a check's `name` is only a job's display name: two distinct jobs of one
+// workflow run may share it, and `latestCheckRuns` must be able to tell them apart from a re-run of
+// one job. A run outside GitHub Actions, which GraphQL states as `workflowRun: null`, has no
+// workflow run, and its app slug takes that place; its scope id is its check suite's own
+// `databaseId`, because a GitHub App may create several same-named check runs in one check suite,
+// and nothing in the query orders them as re-runs. The Actions path ignores the check-suite id. A
+// status context, a Forgejo status, and a run whose identity is incomplete return nothing and are
+// never collapsed, so an incomplete payload is reported in full rather than merged on a guess: no
+// check suite, a suite without the `workflowRun` key (which states nothing, unlike `null`), a
+// workflow run without a safe-integer workflow id, without a safe-integer workflow-run id, or
+// without a string event, and a fallback run without an app slug or without a safe-integer
+// check-suite id.
 function checkRunIdentity(node) {
   if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
   const suite = node.checkSuite;
@@ -2766,12 +2769,16 @@ function checkRunIdentity(node) {
     return Number.isSafeInteger(workflowId) &&
       Number.isSafeInteger(workflowRunId) &&
       typeof run?.event === 'string'
-      ? { key: JSON.stringify(['workflow', node.name, workflowId, run.event]), workflowRunId }
+      ? {
+          key: JSON.stringify(['workflow', node.name, workflowId, run.event]),
+          scopeId: workflowRunId,
+        }
       : undefined;
   }
   const slug = suite.app?.slug;
-  return typeof slug === 'string'
-    ? { key: JSON.stringify(['app', node.name, slug]), workflowRunId: undefined }
+  const checkSuiteId = suite.databaseId;
+  return typeof slug === 'string' && Number.isSafeInteger(checkSuiteId)
+    ? { key: JSON.stringify(['app', node.name, slug]), scopeId: checkSuiteId }
     : undefined;
 }
 
@@ -2782,13 +2789,15 @@ function checkRunIdentity(node) {
 // stay in rollup order. The id is compared as a number: it exceeds 32 bits but is a safe integer.
 // A group fails closed to today's full report when any of its runs lacks a safe-integer id, or when
 // the highest id is not unique, because neither case says which run is the latest. It also fails
-// closed when two of its runs belong to one workflow run: a re-run attempt of a job stays in its
-// workflow run, but GitHub's rollup already lists only that job's latest attempt, so two same-named
-// runs of one workflow run are distinct jobs sharing a display name, and GraphQL exposes no per-job
-// id that could order them. Only runs of different workflow runs supersede one another. The
-// app-slug fallback carries no workflow-run id and collapses as before. Each kept run also carries
-// how many runs of its identity it superseded: at least 1 only for the kept run of a collapsed group,
-// 0 everywhere else, so a caller can tell a re-run from a first run that merely started late.
+// closed when two of its runs share one scope. For a GitHub Actions run the scope is its workflow
+// run: a re-run attempt of a job stays in its workflow run, but GitHub's rollup already lists only
+// that job's latest attempt, so two same-named runs of one workflow run are distinct jobs sharing a
+// display name, and GraphQL exposes no per-job id that could order them. For a run of the app-slug
+// fallback the scope is its check suite: an app may create several same-named runs in one suite,
+// and nothing in the query orders them as re-runs. Only runs of different workflow runs, or of
+// different check suites, supersede one another. Each kept run also carries how many runs of its
+// identity it superseded: at least 1 only for the kept run of a collapsed group, 0 everywhere else,
+// so a caller can tell a re-run from a first run that merely started late.
 // `pr-checks-wait` shares `normalizeCheck` but not this step; its output stays unchanged.
 function latestCheckRuns(rollup) {
   const groups = new Map();
@@ -2796,7 +2805,7 @@ function latestCheckRuns(rollup) {
     const identity = checkRunIdentity(node);
     if (identity === undefined) return;
     const members = groups.get(identity.key);
-    const member = { index, workflowRunId: identity.workflowRunId };
+    const member = { index, scopeId: identity.scopeId };
     if (members === undefined) groups.set(identity.key, [member]);
     else members.push(member);
   });
@@ -2804,10 +2813,8 @@ function latestCheckRuns(rollup) {
   const supersededBy = new Map();
   for (const members of groups.values()) {
     if (members.length < 2) continue;
-    const runIds = members
-      .map((member) => member.workflowRunId)
-      .filter((runId) => runId !== undefined);
-    if (new Set(runIds).size !== runIds.length) continue;
+    const scopeIds = members.map((member) => member.scopeId);
+    if (new Set(scopeIds).size !== scopeIds.length) continue;
     const ids = members.map((member) => rollup[member.index].databaseId);
     if (!ids.every((id) => Number.isSafeInteger(id))) continue;
     const highest = Math.max(...ids);
