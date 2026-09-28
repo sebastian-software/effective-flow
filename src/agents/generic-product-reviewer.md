@@ -66,6 +66,10 @@ If the skill is unavailable, use this minimal fallback: read scoped repository i
 reviewer-design-decisions
 ```
 
+```include
+reviewer-assigned-change
+```
+
 ## Output format
 
 Begin with the audited scope, evidence limits, the reduced-depth notice, and important areas not inspected. For each finding report:

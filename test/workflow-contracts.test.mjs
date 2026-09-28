@@ -17599,3 +17599,201 @@ test('setup-profiles classifies origin read-only before the Profile question and
   );
   assert.equal(profileAsk?.type, 'scored');
 });
+
+// ---------------------------------------------------------------------------------------------
+// Diff baseline (#469)
+//
+// `build`, `fix` and `refactor` capture one diff baseline before their first implementation write
+// and render the run's delta from it wherever a step needs "the files this run changed". The pins
+// below hold the wiring the plan's deep review corrected, by stable phrase and by order rather than
+// by paragraph, so rewording stays free while a moved or dropped step fails.
+
+// The top-level numbered items of one slice, keyed by their number. A continuation line is indented,
+// so only a line that starts at column 0 with `<n>. ` opens an item.
+function numberedItems(text) {
+  const items = new Map();
+  for (const match of text.matchAll(/^(\d+)\. ([\s\S]*?)(?=^\d+\. |(?![\s\S]))/gm)) {
+    items.set(Number(match[1]), match[2]);
+  }
+  return items;
+}
+
+const DIFF_BASELINE_TOOLS = [
+  { tool: 'build', capturePoint: /Phase 2, step 0/ },
+  { tool: 'fix', capturePoint: /Phase 3, step 0/ },
+  { tool: 'refactor', capturePoint: /end of Phase 2/ },
+];
+
+test('build, fix and refactor lazy-load the diff-baseline fragment exactly once', () => {
+  for (const { tool, capturePoint } of DIFF_BASELINE_TOOLS) {
+    const path = `src/tools/${tool}.md`;
+    const body = source(path);
+    const { eager, lazy } = collectIncludeNames(body);
+    assert.equal(eager.has('diff-baseline'), false, `${path} must not eager-include diff-baseline`);
+    assert.ok(lazy.has('diff-baseline'), `${path} must lazy-include diff-baseline`);
+
+    const { body: rendered, names } = resolveLazyIncludes(body, { context: path });
+    assert.equal(
+      names.filter((name) => name === 'diff-baseline').length,
+      1,
+      `${path} must load diff-baseline exactly once`,
+    );
+    const pointer = rendered
+      .split('\n')
+      .find((line) => line.startsWith('**Load on demand:** Read `shared/diff-baseline.md`'));
+    assert.ok(pointer, `${path} must render the diff-baseline load pointer`);
+    assert.match(pointer, /captured/, `${path}: the pointer must name the capture`);
+    assert.match(pointer, capturePoint, `${path}: the pointer must name the capture step`);
+    assert.match(
+      prose(body),
+      /capture the diff baseline per "Diff baseline"/i,
+      `${path} must capture the diff baseline at its named step`,
+    );
+  }
+});
+
+test('fix specifies the reproduction test in Phase 2 and writes it after capture in Phase 3', () => {
+  const fix = source('src/tools/fix.md');
+
+  const phase2 = boundedSlice(fix, '### Phase 2: Reproduction', '### Phase 3: Fix');
+  assert.doesNotMatch(
+    phase2,
+    /\{\{AGENT:test-writer\}\}/,
+    'Phase 2 runs before any receipt or capture, so it must not start the test-writer',
+  );
+  assert.match(prose(phase2), /\{\{AGENT:code-validator\}\}/);
+  assert.match(prose(phase2), /specify a failing test/i);
+  assert.match(prose(phase2), /without writing it/i);
+
+  // Receipt, then capture, then the test-writer writes the reproduction test, then implementers.
+  const phase3 = prose(boundedSlice(fix, '### Phase 3: Fix', '### Phase 3.5'));
+  ordered(
+    phase3,
+    'execution-location receipt',
+    'capture the diff baseline',
+    '{{AGENT:test-writer}}',
+    'before any implementer starts',
+    'Start every implementer',
+  );
+
+  // Phase 4: the test-writer first, then a render, then validator and reviewer on that render.
+  const phase4 = prose(boundedSlice(fix, '### Phase 4: Verification', '### Phase 5'));
+  ordered(
+    phase4,
+    '{{AGENT:test-writer}}',
+    'render the diff baseline',
+    '{{AGENT:code-validator}}',
+    '{{AGENT:generic-product-reviewer}}',
+  );
+  assert.doesNotMatch(phase4, /from Phase 2/, 'Phase 4 must not refer to a Phase 2 test');
+
+  const completion = prose(boundedSlice(fix, '### Phase 5: Completion', '\n## Rules'));
+  assert.match(completion, /Delete the wisdom file and discard the diff baseline/);
+});
+
+test('build captures last in Phase 2 step 0 and discards only after the Phase 7 formatter', () => {
+  const build = source('src/tools/build.md');
+
+  const phase2 = numberedItems(boundedSlice(build, '### Phase 2: Implementation', '### Phase 3'));
+  assert.match(prose(phase2.get(0)), /Last, capture the diff baseline/);
+  assert.doesNotMatch(prose(phase2.get(1)), /diff baseline/i);
+
+  const phase7 = numberedItems(boundedSlice(build, '### Phase 7: Completion', '\n## Rules'));
+  const [wisdomNumber] = [...phase7].find(([, text]) => /Delete the wisdom file/.test(text));
+  assert.doesNotMatch(
+    phase7.get(wisdomNumber),
+    /discard/i,
+    'the wisdom deletion runs before the formatter render, so it must not discard the baseline',
+  );
+  const [formatterNumber, formatter] = [...phase7].find(([, text]) => /formatter/.test(text));
+  assert.ok(formatterNumber > wisdomNumber, 'the formatter step must follow the wisdom deletion');
+  ordered(prose(formatter), 'Render the diff baseline', 'formatter', 'discard the diff baseline');
+  const [handbackNumber] = [...phase7].find(([, text]) => /perform the handback/.test(text));
+  assert.ok(formatterNumber < handbackNumber, 'the discard must precede the handback');
+});
+
+test('refactor captures after the documented behavior baseline and before Phase 3', () => {
+  const refactor = source('src/tools/refactor.md');
+  const phase2 = prose(boundedSlice(refactor, '### Phase 2: Baseline', '### Phase 3: Refactoring'));
+  ordered(
+    phase2,
+    '{{AGENT:code-validator}}',
+    '{{AGENT:test-writer}}',
+    'Document the baseline for the later comparison.',
+    'capture the diff baseline',
+  );
+  assert.equal(
+    (phase2.match(/capture the diff baseline/gi) ?? []).length,
+    1,
+    'refactor captures exactly once, after the behavior baseline',
+  );
+  assert.doesNotMatch(
+    prose(boundedSlice(refactor, '### Phase 3: Refactoring', '### Phase 3.5')),
+    /capture the diff baseline/i,
+  );
+  assert.match(
+    prose(boundedSlice(refactor, '### Phase 6:', '\n## Rules')),
+    /delete the wisdom file and discard the diff baseline/,
+  );
+});
+
+test('cleanup lists stale diff baselines and discards one only after confirmation', () => {
+  const cleanup = source('src/tools/cleanup.md');
+
+  // `flat`, not `prose`: the glob's `*` is the contract here, and `prose` drops asterisks.
+  const inventory = flat(boundedSlice(cleanup, '### Phase 1: Discovery', '### Phase 2'));
+  assert.match(
+    inventory,
+    /\*\*Stale diff baselines:\*\*.*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/runs\/\*\/diff-baseline\/`/,
+  );
+  assert.match(inventory, /read-only/);
+  assert.doesNotMatch(inventory, /diff-baseline\.mjs discard/, 'the inventory must not delete');
+
+  const phase5 = boundedSlice(cleanup, '### Phase 5: Confirm deletion', '### Phase 6');
+  const deleteAsk = askContracts(phase5, 'cleanup Phase 5').find((ask) =>
+    /stale diff baseline/.test(ask.when ?? ''),
+  );
+  assert.ok(deleteAsk, 'the Phase 5 deletion ask must cover stale diff baselines');
+  ordered(phase5, `\`\`\`ask\nwhen: ${deleteAsk.when}`, '- **Stale diff baselines:**');
+  const execution = prose(section(phase5, '- **Stale diff baselines:**', '\n- **'));
+  assert.match(execution, /scripts\/diff-baseline\.mjs discard/);
+  assert.match(execution, /runtime-state safety/);
+  assert.match(execution, /keep a refused one/);
+});
+
+const DIFF_REVIEWERS = [
+  'nodejs-reviewer',
+  'rust-reviewer',
+  'frontend-reviewer',
+  'generic-product-reviewer',
+];
+
+test('exactly the four specialist reviewers eagerly include reviewer-assigned-change', () => {
+  const agents = readdirSync(new URL('src/agents/', repositoryRoot))
+    .filter((entry) => entry.endsWith('.md'))
+    .map((entry) => entry.replace(/\.md$/, ''));
+  const consumers = agents.filter((agent) => {
+    const { eager, lazy } = collectIncludeNames(source(`src/agents/${agent}.md`));
+    assert.equal(
+      lazy.has('reviewer-assigned-change'),
+      false,
+      `src/agents/${agent}.md must not defer reviewer-assigned-change`,
+    );
+    return eager.has('reviewer-assigned-change');
+  });
+  // `code-validator` is a merge-gate load-set seed: including the fragment there would move the
+  // eval's skill digest, so the consumer set is pinned exactly rather than as a minimum.
+  assert.deepEqual(consumers.sort(), [...DIFF_REVIEWERS].sort());
+});
+
+test('reviewer-assigned-change is conditional on a diff path and names no runtime state', () => {
+  const fragment = source('src/shared/reviewer-assigned-change.md');
+  // The fragment is inlined into every reviewer, and the runtime-state writer guard walks agent
+  // includes; reviewers only read the diff the orchestrator names.
+  assert.doesNotMatch(fragment, /\.effective-flow\//);
+  assert.doesNotMatch(fragment, /```(?:lazy-)?include/);
+  const text = prose(fragment);
+  assert.match(text, /When the assignment supplies a diff path/);
+  assert.match(text, /do not rely on the implementer's report/);
+  assert.match(text, /Without a diff path, review the assigned files as before/);
+});

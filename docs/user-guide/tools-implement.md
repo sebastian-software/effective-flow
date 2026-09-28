@@ -49,6 +49,16 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   `/effective-flow docs` finding. Most small
   changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
   manufacture busywork.
+- `build`, `fix`, and `refactor` capture a **diff baseline** of the working tree right before
+  their first implementation write (`refactor` after its behavior baseline). Whenever a step needs
+  "the files this run changed", they compute the delta since that point, so edits that already
+  existed when the run started never count as the run's change. That one path list drives the
+  documentation sync gate, validator routing, reviewer routing and, in `build`, the formatter.
+  Reviewers receive the diff itself and assess it instead of relying on the implementer's report.
+  When `iterate` or `apply-review` runs several items in one checkout, each item's delta is limited
+  to its own files. The snapshot lives in ignored runtime state under
+  `.effective-flow/runs/<RUN_ID>/diff-baseline/` and is removed when the run succeeds; an aborted
+  run leaves it for [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -139,8 +149,10 @@ updated plan file (if referenced), and – with delivery/worktree mode active �
 usual delivery branch with a completion action.
 
 **Interplay:** Often builds directly on a `/effective-flow investigate` report. Unlike
-`investigate`, `fix` deliberately writes a reproduction test in phase 2, instead of only
-observing.
+`investigate`, `fix` does not stop at observing: phase 2 reproduces the defect and specifies a
+failing test (file, case, expected failure), and phase 3 writes that test and confirms it fails
+before any implementer starts. The test is written only after the diff baseline is captured, so it
+lands in the delivery checkout and counts as part of the fix.
 
 ## `/effective-flow refactor`
 

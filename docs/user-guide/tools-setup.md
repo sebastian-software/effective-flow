@@ -332,6 +332,14 @@ only when all independent checks agree: Effective Flow created it, its lifecycle
 path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
 The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
+Cleanup also lists **stale diff baselines**: the
+`<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/` directories that an aborted
+`build`, `fix`, or `refactor` run left behind. A successful run removes its own; a left-over one
+can contain working-tree content, including secrets. Each appears in the dry run with its run ID
+(the run's start timestamp) and a warning that a run still in progress needs its directory, since
+nothing proves such a directory abandoned and its age is never taken as proof. A listed directory
+is deleted only after explicit confirmation, through the shipped diff-baseline helper.
+
 **When to use:** After Effective Flow has migrated a project from an older version (`.firmo/`,
 `.sf-plugin/`, `firmo-` labels) and you want to remove deliberately retained legacy data, or when
 a finished Effective Flow run left a linked worktree behind. Migration itself remains
@@ -364,9 +372,10 @@ directory's `info/exclude` as the active entry [hidden mode](#hidden-mode) relie
 removes it. The same holds for the hidden local configuration `.effective-flow/project-setup.md`
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
-`.effective-flow/` or remove a confirmed legacy config from that directory; otherwise it
-preserves active runtime state. A true no-op means there are no migration actions and no eligible
-worktrees, but the remaining-worktree report still appears.
+`.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
+stale diff baseline; otherwise it preserves active runtime state. A true no-op means there are no
+migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
+report still appears.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

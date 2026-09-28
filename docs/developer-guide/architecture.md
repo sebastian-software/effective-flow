@@ -486,6 +486,54 @@ monotonic, wall-clock, boot, and salted-host continuity. Review binds evidence p
 aggregate digests, and deletion uses exclusive digest-named tombstones with fail-closed retry
 inventory rather than unscoped recursive cleanup.
 
+## Diff baseline
+
+`build`, `fix` and `refactor` act on "the files this run changed" in several steps: documentation
+sync, validator routing, reviewer scope and, in `build`, the formatter. The diff baseline computes
+that set instead of leaving each step to estimate it. The contract lives in the lazily loaded
+[`src/shared/diff-baseline.md`](../../src/shared/diff-baseline.md); the fifth dependency-free
+script subsystem, `diff-baseline.mjs` over `diff-baseline-core.mjs`, does the work (see
+[Runtime scripts](build-system.md#runtime-scripts)). It is distinct from `refactor`'s Phase 2
+behavior baseline, which records check results.
+
+Each run captures exactly once, after its execution-location receipt is verified and any owned
+setup ran, and before its first implementation write: `build` at the end of Phase 2 step 0, `fix`
+at the end of Phase 3 step 0, and `refactor` after its behavior-baseline checks are documented, so
+files those checks generate never count as the refactoring's change. Every delivery mode captures
+the same way, which gives an in-place run, a reused worktree, or a run that starts on a dirty tree
+a reference point that a creation OID alone never provided. Because `fix` may no longer write
+before capture, its Phase 2 only specifies the failing reproduction test, and the test-writer
+writes it at the start of Phase 3, after capture and before any implementer.
+
+The run renders its delta before documentation sync, before every validation or review round and
+after every correction or incorporation pass. The latest render's path list drives all consumers:
+it is the documentation-sync change set, it selects the `code-validator` routing buckets (whose
+checks still run at repository-native breadth), it routes reviewers and, in `build`, it names the
+files to format. Every reviewer assignment names the absolute `diff.patch` path and the path list.
+The four reviewer workers eagerly include
+[`src/shared/reviewer-assigned-change.md`](../../src/shared/reviewer-assigned-change.md): given a
+diff path, they assess that diff and read full files only for context, never relying on the
+implementer's report; without one, as in `review`, they review the assigned files as before. When
+`iterate` or `apply-review` runs several items in one checkout and the delegation handoff supplies
+an owned or affected file set, the item renders only that literal path scope, so a sibling's edits
+never enter its change.
+
+The snapshots never touch the repository's real index, stash, refs, `HEAD` or object store. Each
+one runs against a private temporary index and a private object directory inside the run's
+`diff-baseline/` directory, with the real object store attached read-only as an alternate, and
+every git call carries `GIT_OPTIONAL_LOCKS=0` so no parallel sibling's commit contends with it.
+Both snapshots use the identical procedure, so filter, line-ending and sparse-checkout effects
+cancel out, and ignored paths, including all of `.effective-flow/`, never appear. A render that
+cannot find its baseline fails closed instead of capturing again.
+
+The directory lives at `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`, which
+is distinct from the worktree lifecycle records under `worktree-runs/`; the diff baseline owns only
+the `diff-baseline/` subdirectory of its run directory. A successful run discards it; an aborted or
+escalated run leaves it for `cleanup`, which lists stale diff baselines in its dry run and deletes
+one only after explicit confirmation. Because the diff can carry working-tree secrets, it stays in
+ignored runtime state with owner-only permissions and is never quoted into a tracker item, pull
+request, commit or report.
+
 ## Repo structure at a glance
 
 ```text

@@ -101,6 +101,11 @@ worktree-integration
 when: the delivery/worktree mode is determined
 ```
 
+```lazy-include
+diff-baseline
+when: the diff baseline is captured at the end of Phase 3, step 0, or later rendered or discarded
+```
+
 ```include
 investigation-method
 ```
@@ -164,9 +169,9 @@ Run the read-only investigation per "Investigation method", section "Investigate
 
 ### Phase 2: Reproduction
 
-1. Try to reproduce the bug:
-   - `{{AGENT:code-validator}}` for the current technical state
-   - if possible: `{{AGENT:test-writer}}` for a failing test that documents the behavior
+1. Try to reproduce the bug with `{{AGENT:code-validator}}` for the current technical state. If
+   possible, specify a failing test that documents the behavior (file, case, expected failure)
+   without writing it; Phase 3 writes it once the diff baseline exists.
 2. Perform a gap analysis for the diagnosis and fix strategy:
    - over-engineering
    - unspoken assumptions
@@ -208,11 +213,13 @@ worktree-record-obligation
    created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
-   roots every operation there.
-1. Start every implementer selected by the canonical routing contract. Before
+   roots every operation there. Last, capture the diff baseline per "Diff baseline".
+1. If Phase 2 specified a failing test, `{{AGENT:test-writer}}` writes it and confirms that it
+   fails as expected, before any implementer starts.
+2. Start every implementer selected by the canonical routing contract. Before
    `{{AGENT:generic-product-implementer}}`, emit the reduced-depth notice. Never send product code
    to `{{AGENT:generic-implementer}}`.
-2. Give a precise assignment:
+3. Give a precise assignment:
    - root cause
    - affected files
    - desired behavior after the fix
@@ -220,7 +227,7 @@ worktree-record-obligation
 
 ### Phase 3.5: Documentation sync
 
-Run the mandatory documentation sync gate for the files this fix changed, before verification, so
+Render the diff baseline, then run the mandatory documentation sync gate for its path list, the files this fix changed, before verification, so
 the checks of Phase 4 cover the documentation changes as well. A minimal fix commonly ends in
 `no impact` verdicts; the gate still runs and still records them.
 
@@ -230,18 +237,17 @@ documentation-sync
 
 ### Phase 4: Verification
 
-Start in parallel if possible:
-
-1. `{{AGENT:test-writer}}`
-   - confirms the failing test from Phase 2 or writes a regression test
-2. `{{AGENT:code-validator}}`
-   - repository-native lint, type, build and documentation checks that can be discovered safely
-3. For every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`
-   - performs a read-only qualitative review with the reduced-depth limitation
-   - reports all severities; critical findings must be fixed before completion
+1. First `{{AGENT:test-writer}}`
+   - confirms that the Phase 3 failing test now passes, or writes a regression test
+2. Then render the diff baseline and start in parallel if possible, with its path list:
+   - `{{AGENT:code-validator}}`: repository-native lint, type, build and documentation checks that
+     can be discovered safely, with the path list as assigned scopes
+   - for every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`: a read-only
+     qualitative review of the diff path and path list with the reduced-depth limitation, reporting
+     all severities; critical findings must be fixed before completion
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, then pass the residual batch through “Gated residual review-finding reports”. Document only
+items, render again, then pass the residual batch through “Gated residual review-finding reports”. Document only
 `admitted` residuals in the structured form below; a remaining `current-scope` or unresolved
 `uncertain` item blocks completion, and `closed` items produce no artifact:
 
@@ -261,7 +267,7 @@ items, then pass the residual batch through “Gated residual review-finding rep
 
 ### Phase 5: Completion
 
-1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
+1. If errors were found in Phase 4: fix them and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
 2. If admitted findings or residual risks with a canonical open or unimplemented status in the complete
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
@@ -271,7 +277,7 @@ items, then pass the residual batch through “Gated residual review-finding rep
 3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-4. Delete the wisdom file.
+4. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
 7. Summarize:

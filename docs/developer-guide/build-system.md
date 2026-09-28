@@ -328,13 +328,15 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Three subsystems carry this today: the pairs `delegation-envelope.mjs`/
-  `delegation-envelope-core.mjs` and `delivery-selection.mjs`/`delivery-selection-core.mjs`, and
-  the remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
-  `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
-  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
-  `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
-  processed-thread ledger). The remote-tracker's runtime prompts are
+  misread as one. Five subsystems carry this today: the pairs `delegation-envelope.mjs`/
+  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs` and
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`; the remote tracker, a seven-file family whose thin
+  entry point `remote-tracker.mjs` sits over `remote-tracker-core.mjs` and its five siblings
+  `remote-tracker-shared-core.mjs`, `remote-tracker-decomposition-core.mjs`,
+  `remote-tracker-github-core.mjs`, `remote-tracker-forgejo-core.mjs` and
+  `remote-tracker-ledger-core.mjs` (the hidden-mode processed-thread ledger); and the pilot
+  measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
+  `pilot-measurement-protocol.mjs`. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
@@ -554,8 +556,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Four dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains fourteen files: two two-file subsystems, the remote tracker's seven-file family,
+Five dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains sixteen files: three two-file subsystems, the remote tracker's seven-file family,
 and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
 core or protocol modules:
 
@@ -580,6 +582,21 @@ core or protocol modules:
 - **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
   source `HEAD`, apply them to the refreshed base with conflict detection, and reconcile the exact
   resulting diff without emitting file content.
+- **Diff-baseline.** Invoke it as `node <skill-root>/scripts/diff-baseline.mjs
+<capture|render|discard>` with one JSON object on standard input; it emits one JSON envelope and
+  uses nonzero exit codes for structured failures. `build`, `fix` and `refactor` load its contract
+  through the lazily loaded `diff-baseline` fragment. `capture` exclusively allocates
+  `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/` (a same-second `SESSION_ID`
+  collision gets a `-2`, `-3`, … suffix) and snapshots every non-ignored working-tree path into a
+  tree object. `render` repeats that snapshot with the identical procedure, optionally limited to a
+  literal path scope, and atomically replaces `diff.patch` and `paths.json` with the tree-to-tree
+  delta; `discard` removes `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left
+  empty. Every snapshot uses a private temporary index and a private object directory inside
+  `diff-baseline/`, with the real object store attached read-only as an alternate, and every git
+  call carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store
+  stay untouched and no call takes the real `index.lock`. It refuses before any write when
+  `.effective-flow/` is tracked, not ignored, or reached through a symlink; directories are
+  created with mode `0700` and files with `0600`.
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
@@ -608,7 +625,7 @@ diagnostics, but body writes are reported as non-atomic because GitHub does not 
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
 pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all fourteen identical, usable scripts and
+checks prove that all three installed payloads contain all sixteen identical, usable scripts and
 that the pilot helper reports its protocol from an isolated distribution.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
@@ -658,7 +675,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `delegation-envelope-examples`, `source-upstream-sync`, `setup-profiles`.
+  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
