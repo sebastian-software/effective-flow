@@ -307,9 +307,10 @@ Briefly report that the commit strategy was taken from the Effective Flow config
 when: no valid value is set for `applyReview.defaultCommitStrategy`
 header: Commits
 question: Which commit strategy should be used for the findings?
+type: scored
 options:
   - label: Individually with worktrees
-    description: Parallel components run in isolated git worktrees and are integrated back afterwards (most common choice)
+    description: Parallel components run in isolated git worktrees and are integrated back afterwards
   - label: Individually
     description: Each finding is committed individually after implementation
   - label: No commits

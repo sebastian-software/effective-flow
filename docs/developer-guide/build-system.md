@@ -97,6 +97,71 @@ descriptions verbatim; it does not infer a language from that text or from a tar
 runtime `language.*` settings. German generated wrapper text therefore requires an explicit
 `language: de` in the individual `ask` block.
 
+`type` accepts `options` (the default), `approval`, or `scored`. A **scored** fence is an options
+question whose choices the agent rates before asking: it parses like an options fence and renders
+exactly one extra line, a localized scoring instruction built by `renderScoringInstruction` from
+the exported `ASK_SCORING` constant in `build-lib.mjs`, the single source of the calibration
+bands. That line tells the agent to start each scorable option's description with
+`n/10 – <short reason>; ` ahead of the original text, to calibrate against fixed bands (1–2 not
+recommended up to 9–10 clearly right), to let a 9–10 name its edge over the next-best option unless the two are tied, to
+give equal fit equal scores, to keep the options in order, to change labels only for
+chat-language translation, and to add neither a "(Recommended)" marker nor a translated equivalent. Scores
+are absolute fit for the current context rather than a ranking, are computed at ask time,
+appear only in the dialog, and are never persisted. The prose decision phases of `plan-review` and
+`concept-review`, which ask outside an `ask` fence, apply the same bands. The Claude renderer
+emits the line first, before the `AskUserQuestion` intro, so a `when:` condition still wraps the
+whole block; the Codex renderer, which the portable target reuses, emits it directly after the
+`Ask the user: **…**` line and before the option bullets. `options` and `approval` fences render byte-identically to their
+rendering before `scored` existed.
+
+The optional `unscored:` key, valid only with `type: scored`, exempts escape options such as
+"Abort" from scoring. It lists one or more exact option labels separated by `|`, because labels may
+contain commas. The instruction line names the exempted labels in quotation marks. Because `|`
+separates the list and the quotes delimit each label, an exempted label may contain neither `|`
+nor one of the quote characters `"`, `„`, or `“`; the build rejects such a label instead of
+rendering a broken instruction. Every listed label must match an option,
+and at least two options that are not exempted must stay scorable. Option labels in a scored fence
+must be unique, because both the scores and `unscored:` address an option by its label; the build
+rejects a duplicate label there.
+
+```ask
+header: Revision
+question: Revise the resolved plan file in place, start a new plan, or stop?
+type: scored
+unscored: Abort
+options:
+  - label: Revise in place
+    description: Reuse the reported file and reset its status to the canonical open value
+  - label: New plan
+    description: Leave the resolved plan untouched and write a new dated plan file
+  - label: Abort
+    description: End the run without changing any plan file
+```
+
+Every non-blank line of an `ask` fence must be an anchored key line (`header`, `question`, `type`,
+`when`, `language`, `unscored`), the `options:` line, an option `- label:` line, or the
+`description:` line that follows a label as its next non-blank line (blank lines in between are
+accepted). The build fails on a duplicate key, any other line, a key after `options:`, an option or
+description line outside the options block, a label without a description, an empty label,
+description, or `when:`, and an `approval` fence that declares options. The error names the
+rendered file and, where known, the fence header; for a fence in a shared fragment that file is the
+tool that includes it. A fence that lacks its `header` or `question` reports that first and also
+names the first structural error found in the same fence, if there is one. Anchoring every key at the line start means a description
+that merely contains `type: approval` cannot change the question type. Only one ordering rule is
+enforced — nothing but option lines follows `options:`. By convention `type:` and `unscored:`
+follow `question:` directly, while `when:` and `language:` keep the position the fence already
+gives them.
+
+Not every choice may be scored. Keep a fence unscored when it is:
+
+- part of the `merge-gate` eval load set, permanently, so the recorded eval evidence does not
+  drift;
+- a choice with an irreversible option, such as discarding stashed work or deleting state, so no
+  score nudges towards data loss;
+- a question whose options would be judged from untrusted input, such as the ADR naming question
+  in `src/shared/project-adr-convention.md`, where a score reason would open a prompt-injection path
+  and push away from the deliberately neutral answer.
+
 A `lazy-include` fence **defers** a mode-gated shared fragment (progressive disclosure, see
 below). Instead of inlining it eagerly, the build delivers `src/shared/<name>.md` once per
 harness as a loadable file `shared/<name>.md` and replaces the directive with a conditional load

@@ -53,7 +53,12 @@ source, ADR-convention, or topology question:
 1. **Chat** — mirror the language you write in, use English, or use German. The answer immediately
    controls the Profile question and the rest of this setup run. Mirror removes an existing
    `language.chat` row in the confirmed write; English and German persist `en` or `de`.
-2. **Profile** — choose one of the following topologies.
+2. **Profile** — choose one of the following topologies. Each option shows a
+   [fit score](glossary.md#fit-score) (`n/10 – <reason>`). The scores rest on a read-only
+   classification of the checkout: no Git repository (every reason then says that setup will stop
+   at the preflight), none (no `origin` remote), GitHub, Forgejo, or other, and unknown if the
+   lookup fails. The classification fetches nothing and changes nothing; the later topology
+   preflight still decides whether the chosen profile can proceed.
 
 | Profile                               | Issue-backed planning and tracking | Development and completion                                                                  |
 | ------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -95,7 +100,10 @@ profile does not turn every planning request into a remote issue.
 
 `/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly.
 `/effective-flow setup guided` enters the existing per-setting interview and its optional Advanced
-settings directly. Neither invocation asks for a profile first.
+settings directly. Neither invocation asks for a profile first. Guided scores its Worktree,
+Completion, and Tracker questions like the Profile question, while "Ask at run time" stays
+unscored; a value already recorded in your configuration is named in the question's explanation
+instead of being marked on an option.
 
 ### Visibility question
 

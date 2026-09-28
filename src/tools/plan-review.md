@@ -191,14 +191,17 @@ For each point:
    - description
    - advantages
    - disadvantages
-   - whether it is recommended and why
-3. Additionally, always offer "Decide later".
+   - an absolute 1–10 fit score for this context with a short reason, written `n/10 – <reason>`
+     (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores), instead of a "(Recommended)" marker; keep the options in their listed order; the score starts the option's description
+3. Additionally, always offer "Decide later", unscored.
 4. If fewer than three meaningful domain options exist, do not invent
    artificial options. Name the existing options and still "Decide
    later".
 5. If a harness ask format supports only three choice options, the
-   domain options go in the question text and "Decide later" remains permissible
+   domain options go in the question text, each preceded by its score and reason, and "Decide later" remains permissible
    as an explicit choice or free-text answer.
+6. Scores are dialog-only: never write them into open points, the review section, or any other
+   artifact section.
 
 After the user's answer:
 
