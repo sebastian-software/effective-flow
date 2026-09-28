@@ -105,6 +105,18 @@ The step-by-step procedure — creating the source, the agent role profiles, the
 
 The delegation rules a new tool or agent must satisfy are in "Delegation" below, not in that procedure.
 
+### Writing prompt text
+
+Points 1-4 govern prompt text under `src/` and `AGENTS.md` itself; point 5 governs `test/*.test.mjs`.
+
+1. **Length is paid on every run:** a tool's eager core on every run of that tool, an eager `src/shared` fragment on every host that includes it, and `AGENTS.md` in every session.
+2. **State a contract once, in its owning fragment,** and never keep a second copy elsewhere.
+3. **Keep rare edge cases out of eager text and put them behind a ` ```lazy-include ` at their decision point,** but only where the qualifying rule of "Progressive disclosure beyond the router" allows it.
+4. **Prefer one precise sentence to an explanation of its history;** a reason that constrains the next edit is not history.
+5. **A test that reads source prose must name the invariant it protects.**
+
+The mechanics of each point are in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Writing prompt text".
+
 ## Delegation
 
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation

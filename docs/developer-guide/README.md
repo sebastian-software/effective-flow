@@ -13,7 +13,8 @@ is no runtime application – you edit `src/`, never `dist/`.
 1. [Architecture](architecture.md) – repository layout: source-to-dist model, the thin router
    with lazy loading, and the split across the two harnesses.
 2. [Build system](build-system.md) – how `build.mjs` transforms `src/` into `dist/`: invocation,
-   placeholder syntax, build guards, and the unit test suite.
+   placeholder syntax, build guards, the mechanics of the writing rules for prompt text, and the
+   unit test suite.
 3. [Configuration](configuration.md) – the Effective Flow configuration in the living
    project-setup ADR, with the developer-oriented overview of all config blocks.
 4. [Model-tiering pilot protocol](model-tiering-pilot-protocol.md) – the local measurement
@@ -33,9 +34,10 @@ is no runtime application – you edit `src/`, never `dist/`.
 
 - [`AGENTS.md`](../../AGENTS.md) – the always-loaded contract, canonical for the **rules**:
   language, delegation, commit and no-AI-attribution rules, the deprecated forwarding alias a tool
-  rename ships, the `CONTEXT_BUDGET_LINES` entry every tool needs, and no hand-bumped versions.
-  The **mechanics** those rules point at are canonical here — [`build-system.md`](build-system.md)
-  for placeholder syntax and for adding a tool or agent,
+  rename ships, the `CONTEXT_BUDGET_LINES` entry every tool needs, the rule for writing prompt
+  text, and no hand-bumped versions. The **mechanics** those rules point at are canonical here —
+  [`build-system.md`](build-system.md) for placeholder syntax, for adding a tool or agent, and for
+  writing prompt text,
   [`release-and-installation.md`](release-and-installation.md) for release-please, and
   [`skill-ownership.md`](skill-ownership.md) for the ownership-check **mechanics** and the
   per-skill classification.
