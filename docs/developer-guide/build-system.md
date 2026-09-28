@@ -722,8 +722,9 @@ the build.
 - **Keep rare edge cases out of eager text.** Deferral follows "Progressive disclosure beyond the
   router" unchanged: only a mode-gated block that serves one nameable decision point qualifies,
   and its pointer states that trigger as the load trigger (`when:`). A fragment on the "Core flow
-  stays inline" list stays eager, so an edge case inside an eager-only fragment stays eager too,
-  and "rare" alone never qualifies text for deferral.
+  stays inline" list itself stays eager; a genuine branch inside it may move behind a nested
+  pointer only under the same one-nameable-decision-point rule, as `chat-language` does with
+  `typography-rules`. "Rare" alone never qualifies text for deferral.
 - **Prefer one precise sentence to an explanation of its history.** Keep the reason that
   constrains the next edit, such as why a gate runs in its order. Move how the text came to be –
   an earlier issue, an older wording, a migration – to the plan archive, the commit message or an
