@@ -152,7 +152,7 @@ is used. Do not write configuration from this tool.
 Use the structural template from the concept contract, and observe:
 
 - Fill every mandatory section; an empty section is a defect, not brevity.
-- `## Non-goals` is mandatory and must not be empty — it is what keeps the concept shallow.
+- `### Non-goals` under `## Scope` is mandatory and must not be empty — it is what keeps the concept shallow.
 - `## Technical direction` names direction, not design: platform, stack candidates with a one-line
   rationale each, coarse architecture, external systems, and the data outline in prose.
 - `## Roadmap and work packages` carries only its empty state at this point; the deep review fills

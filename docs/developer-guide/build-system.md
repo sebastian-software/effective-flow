@@ -488,7 +488,7 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 ## Runtime scripts
 
 Four dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains thirteen files: two two-file subsystems, the remote tracker's six-file family,
+allowlist contains fourteen files: two two-file subsystems, the remote tracker's seven-file family,
 and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
 core or protocol modules:
 
@@ -541,7 +541,7 @@ diagnostics, but body writes are reported as non-atomic because GitHub does not 
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
 pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all thirteen identical, usable scripts and
+checks prove that all three installed payloads contain all fourteen identical, usable scripts and
 that the pilot helper reports its protocol from an isolated distribution.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
