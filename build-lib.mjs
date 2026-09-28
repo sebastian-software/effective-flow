@@ -3,13 +3,16 @@ import {
   PILOT_MEASUREMENT_POLICY_PROJECTION,
   canonicalizeJson,
 } from './src/scripts/pilot-measurement-protocol.mjs';
+import { readdirSync, statSync } from 'node:fs';
+import { join, posix } from 'node:path';
 
 // Pure, importable transformation helpers for build.mjs.
 //
 // These functions are extracted from build.mjs so the Markdown -> skill
 // transforms can be unit-tested (node:test) without running the full I/O
-// build. Nothing here touches the filesystem; all inputs and outputs are
-// strings or plain data. build.mjs owns the I/O, the source config
+// build. Nothing here writes to the filesystem and, apart from the read-only
+// walk in collectRepositoryOnlyFiles, nothing reads it either; all other inputs
+// and outputs are strings or plain data. build.mjs owns the I/O, the source config
 // (EXPOSED_TOOLS, agent prefix) and the known-name sets, and passes them in.
 
 // Allowed `type` values for an ```ask``` block. `approval` renders a yes/no
@@ -3120,6 +3123,199 @@ export function findForeignHarnessToolParameters(text, target) {
   }
 
   return findings.sort((a, b) => a.line - b.line || a.parameter.localeCompare(b.parameter));
+}
+
+// --- Repository-only reference guard (#497) ---
+//
+// Shipped text must not name a file that exists only in this source repository:
+// no build target carries `docs/developer-guide/`, `test/` or `build.mjs`, so a
+// relative link or an inline code span naming one is dead for every consumer.
+// The guard has two halves, both run over each rendered file of each target:
+//
+// - links: an inline link, image or reference definition whose relative target
+//   does not resolve to a file of the same target's payload (or escapes it), and
+//   every root-absolute target. Native agent sidecars (`agents/*`) are installed
+//   apart from the skill directory, so every relative link in one is a finding.
+// - code spans: a span whose normalized content is exactly a repository-only
+//   file. Payload resolution takes precedence, so a shipped runtime script such
+//   as `scripts/remote-tracker.mjs` never counts as repository-only.
+//
+// Fenced code blocks are skipped by both halves: they carry commands and
+// examples, not references the reader is asked to follow. The set of
+// repository-only files is collected by a read-only filesystem walk; Git is
+// never consulted, so the guard behaves the same in an archive or a worktree.
+export const REPOSITORY_ONLY_SKIP_DIRS = Object.freeze([
+  'node_modules',
+  'dist',
+  'dist.tmp',
+  '.git',
+]);
+
+export function collectRepositoryOnlyFiles(repoRoot, { roots = [], rootFiles = [] } = {}) {
+  const files = new Set();
+  const isFile = (absolute) => {
+    try {
+      return statSync(absolute).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const visit = (absolute, relativePath) => {
+    let entries;
+    try {
+      entries = readdirSync(absolute, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (REPOSITORY_ONLY_SKIP_DIRS.includes(entry.name)) continue;
+      const childRelative = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) visit(join(absolute, entry.name), childRelative);
+      else if (entry.isFile()) files.add(childRelative);
+    }
+  };
+
+  for (const root of roots) {
+    const relativeRoot = posix.normalize(root).replace(/\/+$/, '');
+    visit(join(repoRoot, ...relativeRoot.split('/')), relativeRoot);
+  }
+  for (const rootFile of rootFiles) {
+    const relativeFile = posix.normalize(rootFile);
+    if (isFile(join(repoRoot, ...relativeFile.split('/')))) files.add(relativeFile);
+  }
+  return files;
+}
+
+export function applyRepositoryOnlyAllowlist(repositoryOnlyFiles, allowlist, { context } = {}) {
+  const entries = [...allowlist];
+  const stale = entries.filter((entry) => !repositoryOnlyFiles.has(entry));
+  if (stale.length > 0) {
+    const where = context ? ` in ${context}` : '';
+    throw new Error(
+      stale
+        .map(
+          (entry) =>
+            `stale repository-only reference allowlist entry${where}: "${entry}" names no file under the repository-only roots`,
+        )
+        .join('\n'),
+    );
+  }
+  const allowed = new Set(entries);
+  return new Set([...repositoryOnlyFiles].filter((file) => !allowed.has(file)));
+}
+
+// Split a line into its inline code spans. A delimiter is a run of exactly one
+// or exactly two backticks; the span closes at the next run of the same length
+// on the same line. Longer runs and an unmatched opener stay literal text.
+function inlineCodeSpans(line) {
+  const runs = [...line.matchAll(/`+/g)].map((match) => ({
+    start: match.index,
+    length: match[0].length,
+  }));
+  const spans = [];
+  for (let index = 0; index < runs.length; index += 1) {
+    const opener = runs[index];
+    if (opener.length > 2) continue;
+    const closerIndex = runs.findIndex(
+      (run, candidate) => candidate > index && run.length === opener.length,
+    );
+    if (closerIndex === -1) continue;
+    const closer = runs[closerIndex];
+    spans.push({
+      start: opener.start,
+      end: closer.start + closer.length,
+      content: line.slice(opener.start + opener.length, closer.start),
+    });
+    index = closerIndex;
+  }
+  return spans;
+}
+
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+const INLINE_LINK = /!?\[[^\]]*\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
+const REFERENCE_DEFINITION = /^ {0,3}\[[^\]]+\]:\s*(\S+)/;
+
+function unwrapAngleBrackets(target) {
+  return target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
+}
+
+export function findRepositoryOnlyReferences(
+  content,
+  { filePath, payloadFiles, repositoryOnlyFiles, sidecar = false },
+) {
+  const findings = [];
+  const directory = posix.dirname(filePath);
+  const payloadList = [...payloadFiles];
+  const resolvesInPayload = (normalized) =>
+    payloadFiles.has(normalized) ||
+    payloadFiles.has(posix.normalize(posix.join(directory, normalized))) ||
+    payloadList.some((file) => file.endsWith(`/${normalized}`));
+
+  const checkLink = (lineNumber, rawTarget) => {
+    const reference = unwrapAngleBrackets(rawTarget);
+    if (URL_SCHEME.test(reference)) return;
+    const target = reference.replace(/[#?].*$/, '');
+    if (target === '') return;
+    let dead;
+    if (target.startsWith('/') || sidecar) {
+      dead = true;
+    } else {
+      const resolved = posix.normalize(posix.join(directory, target));
+      dead = resolved === '..' || resolved.startsWith('../') || !payloadFiles.has(resolved);
+    }
+    if (dead) findings.push({ line: lineNumber, kind: 'link', reference });
+  };
+
+  let fence = null;
+  for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
+    const lineNumber = lineIndex + 1;
+    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence.char && fenceMatch[1].length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMatch) {
+      fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      continue;
+    }
+
+    const spans = inlineCodeSpans(line);
+    for (const span of spans) {
+      const normalized = span.content
+        .trim()
+        .replace(/^\.\//, '')
+        .replace(/:\d+(?::\d+)?$/, '');
+      if (repositoryOnlyFiles.has(normalized) && !resolvesInPayload(normalized)) {
+        findings.push({ line: lineNumber, kind: 'code-span', reference: span.content });
+      }
+    }
+
+    let text = line;
+    for (const span of [...spans].reverse()) {
+      text = `${text.slice(0, span.start)} ${text.slice(span.end)}`;
+    }
+    const definition = REFERENCE_DEFINITION.exec(text);
+    if (definition) checkLink(lineNumber, definition[1]);
+    for (const match of text.matchAll(INLINE_LINK)) checkLink(lineNumber, match[1]);
+  }
+
+  const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  return findings.sort(
+    (a, b) => a.line - b.line || order(a.kind, b.kind) || order(a.reference, b.reference),
+  );
+}
+
+export function findVerbatimSourceLocations(reference, sources) {
+  const entries = sources instanceof Map ? [...sources] : Object.entries(sources);
+  const locations = [];
+  for (const [path, text] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const [lineIndex, line] of normalizeLineEndings(text).split('\n').entries()) {
+      if (line.includes(reference)) locations.push(`${path}:${lineIndex + 1}`);
+    }
+  }
+  return locations;
 }
 
 // --- Router dispatch clause for deprecated tool aliases ---

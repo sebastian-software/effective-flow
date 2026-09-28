@@ -64,9 +64,112 @@ function inventory(outputRoot, harness) {
   );
 }
 
-function assertSameFile(left, right) {
-  if (!readFileSync(left).equals(readFileSync(right))) {
-    throw new Error(`Base native artifact drift: ${right}`);
+// The proof compares native CONFIGURATION only, never the rendered prompt body. It exists to
+// show that execution-profile rendering leaves every Quality base worker's harness configuration
+// unchanged. Body prose comes largely from shared include fragments, and a golden byte-for-byte
+// comparison would make every legitimate shared-fragment edit churn this unrelated proof — the
+// native-profile-rendering plan warns against exactly such fixtures. Both parsers below fail
+// closed: a sidecar shape they do not recognize is an error, never a silently skipped key.
+
+function configError(file, message) {
+  return new Error(`Unparseable native sidecar ${file}: ${message}`);
+}
+
+function setConfigKey(config, key, value, file) {
+  if (Object.hasOwn(config, key)) throw configError(file, `duplicate key "${key}"`);
+  config[key] = value;
+}
+
+// Claude sidecar: `---` frontmatter of `key: value` lines; the body after the closing `---`
+// is excluded from the comparison.
+function parseClaudeSidecarConfig(content, file) {
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(content);
+  if (!match) throw configError(file, 'missing or unterminated frontmatter');
+  const config = Object.create(null);
+  for (const line of match[1].split('\n')) {
+    const entry = /^([A-Za-z_][\w-]*):(?: (.*))?$/.exec(line);
+    if (!entry) throw configError(file, `unrecognized frontmatter line ${JSON.stringify(line)}`);
+    let value = entry[2] ?? '';
+    if (value.startsWith('"')) {
+      if (value.length < 2 || !value.endsWith('"')) {
+        throw configError(file, `unterminated quoted value for "${entry[1]}"`);
+      }
+      value = value.slice(1, -1).replace(/\\"/g, '"');
+    }
+    setConfigKey(config, entry[1], value, file);
+  }
+  if (Object.keys(config).length === 0) throw configError(file, 'empty frontmatter');
+  return config;
+}
+
+const PROMPT_BODY_KEY = 'developer_instructions';
+
+// Codex sidecar: the minimal TOML subset build.mjs emits — top-level `key = value` lines with a
+// basic string (JSON-compatible, as `tomlString` writes it), a literal string, a boolean, or a
+// number, plus the `developer_instructions = '''…'''` multiline literal prompt body. Only the
+// presence of that body is compared, never its text.
+function parseCodexSidecarConfig(content, file) {
+  const config = Object.create(null);
+  const lines = content.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') continue;
+    const entry = /^([A-Za-z_][\w-]*) = (.*)$/.exec(line);
+    if (!entry) throw configError(file, `unrecognized line ${JSON.stringify(line)}`);
+    const [, key, raw] = entry;
+    let value;
+    if (raw.startsWith("'''")) {
+      const rest = [raw.slice(3), ...lines.slice(index + 1)].join('\n');
+      const end = rest.indexOf("'''");
+      if (end === -1) throw configError(file, `unterminated multiline string for "${key}"`);
+      const consumed = rest.slice(0, end + 3).split('\n').length - 1;
+      const trailing = rest.slice(end + 3).split('\n')[0];
+      if (trailing.trim() !== '') {
+        throw configError(file, `unexpected text after multiline string for "${key}"`);
+      }
+      value = rest.slice(0, end).replace(/^\n/, '');
+      index += consumed;
+    } else if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        throw configError(file, `invalid basic string for "${key}"`);
+      }
+    } else if (/^'[^'\n]*'$/.test(raw)) {
+      value = raw.slice(1, -1);
+    } else if (/^(?:true|false|[+-]?\d+(?:\.\d+)?)$/.test(raw)) {
+      value = raw;
+    } else {
+      throw configError(file, `unrecognized value for "${key}"`);
+    }
+    setConfigKey(config, key, value, file);
+  }
+  if (!Object.hasOwn(config, PROMPT_BODY_KEY)) {
+    throw configError(file, `missing "${PROMPT_BODY_KEY}"`);
+  }
+  config[PROMPT_BODY_KEY] = '<prompt body excluded>';
+  return config;
+}
+
+const CONFIG_PARSERS = {
+  claude: parseClaudeSidecarConfig,
+  codex: parseCodexSidecarConfig,
+};
+
+function assertSameConfiguration(harness, file, baselinePath, workingPath) {
+  const parse = CONFIG_PARSERS[harness];
+  const baseline = parse(readFileSync(baselinePath, 'utf8'), baselinePath);
+  const working = parse(readFileSync(workingPath, 'utf8'), workingPath);
+  const keys = [...new Set([...Object.keys(baseline), ...Object.keys(working)])].sort();
+  for (const key of keys) {
+    const before = Object.hasOwn(baseline, key) ? JSON.stringify(baseline[key]) : '<absent>';
+    const after = Object.hasOwn(working, key) ? JSON.stringify(working[key]) : '<absent>';
+    if (before !== after) {
+      throw new Error(
+        `Base native configuration drift: ${harness} ${file} key "${key}": ${before} -> ${after}`,
+      );
+    }
   }
 }
 
@@ -93,7 +196,7 @@ function compareBaseline(baseOutput, workingOutput) {
       throw new Error(`${harness} baseline worker membership differs from the working inventory`);
     }
     for (const file of baselineFiles) {
-      assertSameFile(join(baselineDir, file), join(workingDir, file));
+      assertSameConfiguration(harness, file, join(baselineDir, file), join(workingDir, file));
     }
   }
 

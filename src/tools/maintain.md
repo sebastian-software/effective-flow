@@ -70,7 +70,7 @@ config-migration
 
 ## Delegation contract
 
-`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
+`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
 
 **The skill owns the update mechanics (the "how"):**
 

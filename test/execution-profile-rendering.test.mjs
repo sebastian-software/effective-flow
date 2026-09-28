@@ -234,7 +234,10 @@ test('portable output contains only base workers and no native profile represent
   }
 });
 
-test('the executable baseline proof preserves every Quality native artifact', () => {
+// The proof compares each base worker's native configuration (Claude frontmatter, Codex TOML keys
+// other than the `developer_instructions` body), not the rendered prose: legitimate shared-fragment
+// edits change every sidecar body and must not churn this execution-profile proof.
+test('the executable baseline proof preserves every Quality native configuration', () => {
   const result = spawnSync(
     process.execPath,
     ['scripts/compare-native-agent-baseline.mjs', '--base', '7d1dcd5'],
