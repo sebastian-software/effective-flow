@@ -3379,7 +3379,7 @@ export const ASK_SCORING = Object.freeze({
     prefix: 'n/10 – <short reason>; ',
     bands:
       '1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right',
-    topScore: 'a 9–10 names its edge over the next-best option',
+    topScore: 'a 9–10 names its edge over the next-best option unless the two are tied',
     tie: 'equal fit gets equal scores',
     order:
       'keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent',
@@ -3388,7 +3388,7 @@ export const ASK_SCORING = Object.freeze({
     prefix: 'n/10 – <kurze Begründung>; ',
     bands:
       '1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig',
-    topScore: 'eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option',
+    topScore: 'eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option, außer bei Gleichstand',
     tie: 'gleiche Eignung erhält gleiche Werte',
     order:
       'behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu',

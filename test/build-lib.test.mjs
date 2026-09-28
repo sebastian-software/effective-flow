@@ -2947,9 +2947,9 @@ test('portable ask rendering uses the Codex-equivalent English default', () => {
 // The full rendered scoring lines, written out by hand rather than derived from `ASK_SCORING`, so a
 // change to the constant or to the sentence around it fails here instead of moving both sides.
 const SCORING_LINE_EN_ABORT =
-  'Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.';
+  'Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.';
 const SCORING_LINE_DE_ABORT =
-  'Bewerte vor dem Fragen jede Option außer „Abort“ für diesen Kontext: Beginne ihre Beschreibung vor dem ursprünglichen Text mit „n/10 – <kurze Begründung>; “ (1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig; eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option; gleiche Eignung erhält gleiche Werte); behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu.';
+  'Bewerte vor dem Fragen jede Option außer „Abort“ für diesen Kontext: Beginne ihre Beschreibung vor dem ursprünglichen Text mit „n/10 – <kurze Begründung>; “ (1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig; eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option, außer bei Gleichstand; gleiche Eignung erhält gleiche Werte); behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu.';
 
 function scoredAskFence({ language, when, type = 'scored', unscored = 'Abort' } = {}) {
   return [
@@ -2996,6 +2996,13 @@ test('renderScoringInstruction renders the full English line from the exported c
 test('renderScoringInstruction renders the full German line from the exported constant', () => {
   assert.equal(renderScoringInstruction('de', ['Abort']), SCORING_LINE_DE_ABORT);
   assert.ok(SCORING_LINE_DE_ABORT.includes(ASK_SCORING.de.bands));
+});
+
+// Equal fit gets equal scores, so two options can share a 9–10; the top-score clause must then not
+// demand an edge that does not exist, or the two rules contradict each other.
+test('the top-score clause exempts a tie in both languages', () => {
+  assert.match(ASK_SCORING.en.topScore, /next-best option unless the two are tied$/);
+  assert.match(ASK_SCORING.de.topScore, /nächstbesten Option, außer bei Gleichstand$/);
 });
 
 test('renderScoringInstruction omits the except clause when no label is exempt', () => {

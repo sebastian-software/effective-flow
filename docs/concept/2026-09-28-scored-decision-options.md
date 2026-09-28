@@ -49,7 +49,7 @@ The score replaces the binary recommended marker for scored questions. The rende
 
 ### In scope (first version)
 
-- A shared definition of the 1–10 fit score: absolute per option, ties allowed, the calibration bands above, a mandatory one-clause reason, a stated advantage over the next-best option for a 9 or 10, and equal scores when options are genuinely equivalent.
+- A shared definition of the 1–10 fit score: absolute per option, ties allowed, the calibration bands above, a mandatory one-clause reason, a stated advantage over the next-best option for a 9 or 10 unless the two are tied, and equal scores when options are genuinely equivalent.
 - A question-level declaration that marks an `ask` question as a decision between substantive alternatives. It is structurally exclusive with approval questions, and the escape options it exempts from scoring are named at the same level.
 - Rendering of that declaration for native Claude Code, native Codex, and portable output, so that every target instructs the orchestrator to put the score and reason at the start of each scored option's description.
 - A classification pass over the 37 option-bearing `ask` fences outside the `merge-gate` eval load set. It marks each one that offers substantive alternatives as scored and leaves approvals, confirmations, and default-selecting configuration questions unscored, deciding every fence explicitly rather than by its "(default)" tag.
@@ -149,7 +149,7 @@ The renderer change must leave every unscored question byte-identical in all thr
 - **Important – Prose decision phases unguarded (incorporated):** the primary use case is prose, not a fence, so content assertions in the workflow contract tests protect it.
 - **Important – Host convention (incorporated):** the rendered instruction now explicitly keeps labels and order and suppresses the "(Recommended)" marker.
 - **Important – Fence count (incorporated):** corrected to 48 fences, 47 of them option-bearing, and noted that individual unit tests pin fence labels, order, and phrases.
-- **Note – Score inflation (decided):** a score of 9 or 10 must name what makes the option clearly better than the next.
+- **Note – Score inflation (decided):** a score of 9 or 10 must name what makes the option clearly better than the next, unless the two are tied.
 - **Note – Option order (incorporated):** turned from a design question into a post-rollout observation, consistent with the non-goal.
 - **Note – ADR rationale (incorporated):** justified by the stable cross-harness calibration, not by irreversibility.
 - **Note – "(default)" tag unreliable (incorporated):** planning classifies every fence explicitly.

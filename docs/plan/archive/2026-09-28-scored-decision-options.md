@@ -309,7 +309,7 @@ The 10 load-set fences and the approval fence `review.md:426` stay unchanged.
 - **Beyond the affected-files table:**
   - The user guide gained a "Fit score" glossary entry (`docs/user-guide/glossary.md`) and consistent notes in `tools-understand.md` and `tools-setup.md`.
   - Review hardening added several parser rules: duplicate option labels are rejected in scored fences, quotation marks are rejected in `unscored:` labels, and a missing-header or missing-question error also names a pending structural error.
-  - The instruction wording says "the next-best option" and "add neither a "(Recommended)" marker nor a translated equivalent".
+  - The instruction wording says "the next-best option unless the two are tied" and "add neither a "(Recommended)" marker nor a translated equivalent".
 - **Budgets:** raised to their measured counts: `setup` 1918→1923, `apply-review` 1406→1407, `apply-issues` 1212→1213, `cleanup` 1043→1044, `plan-issue` 754→755, `maintain` 727→728, and `apply` 593→594. `concept-review` now sits exactly at its budget (344/344).
 - **ADR follow-up:** as planned, `docs/adr/absolute-dialog-only-decision-scores.md` is left to a separate `effective-flow docs` run after merge.
 

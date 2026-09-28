@@ -103,7 +103,7 @@ exactly one extra line, a localized scoring instruction built by `renderScoringI
 the exported `ASK_SCORING` constant in `build-lib.mjs`, the single source of the calibration
 bands. That line tells the agent to start each scorable option's description with
 `n/10 – <short reason>; ` ahead of the original text, to calibrate against fixed bands (1–2 not
-recommended up to 9–10 clearly right), to let a 9–10 name its edge over the next-best option, to
+recommended up to 9–10 clearly right), to let a 9–10 name its edge over the next-best option unless the two are tied, to
 give equal fit equal scores, to keep the options in order, to change labels only for
 chat-language translation, and to add neither a "(Recommended)" marker nor a translated equivalent. Scores
 are absolute fit for the current context rather than a ranking, are computed at ask time,
