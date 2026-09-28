@@ -28,6 +28,8 @@ import {
   missingCategoryReadmes,
   findSelfReferentialContractPhrases,
   ASK_MAX_HEADER_LENGTH,
+  ASK_SCORING,
+  renderScoringInstruction,
   renderLazyPointer,
   resolveLazyIncludes,
   resolveEagerIncludes,
@@ -2354,6 +2356,479 @@ test('parseAskBlock rejects duplicate language fields with source context', () =
   }
 });
 
+// --- parseAskBlock: type scored and the strict line grammar ---
+
+// Builds an ask block body from its key lines and `[label, description]` option pairs, so each
+// rejection test below differs from a valid block by exactly the line it is about.
+function askBlockLines(keys, options) {
+  const lines = [...keys];
+  if (options) {
+    lines.push('options:');
+    for (const [label, description] of options) {
+      lines.push(`  - label: ${label}`, `    description: ${description}`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+const scoredOptions = [
+  ['Revise', 'Edit the plan in place'],
+  ['New', 'Start a new plan'],
+  ['Abort', 'Stop here'],
+];
+
+test('parseAskBlock parses a scored block and returns its exempt labels', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: Revision', 'question: Q?', 'type: scored', 'unscored: Abort'],
+      scoredOptions,
+    ),
+  );
+  assert.equal(r.type, 'scored');
+  assert.deepEqual(r.unscored, ['Abort']);
+  assert.deepEqual(
+    r.options.map((option) => option.label),
+    ['Revise', 'New', 'Abort'],
+  );
+});
+
+test('parseAskBlock returns an empty unscored list when no label is exempt', () => {
+  const scored = parseAskBlock(
+    askBlockLines(['header: H', 'question: Q?', 'type: scored'], scoredOptions),
+  );
+  const options = parseAskBlock(askBlockLines(['header: H', 'question: Q?'], scoredOptions));
+  const approval = parseAskBlock('header: H\nquestion: Q?\ntype: approval\n');
+  assert.deepEqual(scored.unscored, []);
+  assert.deepEqual(options.unscored, []);
+  assert.deepEqual(approval.unscored, []);
+});
+
+test('parseAskBlock splits several exempt labels on the pipe separator', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: H', 'question: Q?', 'type: scored', 'unscored: Ask later | Abort, now'],
+      [
+        ['A', 'first'],
+        ['B', 'second'],
+        ['Ask later', 'decide at run time'],
+        ['Abort, now', 'a label that carries a comma'],
+      ],
+    ),
+  );
+  assert.deepEqual(r.unscored, ['Ask later', 'Abort, now']);
+});
+
+test('parseAskBlock rejects unscored: on an options fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'unscored: Abort'], scoredOptions),
+        {
+          context: 'u.md',
+        },
+      ),
+    /^Error: ASK block "H" declares unscored: but is not of type scored \(in u\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects unscored: on an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock('header: H\nquestion: Q?\ntype: approval\nunscored: Abort\n', {
+        context: 'u.md',
+      }),
+    /ASK block "H" declares unscored: but is not of type scored.*u\.md/,
+  );
+});
+
+test('parseAskBlock rejects an options block in an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: approval'], [['Yes', 'go']]),
+        { context: 'a.md' },
+      ),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects a bare options: line in an approval fence', () => {
+  assert.throws(
+    () => parseAskBlock('header: H\nquestion: Q?\ntype: approval\noptions:\n', { context: 'a.md' }),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects option lines without an options: line in an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        'header: H\nquestion: Q?\ntype: approval\n  - label: Yes\n    description: go\n',
+        {
+          context: 'a.md',
+        },
+      ),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects an exempt label that names no option', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Cancel'],
+          scoredOptions,
+        ),
+        { context: 's.md' },
+      ),
+    /ASK block "H" exempts unknown option "Cancel" in unscored:.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects a scored fence with fewer than two scorable options', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort'],
+          [
+            ['Go', 'continue'],
+            ['Abort', 'stop'],
+          ],
+        ),
+        { context: 's.md' },
+      ),
+    /ASK block "H" of type scored needs at least two scorable options, found 1.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects a scored fence with a single option and no exemption', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: scored'], [['Go', 'continue']]),
+        {
+          context: 's.md',
+        },
+      ),
+    /needs at least two scorable options, found 1.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects an options fence whose options: block holds no option', () => {
+  for (const type of [[], ['type: scored'], ['type: options']]) {
+    assert.throws(
+      () =>
+        parseAskBlock(askBlockLines(['header: H', 'question: Q?', ...type], []), {
+          context: 'o.md',
+        }),
+      /^Error: ASK block missing options \(in o\.md\)$/,
+      `type ${type[0] ?? '(default)'} accepted an options: line with no option`,
+    );
+  }
+});
+
+test('parseAskBlock rejects every duplicate key', () => {
+  for (const [key, value] of [
+    ['header', 'H'],
+    ['question', 'Q?'],
+    ['type', 'scored'],
+    ['when', 'always'],
+    ['unscored', 'Abort'],
+  ]) {
+    const keys = ['header: H', 'question: Q?', 'type: scored', 'when: always', 'unscored: Abort'];
+    assert.throws(
+      () =>
+        parseAskBlock(askBlockLines([...keys, `${key}: ${value}`], scoredOptions), {
+          context: 'd.md',
+        }),
+      new RegExp(`^Error: ASK block has duplicate ${key} fields \\(in d\\.md\\)$`),
+    );
+  }
+});
+
+test('parseAskBlock rejects a second options: line', () => {
+  const block = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}options:\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'd.md' }),
+    /ASK block has duplicate options fields.*d\.md/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line after a description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description: first',
+    '    and a wrapped second line',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "and a wrapped second line" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line between a label and its description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    stray note',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "stray note" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line directly after options:', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  pick one of these',
+    '  - label: A',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "pick one of these" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a key line after the options block', () => {
+  const block = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}type: scored\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has line "type: scored" after the options block; every key must precede options: \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option label without a description line', () => {
+  const followedByLabel = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(followedByLabel, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "A" without a description line \(in x\.md\)$/,
+  );
+  const lastLabel = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description: first',
+    '  - label: B',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(lastLabel, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "B" without a description line \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option with an empty label', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label:',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block "H" has option line "- label:" with an empty label \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option with an empty description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description:',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "A" with an empty description \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a description line that does not directly follow a label', () => {
+  const orphan = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}    description: extra\n`;
+  assert.throws(
+    () => parseAskBlock(orphan, { context: 'x.md' }),
+    /^Error: ASK block "H" has description line "description: extra" that does not directly follow an option label \(in x\.md\)$/,
+  );
+  assert.throws(
+    () => parseAskBlock('header: H\nquestion: Q?\n    description: stray\n', { context: 'x.md' }),
+    /^Error: ASK block "H" has description line "description: stray" that does not directly follow an option label \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an empty when field', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['when:', 'header: H', 'question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block "H" has an empty when field \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an empty entry in unscored:', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort | | New'],
+          scoredOptions,
+        ),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" has an empty label in unscored: "Abort \| \| New" \(in x\.md\)$/,
+  );
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: scored', 'unscored:   '], scoredOptions),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" has an empty label in unscored: "" \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a label listed twice in unscored:', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort | Abort'],
+          scoredOptions,
+        ),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" lists "Abort" twice in unscored: \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a quotation mark inside an unscored: label', () => {
+  for (const [label, pattern] of [
+    [
+      'Say "no"',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Say "no"" \(in x\.md\)$/,
+    ],
+    [
+      'Sag „nein“',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Sag „nein“" \(in x\.md\)$/,
+    ],
+    [
+      'Stop“',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Stop“" \(in x\.md\)$/,
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        parseAskBlock(
+          askBlockLines(
+            ['header: H', 'question: Q?', 'type: scored', `unscored: ${label}`],
+            [...scoredOptions, [label, 'a quoted label']],
+          ),
+          { context: 'x.md' },
+        ),
+      pattern,
+    );
+  }
+});
+
+test('parseAskBlock rejects a duplicate option label in a scored fence only', () => {
+  const duplicated = [
+    ['Go', 'continue now'],
+    ['Go', 'continue later'],
+    ['Wait', 'hold'],
+  ];
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['header: H', 'question: Q?', 'type: scored'], duplicated), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block "H" of type scored has duplicate option label "Go" \(in x\.md\)$/,
+  );
+  assert.equal(
+    parseAskBlock(askBlockLines(['header: H', 'question: Q?'], duplicated)).options.length,
+    3,
+  );
+});
+
+test('parseAskBlock names a key line after options: when the header is missing', () => {
+  const block = `${askBlockLines(['question: Q?'], scoredOptions)}header: H\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block missing header field; the block has line "header: H" after the options block; every key must precede options: \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock names an indented key line when the header or question is missing', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['  header: H', 'question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block missing header field; the block has an unconsumed line "header: H" \(in x\.md\)$/,
+  );
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['header: H', '  question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block missing question field; the block has an unconsumed line "question: Q\?" \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock keeps the plain missing-field message without a structural error', () => {
+  assert.throws(
+    () => parseAskBlock('question: Q?\ntype: approval\n', { context: 'x.md' }),
+    /^Error: ASK block missing header field \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock no longer lets a description containing type: approval change the type', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: H', 'question: Q?'],
+      [
+        ['Gate', 'Switch this ask to type: approval later'],
+        ['Keep', 'Leave it'],
+      ],
+    ),
+  );
+  assert.equal(r.type, null);
+  assert.deepEqual(r.options, [
+    { label: 'Gate', description: 'Switch this ask to type: approval later' },
+    { label: 'Keep', description: 'Leave it' },
+  ]);
+});
+
 test('renderBody localizes only generated ask scaffolding for both harnesses', () => {
   const optionsBlock = (language) =>
     [
@@ -2470,6 +2945,240 @@ test('portable ask rendering uses the Codex-equivalent English default', () => {
 
   assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'ask.md' }), expected);
   assert.equal(renderBody(body, 'portable', { ...refConfig, context: 'ask.md' }), expected);
+});
+
+// --- Scored ask rendering ---
+
+// The full rendered scoring lines, written out by hand rather than derived from `ASK_SCORING`, so a
+// change to the constant or to the sentence around it fails here instead of moving both sides.
+const SCORING_LINE_EN_ABORT =
+  'Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.';
+const SCORING_LINE_DE_ABORT =
+  'Bewerte vor dem Fragen jede Option außer „Abort“ für diesen Kontext: Beginne ihre Beschreibung vor dem ursprünglichen Text mit „n/10 – <kurze Begründung>; “ (1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig; eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option, außer bei Gleichstand; gleiche Eignung erhält gleiche Werte); behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu.';
+
+function scoredAskFence({ language, when, type = 'scored', unscored = 'Abort' } = {}) {
+  return [
+    '```ask',
+    ...(when ? [`when: ${when}`] : []),
+    'header: Revision',
+    'question: Revise the plan?',
+    `type: ${type}`,
+    ...(unscored ? [`unscored: ${unscored}`] : []),
+    ...(language ? [`language: ${language}`] : []),
+    'options:',
+    '  - label: Revise',
+    '    description: Edit the plan in place',
+    '  - label: New',
+    '    description: Start a new plan',
+    '  - label: Abort',
+    '    description: Stop here',
+    '```',
+  ].join('\n');
+}
+
+const claudeScoredOptions = [
+  '- header: "Revision"',
+  '- question: "Revise the plan?"',
+  '- multiSelect: false',
+  '- options:',
+  '  - label: "Revise", description: "Edit the plan in place"',
+  '  - label: "New", description: "Start a new plan"',
+  '  - label: "Abort", description: "Stop here"',
+];
+const codexScoredOptions = [
+  '- Revise -- Edit the plan in place',
+  '- New -- Start a new plan',
+  '- Abort -- Stop here',
+];
+
+test('renderScoringInstruction renders the full English line from the exported constant', () => {
+  assert.equal(renderScoringInstruction('en', ['Abort']), SCORING_LINE_EN_ABORT);
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.bands));
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.topScore));
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.tie));
+});
+
+test('renderScoringInstruction renders the full German line from the exported constant', () => {
+  assert.equal(renderScoringInstruction('de', ['Abort']), SCORING_LINE_DE_ABORT);
+  assert.ok(SCORING_LINE_DE_ABORT.includes(ASK_SCORING.de.bands));
+});
+
+// Equal fit gets equal scores, so two options can share a 9–10; the top-score clause must then not
+// demand an edge that does not exist, or the two rules contradict each other.
+test('the top-score clause exempts a tie in both languages', () => {
+  assert.match(ASK_SCORING.en.topScore, /next-best option unless the two are tied$/);
+  assert.match(ASK_SCORING.de.topScore, /nächstbesten Option, außer bei Gleichstand$/);
+});
+
+test('renderScoringInstruction omits the except clause when no label is exempt', () => {
+  assert.equal(
+    renderScoringInstruction('en'),
+    SCORING_LINE_EN_ABORT.replace(' except "Abort"', ''),
+  );
+  assert.match(
+    renderScoringInstruction('en', []),
+    /^Before asking, score each option for this context: /,
+  );
+  assert.equal(
+    renderScoringInstruction('de', []),
+    SCORING_LINE_DE_ABORT.replace(' außer „Abort“', ''),
+  );
+});
+
+test('renderScoringInstruction joins several exempt labels with commas and a conjunction', () => {
+  assert.match(
+    renderScoringInstruction('en', ['A', 'B', 'C']),
+    /^Before asking, score each option except "A", "B" and "C" for this context: /,
+  );
+  assert.match(
+    renderScoringInstruction('de', ['A', 'B']),
+    /^Bewerte vor dem Fragen jede Option außer „A“ und „B“ für diesen Kontext: /,
+  );
+});
+
+test('renderScoringInstruction rejects a language without scoring copy', () => {
+  assert.throws(() => renderScoringInstruction('fr'), /No scoring instruction for language "fr"/);
+});
+
+test('a scored ask renders its scoring line first on Claude, in English and German', () => {
+  assert.equal(
+    renderBody(scoredAskFence(), 'claude', { ...refConfig, context: 'scored.md' }),
+    [
+      SCORING_LINE_EN_ABORT,
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ language: 'de' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      SCORING_LINE_DE_ABORT,
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('a conditional scored ask keeps its scoring line inside the when block on Claude', () => {
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'the plan is archived' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'If the plan is archived:',
+      '',
+      SCORING_LINE_EN_ABORT,
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'der Plan archiviert ist', language: 'de' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'Wenn der Plan archiviert ist:',
+      '',
+      SCORING_LINE_DE_ABORT,
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('a scored ask renders its scoring line after the question on Codex, in English and German', () => {
+  assert.equal(
+    renderBody(scoredAskFence(), 'codex', { ...refConfig, context: 'scored.md' }),
+    ['Ask the user: **Revise the plan?**', SCORING_LINE_EN_ABORT, ...codexScoredOptions].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ language: 'de' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    ['Frage den User: **Revise the plan?**', SCORING_LINE_DE_ABORT, ...codexScoredOptions].join(
+      '\n',
+    ),
+  );
+});
+
+test('a conditional scored ask keeps the when prefix on the question line on Codex', () => {
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'the plan is archived' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'If the plan is archived: Ask the user: **Revise the plan?**',
+      SCORING_LINE_EN_ABORT,
+      ...codexScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'der Plan archiviert ist', language: 'de' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'Wenn der Plan archiviert ist: Frage den User: **Revise the plan?**',
+      SCORING_LINE_DE_ABORT,
+      ...codexScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('portable renders a scored ask exactly as Codex does', () => {
+  for (const variant of [
+    {},
+    { language: 'de' },
+    { when: 'the plan is archived' },
+    { when: 'der Plan archiviert ist', language: 'de' },
+  ]) {
+    const fence = scoredAskFence(variant);
+    assert.equal(
+      renderBody(fence, 'portable', { ...refConfig, context: 'scored.md' }),
+      renderBody(fence, 'codex', { ...refConfig, context: 'scored.md' }),
+      `portable diverged from Codex for ${JSON.stringify(variant)}`,
+    );
+  }
+});
+
+test('a scored ask renders exactly one line more than the same ask as options', () => {
+  for (const harness of ['claude', 'codex', 'portable']) {
+    for (const variant of [
+      {},
+      { language: 'de' },
+      { when: 'the plan is archived' },
+      { when: 'der Plan archiviert ist', language: 'de' },
+    ]) {
+      const config = { ...refConfig, context: 'scored.md' };
+      const scored = renderBody(scoredAskFence(variant), harness, config);
+      const options = renderBody(
+        scoredAskFence({ ...variant, type: 'options', unscored: null }),
+        harness,
+        config,
+      );
+      const scoringLine = variant.language === 'de' ? SCORING_LINE_DE_ABORT : SCORING_LINE_EN_ABORT;
+      const label = `${harness} ${JSON.stringify(variant)}`;
+      assert.equal(scored.split('\n').length, options.split('\n').length + 1, label);
+      assert.equal(scored.replace(`${scoringLine}\n`, ''), options, label);
+    }
+  }
+});
+
+test('a scored ask without unscored: renders no except clause', () => {
+  const fence = scoredAskFence({ unscored: null });
+  const claude = renderBody(fence, 'claude', { ...refConfig, context: 'scored.md' });
+  const codex = renderBody(fence, 'codex', { ...refConfig, context: 'scored.md' });
+  const line = SCORING_LINE_EN_ABORT.replace(' except "Abort"', '');
+  assert.equal(claude.split('\n')[0], line);
+  assert.equal(codex.split('\n')[1], line);
+  assert.doesNotMatch(`${claude}\n${codex}`, /score each option except/);
 });
 
 // --- Retired goal mode ---
@@ -3290,6 +3999,73 @@ test('end-to-end: fixture asks render in English by default and German by opt-in
     '',
   ].join('\n');
   assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'fixture.md' }), expectedCodex);
+});
+
+test('end-to-end: a scored fixture ask adds only its scoring line on every target', () => {
+  const fixture = [
+    '---',
+    'description: "A fixture tool with a scored decision."',
+    '---',
+    '',
+    '# Fixture',
+    '',
+    '```ask',
+    'when: the target is ambiguous',
+    'header: Revision',
+    'question: Revise, restart, or stop?',
+    'type: scored',
+    'unscored: Abort',
+    'options:',
+    '  - label: Revise in place',
+    '    description: Reuse the file, keep its history',
+    '  - label: New plan',
+    '    description: Start over under a new name',
+    '  - label: Abort',
+    '    description: Change nothing',
+    '```',
+    '',
+  ].join('\n');
+
+  const fm = extractFrontmatter(fixture);
+  const body = extractBody(fixture);
+  assert.doesNotThrow(() => assertQuotedDescription(fm));
+  validateRefs(`${fm}\n${body}`, refConfig);
+
+  const expectedClaude = [
+    '',
+    '# Fixture',
+    '',
+    'If the target is ambiguous:',
+    '',
+    SCORING_LINE_EN_ABORT,
+    'Use the `AskUserQuestion` tool with the following parameters:',
+    '- header: "Revision"',
+    '- question: "Revise, restart, or stop?"',
+    '- multiSelect: false',
+    '- options:',
+    '  - label: "Revise in place", description: "Reuse the file, keep its history"',
+    '  - label: "New plan", description: "Start over under a new name"',
+    '  - label: "Abort", description: "Change nothing"',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'claude', { ...refConfig, context: 'fixture.md' }), expectedClaude);
+
+  const expectedCodex = [
+    '',
+    '# Fixture',
+    '',
+    'If the target is ambiguous: Ask the user: **Revise, restart, or stop?**',
+    SCORING_LINE_EN_ABORT,
+    '- Revise in place -- Reuse the file, keep its history',
+    '- New plan -- Start over under a new name',
+    '- Abort -- Change nothing',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'fixture.md' }), expectedCodex);
+  assert.equal(
+    renderBody(body, 'portable', { ...refConfig, context: 'fixture.md' }),
+    expectedCodex,
+  );
 });
 
 test('end-to-end: fixture rejects an invalid ask language with source context', () => {

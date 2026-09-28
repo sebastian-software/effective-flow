@@ -62,6 +62,7 @@ Only when step 4 above applies (no config value, no argument/per-run signal):
 ```ask
 header: Tracker
 question: Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?
+type: scored
 options:
   - label: Local
     description: tracker.mode = local — Markdown report under .effective-flow/review/ (previous behavior)

@@ -11,8 +11,10 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { ASK_SCORING } from '../build-lib.mjs';
 import {
   buildPortableSkill,
+  builtSkillIdentity,
   freshnessVerdict,
   instrumentIdentity,
   isCompatibleLegacyInstrumentPredecessor,
@@ -1149,6 +1151,38 @@ test('the version-stamped router must be a member of the load set it is neutrali
       ),
     /SKILL\.md is not in the derived load set/,
     'the version-neutral digest was computed over a file the exact digest does not cover, which is what the release-bump waiver is decided on',
+  );
+});
+
+// A scored ask renders one extra instruction line, and the eval hashes the built load set, so a
+// scored fence anywhere in that set would move the skill digest and stale every archived round. The
+// sentinels are the rendered-only parts of the scoring line in both languages: the bands and the
+// order clause, taken from the exported constant so a reworded line cannot slip past a stale copy.
+// The positive check on `tools/plan.md`, which carries a scored fence outside the load set, keeps
+// the negative one from passing on a build that renders no scoring line at all.
+test('no merge-gate load-set file carries a rendered scoring instruction', () => {
+  const skillRoot = builtSkillRootForTests();
+  const sentinels = ['en', 'de'].flatMap((language) => [
+    ASK_SCORING[language].bands,
+    ASK_SCORING[language].order,
+  ]);
+  const { files } = builtSkillIdentity(skillRoot, suite.loadSetSeeds);
+  const loadSet = Object.keys(files);
+  assert.ok(loadSet.includes('tools/merge-gate.md'), 'the derived load set lost merge-gate itself');
+  assert.ok(!loadSet.includes('tools/plan.md'), 'tools/plan.md joined the load set');
+  for (const path of loadSet) {
+    const body = readFileSync(resolve(skillRoot, path), 'utf8');
+    for (const sentinel of sentinels) {
+      assert.ok(
+        !body.includes(sentinel),
+        `load-set file ${path} carries the scoring sentinel "${sentinel}", so a scored fence entered the merge-gate eval load set`,
+      );
+    }
+  }
+  const plan = readFileSync(resolve(skillRoot, 'tools/plan.md'), 'utf8');
+  assert.ok(
+    plan.includes(ASK_SCORING.en.bands) && plan.includes(ASK_SCORING.en.order),
+    'the built tools/plan.md renders no scoring line, so the load-set check above proves nothing',
   );
 });
 

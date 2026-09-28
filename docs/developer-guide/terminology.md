@@ -12,7 +12,11 @@ English remain equally valid artifact languages.
   consistent.
 - Leave **placeholders and directives unchanged**: `{{SKILL:X}}`, `{{AGENT:X}}`, `{{FLOW}}`,
   ` ```include `, ` ```lazy-include `, ` ```ask ` fences and their `when:` keys keep their
-  structure; only the human-readable text is translated.
+  structure; only the human-readable text is translated. In an `ask` fence the `type:` and
+  `unscored:` keys and the `type` value stay verbatim. An `unscored:` label is translated together
+  with the option label it names, because the build fails when an exempted label matches no
+  option; the translation must not introduce `|` or the quote characters `"`, `„`, or `“`, which
+  an exempted label may not contain.
 - Keep proper nouns as-is: **Effective Flow**, **Claude**, **Codex**, tool and agent names
   (`build`, `plan`, `code-validator`, …), label prefixes (`effective-flow-`, `firmo-`, `sf-`).
 

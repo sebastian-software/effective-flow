@@ -109,6 +109,7 @@ Before starting the workflow, classify the user's requirement:
 ```ask
 header: Intent
 question: What type is this requirement?
+type: scored
 options:
   - label: Feature
     description: New functionality, new UI element, new page or integration

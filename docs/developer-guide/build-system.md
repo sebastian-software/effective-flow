@@ -2,11 +2,13 @@
 
 `build.mjs` transforms the Markdown sources under `src/` into native Claude and Codex targets
 plus one portable manager target under `dist/`. This document describes invocation,
-placeholder syntax, and build guards, and it is canonical for the **mechanics** of two things
-[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, and the
-step-by-step procedure for adding a tool or agent. `AGENTS.md` stays canonical for the two
-**rules** it owns — renaming an exposed tool ships a deprecated forwarding alias, and every
-`src/tools/*.md` needs a `CONTEXT_BUDGET_LINES` entry measured from the build report.
+placeholder syntax, and build guards, and it is canonical for the **mechanics** of three things
+[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, the
+step-by-step procedure for adding a tool or agent, and how each point of the prompt-writing rule
+maps onto the build. `AGENTS.md` stays canonical for the three **rules** it owns — renaming an
+exposed tool ships a deprecated forwarding alias, every `src/tools/*.md` needs a
+`CONTEXT_BUDGET_LINES` entry measured from the build report, and prompt text follows the
+prompt-writing rule.
 
 ## Invocation
 
@@ -96,6 +98,71 @@ The build preserves `header`, `question`, `when`, and source-provided option lab
 descriptions verbatim; it does not infer a language from that text or from a target project's
 runtime `language.*` settings. German generated wrapper text therefore requires an explicit
 `language: de` in the individual `ask` block.
+
+`type` accepts `options` (the default), `approval`, or `scored`. A **scored** fence is an options
+question whose choices the agent rates before asking: it parses like an options fence and renders
+exactly one extra line, a localized scoring instruction built by `renderScoringInstruction` from
+the exported `ASK_SCORING` constant in `build-lib.mjs`, the single source of the calibration
+bands. That line tells the agent to start each scorable option's description with
+`n/10 – <short reason>; ` ahead of the original text, to calibrate against fixed bands (1–2 not
+recommended up to 9–10 clearly right), to let a 9–10 name its edge over the next-best option unless the two are tied, to
+give equal fit equal scores, to keep the options in order, to change labels only for
+chat-language translation, and to add neither a "(Recommended)" marker nor a translated equivalent. Scores
+are absolute fit for the current context rather than a ranking, are computed at ask time,
+appear only in the dialog, and are never persisted. The prose decision phases of `plan-review` and
+`concept-review`, which ask outside an `ask` fence, apply the same bands. The Claude renderer
+emits the line first, before the `AskUserQuestion` intro, so a `when:` condition still wraps the
+whole block; the Codex renderer, which the portable target reuses, emits it directly after the
+`Ask the user: **…**` line and before the option bullets. `options` and `approval` fences render byte-identically to their
+rendering before `scored` existed.
+
+The optional `unscored:` key, valid only with `type: scored`, exempts escape options such as
+"Abort" from scoring. It lists one or more exact option labels separated by `|`, because labels may
+contain commas. The instruction line names the exempted labels in quotation marks. Because `|`
+separates the list and the quotes delimit each label, an exempted label may contain neither `|`
+nor one of the quote characters `"`, `„`, or `“`; the build rejects such a label instead of
+rendering a broken instruction. Every listed label must match an option,
+and at least two options that are not exempted must stay scorable. Option labels in a scored fence
+must be unique, because both the scores and `unscored:` address an option by its label; the build
+rejects a duplicate label there.
+
+```ask
+header: Revision
+question: Revise the resolved plan file in place, start a new plan, or stop?
+type: scored
+unscored: Abort
+options:
+  - label: Revise in place
+    description: Reuse the reported file and reset its status to the canonical open value
+  - label: New plan
+    description: Leave the resolved plan untouched and write a new dated plan file
+  - label: Abort
+    description: End the run without changing any plan file
+```
+
+Every non-blank line of an `ask` fence must be an anchored key line (`header`, `question`, `type`,
+`when`, `language`, `unscored`), the `options:` line, an option `- label:` line, or the
+`description:` line that follows a label as its next non-blank line (blank lines in between are
+accepted). The build fails on a duplicate key, any other line, a key after `options:`, an option or
+description line outside the options block, a label without a description, an empty label,
+description, or `when:`, and an `approval` fence that declares options. The error names the
+rendered file and, where known, the fence header; for a fence in a shared fragment that file is the
+tool that includes it. A fence that lacks its `header` or `question` reports that first and also
+names the first structural error found in the same fence, if there is one. Anchoring every key at the line start means a description
+that merely contains `type: approval` cannot change the question type. Only one ordering rule is
+enforced — nothing but option lines follows `options:`. By convention `type:` and `unscored:`
+follow `question:` directly, while `when:` and `language:` keep the position the fence already
+gives them.
+
+Not every choice may be scored. Keep a fence unscored when it is:
+
+- part of the `merge-gate` eval load set, permanently, so the recorded eval evidence does not
+  drift;
+- a choice with an irreversible option, such as discarding stashed work or deleting state, so no
+  score nudges towards data loss;
+- a question whose options would be judged from untrusted input, such as the ADR naming question
+  in `src/shared/project-adr-convention.md`, where a score reason would open a prompt-injection path
+  and push away from the deliberately neutral answer.
 
 A `lazy-include` fence **defers** a mode-gated shared fragment (progressive disclosure, see
 below). Instead of inlining it eagerly, the build delivers `src/shared/<name>.md` once per
@@ -718,6 +785,39 @@ metadata verifies the absolute root and checkout identity, while Claude- or Code
 worktree lifecycle stays outside Effective Flow ownership. No runtime helper or configuration
 schema is required for the receipt.
 
+## Writing prompt text
+
+The rule for writing prompt text, including its scope, is canonical in
+[`AGENTS.md`](../../AGENTS.md), section "Writing prompt text"; this section maps each point onto
+the build.
+
+- **Length is paid on every run.** The context-budget guard (see "Guards") measures every tool's
+  always-loaded core, and the "**Context budget.**" paragraph below makes each entry a ratchet,
+  not room to fill. An eager `src/shared` fragment is charged to every host that includes it, so
+  one line added there raises several measurements at once. `AGENTS.md` is paid in every session
+  but has no guard, so the rule is all that holds it.
+- **State a contract once, in its owning fragment.** Every other source reaches it through an
+  ` ```include ` or ` ```lazy-include ` fence (see "Placeholder and directive syntax") or a
+  pointer that names the owning file, never through a restated copy. For a playbook a central
+  skill owns, the ownership contract in [`skill-ownership.md`](skill-ownership.md), section "The
+  layered contract", decides what the source still carries.
+- **Keep rare edge cases out of eager text.** Deferral follows "Progressive disclosure beyond the
+  router" unchanged: only a mode-gated block that serves one nameable decision point qualifies,
+  and its pointer states that trigger as the load trigger (`when:`). A fragment on the "Core flow
+  stays inline" list itself stays eager; a genuine branch inside it may move behind a nested
+  pointer only under the same one-nameable-decision-point rule, as `chat-language` does with
+  `typography-rules`. "Rare" alone never qualifies text for deferral.
+- **Prefer one precise sentence to an explanation of its history.** Keep the reason that
+  constrains the next edit, such as why a gate runs in its order. Move how the text came to be –
+  an earlier issue, an older wording, a migration – to the plan archive, the commit message or an
+  ADR.
+- **A test that reads source prose must name the invariant it protects.** State the invariant in
+  a comment block above the test and name the property in the assertion message; the test "every
+  merge-gate lazy pointer names the decision point that loads it" in
+  `test/workflow-contracts.test.mjs` and its comment are the model. Anchor the assertion on the
+  smallest stable phrase or marker, so rewording stays free while losing the invariant fails. When
+  tightening an assertion, mutate the source deliberately and confirm the test fails.
+
 ## Native and portable worker rendering
 
 Each `src/agents/<name>.md` body remains the only worker contract. The native renderers combine
@@ -818,5 +918,5 @@ actually occurs.
 - [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
 - [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
 - [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (language, delegation,
-  commits, the tool-rename alias, the context-budget entry); the build **mechanics** those rules
-  refer to are canonical here.
+  commits, the tool-rename alias, the context-budget entry, writing prompt text); the build
+  **mechanics** those rules refer to are canonical here.

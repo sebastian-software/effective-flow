@@ -201,6 +201,8 @@ For the actual update work, follow the dependency path of `effective-delivery` u
 ```ask
 header: Updates
 question: Which of the proposed update groups should be implemented now?
+type: scored
+unscored: Selection
 options:
   - label: All safe ones
     description: Safe batch (patch/minor) and security fixes automatically, skip major bumps
