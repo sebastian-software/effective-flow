@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
+  ASK_SCORING,
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   findNextStepsDocViolations,
@@ -17433,4 +17434,168 @@ test('iterate uses the processed-thread ledger in hidden mode and explicit PR re
     prose(source('src/tools/merge-gate.md')),
     /leave `\{\{SKILL:iterate\}\}`'s processed-thread ledger in place: it is not a delegation message/,
   );
+});
+
+// --- Scored decision options ---
+
+// Every ask fence below `src/`, parsed by the build's own parser. Keyed by file and question rather
+// than header: `shared/source-upstream-sync.md` carries two fences headed `Upstream`, and only the
+// first is scored.
+function scoredAskRegistry() {
+  const registry = new Map();
+  let scoredFences = 0;
+  const files = readdirSync(new URL('src/', repositoryRoot), { recursive: true })
+    .filter((path) => path.endsWith('.md'))
+    .sort();
+  for (const path of files) {
+    const relative = `src/${path}`;
+    for (const ask of askContracts(source(relative), relative)) {
+      if (ask.type !== 'scored') continue;
+      scoredFences += 1;
+      registry.set(`${relative} :: ${ask.question}`, ask.unscored);
+    }
+  }
+  return { registry, scoredFences };
+}
+
+test('exactly the ten registered decision fences are scored, with their exempt labels', () => {
+  const { registry, scoredFences } = scoredAskRegistry();
+  const expected = new Map([
+    [
+      'src/shared/issue-tracker.md :: Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?',
+      [],
+    ],
+    ['src/shared/setup-profiles.md :: Which workflow profile should Effective Flow apply?', []],
+    [
+      'src/shared/source-upstream-sync.md :: Update the local branch from its upstream before selecting?',
+      ['Abort'],
+    ],
+    ['src/tools/apply-review.md :: Which commit strategy should be used for the findings?', []],
+    ['src/tools/build.md :: What type is this requirement?', []],
+    [
+      'src/tools/maintain.md :: Which of the proposed update groups should be implemented now?',
+      ['Selection'],
+    ],
+    [
+      'src/tools/plan.md :: Revise the resolved plan file in place, start a new plan, or stop?',
+      ['Abort'],
+    ],
+    ['src/tools/setup.md :: Should the implementation run in a separate Git worktree?', []],
+    [
+      'src/tools/setup.md :: Which completion action should Effective Flow use by default?',
+      ['Ask at run time'],
+    ],
+    [
+      'src/tools/setup.md :: Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?',
+      [],
+    ],
+  ]);
+  assert.deepEqual(
+    Object.fromEntries([...registry].sort()),
+    Object.fromEntries([...expected].sort()),
+  );
+  assert.equal(
+    registry.size,
+    scoredFences,
+    'two scored fences share one file and question, so one registry key hides the other',
+  );
+});
+
+test('the second Upstream fence of source-upstream-sync stays unscored', () => {
+  const asks = askContracts(
+    source('src/shared/source-upstream-sync.md'),
+    'src/shared/source-upstream-sync.md',
+  ).filter((ask) => ask.header === 'Upstream');
+  assert.deepEqual(
+    asks.map((ask) => ask.type),
+    ['scored', null],
+  );
+});
+
+for (const tool of ['plan-review', 'concept-review']) {
+  const phase3 = () =>
+    prose(
+      boundedSlice(
+        source(`src/tools/${tool}.md`),
+        '### Phase 3: Clarify decisions',
+        "After the user's answer:",
+      ),
+    );
+
+  test(`${tool} Phase 3 asks for a 1–10 fit score with a reason per domain option`, () => {
+    const text = phase3();
+    assert.match(text, /an absolute 1–10 fit score for this context with a short reason/);
+    assert.match(text, /written `n\/10 – <reason>`/);
+    assert.match(text, /instead of a "\(Recommended\)" marker/);
+  });
+
+  test(`${tool} Phase 3 keeps the listed option order and starts each description with the score`, () => {
+    assert.match(
+      phase3(),
+      /keep the options in their listed order; the score starts the option's description/,
+    );
+  });
+
+  test(`${tool} Phase 3 keeps "Decide later" unscored`, () => {
+    assert.match(phase3(), /always offer "Decide later", unscored\./);
+  });
+
+  test(`${tool} Phase 3 puts score and reason before each option in the question-text fallback`, () => {
+    assert.match(
+      phase3(),
+      /the domain options go in the question text, each preceded by its score and reason/,
+    );
+  });
+
+  test(`${tool} Phase 3 keeps scores dialog-only`, () => {
+    assert.match(
+      phase3(),
+      /Scores are dialog-only: never write them into open points, the review section, or any other artifact section\./,
+    );
+  });
+
+  test(`${tool} no longer asks whether an option is recommended and why`, () => {
+    assert.doesNotMatch(prose(source(`src/tools/${tool}.md`)), /whether it is recommended and why/);
+  });
+
+  test(`${tool} Phase 3 bands, top-score clause, and tie rule match the exported scoring constant`, () => {
+    const text = phase3();
+    for (const field of ['bands', 'topScore', 'tie']) {
+      assert.ok(
+        text.includes(ASK_SCORING.en[field]),
+        `${tool} Phase 3 drifted from ASK_SCORING.en.${field}: ${ASK_SCORING.en[field]}`,
+      );
+    }
+  });
+}
+
+test('setup-profiles classifies origin read-only before the Profile question and changes nothing', () => {
+  const profiles = source('src/shared/setup-profiles.md');
+  const classification = prose(
+    boundedSlice(profiles, 'Directly before the Profile ask', '```ask\nheader: Profile\n'),
+  );
+  assert.match(classification, /classify the `origin` remote read-only/);
+  assert.match(classification, /read-only `repository-resolve` operation/);
+  assert.match(
+    classification,
+    /`node <skill-root>\/scripts\/remote-tracker\.mjs repository-resolve` with `\{\}` on standard input, run from the invocation directory without a `cwd` field/,
+  );
+  assert.match(
+    classification,
+    /deliberate pre-verification exception to the remote helper rule that `cwd` is the verified `RUNTIME_STATE_ROOT`: the operation is read-only and runs before that root is verified/,
+  );
+  assert.match(
+    classification,
+    /no Git repository \(`NOT_GIT_REPOSITORY`; every score reason then says setup will stop at the preflight\), none \(`NO_ORIGIN`\)/,
+  );
+  assert.match(
+    classification,
+    /runs no fetch, asks nothing, changes no file, ref, or configuration row, and decides nothing/,
+  );
+  assert.match(classification, /the later topology preflight stays the only authority/);
+  assert.doesNotMatch(classification, /\bwrit/i, 'the classification step names a write');
+  const profileAsk = askContracts(profiles, 'src/shared/setup-profiles.md').find(
+    (ask) => ask.header === 'Profile',
+  );
+  assert.equal(profileAsk?.type, 'scored');
 });

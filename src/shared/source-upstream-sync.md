@@ -22,6 +22,8 @@ ask:
 when: upstream-status reports behind and the fetch was not attempted, or fetch.ok is true and fetch.stale is false
 header: Upstream
 question: Update the local branch from its upstream before selecting?
+type: scored
+unscored: Abort
 options:
   - label: Fast-forward first
     description: Fast-forward the local branch to the reported upstream commit; uncommitted changes stay in place and hooks are skipped

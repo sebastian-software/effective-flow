@@ -159,6 +159,8 @@ central-reasoning-delegation
 when: the revision target was resolved from a legacy number or a title slug, or the resolved plan does not carry the canonical open status
 header: Revision
 question: Revise the resolved plan file in place, start a new plan, or stop?
+type: scored
+unscored: Abort
 options:
   - label: Revise in place
     description: Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan file back to <plan.dir>/ without staging that move

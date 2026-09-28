@@ -16,7 +16,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 - always start from safe defaults; use **Profile** as the standard two-question path and retain
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
-- for an existing config, show and pre-select the currently recorded value at every choice
+- for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
 - do not run project validation such as linting, tests, or build checks
 
 ```lazy-include
@@ -340,7 +340,8 @@ options:
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
-   ("currently not set – default: …"). While parsing, record every retired row: every row
+   ("currently not set – default: …"). On a scored question, name that value in the question or
+   its explanation only; never mark it in a label and never move its option. While parsing, record every retired row: every row
    whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
    a `worktree.baseBranch`, `worktree.branchPrefix` or `worktree.completion` row is the former
    spelling of the same `delivery.*` key. For each such row note whether its successor row already
@@ -379,7 +380,8 @@ These core switches determine the everyday behavior. **Before** each question, p
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
 without assuming prior knowledge of Effective Flow – and state whether and with which value the
 switch is currently set in the config (see Step 2); pre-select this value or the safe
-default. Explain technical terms in one sentence at first mention.
+default, which on a scored question means naming it in that explanation while the options keep
+their order and labels. Explain technical terms in one sentence at first mention.
 
 **Worktree.** Explain: Effective Flow implements changes by default in a separate workspace
 with its own branch (a "worktree"), so that your current state stays untouched and the
@@ -388,6 +390,7 @@ work is cleanly bundled; "No" works directly in your current checkout.
 ```ask
 header: Worktree
 question: Should the implementation run in a separate Git worktree?
+type: scored
 options:
   - label: Yes
     description: worktree.enabled = true (default) — the implementation runs in a separate worktree with its own delivery branch
@@ -402,6 +405,8 @@ just leaves the branch; "ask at run time" decides anew each time.
 ```ask
 header: Completion
 question: Which completion action should Effective Flow use by default?
+type: scored
+unscored: Ask at run time
 options:
   - label: Merge
     description: delivery.completion = merge (default) — merge the branch locally into the base branch, without a PR
@@ -489,6 +494,7 @@ on the Git forge, whichever option is chosen.
 ```ask
 header: Tracker
 question: Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?
+type: scored
 options:
   - label: Local
     description: tracker.mode = local (default) — Markdown report under .effective-flow/review/

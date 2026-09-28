@@ -34,7 +34,10 @@ it clarifies decision-requiring points one by one, deepens the sections, marks d
 ADR candidates, and records the first planning steps as ordered work packages – each with a
 ready-to-paste `/effective-flow plan` call. Only then does the status become
 `**Concept status:** Elaborated`. `concept` offers this review right at the end of its run; you can
-also catch it up later with `/effective-flow review <concept file>`.
+also catch it up later with `/effective-flow review <concept file>`. Each solution option the review
+offers for a decision carries a [fit score](glossary.md#fit-score) for your context, shown as
+`n/10 – <reason>`, while "Decide later" stays unscored; the scores appear only in the dialog and
+are never written into the concept.
 
 **Interplay:** concept → deep concept review → `/effective-flow plan` per work package →
 `/effective-flow build`. The concept workflows never write a plan file themselves; the handoff is
@@ -113,7 +116,10 @@ issue input instead produces the canonical issue-planning comment described unde
 which reads the plan's own `**Recommended workflow:**` field and routes to the matching
 implementation tool, so the routing decision is made once, at invocation time. Optionally,
 `plan` offers a deeper interactive plan review directly afterwards; if it is
-skipped, it can be caught up later via `/effective-flow review <plan file>`.
+skipped, it can be caught up later via `/effective-flow review <plan file>`. That review gives
+each option of a decision it asks about a [fit score](glossary.md#fit-score) from 1 to 10 for
+your context, shown as `n/10 – <reason>`, instead of marking one option as recommended; "Decide
+later" stays unscored, and the scores stay in the dialog and are never written into the plan.
 
 **Revising an existing plan:** `/effective-flow plan <plan-file>` on a plan file it already
 wrote does not start a new dated file — it revises that file in place. The earlier plan review

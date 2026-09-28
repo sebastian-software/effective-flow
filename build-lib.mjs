@@ -13,9 +13,10 @@ import {
 // (EXPOSED_TOOLS, agent prefix) and the known-name sets, and passes them in.
 
 // Allowed `type` values for an ```ask``` block. `approval` renders a yes/no
-// gate; the default (no `type`) renders an options question. Any other value
+// gate; the default (no `type`) renders an options question; `scored` renders
+// an options question preceded by one scoring instruction line. Any other value
 // is a typo and must fail the build.
-export const ASK_ALLOWED_TYPES = ['approval', 'options'];
+export const ASK_ALLOWED_TYPES = ['approval', 'options', 'scored'];
 export const ASK_ALLOWED_LANGUAGES = ['en', 'de'];
 // AskUserQuestion header chips are capped at 12 characters (see R-0000001).
 export const ASK_MAX_HEADER_LENGTH = 12;
@@ -3165,26 +3166,142 @@ export function renderDeprecatedAliasClause(aliases, skillInvocation) {
 
 // --- ASK block transforms ---
 
-export function parseAskBlock(block, { context } = {}) {
-  block = block.replace(/\r/g, '');
-  const headerMatch = block.match(/header:\s*(.+)/);
-  const questionMatch = block.match(/question:\s*(.+)/);
-  const typeMatch = block.match(/type:\s*(\S+)/);
-  const whenMatch = block.match(/when:\s*(.+)/);
-  const languageMatches = [...block.matchAll(/^language:[ \t]*(.*)$/gm)];
+// Keys an ```ask``` block may carry before its `options:` line. Each is matched
+// anchored at the start of a line, at most once, so a description that merely
+// contains `type: approval` can no longer change the question type.
+const ASK_KEYS = ['header', 'question', 'type', 'when', 'language', 'unscored'];
+const ASK_KEY_LINE = new RegExp(`^(${ASK_KEYS.join('|')}):[ \\t]*(.*)$`);
+const ASK_OPTIONS_LINE = /^options:[ \t]*$/;
+const ASK_LABEL_LINE = /^\s+-\s+label:[ \t]*(.*)$/;
+const ASK_DESCRIPTION_LINE = /^\s+description:[ \t]*(.*)$/;
+// Separator between the exact option labels an `unscored:` key exempts. A pipe,
+// not a comma, because labels may contain commas.
+const ASK_UNSCORED_SEPARATOR = '|';
 
-  if (languageMatches.length > 1) {
-    throw new Error(`ASK block has duplicate language fields${contextSuffix(context)}`);
+// Strict line grammar: every non-blank line of the block is a key line, the
+// `options:` line, an option `- label:` line, or the `description:` line
+// directly after a label line. Anything else fails the build instead of being
+// silently dropped. Duplicate keys fail at once; every other structural error
+// is deferred (the first one wins) and reported by `parseAskBlock` only after
+// its header, question, type, language, empty-`when` and approval-with-options
+// checks, so the long-standing precedence of those checks, which tests pin, is
+// kept and an approval fence with stray option lines gets its own message.
+function scanAskBlockLines(block, context) {
+  const keys = new Map();
+  const options = [];
+  let optionsLine = false;
+  let optionLineOutsideOptions = false;
+  let pendingLabel = null;
+  let structuralError = null;
+  const defer = (message) => {
+    if (structuralError === null) structuralError = message;
+  };
+
+  for (const rawLine of block.split('\n')) {
+    if (rawLine.trim() === '') continue;
+    const line = rawLine.trimEnd();
+    const keyMatch = line.match(ASK_KEY_LINE);
+    const labelMatch = line.match(ASK_LABEL_LINE);
+    const descriptionMatch = line.match(ASK_DESCRIPTION_LINE);
+
+    if (keyMatch || ASK_OPTIONS_LINE.test(line)) {
+      const key = keyMatch ? keyMatch[1] : 'options';
+      if (keys.has(key) || (key === 'options' && optionsLine)) {
+        throw new Error(`ASK block has duplicate ${key} fields${contextSuffix(context)}`);
+      }
+      if (optionsLine) {
+        defer(`has line "${line.trim()}" after the options block; every key must precede options:`);
+        continue;
+      }
+      if (keyMatch) keys.set(key, keyMatch[2].trim());
+      else optionsLine = true;
+      continue;
+    }
+
+    if (labelMatch) {
+      if (!optionsLine) {
+        optionLineOutsideOptions = true;
+        defer(`has option line "${line.trim()}" outside an options: block`);
+        continue;
+      }
+      if (pendingLabel !== null) {
+        defer(`has option "${pendingLabel}" without a description line`);
+      }
+      const label = labelMatch[1].trim();
+      if (label === '') defer(`has option line "${line.trim()}" with an empty label`);
+      pendingLabel = label;
+      continue;
+    }
+
+    if (descriptionMatch && pendingLabel !== null) {
+      const description = descriptionMatch[1].trim();
+      if (description === '') defer(`has option "${pendingLabel}" with an empty description`);
+      options.push({ label: pendingLabel, description });
+      pendingLabel = null;
+      continue;
+    }
+
+    if (descriptionMatch) {
+      if (!optionsLine) optionLineOutsideOptions = true;
+      defer(`has description line "${line.trim()}" that does not directly follow an option label`);
+      continue;
+    }
+
+    defer(`has an unconsumed line "${line.trim()}"`);
   }
 
-  const header = headerMatch ? headerMatch[1].trim() : null;
-  const question = questionMatch ? questionMatch[1].trim() : null;
-  const type = typeMatch ? typeMatch[1].trim() : null;
-  const when = whenMatch ? whenMatch[1].trim() : null;
-  const language = languageMatches.length === 1 ? languageMatches[0][1].trim() : 'en';
+  if (pendingLabel !== null) defer(`has option "${pendingLabel}" without a description line`);
 
-  if (!header) throw new Error(`ASK block missing header field${contextSuffix(context)}`);
-  if (!question) throw new Error(`ASK block missing question field${contextSuffix(context)}`);
+  return { keys, options, optionsLine, optionLineOutsideOptions, structuralError };
+}
+
+function parseUnscoredLabels(value, header, context) {
+  const labels = value.split(ASK_UNSCORED_SEPARATOR).map((label) => label.trim());
+  if (labels.some((label) => label === '')) {
+    throw new Error(
+      `ASK block "${header}" has an empty label in unscored: "${value}"${contextSuffix(context)}`,
+    );
+  }
+  const seen = new Set();
+  for (const label of labels) {
+    // The rendered except clause quotes each exempt label, so a quotation mark inside one
+    // would break that quoting in English or German.
+    if (/["„“]/.test(label)) {
+      throw new Error(
+        `ASK block "${header}" has a quotation mark in unscored: label "${label}"${contextSuffix(context)}`,
+      );
+    }
+    if (seen.has(label)) {
+      throw new Error(
+        `ASK block "${header}" lists "${label}" twice in unscored:${contextSuffix(context)}`,
+      );
+    }
+    seen.add(label);
+  }
+  return labels;
+}
+
+export function parseAskBlock(block, { context } = {}) {
+  block = block.replace(/\r/g, '');
+  const { keys, options, optionsLine, optionLineOutsideOptions, structuralError } =
+    scanAskBlockLines(block, context);
+
+  const header = keys.get('header') || null;
+  const question = keys.get('question') || null;
+  const type = keys.has('type') ? keys.get('type') : null;
+  const when = keys.has('when') ? keys.get('when') : null;
+  const language = keys.has('language') ? keys.get('language') : 'en';
+  const unscoredValue = keys.has('unscored') ? keys.get('unscored') : null;
+
+  // A missing header or question is often caused by a misplaced key line, which the scan
+  // recorded as a structural error; naming that line points at the actual mistake.
+  const pending = structuralError === null ? '' : `; the block ${structuralError}`;
+  if (!header) {
+    throw new Error(`ASK block missing header field${pending}${contextSuffix(context)}`);
+  }
+  if (!question) {
+    throw new Error(`ASK block missing question field${pending}${contextSuffix(context)}`);
+  }
   if (header.length > ASK_MAX_HEADER_LENGTH) {
     throw new Error(
       `ASK block header "${header}" exceeds ${ASK_MAX_HEADER_LENGTH} characters${contextSuffix(context)}`,
@@ -3201,19 +3318,113 @@ export function parseAskBlock(block, { context } = {}) {
     );
   }
 
-  let options = [];
-  if (type !== 'approval') {
-    const optsMatch = block.match(/options:\s*\n((?:\s+-\s+label:.*\n\s+description:.*\n?)*)/);
-    if (!optsMatch) throw new Error(`ASK block missing options${contextSuffix(context)}`);
-    const optsBlock = optsMatch[1];
-    const optRe = /-\s+label:\s*(.+?)\n\s*description:\s*(.+)/g;
-    let m;
-    while ((m = optRe.exec(optsBlock)) !== null) {
-      options.push({ label: m[1].trim(), description: m[2].trim() });
+  if (when === '') {
+    throw new Error(`ASK block "${header}" has an empty when field${contextSuffix(context)}`);
+  }
+  if (type === 'approval' && (optionsLine || optionLineOutsideOptions || options.length > 0)) {
+    throw new Error(
+      `ASK block "${header}" of type approval must not declare options${contextSuffix(context)}`,
+    );
+  }
+  if (structuralError !== null) {
+    throw new Error(`ASK block "${header}" ${structuralError}${contextSuffix(context)}`);
+  }
+  if (unscoredValue !== null && type !== 'scored') {
+    throw new Error(
+      `ASK block "${header}" declares unscored: but is not of type scored${contextSuffix(context)}`,
+    );
+  }
+  if (type !== 'approval' && (!optionsLine || options.length === 0)) {
+    throw new Error(`ASK block missing options${contextSuffix(context)}`);
+  }
+
+  let unscored = [];
+  if (type === 'scored') {
+    unscored = unscoredValue === null ? [] : parseUnscoredLabels(unscoredValue, header, context);
+    const labels = options.map((option) => option.label);
+    const seenLabels = new Set();
+    for (const label of labels) {
+      if (seenLabels.has(label)) {
+        throw new Error(
+          `ASK block "${header}" of type scored has duplicate option label "${label}"${contextSuffix(context)}`,
+        );
+      }
+      seenLabels.add(label);
+    }
+    for (const label of unscored) {
+      if (!labels.includes(label)) {
+        throw new Error(
+          `ASK block "${header}" exempts unknown option "${label}" in unscored:${contextSuffix(context)}`,
+        );
+      }
+    }
+    const scorable = options.filter((option) => !unscored.includes(option.label)).length;
+    if (scorable < 2) {
+      throw new Error(
+        `ASK block "${header}" of type scored needs at least two scorable options, found ${scorable}${contextSuffix(context)}`,
+      );
     }
   }
 
-  return { header, question, type, when, language, options };
+  return { header, question, type, when, language, options, unscored };
+}
+
+// Single source of the fit-score calibration a `type: scored` fence renders.
+// The rendered instruction line is built from these strings per language, and
+// the handwritten Phase 3 prose of `plan-review` and `concept-review` is bound
+// to the `en` strings by contract tests, so the copies cannot drift. Scores
+// are dialog-only: they are computed at ask time and never persisted.
+export const ASK_SCORING = Object.freeze({
+  en: Object.freeze({
+    prefix: 'n/10 – <short reason>; ',
+    bands:
+      '1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right',
+    topScore: 'a 9–10 names its edge over the next-best option',
+    tie: 'equal fit gets equal scores',
+    order:
+      'keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent',
+  }),
+  de: Object.freeze({
+    prefix: 'n/10 – <kurze Begründung>; ',
+    bands:
+      '1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig',
+    topScore: 'eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option',
+    tie: 'gleiche Eignung erhält gleiche Werte',
+    order:
+      'behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu',
+  }),
+});
+
+function quoteLabels(labels, open, close, conjunction) {
+  const quoted = labels.map((label) => `${open}${label}${close}`);
+  if (quoted.length <= 1) return quoted.join('');
+  return `${quoted.slice(0, -1).join(', ')} ${conjunction} ${quoted.at(-1)}`;
+}
+
+// The one rendered scoring instruction line of a `type: scored` fence. The
+// exempt labels (from `unscored:`) are named in the "except" clause, which is
+// omitted when no label is exempt.
+export function renderScoringInstruction(language, unscored = []) {
+  const scoring = ASK_SCORING[language];
+  if (!scoring) {
+    throw new Error(
+      `No scoring instruction for language "${language}" (allowed: ${ASK_ALLOWED_LANGUAGES.join(', ')})`,
+    );
+  }
+  if (language === 'de') {
+    const except = unscored.length > 0 ? ` außer ${quoteLabels(unscored, '„', '“', 'und')}` : '';
+    return (
+      `Bewerte vor dem Fragen jede Option${except} für diesen Kontext: ` +
+      `Beginne ihre Beschreibung vor dem ursprünglichen Text mit „${scoring.prefix}“ ` +
+      `(${scoring.bands}; ${scoring.topScore}; ${scoring.tie}); ${scoring.order}.`
+    );
+  }
+  const except = unscored.length > 0 ? ` except ${quoteLabels(unscored, '"', '"', 'and')}` : '';
+  return (
+    `Before asking, score each option${except} for this context: ` +
+    `start its description with "${scoring.prefix}" before the original text ` +
+    `(${scoring.bands}; ${scoring.topScore}; ${scoring.tie}); ${scoring.order}.`
+  );
 }
 
 const ASK_SCAFFOLDING = Object.freeze({
@@ -3239,13 +3450,22 @@ const ASK_SCAFFOLDING = Object.freeze({
   }),
 });
 
+// Both renderers add the scoring instruction line for `type: scored` only, so
+// `options` and `approval` fences render byte-identically to the pre-scoring
+// output. That keeps the digest of the `merge-gate` eval load set stable (the
+// eval hashes the built load set, not this file), which is why that load set
+// must never contain a scored fence; `test/merge-gate-eval.test.mjs` enforces
+// it. Claude puts the line first, before the intro, so a `when:` condition
+// wraps it with the block; Codex (and portable, which reuses it) puts it right
+// after the question line, so the inline `when:` prefix stays on the first line.
 export function transformAskClaude(body, { context } = {}) {
   return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { header, question, type, when, language, options } = parseAskBlock(block, {
+    const { header, question, type, when, language, options, unscored } = parseAskBlock(block, {
       context,
     });
     const copy = ASK_SCAFFOLDING[language];
-    let out = `${copy.claudeIntro}\n`;
+    let out = type === 'scored' ? `${renderScoringInstruction(language, unscored)}\n` : '';
+    out += `${copy.claudeIntro}\n`;
     out += `- header: "${header}"\n`;
     out += `- question: "${question}"\n`;
     out += '- multiSelect: false\n';
@@ -3264,13 +3484,16 @@ export function transformAskClaude(body, { context } = {}) {
 
 export function transformAskCodex(body, { context } = {}) {
   return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { question, type, when, language, options } = parseAskBlock(block, { context });
+    const { question, type, when, language, options, unscored } = parseAskBlock(block, {
+      context,
+    });
     const copy = ASK_SCAFFOLDING[language];
     const prefix = when ? `${copy.condition} ${when}: ` : '';
     if (type === 'approval') {
       return `${prefix}${copy.codexQuestion}: **${question}** ${copy.codexApproval}`;
     }
     let out = `${copy.codexQuestion}: **${question}**\n`;
+    if (type === 'scored') out += `${renderScoringInstruction(language, unscored)}\n`;
     out += options.map((o) => `- ${o.label} -- ${o.description}`).join('\n');
     return prefix ? `${prefix}${out}` : out;
   });
