@@ -498,6 +498,139 @@ export function reconcileNativeAgentInventories(
   };
 }
 
+// --- Native sidecar configuration comparison ---
+//
+// `scripts/compare-native-agent-baseline.mjs` proves that execution-profile rendering leaves every
+// Quality base worker's harness configuration unchanged. The pure parsing and comparison it needs
+// lives here so it is unit-testable; the script keeps only argument parsing, builds and I/O.
+//
+// The proof compares native CONFIGURATION only, never the rendered prompt body. Body prose comes
+// largely from shared include fragments, and a golden byte-for-byte comparison would make every
+// legitimate shared-fragment edit churn this unrelated proof — the native-profile-rendering plan
+// warns against exactly such fixtures. Both parsers below fail closed: a sidecar shape they do not
+// recognize is an error, never a silently skipped key.
+
+function nativeSidecarConfigError(file, message) {
+  return new Error(`Unparseable native sidecar ${file}: ${message}`);
+}
+
+function setNativeSidecarConfigKey(config, key, value, file) {
+  if (Object.hasOwn(config, key)) throw nativeSidecarConfigError(file, `duplicate key "${key}"`);
+  config[key] = value;
+}
+
+// Claude sidecar: `---` frontmatter of `key: value` lines; the body after the closing `---`
+// is excluded from the comparison.
+export function parseClaudeSidecarConfig(content, file) {
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(content);
+  if (!match) throw nativeSidecarConfigError(file, 'missing or unterminated frontmatter');
+  const config = Object.create(null);
+  for (const line of match[1].split('\n')) {
+    const entry = /^([A-Za-z_][\w-]*):(?: (.*))?$/.exec(line);
+    if (!entry) {
+      throw nativeSidecarConfigError(file, `unrecognized frontmatter line ${JSON.stringify(line)}`);
+    }
+    let value = entry[2] ?? '';
+    if (value.startsWith('"')) {
+      if (value.length < 2 || !value.endsWith('"')) {
+        throw nativeSidecarConfigError(file, `unterminated quoted value for "${entry[1]}"`);
+      }
+      value = value.slice(1, -1).replace(/\\"/g, '"');
+    }
+    setNativeSidecarConfigKey(config, entry[1], value, file);
+  }
+  if (Object.keys(config).length === 0) throw nativeSidecarConfigError(file, 'empty frontmatter');
+  return config;
+}
+
+export const NATIVE_SIDECAR_PROMPT_BODY_KEY = 'developer_instructions';
+
+// Codex sidecar: the minimal TOML subset build.mjs emits — top-level `key = value` lines with a
+// basic string (JSON-compatible, as `tomlString` writes it), a literal string, a boolean, or a
+// number, plus the `developer_instructions = '''…'''` multiline literal prompt body. Only the
+// presence of that body is compared, never its text.
+export function parseCodexSidecarConfig(content, file) {
+  const config = Object.create(null);
+  const lines = content.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') continue;
+    const entry = /^([A-Za-z_][\w-]*) = (.*)$/.exec(line);
+    if (!entry) throw nativeSidecarConfigError(file, `unrecognized line ${JSON.stringify(line)}`);
+    const [, key, raw] = entry;
+    let value;
+    if (raw.startsWith("'''")) {
+      const rest = [raw.slice(3), ...lines.slice(index + 1)].join('\n');
+      const end = rest.indexOf("'''");
+      if (end === -1) {
+        throw nativeSidecarConfigError(file, `unterminated multiline string for "${key}"`);
+      }
+      const consumed = rest.slice(0, end + 3).split('\n').length - 1;
+      const trailing = rest.slice(end + 3).split('\n')[0];
+      if (trailing.trim() !== '') {
+        throw nativeSidecarConfigError(file, `unexpected text after multiline string for "${key}"`);
+      }
+      value = rest.slice(0, end).replace(/^\n/, '');
+      index += consumed;
+    } else if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        throw nativeSidecarConfigError(file, `invalid basic string for "${key}"`);
+      }
+    } else if (/^'[^'\n]*'$/.test(raw)) {
+      value = raw.slice(1, -1);
+    } else if (/^(?:true|false|[+-]?\d+(?:\.\d+)?)$/.test(raw)) {
+      value = raw;
+    } else {
+      throw nativeSidecarConfigError(file, `unrecognized value for "${key}"`);
+    }
+    setNativeSidecarConfigKey(config, key, value, file);
+  }
+  if (!Object.hasOwn(config, NATIVE_SIDECAR_PROMPT_BODY_KEY)) {
+    throw nativeSidecarConfigError(file, `missing "${NATIVE_SIDECAR_PROMPT_BODY_KEY}"`);
+  }
+  config[NATIVE_SIDECAR_PROMPT_BODY_KEY] = '<prompt body excluded>';
+  return config;
+}
+
+export const NATIVE_SIDECAR_CONFIG_PARSERS = Object.freeze({
+  claude: parseClaudeSidecarConfig,
+  codex: parseCodexSidecarConfig,
+});
+
+// Compares the parsed configuration of one base worker's sidecar in the baseline and the working
+// build. `baseline` and `working` are `{ path, content }`; parse errors name the offending path.
+export function assertSameNativeSidecarConfiguration(harness, file, baseline, working) {
+  if (!Object.hasOwn(NATIVE_SIDECAR_CONFIG_PARSERS, harness)) {
+    throw new Error(`Unsupported native sidecar harness "${harness}"`);
+  }
+  const parse = NATIVE_SIDECAR_CONFIG_PARSERS[harness];
+  const before = parse(baseline.content, baseline.path);
+  const after = parse(working.content, working.path);
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+  for (const key of keys) {
+    const beforeValue = Object.hasOwn(before, key) ? JSON.stringify(before[key]) : '<absent>';
+    const afterValue = Object.hasOwn(after, key) ? JSON.stringify(after[key]) : '<absent>';
+    if (beforeValue !== afterValue) {
+      throw new Error(
+        `Base native configuration drift: ${harness} ${file} key "${key}": ${beforeValue} -> ${afterValue}`,
+      );
+    }
+  }
+}
+
+// The baseline build must ship exactly one `<worker>.<extension>` sidecar per base worker the
+// working inventory declares. Inputs are copied before sorting and never mutated.
+export function assertBaselineWorkerMembership(harness, baselineFiles, baseWorkers, extension) {
+  const actual = [...baselineFiles].sort();
+  const expected = baseWorkers.map((worker) => `${worker}.${extension}`).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${harness} baseline worker membership differs from the working inventory`);
+  }
+}
+
 // --- Central-skill ownership contract (#168) ---
 //
 // Effective Flow validates only relationships it declares itself. The central
