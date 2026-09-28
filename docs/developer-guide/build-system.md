@@ -2,11 +2,13 @@
 
 `build.mjs` transforms the Markdown sources under `src/` into native Claude and Codex targets
 plus one portable manager target under `dist/`. This document describes invocation,
-placeholder syntax, and build guards, and it is canonical for the **mechanics** of two things
-[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, and the
-step-by-step procedure for adding a tool or agent. `AGENTS.md` stays canonical for the two
-**rules** it owns — renaming an exposed tool ships a deprecated forwarding alias, and every
-`src/tools/*.md` needs a `CONTEXT_BUDGET_LINES` entry measured from the build report.
+placeholder syntax, and build guards, and it is canonical for the **mechanics** of three things
+[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, the
+step-by-step procedure for adding a tool or agent, and how each point of the prompt-writing rule
+maps onto the build. `AGENTS.md` stays canonical for the three **rules** it owns — renaming an
+exposed tool ships a deprecated forwarding alias, every `src/tools/*.md` needs a
+`CONTEXT_BUDGET_LINES` entry measured from the build report, and prompt text follows the
+prompt-writing rule.
 
 ## Invocation
 
@@ -766,6 +768,39 @@ metadata verifies the absolute root and checkout identity, while Claude- or Code
 worktree lifecycle stays outside Effective Flow ownership. No runtime helper or configuration
 schema is required for the receipt.
 
+## Writing prompt text
+
+The rule for writing prompt text, including its scope, is canonical in
+[`AGENTS.md`](../../AGENTS.md), section "Writing prompt text"; this section maps each point onto
+the build.
+
+- **Length is paid on every run.** The context-budget guard (see "Guards") measures every tool's
+  always-loaded core, and the "**Context budget.**" paragraph below makes each entry a ratchet,
+  not room to fill. An eager `src/shared` fragment is charged to every host that includes it, so
+  one line added there raises several measurements at once. `AGENTS.md` is paid in every session
+  but has no guard, so the rule is all that holds it.
+- **State a contract once, in its owning fragment.** Every other source reaches it through an
+  ` ```include ` or ` ```lazy-include ` fence (see "Placeholder and directive syntax") or a
+  pointer that names the owning file, never through a restated copy. For a playbook a central
+  skill owns, the ownership contract in [`skill-ownership.md`](skill-ownership.md), section "The
+  layered contract", decides what the source still carries.
+- **Keep rare edge cases out of eager text.** Deferral follows "Progressive disclosure beyond the
+  router" unchanged: only a mode-gated block that serves one nameable decision point qualifies,
+  and its pointer states that trigger as the load trigger (`when:`). A fragment on the "Core flow
+  stays inline" list itself stays eager; a genuine branch inside it may move behind a nested
+  pointer only under the same one-nameable-decision-point rule, as `chat-language` does with
+  `typography-rules`. "Rare" alone never qualifies text for deferral.
+- **Prefer one precise sentence to an explanation of its history.** Keep the reason that
+  constrains the next edit, such as why a gate runs in its order. Move how the text came to be –
+  an earlier issue, an older wording, a migration – to the plan archive, the commit message or an
+  ADR.
+- **A test that reads source prose must name the invariant it protects.** State the invariant in
+  a comment block above the test and name the property in the assertion message; the test "every
+  merge-gate lazy pointer names the decision point that loads it" in
+  `test/workflow-contracts.test.mjs` and its comment are the model. Anchor the assertion on the
+  smallest stable phrase or marker, so rewording stays free while losing the invariant fails. When
+  tightening an assertion, mutate the source deliberately and confirm the test fails.
+
 ## Native and portable worker rendering
 
 Each `src/agents/<name>.md` body remains the only worker contract. The native renderers combine
@@ -866,5 +901,5 @@ actually occurs.
 - [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
 - [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
 - [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (language, delegation,
-  commits, the tool-rename alias, the context-budget entry); the build **mechanics** those rules
-  refer to are canonical here.
+  commits, the tool-rename alias, the context-budget entry, writing prompt text); the build
+  **mechanics** those rules refer to are canonical here.
