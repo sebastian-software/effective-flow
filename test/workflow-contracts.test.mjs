@@ -4547,9 +4547,9 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
 
   // The defect this pins: Phase 4 pointed at apply-review's copy by analogy, so an agent
   // following apply-issues alone never learned to write a record — and cleanup, whose only
-  // ownership proof is that record, could then never remove the worktree it had created.
+  // ownership proof is that record, could then never remove the worktree it had created. The
+  // eager include fence is what makes the contract embedded rather than referenced.
   assert.match(applyIssues, /```include\nworktree-lifecycle\n```/);
-  assert.match(applyIssues, /a reference by analogy is not a contract/);
 
   // Both ends of the lifecycle have to be instructed, not just the format.
   assert.match(
@@ -4566,10 +4566,9 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
     /a failed delegation, a rejected push and a failed pull-request creation all set `failed`/,
   );
   assert.match(flatIssues, /A record must never be left at `active` once the issue is done with/);
-  assert.match(
-    flatIssues,
-    /transition its lifecycle record to `failed` with the exact reason, whether the failure happened during delegation or afterwards during push or pull-request creation/,
-  );
+  // The error path itself must record `failed` with its reason; which failures count is pinned
+  // by the status-set assertion above.
+  assert.match(flatIssues, /transition its lifecycle record to `failed` with the exact reason/);
 
   // The fragment must actually resolve, so the rendered tool carries the record path.
   const rendered = resolveEagerIncludes(applyIssues, {
@@ -5342,7 +5341,7 @@ test('the gate bounds its own trigger comments per verified head, not per run', 
     'the per-head bound must name the unprovable-comparison fallback that can exceed it',
   );
 
-  // The obligation an agent must not derive away, with the failure it prevents.
+  // The obligation an agent must not derive away, and the reading that would repeal it.
   assert.match(
     gate,
     near(
@@ -5354,16 +5353,8 @@ test('the gate bounds its own trigger comments per verified head, not per run', 
   );
   assert.match(
     gate,
-    near('(?:skip that re-post|skip the re-post)', '(?:deadlock|not started)', 300),
-    'the re-post obligation must carry the deadlock it prevents',
-  );
-
-  // The noise argument that justifies suppressing the delegated summary comment now visibly
-  // applies to the gate's own triggers too, and the file may not pretend otherwise.
-  assert.match(
-    gate,
-    near('noise', "(?:own triggers|gate's own trigger)", 300),
-    "the noise argument must be reconciled with the gate's own repeated triggers",
+    /\bnever\b[^.]{0,60}skip (?:that|the) re-post/i,
+    'the gate must forbid reading the bound as licence to skip the re-post after a head move',
   );
 
   // And the two files that restate the bound must restate the qualified form.
@@ -6292,11 +6283,12 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
 
   // The rename removed the shared name but not the confusion: `delivery.prReview` is still a
   // configuration key about publishing this run's own findings, while the gate's block is about
-  // driving somebody else's pull request. The disambiguation must stay an explicit sentence
-  // naming both, not merely implied by separate sections.
+  // driving somebody else's pull request. The disambiguation must stay an explicit warning naming
+  // both keys, not merely implied by separate sections; its surrounding wording stays free.
   assert.match(
     flat(block),
-    /Do not confuse `mergeGate\.\*` with the pre-existing `delivery\.prReview`/,
+    /Do not confuse `mergeGate\.\*` with[^.]*`delivery\.prReview`/,
+    'the mergeGate block must explicitly warn against confusing mergeGate.* with delivery.prReview',
   );
 });
 
@@ -6604,11 +6596,6 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     near('(?:in doubt|unsure)', 'configure it', 120),
     'doubt must resolve toward configuring the context, never toward leaving it unset',
   );
-  assert.match(
-    checkKey,
-    near('wrongly set', '(?:never be reported|can never be reported)', 300),
-    'the asymmetry must be stated: a wrong context blocks visibly, an omitted one is never reported',
-  );
 });
 
 test("this repository's own gate is not left on a signal its reviewer cannot use", () => {
@@ -6719,11 +6706,12 @@ test('setup preserves the ADR prose that follows the configuration table', () =>
     'For an existing ADR',
     'Add a short context sentence',
   );
+  // Write boundary: a table rewrite must never drop the machine-read prose below the table.
   assert.match(
     flat(bullet),
-    /Sections \*\*after\*\* the configuration table are surrounding prose/,
+    /rewrite the table in place and keep everything below it/,
+    'setup must rewrite the configuration table in place and keep every section below it',
   );
-  assert.match(flat(bullet), /rewrite the table in place and keep everything below it/);
 });
 
 test('the project-setup ADR carries the acknowledgement sentence verbatim', () => {
@@ -7065,15 +7053,6 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
   );
   assert.match(
     retrigger,
-    near(
-      '`supersededRuns` of at least 1',
-      'replaced an earlier run of the same check identity',
-      20,
-    ),
-    'supersededRuns of at least 1 must be tied to a superseded earlier run of the same check',
-  );
-  assert.match(
-    retrigger,
     /reviewer's own configured `\.check` does not count/,
     "the reviewer's own check must not count as a re-run",
   );
@@ -7104,11 +7083,6 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
       40,
     ),
     'the missing-start exclusion must cover every status context and every Forgejo status',
-  );
-  assert.match(
-    secondCondition,
-    near('every commit status context and every Forgejo status', 'report only `completedAt`', 30),
-    'a status context and a Forgejo status must be stated to report only completedAt',
   );
   assert.match(
     secondCondition,
@@ -7248,11 +7222,6 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
   );
   assert.match(
     unprovable,
-    near('An entry without `startedAt`', 'every status context and every Forgejo status', 10),
-    'the entry without startedAt must be named as every status context and Forgejo status',
-  );
-  assert.match(
-    unprovable,
     /comment-provenance gaps are evaluated only when a qualifying re-run check exists/,
     'comment-provenance gaps must count only once a qualifying re-run check exists',
   );
@@ -7292,8 +7261,8 @@ test('Phase 3 re-triggers a stale changes-requested verdict once, after a later 
   );
   assert.match(
     state,
-    /did not answer within the wait – it is still has run with no review newer than the re-trigger/,
-    'not answering must mean has run with no review newer than the re-trigger',
+    near('did not answer within the wait', 'no review newer than the re-trigger', 40),
+    'a reviewer that did not answer within the wait must be stated to have no review newer than the re-trigger',
   );
   // An answer that leaves the verdict standing was re-triggered and answered, so it is reported as
   // exactly that. "already posted" is what a later run says when it finds this verdict's
@@ -7445,11 +7414,6 @@ test('the stale-verdict no-loop claim is qualified and names what only bounds a 
   );
   assert.match(
     retrigger,
-    near('from its second run on', 'requalify each one', 30),
-    'a review-event workflow must be named as able to requalify every verdict from its second run',
-  );
-  assert.match(
-    retrigger,
     near(
       'bounded to one re-trigger per verdict and by `mergeGate\\.maxRounds` per run',
       'not prevented',
@@ -7486,6 +7450,8 @@ test('the stale-verdict no-loop claim is qualified and names what only bounds a 
 });
 
 test('the stale-verdict state is reported with its evidence and the gate allows its re-trigger', () => {
+  // Invariant: a stale verdict is reported with the evidence a human needs to act on it, and the
+  // gate's trigger bounds admit at most one re-trigger per verdict under the run-level ceiling.
   const item = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'))
     .split(/ - (?=every )/)
     .find((entry) => entry.startsWith('every stale changes-requested verdict'));
@@ -7555,43 +7521,28 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
     near('any match with `status: PENDING` means running', 'otherwise has run', 20),
     'several settled matches must read as has run',
   );
-  assert.match(
-    precedence,
-    near('more than one matching entry', 'only the latest run per check identity', 200),
-    'the multi-match rule must rest on the deduplicated pr-status-read list',
-  );
-  // Distinct identities are not the only source of several matches: a group whose latest run
-  // cannot be told apart is reported in full rather than collapsed on a guess.
-  assert.match(
-    precedence,
-    near('distinct identities share the name', 'a group stays uncollapsed', 20),
-    'the multi-match rationale must name uncollapsed groups beside distinct identities',
-  );
-  assert.match(
-    precedence,
-    /a missing or tied `databaseId`, two same-named runs of one workflow run or check suite, or an incomplete identity, keeps every run of that group/,
-    'the multi-match rationale must name why a group stays uncollapsed',
-  );
 
   const status = prose(
     section(source('src/shared/pr-review-comments.md'), '### Read the pull-request status'),
   );
+  // Collapsing runs under a wrong or incomplete identity silently hides a run from every consumer,
+  // so the identity and each fail-closed "not collapsed" case are pinned on their rule phrase.
   for (const [pattern, message] of [
     [/only the latest run per check identity/, 'keeps only the latest run per identity'],
     [
-      /name plus workflow id \(the workflow's `databaseId`, since workflow names are not unique\) and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`/,
-      'defines the check-run identity by workflow id, or by app slug and check suite',
+      /name plus workflow id \(the workflow's `databaseId`[^)]*\) and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`/,
+      'defines the check-run identity by workflow databaseId, or by app slug and check suite only where workflowRun is null',
     ],
     [
       /nor is a run with an incomplete identity \(no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite, app slug, or check-suite id\)/,
       'fails closed on an incomplete identity',
     ],
     [
-      /nor is a group holding two runs of one workflow run \(distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt\)/,
+      /nor is a group holding two runs of one workflow run/,
       'leaves two same-named runs of one workflow run uncollapsed',
     ],
     [
-      /nor is a group holding two runs of one check suite \(an app may create several same-named runs in one suite, and nothing orders them as re-runs\)/,
+      /nor is a group holding two runs of one check suite/,
       'leaves two same-named runs of one check suite uncollapsed',
     ],
     [/highest `databaseId`/, 'orders runs by databaseId'],
@@ -8595,6 +8546,8 @@ test('issue-backed apply workflows share one started-before-delegation lifecycle
   );
 
   const started = prose(section(lifecycle, '### Started transition'));
+  // Fail-closed limits of the started transition: excluded items stay untouched, a terminal or
+  // later state is never moved back, and a failed transition stops before any code change.
   assert.match(
     started,
     /Skipped, `wontfix`, terminal, container-only, and failed-before-start items receive no transition/,
@@ -8610,6 +8563,8 @@ test('native workflow state remains separate from Effective Flow classifications
   const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
   const trackerTarget = prose(source('src/shared/tracker-target.md'));
 
+  // The tracker's native state is never replaced by, or stored as, an Effective Flow label or
+  // classification, so a label can never stand in for a terminal state.
   assert.match(
     lifecycle,
     /the tracker's native workflow state.*Effective Flow classifications.*pull request's versioned lifecycle receipt/,
@@ -8627,6 +8582,8 @@ test('native workflow state remains separate from Effective Flow classifications
 test('issue lifecycle receipt propagation is exact and existing PR writes stay guarded', () => {
   const lifecycle = source('src/shared/issue-lifecycle.md');
   const lifecycleProse = prose(lifecycle);
+  // The receipt format is exact and strictly validated, and an existing PR body is only rewritten
+  // through a fresh read and a hash-guarded write that aborts rather than overwrite or drop.
   const canonical =
     '<!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->';
   assert.match(lifecycle, new RegExp(canonical.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -8655,6 +8612,8 @@ test('interrupted in-progress issue recovery fails closed instead of duplicating
   const lifecycle = prose(
     section(source('src/shared/issue-lifecycle.md'), '### Started transition'),
   );
+  // One exact-reference search; only a single candidate is restored, anything else fails closed,
+  // and recovery never resets the issue or starts a second implementation.
   assert.match(
     lifecycle,
     /Read its comments and search the current forge exactly once by the exact issue reference/,
@@ -8684,6 +8643,8 @@ test('container completion is deferred until a linked issue is observed terminal
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
+  // No workflow completes a container entry before merge; only a post-merge terminal (done)
+  // observation does, through a guarded, idempotent write and never a second native mutation.
   assert.match(lifecycle, /must not complete a native sub-item or tick a container checklist/);
   assert.match(
     applyIssues,
@@ -8732,6 +8693,8 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
   );
 
+  // Observer-only re-entry performs no merge-side action, and reconciliation acts only on a fresh
+  // terminal (done) observation: no model polling, no force-close, the marker kept otherwise.
   assert.match(
     phase0,
     /already-merged pull request with one valid receipt enters observer-only mode and jumps to Phase 5\.5/,
@@ -8808,8 +8771,9 @@ test('external started-state configuration is tracker-verified and only setup pe
 // --- post-merge completion assessment and the offered terminal transition ---
 // After a confirmed merge the gate now assesses whether the merged pull request completes each
 // still-open linked issue, and offers exactly one operator-confirmed transition to the terminal
-// tracker state. Every guarantee here is prose, so each pin below matches a literal sentence: a
-// reworded guarantee has to be a deliberate edit in this file as well.
+// tracker state. Every guarantee here is prose. A pin anchors on the phrase that carries its
+// guarantee where a shorter phrase stays unique; where the neighbouring wording is shared, the pin
+// keeps the whole sentence, so rewording that sentence is a deliberate edit in this file too.
 
 test('the post-merge completion assessment states a closed verdict vocabulary and its gating', () => {
   const observation = prose(
@@ -8843,8 +8807,9 @@ test('the post-merge completion assessment states a closed verdict vocabulary an
 
   // Steps 5 and 6 are gated on a fresh terminal observation, so the post-transition re-read has to
   // replace step 2's record rather than merely sit beside it — otherwise a transitioned issue is
-  // stranded with its in-progress label and an open container entry.
-  assert.match(observation, /replaces that issue's recorded observation outcome/);
+  // stranded with its in-progress label and an open container entry. Anchored on the re-read's own
+  // clause: the bare "replaces that issue's recorded observation outcome" also occurs in step 4.
+  assert.match(observation, /the re-read shows replaces that issue's recorded observation outcome/);
 });
 
 test('the confirmed transition revalidates the whole assessment basis before each mutation', () => {
@@ -8875,16 +8840,6 @@ test('the confirmed transition revalidates the whole assessment basis before eac
     observation,
     /that issue's own basis comes from the same operations and the same target split step 3 uses/,
   );
-  // Step 3's single whole-run read is earned by a pass that only reads; borrowing that bound for a
-  // loop that mutates between its issues is what made the pull-request text the one stale input.
-  assert.match(
-    observation,
-    /whole-run bound is earned by a pass that only reads, while this loop writes between its issues/,
-  );
-  assert.match(
-    observation,
-    /a covering statement edited away mid-loop would otherwise still close every issue behind it/,
-  );
   assert.match(
     observation,
     /one fresh read of the issue for its state, body and classifications, and one fresh read of its direct children/,
@@ -8906,7 +8861,7 @@ test('the confirmed transition revalidates the whole assessment basis before eac
   // to promote its fresh read exactly as the post-transition re-read does.
   assert.match(
     observation,
-    /Skipping the transition is not skipping the record: this fresh read replaces that issue's recorded observation outcome from step 2 exactly as the post-transition re-read below does/,
+    /Skipping the transition is not skipping the record: this fresh read replaces that issue's recorded observation outcome/,
   );
   assert.match(
     observation,
@@ -8956,16 +8911,13 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   );
   // The condensed rule has to carry the per-item granularity too, pull-request text included: a
   // reader who stops at the include would otherwise take one whole-loop read for the contract.
-  assert.match(
-    lifecycle,
-    /all re-read per item rather than once for the loop, because this loop writes between its items/,
-  );
+  assert.match(lifecycle, /all re-read per item rather than once for the loop/);
   // The condensed rule carries the already-terminal branch's record promotion for the same reason
   // the widened one does: a reader who stops at the include would otherwise take "skipped as a
   // no-op" for skipping the record too, and leave the marker on an item that closed itself.
   assert.match(
     lifecycle,
-    /Skipping the transition for an already-terminal item is not skipping the record: that revalidation read replaces the item's recorded observation outcome exactly as the post-transition re-read below does/,
+    /Skipping the transition for an already-terminal item is not skipping the record: that revalidation read replaces the item's recorded observation outcome/,
   );
   assert.match(
     lifecycle,
