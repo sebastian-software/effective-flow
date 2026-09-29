@@ -149,7 +149,11 @@ test('render validates baselineTree, scope and dir before running git', async (t
 test('normalizeScope keeps literal repository-relative paths', () => {
   assert.equal(normalizeScope(undefined), null);
   assert.equal(normalizeScope(null), null);
-  assert.equal(normalizeScope([]), null);
+  assert.deepEqual(
+    normalizeScope([]),
+    [],
+    'an explicitly empty scope never widens to the whole tree',
+  );
   assert.deepEqual(normalizeScope(['src/', './docs/a.md', 'src', 'g*.txt', '.']), [
     'src',
     'docs/a.md',

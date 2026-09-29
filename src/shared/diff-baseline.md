@@ -65,7 +65,8 @@ fail-closed; never capture again to recover, because that would silently lose th
 When a delegation handoff supplies an owned or affected file set — `{{SKILL:iterate}}` and
 `{{SKILL:apply-review}}` run several items in one checkout — pass that set as `scope`, plus every
 path whose later expansion the caller approved, so a sibling's edits never enter this run's change.
-Scope entries are literal paths, never globs. Without such a set, omit `scope`.
+Scope entries are literal paths, never globs. A handed-off set that is empty is passed as
+`scope: []` and renders no change; omit `scope` only when no set was handed off at all.
 
 ### Consumers
 

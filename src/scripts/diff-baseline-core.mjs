@@ -290,6 +290,8 @@ function requireObjectId(value, label) {
 
 // Validates an optional path scope and returns it normalized, deduplicated and in input order, or
 // null for the whole tree. Every entry is repository-relative and may not leave the repository.
+// An explicitly empty scope stays an empty array: it selects no path and never widens to the whole
+// tree, so a fileless item cannot claim a concurrent sibling's edits.
 export function normalizeScope(scope) {
   if (scope === undefined || scope === null) return null;
   if (!Array.isArray(scope)) fail('INVALID_INPUT', 'scope must be an array of paths');
@@ -313,7 +315,7 @@ export function normalizeScope(scope) {
     const value = clean === '' ? '.' : clean;
     if (!normalized.includes(value)) normalized.push(value);
   }
-  return normalized.length === 0 ? null : normalized;
+  return normalized;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -981,31 +983,37 @@ export async function renderDiff(input, deps = {}) {
   const { tree: currentTree } = await snapshot(context, executionRoot, dir);
   const range = [baselineTree, currentTree];
   const spec = pathspecArgs(scope);
-  const nameStatus = await git(
-    context,
-    executionRoot,
-    ['diff-tree', '-r', '-z', '--name-status', '-M', '--no-ext-diff', ...range, ...spec],
-    { env: lookupEnv },
-  );
+  // An empty scope selects nothing; git would read a bare `--` as the whole tree.
+  const empty = scope !== null && scope.length === 0;
+  const nameStatus = empty
+    ? { stdout: Buffer.alloc(0) }
+    : await git(
+        context,
+        executionRoot,
+        ['diff-tree', '-r', '-z', '--name-status', '-M', '--no-ext-diff', ...range, ...spec],
+        { env: lookupEnv },
+      );
   const entries = parseNameStatus(nameStatus.stdout);
-  const patch = await git(
-    context,
-    executionRoot,
-    [
-      'diff-tree',
-      '-r',
-      '-p',
-      '-M',
-      '--no-color',
-      '--no-ext-diff',
-      '--no-textconv',
-      '--src-prefix=a/',
-      '--dst-prefix=b/',
-      ...range,
-      ...spec,
-    ],
-    { env: lookupEnv },
-  );
+  const patch = empty
+    ? { stdout: Buffer.alloc(0) }
+    : await git(
+        context,
+        executionRoot,
+        [
+          'diff-tree',
+          '-r',
+          '-p',
+          '-M',
+          '--no-color',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          ...range,
+          ...spec,
+        ],
+        { env: lookupEnv },
+      );
 
   const diffPath = path.join(dir, PATCH_FILE);
   const pathsPath = path.join(dir, PATHS_FILE);

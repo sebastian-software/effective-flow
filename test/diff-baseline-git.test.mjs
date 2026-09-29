@@ -478,6 +478,31 @@ test('scope restricts the delta to literal repository paths', async (t) => {
   );
 });
 
+test('an explicitly empty scope renders no change instead of the whole tree', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  commitFiles(root, { 'src/a.txt': 'a\n' });
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(root, 'src/a.txt'), 'a changed\n');
+  writeFileSync(join(root, 'sibling.txt'), 'sibling\n');
+
+  const empty = await ok(root, 'render', renderInput(fixture, baseline, { scope: [] }));
+  assert.deepEqual(empty.entries, [], 'an empty scope never attributes sibling edits');
+  assert.equal(readFileSync(empty.diffPath, 'utf8'), '');
+  const paths = JSON.parse(readFileSync(empty.pathsPath, 'utf8'));
+  assert.deepEqual(paths.scope, []);
+  assert.deepEqual(paths.entries, []);
+  assert.equal(paths.currentTree, empty.currentTree);
+
+  const whole = await ok(root, 'render', renderInput(fixture, baseline));
+  assert.equal(whole.currentTree, empty.currentTree);
+  assert.deepEqual(whole.entries, [
+    { status: 'A', path: 'sibling.txt' },
+    { status: 'M', path: 'src/a.txt' },
+  ]);
+  assert.ok(readFileSync(whole.diffPath, 'utf8').includes('sibling.txt'));
+});
+
 test('a linked worktree is snapshotted against the main checkout runtime root', async (t) => {
   const fixture = repository(t);
   const { root } = fixture;
