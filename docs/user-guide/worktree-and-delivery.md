@@ -268,10 +268,12 @@ What archiving does depends on the state the plan is in: a plan Git already trac
 checkout is renamed – the ordinary case for a published plan, which is tracked on its pull
 request's branch – a plan the planning run left untracked is written into the archive and added,
 and a plan an earlier run already archived is refreshed where it is rather than re-added at top
-level. The redundant, still untracked copy left behind in your main checkout is removed once the
-archived state is safely in the delivery branch and the copy has not changed in the meantime –
-that copy is what would otherwise make a later `git pull` refuse. Details on the plan format are
-in [Understanding tools](./tools-understand.md).
+level. The redundant, still untracked copy left behind where the plan was written is removed once
+the archived state is safely in the delivery branch and the copy has not changed in the meantime –
+that copy is what would otherwise make a later `git pull` refuse. That is your main checkout, or
+the checkout of the Claude Code or Codex worktree session in which the plan was written; the plan
+is also taken over from there, and a checkout that does not belong to this repository blocks
+archival. Details on the plan format are in [Understanding tools](./tools-understand.md).
 
 In [hidden mode](#hidden-mode) the plan lives only in your main checkout under
 `.effective-flow/plan/`, so there is nothing to commit. Whatever the delivery shape, Effective Flow

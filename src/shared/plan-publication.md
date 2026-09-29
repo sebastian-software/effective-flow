@@ -8,6 +8,9 @@ the discovery of an existing plan pull request, and the mechanics of the commit,
 
 It never touches the invocation checkout. The plan stays there untracked, exactly as
 `{{SKILL:plan}}` wrote it, and every Git write happens in a temporary Effective Flow-owned worktree.
+The invocation checkout is the plan's source checkout, `plan-archival`'s `SOURCE_ROOT`: in a Claude
+Code or Codex worktree session it is the session's checkout, not `RUNTIME_STATE_ROOT`, and the
+delivery later takes the plan over from it and cleans its copy there.
 `{{SKILL:plan}}` reaches this fragment in Phase 7, after the final write, format, and lint. The
 implementation side reaches it through a nested pointer in `plan-pr-continuation`, to republish a
 local plan that differs from the published one.

@@ -10264,7 +10264,7 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   }
   assert.match(roots, /Reading the plan's final content for the take-over/);
   assert.match(roots, /`EXECUTION_ROOT`, passed explicitly with `git -C`/);
-  assert.match(roots, /`RUNTIME_STATE_ROOT`, from the retained absolute handle/);
+  assert.match(roots, /`SOURCE_ROOT`, from the retained absolute handle/);
   assert.match(roots, /No operation relies on an inherited working directory\./);
 
   // Both in-place shapes, and the five report shapes.
@@ -17282,6 +17282,69 @@ test('hidden mode sanitizes the delivery slug at construction: disclosure rule, 
   for (const text of [prose(source('src/tools/pr.md')), step, deliver]) {
     assert.match(text, new RegExp(rule));
   }
+});
+
+test('plan archival takes the plan over from, and cleans it in, its own source checkout', () => {
+  const archival = source('src/shared/plan-archival.md');
+
+  // Invariant: a plan written in a Claude Code or Codex worktree session lives in that checkout,
+  // not in RUNTIME_STATE_ROOT. The source checkout is an input of its own, derived from the plan
+  // file's physical path and proven to be this repository, and a failed proof blocks archival
+  // rather than reading or deleting a file elsewhere.
+  const input = itemWith(listItems(section(archival, '### Inputs')), '`SOURCE_ROOT`');
+  includesAll(
+    input,
+    [
+      'the checkout whose working tree holds the plan file this run was given',
+      'A caller may supply it',
+      '`git -C <physical parent> rev-parse --show-toplevel`',
+      'symlinks resolved',
+      '`git -C <SOURCE_ROOT> rev-parse --path-format=absolute --git-common-dir`',
+      'the same probe on `RUNTIME_STATE_ROOT`',
+      'foreign identity blocks archival',
+      'defaults to `RUNTIME_STATE_ROOT`',
+      'The hidden arm never uses it',
+    ],
+    'the source-root input',
+  );
+  // worktree-integration's handback hands over only the inputs it lists and names no source root,
+  // so the derivation above is what reaches the fragment on every delivery.
+  assert.equal(source('src/shared/worktree-integration.md').includes('SOURCE_ROOT'), false);
+
+  // Invariant: the take-over read and all three cleanup operations run in that checkout, under
+  // the unchanged containment, untracked-only, and hash preconditions.
+  const roots = section(archival, '### Execution roots', '\n### ');
+  const rootOf = (operation) => {
+    const row = roots.split('\n').find((line) => line.startsWith(`| ${operation}`));
+    assert.ok(row, `missing roots row: ${operation}`);
+    return row.split('|')[2].trim();
+  };
+  assert.ok(rootOf("Reading the plan's final content").startsWith('`SOURCE_ROOT`'));
+  assert.ok(rootOf('Cleanup probe, cleanup hash, cleanup removal').startsWith('`SOURCE_ROOT`'));
+  const cleanup = prose(section(archival, '### Main-checkout cleanup', '\n### '));
+  includesAll(
+    cleanup,
+    [
+      'untracked project file inside `SOURCE_ROOT`',
+      'The path resolves inside `SOURCE_ROOT` as an absolute handle and is untracked there',
+      'source-checkout copy still hashes',
+      're-verified immediately before removal',
+    ],
+    'the source-checkout cleanup',
+  );
+
+  // Invariant: publication and the continuation name the same checkout, so the file the
+  // continuation hashes is the file archival takes over and cleans.
+  assert.match(
+    prose(source('src/shared/plan-publication.md')),
+    /The invocation checkout is the plan's source checkout, `plan-archival`'s `SOURCE_ROOT`/,
+  );
+  const continuation = prose(source('src/shared/plan-pr-continuation.md'));
+  assert.match(
+    continuation,
+    /plan's source file in its source checkout, `plan-archival`'s `SOURCE_ROOT`/,
+  );
+  assert.match(continuation, near('cleans the untracked copy in', 'the hash comparison read', 60));
 });
 
 test('plan archival hidden arm: main checkout only, no staging, no cleanup, no clobber, collision stop', () => {

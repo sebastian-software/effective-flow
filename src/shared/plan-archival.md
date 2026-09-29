@@ -19,7 +19,7 @@ This fragment carries no runtime-state write guard, because it needs none: outsi
 private runtime directory is outside its scope entirely — it neither reads from nor writes to it.
 The hidden arm below is the one exception and applies "Runtime-state write safety" (the
 `runtime-state-safety` building block) to its archive directory and target. Its one destructive
-act is on a **project** file: the redundant untracked plan copy in the main checkout, whose
+act is on a **project** file: the redundant untracked plan copy in the plan's source checkout, whose
 preconditions and whose relationship to the worktree-cleanup prohibition are stated under
 "Main-checkout cleanup".
 
@@ -30,6 +30,16 @@ configuration:
 
 - `EXECUTION_ROOT` — the delivery checkout, as an absolute path.
 - `RUNTIME_STATE_ROOT` — the main checkout, as an absolute path.
+- `SOURCE_ROOT` — the plan's **source checkout**: the root of the checkout whose working tree holds
+  the plan file this run was given. It is a Claude Code or Codex worktree session's checkout, not
+  the main checkout, when the plan was written there. A caller may supply it; otherwise derive it
+  from the plan file's absolute path as the run resolved it, with
+  `git -C <physical parent> rev-parse --show-toplevel`, where `<physical parent>` is that path's
+  parent directory with symlinks resolved. Require
+  `git -C <SOURCE_ROOT> rev-parse --path-format=absolute --git-common-dir` to equal the same probe
+  on `RUNTIME_STATE_ROOT`, so the source shares this repository's identity. A failed derivation or
+  a foreign identity blocks archival and is reported. With no absolute path known, `SOURCE_ROOT`
+  defaults to `RUNTIME_STATE_ROOT`. The hidden arm never uses it.
 - `plan.dir` — the plan directory.
 - the plan file's repository-relative path.
 - the plan's complete language, for the status marker.
@@ -182,25 +192,26 @@ alone cannot see such a file, so without that row State C would write straight o
 **This is not worktree cleanup.** The execution-location contract forbids removing, renaming or
 otherwise altering `RUNTIME_STATE_ROOT`, or using the runtime root as a cleanup target; that rule
 governs the withdrawal of an owned worktree and the root it must never point at. What follows removes
-exactly one **untracked project file** inside that root, never the root, never a directory, and never
-anything Git tracks. The two rules do not overlap.
+exactly one **untracked project file** inside `SOURCE_ROOT`, never the root, never a directory, and never
+anything Git tracks. The two rules do not overlap. `SOURCE_ROOT` is the main checkout unless the plan
+was written in a worktree session, and the section keeps the name of that ordinary case.
 
 Applies to States A, C, and D. The archived-basis arm runs none of it.
 
-The plan file was authored in the main checkout and its copy stays there after the take-over. That
+The plan file was authored in its source checkout and its copy stays there after the take-over. That
 redundant copy is what makes a later `git merge` or checkout refuse over an untracked working-tree
 file — Git refuses even when the content is byte-identical — and what leaves a phantom top-level plan
 that `{{SKILL:open-plans}}` reports as open. Remove it, under all of these preconditions, in order:
 
 1. The take-over is staged in `EXECUTION_ROOT`, or — in State D — `A` is confirmed tracked.
-2. The path resolves inside `RUNTIME_STATE_ROOT` as an absolute handle **and is untracked there**,
+2. The path resolves inside `SOURCE_ROOT` as an absolute handle **and is untracked there**,
    probed with the same `ls-files -z -- ':(literal)…'` shape. A tracked path is never touched. On a
    checkout that has already pulled the base, `P` is tracked and no untracked copy exists — that is
    the ordinary, correct outcome and is reported as "nothing to clean up", never as a refusal.
 3. The content comparison for this state passes:
-   - **States A and C:** the main-checkout copy still hashes to the value captured when this step
+   - **States A and C:** the source-checkout copy still hashes to the value captured when this step
      read it. A difference means someone edited the plan while the run was in flight.
-   - **State D:** the main-checkout copy matches the already-archived file with the status marker
+   - **State D:** the source-checkout copy matches the already-archived file with the status marker
      normalized. A self-comparison would be meaningless when nothing was taken over during this run,
      and local unmerged edits would be deleted unseen.
 4. The hash is re-verified immediately before removal, so a write between the comparison and the
@@ -214,11 +225,11 @@ gone, which precondition 2 reports as "nothing to clean up". The archived-basis 
 
 ### Execution roots
 
-| Operation                                                                                      | Root                                                                                                                                                                               |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ls-files` detection, `mkdir -p`, status-marker edit, `git mv`, direct write of `A`, `git add` | `EXECUTION_ROOT`, passed explicitly with `git -C` or as an absolute path                                                                                                           |
-| Reading the plan's final content for the take-over                                             | `RUNTIME_STATE_ROOT` — a project-file read from the runtime root, permitted here because that is where the authoring run left the file, and named explicitly rather than inherited |
-| Cleanup probe, cleanup hash, cleanup removal                                                   | `RUNTIME_STATE_ROOT`, from the retained absolute handle                                                                                                                            |
+| Operation                                                                                      | Root                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ls-files` detection, `mkdir -p`, status-marker edit, `git mv`, direct write of `A`, `git add` | `EXECUTION_ROOT`, passed explicitly with `git -C` or as an absolute path                                                                                                              |
+| Reading the plan's final content for the take-over                                             | `SOURCE_ROOT` — a project-file read from the plan's source checkout, permitted here because that is where the authoring run left the file, and named explicitly rather than inherited |
+| Cleanup probe, cleanup hash, cleanup removal                                                   | `SOURCE_ROOT`, from the retained absolute handle, under the same containment, untracked-only, and hash preconditions                                                                  |
 
 No operation relies on an inherited working directory. The status marker is written in the plan's own
 complete language; this contract changes only when and where it is written, never which marker.

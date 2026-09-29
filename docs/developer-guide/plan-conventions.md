@@ -91,7 +91,8 @@ already tracked in the delivery checkout's index. A plan that `/effective-flow p
 draft pull request is: its implementing run continues on that pull request's branch, where the
 plan is tracked, so archival renames it. An unpublished plan stays untracked until delivery.
 `src/shared/plan-archival.md` owns that state model, the detection behind it, and the cleanup of
-the redundant copy in the main checkout.
+the redundant copy in the plan's source checkout: the main checkout, or the Claude Code or Codex
+worktree session's checkout in which the plan was written.
 In hidden mode (`visibility: hidden`) `plan.dir` is forced to `.effective-flow/plan` in the main
 checkout and the plan is never tracked, so the plan-archival contract's hidden arm applies instead.
 It checks that the plan is ignored and untracked, moves it to `<plan.dir>/archive/` in

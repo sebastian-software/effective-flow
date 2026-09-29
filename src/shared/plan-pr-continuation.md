@@ -140,7 +140,7 @@ reports both values as it does for any override.
 
 Compare the local plan with the head's plan:
 `git -C <RUNTIME_STATE_ROOT> hash-object -- <absolute plan path>`, where the absolute path is the
-plan's source file in the invocation checkout, against
+plan's source file in its source checkout, `plan-archival`'s `SOURCE_ROOT`, against
 `git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`. Any failure of either command stops
 the run before provisioning. Equal hashes continue. On a difference, load `plan-publication` before
 asking: its read-only resolution supplies the audience, and its content check supplies the findings
@@ -261,7 +261,9 @@ worktree and branch, archive nothing, leave the local plan copy in place, push n
 the draft untouched.
 
 With evidence, `plan-archival` finds `P` tracked in the delivery checkout and selects State A with
-unchanged mechanics. The handback's `{{SKILL:pr}}` delegation keeps every line it already carries,
+unchanged mechanics. It takes the final content over from, and cleans the untracked copy in, the
+checkout whose file the hash comparison read, which in a worktree session is not
+`RUNTIME_STATE_ROOT`. The handback's `{{SKILL:pr}}` delegation keeps every line it already carries,
 including `Next steps: suppressed`, and adds the line `Finalize plan draft: <PR number>` with the
 verified number. `{{SKILL:pr}}` then reuses that pull request and finishes it before the handback's
 PR review publication. When the finish fails, the pull request stays a draft, and the recovery is a
