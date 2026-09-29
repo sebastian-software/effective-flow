@@ -768,8 +768,8 @@ test('untrusted repository text cannot grant authority or bypass unknown-to-Qual
   );
   assert.match(
     executionProfileSource,
-    /unknown\s+condition\s+(?:therefore\s+)?reaches `unknown-evidence` and selects Quality/,
-    'an unknown condition must reach `unknown-evidence` and select Quality',
+    /\.\s+An\s+unknown\s+condition\s+(?:therefore\s+)?reaches `unknown-evidence` and selects Quality, never Fast\./,
+    'fail closed: every unknown condition must reach `unknown-evidence` and select Quality, never Fast',
   );
   assert.match(executionProfileSource, /Coupled or mixed-scope packets share Quality/);
 });
