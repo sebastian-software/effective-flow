@@ -18140,12 +18140,25 @@ test('pr finishes a plan draft only on its number or as recovery, with evidence,
   // update only while the pull request is still a draft.
   assert.match(
     finish,
-    near('only while it is a draft', '`payload.title` replaces `pr-update-title`', 80),
+    near('only while it is a draft', '`payload.title` replaces `pr-update-title`', 120),
   );
   assert.match(finish, /otherwise `pr-update-title` runs on its own/);
 
+  // Invariant: ready is the last mutation on both providers. The combined Forgejo edit removes the
+  // WIP prefix, so it must follow the body update; a body failure after it would leave a ready pull
+  // request carrying the plan-only body.
+  const forgejo = boundedSlice(finish, 'On Forgejo', 'otherwise `pr-update-title`');
+  ordered(
+    forgejo,
+    'the body update runs first',
+    '`pr-mark-ready` with `payload.title`',
+    'final, combined edit',
+  );
+  assert.match(finish, /Ready is always the last mutation, so any failure leaves a draft/);
+  ordered(finish, 'hash-guarded `pr-update-body`', 'then `pr-mark-ready`', 'On Forgejo');
+
   // Invariant: a failure leaves a draft, and the finish precedes the caller's review publication.
-  assert.match(finish, near('Stop at the first failure', 'stays a draft', 60));
+  assert.match(finish, near('stop at the first failure', 'leaves a draft', 60));
   assert.match(finish, near('completes before', 'PR review publication', 40));
 });
 

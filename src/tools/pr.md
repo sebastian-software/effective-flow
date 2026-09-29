@@ -255,10 +255,10 @@ base-branch-resolution
      step 9 for it, read the body fresh through `pr-read`, hash it with `body-hash`, and apply, each
      dry run first: `pr-update-title` with the derived title; the hash-guarded `pr-update-body` with
      the derived body plus the unchanged marker line as its own line; then `pr-mark-ready`, skipped
-     when it is no longer a draft. On Forgejo, only while it is a draft, `pr-mark-ready` with
-     `payload.title` replaces `pr-update-title`, so retitle and ready are one edit; otherwise
-     `pr-update-title` runs on its own. Stop at the first failure: the pull request stays a draft,
-     and the report names the step. The finish completes before the caller's PR review publication.
+     when it is no longer a draft. On Forgejo, only while it is a draft, the body update runs first and
+     `pr-mark-ready` with `payload.title` replaces `pr-update-title` as the final, combined edit; otherwise
+     `pr-update-title` runs on its own. Ready is always the last mutation, so any failure leaves a draft:
+     stop at the first failure, and the report names the step. The finish completes before the caller's PR review publication.
    - **No exact match:** Continue with title/description derivation and PR creation; with `Finalize plan draft:` supplied,
      stop before `pr-create` instead and report that number. An open PR for the same head but a different base, as well as a closed or merged PR, is not a match.
    - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear

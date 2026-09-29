@@ -197,9 +197,10 @@ creating a new one. A direct `pr` call is the recovery path after a failed finis
 draft with a valid plan marker whose branch already holds the archived plan and no longer the plan
 itself. `pr` then derives the final title and description as for a new pull request, updates the
 title, updates the body while keeping the marker line, and marks the pull request ready, each as a
-dry run first. On Forgejo, while the pull request is still a draft, the retitle and the ready
-transition are one edit. The first failure stops it, the pull request stays a draft, and the report
-names the failed step.
+dry run first. On Forgejo, while the pull request is still a draft, the body is updated first and
+the retitle and the ready transition are one final edit, so marking the pull request ready is always
+the last change. The first failure stops it, the pull request stays a draft, and the report names
+the failed step.
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the

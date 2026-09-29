@@ -383,11 +383,12 @@ instead, for example on a collision or a failed probe, the delivery still commit
 implementation, but the pull request stays a draft and the report names the archival outcome.
 Otherwise `/effective-flow pr` reuses the draft and finishes it before any PR review is published.
 It derives the final Conventional-Commit title and description and updates the body while keeping
-the plan marker. Then it marks the pull request ready for review; on Forgejo, while the pull request
-is still a draft, the retitle and the ready transition are one title edit. If the handoff names the
-draft but `pr` finds no matching pull request, it stops instead of creating a new one. If one of
-these steps fails, the pull request stays a draft and the report names the step. Recover by running
-`/effective-flow pr` on that branch yourself.
+the plan marker. Then it marks the pull request ready for review, always as the last change; on
+Forgejo, while the pull request is still a draft, the body is updated first and the retitle and the
+ready transition follow as one final title edit. If the handoff names the draft but `pr` finds no
+matching pull request, it stops instead of creating a new one. If one of these steps fails, the pull
+request stays a draft and the report names the step. Recover by running `/effective-flow pr` on that
+branch yourself.
 
 ## Hidden mode
 
