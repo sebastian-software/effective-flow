@@ -3766,6 +3766,96 @@ test('findRepositoryOnlyReferences accepts escaped parentheses inside a parenthe
   ]);
 });
 
+test('findRepositoryOnlyReferences reports dead links whose double-quoted title holds an escaped quote', () => {
+  const content = [
+    'See [guide](../missing.md "a \\"title\\"").',
+    'Wrapped [w](<../gone-wrapped.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose single-quoted title holds an escaped quote', () => {
+  const content = [
+    "See [g](../gone.md 'it\\'s') here.",
+    "Wrapped [w](<../gone-single.md> 'don\\'t') link.",
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+    { line: 2, kind: 'link', reference: '../gone-single.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links whose quoted title holds an escaped quote', () => {
+  const content = [
+    '[shared](../shared/x.md "a \\"title\\"")',
+    "[shared](../shared/x.md 'it\\'s')",
+    'Wrapped [shared](<../shared/x.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented backtick line', () => {
+  const content = ['    ```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented tilde line', () => {
+  const content = ['    ~~~', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a tab-indented backtick line', () => {
+  const content = ['\t```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still skips a fence opened and closed with up to three spaces of indentation', () => {
+  const content = [
+    '   ```',
+    '[g](../inside.md)',
+    '   ```',
+    '  ~~~',
+    '[t](../inside-tilde.md)',
+    '  ~~~',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes an open fence only at a closer indented up to three spaces', () => {
+  const content = [
+    '```',
+    '    ```',
+    '[g](../inside.md)',
+    '\t```',
+    '[i](../still-inside.md)',
+    '```',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
 test('findVerbatimSourceLocations lists every matching source line in path order', () => {
   const reference = '../../docs/developer-guide/skill-ownership.md';
   const sources = new Map([

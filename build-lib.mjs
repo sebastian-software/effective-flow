@@ -3369,10 +3369,10 @@ const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 // CommonMark reference definition: the label may hold backslash escapes but no
 // unescaped bracket, and it must contain at least one non-whitespace character.
 const REFERENCE_DEFINITION = /^ {0,3}\[((?:\\.|[^\\[\]])+)\]:\s*(\S+)/;
-// The optional title is `"…"`, `'…'`, or `(…)`; a parenthesized title holds a
-// `(` or `)` only when it is backslash-escaped.
+// The optional title is `"…"`, `'…'`, or `(…)`; all three accept backslash
+// escapes, so a title holds its own delimiter only when it is escaped.
 const INLINE_LINK_DESTINATION =
-  /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\((?:\\.|[^\\()])*\)))?\s*\)/y;
+  /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"(?:\\.|[^\\"])*"|'(?:\\.|[^\\'])*'|\((?:\\.|[^\\()])*\)))?\s*\)/y;
 
 // CommonMark inline link or image text: an unescaped `[` (optionally preceded
 // by `!`) opens it, a backslash escapes the next character, unescaped brackets
@@ -3438,7 +3438,8 @@ export function findRepositoryOnlyReferences(
   let fence = null;
   for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
     const lineNumber = lineIndex + 1;
-    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+    // Only a line indented by 0-3 spaces may open or close a CommonMark fence.
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (fence) {
       if (fenceMatch && fenceMatch[1][0] === fence.char && fenceMatch[1].length >= fence.length) {
         fence = null;
