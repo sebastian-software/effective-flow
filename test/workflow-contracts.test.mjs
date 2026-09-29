@@ -18466,6 +18466,50 @@ test('plan publication republishes as a new commit and forbids every history rew
   assert.match(prohibited, /Never switch, stash, or stage in the invocation checkout/);
 });
 
+test('a first publication never copies onto a plan the base already tracks', () => {
+  const publication = source('src/shared/plan-publication.md');
+
+  // Invariant: a first publication writes a path the base does not carry. If the refreshed base
+  // acquired the same dated plan after local naming, copying onto `P` would modify, and on merge
+  // replace, that foreign plan; the read-only probe stops before the question asks anything.
+  const threeWay = listItems(
+    boundedSlice(
+      publication,
+      'Apply the three-way rule:',
+      '\n\nA plan pull request that was merged',
+    ),
+  );
+  const firstArm = itemWith(threeWay, 'No candidate:');
+  includesAll(
+    firstArm,
+    [
+      "`git -C <RUNTIME_STATE_ROOT> ls-tree -z --name-only <resolved base ref> -- ':(literal)<P>'`",
+      'already tracked on the base',
+      'nothing is asked or written',
+      'nonzero exit is its own named reason',
+    ],
+    'the first-publication base probe',
+  );
+  ordered(publication, 'No candidate:', '```ask\n');
+
+  // Invariant: the staging probe repeats the rule in the fresh worktree's index, for either state
+  // of `A`, while the republication arm keeps copying onto the head branch's tracked `P`.
+  const staging = listItems(section(publication, '### Staging'));
+  const rule = itemWith(staging, 'First publication:');
+  includesAll(
+    rule,
+    [
+      'a tracked `P` is a collision, whether or not `A` is tracked',
+      "fresh worktree's index is the resolved base ref's tree",
+      'publish nothing',
+      '`git -C <WORKTREE_PATH> mv -- <A> <P>`',
+      'Republication, where the head branch tracks `P`',
+    ],
+    'the staging collision rule',
+  );
+  ordered(rule, 'First publication:', 'publish nothing', 'Republication,');
+});
+
 test('publication and continuation share their filter, check 5, and branch-state rule byte for byte', () => {
   // Invariant (F20, F26, F12): the published side and the implementing side decide "is this our
   // plan pull request" and "may this local branch be used" by one mechanic. Two copies that drift

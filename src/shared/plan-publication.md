@@ -127,7 +127,11 @@ A remaining candidate counts only when all five checks hold:
 
 Apply the three-way rule:
 
-- **No candidate:** first publication.
+- **No candidate:** first publication, unless the base already tracks `P`. Probe it read-only with
+  `git -C <RUNTIME_STATE_ROOT> ls-tree -z --name-only <resolved base ref> -- ':(literal)<P>'`: an
+  entry equal to `P` means the base acquired a plan at the same path after this run named it, so
+  publication is unavailable with `P` reported as already tracked on the base, and nothing is
+  asked or written; a nonzero exit is its own named reason.
 - **Exactly one verified candidate:** republication onto its head branch. When
   `git -C <RUNTIME_STATE_ROOT> hash-object -- <absolute plan path>` equals
   `git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`, there is nothing to republish: ask
@@ -244,10 +248,14 @@ exit `1` fails, and any other exit stops the run.
 1. Probe both paths with `git -C <WORKTREE_PATH> ls-files -z -- ':(literal)<P>' ':(literal)<A>'`,
    and read the entries as the `plan-archival` detection does: each path is matched against the
    entries, and a nonzero exit stops.
-2. When `A` is tracked and `P` is not, the base still tracks the archived plan, because this
-   revision run brought it back from the archive. Record the move as a rename first:
-   `git -C <WORKTREE_PATH> mv -- <A> <P>`. When both are tracked, the branch carries two copies of
-   one plan: stop, and report both paths.
+2. **First publication:** a tracked `P` is a collision, whether or not `A` is tracked. The fresh
+   worktree's index is the resolved base ref's tree, and copying onto an existing `P` would modify,
+   and on merge replace, a plan this run never published: stop, report `P` as already tracked on
+   the base, and publish nothing. When `A` is tracked and `P` is not, the base still tracks the
+   archived plan, because this revision run brought it back from the archive. Record the move as a
+   rename first: `git -C <WORKTREE_PATH> mv -- <A> <P>`. **Republication**, where the head branch
+   tracks `P`: when `A` is tracked too, the branch carries two copies of one plan: stop, and report
+   both paths.
 3. Copy the plan's content from its absolute path in the invocation checkout to
    `<WORKTREE_PATH>/<P>`.
 4. Stage by explicit path only: `git -C <WORKTREE_PATH> add -- ':(literal)<P>'`. Never use

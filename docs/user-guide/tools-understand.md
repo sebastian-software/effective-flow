@@ -147,9 +147,11 @@ The offer comes at the end of the run, after the deep plan review ended ready or
 A review that returned `Revision required` or blocking open points skips it: close those points
 first. Publication is also unavailable, with the reason named, when the base branch is not
 resolved through the remote-configured arm on `origin`, when the forge CLI cannot create a draft,
-retitle a pull request, and mark it ready, or when the forge cannot be reached. `plan` looks for an
-existing plan pull request first. It matches only on a marker the helper parses, never on the
-branch name, and it reads no pull-request body itself. A marker-carrying pull request whose head
+retitle a pull request, and mark it ready, or when the forge cannot be reached. A first publication
+is unavailable, too, when the base branch already tracks a plan at the same path, for example one
+that reached the base after this plan was named: `plan` names the path and never writes over that
+plan. `plan` looks for an existing plan pull request first. It matches only on a marker the helper
+parses, never on the branch name, and it reads no pull-request body itself. A marker-carrying pull request whose head
 branch is not in this repository, such as a fork's, or whose repository the forge does not state,
 is ignored and reported, never blocking.
 
