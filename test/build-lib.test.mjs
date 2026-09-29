@@ -3704,6 +3704,68 @@ test('findRepositoryOnlyReferences detects an inner link after an unbalanced out
   ]);
 });
 
+test('findRepositoryOnlyReferences reports three-backtick code spans naming repository-only files', () => {
+  const content = ['Run ```build.mjs``` locally.', 'Padded ``` build-lib.mjs ``` span.'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'code-span', reference: ' build-lib.mjs ' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a four-backtick code span only at the next four-backtick run', () => {
+  // The inner double-backtick runs belong to the first span's content and must neither open nor
+  // close a span of their own; the second four-backtick span is detected on its own.
+  const content = 'Quad ```` ``build.mjs`` ```` span, then ````build-lib.mjs```` here.';
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences keeps backtick runs without a same-length closer literal', () => {
+  const content = [
+    'Mismatch ```build.mjs`` here.',
+    'Open ``build.mjs``` and `build-lib.mjs` here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links with a parenthesized title', () => {
+  const content = [
+    'See [guide](../missing.md (title)).',
+    'Wrapped [w](<../gone-wrapped.md> (A longer title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links with a parenthesized title', () => {
+  const content = [
+    '[shared](../shared/x.md (Shared fragment))',
+    'Wrapped [shared](<../shared/x.md> (title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences accepts escaped parentheses inside a parenthesized title', () => {
+  const content = [
+    '[g](../gone.md (a \\) b))',
+    'Resolving [s](../shared/x.md (a \\( b \\) c)) here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+  ]);
+});
+
 test('findVerbatimSourceLocations lists every matching source line in path order', () => {
   const reference = '../../docs/developer-guide/skill-ownership.md';
   const sources = new Map([

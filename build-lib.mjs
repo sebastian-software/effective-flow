@@ -3338,9 +3338,10 @@ export function applyRepositoryOnlyAllowlist(repositoryOnlyFiles, allowlist, { c
   return new Set([...repositoryOnlyFiles].filter((file) => !allowed.has(file)));
 }
 
-// Split a line into its inline code spans. A delimiter is a run of exactly one
-// or exactly two backticks; the span closes at the next run of the same length
-// on the same line. Longer runs and an unmatched opener stay literal text.
+// Split a line into its inline code spans (CommonMark delimiter matching). A
+// delimiter is a backtick run of any length N; the span closes at the next run
+// of exactly N backticks on the same line. An unmatched opener stays literal
+// text and scanning continues with the next run.
 function inlineCodeSpans(line) {
   const runs = [...line.matchAll(/`+/g)].map((match) => ({
     start: match.index,
@@ -3349,7 +3350,6 @@ function inlineCodeSpans(line) {
   const spans = [];
   for (let index = 0; index < runs.length; index += 1) {
     const opener = runs[index];
-    if (opener.length > 2) continue;
     const closerIndex = runs.findIndex(
       (run, candidate) => candidate > index && run.length === opener.length,
     );
@@ -3369,7 +3369,10 @@ const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 // CommonMark reference definition: the label may hold backslash escapes but no
 // unescaped bracket, and it must contain at least one non-whitespace character.
 const REFERENCE_DEFINITION = /^ {0,3}\[((?:\\.|[^\\[\]])+)\]:\s*(\S+)/;
-const INLINE_LINK_DESTINATION = /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/y;
+// The optional title is `"…"`, `'…'`, or `(…)`; a parenthesized title holds a
+// `(` or `)` only when it is backslash-escaped.
+const INLINE_LINK_DESTINATION =
+  /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\((?:\\.|[^\\()])*\)))?\s*\)/y;
 
 // CommonMark inline link or image text: an unescaped `[` (optionally preceded
 // by `!`) opens it, a backslash escapes the next character, unescaped brackets
@@ -3430,6 +3433,8 @@ export function findRepositoryOnlyReferences(
     if (dead) findings.push({ line: lineNumber, kind: 'link', reference });
   };
 
+  // The guard is line-based: a link or code span that spans a line break is
+  // deliberately out of scope and is not recognized.
   let fence = null;
   for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
     const lineNumber = lineIndex + 1;
