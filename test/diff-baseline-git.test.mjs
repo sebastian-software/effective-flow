@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -48,9 +50,15 @@ function git(root, ...args) {
     .trim();
 }
 
+// `restore` collects mode resets a test registers through `makeUnreadable`; they run in the
+// fixture's own `t.after` before the removal, because a mode-000 directory cannot be deleted.
 function repository(t, { commit = true, ignore = '.effective-flow/\n*.log\n' } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-diff-baseline-')));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const restore = [];
+  t.after(() => {
+    for (const reset of restore.splice(0).reverse()) reset();
+    rmSync(root, { recursive: true, force: true });
+  });
   git(root, 'init', '--initial-branch=main');
   writeFileSync(join(root, '.gitignore'), ignore);
   if (commit) {
@@ -59,7 +67,22 @@ function repository(t, { commit = true, ignore = '.effective-flow/\n*.log\n' } =
     git(root, 'commit', '-m', 'fixture');
   }
   mkdirSync(join(root, '.effective-flow'), { mode: 0o700 });
-  return { root, repositoryIdentity: realpathSync(join(root, '.git')) };
+  return { root, repositoryIdentity: realpathSync(join(root, '.git')), restore };
+}
+
+// Sets a directory to mode 000 and reports whether this process is actually denied its listing;
+// root, or a filesystem that ignores modes, still reads it. The fixture restores the mode before it
+// removes the repository, and `readable` restores it early.
+function makeUnreadable(fixture, directory) {
+  const reset = () => chmodSync(directory, 0o755);
+  fixture.restore.push(reset);
+  chmodSync(directory, 0o000);
+  try {
+    readdirSync(directory);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 function commitFiles(root, files) {
@@ -85,11 +108,33 @@ function listFiles(directory) {
   return found.sort();
 }
 
+// Every file and directory below `directory`, directories marked with a trailing slash, so a new
+// empty directory counts as a change too.
+function listTree(directory) {
+  const found = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        found.push(`${relative(directory, full)}/`);
+        walk(full);
+      } else found.push(relative(directory, full));
+    }
+  };
+  walk(directory);
+  return found.sort();
+}
+
 function readIfPresent(file) {
   return existsSync(file) ? readFileSync(file).toString('hex') : null;
 }
 
-// Everything capture, render and discard must leave untouched in the real repository.
+// Everything capture, render and discard must leave untouched in the real repository. The whole
+// git directory is listed, which covers the object store, a split index's `sharedindex.*` file
+// and every linked worktree's private `.git/worktrees/<name>/` directory. The listing compares
+// names only, and two effects stay outside the snapshot isolation it proves: git may freshen (touch
+// the mtime of) an object it finds in the real store through the alternate, and a
+// repository-configured clean or process filter (for example Git LFS) writes to its own store.
 function repositoryState(root, extraIndexes = []) {
   const head = spawnSync('git', ['-C', root, 'rev-parse', '--verify', '-q', 'HEAD'], {
     env: GIT_ENV,
@@ -109,7 +154,7 @@ function repositoryState(root, extraIndexes = []) {
     refs: git(root, 'for-each-ref'),
     head: head.stdout.toString('utf8').trim(),
     symbolicHead: readFileSync(join(root, '.git/HEAD'), 'utf8'),
-    objects: listFiles(join(root, '.git/objects')),
+    gitDir: listTree(join(root, '.git')),
   };
 }
 
@@ -144,6 +189,15 @@ async function operate(root, operation, input, { extraIndexes = [] } = {}) {
         call.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
         realpathSync(join(root, '.git/objects')),
       );
+      const baselineDir = call.env.GIT_OBJECT_DIRECTORY.slice(0, -'/objects'.length);
+      for (const setting of [
+        'core.splitIndex=false',
+        'core.safecrlf=false',
+        'core.sharedRepository=0600',
+        `core.hooksPath=${baselineDir}/hooks`,
+      ]) {
+        assert.ok(call.args.includes(setting), `${setting} missing from ${call.args.join(' ')}`);
+      }
     }
   }
   return envelope;
@@ -273,6 +327,7 @@ test('render reports only what changed since capture', async (t) => {
     join(root, '.effective-flow/runs', SESSION),
     baseline.dir,
     join(baseline.dir, 'objects'),
+    join(baseline.dir, 'hooks'),
   ]) {
     assert.equal(mode(directory), 0o700, directory);
   }
@@ -283,9 +338,11 @@ test('render reports only what changed since capture', async (t) => {
   assert.deepEqual(readdirSync(baseline.dir).sort(), [
     'baseline.json',
     'diff.patch',
+    'hooks',
     'objects',
     'paths.json',
   ]);
+  assert.deepEqual(readdirSync(join(baseline.dir, 'hooks')), []);
 
   // A second render replaces both files atomically with the new delta.
   writeFileSync(join(root, 'created.txt'), 'created by the run, then edited\n');
@@ -587,14 +644,6 @@ test('render fails closed on a missing baseline object and never re-captures', a
   writeFileSync(join(root, 'private.txt'), 'only in the snapshot store\n');
   const baseline = await ok(root, 'capture', captureInput(fixture));
 
-  const unknown = await refused(
-    root,
-    'render',
-    renderInput(fixture, baseline, { baselineTree: 'b'.repeat(40) }),
-    'MISSING_OBJECT',
-  );
-  assert.match(unknown.message, /b{40}/);
-
   rmSync(join(baseline.dir, 'objects'), { recursive: true });
   mkdirSync(join(baseline.dir, 'objects'), { mode: 0o700 });
   const emptied = await refused(root, 'render', renderInput(fixture, baseline), 'MISSING_OBJECT');
@@ -606,6 +655,309 @@ test('render fails closed on a missing baseline object and never re-captures', a
   const removed = await refused(root, 'render', renderInput(fixture, baseline), 'MISSING_OBJECT');
   assert.ok(removed.message.includes(baseline.baselineTree));
   assert.ok(!existsSync(join(root, '.effective-flow/runs', SESSION)), 'render must not re-capture');
+});
+
+test('render refuses a handle whose record names another tree or execution root', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const worktree = join(root, '.effective-flow/.worktrees/run');
+  git(root, 'worktree', 'add', '--detach', worktree);
+  const baseline = await ok(root, 'capture', captureInput(fixture, { executionRoot: worktree }));
+  writeFileSync(join(worktree, 'other.txt'), 'makes a second, different tree\n');
+  const other = await ok(root, 'capture', captureInput(fixture, { executionRoot: worktree }));
+  assert.notEqual(other.baselineTree, baseline.baselineTree);
+
+  const scoped = { executionRoot: worktree };
+  const foreignTree = await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { ...scoped, baselineTree: other.baselineTree }),
+    'INVALID_INPUT',
+  );
+  assert.ok(foreignTree.message.includes(baseline.baselineTree), foreignTree.message);
+  await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { ...scoped, baselineTree: 'b'.repeat(40) }),
+    'INVALID_INPUT',
+  );
+  const foreignRoot = await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline),
+    'UNSAFE_TARGET',
+  );
+  assert.match(foreignRoot.message, /executionRoot/);
+
+  const record = join(baseline.dir, 'baseline.json');
+  const saved = readFileSync(record);
+  writeFileSync(record, '{ not json');
+  await refused(root, 'render', renderInput(fixture, baseline, scoped), 'INVALID_INPUT');
+  const decoy = join(root, '.effective-flow/decoy.json');
+  writeFileSync(decoy, saved);
+  rmSync(record);
+  symlinkSync(decoy, record);
+  await refused(root, 'render', renderInput(fixture, baseline, scoped), 'UNSAFE_TARGET');
+  rmSync(record);
+  await refused(root, 'render', renderInput(fixture, baseline, scoped), 'MISSING_OBJECT');
+  assert.ok(!existsSync(join(baseline.dir, 'diff.patch')));
+  assert.ok(!existsSync(join(baseline.dir, 'paths.json')));
+
+  writeFileSync(record, saved, { mode: 0o600 });
+  await ok(root, 'render', renderInput(fixture, baseline, scoped));
+});
+
+test(
+  'render refuses a FIFO in place of baseline.json instead of blocking',
+  { timeout: 10_000 },
+  async (t) => {
+    if (process.platform === 'win32') return t.skip('no mkfifo on Windows');
+    const fixture = repository(t);
+    const { root } = fixture;
+    const baseline = await ok(root, 'capture', captureInput(fixture));
+    const record = join(baseline.dir, 'baseline.json');
+    rmSync(record);
+    try {
+      execFileSync('mkfifo', [record], { stdio: 'ignore' });
+    } catch {
+      return t.skip('mkfifo unavailable');
+    }
+    const error = await refused(root, 'render', renderInput(fixture, baseline), 'UNSAFE_TARGET');
+    assert.match(error.message, /not a regular file/);
+    assert.ok(!existsSync(join(baseline.dir, 'diff.patch')));
+    await ok(root, 'discard', { cwd: root, dir: baseline.dir });
+  },
+);
+
+// ---------------------------------------------------------------------------------------------
+// Repository configurations that must neither leak into .git nor break a snapshot
+
+test('a split index and an installed hook leave .git untouched and the hook never runs', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-diff-baseline-hook-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const marker = join(outside, 'hook-ran');
+  mkdirSync(join(root, '.git/hooks'), { recursive: true });
+  const hook = join(root, '.git/hooks/post-index-change');
+  writeFileSync(hook, `#!/bin/sh\necho ran >> '${marker}'\n`, { mode: 0o755 });
+  git(root, 'config', 'core.splitIndex', 'true');
+  // Splitting the real index is an ordinary index write, which proves the hook is live.
+  git(root, 'update-index', '--split-index');
+  assert.ok(existsSync(marker), 'the fixture hook must run for a real index write');
+  rmSync(marker);
+
+  writeFileSync(join(root, 'untracked.txt'), 'untracked\n');
+  // `operate` compares the full .git listing, so a sharedindex.* file written there fails here.
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const rendered = await ok(root, 'render', renderInput(fixture, baseline));
+  assert.deepEqual(rendered.entries, [{ status: 'M', path: 'tracked.txt' }]);
+  assert.ok(!existsSync(marker), 'a repository hook ran during a snapshot');
+  assert.deepEqual(readdirSync(join(baseline.dir, 'hooks')), []);
+});
+
+test('core.autocrlf with core.safecrlf=true does not abort a snapshot', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  git(root, 'config', 'core.autocrlf', 'true');
+  git(root, 'config', 'core.safecrlf', 'true');
+  // The LF working-tree file would not survive a CRLF round trip, which safecrlf=true makes fatal.
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(root, 'created.txt'), 'created\n');
+  const rendered = await ok(root, 'render', renderInput(fixture, baseline));
+  assert.deepEqual(rendered.entries, [{ status: 'A', path: 'created.txt' }]);
+});
+
+test('an unreadable untracked file fails capture closed with an actionable message', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const secret = join(root, 'secret.txt');
+  writeFileSync(secret, 'secret\n');
+  // Removing the fixture needs only the parent directory to be writable, so no mode is restored.
+  chmodSync(secret, 0o000);
+  let readable = true;
+  try {
+    readFileSync(secret);
+  } catch {
+    readable = false;
+  }
+  if (readable) {
+    t.skip('this process can read a mode-000 file (for example as root)');
+    return;
+  }
+  const error = await refused(root, 'capture', captureInput(fixture), 'GIT_FAILED');
+  assert.match(error.message, /secret\.txt/);
+  assert.match(error.message, /ignore the file/);
+  assert.match(error.message, /fix its permissions/);
+  assert.ok(!existsSync(join(root, '.effective-flow/runs', SESSION)), 'no half-built baseline');
+
+  // Ignoring the file is the documented way out; the snapshot never skips it on its own.
+  writeFileSync(join(root, '.git/info/exclude'), 'secret.txt\n');
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  assert.equal(baseline.runId, SESSION);
+});
+
+test('an unreadable untracked directory fails capture and render closed', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const locked = join(root, 'locked');
+  mkdirSync(locked);
+  writeFileSync(join(locked, 'inside.txt'), 'inside\n');
+  if (!makeUnreadable(fixture, locked)) {
+    t.skip('this process can list a mode-000 directory (for example as root)');
+    return;
+  }
+  const error = await refused(root, 'capture', captureInput(fixture), 'GIT_FAILED');
+  assert.match(error.message, /could not read locked\/ \(Permission denied\)/);
+  assert.match(error.message, /never skips a path/);
+  assert.match(error.message, /ignore the path/);
+  assert.match(error.message, /fix its permissions/);
+  assert.ok(!existsSync(join(root, '.effective-flow/runs', SESSION)), 'no half-built baseline');
+
+  chmodSync(locked, 0o755);
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  chmodSync(locked, 0o000);
+  const rendered = await refused(root, 'render', renderInput(fixture, baseline), 'GIT_FAILED');
+  assert.match(rendered.message, /could not read locked\//);
+  assert.ok(!existsSync(join(baseline.dir, 'diff.patch')), 'no patch');
+  assert.ok(!existsSync(join(baseline.dir, 'paths.json')), 'no paths');
+});
+
+test('a modified tracked file inside an unreadable directory fails closed', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  commitFiles(root, { 'guarded/tracked.txt': 'committed\n' });
+  const guarded = join(root, 'guarded');
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(guarded, 'tracked.txt'), 'changed by the run\n');
+  if (!makeUnreadable(fixture, guarded)) {
+    t.skip('this process can list a mode-000 directory (for example as root)');
+    return;
+  }
+  // Without the guard, git add exits 0 here and render reports no entries at all.
+  const rendered = await refused(root, 'render', renderInput(fixture, baseline), 'GIT_FAILED');
+  assert.match(rendered.message, /could not read guarded\/(?:tracked\.txt)? \(Permission denied\)/);
+  assert.match(rendered.message, /ignore the path/);
+  assert.ok(!existsSync(join(baseline.dir, 'diff.patch')), 'no patch');
+  assert.ok(!existsSync(join(baseline.dir, 'paths.json')), 'no paths');
+
+  const error = await refused(
+    root,
+    'capture',
+    captureInput(fixture, { sessionId: `${SESSION}-other` }),
+    'GIT_FAILED',
+  );
+  assert.match(error.message, /guarded\//);
+  assert.ok(!existsSync(join(root, '.effective-flow/runs', `${SESSION}-other`)));
+});
+
+test('a benign git add warning such as an embedded repository does not fail a snapshot', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  const embedded = join(root, 'embedded');
+  mkdirSync(embedded);
+  git(embedded, 'init', '--initial-branch=main');
+  git(embedded, 'commit', '--allow-empty', '-m', 'embedded');
+
+  const inner = createProcessRunner();
+  const addStderr = [];
+  const runner = async (call) => {
+    const result = await inner(call);
+    if (call.args.includes('add') && call.env.GIT_INDEX_FILE) addStderr.push(result.stderr);
+    return result;
+  };
+  const envelope = await executeOperation('render', renderInput(fixture, baseline), {
+    runner,
+    env: GIT_ENV,
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.match(
+    Buffer.concat(addStderr).toString('utf8'),
+    /^warning: adding embedded git repository: embedded$/m,
+  );
+  assert.deepEqual(envelope.result.entries, [{ status: 'A', path: 'embedded' }]);
+});
+
+test('a failing snapshot cleanup never replaces the snapshot error', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const inner = createProcessRunner();
+  let addFailed = false;
+  // `add` fails after `read-tree` has created the private index; from then on every runtime-state
+  // guard fails too, so removing that index fails while the add error is still in flight.
+  const runner = (call) => {
+    if (call.args.includes('add') && call.env.GIT_INDEX_FILE) {
+      addFailed = true;
+      return { status: 128, stdout: Buffer.alloc(0), stderr: Buffer.from('fatal: injected add\n') };
+    }
+    if (addFailed && call.args.includes('ls-files')) {
+      return {
+        status: 128,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.from('fatal: injected guard\n'),
+      };
+    }
+    return inner(call);
+  };
+  const envelope = await executeOperation('capture', captureInput(fixture), {
+    runner,
+    env: GIT_ENV,
+  });
+  assert.ok(addFailed);
+  assert.equal(envelope.ok, false);
+  assert.deepEqual(envelope.error, {
+    code: 'GIT_FAILED',
+    message: 'git add failed: fatal: injected add',
+  });
+});
+
+test('snapshot objects and directories are private to the owner', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  // A permissive umask would otherwise leave git's loose objects group- and world-readable.
+  const previous = process.umask(0o022);
+  t.after(() => process.umask(previous));
+  writeFileSync(join(root, 'secret.txt'), 'working-tree secret\n');
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(root, 'secret.txt'), 'working-tree secret, changed\n');
+  await ok(root, 'render', renderInput(fixture, baseline));
+  const objects = join(baseline.dir, 'objects');
+  const entries = listTree(objects);
+  assert.ok(
+    entries.some((entry) => !entry.endsWith('/')),
+    'the snapshot wrote loose objects',
+  );
+  for (const entry of ['', ...entries]) {
+    const full = join(objects, entry);
+    assert.equal(mode(full) & 0o077, 0, `${entry || 'objects/'} is ${mode(full).toString(8)}`);
+  }
+});
+
+test('discard removes a symlink inside the baseline without touching its target', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-diff-baseline-link-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(outside, 'nested'));
+  writeFileSync(join(outside, 'nested/kept.txt'), 'kept\n');
+  writeFileSync(join(outside, 'file.txt'), 'kept too\n');
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  const directoryLink = join(baseline.dir, 'objects/escape');
+  const fileLink = join(baseline.dir, 'objects/escape-file');
+  symlinkSync(outside, directoryLink);
+  symlinkSync(join(outside, 'file.txt'), fileLink);
+  assert.ok(lstatSync(directoryLink).isSymbolicLink());
+
+  assert.deepEqual(await ok(root, 'discard', { cwd: root, dir: baseline.dir }), {
+    removed: true,
+    parentRemoved: true,
+  });
+  assert.ok(!existsSync(baseline.dir));
+  assert.deepEqual(listTree(outside), ['file.txt', 'nested/', 'nested/kept.txt']);
+  assert.equal(readFileSync(join(outside, 'nested/kept.txt'), 'utf8'), 'kept\n');
+  assert.equal(readFileSync(join(outside, 'file.txt'), 'utf8'), 'kept too\n');
 });
 
 // ---------------------------------------------------------------------------------------------

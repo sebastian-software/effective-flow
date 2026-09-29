@@ -11,8 +11,11 @@ import {
   DIFF_BASELINE_OPERATIONS,
   DiffBaselineError,
   MAX_SCOPE_ENTRIES,
+  errorDetail,
   errorEnvelope,
   executeOperation,
+  explainSkipped,
+  explainUnreadable,
   exitCodeFor,
   gitBaseEnv,
   normalizeScope,
@@ -198,22 +201,95 @@ test('parseNameStatus fails closed on malformed output', () => {
   }
 });
 
-test('gitBaseEnv strips repository redirections and disables optional locks', () => {
+test('gitBaseEnv strips redirections and injected configuration, and pins the locale', () => {
   const env = gitBaseEnv({
     PATH: '/bin',
+    LANG: 'de_DE.UTF-8',
+    LC_ALL: 'de_DE.UTF-8',
     GIT_DIR: '/elsewhere',
     GIT_INDEX_FILE: '/elsewhere/index',
     GIT_OBJECT_DIRECTORY: '/elsewhere/objects',
     GIT_LITERAL_PATHSPECS: '1',
     GIT_OPTIONAL_LOCKS: '1',
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_PARAMETERS: "'core.hookspath'='/elsewhere'",
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: 'core.splitIndex',
+    GIT_CONFIG_VALUE_0: 'true',
+    GIT_CONFIG_KEY_1: 'core.hooksPath',
+    GIT_CONFIG_VALUE_1: '/elsewhere',
+    GIT_ATTR_SOURCE: 'HEAD~1',
+    GIT_REPLACE_REF_BASE: 'refs/elsewhere/',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_SHALLOW_FILE: '/elsewhere/shallow',
   });
   assert.deepEqual(env, {
     PATH: '/bin',
+    LANG: 'de_DE.UTF-8',
+    LC_ALL: 'C',
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_OPTIONAL_LOCKS: '0',
     GIT_TERMINAL_PROMPT: '0',
   });
+});
+
+test('errorDetail prefers the first fatal: or error: line over a leading warning', () => {
+  assert.equal(
+    errorDetail(Buffer.from('warning: in the working copy of a.txt\nfatal: first\nerror: later\n')),
+    'fatal: first',
+  );
+  assert.equal(
+    errorDetail(Buffer.from('hint: x\nerror: open failed\nfatal: after\n')),
+    'error: open failed',
+  );
+  assert.equal(errorDetail(Buffer.from('\n  plain message\nsecond\n')), 'plain message');
+  assert.equal(errorDetail(Buffer.alloc(0)), '');
+});
+
+test('explainUnreadable names the unreadable path and the way out', () => {
+  const message = explainUnreadable(
+    'error: open("dir/secret.txt"): Permission denied\n' +
+      "error: unable to index file 'dir/secret.txt'\nfatal: adding files failed\n",
+  );
+  assert.match(message, /^git add failed: cannot read dir\/secret\.txt \(Permission denied\)/);
+  assert.match(
+    message,
+    /ignore the file \(\.gitignore or \.git\/info\/exclude\) or fix its permissions/,
+  );
+  assert.match(explainUnreadable("error: unable to index file 'x'\n"), /cannot read x while/);
+  assert.equal(explainUnreadable('fatal: something else\n'), undefined);
+});
+
+test('explainSkipped fails on a skipped directory or path and ignores benign warnings', () => {
+  const directory = explainSkipped(
+    "warning: could not open directory 'locked/': Permission denied\n",
+  );
+  assert.match(directory, /^git add could not read locked\/ \(Permission denied\) while/);
+  assert.match(directory, /never skips a path/);
+  assert.match(
+    directory,
+    /ignore the path \(\.gitignore or \.git\/info\/exclude\) or fix its permissions/,
+  );
+  assert.match(
+    explainSkipped('hint: advice\r\ndir/file.txt: Permission denied\r\n'),
+    /could not read dir\/file\.txt \(Permission denied\)/,
+  );
+  assert.equal(
+    explainSkipped(
+      'warning: adding embedded git repository: emb\n' +
+        "hint: You've added another git repository inside your current repository.\n" +
+        'hint: \tgit submodule add <url> emb\n' +
+        'hint:\n' +
+        "warning: in the working copy of 'a.txt', LF will be replaced by CRLF the next time Git touches it\n" +
+        'error: not reached: after a failed add\n' +
+        'fatal: not reached: after a failed add\n',
+    ),
+    undefined,
+  );
+  assert.equal(explainSkipped(''), undefined);
+  assert.equal(explainSkipped(undefined), undefined);
 });
 
 test('a git failure while resolving cwd is reported as an unsafe target', async (t) => {

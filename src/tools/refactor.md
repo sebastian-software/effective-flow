@@ -241,7 +241,7 @@ skill-discovery
 
 ### Phase 3.5: Documentation sync
 
-Render the diff baseline, then run the mandatory documentation sync gate for its path list, the files this refactoring changed, before review and
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline" before review and
 post-validation, so both cover the documentation changes. Documentation must describe the
 restructured code, never a behavior change — a refactoring that alters no public surface commonly
 ends in `no impact` verdicts, and the gate records them instead of skipping.
@@ -252,9 +252,8 @@ documentation-sync
 
 ### Phase 4: Review
 
-1. Render the diff baseline, then start every reviewer selected by project routing for its path
-   list, naming the diff path and path list in each assignment, including
-   `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
+1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
+   routing selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
    items. Render again and run the affected review checks once after the pass, then classify the residual batch via
    “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
@@ -286,7 +285,7 @@ documentation-sync
 
 Render the diff baseline, then start in parallel:
 
-1. `{{AGENT:code-validator}}` with its path list as assigned scopes
+1. `{{AGENT:code-validator}}` with the path list per "Diff baseline"
 2. `{{AGENT:test-writer}}`
    - runs all existing tests again
    - writes no new tests

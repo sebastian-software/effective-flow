@@ -17675,6 +17675,16 @@ test('fix specifies the reproduction test in Phase 2 and writes it after capture
     'before any implementer starts',
     'Start every implementer',
   );
+  assert.match(
+    phase3,
+    /if it does not, start no implementer and return to Phase 2/,
+    'a reproduction test that does not fail as expected must stop the fix before any implementer',
+  );
+  assert.match(
+    phase3,
+    /Re-entering Phase 3 skips step 0, keeping the receipt and diff baseline/,
+    'a return through Phase 2 must resume Phase 3 without a second capture, so no run directory is orphaned',
+  );
 
   // Phase 4: the test-writer first, then a render, then validator and reviewer on that render.
   const phase4 = prose(boundedSlice(fix, '### Phase 4: Verification', '### Phase 5'));
@@ -17737,23 +17747,53 @@ test('refactor captures after the documented behavior baseline and before Phase 
   );
 });
 
-test('cleanup lists stale diff baselines and discards one only after confirmation', () => {
+// Stale diff baselines are their own cleanup class: discovered in their own Phase 1 step, so no
+// legacy-remnant "new counterpart" proof applies to them, and confirmed by their own ask, so a live
+// run's directory can be kept without cancelling the legacy-remnant deletion.
+test('cleanup lists stale diff baselines and discards one only after its own confirmation', () => {
   const cleanup = source('src/tools/cleanup.md');
 
+  const phase1 = boundedSlice(cleanup, '### Phase 1: Discovery', '### Phase 2');
   // `flat`, not `prose`: the glob's `*` is the contract here, and `prose` drops asterisks.
-  const inventory = flat(boundedSlice(cleanup, '### Phase 1: Discovery', '### Phase 2'));
+  const inventory = flat(phase1);
   assert.match(
     inventory,
     /\*\*Stale diff baselines:\*\*.*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/runs\/\*\/diff-baseline\/`/,
   );
   assert.match(inventory, /read-only/);
   assert.doesNotMatch(inventory, /diff-baseline\.mjs discard/, 'the inventory must not delete');
+  const discovery = [...numberedItems(phase1).values()];
+  assert.ok(
+    discovery.some((text) => text.startsWith('**Stale diff baselines:**')),
+    'stale diff baselines must be discovered in their own numbered Phase 1 step',
+  );
+  assert.ok(
+    discovery
+      .filter((text) => /legacy remnant/.test(text))
+      .every((text) => !/Stale diff baselines/.test(text)),
+    'the legacy-remnant steps must not discover stale diff baselines',
+  );
 
   const phase5 = boundedSlice(cleanup, '### Phase 5: Confirm deletion', '### Phase 6');
-  const deleteAsk = askContracts(phase5, 'cleanup Phase 5').find((ask) =>
-    /stale diff baseline/.test(ask.when ?? ''),
+  const asks = askContracts(phase5, 'cleanup Phase 5');
+  const baselineAsks = asks.filter((ask) => /stale diff baseline/.test(ask.when ?? ''));
+  assert.equal(baselineAsks.length, 1, 'exactly one Phase 5 ask must confirm stale diff baselines');
+  const [deleteAsk] = baselineAsks;
+  assert.doesNotMatch(
+    deleteAsk.when,
+    /legacy/,
+    'stale diff baselines are confirmed as their own class, not with legacy remnants',
   );
-  assert.ok(deleteAsk, 'the Phase 5 deletion ask must cover stale diff baselines');
+  assert.ok(
+    asks
+      .filter((ask) => ask !== deleteAsk)
+      .every((ask) => !/diff baseline/i.test(`${ask.question} ${JSON.stringify(ask.options)}`)),
+    'no other Phase 5 ask may confirm stale diff baselines',
+  );
+  assert.ok(
+    deleteAsk.options.some((option) => /keep/i.test(option.label)),
+    "the stale-diff-baseline ask must let the user keep a live run's directory",
+  );
   ordered(phase5, `\`\`\`ask\nwhen: ${deleteAsk.when}`, '- **Stale diff baselines:**');
   const execution = prose(section(phase5, '- **Stale diff baselines:**', '\n- **'));
   assert.match(execution, /scripts\/diff-baseline\.mjs discard/);
@@ -17795,5 +17835,10 @@ test('reviewer-assigned-change is conditional on a diff path and names no runtim
   const text = prose(fragment);
   assert.match(text, /When the assignment supplies a diff path/);
   assert.match(text, /do not rely on the implementer's report/);
+  assert.match(
+    text,
+    /assess its hunks for the assigned paths, read other hunks and full files only for context/,
+    'a reviewer assesses only its routed bucket; other hunks are context',
+  );
   assert.match(text, /Without a diff path, review the assigned files as before/);
 });

@@ -54,11 +54,11 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   "the files this run changed", they compute the delta since that point, so edits that already
   existed when the run started never count as the run's change. That one path list drives the
   documentation sync gate, validator routing, reviewer routing and, in `build`, the formatter.
-  Reviewers receive the diff itself and assess it instead of relying on the implementer's report.
-  When `iterate` or `apply-review` runs several items in one checkout, each item's delta is limited
-  to its own files. The snapshot lives in ignored runtime state under
-  `.effective-flow/runs/<RUN_ID>/diff-baseline/` and is removed when the run succeeds; an aborted
-  run leaves it for [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
+  Each reviewer receives the diff and assesses the hunks of its own routed paths instead of
+  relying on the implementer's report. When `iterate` or `apply-review` runs several items in one
+  checkout, each item's delta is limited to its own files. An aborted run leaves its snapshot under
+  `.effective-flow/runs/<RUN_ID>/diff-baseline/` for
+  [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -152,7 +152,8 @@ usual delivery branch with a completion action.
 `investigate`, `fix` does not stop at observing: phase 2 reproduces the defect and specifies a
 failing test (file, case, expected failure), and phase 3 writes that test and confirms it fails
 before any implementer starts. The test is written only after the diff baseline is captured, so it
-lands in the delivery checkout and counts as part of the fix.
+lands in the delivery checkout and counts as part of the fix. If it does not fail as expected, the
+run returns to diagnosis before any implementation.
 
 ## `/effective-flow refactor`
 

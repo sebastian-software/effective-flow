@@ -332,13 +332,13 @@ only when all independent checks agree: Effective Flow created it, its lifecycle
 path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
 The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
-Cleanup also lists **stale diff baselines**: the
-`<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/` directories that an aborted
-`build`, `fix`, or `refactor` run left behind. A successful run removes its own; a left-over one
-can contain working-tree content, including secrets. Each appears in the dry run with its run ID
-(the run's start timestamp) and a warning that a run still in progress needs its directory, since
-nothing proves such a directory abandoned and its age is never taken as proof. A listed directory
-is deleted only after explicit confirmation, through the shipped diff-baseline helper.
+Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
+directories that an aborted `build`, `fix`, or `refactor` run left behind (see
+[Implement a change](tools-implement.md)). They can contain working-tree content, including
+secrets. Each appears in the dry run with its run ID (the run's start timestamp) and a warning that
+a run still in progress needs its directory; its age is never taken as proof that it is abandoned.
+Stale diff baselines get their own confirmation instead of sharing the legacy-remnant question:
+remove all, select individually, or keep all.
 
 **When to use:** After Effective Flow has migrated a project from an older version (`.firmo/`,
 `.sf-plugin/`, `firmo-` labels) and you want to remove deliberately retained legacy data, or when

@@ -182,6 +182,8 @@ function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingC
       throw new Error(`${harness} baseline worker membership differs from the working inventory`);
     }
     for (const worker of claude.baseWorkers) {
+      // A source-changed worker is deliberately not byte-compared; the report names every
+      // exemption, and the baseline-proof test pins that line so an unexpected one fails it.
       if (exemptSet.has(worker)) continue;
       const file = `${worker}.${extension}`;
       assertSameFile(join(baselineDir, file), join(workingDir, file));

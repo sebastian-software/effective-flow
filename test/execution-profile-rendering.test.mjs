@@ -245,6 +245,8 @@ test('the executable baseline proof preserves every source-unchanged Quality nat
   // Agents whose source inputs (agent file plus transitive eager includes)
   // changed since the base are named and exempt; every other base agent must
   // still build byte-identically. An unexpected exemption changes this line.
+  // Exempt agents are deliberately not byte-compared, so each exemption is
+  // pinned here in the asserted stdout instead.
   assert.equal(
     result.stdout,
     'Native base agents match 7d1dcd5\n' +

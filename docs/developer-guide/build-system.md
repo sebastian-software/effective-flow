@@ -592,11 +592,23 @@ core or protocol modules:
   literal path scope, and atomically replaces `diff.patch` and `paths.json` with the tree-to-tree
   delta; `discard` removes `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left
   empty. Every snapshot uses a private temporary index and a private object directory inside
-  `diff-baseline/`, with the real object store attached read-only as an alternate, and every git
-  call carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store
-  stay untouched and no call takes the real `index.lock`. It refuses before any write when
-  `.effective-flow/` is tracked, not ignored, or reached through a symlink; directories are
-  created with mode `0700` and files with `0600`.
+  `diff-baseline/`, with the real object store attached read-only as an alternate. Every git call
+  carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store stay
+  untouched and no call takes the real `index.lock`. Snapshots also pin `core.splitIndex=false`
+  and an empty private `core.hooksPath`, so no split-index write and no hook reaches the real
+  `.git/`. They pin `core.safecrlf=false`, so a line-ending round trip cannot abort the snapshot,
+  and every helper git call runs with `LC_ALL=C`, so git's messages stay parseable. Both snapshots
+  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. An
+  unreadable file or directory makes `capture` or `render` fail closed, naming the path. `render` verifies `executionRoot` and
+  `baselineTree` against the recorded `baseline.json` and fails closed when its baseline is
+  missing instead of capturing again. The helper refuses before any write when `.effective-flow/`
+  is tracked, not ignored, or reached through a symlink; directories are created with mode `0700`
+  and files with `0600`. Three effects remain outside that boundary. Git may freshen the
+  modification time of objects it finds in the real store through the alternate. A
+  repository-configured clean or process filter writes to its own store; Git LFS, for example,
+  copies snapshot content into the shared LFS store, an accepted side effect that `discard` does
+  not remove. A same-user race that swaps a parent directory for a symlink between the chain check and
+  a mutation is not excluded.
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs

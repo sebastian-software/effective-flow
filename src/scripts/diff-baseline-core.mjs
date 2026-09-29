@@ -6,11 +6,20 @@
 // with the identical procedure and writes the tree-to-tree delta as `diff.patch` plus
 // `paths.json`. `discard` removes the `diff-baseline/` directory and its now empty run parent.
 //
-// A snapshot never touches the real index, stash, refs, HEAD or object store: every snapshot git
-// call runs against a private temporary index (`GIT_INDEX_FILE`) and a private object directory
-// (`GIT_OBJECT_DIRECTORY`) inside the run's `diff-baseline/` directory, with the real object store
-// attached read-only as an alternate. Every git call carries `GIT_OPTIONAL_LOCKS=0`, so none takes
-// the real `index.lock` while a sibling run commits.
+// A snapshot never touches the real index, stash, refs or HEAD, and writes no new object into the
+// real object store: every snapshot git call runs against a private temporary index
+// (`GIT_INDEX_FILE`) and a private object directory (`GIT_OBJECT_DIRECTORY`) inside the run's
+// `diff-baseline/` directory, with the real object store attached as an alternate. Snapshot calls
+// also disable the split index and point `core.hooksPath` at the run's empty `hooks/` directory,
+// so neither a shared index file lands in the real git directory nor a repository hook runs. Every
+// git call carries `GIT_OPTIONAL_LOCKS=0`, so none takes the real `index.lock` while a sibling run
+// commits. Two effects stay outside that isolation: git may freshen (touch the mtime of) an object
+// it finds in the real store through the alternate instead of writing a copy, and a
+// repository-configured clean or process filter (for example Git LFS) runs during `git add` and
+// writes to its own store.
+//
+// `render` refuses a handle whose recorded `baseline.json` names another baseline tree or execution
+// root than the caller passes.
 //
 // Every mkdir, write, rename and delete below `.effective-flow/` is preceded by the runtime-state
 // guard, run from `cwd`: `.effective-flow/` must be ignored and untracked, and no component of the
@@ -19,7 +28,18 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rename, rm, rmdir, stat, unlink } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -58,12 +78,14 @@ const STATE_DIR = '.effective-flow';
 const RUNS_DIR = 'runs';
 const BASELINE_DIR = 'diff-baseline';
 const OBJECTS_DIR = 'objects';
+const HOOKS_DIR = 'hooks';
 const BASELINE_FILE = 'baseline.json';
 const PATCH_FILE = 'diff.patch';
 const PATHS_FILE = 'paths.json';
 
-// Inherited variables that would redirect git to another repository, index or object store, or
-// reinterpret pathspecs and diff output. The helper sets the ones it needs itself.
+// Inherited variables that would redirect git to another repository, index or object store,
+// inject configuration, swap attributes, replace or graft objects, or reinterpret pathspecs and
+// diff output. The helper sets the ones it needs itself.
 const STRIPPED_GIT_ENV = Object.freeze([
   'GIT_DIR',
   'GIT_WORK_TREE',
@@ -81,17 +103,38 @@ const STRIPPED_GIT_ENV = Object.freeze([
   'GIT_EXTERNAL_DIFF',
   'GIT_DIFF_OPTS',
   'GIT_OPTIONAL_LOCKS',
+  'GIT_CONFIG_PARAMETERS',
+  'GIT_CONFIG_COUNT',
+  'GIT_ATTR_SOURCE',
+  'GIT_REPLACE_REF_BASE',
+  'GIT_NO_REPLACE_OBJECTS',
+  'GIT_SHALLOW_FILE',
 ]);
+// `GIT_CONFIG_COUNT` pairs with any number of numbered key and value variables.
+const STRIPPED_GIT_ENV_PATTERN = /^GIT_CONFIG_(?:KEY|VALUE)_/;
 
-// Snapshot calls pin the two settings that would otherwise let git start a daemon or cache
-// extension on behalf of the private index. The same flags run for baseline and current snapshots,
-// so they cannot introduce a delta.
+// Snapshot calls pin the settings that would otherwise let git start a daemon, write an extension
+// or a split-index shared file into the real git directory, abort on a line-ending round trip, or
+// create group- or world-readable snapshot objects. `core.hooksPath` is appended per call and
+// names the run's own empty `hooks/` directory, so no repository hook (such as
+// `post-index-change`) runs for the private index. The same flags run for baseline and current
+// snapshots, so they cannot introduce a delta.
 const SNAPSHOT_CONFIG = Object.freeze([
   '-c',
   'core.fsmonitor=false',
   '-c',
   'core.untrackedCache=false',
+  '-c',
+  'core.splitIndex=false',
+  '-c',
+  'core.safecrlf=false',
+  '-c',
+  'core.sharedRepository=0600',
 ]);
+
+function snapshotConfig(hooksDir) {
+  return [...SNAPSHOT_CONFIG, '-c', `core.hooksPath=${hooksDir}`];
+}
 
 export class DiffBaselineError extends Error {
   constructor(code, message, options) {
@@ -147,10 +190,14 @@ export function createProcessRunner() {
 export function gitBaseEnv(source = process.env) {
   const env = {};
   for (const [key, value] of Object.entries(source ?? {})) {
-    if (!STRIPPED_GIT_ENV.includes(key) && value !== undefined) env[key] = value;
+    if (value === undefined || STRIPPED_GIT_ENV.includes(key)) continue;
+    if (STRIPPED_GIT_ENV_PATTERN.test(key)) continue;
+    env[key] = value;
   }
   env.GIT_OPTIONAL_LOCKS = '0';
   env.GIT_TERMINAL_PROMPT = '0';
+  // Untranslated messages keep the reported detail and the error parsing below locale-independent.
+  env.LC_ALL = 'C';
   return env;
 }
 
@@ -160,18 +207,29 @@ function asBuffer(value) {
   return Buffer.from(String(value ?? ''), 'utf8');
 }
 
-function firstLine(buffer) {
-  return asBuffer(buffer).toString('utf8').trim().split('\n')[0] ?? '';
+// The one stderr line worth reporting: the first `fatal:` or `error:` line, because warnings
+// such as a line-ending notice can precede the actual cause; otherwise the first non-empty line.
+export function errorDetail(buffer) {
+  const lines = asBuffer(buffer)
+    .toString('utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return lines.find((line) => /^(?:fatal|error):/.test(line)) ?? lines[0] ?? '';
 }
 
 // Runs `git -C <cwd> <args>` and returns the raw result when its status is allowed. Any other
-// outcome is a GIT_FAILED error carrying the first stderr line, never the full output.
-async function git(context, cwd, args, { env = context.env, allowed = [0] } = {}) {
+// outcome is a GIT_FAILED error carrying one stderr line, never the full output; `explain` may
+// turn stderr into a more actionable message.
+async function git(context, cwd, args, { env = context.env, allowed = [0], explain } = {}) {
   const result = await context.runner({ executable: 'git', args: ['-C', cwd, ...args], cwd, env });
   if (result?.error || !allowed.includes(result?.status)) {
-    const detail = result?.error?.message ?? firstLine(result?.stderr);
+    const detail = result?.error?.message ?? errorDetail(result?.stderr);
     const command = args.find((arg, index) => arg !== '-c' && args[index - 1] !== '-c');
-    fail('GIT_FAILED', `git ${command} failed${detail ? `: ${detail}` : ''}`);
+    const explained = result?.error
+      ? undefined
+      : explain?.(asBuffer(result?.stderr).toString('utf8'));
+    fail('GIT_FAILED', explained ?? `git ${command} failed${detail ? `: ${detail}` : ''}`);
   }
   return {
     status: result.status,
@@ -560,40 +618,101 @@ async function currentHead(context, executionRoot) {
   return head;
 }
 
+// The private, empty hooks directory `core.hooksPath` points at. A file inside it would run as a
+// hook, so a non-empty directory fails closed instead of being used.
+async function requireEmptyHooksDirectory(context, dir) {
+  const hooksDir = path.join(dir, HOOKS_DIR);
+  await ensureGuardedDirectory(context, hooksDir);
+  let entries;
+  try {
+    entries = await readdir(hooksDir);
+  } catch (error) {
+    fail('UNSAFE_TARGET', `cannot inspect ${hooksDir}: ${error?.code ?? error?.message}`);
+  }
+  if (entries.length !== 0) fail('UNSAFE_TARGET', `${hooksDir} must be empty`);
+  return hooksDir;
+}
+
+// Turns a `git add` failure on a working-tree file git cannot read into an actionable message.
+// The snapshot never skips such a file: a silently missing path would hide the run's change.
+export function explainUnreadable(stderr) {
+  const text = String(stderr ?? '');
+  const indexed = /^error: unable to index file '(.+)'$/m.exec(text);
+  const opened = /^error: open\("(.+)"\): (.+)$/m.exec(text);
+  const file = indexed?.[1] ?? opened?.[1];
+  if (!file) return undefined;
+  const reason = opened?.[2] ? ` (${opened[2]})` : '';
+  return (
+    `git add failed: cannot read ${file}${reason} while snapshotting the working tree; ` +
+    'ignore the file (.gitignore or .git/info/exclude) or fix its permissions, then retry'
+  );
+}
+
+// `git add -A` exits 0 when it cannot open a working-tree directory: it only warns
+// (`warning: could not open directory 'dir/': Permission denied`) or prints an unprefixed perror
+// line (`dir/file: Permission denied`) for a tracked path it cannot stat, and leaves that path out
+// of the snapshot. The snapshot never skips a path silently, so either line fails the snapshot
+// closed. Every other warning (line-ending notices, embedded-repository advice) and every `hint:`
+// line stays benign. Returns the actionable message, or undefined when nothing was skipped.
+export function explainSkipped(stderr) {
+  for (const line of String(stderr ?? '').split('\n')) {
+    const text = line.replace(/\r$/, '');
+    const directory = /^warning: could not open directory '(.+)': (.+)$/.exec(text);
+    const perror = /^(?:warning|hint|error|fatal):/.test(text) ? null : /^(.+): (.+)$/.exec(text);
+    const found = directory ?? perror;
+    if (!found) continue;
+    return (
+      `git add could not read ${found[1]} (${found[2]}) while snapshotting the working tree, ` +
+      'and the snapshot never skips a path; ignore the path (.gitignore or .git/info/exclude) or ' +
+      'fix its permissions, then retry'
+    );
+  }
+  return undefined;
+}
+
 // The one snapshot procedure shared by capture and render: seed a private index from HEAD (or an
 // empty index for an unborn branch), stage every non-ignored path, write the tree. Snapshot
 // objects land only in `<dir>/objects`; the temporary index is removed afterwards.
 async function snapshot(context, executionRoot, dir) {
   const head = await currentHead(context, executionRoot);
+  const config = snapshotConfig(await requireEmptyHooksDirectory(context, dir));
   const indexFile = path.join(dir, `index-${randomBytes(8).toString('hex')}`);
   await guardTarget(context, indexFile);
   await guardTarget(context, `${indexFile}.lock`);
   const env = await snapshotEnv(context, executionRoot, dir, indexFile);
+  let primary;
   try {
-    await git(
-      context,
-      executionRoot,
-      [...SNAPSHOT_CONFIG, 'read-tree', ...(head ? [head] : ['--empty'])],
-      {
-        env,
-      },
-    );
-    await git(context, executionRoot, [...SNAPSHOT_CONFIG, 'add', '-A', '--', '.'], { env });
-    const tree = (
-      await git(context, executionRoot, [...SNAPSHOT_CONFIG, 'write-tree'], { env })
-    ).stdout
+    await git(context, executionRoot, [...config, 'read-tree', ...(head ? [head] : ['--empty'])], {
+      env,
+    });
+    const added = await git(context, executionRoot, [...config, 'add', '-A', '--', '.'], {
+      env,
+      explain: explainUnreadable,
+    });
+    const skipped = explainSkipped(added.stderr.toString('utf8'));
+    if (skipped) fail('GIT_FAILED', skipped);
+    const tree = (await git(context, executionRoot, [...config, 'write-tree'], { env })).stdout
       .toString('utf8')
       .trim();
     if (!OBJECT_ID_PATTERN.test(tree)) fail('GIT_FAILED', 'git write-tree returned no object id');
     return { head, tree };
+  } catch (error) {
+    primary = error;
+    throw error;
   } finally {
-    for (const leftover of [indexFile, `${indexFile}.lock`]) {
-      try {
-        await lstat(leftover);
-      } catch {
-        continue;
+    // A cleanup failure surfaces only when the snapshot itself succeeded; it never replaces the
+    // snapshot's own error, mirroring `captureBaseline`.
+    try {
+      for (const leftover of [indexFile, `${indexFile}.lock`]) {
+        try {
+          await lstat(leftover);
+        } catch {
+          continue;
+        }
+        await guardedUnlink(context, leftover);
       }
-      await guardedUnlink(context, leftover);
+    } catch (cleanupError) {
+      if (primary === undefined) throw cleanupError;
     }
   }
 }
@@ -725,8 +844,10 @@ export async function captureBaseline(input, deps = {}) {
   const dir = path.join(runPath, BASELINE_DIR);
   try {
     if (!(await guardedMkdir(context, dir))) fail('UNSAFE_TARGET', `${dir} already exists`);
-    if (!(await guardedMkdir(context, path.join(dir, OBJECTS_DIR)))) {
-      fail('UNSAFE_TARGET', `${path.join(dir, OBJECTS_DIR)} already exists`);
+    for (const child of [OBJECTS_DIR, HOOKS_DIR]) {
+      if (!(await guardedMkdir(context, path.join(dir, child)))) {
+        fail('UNSAFE_TARGET', `${path.join(dir, child)} already exists`);
+      }
     }
     const { head, tree } = await snapshot(context, executionRoot, dir);
     const record = {
@@ -754,6 +875,57 @@ export async function captureBaseline(input, deps = {}) {
   }
 }
 
+const MAX_RECORD_BYTES = 64 * 1024;
+// O_NONBLOCK keeps open() from waiting for a writer when the record path names a FIFO; the fstat
+// type check on the handle then rejects it. On a regular file the flag has no effect.
+const READ_FLAGS = fsConstants.O_RDONLY | O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0);
+
+// Reads `<dir>/baseline.json` without following a symlink. The caller has already proven the
+// directory chain from `cwd` down to `dir`.
+async function readBaselineRecord(dir) {
+  const recordPath = path.join(dir, BASELINE_FILE);
+  let handle;
+  try {
+    handle = await open(recordPath, READ_FLAGS);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      fail('MISSING_OBJECT', `the baseline record ${recordPath} does not exist`);
+    }
+    fail('UNSAFE_TARGET', `cannot open ${recordPath}: ${error?.code ?? error?.message}`);
+  }
+  let text;
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) fail('UNSAFE_TARGET', `${recordPath} is not a regular file`);
+    if (info.size > MAX_RECORD_BYTES) fail('INVALID_INPUT', `${recordPath} is too large`);
+    text = await handle.readFile('utf8');
+  } catch (error) {
+    if (error instanceof DiffBaselineError) throw error;
+    fail('UNSAFE_TARGET', `cannot read ${recordPath}: ${error?.code ?? error?.message}`);
+  } finally {
+    await handle.close().catch(() => {});
+  }
+  let record;
+  try {
+    record = JSON.parse(text);
+  } catch {
+    fail('INVALID_INPUT', `${recordPath} is not valid JSON`);
+  }
+  if (
+    !record ||
+    typeof record !== 'object' ||
+    record.version !== DIFF_BASELINE_VERSION ||
+    typeof record.baselineTree !== 'string' ||
+    typeof record.executionRoot !== 'string'
+  ) {
+    fail(
+      'INVALID_INPUT',
+      `${recordPath} is not a version ${DIFF_BASELINE_VERSION} baseline record`,
+    );
+  }
+  return record;
+}
+
 async function requireBaselineDirectory(cwd, value) {
   const resolved = await resolveBaselineDir(cwd, value);
   const present = await assertDirectoryChain(cwd, resolved.dir, { allowMissing: true });
@@ -774,6 +946,21 @@ export async function renderDiff(input, deps = {}) {
   const { dir, present } = await requireBaselineDirectory(cwd, handle);
   if (!present) {
     fail('MISSING_OBJECT', `baseline tree ${baselineTree} is unavailable: ${dir} does not exist`);
+  }
+  // The handle's own record decides what it may render: the recorded tree and execution root
+  // must be the ones the caller names, so a mixed-up handle never renders a foreign delta.
+  const record = await readBaselineRecord(dir);
+  if (record.baselineTree !== baselineTree) {
+    fail(
+      'INVALID_INPUT',
+      `baselineTree ${baselineTree} does not match the recorded ${record.baselineTree} of ${dir}`,
+    );
+  }
+  if (record.executionRoot !== executionRoot) {
+    fail(
+      'UNSAFE_TARGET',
+      `executionRoot ${executionRoot} does not match the recorded ${record.executionRoot} of ${dir}`,
+    );
   }
   if (!(await assertDirectoryChain(cwd, path.join(dir, OBJECTS_DIR), { allowMissing: true }))) {
     fail(

@@ -294,7 +294,7 @@ worktree-record-obligation
 
 ### Phase 3: Documentation
 
-Render the diff baseline, then run the mandatory documentation sync gate for its path list, the files this run changed. Assign documentation per
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline". Assign documentation per
 file/domain using the canonical routing contract; preserve the explicit JS/TS and Rust branches and
 use repository-native conventions for other product languages rather than inventing a documentation
 format.
@@ -312,14 +312,14 @@ Start in parallel if possible:
 
 ### Phase 5: Validation
 
-1. Render the diff baseline and start `{{AGENT:code-validator}}` with its path list as assigned scopes.
+1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
 2. Give the user the complete list of all errors and warnings found.
 3. If errors are found: fix them directly or delegate again to the appropriate implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
 
 ### Phase 6: Review
 
-1. Render the diff baseline, then start every reviewer selected by the canonical routing contract for its path list, naming the diff path and path list in each assignment, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
+1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
 2. Aggregate all review findings, then make exactly one automatic incorporation pass for every new
    finding that belongs to the authorized slice. Render again and re-run the affected review checks
    once after that pass; do not weaken or consume the separate validator correction budget.
@@ -379,7 +379,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 ### Phase 7: Completion
 
-1. Render the diff baseline and run `{{AGENT:code-validator}}` one last time with its path list as a final check.
+1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check.
 2. Document the completed workflow in the plan file, without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
@@ -429,7 +429,7 @@ Rules for the findings report:
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
 4. Delete the wisdom file.
-5. Render the diff baseline; if a formatter is configured, format its non-deleted paths including the plan file once, consistently. Then discard the diff baseline.
+5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". Then discard the diff baseline.
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Run the worktree-record exit self-check.
 8. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.

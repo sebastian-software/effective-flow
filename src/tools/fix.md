@@ -215,7 +215,9 @@ worktree-record-obligation
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
    roots every operation there. Last, capture the diff baseline per "Diff baseline".
 1. If Phase 2 specified a failing test, `{{AGENT:test-writer}}` writes it and confirms that it
-   fails as expected, before any implementer starts.
+   fails as expected, before any implementer starts; if it does not, start no implementer and
+   return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
+   diff baseline, and resumes here: the test-writer revises the already written test in place.
 2. Start every implementer selected by the canonical routing contract. Before
    `{{AGENT:generic-product-implementer}}`, emit the reduced-depth notice. Never send product code
    to `{{AGENT:generic-implementer}}`.
@@ -227,7 +229,7 @@ worktree-record-obligation
 
 ### Phase 3.5: Documentation sync
 
-Render the diff baseline, then run the mandatory documentation sync gate for its path list, the files this fix changed, before verification, so
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline" before verification, so
 the checks of Phase 4 cover the documentation changes as well. A minimal fix commonly ends in
 `no impact` verdicts; the gate still runs and still records them.
 
@@ -239,12 +241,12 @@ documentation-sync
 
 1. First `{{AGENT:test-writer}}`
    - confirms that the Phase 3 failing test now passes, or writes a regression test
-2. Then render the diff baseline and start in parallel if possible, with its path list:
+2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
    - `{{AGENT:code-validator}}`: repository-native lint, type, build and documentation checks that
-     can be discovered safely, with the path list as assigned scopes
+     can be discovered safely
    - for every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`: a read-only
-     qualitative review of the diff path and path list with the reduced-depth limitation, reporting
-     all severities; critical findings must be fixed before completion
+     qualitative review with the reduced-depth limitation, reporting all severities; critical
+     findings must be fixed before completion
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
 items, render again, then pass the residual batch through “Gated residual review-finding reports”. Document only
