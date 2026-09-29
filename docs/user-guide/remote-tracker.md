@@ -765,11 +765,28 @@ makes the line no marker line at all. The helper does not interpret Markdown: a 
 a fenced code block or a block quote is judged by the same rule as anywhere else. A body with no
 marker line carries neither field.
 
-A plan path, whether a marker's value or `pr-list`'s `planPath`, passes a strict allowlist. It is
-repository-relative and made of `/`-separated segments of letters, digits, `.`, `_`, and `-` only,
-none of them empty, `.`, or `..`, and none beginning with `-`. It is well-formed Unicode, contains no
-control, format, line-separator, or paragraph-separator character and no non-ASCII whitespace, and
-ends in `.md`. A leading `/`, a drive letter, and a backslash therefore never pass.
+A plan path, whether a marker's value or `pr-list`'s `planPath`, passes an allowlist that follows
+the configuration path contract: `plan.dir` is free text and a plan's file name is free too, so the
+rule admits what those can hold and refuses only what a literal argument cannot make harmless.
+
+- **Accepted:** a repository-relative path of `/`-separated segments made of Unicode letters, marks,
+  and numbers, punctuation, the ASCII space, and the ASCII symbols `+`, `=`, `^`, and `~`. Spaces
+  (`docs/my plans/2026-01-01-x.md`), glob characters `*`, `?`, `[`, and `]`
+  (`docs/plan[1]/x.md`), any script, and a decomposed (NFD) umlaut as well as a precomposed one all
+  pass. The path ends in `.md`.
+- **Refused:** a path that is not well-formed Unicode; a control, format (the bidirectional
+  overrides and the zero-width characters), line-separator, or paragraph-separator character, the
+  line feed included; any whitespace other than the ASCII space; a backslash; a `:`, which covers a
+  drive letter; an absolute path; an empty, `.`, or `..` segment; a segment beginning with `-`; a
+  missing `.md` suffix; the shell-significant characters `` ` ``, `$`, `;`, `|`, `<`, `>`, `"`,
+  `'`, and `&`; and any other symbol, such as `€`.
+
+A consumer passes an accepted path to Git as a literal argument: behind `--`, and as a
+`:(literal)` pathspec wherever Git would otherwise read `*`, `?`, or `[` as a glob. A `plan.dir`
+that carries a refused character makes plan publication unavailable for that project: every plan
+path below it fails the rule, so the `pr-list` probe that has to rule out an existing plan pull
+request is refused before any provider call, and publication stops before it writes anything. Choose
+a `plan.dir` without such a character to publish plans.
 
 `pr-list` also takes an optional `planPath`. It returns only the items whose parsed `planPrMarker`
 equals it and omits their `body`, so plan discovery never hands pull-request text to a workflow. A

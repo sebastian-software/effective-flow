@@ -2846,20 +2846,32 @@ const PLAN_PR_MARKER_OPENER = '<!-- effective-flow-plan-pr:';
 // separators `.` would otherwise stop at are the path rule's to refuse, as `unsafe-path`.
 const PLAN_PR_MARKER_LINE = /^<!-- effective-flow-plan-pr:v1 (.*) -->$/s;
 
-// The strict allowlist a plan path has to pass, as a marker's value and as `pr-list`'s `planPath`
-// alike. A caller joins it onto a checkout and passes it to Git, so it admits the shape a plan file
-// actually has and nothing that merely survives a denylist:
-// - repository-relative POSIX segments, each made of letters, digits, `.`, `_` and `-` only, never
-//   beginning with `-` (which Git or a shell would read as an option);
-// - no empty, `.` or `..` segment, so no leading `/`, no traversal, and no drive letter or
-//   backslash (neither `:` nor `\` is a segment character);
-// - well-formed UTF-16, and no control (`Cc`), format (`Cf` — the bidirectional overrides and the
-//   zero-width characters), line- or paragraph-separator character, and no non-ASCII whitespace;
+// The allowlist a plan path has to pass, as a marker's value and as `pr-list`'s `planPath` alike.
+// It follows the configuration path contract: `plan.dir` is free text, canonicalized before it is
+// written, and a plan's file name is free too, so a path may carry spaces, glob characters, and any
+// script. A caller joins the path onto a checkout and hands it to Git as one literal argument —
+// behind `--` and as a `:(literal)` pathspec — never through a shell, so what this rule keeps out
+// is what no literal argument can make harmless:
+// - repository-relative POSIX segments, none empty, `.` or `..`, so no leading `/` and no
+//   traversal, and none beginning with `-` (which Git or a shell would read as an option);
+// - each segment made of Unicode letters (`L`), marks (`M`, so a decomposed `u\u0308` passes as
+//   well as a precomposed `ü`), numbers (`N`), punctuation (`P`), the ASCII space, and the ASCII
+//   symbols `+`, `=`, `^` and `~` — which admits the glob characters `*`, `?`, `[` and `]`;
+// - none of the shell-significant characters `` ` ``, `$`, `;`, `|`, `<`, `>`, `"`, `'` and `&`,
+//   no backslash, and no `:` — which is what keeps a drive letter (`C:/…`, `c:…`), an NTFS stream
+//   name and Git's pathspec magic prefix out;
+// - well-formed UTF-16, and no control (`Cc`, the line feed included), format (`Cf` — the
+//   bidirectional overrides and the zero-width characters), line- or paragraph-separator character,
+//   and no whitespace other than the ASCII space;
 // - a `.md` suffix.
-// The segment rule already excludes every character the third rule names; that rule is stated on
-// its own so the refusal survives a later widening of the segment alphabet.
-const PLAN_PATH_SEGMENT = /^(?!-)[\p{L}\p{N}._-]+$/u;
-const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]|(?![ \t\n\v\f\r])\s/u;
+// `PLAN_PATH_FORBIDDEN` carries both character refusals. It is load-bearing for `;`, `"`, `'`, `&`,
+// `\` and `:`, which are punctuation and so inside the segment alphabet; the rest it names lie
+// outside that alphabet already and are stated there so the refusal survives a later widening of
+// it. A `plan.dir`
+// that carries a refused character makes plan publication unavailable for the project rather than
+// weakening the rule.
+const PLAN_PATH_SEGMENT = /^(?!-)[\p{L}\p{M}\p{N}\p{P} +=^~]+$/u;
+const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}`$;|<>"'&\\:]|(?! )\s/u;
 
 function isSafePlanPath(path) {
   if (typeof path !== 'string' || path === '' || !path.isWellFormed()) return false;

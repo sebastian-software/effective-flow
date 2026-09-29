@@ -11162,9 +11162,9 @@ test('every plan pull-request marker error has its stable code', () => {
   }
 });
 
-// The strict path allowlist, probed on both of its inputs: the marker's value and `pr-list`'s
-// `planPath`. Every refusal is a path that survived the earlier denylist of `/`, drive letters,
-// backslashes, ASCII controls and dot segments.
+// The plan path allowlist, probed on both of its inputs: the marker's value and `pr-list`'s
+// `planPath`. It follows the configuration path contract, so a free-text `plan.dir` and a free
+// plan file name pass; every refusal is a character or shape no literal Git argument makes harmless.
 const PLAN_PATH_PROBES = [
   // Admitted: the shapes a plan file has, letters of any script included.
   [PLAN_PATH, true],
@@ -11173,46 +11173,80 @@ const PLAN_PATH_PROBES = [
   ['docs/plan/über-änderung.md', true],
   ['docs/plan/計画.md', true],
   ['docs/plan/v1.2_final.md', true],
+  // Admitted: spaces, which a free-text `plan.dir` and a plan's file name may both carry.
+  ['docs/my plans/2026-01-01-x.md', true],
+  ['docs/plan/2026-01-01-über plan.md', true],
+  ['docs/plan/a b.md', true],
+  // Admitted: glob characters, which Git reads literally behind a `:(literal)` pathspec.
+  ['docs/plan[1]/x.md', true],
+  ['docs/plan/a*b.md', true],
+  ['docs/plan/a?.md', true],
+  ['docs/plan/[a].md', true],
+  // Admitted: a decomposed umlaut (NFD), whose combining mark is `M`, beside the precomposed one.
+  ['docs/plan/u\u0308ber.md', true],
+  // Admitted: ordinary punctuation and the ASCII symbols `+`, `=`, `^` and `~`.
+  ['docs/plan/a#b.md', true],
+  ['docs/plan/a%2e%2e.md', true],
+  ['docs/plan/(draft) a, b!.md', true],
+  ['docs/plan/{x}@y.md', true],
+  ['docs/plan/c++=^.md', true],
+  ['~/plan.md', true],
+  ['docs/plan/„Zitat“ – x….md', true],
   // A segment that begins with `-` would read as an option to Git or a shell.
   ['-rf.md', false],
   ['docs/-plan/a.md', false],
   ['docs/plan/--output=x.md', false],
+  // Only the leading character counts: a segment that begins with a space passes.
+  ['docs/plan/ -a.md', true],
   // Bidirectional overrides and zero-width characters are `Cf`.
   ['docs/plan/\u202egpj.md', false],
   ['docs/plan/\u2066a\u2069.md', false],
   ['docs/plan/a\u200b.md', false],
   ['docs/plan/\ufeffa.md', false],
   ['docs/plan/a\u00ad.md', false],
-  // Line and paragraph separators, C1 controls, and every whitespace, ASCII or not.
+  // Line and paragraph separators, controls, and every whitespace but the ASCII space.
   ['docs/plan/a\u2028.md', false],
   ['docs/plan/a\u2029.md', false],
   ['docs/plan/a\u0085.md', false],
   ['docs/plan/a\u007f.md', false],
+  ['docs/plan/a\n.md', false],
+  ['docs/plan/a\r.md', false],
   ['docs/plan/a\t.md', false],
-  ['docs/plan/a b.md', false],
   ['docs/plan/a\u00a0b.md', false],
   ['docs/plan/a\u3000b.md', false],
   ['docs/plan/a\u2003b.md', false],
   // Not well-formed UTF-16: a lone surrogate half.
   ['docs/plan/a\ud800.md', false],
   ['docs/plan/\udc00a.md', false],
-  // A combining mark is neither a letter nor a digit, so a decomposed spelling is refused; Git on
-  // macOS stores the precomposed form by default (`core.precomposeUnicode`).
-  ['docs/plan/u\u0308ber.md', false],
-  // Shell, URL and Markdown punctuation.
-  ['docs/plan:a.md', false],
-  ['~/plan.md', false],
+  // The shell-significant characters, one probe each.
+  ['docs/plan/a`b.md', false],
   ['docs/plan/$HOME.md', false],
   ['docs/plan/a;b.md', false],
-  ['docs/plan/a*b.md', false],
-  ["docs/plan/a'b.md", false],
+  ['docs/plan/a|b.md', false],
+  ['docs/plan/a<b.md', false],
+  ['docs/plan/a>b.md', false],
   ['docs/plan/a"b.md', false],
-  ['docs/plan/a%2e%2e.md', false],
-  ['docs/plan/a?.md', false],
-  ['docs/plan/a#b.md', false],
-  ['docs/plan/[a].md', false],
+  ["docs/plan/a'b.md", false],
+  ['docs/plan/a&b.md', false],
+  // A backslash, and a `:` — a drive letter, an NTFS stream name, or Git's pathspec magic.
+  ['docs\\plan\\a.md', false],
+  ['docs/plan:a.md', false],
+  ['C:/plan.md', false],
+  ['c:plan.md', false],
+  [':(glob)docs/*.md', false],
+  // Symbols outside the four admitted ASCII ones.
+  ['docs/plan/a€.md', false],
+  ['docs/plan/a\u2215b.md', false],
+  // Shape: absolute, empty, `.` and `..` segments, and the `.md` suffix.
+  ['/docs/plan/a.md', false],
+  ['docs//plan/a.md', false],
+  ['docs/./plan/a.md', false],
+  ['docs/plan/../a.md', false],
   ['docs/plan/a.md/', false],
   ['docs/plan/a.md.txt', false],
+  ['docs/plan/a.MD', false],
+  ['docs/plan/a', false],
+  ['', false],
 ];
 
 test('the plan path allowlist decides the marker and planPath alike', async () => {
