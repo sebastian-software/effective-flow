@@ -28,6 +28,7 @@ import {
   executeOperation,
   RemoteTrackerError,
 } from '../src/scripts/remote-tracker-core.mjs';
+import { buildEnvelope, validateStructure } from '../src/scripts/delegation-envelope-core.mjs';
 
 // The stub's own predicate for the merge opt-in, imported rather than restated so this file cannot
 // drift from the rule it is asserting. The import has to be dynamic and the flag has to be set
@@ -36,7 +37,7 @@ import {
 // asking what the predicate is.
 process.env.EVAL_TRACKER_NO_MAIN = '1';
 const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
-  await import('../evals/merge-gate/_scaffold/remote-tracker.mjs');
+  await import('../evals/_scaffold/remote-tracker.mjs');
 
 // WP2 of docs/plan/2026-09-02-merge-gate-behavioural-evals.md. The eval suite stubs the whole forge
 // input surface of a `merge-gate` run at one subprocess, which is only worth something while the
@@ -51,21 +52,35 @@ const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
 const SCENARIO_DIR = resolve(SUITE_ROOT, 'scenarios');
-const STUB_PATH = resolve(SUITE_ROOT, '_scaffold', 'remote-tracker.mjs');
+const STUB_PATH = resolve(SUITE_ROOT, '..', '_scaffold', 'remote-tracker.mjs');
 const ITERATE_TRACE_PATH = resolve(SUITE_ROOT, '_scaffold', 'iterate-trace.mjs');
 // The suite's auxiliary-evidence descriptor as `validateArchivedPairing` takes it: the archived
 // suffix plus whether the scenario under test must carry that second file.
 const ITERATE_PAIRING = { suffix: 'iterate.jsonl', required: true };
 const NO_PAIRING = { suffix: 'iterate.jsonl', required: false };
 
-function fixtureFiles() {
-  return readdirSync(FIXTURE_DIR)
+// Every suite whose fixtures the stub serves. The stub is shared, so the proofs that do not name a
+// tool — an envelope is one the real normalizer emits, the stub hands out exactly what a fixture
+// states, every prompt requires the runtime root — run over every corpus; the gate-specific ones
+// below stay on the merge-gate corpus they were written for.
+const ITERATE_SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'iterate');
+const CORPORA = [
+  { suite: 'merge-gate', fixtures: FIXTURE_DIR, scenarios: SCENARIO_DIR },
+  {
+    suite: 'iterate',
+    fixtures: resolve(ITERATE_SUITE_ROOT, 'fixtures'),
+    scenarios: resolve(ITERATE_SUITE_ROOT, 'scenarios'),
+  },
+];
+
+function fixtureFiles(dir = FIXTURE_DIR) {
+  return readdirSync(dir)
     .filter((name) => name.endsWith('.json'))
     .sort();
 }
 
-function loadFixture(name) {
-  return JSON.parse(readFileSync(join(FIXTURE_DIR, name), 'utf8'));
+function loadFixture(name, dir = FIXTURE_DIR) {
+  return JSON.parse(readFileSync(join(dir, name), 'utf8'));
 }
 
 const THREAD_IDENTIFIER = 'A'.repeat(32);
@@ -126,31 +141,32 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
   }
 });
 
-test('every scenario prompt requires the runtime root in each helper request', () => {
-  for (const file of fixtureFiles()) {
-    const scenario = file.slice(0, -'.json'.length);
-    const template = extractPrompt(
-      readFileSync(join(SCENARIO_DIR, `${scenario}.md`), 'utf8'),
-      scenario,
-    );
-    // Rounds render each slot's project root into the template, so the literal field is asserted on
-    // a rendered prompt for an arbitrary slot rather than on one fixed sandbox path.
-    const project = `/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/${scenario}/slot-1/attempt-1/project`;
-    const prompt = renderPrompt(template, {
-      skillRoot: `/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/${scenario}/slot-1/attempt-1/skill`,
-      projectRoot: project,
-    });
-    assert.ok(
-      prompt.includes(`"cwd":"${project}"`),
-      `${scenario}: prompt does not require the literal cwd request field`,
-    );
-    assert.match(
-      prompt,
-      /Omit\s+that\s+field\s+from\s+no\s+invocation\./,
-      `${scenario}: prompt leaves cwd optional`,
-    );
-  }
-});
+for (const corpus of CORPORA)
+  test(`${corpus.suite}: every scenario prompt requires the runtime root in each helper request`, () => {
+    for (const file of fixtureFiles(corpus.fixtures)) {
+      const scenario = file.slice(0, -'.json'.length);
+      const template = extractPrompt(
+        readFileSync(join(corpus.scenarios, `${scenario}.md`), 'utf8'),
+        scenario,
+      );
+      // Rounds render each slot's project root into the template, so the literal field is asserted on
+      // a rendered prompt for an arbitrary slot rather than on one fixed sandbox path.
+      const project = `/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/${scenario}/slot-1/attempt-1/project`;
+      const prompt = renderPrompt(template, {
+        skillRoot: `/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/${scenario}/slot-1/attempt-1/skill`,
+        projectRoot: project,
+      });
+      assert.ok(
+        prompt.includes(`"cwd":"${project}"`),
+        `${scenario}: prompt does not require the literal cwd request field`,
+      );
+      assert.match(
+        prompt,
+        /Omit\s+that\s+field\s+from\s+no\s+invocation\./,
+        `${scenario}: prompt leaves cwd optional`,
+      );
+    }
+  });
 
 test('the iterate echo records one bounded attributed handoff and returns deferred for both keys', () => {
   const { root, result, trace } = runIterateEcho(echoHandoff());
@@ -460,51 +476,53 @@ function runStub(operation, argv = [], env = {}) {
   return { ...result, envelope: JSON.parse(result.stdout) };
 }
 
-test('the suite ships at least one fixture', () => {
-  assert.ok(fixtureFiles().length > 0, `no fixtures found in ${FIXTURE_DIR}`);
-});
+for (const corpus of CORPORA)
+  test(`${corpus.suite}: the suite ships at least one fixture`, () => {
+    assert.ok(fixtureFiles(corpus.fixtures).length > 0, `no fixtures found in ${corpus.fixtures}`);
+  });
 
-test('every fixture envelope is one the real normalizer emits', async () => {
-  for (const file of fixtureFiles()) {
-    const fixture = loadFixture(file);
-    assert.ok(fixture.repository, `${file}: fixture states no repository`);
-    assert.ok(fixture.probe, `${file}: fixture states no probe`);
+for (const corpus of CORPORA)
+  test(`${corpus.suite}: every fixture envelope is one the real normalizer emits`, async () => {
+    for (const file of fixtureFiles(corpus.fixtures)) {
+      const fixture = loadFixture(file, corpus.fixtures);
+      assert.ok(fixture.repository, `${file}: fixture states no repository`);
+      assert.ok(fixture.probe, `${file}: fixture states no probe`);
 
-    for (const { operation, label, entry, element } of fixtureElements(file, fixture)) {
-      for (const { apply, envelope } of statedEnvelopes(file, `${operation}${label}`, element)) {
-        const runner = runnerFor(element);
-        const produced = await executeOperation(
-          operation,
-          { repository: fixture.repository, probe: fixture.probe, ...(entry.input ?? {}) },
-          {
-            runner,
-            // The probe is stated by the fixture rather than performed, so the corpus declares the
-            // provider capabilities it assumes instead of inheriting whatever a live `gh` reports.
-            skipProbe: true,
-            // `issue-state-wait` is the one operation that sleeps: between its two reads it waits
-            // the helper's fixed grace period. Replaying that for real costs this suite half a
-            // minute per such envelope and makes the emitted `observedWaitMs` depend on the wall
-            // clock, which is both slow and a flake. The no-op sleeper and the stepping clock below
-            // reproduce the same envelope instantly and deterministically: the helper clamps the
-            // observed wait to its fixed period, so any step larger than that period yields exactly
-            // the value a real wait produces. Every other operation ignores both options.
-            sleeper: async () => {},
-            clock: steppingClock(),
-            ...(apply ? { apply: true } : {}),
-          },
-        );
-        assert.deepEqual(
-          produced,
-          envelope,
-          `${file}: the canned ${apply ? 'apply' : 'dry-run'} envelope for "${operation}"${label} is not what executeOperation emits for its provider payload`,
-        );
-        // Only the applied call issues every command a mutation has; a dry run returns its preview
-        // before the first one, so its unconsumed responses say nothing.
-        if (apply) runner.assertDrained(`${file}: "${operation}"${label}`);
+      for (const { operation, label, entry, element } of fixtureElements(file, fixture)) {
+        for (const { apply, envelope } of statedEnvelopes(file, `${operation}${label}`, element)) {
+          const runner = runnerFor(element);
+          const produced = await executeOperation(
+            operation,
+            { repository: fixture.repository, probe: fixture.probe, ...(entry.input ?? {}) },
+            {
+              runner,
+              // The probe is stated by the fixture rather than performed, so the corpus declares the
+              // provider capabilities it assumes instead of inheriting whatever a live `gh` reports.
+              skipProbe: true,
+              // `issue-state-wait` is the one operation that sleeps: between its two reads it waits
+              // the helper's fixed grace period. Replaying that for real costs this suite half a
+              // minute per such envelope and makes the emitted `observedWaitMs` depend on the wall
+              // clock, which is both slow and a flake. The no-op sleeper and the stepping clock below
+              // reproduce the same envelope instantly and deterministically: the helper clamps the
+              // observed wait to its fixed period, so any step larger than that period yields exactly
+              // the value a real wait produces. Every other operation ignores both options.
+              sleeper: async () => {},
+              clock: steppingClock(),
+              ...(apply ? { apply: true } : {}),
+            },
+          );
+          assert.deepEqual(
+            produced,
+            envelope,
+            `${file}: the canned ${apply ? 'apply' : 'dry-run'} envelope for "${operation}"${label} is not what executeOperation emits for its provider payload`,
+          );
+          // Only the applied call issues every command a mutation has; a dry run returns its preview
+          // before the first one, so its unconsumed responses say nothing.
+          if (apply) runner.assertDrained(`${file}: "${operation}"${label}`);
+        }
       }
     }
-  }
-});
+  });
 
 // The corpus has to cover the operations a gate run actually performs, or a scenario could pass
 // because the run never got far enough to need one — and, worse, because the stub's loud failure on
@@ -609,46 +627,47 @@ test('every fixture hashes the body returned by its normalized PR read', () => {
   }
 });
 
-test('the stub hands out exactly the fixture envelope for every defined operation', () => {
-  for (const file of fixtureFiles()) {
-    const fixture = loadFixture(file);
-    const fixturePath = join(FIXTURE_DIR, file);
-    const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
-    try {
-      const asked = [];
-      for (const [operation, entry] of Object.entries(fixture.operations)) {
-        // Walked element by element in the next test: one call here would ask for element 1 only.
-        if (isSequenced(entry)) continue;
-        for (const { apply, envelope: stated } of statedEnvelopes(file, operation, entry)) {
-          asked.push(operation);
-          const { status, envelope } = runStub(operation, apply ? ['--apply'] : [], {
-            EVAL_TRACKER_FIXTURE: fixturePath,
-            EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
-          });
-          assert.equal(status, 0, `${file}: the stub exited non-zero for "${operation}"`);
-          assert.deepEqual(
-            envelope,
-            stated,
-            `${file}: the stub altered the "${operation}" ${apply ? 'apply' : 'dry-run'} envelope`,
-          );
+for (const corpus of CORPORA)
+  test(`${corpus.suite}: the stub hands out exactly the fixture envelope for every defined operation`, () => {
+    for (const file of fixtureFiles(corpus.fixtures)) {
+      const fixture = loadFixture(file, corpus.fixtures);
+      const fixturePath = join(corpus.fixtures, file);
+      const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+      try {
+        const asked = [];
+        for (const [operation, entry] of Object.entries(fixture.operations)) {
+          // Walked element by element in the next test: one call here would ask for element 1 only.
+          if (isSequenced(entry)) continue;
+          for (const { apply, envelope: stated } of statedEnvelopes(file, operation, entry)) {
+            asked.push(operation);
+            const { status, envelope } = runStub(operation, apply ? ['--apply'] : [], {
+              EVAL_TRACKER_FIXTURE: fixturePath,
+              EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
+            });
+            assert.equal(status, 0, `${file}: the stub exited non-zero for "${operation}"`);
+            assert.deepEqual(
+              envelope,
+              stated,
+              `${file}: the stub altered the "${operation}" ${apply ? 'apply' : 'dry-run'} envelope`,
+            );
+          }
         }
+        // The call log is the evidence every scenario assertion reads, so it has to record every
+        // operation the run asked for, in order.
+        const log = readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+        assert.deepEqual(
+          startEvents(log).map((record) => record.operation),
+          asked,
+          `${file}: the stub's call log does not record every operation`,
+        );
+      } finally {
+        rmSync(logDir, { recursive: true, force: true });
       }
-      // The call log is the evidence every scenario assertion reads, so it has to record every
-      // operation the run asked for, in order.
-      const log = readFileSync(join(logDir, 'tracker-calls.jsonl'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line));
-      assert.deepEqual(
-        startEvents(log).map((record) => record.operation),
-        asked,
-        `${file}: the stub's call log does not record every operation`,
-      );
-    } finally {
-      rmSync(logDir, { recursive: true, force: true });
     }
-  }
-});
+  });
 
 // The sequenced half of the test above. A sequenced entry is walked rather than called once: the
 // n-th call must receive the n-th element, so every element is asked for in order against one log,
@@ -897,7 +916,7 @@ test('a sequenced call records completion only after stdout delivery completes',
   process.env.EVAL_TRACKER_FIXTURE = fixturePath;
   process.env.EVAL_TRACKER_LOG = logPath;
   try {
-    const moduleUrl = new URL('../evals/merge-gate/_scaffold/remote-tracker.mjs', import.meta.url);
+    const moduleUrl = new URL('../evals/_scaffold/remote-tracker.mjs', import.meta.url);
     moduleUrl.searchParams.set('stdout-order-test', `${Date.now()}`);
     const { main } = await import(moduleUrl.href);
 
@@ -1389,5 +1408,237 @@ test('the stub rejects a malformed sequenced entry loudly rather than guessing',
     );
     assert.equal(unpositioned.ok, false, `position ${position} was served`);
     assert.equal(unpositioned.error.code, 'COMMAND_FAILED');
+  }
+});
+
+// --- The iterate corpus ---------------------------------------------------------------------------
+//
+// The iterate suite hands a run a stored delegation instead of letting a live gate build one, so its
+// fixtures carry a second kind of claim beside the forge envelopes: that the message a run receives
+// is what the shipped sender produced, changed in exactly one declared way. The cases below prove
+// that claim from the stored parts, and prove the rendered prompt carries that message and nothing
+// else after the dispatch line.
+
+const ITERATE_FIXTURES = resolve(ITERATE_SUITE_ROOT, 'fixtures');
+const ITERATE_SCENARIOS = resolve(ITERATE_SUITE_ROOT, 'scenarios');
+const ITERATE_DISPATCH_LINE = 'effective-flow iterate 42';
+
+function iterateFixtures() {
+  return fixtureFiles(ITERATE_FIXTURES).map((file) => ({
+    file,
+    scenario: file.slice(0, -'.json'.length),
+    fixture: loadFixture(file, ITERATE_FIXTURES),
+  }));
+}
+
+// The one change a scenario makes to a genuine envelope, applied the way its fixture declares it.
+// Each kind names a line that must occur exactly once, so a declaration that matches nothing — or
+// matches ambiguously — fails here rather than yielding a message nobody meant.
+function applyMutation(built, mutation) {
+  const lines = built.split('\n');
+  const uniqueIndex = (line) => {
+    const index = lines.indexOf(line);
+    assert.ok(index >= 0, `the mutation names a line the built envelope does not carry: ${line}`);
+    assert.equal(lines.lastIndexOf(line), index, `the mutation names a repeated line: ${line}`);
+    return index;
+  };
+  switch (mutation.kind) {
+    case 'none':
+      return built;
+    case 'replace-line':
+      lines[uniqueIndex(mutation.from)] = mutation.to;
+      return lines.join('\n');
+    case 'duplicate-line':
+      lines.splice(uniqueIndex(mutation.line) + 1, 0, mutation.line);
+      return lines.join('\n');
+    case 'remove-line':
+      lines.splice(uniqueIndex(mutation.line), 1);
+      return lines.join('\n');
+    case 'remove-last-span': {
+      const token = lines.find((line) => line.startsWith('Boundary token: '));
+      assert.ok(token, 'the built envelope declares no boundary token');
+      const cut = built.lastIndexOf(`\n${token.slice('Boundary token: '.length)}\n`);
+      assert.ok(cut >= 0, 'the built envelope has no second span to remove');
+      return built.slice(0, cut);
+    }
+    default:
+      throw new Error(`unknown mutation kind ${mutation.kind}`);
+  }
+}
+
+test('iterate: every stored delegation is genuine sender output changed in exactly its declared way', () => {
+  const fixtures = iterateFixtures();
+  assert.equal(fixtures.length, 6, 'the iterate corpus is expected to hold its six scenarios');
+  for (const { scenario, fixture } of fixtures) {
+    const { input, built, snapshot, mutation, message } = fixture.delegation ?? {};
+    assert.equal(typeof built, 'string', `${scenario}: the fixture stores no built envelope`);
+    // The build input is stored without the scratch directory it was built in, so no local path
+    // reaches the corpus.
+    assert.ok(
+      !Object.hasOwn(input ?? {}, 'cwd'),
+      `${scenario}: the stored build input keeps a cwd`,
+    );
+    // The shipped sender's own validator accepts the stored envelope against the snapshot the
+    // sender wrote beside it: the bytes are what `build` produced, not a hand-written lookalike.
+    assert.doesNotThrow(
+      () => validateStructure(built, snapshot),
+      `${scenario}: the stored envelope is not one the shipped delegation-envelope helper accepts`,
+    );
+    assert.equal(
+      applyMutation(built, mutation),
+      message,
+      `${scenario}: the message is not the built envelope changed by its declared mutation`,
+    );
+    if (mutation.kind === 'none') {
+      assert.equal(message, built, `${scenario}: an unmutated delegation differs from the build`);
+    } else {
+      // A mutation the sender would itself have refused is a real defect, not a cosmetic edit.
+      assert.throws(
+        () => validateStructure(message, snapshot),
+        `${scenario}: the declared mutation left an envelope the sender's validator still accepts`,
+      );
+    }
+    // An item may legitimately contain any text, but a stored refusal string would let the fixture
+    // answer for the run; the scenarios never seed one.
+    assert.ok(!message.includes('ABORT:'), `${scenario}: the delegated message carries ABORT:`);
+    assert.ok(
+      !JSON.stringify(fixture.operations).includes('ABORT:'),
+      `${scenario}: a forge envelope carries ABORT:`,
+    );
+  }
+});
+
+// The minted values of one envelope, in the order the sender drew them: one identifier per manifest
+// line, then the boundary token. Everything else in the envelope is a function of the build input.
+function mintedValues(snapshot) {
+  const identifiers = snapshot.manifestLines.map((line) => {
+    const match = line.match(/^(?:Thread item|Item): ([A-Z0-9]+) \| /);
+    assert.ok(match, `a manifest line carries no identifier: ${line}`);
+    return match[1];
+  });
+  return [...identifiers, snapshot.token];
+}
+
+// The envelope and its snapshot with every minted value replaced by its position, so two builds of
+// one input compare equal exactly when the sender's format did not move.
+function withoutMintedValues(text, minted) {
+  return minted.reduce(
+    (current, value, index) =>
+      current.split(value).join(index === minted.length - 1 ? '<TOKEN>' : `<ID-${index + 1}>`),
+    text,
+  );
+}
+
+// The validator accepts a stored envelope against its own snapshot, which proves the bytes were
+// well-formed sender output **when stored**. It cannot prove they still are: a change to the
+// sender's format that the validator tolerates — a reordered control line, a renamed manifest field
+// the parser also accepts — would leave every stored message describing a sender that no longer
+// exists. So each envelope is rebuilt here from its stored input with the current shipped helper, and
+// the two are compared in full except for the values the sender mints at random.
+test('iterate: every stored delegation is what the current shipped sender builds from its input', async () => {
+  for (const { scenario, fixture } of iterateFixtures()) {
+    const { input, built, snapshot } = fixture.delegation;
+    const cwd = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-rebuild-'));
+    try {
+      const result = await buildEnvelope({ ...input, cwd: realpathSync(cwd) });
+      assert.equal(result.status, 'written', `${scenario}: the sender no longer writes this input`);
+      const rebuiltText = readFileSync(result.path, 'utf8');
+      const rebuiltSnapshot = JSON.parse(readFileSync(result.snapshotPath, 'utf8'));
+      const stored = mintedValues(snapshot);
+      const rebuilt = mintedValues(rebuiltSnapshot);
+      assert.equal(
+        rebuilt.length,
+        stored.length,
+        `${scenario}: a different number of minted values`,
+      );
+      assert.equal(
+        withoutMintedValues(rebuiltText, rebuilt),
+        withoutMintedValues(built, stored),
+        `${scenario}: the stored envelope is not what the current sender builds from its input`,
+      );
+      assert.equal(
+        withoutMintedValues(JSON.stringify(rebuiltSnapshot), rebuilt),
+        withoutMintedValues(JSON.stringify(snapshot), stored),
+        `${scenario}: the stored snapshot is not what the current sender writes beside the envelope`,
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
+test('iterate: every prompt closes with the dispatch line and the stored message, byte for byte', () => {
+  for (const { scenario, fixture } of iterateFixtures()) {
+    const template = extractPrompt(
+      readFileSync(join(ITERATE_SCENARIOS, `${scenario}.md`), 'utf8'),
+      scenario,
+    );
+    const prompt = renderPrompt(template, {
+      skillRoot: '/tmp/effective-flow-iterate-eval/rounds/unit/skill',
+      projectRoot: '/tmp/effective-flow-iterate-eval/rounds/unit/project',
+    });
+    const invocation = `\n${ITERATE_DISPATCH_LINE}\n${fixture.delegation.message}`;
+    assert.ok(
+      prompt.endsWith(invocation),
+      `${scenario}: the prompt does not end with the dispatch line and the fixture's message`,
+    );
+    // Exactly one dispatch line: the invocation is the tail of the prompt and appears nowhere else.
+    assert.equal(prompt.split(ITERATE_DISPATCH_LINE).length, 2, `${scenario}: dispatch repeated`);
+    assert.ok(
+      prompt.includes(
+        '`node /tmp/effective-flow-iterate-eval/rounds/unit/skill/scripts/report-channel.mjs`',
+      ),
+      `${scenario}: the prompt does not route the final report into the exit channel`,
+    );
+    // The discipline the merge-gate prompts keep: the prompt says where things are, never what to
+    // conclude. A refusal string or completion keyword ahead of the invocation would be an answer.
+    const head = prompt.slice(0, prompt.length - invocation.length);
+    assert.ok(!/ABORT:|\bDONE\b/.test(head), `${scenario}: the prompt states an outcome`);
+  }
+});
+
+// What a run reads in Phase 1 has to be answered on every fixture — the forge-reading scenarios
+// because their verdict rests on those reads, the Phase-0 ones so that a regression proceeding into
+// Phase 1 meets the normal path and is recorded as the failure it is.
+test('iterate: every fixture answers the reads an iterate run performs in PR mode', () => {
+  const required = [
+    'repository-resolve',
+    'reference-parse',
+    'probe',
+    'pr-read',
+    'viewer-read',
+    'pr-status-read',
+    'pr-comments-read',
+    'pr-reviews-read',
+    'review-threads-read',
+  ];
+  for (const { scenario, fixture } of iterateFixtures()) {
+    for (const operation of required) {
+      assert.ok(
+        Object.hasOwn(fixture.operations, operation),
+        `${scenario}: fixture defines no envelope for "${operation}"`,
+      );
+    }
+    for (const [operation, entry] of Object.entries(fixture.operations)) {
+      assert.ok(!isSequenced(entry), `${scenario}: ${operation} is sequenced`);
+    }
+    assert.notEqual(fixture.servesMerge, true, `${scenario}: an iterate fixture serves a merge`);
+  }
+});
+
+// The checkout the sandbox builds and the forge the stub reports must describe one pull request:
+// the head SHA a run fetches is the head the status read reports, on the branch the PR read names.
+test('iterate: every fixture checkout block matches the pull request its forge envelopes report', () => {
+  for (const { scenario, fixture } of iterateFixtures()) {
+    const { baseRef, headRef, baseSha, headSha } = fixture.checkout ?? {};
+    for (const sha of [baseSha, headSha]) {
+      assert.match(sha ?? '', /^[0-9a-f]{40}$/, `${scenario}: checkout SHA is not a commit id`);
+    }
+    const pr = fixture.operations['pr-read'].envelope.data.result;
+    const status = fixture.operations['pr-status-read'].envelope.data.result;
+    assert.equal(pr.head, headRef, `${scenario}: pr-read names another head branch`);
+    assert.equal(pr.base, baseRef, `${scenario}: pr-read names another base branch`);
+    assert.equal(status.headSha, headSha, `${scenario}: pr-status-read reports another head`);
+    assert.equal(status.baseRef, baseRef, `${scenario}: pr-status-read reports another base`);
   }
 });

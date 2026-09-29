@@ -78,6 +78,60 @@ function auxiliaryFor(suite, scenario) {
   return auxiliary.required(scenario) ? auxiliary : null;
 }
 
+function nonEmptyFile(path) {
+  return existsSync(path) && statSync(path).size > 0;
+}
+
+// Whether an attempt left anything a run writes, which is the line between "the session produced
+// evidence, seal and evaluate it" and "nothing happened, retry it as aborted".
+//
+// For a suite whose scenarios all read the forge, that line is a non-empty call log, and it stays
+// exactly that. A suite whose evaluator permits an empty call log for a scenario — the `iterate`
+// suite, whose correct refusals happen before the first forge read — cannot draw it there, since
+// its best runs leave no call at all. For such a scenario the paired auxiliary evidence counts too:
+// the exit-channel record is what the run wrote. An attempt with neither reads as not yet run in
+// `status`, and `retry-aborted` still accepts it as one that was stopped; sealing it on a
+// completed-session receipt is decided separately, below.
+function attemptLeftEvidence(suite, scenario, paths) {
+  if (nonEmptyFile(paths.callLog)) return true;
+  if (!permitsEmptyCallLog(suite, scenario)) return false;
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  return auxiliaryLog !== null && nonEmptyFile(auxiliaryLog);
+}
+
+// The evaluator's explicit answer, checked with `=== true` so anything else keeps the strict rule.
+function permitsEmptyCallLog(suite, scenario) {
+  return suite.evaluator.permitsEmptyCallLog?.(scenario) === true;
+}
+
+// Whether a completed attempt may be sealed although it left nothing, and why not when it may not.
+//
+// For a suite whose scenarios all read the forge — every scenario whose evaluator does not permit an
+// empty call log — an attempt with no call left nothing to evaluate, and sealing it stays refused.
+//
+// Where the evaluator permits an empty call log, "left nothing" is itself an outcome. Sealing
+// requires a host receipt attesting `completed: true`, so what reaches this point is a session that
+// ran to its end and wrote neither a call nor a report; it evaluates to the finding that it reported
+// nothing. Refusing the seal would leave `retry-aborted` as the only exit, and that command requires
+// attesting the session was **stopped**: an honest operator would be stuck, and a regression that
+// ends silently could be retried until some run happened to speak — survivorship bias dressed up as
+// a retry. `retry-aborted` stays what it is for, a session that really was stopped.
+function sealRefusalWithoutEvidence(suite, scenario, paths) {
+  if (attemptLeftEvidence(suite, scenario, paths)) return null;
+  if (permitsEmptyCallLog(suite, scenario)) return null;
+  return 'has no non-empty call log';
+}
+
+// What counts as "the attempt left evidence" for this scenario, in words, for the refusals that
+// depend on it. A suite whose evaluator permits an empty call log counts the paired exit-channel
+// record too, and saying only "non-empty log" there would name a condition the code does not check.
+function evidenceDescription(suite, scenario) {
+  const auxiliary = auxiliaryFor(suite, scenario);
+  return permitsEmptyCallLog(suite, scenario) && auxiliary
+    ? `a non-empty call log or ${auxiliary.fileName}`
+    : 'a non-empty log';
+}
+
 function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -610,9 +664,14 @@ export function sealAttempt(
     }
     if (existsSync(paths.callLogLock))
       throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
-    if (!existsSync(paths.callLog) || statSync(paths.callLog).size === 0) {
-      throw new Error(`${scenario}/${slot} has no non-empty call log`);
-    }
+    const refusal = sealRefusalWithoutEvidence(suite, scenario, paths);
+    if (refusal !== null) throw new Error(`${scenario}/${slot} ${refusal}`);
+    // **An absent call log and an empty one are the same observation, and are made the same file
+    // here.** The stub creates the log on its first call, so a run that correctly made none leaves
+    // no file at all. Materialising it as an empty file before anything is digested means the seal,
+    // the published archive and every later evaluation see one state — zero records — rather than
+    // two spellings of it, and `run-<n>.jsonl` exists in the archive like every other run's.
+    if (!existsSync(paths.callLog)) writeFileSync(paths.callLog, '', { flag: 'wx' });
     const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
     if (auxiliaryLog) {
       if (existsSync(`${auxiliaryLog}.lock`))
@@ -697,7 +756,7 @@ export function roundStatus(suite, handle, { base = suite.sandboxBase } = {}) {
     }
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
     let status = 'prepared';
-    if (existsSync(paths.callLog) && statSync(paths.callLog).size > 0) status = 'unsealed';
+    if (attemptLeftEvidence(suite, scenario, paths)) status = 'unsealed';
     if (existsSync(paths.sealReceipt)) {
       if (changedAfterSeal(suite, paths, scenario)) status = 'changed-after-seal';
       else {
@@ -899,8 +958,10 @@ export function retryAborted(
       throw new Error('retry-aborted requires {schemaVersion:1, stopped:true, reason}');
     }
     if (existsSync(paths.sealReceipt)) throw new Error('sealed attempts use retry-invalid');
-    if (existsSync(paths.callLog) && statSync(paths.callLog).size > 0) {
-      throw new Error('a non-empty log must be sealed and evaluated before any retry');
+    if (attemptLeftEvidence(suite, scenario, paths)) {
+      throw new Error(
+        `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry`,
+      );
     }
     return reprovision({
       suite,

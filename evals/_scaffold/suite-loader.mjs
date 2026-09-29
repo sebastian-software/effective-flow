@@ -33,7 +33,9 @@ const REQUIRED_FIELDS = {
   scenarioRegistry: (value) => typeof value === 'string' && value !== '',
   loadSetSeeds: (value) => Array.isArray(value) && value.length > 0,
   instrumentFiles: (value) => Array.isArray(value) && value.length > 0,
-  alwaysAllowedOperations: (value) => Array.isArray(value),
+  // A list, or a function of the scenario returning one: a suite whose scenarios differ in which
+  // unanswered calls must be judged rather than discarded says so per scenario.
+  alwaysAllowedOperations: (value) => Array.isArray(value) || typeof value === 'function',
   trackerStub: (value) => typeof value?.source === 'string' && value.source !== '',
   legacyInstrumentWaiver: (value) =>
     value === null ||
@@ -54,11 +56,19 @@ const REQUIRED_FIELDS = {
       typeof value?.orphanMessage === 'string'),
   scenarioSetup: (value) => typeof value === 'function',
   projectDocuments: (value) => typeof value === 'function',
+  // What a suite does to the seeded sandbox checkout after the shared seed commit, or `null` for
+  // nothing. Required for the same reason `auxiliaryEvidence` is: a suite whose runs fetch from
+  // `origin` and that forgot its preparation would otherwise read like one whose runs never do.
+  prepareCheckout: (value) => value === null || typeof value === 'function',
   evaluator: (value) =>
     Array.isArray(value?.BRANCHED_SCENARIOS) &&
-    ['usesLifecycleSchema', 'validityProblems', 'parseAuxiliary', 'findings'].every(
-      (name) => typeof value?.[name] === 'function',
-    ),
+    [
+      'usesLifecycleSchema',
+      'permitsEmptyCallLog',
+      'validityProblems',
+      'parseAuxiliary',
+      'findings',
+    ].every((name) => typeof value?.[name] === 'function'),
   retryDiscardLimit: (value) => typeof value === 'function',
   // The execution profile `prepare` and `publish` hold every round to. Required for the same reason
   // as `auxiliaryEvidence`: a suite that forgot its pin would otherwise read exactly like one that

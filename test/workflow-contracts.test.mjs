@@ -8187,7 +8187,7 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
   }
 });
 
-test('the merge-gate eval gate always reports and turns strict only for release-please', () => {
+test('the behavioural eval gate always reports and turns strict only for release-please', () => {
   // Enforcement of the archived eval evidence moved from every pull request to the release one,
   // which leaves four properties that all fail silently when they are lost: the step exists at
   // all, it is the last step of the required job, nothing can stop it reporting, and the release
@@ -8196,8 +8196,8 @@ test('the merge-gate eval gate always reports and turns strict only for release-
   const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
 
   assert.ok(
-    buildJob.includes('      - name: Merge-gate eval evidence\n'),
-    'ci.yml must carry the `Merge-gate eval evidence` step inside the job the develop ruleset ' +
+    buildJob.includes('      - name: Behavioural eval evidence\n'),
+    'ci.yml must carry the `Behavioural eval evidence` step inside the job the develop ruleset ' +
       'requires; anywhere else it reports nothing the release pull request can be blocked on',
   );
 
@@ -8209,7 +8209,7 @@ test('the merge-gate eval gate always reports and turns strict only for release-
   );
   assert.equal(
     steps.at(-1),
-    'Merge-gate eval evidence',
+    'Behavioural eval evidence',
     'the eval-evidence step must stay the last step of `Format, test and build`; ahead of the ' +
       'distribution steps a strict failure would mask a genuine build failure',
   );
@@ -8217,7 +8217,7 @@ test('the merge-gate eval gate always reports and turns strict only for release-
     buildJob,
     'name: Build distribution',
     'name: Distribution and installation smoke tests',
-    'name: Merge-gate eval evidence',
+    'name: Behavioural eval evidence',
   );
 
   // No condition at either level. A required status check that never reports blocks the pull
@@ -8232,7 +8232,7 @@ test('the merge-gate eval gate always reports and turns strict only for release-
   );
   // Comments stripped first, so a rationale line that merely mentions a condition cannot fail
   // this — and, in the other direction, cannot be where a real one hides.
-  const step = shellCode(workflowStep(ci, 'Merge-gate eval evidence'));
+  const step = shellCode(workflowStep(ci, 'Behavioural eval evidence'));
   assert.doesNotMatch(
     step,
     /^\s*if:/m,
@@ -8255,9 +8255,35 @@ test('the merge-gate eval gate always reports and turns strict only for release-
   );
   assert.match(
     step,
-    /eval merge-gate verify --mode "\$mode"/,
-    'the step must run the read-only `verify` subcommand with the mode it selected',
+    /pnpm eval "\$suite" verify --mode "\$mode"/,
+    'the step must run the read-only `verify` subcommand for each suite with the mode it selected',
   );
+  // The suites the step verifies are a literal list, so a suite added under `evals/` would be left
+  // out of the release gate — its evidence never enforced, and CI green about it — unless the list
+  // is held to the directories that actually declare a suite.
+  const loop = step.match(/^\s*for suite in ([a-z0-9 -]+); do$/m);
+  assert.ok(loop, 'the step must verify the suites in one `for suite in …; do` loop');
+  const declared = readdirSync(new URL('evals/', repositoryRoot), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        existsSync(new URL(`evals/${entry.name}/suite.config.mjs`, repositoryRoot)),
+    )
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(
+    loop[1].trim().split(/\s+/).sort(),
+    declared,
+    'the eval-evidence step must verify exactly the suites that carry an evals/<tool>/suite.config.mjs',
+  );
+  // One suite's failure must not end the loop before the next suite has reported: the status is
+  // captured per suite and the step fails only after every verdict reached the summary.
+  assert.match(
+    step,
+    /\|\| suite_status=\$\?/,
+    'each suite verdict must be captured rather than aborting the step before later suites report',
+  );
+  assert.match(step, /exit "\$status"/, 'the step must fail when any suite failed');
   assert.match(
     step,
     /GITHUB_STEP_SUMMARY/,

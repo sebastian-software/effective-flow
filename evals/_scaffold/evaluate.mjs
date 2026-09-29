@@ -25,6 +25,7 @@ const TRACKER_CORE = resolve(
 );
 let supportedOperationsCache = null;
 let mutatingOperationsCache = null;
+let localOperationsCache = null;
 
 function quotedValues(source) {
   return [...source.matchAll(/'([^']+)'/g)].map((match) => match[1]);
@@ -58,10 +59,50 @@ function functionBody(source, name) {
 export function supportedTrackerOperations() {
   if (supportedOperationsCache !== null) return supportedOperationsCache;
   const helper = readFileSync(TRACKER_CORE, 'utf8');
-  supportedOperationsCache = new Set(declaredSet(helper, 'REMOTE_OPERATIONS'));
-  for (const match of functionBody(helper, 'localOperation').matchAll(/case '([^']+)':/g))
-    supportedOperationsCache.add(match[1]);
+  supportedOperationsCache = new Set([
+    ...declaredSet(helper, 'REMOTE_OPERATIONS'),
+    ...localTrackerOperations(),
+  ]);
   return supportedOperationsCache;
+}
+
+// The operations the shipped helper answers from its pure local-operation dispatcher, without a
+// provider and without any forge access: parsing a reference, hashing a body, building a comment
+// payload, and the like. Derived from the same `localOperation` switch the helper dispatches through,
+// so an operation that moves between the two classes moves here with it. A suite whose verdict is
+// "no forge access" counts calls outside this set and nothing else.
+export function localTrackerOperations() {
+  if (localOperationsCache !== null) return localOperationsCache;
+  const helper = readFileSync(TRACKER_CORE, 'utf8');
+  localOperationsCache = new Set(
+    [...functionBody(helper, 'localOperation').matchAll(/case '([^']+)':/g)].map(
+      (match) => match[1],
+    ),
+  );
+  return localOperationsCache;
+}
+
+// The helper's local operations that read or write **runtime state** rather than computing a value
+// from their input: the hidden-mode processed-thread ledger, which the helper's own comment on its
+// `localOperation` switch describes as "local runtime-state operations" that touch
+// `<cwd>/.effective-flow/merge-gate/`. They reach no provider, but they are not side-effect free, so
+// a verdict that means "nothing read or written yet" must not exempt them with the pure ones.
+//
+// Named rather than derived, because the helper exports no classification and nothing in its
+// switch distinguishes a file-touching case from a pure one syntactically. The names are guarded
+// instead: `test/iterate-eval.test.mjs` pins the helper's whole local set beside this list and
+// fails the moment an operation is added to or removed from it, so a new runtime-state operation
+// cannot be exempted by default.
+export const RUNTIME_STATE_TRACKER_OPERATIONS = Object.freeze([
+  'thread-ledger-lookup',
+  'thread-ledger-record',
+]);
+
+// The local operations that are pure computation over their input — no provider, no forge and no
+// runtime state: the helper's local set without `RUNTIME_STATE_TRACKER_OPERATIONS`.
+export function pureLocalTrackerOperations() {
+  const runtimeState = new Set(RUNTIME_STATE_TRACKER_OPERATIONS);
+  return new Set([...localTrackerOperations()].filter((operation) => !runtimeState.has(operation)));
 }
 
 // `apply` in the call log records the raw presence of the CLI flag. The shipped helper gives that
@@ -75,7 +116,13 @@ export function mutatingTrackerOperations() {
   return mutatingOperationsCache;
 }
 
-export function parseCallLog(raw) {
+// `allowEmpty` is the suite's explicit answer to whether a log with no record is evidence at all,
+// asked per scenario through `evaluator.permitsEmptyCallLog`. The default stays the old rule — no
+// record means a run that never started — because for a tool that must read the forge before it can
+// decide anything that is exactly what an empty log is. A suite whose correct outcome is to stop
+// before the first forge call says so instead, and then an empty log is zero records rather than a
+// validity problem; what such a suite proves the run did at all has to come from another observable.
+export function parseCallLog(raw, { allowEmpty = false } = {}) {
   const problems = [];
   const records = [];
   for (const [index, line] of raw.split('\n').entries()) {
@@ -89,7 +136,7 @@ export function parseCallLog(raw) {
       problems.push(`line ${index + 1} is not JSON: ${error.message}`);
     }
   }
-  if (records.length === 0) problems.push('the call log contains no records');
+  if (records.length === 0 && !allowEmpty) problems.push('the call log contains no records');
   return { records, problems };
 }
 
@@ -200,6 +247,13 @@ function runtimeRootProblems(records, projectRoot) {
   });
 }
 
+// The operations a scenario's run may attempt without the fixture answering them, from the suite's
+// declaration: a plain list for every scenario alike, or a function of the scenario.
+export function alwaysAllowedOperations(suite, scenario) {
+  const declared = suite.alwaysAllowedOperations;
+  return typeof declared === 'function' ? declared(scenario) : declared;
+}
+
 export function evaluateEvidence(
   suite,
   {
@@ -216,13 +270,27 @@ export function evaluateEvidence(
 ) {
   if (!suite.scenarios.includes(scenario)) throw new Error(`no evaluator for ${scenario}`);
   const evaluator = suite.evaluator;
-  const parsed = parseCallLog(logText);
+  // Checked with `=== true` so an evaluator that answers anything else keeps the strict rule.
+  const parsed = parseCallLog(logText, {
+    allowEmpty: evaluator.permitsEmptyCallLog?.(scenario) === true,
+  });
   const validityProblems = [...parsed.problems];
   if (parsed.problems.length === 0) {
     validityProblems.push(
       ...schemaProblems(parsed.records, evaluator.usesLifecycleSchema(scenario)),
     );
-    validityProblems.push(...runtimeRootProblems(parsed.records, projectRoot));
+    // **A call the scenario already fails on is judged whatever root it ran from.** The runtime-root
+    // rule exists so a log is evidence about the provisioned sandbox, and a record from another root
+    // normally makes the whole log unreadable as such. But where the suite's evaluator names calls
+    // that decide the verdict by their mere presence — a Phase-0 refusal is failed by any forge
+    // call — a wrong or missing `cwd` on such a call cannot turn a failing run into a passing one.
+    // Discarding it as invalid would retry the regression away instead of recording it, so for such
+    // a log the root problems are not validity problems and the findings stand.
+    const decisive =
+      evaluator.decisiveCalls?.({ scenario, records: parsed.records }) ?? Object.freeze([]);
+    if (decisive.length === 0) {
+      validityProblems.push(...runtimeRootProblems(parsed.records, projectRoot));
+    }
   }
   // The same exception the archived-run assertions apply, and it is needed here for the same
   // reason: `publishRound` re-evaluates every already-published scenario against a fresh build, not
@@ -244,7 +312,7 @@ export function evaluateEvidence(
     // decision is the thing under test, and a scenario in which no merge is offered still has to be
     // able to record the attempt. Which operation that is, is a property of the tool under test, so
     // the suite names it rather than this module.
-    const allowed = new Set([...answerableOperations, ...suite.alwaysAllowedOperations]);
+    const allowed = new Set([...answerableOperations, ...alwaysAllowedOperations(suite, scenario)]);
     for (const operation of new Set(
       startRecords(parsed.records).map((record) => record.operation),
     )) {

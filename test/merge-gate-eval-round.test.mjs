@@ -40,7 +40,16 @@ import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { loadSuite, suiteConfigPath, validateSuite } from '../evals/_scaffold/suite-loader.mjs';
 import { findings as evaluatorFindings } from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import { findings as iterateEvaluatorFindings } from '../evals/iterate/_scaffold/evaluate.mjs';
+import iterateSuite from '../evals/iterate/suite.config.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
+
+// Every suite the shared scaffold runs, with the outcome chain its evaluator exposes. The contract
+// checks below are the loader's and the parity rule's, so each suite is held to them.
+const SUITES = [
+  { suite, findings: evaluatorFindings },
+  { suite: iterateSuite, findings: iterateEvaluatorFindings },
+];
 
 // The attested receipt profile of every sealed test slot. The keys the suite pins come from the pin
 // itself, so the fixture drives the real suite with a profile `prepare` and `publish` accept; the
@@ -262,12 +271,14 @@ test('prompt rendering is strict and slot paths cannot collide', () => {
   assert.throws(() => sandboxPaths('/tmp/round-a', '../escape', 1, 1), /invalid scenario/);
 });
 
-test('the discovered scenarios, fixtures, and evaluator registrations stay in parity', () => {
-  const discovered = discoverSuite(suite);
-  assert.ok(discovered.scenarios.length > 0);
-  assert.equal(new Set(discovered.scenarios).size, discovered.scenarios.length);
-  assert.equal(REQUIRED_RUNS, 5);
-});
+for (const { suite: each } of SUITES) {
+  test(`${each.name}: the discovered scenarios, fixtures, and evaluator registrations stay in parity`, () => {
+    const discovered = discoverSuite(each);
+    assert.ok(discovered.scenarios.length > 0);
+    assert.equal(new Set(discovered.scenarios).size, discovered.scenarios.length);
+    assert.equal(REQUIRED_RUNS, 5);
+  });
+}
 
 // The suite configuration is a plain object the shared scaffold trusts, and most of its fields fail
 // loudly at first use. The ones that do not are why this check exists at all: an omitted
@@ -275,87 +286,103 @@ test('the discovered scenarios, fixtures, and evaluator registrations stay in pa
 // that ships an exit-channel helper and forgets the block publishes runs whose only positive
 // observable was never examined. The loader therefore requires every field and lets a suite say
 // "none" explicitly.
-test('the suite contract is checked once at load rather than discovered field by field at first use', () => {
-  const label = 'probe';
-  assert.equal(validateSuite(suite, label), suite);
+for (const { suite: each } of SUITES) {
+  test(`${each.name}: the suite contract is checked once at load rather than discovered field by field at first use`, () => {
+    const label = 'probe';
+    assert.equal(validateSuite(each, label), each);
 
-  // Omission and an intentional "no auxiliary evidence" must not be the same thing.
-  const { auxiliaryEvidence, ...withoutAuxiliary } = suite;
-  assert.throws(
-    () => validateSuite(withoutAuxiliary, label),
-    /auxiliaryEvidence missing or malformed/,
-    'a suite that omits auxiliaryEvidence is accepted as one that deliberately records no second evidence file, so an orphaned trace would never be detected',
-  );
-  assert.doesNotThrow(() => validateSuite({ ...suite, auxiliaryEvidence: null }, label));
-
-  // The four functions the shared evaluator calls, and the branch list the parity contract reads.
-  for (const name of [
-    'usesLifecycleSchema',
-    'validityProblems',
-    'parseAuxiliary',
-    'findings',
-    'BRANCHED_SCENARIOS',
-  ]) {
-    const { [name]: _removed, ...partialEvaluator } = suite.evaluator;
+    // Omission and an intentional "no auxiliary evidence" must not be the same thing.
+    const { auxiliaryEvidence, ...withoutAuxiliary } = each;
     assert.throws(
-      () => validateSuite({ ...suite, evaluator: partialEvaluator }, label),
-      /evaluator missing or malformed/,
-      `an evaluator without ${name} is accepted, so the seam is enforced by reading the merge-gate implementation rather than by this check`,
+      () => validateSuite(withoutAuxiliary, label),
+      /auxiliaryEvidence missing or malformed/,
+      'a suite that omits auxiliaryEvidence is accepted as one that deliberately records no second evidence file, so an orphaned trace would never be detected',
     );
-  }
+    assert.doesNotThrow(() => validateSuite({ ...each, auxiliaryEvidence: null }, label));
 
-  // `projectDocuments` is the one contract function whose return shape nothing downstream reads.
-  assert.throws(
-    () => validateSuite({ ...suite, projectDocuments: () => ({ agents: 'only one half' }) }, label),
-    /projectDocuments must return \{ agents, setupAdr \} as strings/,
-  );
-
-  // The stub that answers a run has to be the stub the instrument hashes.
-  assert.throws(
-    () =>
-      validateSuite(
-        { ...suite, trackerStub: { source: resolve(suite.root, 'not-hashed.mjs') } },
-        label,
-      ),
-    /hashes no instrument entry for its tracker stub/,
-  );
-
-  // Both halves of the registry split, neither of which is safe alone. A configuration left out of
-  // its own instrument can re-point `scenarioSetup` or `projectDocuments` at other modules while
-  // every archived stamp reports current; a registry pulled into it costs every other scenario a
-  // re-record per name added.
-  assert.throws(
-    () =>
-      validateSuite(
-        {
-          ...suite,
-          instrumentFiles: suite.instrumentFiles.filter(
-            (path) => path !== resolve(suite.root, 'suite.config.mjs'),
-          ),
-        },
-        label,
-      ),
-    /is not one of its own instrumentFiles/,
-    'a suite that omits its own configuration from the instrument is accepted, so the bindings it makes are unhashed',
-  );
-  assert.throws(
-    () =>
-      validateSuite(
-        { ...suite, instrumentFiles: [...suite.instrumentFiles, suite.scenarioRegistry] },
-        label,
-      ),
-    /hashes its scenario registry/,
-    'a suite that hashes its scenario registry is accepted, so adding one name is back to staling every archived round',
-  );
-
-  for (const field of ['scenarios', 'loadSetSeeds', 'instrumentFiles']) {
+    // The same distinction for the checkout preparation: a suite whose runs fetch and that forgot the
+    // hook would otherwise read like one whose runs never do.
+    const { prepareCheckout, ...withoutCheckout } = each;
     assert.throws(
-      () => validateSuite({ ...suite, [field]: [] }, label),
-      new RegExp(`${field} missing or malformed`),
-      `an empty ${field} is accepted, and an empty one hashes to a plausible digest of nothing`,
+      () => validateSuite(withoutCheckout, label),
+      /prepareCheckout missing or malformed/,
+      'a suite that omits prepareCheckout is accepted as one that deliberately prepares nothing',
     );
-  }
-});
+    assert.doesNotThrow(() => validateSuite({ ...each, prepareCheckout: null }, label));
+
+    // The five functions the shared evaluator calls, and the branch list the parity contract reads.
+    // `permitsEmptyCallLog` is among them because an evaluator that omitted it would silently inherit
+    // one of the two answers, and the two answers decide whether a run that never started is evidence.
+    for (const name of [
+      'usesLifecycleSchema',
+      'permitsEmptyCallLog',
+      'validityProblems',
+      'parseAuxiliary',
+      'findings',
+      'BRANCHED_SCENARIOS',
+    ]) {
+      const { [name]: _removed, ...partialEvaluator } = each.evaluator;
+      assert.throws(
+        () => validateSuite({ ...each, evaluator: partialEvaluator }, label),
+        /evaluator missing or malformed/,
+        `an evaluator without ${name} is accepted, so the seam is enforced by reading one suite's implementation rather than by this check`,
+      );
+    }
+
+    // `projectDocuments` is the one contract function whose return shape nothing downstream reads.
+    assert.throws(
+      () =>
+        validateSuite({ ...each, projectDocuments: () => ({ agents: 'only one half' }) }, label),
+      /projectDocuments must return \{ agents, setupAdr \} as strings/,
+    );
+
+    // The stub that answers a run has to be the stub the instrument hashes.
+    assert.throws(
+      () =>
+        validateSuite(
+          { ...each, trackerStub: { source: resolve(each.root, 'not-hashed.mjs') } },
+          label,
+        ),
+      /hashes no instrument entry for its tracker stub/,
+    );
+
+    // Both halves of the registry split, neither of which is safe alone. A configuration left out of
+    // its own instrument can re-point `scenarioSetup` or `projectDocuments` at other modules while
+    // every archived stamp reports current; a registry pulled into it costs every other scenario a
+    // re-record per name added.
+    assert.throws(
+      () =>
+        validateSuite(
+          {
+            ...each,
+            instrumentFiles: each.instrumentFiles.filter(
+              (path) => path !== resolve(each.root, 'suite.config.mjs'),
+            ),
+          },
+          label,
+        ),
+      /is not one of its own instrumentFiles/,
+      'a suite that omits its own configuration from the instrument is accepted, so the bindings it makes are unhashed',
+    );
+    assert.throws(
+      () =>
+        validateSuite(
+          { ...each, instrumentFiles: [...each.instrumentFiles, each.scenarioRegistry] },
+          label,
+        ),
+      /hashes its scenario registry/,
+      'a suite that hashes its scenario registry is accepted, so adding one name is back to staling every archived round',
+    );
+
+    for (const field of ['scenarios', 'loadSetSeeds', 'instrumentFiles']) {
+      assert.throws(
+        () => validateSuite({ ...each, [field]: [] }, label),
+        new RegExp(`${field} missing or malformed`),
+        `an empty ${field} is accepted, and an empty one hashes to a plausible digest of nothing`,
+      );
+    }
+  });
+}
 
 // The pin is a required field, like `auxiliaryEvidence`, so a suite that forgot it cannot read like
 // one that deliberately pins nothing. Every malformed form is refused at load: the comparison runs
@@ -435,38 +462,40 @@ test('the suite name is validated before it is resolved to a module path', async
 // a mistake fell with it: a registered name the evaluator does not branch on carries five sealed
 // runs and asserts nothing about any of them. The branch list is the fourth parity member, and the
 // outcome chain's terminal throw is the backstop for the two lists disagreeing.
-test('a registered scenario the evaluator does not branch on fails parity and cannot evaluate silently', () => {
-  const unbranched = 'registered-but-unbranched';
-  assert.throws(
-    () =>
-      discoverSuite({
-        ...suite,
-        scenarios: [...suite.scenarios, unbranched],
-        evaluator: {
-          ...suite.evaluator,
-          BRANCHED_SCENARIOS: [...suite.evaluator.BRANCHED_SCENARIOS, unbranched],
-        },
-      }),
-    new RegExp(`${unbranched} missing scenarios, fixtures`),
-  );
-  assert.throws(
-    () => discoverSuite({ ...suite, scenarios: [...suite.scenarios, unbranched] }),
-    new RegExp(`${unbranched} missing scenarios, fixtures, branches`),
-    'a registry entry with no evaluator branch passed parity, so a misspelled name would publish five green runs that assert nothing',
-  );
-  assert.throws(
-    () =>
-      evaluatorFindings({
-        scenario: unbranched,
-        records: [],
-        fixture: {},
-        auxiliaryRecords: [],
-        requiresAuxiliary: false,
-      }),
-    /registered as branched but reaches no outcome branch/,
-    'the outcome chain returned no findings for an unrecognised scenario instead of throwing',
-  );
-});
+for (const { suite: each, findings: eachFindings } of SUITES) {
+  test(`${each.name}: a registered scenario the evaluator does not branch on fails parity and cannot evaluate silently`, () => {
+    const unbranched = 'registered-but-unbranched';
+    assert.throws(
+      () =>
+        discoverSuite({
+          ...each,
+          scenarios: [...each.scenarios, unbranched],
+          evaluator: {
+            ...each.evaluator,
+            BRANCHED_SCENARIOS: [...each.evaluator.BRANCHED_SCENARIOS, unbranched],
+          },
+        }),
+      new RegExp(`${unbranched} missing scenarios, fixtures`),
+    );
+    assert.throws(
+      () => discoverSuite({ ...each, scenarios: [...each.scenarios, unbranched] }),
+      new RegExp(`${unbranched} missing scenarios, fixtures, branches`),
+      'a registry entry with no evaluator branch passed parity, so a misspelled name would publish five green runs that assert nothing',
+    );
+    assert.throws(
+      () =>
+        eachFindings({
+          scenario: unbranched,
+          records: [],
+          fixture: {},
+          auxiliaryRecords: [],
+          requiresAuxiliary: false,
+        }),
+      /registered as branched but reaches no outcome branch/,
+      'the outcome chain returned no findings for an unrecognised scenario instead of throwing',
+    );
+  });
+}
 
 test('suite discovery rejects missing and unregistered corpus members in both directions', () => {
   const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-suite-'));
@@ -2356,6 +2385,44 @@ test(
           }),
         /no paired auxiliary trace/,
       );
+
+      // Slot 4: the echo ran and wrote its trace, but the run made no forge call. The shared scaffold
+      // counts a non-empty auxiliary trace as evidence only for a scenario whose evaluator permits an
+      // empty call log, which no gate scenario does — every one reads the forge before it decides
+      // anything. So this attempt is still one that never reached the gate: it reads as prepared,
+      // neither an absent nor an empty log can be sealed, and it is retried as aborted.
+      const echoOnly = sandboxPaths(prepared.roundRoot, CONFIGURED, 4, 1);
+      const echoOnlyRun = spawnSync(
+        process.execPath,
+        [resolve(echoOnly.skillRoot, 'scripts', 'iterate-trace.mjs'), '42'],
+        { cwd: echoOnly.projectRoot, input: configuredHandoff(fixture), encoding: 'utf8' },
+      );
+      assert.equal(echoOnlyRun.status, 0, echoOnlyRun.stderr);
+      assert.notEqual(readFileSync(auxiliaryLogPath(suite, echoOnly), 'utf8'), '');
+      for (const logState of ['absent', 'empty']) {
+        if (logState === 'empty') writeFileSync(echoOnly.callLog, '');
+        assert.equal(statusOf(4), 'prepared', `an echo trace with an ${logState} call log`);
+        assert.throws(
+          () =>
+            sealAttempt(suite, {
+              handle: prepared.manifestPath,
+              scenario: CONFIGURED,
+              slot: 4,
+              hostReceipt: hostReceipt(echoOnly.projectRoot),
+              base,
+            }),
+          /has no non-empty call log/,
+          `an echo trace with an ${logState} call log was sealed as gate evidence`,
+        );
+      }
+      const retriedEchoOnly = retryAborted(suite, {
+        handle: prepared.manifestPath,
+        scenario: CONFIGURED,
+        slot: 4,
+        assertion: { schemaVersion: 1, stopped: true, reason: 'the gate never read the forge' },
+        base,
+      });
+      assert.equal(retriedEchoOnly.attempt, 2);
     } finally {
       const manifest = resolve(base, 'configured-round', 'manifest.json');
       if (existsSync(manifest)) chmodSync(manifest, 0o644);
@@ -2400,4 +2467,40 @@ test('the evaluator requires the echo trace for the configured scenario and forb
       auxiliaryText: '',
     }).validityProblems.includes('an iterate trace is orphaned in a scenario without an echo'),
   );
+});
+
+// `permitsEmptyCallLog` exists because the `iterate` suite's correct refusals leave no forge call at
+// all. The gate answers it `false` for every scenario: each one reads the forge before it can decide
+// anything, so a log with no record stays what it has always been here — a run that never started,
+// invalid evidence to be redone, never a behavioural result. Asked of every gate scenario, so a later
+// one cannot quietly inherit the other suite's answer.
+test('merge-gate: an empty call log is still invalid evidence in every gate scenario', () => {
+  const projectRoot = '/tmp/round/project';
+  const evaluateEmpty = (each, scenario) => {
+    const fixture = JSON.parse(
+      readFileSync(
+        resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'fixtures', `${scenario}.json`),
+        'utf8',
+      ),
+    );
+    return evaluateEvidence(each, {
+      scenario,
+      logText: '',
+      fixture,
+      projectRoot,
+      answerableOperations: new Set(Object.keys(fixture.operations)),
+      auxiliaryText: each.auxiliaryEvidence.required(scenario) ? '' : null,
+    });
+  };
+  for (const scenario of suite.scenarios) {
+    assert.equal(suite.evaluator.permitsEmptyCallLog(scenario), false, scenario);
+    const result = evaluateEmpty(suite, scenario);
+    assert.deepEqual(result.validityProblems, ['the call log contains no records'], scenario);
+    assert.deepEqual(result.findings, [], `${scenario}: an empty log was judged as behaviour`);
+  }
+  // Only a literal `true` relaxes the rule; an evaluator answering any other truthy value keeps it.
+  const truthy = { ...suite, evaluator: { ...suite.evaluator, permitsEmptyCallLog: () => 1 } };
+  assert.deepEqual(evaluateEmpty(truthy, 'guard-blocks-merge').validityProblems, [
+    'the call log contains no records',
+  ]);
 });

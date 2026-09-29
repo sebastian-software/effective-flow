@@ -32,9 +32,14 @@ final publication of canonical results is serialized.
 The instrument is shared with every other behavioural eval suite and lives one level up, under
 `evals/_scaffold/`; what is specific to this suite lives here. `suite.config.mjs` is the seam
 between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
-tracker stub, its `iterate`-echo overlay policy, its sandbox namespace and the execution profile
-every round is pinned to, and the shared scaffold reads all of it from there rather than naming a
-tool. It is hashed as one of the suite's instrument files, because every one of those bindings
+tracker stub, its `iterate`-echo overlay policy, its checkout preparation, its sandbox namespace and
+the execution profile every round is pinned to, and the shared scaffold reads all of it from there
+rather than naming a tool. Two of those bindings are answered explicitly with "nothing" rather than
+omitted: `prepareCheckout` is `null`, because a gate run reads the forge through the stub and never
+fetches, and the evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because every
+gate scenario reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
+list here; the shared scaffold also accepts a function of the scenario, which the `iterate` suite
+uses. It is hashed as one of the suite's instrument files, because every one of those bindings
 decides what a slot sees — and, for the pin, so that changing the recording profile stales the
 archived rounds recorded under the old one. The scenario registry is the
 one declaration that does not, so it sits in `scenario-registry.mjs` and is hashed by nothing —
@@ -46,7 +51,6 @@ both halves, and neither is safe alone.
 | `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                      |
 | `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it |
 | `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument          |
-| `_scaffold/remote-tracker.mjs`               | The canned-envelope stub standing in for the shipped helper, and writer of the call log |
 | `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace |
 | `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads           |
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                    |
@@ -64,8 +68,12 @@ deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs`
 sealing, retry, publication and recovery logic), `scaffold.mjs` (provisioning one isolated slot from
 the round's shared build), `build-identity.mjs` (the three-part identity an archived run is bound
 by), `sandbox.mjs` (the round, scenario, slot and attempt layout), `prompt.mjs`, `suite.mjs`,
-`evaluate.mjs` (the generic evidence rules) and `run-evidence.mjs` (the call-log/build-stamp/echo-trace
-pairing rule publication checks).
+`evaluate.mjs` (the generic evidence rules), `run-evidence.mjs` (the call-log/build-stamp/paired-trace
+rule publication checks) and `remote-tracker.mjs`, the canned-envelope stub standing in for the
+shipped helper and writing the call log. The stub is shared with the
+[`iterate` suite](../iterate/README.md) because nothing in it names a tool; each suite still declares
+it as its own tracker stub and hashes it among its own instrument files, so a change to it stales
+both suites — see [How the stub works](#how-the-stub-works).
 
 Three test files in the ordinary `pnpm test` suite belong to this layer:
 
@@ -189,7 +197,8 @@ pnpm eval merge-gate status --round ROUND_ID_OR_MANIFEST
 
 The status values are `prepared`, `unsealed`, `sealed`, `invalid`, `changed-after-seal`, and
 `retry-pending`. `unsealed` means a non-empty log exists; it does not mean the host task is still
-running. `retry-pending` means an interrupted retry left a journaled transition to its already
+running. (For a suite whose evaluator permits an empty call log, a non-empty paired trace counts as
+well; no scenario here does.) `retry-pending` means an interrupted retry left a journaled transition to its already
 prepared replacement attempt.
 
 ### 3. Seal each finished attempt
@@ -358,8 +367,11 @@ Only a failure to reach a verdict at all — a build that fails, an archived sta
 parse — exits nonzero in report mode: an unwelcome verdict is not an operational error, and
 conflating the two would turn every pull request red through the step that exists to keep it green.
 
-CI runs exactly that command as the last step of the required `Format, test and build` job, and that
-is the whole of CI's involvement with this layer: no model, no quota, no round. On an ordinary
+CI runs exactly that command in the `Behavioural eval evidence` step, the last step of the required
+`Format, test and build` job, once for every suite — this one and
+[`iterate`](../iterate/README.md) — with each suite's verdict in its own section of the job summary,
+every suite verified even after an earlier one failed, and the step failing if any did. That is the
+whole of CI's involvement with this layer: no model, no quota, no round. On an ordinary
 pull request the step reports — the verdict goes to the job summary and the check stays green even
 when the corpus is stale — because paying a round per pull request for a claim about the build that
 ships is the cost this arrangement removes. On the release pull request, recognised by its
@@ -643,6 +655,10 @@ than a possibly stale, gitignored `dist/`. Publication rebuilds independently to
 and instrument identity have not drifted since preparation.
 
 ## How the stub works
+
+The stub lives in the shared scaffold at `../_scaffold/remote-tracker.mjs` and is the same file the
+`iterate` suite runs. It is fixture-driven and names no tool; what follows is written from the gate,
+where every rule in it was decided.
 
 The whole forge input surface of a gate run passes through one subprocess with a JSON-in/JSON-out
 envelope, and the gate's prompt contract forbids it from assembling provider requests itself. So a
