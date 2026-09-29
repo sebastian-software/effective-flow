@@ -3700,14 +3700,21 @@ export function findRepositoryOnlyReferences(
   for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
     const lineNumber = lineIndex + 1;
     // Only a line indented by 0-3 spaces may open or close a CommonMark fence.
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    // A backtick opener's info string must not contain a backtick, and a
+    // closer may be followed only by spaces or tabs.
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence.char && fenceMatch[1].length >= fence.length) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === fence.char &&
+        fenceMatch[1].length >= fence.length &&
+        /^[ \t]*$/.test(fenceMatch[2])
+      ) {
         fence = null;
       }
       continue;
     }
-    if (fenceMatch) {
+    if (fenceMatch && (fenceMatch[1][0] === '~' || !fenceMatch[2].includes('`'))) {
       fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
       continue;
     }

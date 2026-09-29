@@ -4024,6 +4024,65 @@ test('findRepositoryOnlyReferences closes an open fence only at a closer indente
   ]);
 });
 
+// Invariant: CommonMark forbids a backtick in a backtick fence's info string,
+// so such a line is inline text (here a code span), never a fence opener.
+test('findRepositoryOnlyReferences scans a backtick line whose info string contains a backtick as inline text', () => {
+  const content = ['```build.mjs```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a backtick fence with a backtick-free info string', () => {
+  const content = ['```js', '[g](../inside.md) `build.mjs`', '```', '[h](../after.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a tilde fence whose info string contains a backtick', () => {
+  const content = ['~~~ a`b', '[g](../inside.md) `build.mjs`', '~~~', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+// Invariant: a closing fence carries only optional trailing spaces or tabs
+// after its run; a fence-character line with trailing text stays fence content.
+test('findRepositoryOnlyReferences does not close a fence at a fence run followed by text', () => {
+  const content = ['```', '``` not a closer', '[g](../inside.md)', '```', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 5, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a fence at a closer followed only by spaces or tabs', () => {
+  const content = [
+    '```',
+    '[g](../inside.md)',
+    '```   ',
+    '[h](../after.md)',
+    '~~~',
+    '[i](../inside-tilde.md)',
+    '~~~ \t',
+    '[j](../after-tilde.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+    { line: 8, kind: 'link', reference: '../after-tilde.md' },
+  ]);
+});
+
 test('findVerbatimSourceLocations lists every matching source line in path order', () => {
   const reference = '../../docs/developer-guide/skill-ownership.md';
   const sources = new Map([
