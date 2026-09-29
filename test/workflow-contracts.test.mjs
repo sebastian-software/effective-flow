@@ -7530,8 +7530,8 @@ test('reviewer state resolves several matching checks and pr-status-read keeps t
   for (const [pattern, message] of [
     [/only the latest run per check identity/, 'keeps only the latest run per identity'],
     [
-      /name plus workflow id[^.]*and triggering event, or name plus app slug[^.]*scoped by its check suite's `databaseId`/,
-      'defines the check-run identity by workflow id, or by app slug and check suite',
+      /name plus workflow id[^.]*and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`/,
+      'defines the check-run identity by workflow id, or by app slug and check suite only where workflowRun is null',
     ],
     [
       /nor is a run with an incomplete identity \(no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite, app slug, or check-suite id\)/,
