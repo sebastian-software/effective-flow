@@ -328,14 +328,14 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Five subsystems carry this today: the pairs `delegation-envelope.mjs`/
-  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs` and
-  `diff-baseline.mjs`/`diff-baseline-core.mjs`; the remote tracker, a seven-file family whose thin
-  entry point `remote-tracker.mjs` sits over `remote-tracker-core.mjs` and its five siblings
-  `remote-tracker-shared-core.mjs`, `remote-tracker-decomposition-core.mjs`,
-  `remote-tracker-github-core.mjs`, `remote-tracker-forgejo-core.mjs` and
-  `remote-tracker-ledger-core.mjs` (the hidden-mode processed-thread ledger); and the pilot
-  measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
+  misread as one. Six subsystems carry this today: the pairs `delegation-envelope.mjs`/
+  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
+  `diff-baseline.mjs`/`diff-baseline-core.mjs` and `plan-lint.mjs`/`plan-lint-core.mjs`; the
+  remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
+  `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
+  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
+  `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
+  processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
   `pilot-measurement-protocol.mjs`. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
@@ -424,6 +424,17 @@ The build aborts with an error message if any of these guards is violated:
   `assertPilotMeasurementDocumentationProjection` reject missing or repeated markers, malformed
   fences or JSON, noncanonical serialization, key/order drift, and any value mismatch before
   rendering.
+- **Plan-lint projection guards:** `src/scripts/plan-lint-core.mjs` owns the bilingual plan
+  mapping and the template placeholders, and `src/shared/plan-contract.md` mirrors both as marked
+  tables. `parsePlanContractMarkedTable` requires exactly one start and one end marker per table,
+  a valid separator row, and no ragged row or line outside the table.
+  `assertPlanContractProjection` compares the mapping table with `PLAN_CONTRACT_MAPPING` row by
+  row and cell by cell. `assertPlanPlaceholderProjection` compares the placeholder table with
+  `PLAN_PLACEHOLDERS` the same way, then checks it against the English template in `plan.md`
+  Phase 3: that phase holds exactly one ` ```markdown ` fence, every bracketed template token
+  is in the table and every table token is in the template, and the template's `**Result:**`
+  value equals the table's review-result value. Every failure message starts with
+  `plan-lint projection:`.
 - **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
   validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
   end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two
@@ -556,8 +567,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Five dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains sixteen files: three two-file subsystems, the remote tracker's seven-file family,
+Six dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains eighteen files: four two-file subsystems, the remote tracker's seven-file family,
 and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
 core or protocol modules:
 
@@ -628,6 +639,24 @@ core or protocol modules:
   activation: setup exposes no pilot action, and `build` and `refactor` request no Fast profile. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
+- **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
+  closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is
+  `RUNTIME_STATE_ROOT` for a hidden-mode plan directory), `planDir` relative to it, and optional
+  `files`. It emits one `{ok, operation, data: {files: [...]}}` envelope whose entries carry the
+  mechanical plan-file facts — status and its reason, language, open-point count, acceptance-criteria
+  presence, leftover placeholders, same-name duplicates between `<plan.dir>/` and its `archive/`,
+  and the header values — and uses exit 2 for `INVALID_PAYLOAD`/`INVALID_CWD`, 3 for `UNSAFE_PATH`,
+  and 1 otherwise; a `\0` in any path is `INVALID_PAYLOAD`, a file swapped after the containment
+  check is `UNSAFE_PATH`, and a dangling-symlink or non-directory `planDir` is `NOT_FOUND`. Every
+  path is contained by realpath inside `cwd` and directly inside `<plan.dir>/` or
+  `<plan.dir>/archive/`. Its callers — the clarification gate, `open-plans`, and `plan`, whose
+  Phase 5 check reruns after Phase 7 formatting — fail closed: a nonzero exit, an unparseable
+  envelope, `ok: false`, or a missing file entry never reads as a pass. The prose contracts stay normative, and the lazily loaded
+  `plan-lint` fragment carries the caller contract. The core owns `PLAN_CONTRACT_MAPPING` and
+  `PLAN_PLACEHOLDERS`; the build guards `assertPlanContractProjection` and
+  `assertPlanPlaceholderProjection` fail on any drift against the marked mapping and placeholder
+  tables in `src/shared/plan-contract.md`, and against the bracketed tokens of the English template
+  in `plan.md` Phase 3.
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
@@ -637,8 +666,9 @@ diagnostics, but body writes are reported as non-atomic because GitHub does not 
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
 pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all sixteen identical, usable scripts and
-that the pilot helper reports its protocol from an isolated distribution.
+checks prove that all three installed payloads contain all eighteen identical, usable scripts,
+that the pilot helper reports its protocol from an isolated distribution, and that
+`plan-lint lint` runs against a fixture plan directory in every target.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
 current-task capability directly, and Claude Code renames its own session through the host's
@@ -683,7 +713,7 @@ and directive syntax").
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `config-migration-edge-cases`, `worktree-integration`, `issue-tracker`, `issue-tracker-forge`,
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
-  `plan-reference-routing`, `plan-archival`,
+  `plan-reference-routing`, `plan-lint`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,

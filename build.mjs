@@ -72,6 +72,13 @@ import {
   assertAgentSkillRecommendationRoster,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
+  PLAN_CONTRACT_MAPPING_START,
+  PLAN_CONTRACT_MAPPING_END,
+  PLAN_CONTRACT_PLACEHOLDERS_START,
+  PLAN_CONTRACT_PLACEHOLDERS_END,
+  parsePlanContractMarkedTable,
+  assertPlanContractProjection,
+  assertPlanPlaceholderProjection,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -101,6 +108,8 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',
+  'plan-lint.mjs',
+  'plan-lint-core.mjs',
 ];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
@@ -953,6 +962,40 @@ try {
   assertPilotMeasurementDocumentationProjection(pilotDocumentationProjection, {
     context: `${pilotProtocolGuideContext} ↔ scripts/pilot-measurement-protocol.mjs`,
   });
+
+  // --- Plan-lint contract projection guard ---
+  // `scripts/plan-lint-core.mjs` owns the bilingual plan mapping and the template placeholder
+  // list; `shared/plan-contract.md` mirrors both as marked tables. Fail on drift in either
+  // direction, and on a bracketed `plan` Phase 3 template token the placeholder table lacks.
+  const planContractContext = 'shared/plan-contract.md';
+  const planContractPath = join(SHARED_DIR, 'plan-contract.md');
+  const planToolContext = 'tools/plan.md';
+  const planToolPath = join(TOOLS_DIR, 'plan.md');
+  for (const path of [planContractPath, planToolPath]) {
+    if (!existsSync(path)) throw new Error(`plan-lint projection source not found: ${path}`);
+  }
+  const planContractSource = normalizeLineEndings(readFileSync(planContractPath, 'utf8'));
+  const planLintContext = `${planContractContext} ↔ scripts/plan-lint-core.mjs`;
+  assertPlanContractProjection(
+    parsePlanContractMarkedTable(planContractSource, {
+      startMarker: PLAN_CONTRACT_MAPPING_START,
+      endMarker: PLAN_CONTRACT_MAPPING_END,
+      context: planContractContext,
+    }),
+    { context: planLintContext },
+  );
+  assertPlanPlaceholderProjection(
+    parsePlanContractMarkedTable(planContractSource, {
+      startMarker: PLAN_CONTRACT_PLACEHOLDERS_START,
+      endMarker: PLAN_CONTRACT_PLACEHOLDERS_END,
+      context: planContractContext,
+    }),
+    {
+      context: planLintContext,
+      planTemplateSource: normalizeLineEndings(readFileSync(planToolPath, 'utf8')),
+      planTemplateContext: planToolContext,
+    },
+  );
 
   // --- Shared next-steps contract guard ---
   // Every completed run closes with up to two concrete follow-up invocations,
@@ -1841,28 +1884,28 @@ try {
     iterate: 1856,
     setup: 1923,
     'apply-review': 1407,
-    'apply-issues': 1213,
+    'apply-issues': 1205,
     cleanup: 1070,
-    refactor: 932,
+    refactor: 924,
     deliver: 795,
     'plan-issue': 755,
     review: 770,
     plan: 665,
     'apply-review-commit-mechanics': 656,
     maintain: 728,
-    docs: 645,
-    build: 625,
-    apply: 594,
-    'apply-plan': 589,
+    docs: 637,
+    build: 617,
+    apply: 586,
+    'apply-plan': 581,
     investigate: 553,
-    fix: 520,
+    fix: 512,
     'plan-review': 446,
     pr: 450,
     'concept-review': 344,
     'apply-review-remote': 382,
     concept: 332,
     commit: 260,
-    'open-plans': 147,
+    'open-plans': 137,
     'pr-review': 38,
     version: 38,
   };

@@ -20,7 +20,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
