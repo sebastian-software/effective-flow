@@ -3,6 +3,8 @@
 Readers map these complete forms to the same internal meanings; writers choose one column and
 use it consistently throughout the artifact:
 
+<!-- plan-contract-mapping:start -->
+
 | Meaning              | German                                              | English                                      |
 | -------------------- | --------------------------------------------------- | -------------------------------------------- |
 | Status, open         | `**Planungsstatus:** Nicht umgesetzt`               | `**Plan status:** Not implemented`           |
@@ -33,6 +35,31 @@ use it consistently throughout the artifact:
 | Empty open points    | `- Keine offenen Punkte.`                           | `- No open points.`                          |
 | Test results         | `## Testergebnisse`                                 | `## Test results`                            |
 | Review findings      | `## Review-Befunde`                                 | `## Review findings`                         |
+
+<!-- plan-contract-mapping:end -->
+
+Template placeholders are fixed tokens. A German plan renders the German token wherever the
+English template shows the English one; a finished plan replaces every token, the review-result
+alternatives included, with real content:
+
+<!-- plan-contract-placeholders:start -->
+
+| Placeholder           | German                                                          | English                                                              |
+| --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Title                 | `[Titel]`                                                       | `[Title]`                                                            |
+| Requirement           | `[Anforderung, Ziel und Begründung der Workflow-Empfehlung]`    | `[Requirement, goal, and rationale for the workflow recommendation]` |
+| Architecture decision | `[Entscheidung mit Begründung]`                                 | `[Decision with rationale]`                                          |
+| Affected file change  | `[geplante Änderung]`                                           | `[planned change]`                                                   |
+| Implementation step   | `[konkreter Implementierungsschritt]`                           | `[concrete implementation step]`                                     |
+| Optional subsection   | `[Nur falls relevant]`                                          | `[Only if relevant]`                                                 |
+| Edge case             | `[Randfall und erwartetes Verhalten]`                           | `[Edge case and expected behavior]`                                  |
+| Acceptance criterion  | `[messbares Kriterium]`                                         | `[measurable criterion]`                                             |
+| Validation step       | `[geplanter Test, geplante Prüfung oder manuelle Verifikation]` | `[planned test, check, or manual verification]`                      |
+| Assumption            | `[Annahme oder bewusst dokumentierter offener Punkt]`           | `[Assumption or deliberately documented remaining point]`            |
+| Plan-review finding   | `[Befund mit Bereich, Schweregrad, Problem und Anpassung]`      | `[Finding with area, severity, problem, and adjustment]`             |
+| Review result         | `Freigegeben / Überarbeitung nötig`                             | `Approved / Revision required`                                       |
+
+<!-- plan-contract-placeholders:end -->
 
 Tables and finding prose follow the same rule. Plan file tables use `Datei` / `Beschreibung`
 and review scorecards use `Bereich` / `Kritisch` / `Wichtig` / `Hinweis` in German; English uses

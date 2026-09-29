@@ -80,6 +80,14 @@ import {
   assertPilotMeasurementDocumentationProjection,
   PILOT_MEASUREMENT_DOCUMENTATION_START,
   PILOT_MEASUREMENT_DOCUMENTATION_END,
+  PLAN_CONTRACT_MAPPING_START,
+  PLAN_CONTRACT_MAPPING_END,
+  PLAN_CONTRACT_PLACEHOLDERS_START,
+  PLAN_CONTRACT_PLACEHOLDERS_END,
+  parsePlanContractMarkedTable,
+  assertPlanContractProjection,
+  assertPlanPlaceholderProjection,
+  extractPlanTemplateTokens,
   parseNextStepsTable,
   assertNextStepsContract,
   findNextStepsDocViolations,
@@ -100,6 +108,7 @@ import {
   PILOT_MEASUREMENT_POLICY_PROJECTION,
   canonicalizeJson,
 } from '../src/scripts/pilot-measurement-protocol.mjs';
+import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from '../src/scripts/plan-lint-core.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
@@ -1624,6 +1633,165 @@ test('the pilot protocol documentation parser rejects marker, canonicalization, 
         context: 'drifted documentation fixture',
       }),
     /documentation projection diverges.*drifted documentation fixture/,
+  );
+});
+
+// --- Plan-lint contract projection ---
+
+const planContractSource = readFileSync(
+  new URL('../src/shared/plan-contract.md', import.meta.url),
+  'utf8',
+);
+const planToolSource = readFileSync(new URL('../src/tools/plan.md', import.meta.url), 'utf8');
+
+function planMappingRows(source = planContractSource) {
+  return parsePlanContractMarkedTable(source, {
+    startMarker: PLAN_CONTRACT_MAPPING_START,
+    endMarker: PLAN_CONTRACT_MAPPING_END,
+    context: 'plan-contract.md',
+  });
+}
+
+function planPlaceholderRows(source = planContractSource) {
+  return parsePlanContractMarkedTable(source, {
+    startMarker: PLAN_CONTRACT_PLACEHOLDERS_START,
+    endMarker: PLAN_CONTRACT_PLACEHOLDERS_END,
+    context: 'plan-contract.md',
+  });
+}
+
+test('the unmodified plan contract and plan template pass both plan-lint projection guards', () => {
+  const mapping = planMappingRows();
+  assert.deepEqual(mapping[0], ['Meaning', 'German', 'English']);
+  assert.equal(mapping.length - 1, PLAN_CONTRACT_MAPPING.length);
+  assert.doesNotThrow(() => assertPlanContractProjection(mapping, { context: 'plan-contract.md' }));
+  const placeholders = planPlaceholderRows();
+  assert.equal(placeholders.length - 1, PLAN_PLACEHOLDERS.length);
+  assert.doesNotThrow(() =>
+    assertPlanPlaceholderProjection(placeholders, {
+      context: 'plan-contract.md',
+      planTemplateSource: planToolSource,
+      planTemplateContext: 'plan.md',
+    }),
+  );
+  const tokens = extractPlanTemplateTokens(planToolSource);
+  assert.ok(tokens.includes('[Title]'));
+  assert.ok(tokens.includes('[measurable criterion]'));
+  assert.ok(!tokens.includes('[ ]'));
+});
+
+test('the review-result mapping cell parses as two code spans', () => {
+  const row = planMappingRows().find(([meaning]) => meaning === 'Review result');
+  assert.deepEqual(row, [
+    'Review result',
+    '`**Ergebnis:** Freigegeben` / `Überarbeitung nötig`',
+    '`**Result:** Approved` / `Revision required`',
+  ]);
+  const drifted = planContractSource.replace(
+    '`**Result:** Approved` / `Revision required`',
+    '`**Result:** Approved / Revision required`',
+  );
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(drifted), { context: 'drifted' }),
+    /^Error: plan-lint projection: mapping row "Review result" English cell must be/,
+  );
+});
+
+test('the plan-lint mapping guard fails on a drifted mapping table', () => {
+  const relabeled = planContractSource.replace(
+    '`**Plan status:** Not implemented`',
+    '`**Plan status:** Not started    `',
+  );
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(relabeled), { context: 'drifted' }),
+    /^Error: plan-lint projection: mapping row "Status, open" English cell must be .*\(in drifted\)$/,
+  );
+  const withoutRow = planContractSource
+    .split('\n')
+    .filter((line) => !line.startsWith('| Review findings '))
+    .join('\n');
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(withoutRow), { context: 'drifted' }),
+    /^Error: plan-lint projection: mapping table has 27 rows; expected 28 \(missing row "Review findings"\)/,
+  );
+  assert.throws(
+    () => planMappingRows(planContractSource.replace(PLAN_CONTRACT_MAPPING_END, '')),
+    /^Error: plan-lint projection: table requires exactly one/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a drifted placeholder table', () => {
+  const retranslated = planContractSource.replace('`[messbares Kriterium]`', '`[Kriterium]`');
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(retranslated), {
+        context: 'drifted',
+        planTemplateSource: planToolSource,
+        planTemplateContext: 'plan.md',
+      }),
+    /^Error: plan-lint projection: placeholder row "Acceptance criterion" German cell must be "\[messbares Kriterium\]"/,
+  );
+  const extra = planContractSource.replace(
+    `${PLAN_CONTRACT_PLACEHOLDERS_END}`,
+    `| Extra | \`[Extra]\` | \`[Extra]\` |\n${PLAN_CONTRACT_PLACEHOLDERS_END}`,
+  );
+  assert.throws(
+    () => assertPlanPlaceholderProjection(planPlaceholderRows(extra), { context: 'drifted' }),
+    /^Error: plan-lint projection: placeholder table has 13 rows; expected 12 \(unexpected row "Extra"\)/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a plan template token the table lacks', () => {
+  const template = planToolSource.replace(
+    '- [ ] [measurable criterion]',
+    '- [ ] [measurable criterion]\n- [ ] [new template token]',
+  );
+  assert.notEqual(template, planToolSource);
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(), {
+        context: 'plan-contract.md',
+        planTemplateSource: template,
+        planTemplateContext: 'plan.md',
+      }),
+    /^Error: plan-lint projection: plan template token "\[new template token\]" is missing from the placeholder table \(in plan\.md/,
+  );
+});
+
+function assertPlanTemplateDrift(template, pattern) {
+  assert.notEqual(template, planToolSource);
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(), {
+        context: 'plan-contract.md',
+        planTemplateSource: template,
+        planTemplateContext: 'plan.md',
+      }),
+    pattern,
+  );
+}
+
+test('the plan-lint placeholder guard fails on a template review result the table does not hold', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace(
+      '**Result:** Approved / Revision required',
+      '**Result:** Approved / Rejected',
+    ),
+    /^Error: plan-lint projection: plan template \*\*Result:\*\* value must be "Approved \/ Revision required"; found "Approved \/ Rejected" \(in plan\.md/,
+  );
+});
+
+test('the plan-lint placeholder guard fails unless Phase 3 holds exactly one markdown fence', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace('\n### Phase 4', '\n```markdown\n# [Title]\n```\n\n### Phase 4'),
+    /^Error: plan-lint projection: plan Phase 3 holds 2 ```markdown fences; expected exactly one template fence/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a table token the template no longer uses', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace('- [Edge case and expected behavior]', '- An edge case.'),
+    /^Error: plan-lint projection: placeholder table token "\[Edge case and expected behavior\]" does not occur in the plan template \(in plan\.md/,
   );
 });
 
