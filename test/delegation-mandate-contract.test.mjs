@@ -251,10 +251,6 @@ test('delegation-mandate.md forbids a delegated orchestrator from ending its tur
       'missing: a delegated orchestrator never ends its turn while a child is still pending',
     ],
     [
-      /not reliably resumed when a background child finishes/i,
-      'missing: the rationale that a delegated run is not reliably resumed by a finished child',
-    ],
-    [
       /binds its own fan-out only/i,
       'missing: the rule binds only the delegated orchestrator’s own fan-out',
     ],

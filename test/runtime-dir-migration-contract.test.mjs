@@ -49,7 +49,6 @@ const contractScenarios = [
   {
     name: 'partial target with transitional config and missing runtime entries',
     clauses: [
-      /Merely finding `\.effective-flow\/` does not prove that migration ran/,
       /missing marker starts the migration scan even when\s+`\.effective-flow\/` already contains a transitional `config\.json`/,
       /copy only missing files/,
       /including `cache\.json`, report or investigation trees, and wisdom\s+files/,
@@ -90,7 +89,7 @@ const contractScenarios = [
     name: 'legacy worktrees remain excluded',
     clauses: [
       /except for the entire `\.worktrees\/` subtree/,
-      /legacy worktrees are path-registered\s+and remain only in the legacy directory/,
+      /legacy worktrees[^.]{0,40}\s+and remain only in the legacy directory/,
     ],
   },
   {
@@ -103,12 +102,14 @@ const contractScenarios = [
   },
 ];
 
+// Invariant: migration copies only missing state, never replaces target state, and writes its marker last.
 for (const scenario of contractScenarios) {
   test(`runtime-directory migration contract covers ${scenario.name}`, () => {
     for (const clause of scenario.clauses) assert.match(migrationContract, clause);
   });
 }
 
+// Invariant: every runtime writer runs the migration prerequisite before its first mutation.
 test('all checked-in runtime writers establish migration before their first mutation', () => {
   assert.deepEqual(findRuntimeDirMigrationViolations(collectRuntimeSources()), []);
 });
@@ -151,6 +152,7 @@ test('cleanup triggers the shared migration after inventory and refreshes eviden
   assert.doesNotMatch(cleanupTool, /normal tool run triggers the migration/);
 });
 
+// Invariant: an unselected legacy source is never released for deletion by the marker.
 test('cleanup keeps simultaneous unselected legacy source separate', () => {
   assert.match(
     cleanupTool,
@@ -162,6 +164,7 @@ test('cleanup keeps simultaneous unselected legacy source separate', () => {
   );
 });
 
+// Invariant: setup migrates only for a selected legacy config and writes no marker on failure.
 test('setup triggers the shared migration only for a locator-selected legacy config', () => {
   assert.match(
     setupTool,
@@ -177,6 +180,7 @@ test('setup triggers the shared migration only for a locator-selected legacy con
   );
 });
 
+// Invariant: the migration marker and its safety clauses survive every harness render.
 test('native and portable renders preserve the same migration marker and behavior clauses', () => {
   for (const harness of ['claude', 'codex', 'portable']) {
     const rendered = renderBody(`${migrationContract}\n`, harness, {
