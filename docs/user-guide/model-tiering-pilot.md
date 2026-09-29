@@ -30,7 +30,9 @@ anonymous period observation. It records only the mode and terminal outcome, har
 required-check summary, and counts of actual CI repair, configured-reviewer implementation, and
 conflict-resolution work. It contains no PR, repository, branch, workflow-record, check-name,
 comment, finding, or path identifier and cannot be linked to a `build` or `refactor` run. An
-observer-only re-entry records nothing.
+observer-only re-entry records nothing. An observation is also skipped, without affecting the
+pilot, when admission closes as it starts (for example because the baseline is activating at that
+moment) or while another measured run is still in flight.
 
 Observation setup sends the verified runtime root and repository identity together with the
 generation, configuration and generation states, `merge|report` mode, and native harness family.
@@ -44,8 +46,10 @@ exactly once; an early report-mode stop is `reported-blocked` with unavailable c
 `executionProfiles.fast.enabled: true` is project-level admission to the pilot lifecycle. It is not
 activation, does not start measurement, and does not authorize a detailed trace. A future guided
 setup action must separately display the exact shipped protocol digest, disclose local minimal-data
-collection, and obtain explicit confirmation before starting a Quality-only baseline. Activation
-then requires the preregistered baseline conditions to pass.
+collection, and obtain explicit confirmation before starting a Quality-only baseline. That
+confirmation is the only one: activation follows automatically once the preregistered baseline
+window and sample conditions pass. Until then, or while another measured run is still in flight,
+the generation simply stays in its baseline.
 
 A detailed trace has a separate, current-run consent boundary. The workflow may attest
 `detailOptIn: true` only after an explicit request in that run. Consent is not stored as text or
@@ -58,8 +62,10 @@ source excerpts, absolute paths, URLs, and unknown fields.
 
 Configuration and generation state remain independent. Disabling the project key stops new
 measurement and Fast selection without deleting evidence or clearing a suspension. Suspension and
-incomplete records block later Fast until the owned evidence is reconciled. Only a still-suspended
-generation can resume; a generation in `review` is terminal and cannot return to admission.
+incomplete records block later Fast until the owned evidence is reconciled. A critical safety,
+data-integrity, authorization, or scope incident suspends the generation, so Fast stops until an
+explicit resume. Only a still-suspended generation can resume; a generation in `review` is terminal
+and cannot return to admission.
 
 Review freezes new reservations but lets already captured work finish or reconcile. Aggregation
 then produces two local views:
@@ -92,7 +98,8 @@ emits no aggregate, and makes Keep unavailable. Manual recursive deletion is not
 recovery path.
 
 Suspension and resume use durable transition state. A crash during either operation keeps every
-admission path frozen until recovery completes. Generation-wide operations exclude packet writers;
+admission path frozen until recovery completes. The next suspension, incident, or resume operation
+completes an interrupted suspension, and the inventory reports the pending transition meanwhile. Generation-wide operations exclude packet writers;
 independent packet timers may still run in parallel when no exclusive lifecycle operation owns the
 generation. Stale-lock and temporary-file recovery validates the generation, operation, lock nonce,
 owner liveness, file identity, and digest before removing anything. Purge and discard use
@@ -116,10 +123,14 @@ evidence.
 The subsystem fails toward Quality. A missing baseline, protocol drift, invalid configuration,
 suspension, incomplete evidence, a live or unknown lock, capacity exhaustion, or an unsafe runtime
 path prevents new Fast admission. A measurement or observation failure never discards successful
-product changes and never changes the current merge result. Observation failures expose only the
-stable `pilotControlOutcome`, `controlStatePersisted`, and value-free `alert` metadata. A caller
-reports durable suspension or incomplete evidence only when those fields explicitly confirm it;
-otherwise it states that cross-run control could not be proven without echoing the rejected value.
+product changes and never changes the current merge result. Only a genuine fault partway through
+recording (finalizing a workflow record, or a gate observation, including damaged evidence it
+meets), capacity exhaustion, or a recorded incident suspends the pilot; an invalid request, a lock
+held by another run, an unsafe location or version, or a missing generation or record does not.
+Measurement and observation failures expose only the stable `pilotControlOutcome`,
+`controlStatePersisted`, and value-free `alert` metadata. A caller reports durable suspension or
+incomplete evidence only when those fields explicitly confirm it; otherwise it states that
+cross-run control could not be proven without echoing the rejected value.
 
 ## See also
 

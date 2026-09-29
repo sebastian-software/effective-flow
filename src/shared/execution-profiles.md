@@ -240,7 +240,9 @@ blocks Fast until reconciliation and, only for suspended state, a confirmed `res
 <!-- execution-profile-control:end -->
 
 `control-state-unpersistable` emits a value-free alert because no durable reason can be proven.
-No incident detail enters tracked configuration.
+A workflow records a critical incident only through the helper's incident operation
+(`record-incident`) by naming its category; it never names a `critical-*` outcome itself, and the
+helper maps the category to the outcome. No incident detail enters tracked configuration.
 
 ## Escalation transfer
 

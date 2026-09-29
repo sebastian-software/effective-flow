@@ -27,8 +27,11 @@ provider model names.
 The project-level `executionProfiles.fast.enabled` key is a strict Boolean and defaults off. Missing
 or `false` is disabled. Malformed, ambiguous, or unreadable input is invalid. Both states select
 Quality and stop new measurement. Literal `true` only admits the project to the pilot lifecycle; an
-explicit prospective Quality-only baseline and a successfully activated generation are still
-required before an eligible packet may use Fast. Disabling or removing the key is the configuration
+explicitly confirmed prospective Quality-only baseline and an activated generation are still
+required before an eligible packet may use Fast. The confirmed baseline is the only consent:
+activation follows automatically once the preregistered baseline window and sample conditions
+pass, and until then the helper reports the unmet conditions, or another run still in flight, as
+not ready rather than as an error. Disabling or removing the key is the configuration
 rollback: it stops new admission without rewriting generation state, clearing a suspension, or
 discarding already captured evidence.
 
@@ -50,6 +53,25 @@ persist suspension and incomplete-record controls where possible, block new Fast
 reconciliation, and require an explicit confirmed resume from suspended state. Configuration
 changes and a successful Quality run never clear that state automatically.
 
+The helper, not the workflow, decides each control outcome. A workflow records a critical incident
+through a dedicated incident operation by naming only its category; the helper maps the category
+to the control outcome, and the generic suspension operation refuses incident outcomes. Contention
+for a pilot lock, schema and authentication errors, and location or version faults never suspend
+the pilot: they return a retryable result without control state. An oversized caller payload is
+the stated exception, because it exhausts capacity and still suspends through the capacity
+handler. A genuine mid-write fault during finalization or
+a gate observation persists a suspension, and when that suspension cannot be persisted the helper
+reports unpersistable control state with a value-free alert. A gate observation that meets closed
+admission or another run in flight records nothing. A crash that leaves an interrupted suspension
+behind is rolled forward by the next control write, and the inventory shows the pending transition
+until then, so a frozen admission is never invisible.
+
+Packet accounting is conservative. Each stored packet records whether its implementation attempt
+started, did not start, or is unknown. A packet whose attempt never started is excluded from every
+packet metric, because counting it would record a Fast attempt without escalation that never
+happened. An unknown attempt, from an abandoned and reconciled run, is never counted as a success,
+and its missing cost keeps the cost comparison unavailable, so the cost gate stays fail-closed.
+
 The policy is now paired with rendered native capability and a local measurement subsystem:
 generated Claude Fast implementer sidecars, a Codex per-spawn override representation, strict
 native inventories, and a dependency-free runtime helper with preregistered lifecycle, evidence,
@@ -61,7 +83,8 @@ anonymous period-level correction observations, but those observations carry no 
 forge/repository identity and cannot be linked to a `build` or `refactor` run.
 
 Lifecycle capability still does not activate the pilot. Neither `build` nor `refactor` requests
-Fast, setup exposes no baseline or activation action, and portable output remains Quality-only.
+Fast, setup exposes no baseline action from which activation could follow, and portable output
+remains Quality-only.
 Configuration, generation state, trace consent, native capability, and publication approval remain
 separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
 separately approved publication of a suppressed candidate. Normal purge is digest-bound and
@@ -88,11 +111,16 @@ generation identifier in the private review binding rather than either metric vi
   benefit and compound scope uncertainty. Corrections and retries therefore use Quality.
 - **Duplicate eligibility rules in each workflow.** That would allow order and fallback behavior to
   drift. One marked, build-validated policy source owns the gate instead.
+- **Suspend the pilot on every helper failure.** Routine lock contention and caller errors would
+  then halt the pilot without any evidence fault. Only classified mid-write faults suspend.
+- **Require a second operator confirmation for activation.** The confirmed baseline already carries
+  the consent, and the preregistered conditions decide readiness mechanically; a second prompt would
+  add no information.
 
 ## Consequences
 
-- Existing projects and current workflows retain Quality behavior until later adoption and explicit
-  activation.
+- Existing projects and current workflows retain Quality behavior until later adoption, an
+  explicitly confirmed baseline, and its automatic activation.
 - The pilot can fail closed when configuration, evidence, lifecycle state, or native enforcement is
   uncertain.
 - A possible performance gain is deliberately forgone for excluded, coupled, corrective, portable,
