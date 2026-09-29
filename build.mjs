@@ -10,7 +10,7 @@ import {
   readdirSync,
   existsSync,
 } from 'node:fs';
-import { join, basename, dirname, relative, resolve } from 'node:path';
+import { join, basename, dirname, relative, resolve, sep } from 'node:path';
 import { execSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,10 @@ import {
   findStaleAdrContractClaims,
   findStaleBrandReferences,
   findForeignHarnessToolParameters,
+  collectRepositoryOnlyFiles,
+  applyRepositoryOnlyAllowlist,
+  findRepositoryOnlyReferences,
+  findVerbatimSourceLocations,
   findRemoteTrackerRecipeViolations,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
@@ -290,6 +294,29 @@ const SKILL_RECOMMENDATION_EXEMPT_AGENTS = new Set([
   // carries that rationale in its own source prose
   'merge-conflict-resolver',
 ]);
+
+// Repository-only reference guard (#497). Files under these roots exist only in
+// this source repository: no build target ships them, so shipped text that
+// links to one or names one in a code span is dead for every consumer.
+const REPOSITORY_ONLY_ROOTS = [
+  'docs/developer-guide', // maintainer documentation; never copied into a target
+  'test', // unit and distribution suites
+  'evals', // behavioural eval suites and their recorded evidence
+  'src', // sources are shipped only in rendered form, under different paths
+  'scripts', // repository maintenance scripts (runtime scripts ship from src/scripts)
+  'site', // project website sources
+];
+const REPOSITORY_ONLY_ROOT_FILES = [
+  'build.mjs', // the build itself
+  'build-lib.mjs', // the build's pure helpers
+  'README.md.src', // README source; only the generated README is published
+];
+// Repository-only files shipped text may still name. Each entry must name an
+// existing file under the roots above, or the build fails as stale.
+const REPOSITORY_ONLY_REFERENCE_ALLOWLIST = [
+  // `docs.md` and `doc-categories.md` name it as a target-project path, not this repository's file
+  'docs/developer-guide/README.md',
+];
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
 if (!existsSync(releasePleaseManifestPath)) {
@@ -1751,8 +1778,45 @@ try {
   ];
   const foreignParameterDiagnostics = [];
 
+  // Repository-only reference guard (#497): the set is collected once from the
+  // source tree by a filesystem walk (no Git), and the sources map lets each
+  // diagnostic point at the `src/` line that carries the reference verbatim.
+  const repositoryOnlyFiles = applyRepositoryOnlyAllowlist(
+    collectRepositoryOnlyFiles(ROOT_DIR, {
+      roots: REPOSITORY_ONLY_ROOTS,
+      rootFiles: REPOSITORY_ONLY_ROOT_FILES,
+    }),
+    REPOSITORY_ONLY_REFERENCE_ALLOWLIST,
+    { context: 'REPOSITORY_ONLY_REFERENCE_ALLOWLIST (build.mjs)' },
+  );
+  const repositoryOnlySources = new Map();
+  const collectSourceMarkdown = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) collectSourceMarkdown(path);
+      else if (entry.isFile() && entry.name.endsWith('.md')) {
+        repositoryOnlySources.set(
+          relative(ROOT_DIR, path).split(sep).join('/'),
+          readFileSync(path, 'utf8'),
+        );
+      }
+    }
+  };
+  collectSourceMarkdown(SOURCE_DIR);
+  const payloadRelative = (root, file) => relative(root, file).split(sep).join('/');
+  const repositoryOnlyDiagnostics = [];
+
   for (const target of targetConfigs) {
     const files = renderedFiles(target.root);
+    const payloadFiles = new Set();
+    const collectPayload = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) collectPayload(path);
+        else payloadFiles.add(payloadRelative(target.root, path));
+      }
+    };
+    collectPayload(target.root);
     for (const file of files) {
       const content = readFileSync(file, 'utf8');
       const foreignParameters = findForeignHarnessToolParameters(content, target.name);
@@ -1761,6 +1825,21 @@ try {
           `target=${target.name} ` +
             `file=${relative(target.root, file)} line=${finding.line} ` +
             `parameter=${finding.parameter}`,
+        );
+      }
+      const filePath = payloadRelative(target.root, file);
+      const repositoryOnlyReferences = findRepositoryOnlyReferences(content, {
+        filePath,
+        payloadFiles,
+        repositoryOnlyFiles,
+        sidecar: target.name !== 'portable' && filePath.startsWith('agents/'),
+      });
+      for (const finding of repositoryOnlyReferences) {
+        const sources = findVerbatimSourceLocations(finding.reference, repositoryOnlySources);
+        repositoryOnlyDiagnostics.push(
+          `target=${target.name} file=${filePath} line=${finding.line} ` +
+            `kind=${finding.kind} reference=${finding.reference} ` +
+            `sources=${sources.length > 0 ? sources.join(', ') : 'no verbatim source match'}`,
         );
       }
       // Shape-matched, not allowlisted: see assertNoUnresolvedPlaceholders.
@@ -1795,6 +1874,12 @@ try {
   if (foreignParameterDiagnostics.length > 0) {
     throw new Error(
       `foreign harness tool-parameter guard (#163):\n${foreignParameterDiagnostics.join('\n')}`,
+    );
+  }
+  if (repositoryOnlyDiagnostics.length > 0) {
+    throw new Error(
+      'repository-only reference guard (#497): shipped text names a file that exists only in this repository:\n' +
+        repositoryOnlyDiagnostics.join('\n'),
     );
   }
 
@@ -1886,11 +1971,11 @@ try {
     'apply-review': 1407,
     'apply-issues': 1205,
     cleanup: 1070,
-    refactor: 924,
+    refactor: 922,
     deliver: 795,
-    'plan-issue': 755,
-    review: 770,
-    plan: 665,
+    'plan-issue': 754,
+    review: 768,
+    plan: 664,
     'apply-review-commit-mechanics': 656,
     maintain: 728,
     docs: 637,
@@ -1899,11 +1984,11 @@ try {
     'apply-plan': 581,
     investigate: 553,
     fix: 512,
-    'plan-review': 446,
+    'plan-review': 445,
     pr: 450,
-    'concept-review': 344,
+    'concept-review': 343,
     'apply-review-remote': 382,
-    concept: 332,
+    concept: 331,
     commit: 260,
     'open-plans': 137,
     'pr-review': 38,

@@ -4,13 +4,16 @@ import {
   canonicalizeJson,
 } from './src/scripts/pilot-measurement-protocol.mjs';
 import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from './src/scripts/plan-lint-core.mjs';
+import { readdirSync, statSync } from 'node:fs';
+import { join, posix } from 'node:path';
 
 // Pure, importable transformation helpers for build.mjs.
 //
 // These functions are extracted from build.mjs so the Markdown -> skill
 // transforms can be unit-tested (node:test) without running the full I/O
-// build. Nothing here touches the filesystem; all inputs and outputs are
-// strings or plain data. build.mjs owns the I/O, the source config
+// build. Nothing here writes to the filesystem and, apart from the read-only
+// walk in collectRepositoryOnlyFiles, nothing reads it either; all other inputs
+// and outputs are strings or plain data. build.mjs owns the I/O, the source config
 // (EXPOSED_TOOLS, agent prefix) and the known-name sets, and passes them in.
 
 // Allowed `type` values for an ```ask``` block. `approval` renders a yes/no
@@ -495,6 +498,139 @@ export function reconcileNativeAgentInventories(
     baseWorkers: [...claudeInventory.baseWorkers],
     claudeFastWorkers: [...claudeInventory.fastWorkers],
   };
+}
+
+// --- Native sidecar configuration comparison ---
+//
+// `scripts/compare-native-agent-baseline.mjs` proves that execution-profile rendering leaves every
+// Quality base worker's harness configuration unchanged. The pure parsing and comparison it needs
+// lives here so it is unit-testable; the script keeps only argument parsing, builds and I/O.
+//
+// The proof compares native CONFIGURATION only, never the rendered prompt body. Body prose comes
+// largely from shared include fragments, and a golden byte-for-byte comparison would make every
+// legitimate shared-fragment edit churn this unrelated proof — the native-profile-rendering plan
+// warns against exactly such fixtures. Both parsers below fail closed: a sidecar shape they do not
+// recognize is an error, never a silently skipped key.
+
+function nativeSidecarConfigError(file, message) {
+  return new Error(`Unparseable native sidecar ${file}: ${message}`);
+}
+
+function setNativeSidecarConfigKey(config, key, value, file) {
+  if (Object.hasOwn(config, key)) throw nativeSidecarConfigError(file, `duplicate key "${key}"`);
+  config[key] = value;
+}
+
+// Claude sidecar: `---` frontmatter of `key: value` lines; the body after the closing `---`
+// is excluded from the comparison.
+export function parseClaudeSidecarConfig(content, file) {
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(content);
+  if (!match) throw nativeSidecarConfigError(file, 'missing or unterminated frontmatter');
+  const config = Object.create(null);
+  for (const line of match[1].split('\n')) {
+    const entry = /^([A-Za-z_][\w-]*):(?: (.*))?$/.exec(line);
+    if (!entry) {
+      throw nativeSidecarConfigError(file, `unrecognized frontmatter line ${JSON.stringify(line)}`);
+    }
+    let value = entry[2] ?? '';
+    if (value.startsWith('"')) {
+      if (value.length < 2 || !value.endsWith('"')) {
+        throw nativeSidecarConfigError(file, `unterminated quoted value for "${entry[1]}"`);
+      }
+      value = value.slice(1, -1).replace(/\\"/g, '"');
+    }
+    setNativeSidecarConfigKey(config, entry[1], value, file);
+  }
+  if (Object.keys(config).length === 0) throw nativeSidecarConfigError(file, 'empty frontmatter');
+  return config;
+}
+
+export const NATIVE_SIDECAR_PROMPT_BODY_KEY = 'developer_instructions';
+
+// Codex sidecar: the minimal TOML subset build.mjs emits — top-level `key = value` lines with a
+// basic string (JSON-compatible, as `tomlString` writes it), a literal string, a boolean, or a
+// number, plus the `developer_instructions = '''…'''` multiline literal prompt body. Only the
+// presence of that body is compared, never its text.
+export function parseCodexSidecarConfig(content, file) {
+  const config = Object.create(null);
+  const lines = content.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') continue;
+    const entry = /^([A-Za-z_][\w-]*) = (.*)$/.exec(line);
+    if (!entry) throw nativeSidecarConfigError(file, `unrecognized line ${JSON.stringify(line)}`);
+    const [, key, raw] = entry;
+    let value;
+    if (raw.startsWith("'''")) {
+      const rest = [raw.slice(3), ...lines.slice(index + 1)].join('\n');
+      const end = rest.indexOf("'''");
+      if (end === -1) {
+        throw nativeSidecarConfigError(file, `unterminated multiline string for "${key}"`);
+      }
+      const consumed = rest.slice(0, end + 3).split('\n').length - 1;
+      const trailing = rest.slice(end + 3).split('\n')[0];
+      if (trailing.trim() !== '') {
+        throw nativeSidecarConfigError(file, `unexpected text after multiline string for "${key}"`);
+      }
+      value = rest.slice(0, end).replace(/^\n/, '');
+      index += consumed;
+    } else if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        throw nativeSidecarConfigError(file, `invalid basic string for "${key}"`);
+      }
+    } else if (/^'[^'\n]*'$/.test(raw)) {
+      value = raw.slice(1, -1);
+    } else if (/^(?:true|false|[+-]?\d+(?:\.\d+)?)$/.test(raw)) {
+      value = raw;
+    } else {
+      throw nativeSidecarConfigError(file, `unrecognized value for "${key}"`);
+    }
+    setNativeSidecarConfigKey(config, key, value, file);
+  }
+  if (!Object.hasOwn(config, NATIVE_SIDECAR_PROMPT_BODY_KEY)) {
+    throw nativeSidecarConfigError(file, `missing "${NATIVE_SIDECAR_PROMPT_BODY_KEY}"`);
+  }
+  config[NATIVE_SIDECAR_PROMPT_BODY_KEY] = '<prompt body excluded>';
+  return config;
+}
+
+export const NATIVE_SIDECAR_CONFIG_PARSERS = Object.freeze({
+  claude: parseClaudeSidecarConfig,
+  codex: parseCodexSidecarConfig,
+});
+
+// Compares the parsed configuration of one base worker's sidecar in the baseline and the working
+// build. `baseline` and `working` are `{ path, content }`; parse errors name the offending path.
+export function assertSameNativeSidecarConfiguration(harness, file, baseline, working) {
+  if (!Object.hasOwn(NATIVE_SIDECAR_CONFIG_PARSERS, harness)) {
+    throw new Error(`Unsupported native sidecar harness "${harness}"`);
+  }
+  const parse = NATIVE_SIDECAR_CONFIG_PARSERS[harness];
+  const before = parse(baseline.content, baseline.path);
+  const after = parse(working.content, working.path);
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+  for (const key of keys) {
+    const beforeValue = Object.hasOwn(before, key) ? JSON.stringify(before[key]) : '<absent>';
+    const afterValue = Object.hasOwn(after, key) ? JSON.stringify(after[key]) : '<absent>';
+    if (beforeValue !== afterValue) {
+      throw new Error(
+        `Base native configuration drift: ${harness} ${file} key "${key}": ${beforeValue} -> ${afterValue}`,
+      );
+    }
+  }
+}
+
+// The baseline build must ship exactly one `<worker>.<extension>` sidecar per base worker the
+// working inventory declares. Inputs are copied before sorting and never mutated.
+export function assertBaselineWorkerMembership(harness, baselineFiles, baseWorkers, extension) {
+  const actual = [...baselineFiles].sort();
+  const expected = baseWorkers.map((worker) => `${worker}.${extension}`).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${harness} baseline worker membership differs from the working inventory`);
+  }
 }
 
 // --- Central-skill ownership contract (#168) ---
@@ -3382,6 +3518,242 @@ export function findForeignHarnessToolParameters(text, target) {
   }
 
   return findings.sort((a, b) => a.line - b.line || a.parameter.localeCompare(b.parameter));
+}
+
+// --- Repository-only reference guard (#497) ---
+//
+// Shipped text must not name a file that exists only in this source repository:
+// no build target carries `docs/developer-guide/`, `test/` or `build.mjs`, so a
+// relative link or an inline code span naming one is dead for every consumer.
+// The guard has two halves, both run over each rendered file of each target:
+//
+// - links: an inline link, image or reference definition whose relative target
+//   does not resolve to a file of the same target's payload (or escapes it), and
+//   every root-absolute target. Native agent sidecars (`agents/*`) are installed
+//   apart from the skill directory, so every relative link in one is a finding.
+// - code spans: a span whose normalized content is exactly a repository-only
+//   file. Payload resolution takes precedence, so a shipped runtime script such
+//   as `scripts/remote-tracker.mjs` never counts as repository-only.
+//
+// Fenced code blocks are skipped by both halves: they carry commands and
+// examples, not references the reader is asked to follow. The set of
+// repository-only files is collected by a read-only filesystem walk; Git is
+// never consulted, so the guard behaves the same in an archive or a worktree.
+export const REPOSITORY_ONLY_SKIP_DIRS = Object.freeze([
+  'node_modules',
+  'dist',
+  'dist.tmp',
+  '.git',
+]);
+
+export function collectRepositoryOnlyFiles(repoRoot, { roots = [], rootFiles = [] } = {}) {
+  const files = new Set();
+  const isFile = (absolute) => {
+    try {
+      return statSync(absolute).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const visit = (absolute, relativePath) => {
+    let entries;
+    try {
+      entries = readdirSync(absolute, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (REPOSITORY_ONLY_SKIP_DIRS.includes(entry.name)) continue;
+      const childRelative = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) visit(join(absolute, entry.name), childRelative);
+      else if (entry.isFile()) files.add(childRelative);
+    }
+  };
+
+  for (const root of roots) {
+    const relativeRoot = posix.normalize(root).replace(/\/+$/, '');
+    visit(join(repoRoot, ...relativeRoot.split('/')), relativeRoot);
+  }
+  for (const rootFile of rootFiles) {
+    const relativeFile = posix.normalize(rootFile);
+    if (isFile(join(repoRoot, ...relativeFile.split('/')))) files.add(relativeFile);
+  }
+  return files;
+}
+
+export function applyRepositoryOnlyAllowlist(repositoryOnlyFiles, allowlist, { context } = {}) {
+  const entries = [...allowlist];
+  const stale = entries.filter((entry) => !repositoryOnlyFiles.has(entry));
+  if (stale.length > 0) {
+    const where = context ? ` in ${context}` : '';
+    throw new Error(
+      stale
+        .map(
+          (entry) =>
+            `stale repository-only reference allowlist entry${where}: "${entry}" names no file under the repository-only roots`,
+        )
+        .join('\n'),
+    );
+  }
+  const allowed = new Set(entries);
+  return new Set([...repositoryOnlyFiles].filter((file) => !allowed.has(file)));
+}
+
+// Split a line into its inline code spans (CommonMark delimiter matching). A
+// delimiter is a backtick run of any length N; the span closes at the next run
+// of exactly N backticks on the same line. An unmatched opener stays literal
+// text and scanning continues with the next run.
+function inlineCodeSpans(line) {
+  const runs = [...line.matchAll(/`+/g)].map((match) => ({
+    start: match.index,
+    length: match[0].length,
+  }));
+  const spans = [];
+  for (let index = 0; index < runs.length; index += 1) {
+    const opener = runs[index];
+    const closerIndex = runs.findIndex(
+      (run, candidate) => candidate > index && run.length === opener.length,
+    );
+    if (closerIndex === -1) continue;
+    const closer = runs[closerIndex];
+    spans.push({
+      start: opener.start,
+      end: closer.start + closer.length,
+      content: line.slice(opener.start + opener.length, closer.start),
+    });
+    index = closerIndex;
+  }
+  return spans;
+}
+
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+// CommonMark reference definition: the label may hold backslash escapes but no
+// unescaped bracket, and it must contain at least one non-whitespace character.
+const REFERENCE_DEFINITION = /^ {0,3}\[((?:\\.|[^\\[\]])+)\]:\s*(\S+)/;
+// The optional title is `"…"`, `'…'`, or `(…)`; all three accept backslash
+// escapes, so a title holds its own delimiter only when it is escaped.
+const INLINE_LINK_DESTINATION =
+  /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"(?:\\.|[^\\"])*"|'(?:\\.|[^\\'])*'|\((?:\\.|[^\\()])*\)))?\s*\)/y;
+
+// CommonMark inline link or image text: an unescaped `[` (optionally preceded
+// by `!`) opens it, a backslash escapes the next character, unescaped brackets
+// nest, and the text closes at the matching unescaped `]`, which must be
+// followed directly by the `(destination "title")` part. Every unescaped `[` is
+// tried as an opener, so a link inside another link's text is checked as well.
+function inlineLinkTargets(text) {
+  const brackets = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '\\') index += 1;
+    else if (char === '[' || char === ']') brackets.push({ index, char });
+  }
+  const targets = [];
+  for (let opener = 0; opener < brackets.length; opener += 1) {
+    if (brackets[opener].char !== '[') continue;
+    let depth = 0;
+    for (let next = opener; next < brackets.length; next += 1) {
+      depth += brackets[next].char === '[' ? 1 : -1;
+      if (depth > 0) continue;
+      INLINE_LINK_DESTINATION.lastIndex = brackets[next].index + 1;
+      const match = INLINE_LINK_DESTINATION.exec(text);
+      if (match) targets.push(match[1]);
+      break;
+    }
+  }
+  return targets;
+}
+
+function unwrapAngleBrackets(target) {
+  return target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
+}
+
+export function findRepositoryOnlyReferences(
+  content,
+  { filePath, payloadFiles, repositoryOnlyFiles, sidecar = false },
+) {
+  const findings = [];
+  const directory = posix.dirname(filePath);
+  const payloadList = [...payloadFiles];
+  const resolvesInPayload = (normalized) =>
+    payloadFiles.has(normalized) ||
+    payloadFiles.has(posix.normalize(posix.join(directory, normalized))) ||
+    payloadList.some((file) => file.endsWith(`/${normalized}`));
+
+  const checkLink = (lineNumber, rawTarget) => {
+    const reference = unwrapAngleBrackets(rawTarget);
+    if (URL_SCHEME.test(reference)) return;
+    const target = reference.replace(/[#?].*$/, '');
+    if (target === '') return;
+    let dead;
+    if (target.startsWith('/') || sidecar) {
+      dead = true;
+    } else {
+      const resolved = posix.normalize(posix.join(directory, target));
+      dead = resolved === '..' || resolved.startsWith('../') || !payloadFiles.has(resolved);
+    }
+    if (dead) findings.push({ line: lineNumber, kind: 'link', reference });
+  };
+
+  // The guard is line-based: a link or code span that spans a line break is
+  // deliberately out of scope and is not recognized.
+  let fence = null;
+  for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
+    const lineNumber = lineIndex + 1;
+    // Only a line indented by 0-3 spaces may open or close a CommonMark fence.
+    // A backtick opener's info string must not contain a backtick, and a
+    // closer may be followed only by spaces or tabs.
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === fence.char &&
+        fenceMatch[1].length >= fence.length &&
+        /^[ \t]*$/.test(fenceMatch[2])
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMatch && (fenceMatch[1][0] === '~' || !fenceMatch[2].includes('`'))) {
+      fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      continue;
+    }
+
+    const spans = inlineCodeSpans(line);
+    for (const span of spans) {
+      const normalized = span.content
+        .trim()
+        .replace(/^\.\//, '')
+        .replace(/:\d+(?::\d+)?$/, '');
+      if (repositoryOnlyFiles.has(normalized) && !resolvesInPayload(normalized)) {
+        findings.push({ line: lineNumber, kind: 'code-span', reference: span.content });
+      }
+    }
+
+    let text = line;
+    for (const span of [...spans].reverse()) {
+      text = `${text.slice(0, span.start)} ${text.slice(span.end)}`;
+    }
+    const definition = REFERENCE_DEFINITION.exec(text);
+    if (definition && /\S/.test(definition[1])) checkLink(lineNumber, definition[2]);
+    for (const target of inlineLinkTargets(text)) checkLink(lineNumber, target);
+  }
+
+  const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  return findings.sort(
+    (a, b) => a.line - b.line || order(a.kind, b.kind) || order(a.reference, b.reference),
+  );
+}
+
+export function findVerbatimSourceLocations(reference, sources) {
+  const entries = sources instanceof Map ? [...sources] : Object.entries(sources);
+  const locations = [];
+  for (const [path, text] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const [lineIndex, line] of normalizeLineEndings(text).split('\n').entries()) {
+      if (line.includes(reference)) locations.push(`${path}:${lineIndex + 1}`);
+    }
+  }
+  return locations;
 }
 
 // --- Router dispatch clause for deprecated tool aliases ---

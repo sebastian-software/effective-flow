@@ -91,6 +91,6 @@ test('the report names exempt workers on a second line only when there are any',
   assert.equal(
     formatBaselineReport('abc1234', ['effective-flow-a', 'effective-flow-b']),
     'Native base agents match abc1234\n' +
-      'Source-changed since abc1234 (not compared): effective-flow-a, effective-flow-b\n',
+      'Source-changed since abc1234 (configuration compared only): effective-flow-a, effective-flow-b\n',
   );
 });

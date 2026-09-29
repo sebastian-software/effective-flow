@@ -1,8 +1,7 @@
 ## Delegation contract: generic audit reasoning
 
 The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
-(classification `delegate`, see
-[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+(classification `delegate`). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
 fallback.
@@ -31,8 +30,7 @@ two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
 `effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
-(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
-with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring).
 
 Cross-language or runtime migration and dependency updates are **not** special branches any more:
 `effective-delivery` owns them itself, so the default owner above already covers them and there is

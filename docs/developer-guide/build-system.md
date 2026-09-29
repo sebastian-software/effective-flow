@@ -323,6 +323,23 @@ The build aborts with an error message if any of these guards is violated:
   | `yield_time_ms`       | Codex         |
   | `sandbox_permissions` | Codex         |
 
+- **Repository-only reference guard (#497):** `docs/developer-guide/` and the other maintainer
+  sources never ship, so shipped text must be self-sufficient. Before the atomic `dist/` swap,
+  every rendered Markdown and TOML file of all three targets is scanned outside fenced code blocks.
+  A relative link, image, or reference definition must resolve inside the same target's payload
+  (URL schemes and `#fragment`-only links are ignored); a root-absolute `/…` link, and any relative
+  link in a native `agents/` sidecar, which installs apart from the skill, always fails. An inline
+  code span (trimmed, one leading `./` and a trailing `:line[:col]` removed) fails when it names a
+  repository-only file that does not also resolve inside the payload. That set is a read-only
+  filesystem walk, never Git, of `REPOSITORY_ONLY_ROOTS` (`docs/developer-guide/`, `test/`,
+  `evals/`, `src/`, `scripts/`, `site/`) and `REPOSITORY_ONLY_ROOT_FILES` (`build.mjs`,
+  `build-lib.mjs`, `README.md.src`), skipping `node_modules`, `dist`, `dist.tmp`, and `.git` at any
+  depth. Each diagnostic names target, rendered file, line, kind, the verbatim reference, and every
+  `src/` file:line carrying it verbatim, or `no verbatim source match` for placeholder output. The
+  commented `REPOSITORY_ONLY_REFERENCE_ALLOWLIST` in `build.mjs` exempts deliberate names (today
+  `docs/developer-guide/README.md`, a target-project path); an entry naming no repository-only file
+  fails as stale. The helpers live in `build-lib.mjs` and are covered in `test/build-lib.test.mjs`.
+
 - **Dependency-free runtime guard (#169):** every script named in the `RUNTIME_SCRIPT_FILES`
   allowlist must exist, import only Node.js built-ins or local siblings, and be copied
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan

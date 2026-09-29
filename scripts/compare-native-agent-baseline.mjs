@@ -8,8 +8,10 @@
 // Every base worker in the working native inventory must then build the same
 // Claude and Codex sidecar bytes as at <commit>, except a worker whose source
 // inputs (its agent file plus transitive eager includes) differ between the two
-// checkouts: that one is exempt and named in the report instead. Importing the
-// module runs nothing; main runs only when the file is executed directly.
+// checkouts: that one is exempt from the byte comparison, still has its native
+// configuration (Claude frontmatter, Codex TOML keys other than the prompt body)
+// compared, and is named in the report. Importing the module runs nothing; main
+// runs only when the file is executed directly.
 
 import {
   cpSync,
@@ -28,6 +30,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   EAGER_INCLUDE_RE,
+  assertBaselineWorkerMembership,
+  assertSameNativeSidecarConfiguration,
   normalizeLineEndings,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
@@ -77,8 +81,8 @@ export function sourceInputsChanged(baseInputs, workingInputs) {
 }
 
 // The base workers whose source inputs changed between the two checkouts,
-// sorted. These are exempt from the byte comparison; every other base worker
-// must still build byte-identically.
+// sorted. These are exempt from the byte comparison and compared by native
+// configuration only; every other base worker must still build byte-identically.
 export function sourceChangedWorkers(workers, readBaseFile, readWorkingFile) {
   return workers
     .filter((worker) => {
@@ -176,17 +180,29 @@ function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingC
   ]) {
     const baselineDir = join(baseOutput, 'dist', harness, 'agents');
     const workingDir = join(workingOutput, 'dist', harness, 'agents');
-    const baselineFiles = readdirSync(baselineDir).sort();
-    const expectedBaseFiles = claude.baseWorkers.map((worker) => `${worker}.${extension}`).sort();
-    if (JSON.stringify(baselineFiles) !== JSON.stringify(expectedBaseFiles)) {
-      throw new Error(`${harness} baseline worker membership differs from the working inventory`);
-    }
+    assertBaselineWorkerMembership(
+      harness,
+      readdirSync(baselineDir),
+      claude.baseWorkers,
+      extension,
+    );
     for (const worker of claude.baseWorkers) {
-      // A source-changed worker is deliberately not byte-compared; the report names every
-      // exemption, and the baseline-proof test pins that line so an unexpected one fails it.
-      if (exemptSet.has(worker)) continue;
       const file = `${worker}.${extension}`;
-      assertSameFile(join(baselineDir, file), join(workingDir, file));
+      const baselinePath = join(baselineDir, file);
+      const workingPath = join(workingDir, file);
+      if (!exemptSet.has(worker)) {
+        assertSameFile(baselinePath, workingPath);
+        continue;
+      }
+      // A source-changed worker is deliberately not byte-compared, but its native configuration
+      // must still match; the report names every exemption, and the baseline-proof test pins that
+      // line so an unexpected one fails it.
+      assertSameNativeSidecarConfiguration(
+        harness,
+        file,
+        { path: baselinePath, content: readFileSync(baselinePath, 'utf8') },
+        { path: workingPath, content: readFileSync(workingPath, 'utf8') },
+      );
     }
   }
 
@@ -203,7 +219,7 @@ function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingC
 export function formatBaselineReport(base, exempt) {
   let report = `Native base agents match ${base}\n`;
   if (exempt.length > 0) {
-    report += `Source-changed since ${base} (not compared): ${exempt.join(', ')}\n`;
+    report += `Source-changed since ${base} (configuration compared only): ${exempt.join(', ')}\n`;
   }
   return report;
 }

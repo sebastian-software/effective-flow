@@ -58,6 +58,11 @@ import {
   collectRenderedWorkerRefs,
   HARNESS_TOOL_PARAMETER_OWNERSHIP,
   findForeignHarnessToolParameters,
+  REPOSITORY_ONLY_SKIP_DIRS,
+  collectRepositoryOnlyFiles,
+  applyRepositoryOnlyAllowlist,
+  findRepositoryOnlyReferences,
+  findVerbatimSourceLocations,
   findProhibitedConsumerScriptCommands,
   findRemoteTrackerRecipeViolations,
   findRetiredConfigDocViolations,
@@ -3611,6 +3616,604 @@ test('findForeignHarnessToolParameters rejects unknown rendered targets', () => 
     () => findForeignHarnessToolParameters('run_in_background: true', 'unknown'),
     /Unknown rendered target "unknown"/,
   );
+});
+
+// Repository-only reference guard (#497): shipped text must not name a file that exists only in
+// this source repository, neither as a dead relative link nor as an inline code span.
+const REPO_ONLY_FILES = new Set([
+  'docs/developer-guide/skill-ownership.md',
+  'scripts/remote-tracker.mjs',
+  'build.mjs',
+  'build-lib.mjs',
+  'test/build-lib.test.mjs',
+]);
+const REPO_ONLY_PAYLOAD = new Set([
+  'effective-flow/SKILL.md',
+  'effective-flow/tools/maintain.md',
+  'effective-flow/tools/a.md',
+  'effective-flow/shared/x.md',
+  'effective-flow/scripts/remote-tracker.mjs',
+  'agents/effective-flow-code-validator.md',
+]);
+const detectRepositoryOnly = (content, options = {}) =>
+  findRepositoryOnlyReferences(content, {
+    filePath: 'effective-flow/tools/maintain.md',
+    payloadFiles: REPO_ONLY_PAYLOAD,
+    repositoryOnlyFiles: REPO_ONLY_FILES,
+    ...options,
+  });
+
+test('findRepositoryOnlyReferences reports dead, root-absolute, reference-definition, image and escaping links', () => {
+  const content = [
+    'See [the guide](../../docs/developer-guide/skill-ownership.md) for details.',
+    'Absolute [root](/docs/developer-guide/skill-ownership.md) link.',
+    '[guide]: ../../docs/developer-guide/skill-ownership.md',
+    '![diagram](../../site/diagram.png)',
+    'Resolving [fragment](../shared/x.md#part) and [query](../shared/x.md?raw=1).',
+    'Missing [fragment](../shared/missing.md#part) and [query](../shared/gone.md?raw=1).',
+    'Escaping [outside](../../../outside.md) the payload.',
+    'Titled [dead](../gone.md "Title") link.',
+    '   [wrapped]: <../gone-wrapped.md>',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 2, kind: 'link', reference: '/docs/developer-guide/skill-ownership.md' },
+    { line: 3, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 4, kind: 'link', reference: '../../site/diagram.png' },
+    { line: 6, kind: 'link', reference: '../shared/gone.md?raw=1' },
+    { line: 6, kind: 'link', reference: '../shared/missing.md#part' },
+    { line: 7, kind: 'link', reference: '../../../outside.md' },
+    { line: 8, kind: 'link', reference: '../gone.md' },
+    { line: 9, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows scheme, fragment-only and payload-resolving links', () => {
+  const content = [
+    'External [site](https://example.com/docs/developer-guide/skill-ownership.md).',
+    'Mail [us](mailto:team@example.com).',
+    'Jump to [the section](#section).',
+    'Sibling [shared](../shared/x.md) file.',
+    'Wrapped [shared](<../shared/x.md>) file.',
+    'Titled [shared](../shared/x.md "Shared fragment") file.',
+    'Same directory [a](a.md) and [a](./a.md#top).',
+    '[ext]: https://example.com/guide',
+    '[local]: <../shared/x.md>',
+    '![icon](../shared/x.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences treats every relative link in a native sidecar as a finding', () => {
+  const content = 'Read [the fragment](../effective-flow/shared/x.md) first.';
+  const options = { filePath: 'agents/effective-flow-code-validator.md' };
+
+  assert.deepEqual(detectRepositoryOnly(content, { ...options, sidecar: false }), []);
+  assert.deepEqual(detectRepositoryOnly(content, options), []);
+  assert.deepEqual(detectRepositoryOnly(content, { ...options, sidecar: true }), [
+    { line: 1, kind: 'link', reference: '../effective-flow/shared/x.md' },
+  ]);
+  assert.deepEqual(
+    detectRepositoryOnly('[site](https://example.com) and [top](#top)', {
+      ...options,
+      sidecar: true,
+    }),
+    [],
+  );
+});
+
+test('findRepositoryOnlyReferences reports code spans naming repository-only files', () => {
+  const content = [
+    'The manifest is `docs/developer-guide/skill-ownership.md`.',
+    'Run ``build.mjs`` locally.',
+    'Also `./build.mjs` and `build-lib.mjs:73` and `build-lib.mjs:73:5`.',
+    'Padded `` build.mjs `` span.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'docs/developer-guide/skill-ownership.md' },
+    { line: 2, kind: 'code-span', reference: 'build.mjs' },
+    { line: 3, kind: 'code-span', reference: './build.mjs' },
+    { line: 3, kind: 'code-span', reference: 'build-lib.mjs:73' },
+    { line: 3, kind: 'code-span', reference: 'build-lib.mjs:73:5' },
+    { line: 4, kind: 'code-span', reference: ' build.mjs ' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows directories, placeholders, target conventions and payload files', () => {
+  const content = [
+    'The directory `docs/developer-guide/` holds guides.',
+    'Invoke `<skill-root>/scripts/x.mjs` and `<skill-root>/scripts/remote-tracker.mjs`.',
+    'Target projects own `AGENTS.md`, `README.md` and `package.json`.',
+    'The setup lives in `docs/adr/effective-flow-project-setup.md`.',
+    'The shipped helper `scripts/remote-tracker.mjs` resolves in the payload.',
+    'A longer path `docs/developer-guide/skill-ownership.md.bak` is not in the set.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences gives payload resolution precedence over the repository-only set', () => {
+  const repositoryOnlyFiles = new Set([
+    'effective-flow/SKILL.md',
+    '../shared/x.md',
+    'scripts/remote-tracker.mjs',
+    'build.mjs',
+  ]);
+  const content = [
+    'Exact `effective-flow/SKILL.md` payload path.',
+    'Relative `../shared/x.md` payload path.',
+    'Suffix `scripts/remote-tracker.mjs` payload path.',
+    'Unshipped `build.mjs` path.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content, { repositoryOnlyFiles }), [
+    { line: 4, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences skips fenced blocks and links inside code spans', () => {
+  const content = [
+    '```sh',
+    'node build.mjs [g](../../docs/developer-guide/skill-ownership.md) `build.mjs`',
+    '```',
+    '~~~',
+    '```',
+    '`build.mjs` [g](../../docs/developer-guide/skill-ownership.md)',
+    '~~~',
+    '  ````md',
+    '  ```',
+    '`build.mjs`',
+    '  ````',
+    'Literal `[a](../../docs/developer-guide/skill-ownership.md)` is not a link.',
+    'After the fences `build.mjs` counts again.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 13, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences skips an unclosed fence to the end of the file', () => {
+  const content = [
+    'Before `build.mjs`.',
+    '~~~~',
+    '`build.mjs` [g](../../docs/developer-guide/skill-ownership.md)',
+    '~~~',
+    '`build-lib.mjs`',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences sorts by line, kind and reference and normalizes CRLF', () => {
+  const content = [
+    'Intro line.',
+    '[g](../../docs/developer-guide/skill-ownership.md) with `build.mjs` and `build-lib.mjs`',
+    '[z](../zed.md) then [a](../alpha.md)',
+    '',
+  ].join('\r\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'code-span', reference: 'build-lib.mjs' },
+    { line: 2, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 3, kind: 'link', reference: '../alpha.md' },
+    { line: 3, kind: 'link', reference: '../zed.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose text nests balanced brackets', () => {
+  const content = [
+    'See [the [guide]](../missing.md).',
+    '![a [b] c](../gone.png)',
+    'Deep [a [b [c]] d](../deep.md) nesting.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone.png' },
+    { line: 3, kind: 'link', reference: '../deep.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose text contains escaped brackets', () => {
+  const content = [
+    '[a \\] b](../missing.md)',
+    '[a \\[ b](../other.md)',
+    'Escaped backslash [x \\\\](../double.md) still closes the text.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../other.md' },
+    { line: 3, kind: 'link', reference: '../double.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows nested and escaped link text that resolves in the payload', () => {
+  const content = [
+    '[the [shared] fragment](../shared/x.md)',
+    '[x \\] y](../shared/x.md)',
+    '![icon [small]](../shared/x.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences reports reference definitions whose label contains escaped brackets', () => {
+  const content = [
+    '[a \\] b]: ../missing.md',
+    '[c \\[ d]: ../shared/x.md',
+    '[a [b]]: ../missing-def.md',
+    '[ ]: ../blank.md',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not treat an escaped opening bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('\\[not a link](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences does not treat text closed only by an escaped bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('[a\\](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences detects an inner link after an unbalanced outer bracket', () => {
+  assert.deepEqual(detectRepositoryOnly('[outer [inner](../inner-missing.md)'), [
+    { line: 1, kind: 'link', reference: '../inner-missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports three-backtick code spans naming repository-only files', () => {
+  const content = ['Run ```build.mjs``` locally.', 'Padded ``` build-lib.mjs ``` span.'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'code-span', reference: ' build-lib.mjs ' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a four-backtick code span only at the next four-backtick run', () => {
+  // The inner double-backtick runs belong to the first span's content and must neither open nor
+  // close a span of their own; the second four-backtick span is detected on its own.
+  const content = 'Quad ```` ``build.mjs`` ```` span, then ````build-lib.mjs```` here.';
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences keeps backtick runs without a same-length closer literal', () => {
+  const content = [
+    'Mismatch ```build.mjs`` here.',
+    'Open ``build.mjs``` and `build-lib.mjs` here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links with a parenthesized title', () => {
+  const content = [
+    'See [guide](../missing.md (title)).',
+    'Wrapped [w](<../gone-wrapped.md> (A longer title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links with a parenthesized title', () => {
+  const content = [
+    '[shared](../shared/x.md (Shared fragment))',
+    'Wrapped [shared](<../shared/x.md> (title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences accepts escaped parentheses inside a parenthesized title', () => {
+  const content = [
+    '[g](../gone.md (a \\) b))',
+    'Resolving [s](../shared/x.md (a \\( b \\) c)) here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose double-quoted title holds an escaped quote', () => {
+  const content = [
+    'See [guide](../missing.md "a \\"title\\"").',
+    'Wrapped [w](<../gone-wrapped.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose single-quoted title holds an escaped quote', () => {
+  const content = [
+    "See [g](../gone.md 'it\\'s') here.",
+    "Wrapped [w](<../gone-single.md> 'don\\'t') link.",
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+    { line: 2, kind: 'link', reference: '../gone-single.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links whose quoted title holds an escaped quote', () => {
+  const content = [
+    '[shared](../shared/x.md "a \\"title\\"")',
+    "[shared](../shared/x.md 'it\\'s')",
+    'Wrapped [shared](<../shared/x.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented backtick line', () => {
+  const content = ['    ```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented tilde line', () => {
+  const content = ['    ~~~', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a tab-indented backtick line', () => {
+  const content = ['\t```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still skips a fence opened and closed with up to three spaces of indentation', () => {
+  const content = [
+    '   ```',
+    '[g](../inside.md)',
+    '   ```',
+    '  ~~~',
+    '[t](../inside-tilde.md)',
+    '  ~~~',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes an open fence only at a closer indented up to three spaces', () => {
+  const content = [
+    '```',
+    '    ```',
+    '[g](../inside.md)',
+    '\t```',
+    '[i](../still-inside.md)',
+    '```',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+// Invariant: CommonMark forbids a backtick in a backtick fence's info string,
+// so such a line is inline text (here a code span), never a fence opener.
+test('findRepositoryOnlyReferences scans a backtick line whose info string contains a backtick as inline text', () => {
+  const content = ['```build.mjs```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a backtick fence with a backtick-free info string', () => {
+  const content = ['```js', '[g](../inside.md) `build.mjs`', '```', '[h](../after.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a tilde fence whose info string contains a backtick', () => {
+  const content = ['~~~ a`b', '[g](../inside.md) `build.mjs`', '~~~', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+// Invariant: a closing fence carries only optional trailing spaces or tabs
+// after its run; a fence-character line with trailing text stays fence content.
+test('findRepositoryOnlyReferences does not close a fence at a fence run followed by text', () => {
+  const content = ['```', '``` not a closer', '[g](../inside.md)', '```', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 5, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a fence at a closer followed only by spaces or tabs', () => {
+  const content = [
+    '```',
+    '[g](../inside.md)',
+    '```   ',
+    '[h](../after.md)',
+    '~~~',
+    '[i](../inside-tilde.md)',
+    '~~~ \t',
+    '[j](../after-tilde.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+    { line: 8, kind: 'link', reference: '../after-tilde.md' },
+  ]);
+});
+
+test('findVerbatimSourceLocations lists every matching source line in path order', () => {
+  const reference = '../../docs/developer-guide/skill-ownership.md';
+  const sources = new Map([
+    [
+      'src/tools/maintain.md',
+      ['# Maintain', `See [guide](${reference}).`, 'Nothing here.', `[g]: ${reference}`].join('\n'),
+    ],
+    ['src/agents/test-writer.md', ['Intro', `Twice ${reference} and ${reference}`].join('\r\n')],
+    ['src/shared/skill-discovery.md', `First ${reference}\n`],
+    ['src/shared/unrelated.md', '../../docsXdeveloper-guide/skill-ownershipXmd'],
+  ]);
+  const expected = [
+    'src/agents/test-writer.md:2',
+    'src/shared/skill-discovery.md:1',
+    'src/tools/maintain.md:2',
+    'src/tools/maintain.md:4',
+  ];
+
+  assert.deepEqual(findVerbatimSourceLocations(reference, sources), expected);
+  assert.deepEqual(findVerbatimSourceLocations(reference, Object.fromEntries(sources)), expected);
+});
+
+test('findVerbatimSourceLocations returns an empty list when no source carries the reference', () => {
+  // The rendered reference comes from a placeholder expansion, so no source carries it verbatim.
+  const sources = new Map([['src/tools/maintain.md', 'Read `{{FLOW}}/tools/maintain.md` next.']]);
+
+  assert.deepEqual(findVerbatimSourceLocations('build.mjs', new Map()), []);
+  assert.deepEqual(findVerbatimSourceLocations('effective-flow/tools/maintain.md', sources), []);
+  assert.deepEqual(findVerbatimSourceLocations('build.mjs', {}), []);
+});
+
+test('applyRepositoryOnlyAllowlist removes allowlisted entries without mutating its input', () => {
+  const files = new Set(['docs/developer-guide/README.md', 'docs/developer-guide/build-system.md']);
+
+  const result = applyRepositoryOnlyAllowlist(files, ['docs/developer-guide/README.md']);
+
+  assert.ok(result instanceof Set);
+  assert.notEqual(result, files);
+  assert.deepEqual([...result], ['docs/developer-guide/build-system.md']);
+  assert.deepEqual(
+    [...files],
+    ['docs/developer-guide/README.md', 'docs/developer-guide/build-system.md'],
+  );
+
+  const unchanged = applyRepositoryOnlyAllowlist(files, []);
+  assert.notEqual(unchanged, files);
+  assert.deepEqual([...unchanged].sort(), [...files].sort());
+});
+
+test('applyRepositoryOnlyAllowlist fails on every stale entry at once', () => {
+  const files = new Set(['docs/developer-guide/README.md']);
+
+  assert.throws(
+    () =>
+      applyRepositoryOnlyAllowlist(files, [
+        'docs/developer-guide/README.md',
+        'docs/developer-guide/gone.md',
+        'test/removed.test.mjs',
+      ]),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /stale repository-only reference allowlist entry/);
+      assert.match(error.message, /names no file under the repository-only roots/);
+      assert.match(error.message, /"docs\/developer-guide\/gone\.md"/);
+      assert.match(error.message, /"test\/removed\.test\.mjs"/);
+      assert.doesNotMatch(error.message, /"docs\/developer-guide\/README\.md"/);
+      return true;
+    },
+  );
+  assert.deepEqual([...files], ['docs/developer-guide/README.md']);
+});
+
+test('REPOSITORY_ONLY_SKIP_DIRS names the generated, dependency and Git directories', () => {
+  assert.deepEqual([...REPOSITORY_ONLY_SKIP_DIRS], ['node_modules', 'dist', 'dist.tmp', '.git']);
+  assert.ok(Object.isFrozen(REPOSITORY_ONLY_SKIP_DIRS));
+});
+
+test('collectRepositoryOnlyFiles walks roots as POSIX paths and skips generated directories', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'effective-flow-repository-only-'));
+  const write = (path, content = 'x\n') => {
+    const absolute = join(repoRoot, ...path.split('/'));
+    mkdirSync(join(absolute, '..'), { recursive: true });
+    writeFileSync(absolute, content);
+  };
+  try {
+    write('docs/developer-guide/skill-ownership.md');
+    write('docs/developer-guide/nested/deep.md');
+    write('docs/adr/outside-roots.md');
+    write('test/build-lib.test.mjs');
+    write('test/fixtures/keep.md');
+    write('test/fixtures/node_modules/pkg/index.js');
+    write('test/dist/x.md');
+    write('test/fixtures/dist.tmp/y.md');
+    write('test/fixtures/.git/HEAD');
+    write('node_modules/top/index.js');
+    write('build.mjs');
+    write('build-lib.mjs');
+
+    const files = collectRepositoryOnlyFiles(repoRoot, {
+      roots: ['docs/developer-guide', 'test', 'missing-root'],
+      rootFiles: ['build.mjs', 'README.md.src', 'docs'],
+    });
+
+    assert.ok(files instanceof Set);
+    assert.deepEqual(
+      [...files].sort(),
+      [
+        'build.mjs',
+        'docs/developer-guide/nested/deep.md',
+        'docs/developer-guide/skill-ownership.md',
+        'test/build-lib.test.mjs',
+        'test/fixtures/keep.md',
+      ].sort(),
+    );
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectRepositoryOnlyFiles returns an empty set when no root exists', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'effective-flow-repository-only-empty-'));
+  try {
+    const files = collectRepositoryOnlyFiles(repoRoot, {
+      roots: ['docs/developer-guide', 'src'],
+      rootFiles: ['build.mjs'],
+    });
+    assert.ok(files instanceof Set);
+    assert.equal(files.size, 0);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
 });
 
 test('code-validator remains a harness-neutral adapter to central validation', () => {

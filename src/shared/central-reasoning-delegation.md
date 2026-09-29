@@ -25,8 +25,7 @@ into the Effective Flow artifact form.
 
 Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
 concrete task crosses the declared boundary of a specialist, load its owner via the relevance
-gate (building block "Skill discovery") and the ownership inventory
-(`docs/developer-guide/skill-ownership.md`). Typical owners:
+gate (building block "Skill discovery"). The declared owners are exactly these:
 
 <!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
