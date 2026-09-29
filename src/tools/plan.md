@@ -285,11 +285,7 @@ On a revision run:
 
 Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and none of these naming rules apply.
 
-Before writing, resolve `language.workflow` once through the shared language resolver and retain
-that concrete value for all planning/review delegates. For an existing plan, preserve its
-clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths
-are only the transitional read fallbacks defined centrally; report the setup recommendation when
-either is used. Do not write configuration from this tool.
+Before writing, resolve `language.workflow` once through the shared language resolver and retain that concrete value for all planning/review delegates. For an existing plan, preserve its clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths are only the transitional read fallbacks defined centrally; report the setup recommendation when either is used. Do not write configuration from this tool.
 
 The plan uses the complete German or English contract in "Plan status convention" — status,
 header fields, sections, review content, and open points all use one column. Stable workflow
@@ -297,8 +293,8 @@ values, skill references, doc-category values, and paths are not translated. Do 
 language explanations or template comments into the plan.
 
 The English form of the structural template is shown below. For `de`, render the complete German
-field/section mapping from the canonical bilingual plan contract, including German table headings
-and review prose; do not partially translate this example:
+field/section mapping from the canonical bilingual plan contract, including German table headings,
+review prose, and the fixed German placeholder tokens from its placeholder table; do not partially translate this example:
 
 ```markdown
 # [Title]
@@ -444,6 +440,13 @@ the judgment, Effective Flow the artifact form):
 
 If a criterion is not met, revise the plan or ask the user for the missing information.
 
+```lazy-include
+plan-lint
+when: the plan file is written and its mechanical check runs in Phase 5 or reruns in Phase 7
+```
+
+**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to the next free numeric suffix per Phase 3); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.
+
 ### Phase 6: Plan review
 
 Before completion, perform a review of the plan itself. This review checks the planned changes at the plan level and is **not a code review**.
@@ -502,7 +505,7 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 ### Phase 7: Completion
 
 1. Write the plan file.
-2. Format only the new plan file if a formatter for Markdown is clearly configured.
+2. Format only the new plan file if a formatter for Markdown is clearly configured; then rerun the Phase 5 mechanical check on the final file, now including the review placeholders.
 3. Report to the user:
    - the path of the created plan file
    - a brief summary of the planned approach
