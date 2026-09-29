@@ -264,17 +264,21 @@ With evidence, `plan-archival` finds `P` tracked in the delivery checkout and se
 unchanged mechanics. It takes the final content over from, and cleans the untracked copy in, the
 checkout whose file the hash comparison read, which in a worktree session is not
 `RUNTIME_STATE_ROOT`. The handback's `{{SKILL:pr}}` delegation keeps every line it already carries,
-including `Next steps: suppressed`, and adds the line `Finalize plan draft: <PR number>` with the
-verified number. `{{SKILL:pr}}` then reuses that pull request and finishes it before the handback's
-PR review publication. When the finish fails, the pull request stays a draft, and the recovery is a
-direct `{{SKILL:pr}}` run on that branch.
+including `Next steps: suppressed`. It adds the line `Finalize plan draft: <PR number>` with the
+verified number **only** when `plan-archival` reported "archived a tracked plan (State A)", or
+"already archived (State D)" with `A` carrying the implemented-marked content on the delivery
+branch. Any other archival outcome, such as a collision or a failed probe, omits that line, because
+archival never aborts the handback: the pull request stays a draft, and the report names the
+archival outcome. `{{SKILL:pr}}` then reuses that pull request and finishes it before the
+handback's PR review publication. When the finish fails, the pull request stays a draft, and the
+recovery is a direct `{{SKILL:pr}}` run on that branch.
 
 ### Report
 
 Exactly one continuation line:
 
 - continued on the plan pull request, with its URL and, where one applies, the sibling-worktree
-  path;
+  path, plus the archival outcome whenever it withheld the finish and left the draft open;
 - resumed an interrupted run by adoption, with the worktree path;
 - no plan pull request found;
 - continued without discovery, by the user's choice or because the completion is `merge` or

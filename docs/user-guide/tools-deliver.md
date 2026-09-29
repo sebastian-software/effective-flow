@@ -191,14 +191,15 @@ attempting creation or guessing.
 **Finishing a plan's draft:** A reused pull request is changed in exactly one case: it is the draft
 that [`plan` published](tools-understand.md#publishing-the-plan-as-a-draft-pull-request), and its
 branch now carries implementation beyond the plan. An implementing run's delivery names that pull
-request by number; a different number or a missing marker then refuses the finish, and when no
-pull request matches at all, `pr` stops before creating a new one. A direct `pr` call is the
-recovery path after a failed finish: it finishes a draft with a valid plan marker whose branch
-already holds the archived plan and no longer the plan itself. `pr` then derives the final title
-and description as for a new pull request, updates the title, updates the body while keeping the
-marker line, and marks the pull request ready, each as a dry run first. On Forgejo, while the pull
-request is still a draft, the retitle and the ready transition are one edit. The first failure
-stops it, the pull request stays a draft, and the report names the failed step.
+request by number, and only once the plan was archived on its branch; a different number or a
+missing marker then refuses the finish, and when no pull request matches at all, `pr` stops before
+creating a new one. A direct `pr` call is the recovery path after a failed finish: it finishes a
+draft with a valid plan marker whose branch already holds the archived plan and no longer the plan
+itself. `pr` then derives the final title and description as for a new pull request, updates the
+title, updates the body while keeping the marker line, and marks the pull request ready, each as a
+dry run first. On Forgejo, while the pull request is still a draft, the retitle and the ready
+transition are one edit. The first failure stops it, the pull request stays a draft, and the report
+names the failed step.
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the

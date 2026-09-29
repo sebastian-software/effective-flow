@@ -18990,6 +18990,34 @@ test('the plan continuation fixes pr completion, proves implementation before ar
       '`Finalize plan draft: <PR number>`',
     ),
   );
+
+  // Invariant: archival reports a collision or a failed probe without aborting the handback, so
+  // the finish request is gated on an archive that really happened; otherwise the pull request
+  // could become ready while the plan stays open or unarchived.
+  includesAll(
+    delivery,
+    [
+      '`Finalize plan draft: <PR number>` with the verified number only when `plan-archival` reported "archived a tracked plan (State A)"',
+      '"already archived (State D)" with `A` carrying the implemented-marked content on the delivery branch',
+      'Any other archival outcome, such as a collision or a failed probe, omits that line',
+      'the report names the archival outcome',
+    ],
+    'the archival-gated finish',
+  );
+  ordered(delivery, 'only when `plan-archival` reported', 'omits that line', 'stays a draft');
+  assert.match(
+    itemWith(listItems(section(continuation, '### Report')), 'continued on the plan pull request'),
+    /the archival outcome whenever it withheld the finish/,
+  );
+  // The two quoted outcomes are archival's own report shapes, not paraphrases.
+  const archivalReport = section(
+    source('src/shared/plan-archival.md'),
+    '### Report vocabulary',
+    '\n## ',
+  );
+  for (const shape of ['archived a tracked plan (State A)', 'already archived (State D)']) {
+    assert.ok(archivalReport.includes(shape), `plan-archival must report: ${shape}`);
+  }
 });
 
 test('worktree-lifecycle admits adoption only through the continuation and never for harness worktrees', () => {
