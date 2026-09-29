@@ -50,6 +50,10 @@ The substantive review depth for accessibility, performance, responsive behavior
 reviewer-design-decisions
 ```
 
+```include
+reviewer-assigned-change
+```
+
 ## Output format
 
 For each finding:

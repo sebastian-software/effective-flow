@@ -233,6 +233,9 @@ const NOT_LOADED_BY_A_RUN = [
   'LICENSE',
   'scripts/remote-tracker.mjs',
   'scripts/remote-tracker-core.mjs',
+  // The diff baseline (#469) is loaded by `build`, `fix` and `refactor` only. A pointer to it from
+  // any seed or reached fragment would pull it into the closure and stale every archived round.
+  'shared/diff-baseline.md',
 ];
 
 // The stamp is only worth its failures if it really covers what a run loads — and only worth
@@ -285,6 +288,43 @@ test('the build stamp covers the built tree a run actually loads', () => {
       identity[part].digest,
       /^sha256:[0-9a-f]{64}$/,
       `the ${part} half of the stamp is not a digest`,
+    );
+  }
+});
+
+// The diff baseline (#469) was deliberately kept out of every file a merge-gate run reads, so the
+// archived rounds stay current: `code-validator` receives the path list through its existing
+// "assigned scopes" wording, and the fragments the gate reaches name no diff baseline. Membership
+// above catches a pointer that pulls the fragment in; this catches the subtler drift of prose about
+// the diff baseline landing in a member itself — an eager include inlined into a seed, or a direct
+// edit — which would move the digest just the same. The six sources the plan names as that
+// boundary are checked as sources too, because a source edit is where the drift starts.
+const DIFF_BASELINE_REFERENCE = /diff-baseline|diff baseline/i;
+const DIFF_BASELINE_FREE_SOURCES = [
+  'src/agents/code-validator.md',
+  'src/shared/worktree-integration.md',
+  'src/shared/runtime-state-safety.md',
+  'src/shared/execution-location.md',
+  'src/tools/merge-gate.md',
+  'src/tools/iterate.md',
+];
+
+test('no file a merge-gate run loads references the diff baseline', () => {
+  for (const path of DIFF_BASELINE_FREE_SOURCES) {
+    assert.doesNotMatch(
+      readFileSync(resolve(import.meta.dirname, '..', path), 'utf8'),
+      DIFF_BASELINE_REFERENCE,
+      `${path} is a merge-gate load-set source and must not reference the diff baseline`,
+    );
+  }
+  const skillRoot = builtSkillRootForTests();
+  const hashed = Object.keys(currentIdentity('guard-blocks-merge').skill.files);
+  assert.ok(hashed.includes('workers/effective-flow-code-validator.md'));
+  for (const file of hashed) {
+    assert.doesNotMatch(
+      readFileSync(resolve(skillRoot, file), 'utf8'),
+      DIFF_BASELINE_REFERENCE,
+      `${file} is in the merge-gate load set and references the diff baseline; that moves the skill digest and stales every archived round`,
     );
   }
 });

@@ -23,6 +23,7 @@ remove a worktree through a verified Effective Flow lifecycle record.
 - then delete the old data **git-aware** and only after explicit confirmation (dry run first)
 - never delete before the new counterpart exists and the carry-over is complete or deliberately discarded
 - inventory outdated `.gitignore` entries but leave them untouched and route their repair to `{{SKILL:setup}}`
+- inventory stale diff baselines and discard one only after dry run and confirmation
 - inventory every linked worktree from Git's machine-readable output and match it to verified
   execution-location and lifecycle evidence
 - after a separate dry-run and confirmation, remove only independently proven cleanup-ready
@@ -48,7 +49,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: worktree lifecycle state will be read or mutated, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent
+when: worktree lifecycle state will be read or mutated, a stale diff baseline will be discarded, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent
 ```
 
 ```lazy-include
@@ -93,8 +94,9 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
 - **Never delete the new.** The active runtime directory `.effective-flow/` itself, its current
   runtime state, and the project setup ADR are never deleted. The recognized legacy
   `config.json` exception remains governed by the legacy classes below. The only current
-  runtime-state deletion allowed is the exact lifecycle record owned by a successfully
-  reconciled cleanup claim; no other active runtime file is a cleanup target.
+  runtime-state deletions allowed are the exact lifecycle record owned by a successfully
+  reconciled cleanup claim and a confirmed stale diff baseline; no other active runtime file is a
+  cleanup target.
 - **Never target the main or current execution worktree.** `RUNTIME_STATE_ROOT` and the worktree
   from which cleanup is running are never removal candidates. A linked current execution
   worktree still appears in the final retained-worktree report.
@@ -127,6 +129,12 @@ The skill knows exactly these four classes of migration remnants, each with its 
 Linked worktrees are a separate cleanup class, not a fifth migration remnant. Existing
 worktrees are never treated as legacy merely because they predate lifecycle recording.
 
+Stale diff baselines are another separate class: an aborted `{{SKILL:build}}`, `{{SKILL:fix}}`, or
+`{{SKILL:refactor}}` run leaves its `.effective-flow/runs/<RUN_ID>/diff-baseline/` directory
+behind, and its diff can hold working-tree secrets. Nothing proves such a directory abandoned:
+list each with its run ID (the run's start timestamp), warn that a run still in progress needs its
+directory, and never infer staleness from age.
+
 ## Workflow
 
 ### Phase 1: Discovery / inventory
@@ -154,7 +162,9 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
      mismatched, foreign/harness-managed, unknown or invalid schema, or recordless state;
    - **not reliably checkable** when repository, path, runtime-state, or receipt evidence cannot
      be read safely; this is retained, never silently skipped.
-4. Capture the existing legacy remnants in the project root:
+4. **Stale diff baselines:** list every `<RUNTIME_STATE_ROOT>/.effective-flow/runs/*/diff-baseline/`
+   directory read-only, without following a symlink.
+5. Capture the existing legacy remnants in the project root:
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
@@ -162,7 +172,7 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
      whether it carries the `.effective-flow/` line. Inventory that line as the **active
      counterpart** of hidden mode, never as a legacy remnant and never as a removal candidate.
    - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker-forge.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
-5. If at least one legacy runtime directory exists, read
+6. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
    `runtimeMigration.directory.version`. When the valid version `1` marker is missing, treat the
    discovered legacy directory as the authorization for cleanup's first runtime write:
@@ -180,14 +190,14 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
      decision.
      Do not invoke the prerequisite when no legacy runtime directory exists: such a cleanup run
      creates no runtime footprint merely to record a marker.
-6. Treat the migration marker as proof only for the source selected by the shared precedence
+7. Treat the migration marker as proof only for the source selected by the shared precedence
    rule (`.firmo/`, otherwise `.sf-plugin/`). If `.firmo/` and `.sf-plugin/` both exist, inventory
    the unselected `.sf-plugin/` separately; the marker does not certify its carry-over and never
    releases it for deletion.
-7. For each existing legacy remnant, determine whether its **new counterpart** exists (`.effective-flow/`, project setup ADR, or `effective-flow-` labels).
-8. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists)
-   plus worktree counts by removal candidate, retained, and not reliably checkable. Do not end
-   merely because no migration remnant exists; worktree preview and the final report still run.
+8. For each existing legacy remnant, determine whether its **new counterpart** exists (`.effective-flow/`, project setup ADR, or `effective-flow-` labels).
+9. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists),
+   worktree counts (removal candidate, retained, not reliably checkable), and stale diff baselines
+   by run ID. Never end for lack of migration remnants; worktree preview and the final report still run.
 
 ### Phase 2: Carry-over check (read + compare)
 
@@ -264,7 +274,7 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    `apply-review` records, a proven integrated temporary branch may subsequently use
    `git branch -d`; delivery and partial-diff branches remain. Cleanup never runs
    `git worktree prune` or `git branch -D`.
-10. If there are no deletable migration artifacts and no worktree removal candidates, call the
+10. If there are no deletable migration artifacts, stale diff baselines, or worktree removal candidates, call the
     action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
     still produced.
 
@@ -298,6 +308,19 @@ options:
     description: Remove no worktree; list every one in the final retained-worktree report
 ```
 
+```ask
+when: there is at least one stale diff baseline
+header: Baselines
+question: Discard the stale diff baselines listed in the dry run now? Removal is physical and irreversible.
+options:
+  - label: Remove all listed
+    description: Discard every listed diff-baseline directory
+  - label: Select individually
+    description: Choose which listed directories to discard; keep the rest
+  - label: Keep all
+    description: Discard no diff baseline; each stays for a later cleanup run
+```
+
 Execute per class:
 
 - **Tracked files:** remove via `git rm` (staged, **no** commit). For untracked/gitignored, `git rm` does not apply.
@@ -306,6 +329,10 @@ Execute per class:
   worktree inventory. Remove physically only when no registered linked worktree remains below
   the directory's `.worktrees/` tree and only after the explicit “irreversible” confirmation
   above, without a backup.
+- **Stale diff baselines:** for each confirmed directory, revalidate the receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety to its exact handle,
+  and remove it only through `node <skill-root>/scripts/diff-baseline.mjs discard` with
+  `{ "cwd": "<RUNTIME_STATE_ROOT>", "dir": "<its absolute handle>" }` on stdin, as
+  `shared/diff-baseline.md`, section "Lifecycle", defines it; keep a refused one.
 - **`.gitignore`:** leave every line untouched. Report the exact outdated entries and route the
   user to `{{SKILL:setup}}`, the sole owner of normalization and repair.
 - **`firmo-` labels:** only on the forge target with a successful helper probe; skipped on an external target. Build the full normalized label transitions through the remote helper: first add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains. Inspect the dry-run steps before applying; if a step fails, report the completed steps and preserve the still-classified issue.
@@ -356,7 +383,8 @@ worktree.”
 Report to the user:
 
 - what was carried over (files to `.effective-flow/`) and which config values `{{SKILL:setup}}` owns
-- what was deleted, separated into tracked (via `git rm`, staged) and physically removed
+- what was deleted, separated into tracked (via `git rm`, staged) and physically removed,
+  including discarded stale diff baselines
 - which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair, not this run
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
@@ -389,9 +417,9 @@ report that found neither matches no row and emits nothing.
 - A migration marker certifies only the one source selected by the shared precedence rule; never
   use it as deletion proof for an unselected simultaneous legacy directory.
 - Preserve the active `.effective-flow/` directory and all unrelated runtime state. Mutate below
-  it only for the explicitly confirmed legacy carry-over/migration operations above or for the
-  exact lifecycle record, temporary record, and owned lock handles authorized by the shared
-  worktree-lifecycle contract, always through runtime-state safety. Do not mutate the project
+  it only for the explicitly confirmed legacy carry-over/migration operations above, a confirmed
+  stale diff-baseline discard, or the exact lifecycle record, temporary record, and owned lock
+  handles authorized by the shared worktree-lifecycle contract, always through runtime-state safety. Do not mutate the project
   setup ADR or a global skill installation.
 - Do not create commits or backup directories.
 - Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.

@@ -234,10 +234,11 @@ test('portable output contains only base workers and no native profile represent
   }
 });
 
-// The proof compares each base worker's native configuration (Claude frontmatter, Codex TOML keys
-// other than the `developer_instructions` body), not the rendered prose: legitimate shared-fragment
-// edits change every sidecar body and must not churn this execution-profile proof.
-test('the executable baseline proof preserves every Quality native configuration', () => {
+// The proof byte-compares every base worker whose source inputs are unchanged since the base and
+// compares only the native configuration (Claude frontmatter, Codex TOML keys other than the
+// `developer_instructions` body) of every source-changed one: legitimate shared-fragment edits
+// change sidecar bodies and must not churn this execution-profile proof.
+test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
   const result = spawnSync(
     process.execPath,
     ['scripts/compare-native-agent-baseline.mjs', '--base', '7d1dcd5'],
@@ -245,7 +246,24 @@ test('the executable baseline proof preserves every Quality native configuration
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.equal(result.stderr, '');
-  assert.equal(result.stdout, 'Native base agents match 7d1dcd5\n');
+  // Agents whose source inputs (agent file plus transitive eager includes)
+  // changed since the base are named and exempt from the byte comparison;
+  // every other base agent must still build byte-identically. Exempt agents
+  // are compared by native configuration only, so each exemption is pinned
+  // here in the asserted stdout. An unexpected exemption changes this line.
+  assert.equal(
+    result.stdout,
+    'Native base agents match 7d1dcd5\n' +
+      'Source-changed since 7d1dcd5 (configuration compared only): ' +
+      'effective-flow-code-documenter, effective-flow-code-validator, ' +
+      'effective-flow-docs-writer, effective-flow-e2e-tester, ' +
+      'effective-flow-frontend-reviewer, effective-flow-generic-implementer, ' +
+      'effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, ' +
+      'effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, ' +
+      'effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, ' +
+      'effective-flow-rust-implementer, effective-flow-rust-reviewer, ' +
+      'effective-flow-test-writer, effective-flow-ui-implementer\n',
+  );
 });
 
 test('route policy, authorization, eligibility, and generated-name errors fail before swap', () => {
