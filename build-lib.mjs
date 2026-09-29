@@ -3,6 +3,7 @@ import {
   PILOT_MEASUREMENT_POLICY_PROJECTION,
   canonicalizeJson,
 } from './src/scripts/pilot-measurement-protocol.mjs';
+import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from './src/scripts/plan-lint-core.mjs';
 
 // Pure, importable transformation helpers for build.mjs.
 //
@@ -2438,6 +2439,266 @@ export function assertPilotMeasurementDocumentationProjection(
   if (mismatch) {
     throw new Error(
       `Pilot-measurement documentation projection diverges from the shipped protocol${contextSuffix(context)}: ${mismatch}`,
+    );
+  }
+}
+
+// --- Plan-lint contract projection ---
+//
+// `scripts/plan-lint-core.mjs` owns the bilingual plan contract mapping and the template
+// placeholder list as frozen constants. `shared/plan-contract.md` carries both as marked tables
+// for readers; these guards fail the build on any drift between the two, and on a bracketed
+// token of the English `plan` Phase 3 template that the placeholder table does not cover.
+
+export const PLAN_CONTRACT_MAPPING_START = '<!-- plan-contract-mapping:start -->';
+export const PLAN_CONTRACT_MAPPING_END = '<!-- plan-contract-mapping:end -->';
+export const PLAN_CONTRACT_PLACEHOLDERS_START = '<!-- plan-contract-placeholders:start -->';
+export const PLAN_CONTRACT_PLACEHOLDERS_END = '<!-- plan-contract-placeholders:end -->';
+
+const PLAN_CONTRACT_MAPPING_HEADERS = ['Meaning', 'German', 'English'];
+const PLAN_CONTRACT_PLACEHOLDER_HEADERS = ['Placeholder', 'German', 'English'];
+
+function planLintProjectionError(message, context) {
+  return new Error(`plan-lint projection: ${message}${contextSuffix(context)}`);
+}
+
+// Returns every row of the one table between the markers, header row first, as arrays of
+// unescaped cell strings. The separator row is validated and dropped.
+export function parsePlanContractMarkedTable(markdown, { startMarker, endMarker, context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(startMarker).length - 1;
+  const ends = normalized.split(endMarker).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw planLintProjectionError(
+      `table requires exactly one ${startMarker} and one ${endMarker}`,
+      context,
+    );
+  }
+  const start = normalized.indexOf(startMarker) + startMarker.length;
+  const end = normalized.indexOf(endMarker);
+  if (end <= start)
+    throw planLintProjectionError(`${startMarker} markers are out of order`, context);
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3)
+    throw planLintProjectionError(`${startMarker} table has no data rows`, context);
+  const nonRow = lines.find((line) => !line.startsWith('|'));
+  if (nonRow) {
+    throw planLintProjectionError(
+      `${startMarker} holds a line outside the table: "${nonRow}"`,
+      context,
+    );
+  }
+  const rows = lines.map(splitExecutionProfileRow);
+  if (rows[1].some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw planLintProjectionError(`${startMarker} table has an invalid separator row`, context);
+  }
+  const width = rows[0].length;
+  const ragged = lines.find((line, index) => rows[index].length !== width);
+  if (ragged) {
+    throw planLintProjectionError(
+      `${startMarker} row does not have ${width} cells: "${ragged}"`,
+      context,
+    );
+  }
+  return [rows[0], ...rows.slice(2)];
+}
+
+// A contract cell is one or more code spans separated by ` / `; returns their contents.
+function planContractCodeSpans(cell, label, context) {
+  if (!/^`[^`]+`(?: \/ `[^`]+`)*$/.test(cell)) {
+    throw planLintProjectionError(`${label} is not a code-span cell: "${cell}"`, context);
+  }
+  return cell.slice(1, -1).split('` / `');
+}
+
+function assertPlanTableHeaders(rows, expected, label, context) {
+  const header = rows[0] ?? [];
+  if (header.length !== expected.length || header.some((cell, index) => cell !== expected[index])) {
+    throw planLintProjectionError(
+      `${label} table headers must be ${expected.join(', ')}; found ${header.join(', ')}`,
+      context,
+    );
+  }
+}
+
+function planProjectionRowCount(label, expected, actual, context) {
+  if (actual.length === expected.length) return;
+  const missing = expected.slice(actual.length);
+  const extra = actual.slice(expected.length);
+  const detail =
+    missing.length > 0 ? `missing row "${missing[0]}"` : `unexpected row "${extra[0]}"`;
+  throw planLintProjectionError(
+    `${label} table has ${actual.length} rows; expected ${expected.length} (${detail})`,
+    context,
+  );
+}
+
+export function assertPlanContractProjection(
+  rows,
+  { mapping = PLAN_CONTRACT_MAPPING, context } = {},
+) {
+  assertPlanTableHeaders(rows, PLAN_CONTRACT_MAPPING_HEADERS, 'mapping', context);
+  const data = rows.slice(1);
+  planProjectionRowCount(
+    'mapping',
+    mapping.map(({ meaning }) => meaning),
+    data.map(([meaning]) => meaning),
+    context,
+  );
+  data.forEach(([meaning, deCell, enCell], index) => {
+    const expected = mapping[index];
+    if (meaning !== expected.meaning) {
+      throw planLintProjectionError(
+        `mapping row ${index + 1} must be "${expected.meaning}"; found "${meaning}"`,
+        context,
+      );
+    }
+    for (const [language, column, cell] of [
+      ['de', 'German', deCell],
+      ['en', 'English', enCell],
+    ]) {
+      const actual = planContractCodeSpans(
+        cell,
+        `mapping row "${meaning}" ${column} cell`,
+        context,
+      );
+      if (JSON.stringify(actual) !== JSON.stringify(expected[language])) {
+        throw planLintProjectionError(
+          `mapping row "${meaning}" ${column} cell must be ${JSON.stringify(expected[language])}; found ${JSON.stringify(actual)}`,
+          context,
+        );
+      }
+    }
+  });
+}
+
+// The body lines of the one English template fence between `### Phase 3` and `### Phase 4`. A
+// second ```markdown fence in that region would leave the guard checking only one of them.
+function planTemplateFenceLines(planSource, context) {
+  const lines = normalizeLineEndings(planSource).split('\n');
+  const phase3 = lines.findIndex((line) => line.startsWith('### Phase 3'));
+  const phase4 = lines.findIndex((line, index) => index > phase3 && line.startsWith('### Phase 4'));
+  if (phase3 === -1 || phase4 === -1) {
+    throw planLintProjectionError(
+      'plan template requires ### Phase 3 and ### Phase 4 headings',
+      context,
+    );
+  }
+  const opens = lines
+    .map((line, index) => (index > phase3 && index < phase4 && line === '```markdown' ? index : -1))
+    .filter((index) => index !== -1);
+  if (opens.length > 1) {
+    throw planLintProjectionError(
+      `plan Phase 3 holds ${opens.length} \`\`\`markdown fences; expected exactly one template fence`,
+      context,
+    );
+  }
+  const [open = -1] = opens;
+  const close = lines.findIndex((line, index) => index > open && index < phase4 && line === '```');
+  if (open === -1 || close === -1) {
+    throw planLintProjectionError('plan Phase 3 has no closed ```markdown template fence', context);
+  }
+  return lines.slice(open + 1, close);
+}
+
+// Every bracketed token of the English template fence between `### Phase 3` and `### Phase 4`,
+// excluding task-list checkboxes, in order of first appearance.
+export function extractPlanTemplateTokens(planSource, { context } = {}) {
+  const tokens = [];
+  for (const line of planTemplateFenceLines(planSource, context)) {
+    for (const [token] of line.matchAll(/\[[^[\]\n]+\]/g)) {
+      if (/^\[[ xX]\]$/.test(token) || tokens.includes(token)) continue;
+      tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
+export function assertPlanPlaceholderProjection(
+  rows,
+  { placeholders = PLAN_PLACEHOLDERS, context, planTemplateSource, planTemplateContext } = {},
+) {
+  assertPlanTableHeaders(rows, PLAN_CONTRACT_PLACEHOLDER_HEADERS, 'placeholder', context);
+  const data = rows.slice(1);
+  planProjectionRowCount(
+    'placeholder',
+    placeholders.map(({ placeholder }) => placeholder),
+    data.map(([placeholder]) => placeholder),
+    context,
+  );
+  const english = new Set();
+  data.forEach(([placeholder, deCell, enCell], index) => {
+    const expected = placeholders[index];
+    if (placeholder !== expected.placeholder) {
+      throw planLintProjectionError(
+        `placeholder row ${index + 1} must be "${expected.placeholder}"; found "${placeholder}"`,
+        context,
+      );
+    }
+    for (const [language, column, cell] of [
+      ['de', 'German', deCell],
+      ['en', 'English', enCell],
+    ]) {
+      const spans = planContractCodeSpans(
+        cell,
+        `placeholder row "${placeholder}" ${column} cell`,
+        context,
+      );
+      if (spans.length !== 1 || spans[0] !== expected[language]) {
+        throw planLintProjectionError(
+          `placeholder row "${placeholder}" ${column} cell must be ${JSON.stringify(expected[language])}; found ${JSON.stringify(spans.join(' / '))}`,
+          context,
+        );
+      }
+      if (language === 'en') english.add(spans[0]);
+    }
+  });
+  if (planTemplateSource === undefined) return;
+  const pairContext = planTemplateContext
+    ? `${planTemplateContext} ↔ ${context ?? 'placeholder table'}`
+    : context;
+  const templateTokens = extractPlanTemplateTokens(planTemplateSource, {
+    context: planTemplateContext,
+  });
+  for (const token of templateTokens) {
+    if (!english.has(token)) {
+      throw planLintProjectionError(
+        `plan template token "${token}" is missing from the placeholder table`,
+        pairContext,
+      );
+    }
+  }
+  for (const token of english) {
+    if (token.startsWith('[') && token.endsWith(']') && !templateTokens.includes(token)) {
+      throw planLintProjectionError(
+        `placeholder table token "${token}" does not occur in the plan template`,
+        pairContext,
+      );
+    }
+  }
+  // The one unbracketed placeholder is the review-result alternatives value; the template's
+  // review-result line must carry exactly that value.
+  const resultLabel = PLAN_CONTRACT_MAPPING.find(
+    ({ meaning }) => meaning === 'Review result',
+  ).en[0].match(/^\*\*[^*]+:\*\*/)[0];
+  const resultValue = placeholders.find(({ en }) => !(en.startsWith('[') && en.endsWith(']'))).en;
+  const resultLines = planTemplateFenceLines(planTemplateSource, planTemplateContext).filter(
+    (line) => line.startsWith(resultLabel),
+  );
+  const templateValue =
+    resultLines.length === 1 ? resultLines[0].slice(resultLabel.length).trim() : null;
+  if (templateValue !== resultValue) {
+    throw planLintProjectionError(
+      `plan template ${resultLabel} value must be "${resultValue}"; found ${
+        resultLines.length === 1
+          ? `"${templateValue}"`
+          : `${resultLines.length} ${resultLabel} lines`
+      }`,
+      pairContext,
     );
   }
 }

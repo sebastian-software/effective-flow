@@ -45,6 +45,8 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',
+  'plan-lint.mjs',
+  'plan-lint-core.mjs',
 ];
 const TRUSTED_AUTOMATION = [
   join('.github', 'workflows', 'close-develop-issues.yml'),
@@ -150,6 +152,41 @@ function assertWorkerResolution(root, workerDir, extension, metadataPrefix, work
     if (!content.includes(`${metadataPrefix}${worker}`)) {
       fail(`${file} does not declare ${worker}`);
     }
+  }
+}
+
+// Lints a throwaway plan directory through the shipped copy of the helper, which proves the CLI
+// resolves its core beside it inside the target and classifies a plan and its archive duplicate.
+function assertPlanLintSmoke(target, helper) {
+  const cwd = mkdtempSync(join(tmpdir(), 'effective-flow-plan-lint-smoke-'));
+  try {
+    const plan =
+      '# Smoke\n\n**Plan status:** Not implemented\n\n## Open points\n\n- No open points.\n';
+    mkdirSync(join(cwd, 'docs', 'plan', 'archive'), { recursive: true });
+    writeFileSync(join(cwd, 'docs', 'plan', 'smoke.md'), plan);
+    writeFileSync(join(cwd, 'docs', 'plan', 'archive', 'smoke.md'), plan);
+    const result = spawnSync(process.execPath, [helper, 'lint'], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, CI: '1', NO_COLOR: '1' },
+      input: JSON.stringify({ cwd: realpathSync(cwd), planDir: 'docs/plan' }),
+    });
+    const envelope = parseJson(result.stdout.trim(), `${target} plan-lint`);
+    const [file] = envelope.data?.files ?? [];
+    if (
+      result.status !== 0 ||
+      envelope.ok !== true ||
+      envelope.operation !== 'lint' ||
+      envelope.data.files.length !== 1 ||
+      file.path !== 'docs/plan/smoke.md' ||
+      file.status !== 'open' ||
+      file.openPoints !== 0 ||
+      file.duplicates.join() !== 'docs/plan/archive/smoke.md'
+    ) {
+      fail(`${target} plan-lint failed\n${result.stdout}${result.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 }
 
@@ -338,6 +375,7 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     if (protocolHelper.status !== 0 || protocol.ok !== true || protocol.operation !== 'protocol') {
       fail(`${target} pilot protocol failed\n${protocolHelper.stdout}${protocolHelper.stderr}`);
     }
+    assertPlanLintSmoke(target, join(scripts, 'plan-lint.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>
