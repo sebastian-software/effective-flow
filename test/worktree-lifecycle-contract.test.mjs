@@ -250,6 +250,7 @@ test('dangerous broad or forced Git cleanup commands are explicitly prohibited',
   assert.match(relevant, /git branch -d <(?:BRANCH_NAME|branch)>/i);
 });
 
+// Invariant: lifecycle statuses and the runtime root survive every render with no unresolved directive.
 test('the lifecycle contract survives every harness render', () => {
   const eagerResolved = resolveEagerIncludes(lifecycle, {
     context: 'shared/worktree-lifecycle.md',
@@ -355,6 +356,7 @@ test('every tool that can reach worktree-integration eagerly carries the record 
   }
 });
 
+// Invariant: the obligation allows only the fixed exit states and never removes, claims, or backfills.
 test('the record obligation fragment pins the allowed exit states and its own limits', () => {
   const fragment = readShared(OBLIGATION);
   const flat = flatten(fragment);
