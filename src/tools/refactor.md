@@ -101,6 +101,11 @@ worktree-integration
 when: the delivery/worktree mode is determined (Phase 2, first step)
 ```
 
+```lazy-include
+diff-baseline
+when: the diff baseline is captured at the end of Phase 2, or later rendered or discarded
+```
+
 ## Wisdom Accumulation
 
 At the start, create a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions with parallel runs.
@@ -216,7 +221,8 @@ Start in parallel:
    - run all existing tests and document the result
    - do not write new tests in this phase
 
-Document the baseline for the later comparison.
+Document the baseline for the later comparison. Then capture the diff baseline per
+"Diff baseline", so files the baseline checks generate never count as the refactoring's change.
 
 ```include
 skill-discovery
@@ -235,7 +241,7 @@ skill-discovery
 
 ### Phase 3.5: Documentation sync
 
-Run the mandatory documentation sync gate for the files this refactoring changed, before review and
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline" before review and
 post-validation, so both cover the documentation changes. Documentation must describe the
 restructured code, never a behavior change — a refactoring that alters no public surface commonly
 ends in `no impact` verdicts, and the gate records them instead of skipping.
@@ -246,10 +252,10 @@ documentation-sync
 
 ### Phase 4: Review
 
-1. Start every reviewer selected by project routing for the changed files, including
-   `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
+1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
+   routing selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
-   items. Run the affected review checks once after the pass, then classify the residual batch via
+   items. Render again and run the affected review checks once after the pass, then classify the residual batch via
    “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
    item blocks completion; only `admitted` residuals may become a report, and `closed` items do not.
 3. Present the review results in detail, including status per finding. Treat the results as
@@ -277,9 +283,9 @@ documentation-sync
 
 ### Phase 5: Post-validation
 
-Start in parallel:
+Render the diff baseline, then start in parallel:
 
-1. `{{AGENT:code-validator}}`
+1. `{{AGENT:code-validator}}` with the path list per "Diff baseline"
 2. `{{AGENT:test-writer}}`
    - runs all existing tests again
    - writes no new tests
@@ -309,7 +315,7 @@ Start in parallel:
      - add a short implementation note as the last entry directly in the affected finding
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
-   - delete the wisdom file
+   - delete the wisdom file and discard the diff baseline
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** finding set of the latest Phase-4 review to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - Run the worktree-record exit self-check.
    - summarize what was refactored and state the worktree-record exit self-check result; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)

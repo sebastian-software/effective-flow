@@ -20,6 +20,7 @@ language: `# Effective Flow project setup` with `## Configuration`, or
 `# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
 envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
 runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, `worktree-runs/`,
+`runs/<RUN_ID>/diff-baseline/` (a run's [diff baseline](architecture.md#diff-baseline)),
 `merge-gate/` (the gate's delegation messages, plus `iterate`'s hidden-mode
 `merge-gate/thread-ledger.json`), `model-tiering-pilot/` (local pilot generations and their
 evidence), and, in hidden mode only, the local `project-setup.md` with the `plan/` and `concept/`

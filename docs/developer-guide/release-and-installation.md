@@ -359,15 +359,19 @@ JavaScript context, not interpolated into shell code. Its token permissions are 
 reading repository contents and writing issues.
 
 Every target's minimal skill payload includes `scripts/remote-tracker.mjs`,
-`scripts/delivery-selection.mjs`, and `scripts/delegation-envelope.mjs`, each beside its importable
-`-core.mjs` sibling, next to the router, tools, and shared resources. The remote tracker ships five
+`scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`, and
+`scripts/diff-baseline.mjs`, each beside its importable `-core.mjs` sibling, plus the pilot
+measurement family `scripts/pilot-measurement.mjs` with its `-core.mjs` and `-protocol.mjs`
+modules, next to the router, tools, and shared resources. The remote tracker ships five
 further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`,
 `-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — which the same registration and byte-identity guards
 cover. Installed skills therefore
 require Node.js 22 or newer at runtime. None of them has third-party runtime dependencies;
 existing `gh` or `tea` installations remain the remote-tracker's credential and transport boundary.
 The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
-messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. Session titles add no shipped
+messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. The
+diff-baseline pair makes no network call either: it runs local `git` against a private index and
+object directory below `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`. Session titles add no shipped
 runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
 current-task capability, Claude Code renames its own session through the host's session-management
 tool, and Codex CLI has no automatic title path in this scope.

@@ -53,6 +53,10 @@ skill-discovery
 reviewer-design-decisions
 ```
 
+```include
+reviewer-assigned-change
+```
+
 ## Output format
 
 For each finding:

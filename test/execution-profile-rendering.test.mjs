@@ -234,7 +234,7 @@ test('portable output contains only base workers and no native profile represent
   }
 });
 
-test('the executable baseline proof preserves every Quality native artifact', () => {
+test('the executable baseline proof preserves every source-unchanged Quality native artifact', () => {
   const result = spawnSync(
     process.execPath,
     ['scripts/compare-native-agent-baseline.mjs', '--base', '7d1dcd5'],
@@ -242,7 +242,18 @@ test('the executable baseline proof preserves every Quality native artifact', ()
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.equal(result.stderr, '');
-  assert.equal(result.stdout, 'Native base agents match 7d1dcd5\n');
+  // Agents whose source inputs (agent file plus transitive eager includes)
+  // changed since the base are named and exempt; every other base agent must
+  // still build byte-identically. An unexpected exemption changes this line.
+  // Exempt agents are deliberately not byte-compared, so each exemption is
+  // pinned here in the asserted stdout instead.
+  assert.equal(
+    result.stdout,
+    'Native base agents match 7d1dcd5\n' +
+      'Source-changed since 7d1dcd5 (not compared): ' +
+      'effective-flow-frontend-reviewer, effective-flow-generic-product-reviewer, ' +
+      'effective-flow-nodejs-reviewer, effective-flow-rust-reviewer\n',
+  );
 });
 
 test('route policy, authorization, eligibility, and generated-name errors fail before swap', () => {
