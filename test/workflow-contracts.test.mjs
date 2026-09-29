@@ -6,6 +6,7 @@ import {
   ASK_SCORING,
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
+  EAGER_INCLUDE_RE,
   findNextStepsDocViolations,
   LAZY_INCLUDE_RE,
   parseAskBlock,
@@ -14,6 +15,7 @@ import {
   resolveEagerIncludes,
   resolveLazyIncludes,
 } from '../build-lib.mjs';
+import { inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -3859,6 +3861,10 @@ test('every returning delegation announces the next-step suppression', () => {
     { file: 'src/tools/apply-review.md', delegates: ['fix', 'refactor', 'build', 'docs'] },
     { file: 'src/tools/apply-issues.md', delegates: ['build', 'fix', 'refactor', 'docs', 'pr'] },
     { file: 'src/tools/iterate.md', delegates: ['fix', 'refactor', 'build', 'docs'] },
+    // Plan publication returns both its commit and its draft pull request to the `plan` run, and
+    // the continuation's finish request returns `pr`'s result to the implementing run's handback.
+    { file: 'src/shared/plan-publication.md', delegates: ['pr', 'commit'] },
+    { file: 'src/shared/plan-pr-continuation.md', delegates: ['pr'] },
   ];
 
   // What the window proves and what it does not: `near` searches the whole flattened file, so it
@@ -3972,9 +3978,10 @@ test('the revision-mode move back from the archive never touches the Git index',
   const plan = source('src/tools/plan.md');
   const flat = (text) => text.replace(/\s+/g, ' ');
 
-  // `plan` creates no commit, so a staged rename would outlive the run in the user's index and
-  // ride along with the next unrelated commit. The move back is a plain filesystem move, and the
-  // rules block states that instead of contradicting it. Both mentions of the command are
+  // `plan` commits nothing from the user's checkout — its one commit, the Phase 7 publication, is
+  // made in its own temporary worktree — so a staged rename would outlive the run in the user's
+  // index and ride along with the next unrelated commit. The move back is a plain filesystem move,
+  // and the rules block states that instead of contradicting it. Both mentions of the command are
   // clauses about not using it — one forbidding it, one explaining the safety it took away.
   assert.deepEqual(
     plan.match(/git mv/g) ?? [],
@@ -4039,11 +4046,17 @@ test('the revision-mode move back from the archive never touches the Git index',
   // The general rule the orderings are instances of: a decline is safe at every point because
   // nothing is written before the questions are answered. Both questions are named, and the
   // unclear-status bullet points back at it — a rule stated once but applied nowhere would drift.
+  // The Phase 7 publication question necessarily follows the move (it publishes the moved file), so
+  // the rule names it as an exception; without that, a revision run could never publish, or a
+  // reader would treat the publication ask as a violation and drop it.
   ordered(
     revision,
     'the revision question above, and the unclear-status confirmation below',
     'is asked and answered before the plan is moved',
     'no question is posed once it has been',
+    'The exceptions are',
+    'the Phase 7 publication question',
+    'this revision does not owe them, so they follow the move',
     'before the move a decline changes nothing because nothing has been written',
   );
   assert.match(
@@ -4075,14 +4088,103 @@ test('the revision-mode move back from the archive never touches the Git index',
   const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));
   assert.match(ask, /move an archived plan file back to <plan\.dir>\/ without staging that move/);
 
-  // The rules block carries the boundary, so no later reader has to infer it from
-  // "Do not create any commits." alone.
-  const rules = flat(section(plan, '## Rules', '\n## '));
+  // The rules block carries the boundary. Phase 7 publication commits and stages, but only in its
+  // own temporary worktree, so each rule names that exception together with the user's checkout it
+  // protects. An unqualified "no commits" or "no staging" rule would contradict the publication
+  // step; one that lost "temporary worktree" would license a commit or a staged rename in the
+  // user's checkout. The rules still end in the plain-filesystem-move consequence they justify.
+  const ruleBullets = section(plan, '## Rules', '\n## ')
+    .split(/\n(?=- )/)
+    .map((bullet) => flat(bullet));
+  const commitRule = ruleBullets.find((bullet) => bullet.startsWith('- Do not create any commits'));
+  const stagingRule = ruleBullets.find((bullet) => bullet.startsWith('- Do not stage anything'));
+  assert.ok(commitRule && stagingRule, 'plan.md must keep its no-commit and no-staging rules');
+  for (const literal of ['Phase 7 publication', 'temporary worktree']) {
+    assert.ok(commitRule.includes(literal), `the no-commit rule must name: ${literal}`);
+  }
+  for (const literal of ["user's checkout", 'temporary worktree', 'plain filesystem move']) {
+    assert.ok(stagingRule.includes(literal), `the no-staging rule must name: ${literal}`);
+  }
+  const flatPlan = flat(plan);
+  assert.equal(
+    flatPlan.includes('Do not create any commits.'),
+    false,
+    'plan.md must not keep the unqualified no-commit rule',
+  );
+  assert.equal(
+    flatPlan.includes('Do not stage anything or otherwise write to the Git index.'),
+    false,
+    'plan.md must not keep the unqualified no-staging rule',
+  );
+
+  // The hard scope boundary names every piece of state publication may create outside
+  // `<plan.dir>/`; a boundary silent on one of them would forbid publication, and a created ref or
+  // pull request it did not name would be unaccounted for.
+  const scopeException = section(plan, '## Hard scope boundary', '\n## ')
+    .split(/\n(?=- )/)
+    .map((bullet) => flat(bullet))
+    .find((bullet) => bullet.includes('Phase 7 publication'));
+  assert.ok(scopeException, 'the hard scope boundary must name the Phase 7 publication exception');
+  for (const literal of [
+    'temporary worktree',
+    'plan branch',
+    'push',
+    'draft pull request',
+    '`<plan.dir>/`',
+  ]) {
+    assert.ok(scopeException.includes(literal), `the scope exception must name: ${literal}`);
+  }
+
+  // Publication runs on the final file. Its one lazy pointer, followed by the eager record
+  // obligation, closes Phase 7 after its numbered list — outside that list, so the list stays one
+  // sequence — and step 3 of the list runs the pointer after the write and the format-plus-check
+  // step and before the report that relays its line.
+  const publicationPointers = [...plan.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'plan-publication',
+  );
+  assert.equal(publicationPointers.length, 1, 'plan.md must defer plan-publication exactly once');
+  assert.match(publicationPointers[0][2], /Phase 7 step 2 passed/);
+  assert.match(
+    publicationPointers[0][2],
+    /`delivery\.completion` is `pr`, `null`, or an invalid value/,
+    'the pointer loads for exactly the modes the fragment maps (pr, null, invalid)',
+  );
+  const obligations = [...plan.matchAll(EAGER_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'worktree-record-obligation',
+  );
+  assert.equal(obligations.length, 1, 'plan.md must eagerly include the record obligation once');
+  const phase7Heading = plan.indexOf('### Phase 7: Completion');
+  const lastStep = plan.indexOf('\n5. Emit the next-step block', phase7Heading);
+  const rulesHeading = plan.indexOf('\n## Rules', phase7Heading);
+  assert.ok(
+    phase7Heading !== -1 && lastStep > phase7Heading && rulesHeading > lastStep,
+    'plan.md must keep Phase 7 step 5 before its Rules section',
+  );
+  assert.ok(
+    lastStep < publicationPointers[0].index &&
+      publicationPointers[0].index < obligations[0].index &&
+      obligations[0].index < rulesHeading,
+    'the plan-publication pointer, then the record obligation, must follow Phase 7 step 5 and precede ## Rules',
+  );
+  assert.equal(
+    plan.slice(obligations[0].index + obligations[0][0].length, rulesHeading).trim(),
+    '',
+    'nothing may sit between the record obligation and ## Rules',
+  );
+  const phase7 = section(plan, '### Phase 7: Completion', '\n## ');
   ordered(
-    rules,
-    'Do not create any commits.',
-    'Do not stage anything or otherwise write to the Git index.',
-    'plain filesystem move',
+    phase7,
+    '1. Write the plan file.',
+    '2. Format only the new plan file',
+    'Phase 5 mechanical check',
+    '3. **Publication.**',
+    'the `plan-publication` pointer below',
+    'worktree-record exit self-check',
+    '4. Report to the user:',
+    'the publication line',
+    '5. Emit the next-step block',
+    '```lazy-include\nplan-publication\n',
+    '```include\nworktree-record-obligation\n```',
   );
 
   // The leftover working-tree change is part of the completion report, not a silent side effect.
@@ -4100,7 +4202,7 @@ test('the revision-mode move back from the archive never touches the Git index',
     'moves the file via `git mv` to `<plan.dir>/archive/`',
     'The **reverse** move is not coupled to a delivery event and therefore not staged',
     'plain filesystem move, never with `git mv`',
-    '`{{SKILL:plan}}` creates no commit',
+    '`{{SKILL:plan}}` creates no commit except through publication, which commits in its own temporary worktree',
   );
 });
 
@@ -17841,4 +17943,1074 @@ test('reviewer-assigned-change is conditional on a diff path and names no runtim
     'a reviewer assesses only its routed bucket; other hunks are context',
   );
   assert.match(text, /Without a diff path, review the assigned files as before/);
+});
+
+// --- Plan publication before implementation, and its continuation ---
+//
+// These pins carry behavior, not sentences: commands with their flags, capability keys, ask
+// headers, labels and `when:` triggers, fence placement, and the literals that name a mode or an
+// outcome. Where the publication and the continuation must apply one mechanic, the test compares
+// the two texts byte for byte instead of pinning each copy.
+
+function askLabels(ask) {
+  return ask.options.map((option) => option.label);
+}
+
+// Each top-level Markdown list item of a slice, whitespace-collapsed, so a literal is searched in
+// the item that owns it rather than anywhere in the section.
+function listItems(text) {
+  return text
+    .split(/\n(?=- |\d+\. )/)
+    .slice(1)
+    .map((item) => prose(item));
+}
+
+function itemWith(items, marker) {
+  const item = items.find((candidate) => candidate.includes(marker));
+  assert.ok(item, `missing list item: ${marker}`);
+  return item;
+}
+
+function includesAll(text, literals, label) {
+  for (const literal of literals) {
+    assert.ok(text.includes(literal), `${label} must name: ${literal}`);
+  }
+}
+
+// The step-8 bullet that finishes a plan draft, cut between its own label and the next bullet, so
+// an assertion about the finish cannot be satisfied by the reuse or creation bullets around it.
+function planDraftFinish(pr) {
+  const lookup = boundedSlice(
+    pr,
+    '8. **Look up an existing open PR:**',
+    '9. **Derive the PR title',
+  );
+  return boundedSlice(lookup, '**Plan draft finish:**', '**No exact match:**');
+}
+
+// A block from an opening literal to the first blank line after it, for the byte-equality checks.
+function paragraphFrom(text, opening) {
+  const start = text.indexOf(opening);
+  assert.notEqual(start, -1, `missing block opening: ${opening}`);
+  const end = text.indexOf('\n\n', start);
+  assert.notEqual(end, -1, `block without a closing blank line: ${opening}`);
+  return { block: text.slice(start, end), after: text.slice(end).trimStart() };
+}
+
+test('pr opens a plan draft and places its marker only when it creates the pull request', () => {
+  const pr = source('src/tools/pr.md');
+
+  // Invariant: the draft request and the marker are creation-only; a reused pull request keeps its
+  // body and draft state, and a missing draft capability aborts at the probe.
+  const creationOnly = pr.split('\n').find((line) => line.includes('**Creation-only lines,**'));
+  assert.ok(creationOnly, 'pr.md must declare its creation-only input lines');
+  includesAll(
+    creationOnly,
+    [
+      'step 8 finds no match',
+      '`Draft: requested`',
+      '`draft: true`',
+      '`pr-create`',
+      'step 6 aborts',
+      '`pullRequestDraftCreate`',
+      '`Plan marker: <marker line>`',
+      'own body line',
+    ],
+    'the creation-only input',
+  );
+
+  // Invariant: a finish request never degrades into creating a new pull request (F18).
+  const noMatch = prose(boundedSlice(pr, '**No exact match:**', '**Multiple exact matches'));
+  assert.match(noMatch, near('`Finalize plan draft:` supplied', 'stop before `pr-create`', 80));
+
+  // Invariant: the caller can tell a created pull request from a reused one, and a pull request
+  // recovered through the `mutationMayHaveSucceeded` lookup counts as created.
+  const report = prose(boundedSlice(pr, '12. **Report the result:**', '\n## '));
+  assert.ok(report.includes('`result: created | reused`'));
+  assert.match(report, near('`mutationMayHaveSucceeded`', 'as `created`', 60));
+});
+
+test('pr finishes a plan draft only on its number or as recovery, with evidence, dry run first', () => {
+  const pr = source('src/tools/pr.md');
+  assert.ok(
+    prose(section(pr, '## Inputs', '\n## ')).includes('`Finalize plan draft: <PR number>`'),
+  );
+  const finish = prose(planDraftFinish(pr));
+
+  // Invariant: a supplied number selects the only pull request the finish may touch; recovery
+  // without it applies only to a draft whose head already carries the archived plan.
+  assert.match(finish, near('`Finalize plan draft:` number', "equals the match's", 40));
+  assert.match(finish, near('differing number or a missing marker', 'refuses the finish', 40));
+  assert.ok(
+    finish.includes('`git -C <execution-root> ls-tree --name-only -z <head OID> -- <P> <A>`'),
+  );
+  assert.match(finish, near('ls-tree', 'lists only `A`', 120));
+
+  // Invariant: a plan pull request is never marked ready without implementation on it.
+  assert.ok(
+    finish.includes(
+      '`git -C <execution-root> diff --name-only -z --no-renames <merge-base> <head OID>`',
+    ),
+  );
+  assert.match(finish, near('lists a path other than', '`P` and `A`', 20));
+
+  // Invariant: evidence first, then the step-9 derivation the reuse path otherwise skips, then the
+  // three mutations each previewed before it is applied, the body guarded by its fresh hash.
+  ordered(
+    finish,
+    'Require implementation evidence',
+    'step 9',
+    '`pr-read`',
+    '`body-hash`',
+    'each dry run first',
+    '`pr-update-title`',
+    'hash-guarded `pr-update-body`',
+    'unchanged marker line',
+    '`pr-mark-ready`',
+  );
+  assert.ok(
+    prose(pr).includes('for a new PR or the plan draft finish'),
+    'step 9 must name the plan draft finish as one of its callers',
+  );
+
+  // Invariant (F19): on Forgejo the combined retitle-and-ready edit replaces the separate title
+  // update only while the pull request is still a draft.
+  assert.match(
+    finish,
+    near('only while it is a draft', '`payload.title` replaces `pr-update-title`', 80),
+  );
+  assert.match(finish, /otherwise `pr-update-title` runs on its own/);
+
+  // Invariant: a failure leaves a draft, and the finish precedes the caller's review publication.
+  assert.match(finish, near('Stop at the first failure', 'stays a draft', 60));
+  assert.match(finish, near('completes before', 'PR review publication', 40));
+});
+
+test('a reused pull request gets no metadata mutation except the plan draft finish', () => {
+  const pr = source('src/tools/pr.md');
+  const reuse = prose(boundedSlice(pr, '**Exactly one exact match:**', '**Plan draft finish:**'));
+
+  // Invariant: reuse preserves the pull request, with the finish as its single named exception.
+  assert.match(
+    reuse,
+    near('do not invoke `pr-create` or any metadata mutation', 'plan draft finish', 200),
+  );
+
+  // Invariant: the three metadata mutations exist in pr.md only inside the finish, so no other
+  // reuse path can reach them.
+  const finishRaw = planDraftFinish(pr);
+  for (const operation of ['pr-update-title', 'pr-update-body', 'pr-mark-ready']) {
+    const everywhere = pr.split(`\`${operation}\``).length - 1;
+    const inFinish = finishRaw.split(`\`${operation}\``).length - 1;
+    assert.ok(inFinish > 0, `the plan draft finish must name ${operation}`);
+    assert.equal(everywhere, inFinish, `${operation} may appear in pr.md only inside the finish`);
+  }
+});
+
+test('plan publication maps the completion mode and gates before any Git operation', () => {
+  const publication = source('src/shared/plan-publication.md');
+  const gatesSection = section(publication, '### Mode and gates');
+  const gates = listItems(gatesSection);
+
+  // Invariant: only `pr` and `null` reach publication; merge/branch/missing stay silent, while an
+  // invalid row, hidden mode, a run that cannot ask, and blocking review outcomes each report why.
+  includesAll(
+    itemWith(gates, 'the row is missing'),
+    ['`merge` or `branch`', '(default `merge`)', 'Ask nothing', 'no publication line'],
+    'the merge/branch gate',
+  );
+  includesAll(
+    itemWith(gates, 'invalid value'),
+    ['unavailable', 'naming the value'],
+    'invalid gate',
+  );
+  includesAll(itemWith(gates, '`visibility: hidden`'), ['unavailable'], 'the hidden-mode gate');
+  includesAll(itemWith(gates, '`non-interactive`'), ['not attempted'], 'the non-interactive gate');
+  includesAll(
+    itemWith(gates, 'end-state gate'),
+    ['`Revision required`', 'blocking open-point count', 'unavailable'],
+    'the end-state gate',
+  );
+  ordered(
+    prose(gatesSection),
+    'the row is missing',
+    'invalid value',
+    '`visibility: hidden`',
+    '`non-interactive`',
+    'end-state gate',
+  );
+  assert.match(prose(gatesSection), near('`pr` continues', '`null` continues', 40));
+
+  // Invariant (F14): caller consent bypasses the caller-decided gates but never hidden mode.
+  assert.match(
+    prose(gatesSection),
+    near('`consent: given-by-caller`', 'only the hidden-mode entry is evaluated', 20),
+  );
+  const consent = itemWith(
+    listItems(section(publication, '### Inputs')),
+    '`consent: given-by-caller`',
+  );
+  includesAll(
+    consent,
+    [
+      'completion-mode',
+      'non-interactive',
+      'end-state',
+      'hidden-mode gate',
+      'capability gate',
+      'verification still apply',
+      'only the republication arm',
+    ],
+    'the consent input',
+  );
+
+  // Invariant: the forge must be able to create, retitle, and ready a draft before anything is
+  // asked, or a published draft could never be finished; the base resolves on `origin`.
+  const availability = prose(section(publication, '### Availability'));
+  includesAll(
+    availability,
+    [
+      '`pullRequestDraftCreate`',
+      '`pullRequestTitleUpdate`',
+      '`pullRequestMarkReady`',
+      'remote-configured arm on `origin`',
+      'ask nothing, write nothing',
+    ],
+    'availability',
+  );
+  ordered(
+    publication,
+    '### Availability',
+    '`pullRequestMarkReady`',
+    '### The single question',
+    '```ask\n',
+  );
+});
+
+test('plan publication asks exactly once, naming a possibly public audience, and consent skips it', () => {
+  const publication = source('src/shared/plan-publication.md');
+
+  // Invariant: one question carries the whole consent, and a caller's consent suppresses it.
+  const asks = askContracts(publication, 'plan-publication');
+  assert.equal(asks.length, 1, 'plan-publication must carry exactly one ask fence');
+  const [ask] = asks;
+  assert.equal(ask.header, 'Publish plan');
+  assert.ok(ask.header.length <= 12);
+  assert.deepEqual(askLabels(ask), ['Publish', 'Keep local']);
+  assert.ok(ask.when && ask.when.includes('`consent: given-by-caller`'));
+  assert.match(ask.when, /interactive/);
+  includesAll(
+    ask.question,
+    ['draft pull request', '<base>', '<branch>', '<audience>', '<findings, or none>', '<URL>'],
+    'the question',
+  );
+  assert.match(prose(publication), near('"Keep local"', 'declined', 120));
+
+  // Invariant (F22): the helper reports no visibility, so the audience is always the conservative
+  // one, and no provider CLI is consulted for it.
+  const audience = prose(section(publication, '### Audience'));
+  assert.ok(audience.includes('possibly public: everyone who can read `<remote>`'));
+  assert.match(audience, /Never read the visibility through a provider CLI/);
+  assert.equal(publication.includes('everyone with read access to'), false);
+});
+
+test('plan publication checks content by class, at token boundaries, and never repeats a value', () => {
+  const publication = source('src/shared/plan-publication.md');
+  const check = prose(section(publication, '### Content check'));
+
+  // Invariant: both published texts — the plan and, on a first publication, the body with its
+  // requirement summary — are scanned before the single question.
+  assert.match(check, near('scan the plan file', '`Requirement` summary', 200));
+  ordered(publication, '### Content check', '```ask\n');
+
+  // Invariant: the finding classes are fixed literals, so the check cannot quietly shrink.
+  includesAll(
+    check,
+    [
+      '`-----BEGIN`',
+      '`PRIVATE KEY`',
+      '`CERTIFICATE`',
+      '`ghp_`',
+      '`github_pat_`',
+      '`glpat-`',
+      '`sk-`',
+      '`xoxb-`',
+      '`AKIA`',
+      '`eyJ`',
+      '`Bearer`',
+      '`password`',
+      '`secret`',
+      '`api_key`',
+      '`/Users/`',
+      '`/home/`',
+      '`C:\\`',
+    ],
+    'the content check',
+  );
+
+  // Invariant (F27): a token prefix counts only at a word boundary followed by a long token run,
+  // so ordinary words that contain a prefix are no finding.
+  includesAll(
+    check,
+    [
+      'word boundary',
+      'at least 20 token characters',
+      '16 after `AKIA`',
+      '`sk-` inside `task-tracking` is no finding',
+    ],
+    'the token-shape rule',
+  );
+
+  // Invariant: the ordinary contents of a plan are not findings, or every plan would warn.
+  const nonFindings = check.slice(check.indexOf('not findings'));
+  includesAll(
+    nonFindings,
+    ['`src/shared/…`', '`docs/plan/…`', '`.effective-flow/…`', '`<token>`'],
+    'the non-findings',
+  );
+
+  // Invariant: the question never repeats a secret, and "no findings" is said explicitly.
+  assert.match(check, near('its class and its line', 'never by the matched value', 60));
+  assert.ok(check.includes('"no findings"'));
+  assert.ok(check.includes('no second question'));
+});
+
+test('plan publication commits only the plan, in a temporary worktree, and opens a new draft', () => {
+  const publication = source('src/shared/plan-publication.md');
+
+  // Invariant: discovery keys on the helper-parsed marker and never reads a body.
+  const discovery = prose(section(publication, '### Discovery and verification'));
+  includesAll(
+    discovery,
+    [
+      '`pr-list`',
+      '`planPath` set to `P`',
+      'Never read a pull-request body',
+      'never parse a marker yourself',
+    ],
+    'discovery',
+  );
+
+  // Invariant: the three-way rule never picks among candidates and never opens a second marker
+  // pull request; an identical local plan is nothing to republish.
+  ordered(
+    discovery,
+    'No candidate:',
+    'Exactly one verified candidate:',
+    'Several candidates, or one that fails verification:',
+    'never open a second marker pull request',
+  );
+  // Invariant (X1): the merge-gate/iterate addendum is reserved for a head whose path set really
+  // touches non-plan paths; a fetch or command failure is its own reason, not that diagnosis.
+  const threeWay = listItems(
+    boundedSlice(
+      publication,
+      'Apply the three-way rule:',
+      '\n\nA plan pull request that was merged',
+    ),
+  );
+  assert.match(
+    itemWith(threeWay, 'Several candidates'),
+    near(
+      'whose check-5 path set touches non-plan paths',
+      '`\\{\\{SKILL:iterate\\}\\}` nor `\\{\\{SKILL:merge-gate\\}\\}`',
+      120,
+    ),
+  );
+  includesAll(
+    discovery,
+    [
+      '`git -C <RUNTIME_STATE_ROOT> hash-object -- <absolute plan path>`',
+      '`git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`',
+    ],
+    'the republication hash comparison',
+  );
+
+  // Invariant: a new branch name is free locally and on `origin`, probed on the remote itself.
+  includesAll(
+    discovery,
+    ['`refs/heads/<name>`', '`git -C <RUNTIME_STATE_ROOT> ls-remote --heads origin <name>`'],
+    'the collision check',
+  );
+
+  // Invariant: the invocation checkout is never switched; every write happens in a separate,
+  // setup-free worktree, a sibling under a harness-managed receipt, owned by the calling workflow
+  // and covered by that caller's exit self-check (F25).
+  assert.match(prose(publication), /It never touches the invocation checkout\./);
+  const worktree = prose(section(publication, '### Temporary worktree'));
+  includesAll(
+    worktree,
+    [
+      '`worktree.enabled: false` does not apply',
+      'harness-managed receipt',
+      'sibling',
+      'never nested',
+      '`BASE_DIR/REPO_NAME/<SESSION_ID>-plan-publication`',
+      "caller's worktree-record exit self-check",
+      'calling workflow',
+      'purpose `plan-publication`',
+      'No `worktree.setup` runs',
+      '`skipped`',
+    ],
+    'the temporary worktree',
+  );
+
+  // Invariant: staging is by explicit path only; the broad forms appear solely in the ban.
+  const staging = prose(section(publication, '### Staging'));
+  assert.ok(staging.includes("`git -C <WORKTREE_PATH> add -- ':(literal)<P>'`"));
+  assert.match(staging, near('Never use', '`git add -A` or `git add .`', 10));
+  for (const broad of ['`git add -A`', '`git add .`']) {
+    assert.equal(publication.split(broad).length - 1, 1, `${broad} may appear only in the ban`);
+  }
+
+  // Invariant: the commit goes through the commit tool with the verified receipt and the expected
+  // staged tree, and its result returns here.
+  const commit = prose(section(publication, '### Commit'));
+  includesAll(
+    commit,
+    ['`{{SKILL:commit}}`', 'full verified receipt', 'staged-tree OID', '`Next steps: suppressed`'],
+    'the commit delegation',
+  );
+
+  // Invariant: the pr delegation carries its three payload lines, each on its own line.
+  assert.ok(
+    publication.includes(
+      '```text\nDraft: requested\nPlan marker: <!-- effective-flow-plan-pr:v1 {"plan":"<plan.dir>/<file>.md"} -->\nNext steps: suppressed\n```',
+    ),
+    'the pr delegation must carry Draft, Plan marker, and Next steps lines verbatim',
+  );
+
+  // Invariant: a first publication must create its own pull request; a reused one is not this
+  // plan's and stops publication.
+  const push = prose(section(publication, '### Push and pull request'));
+  includesAll(
+    push,
+    ['`result: created`', 'A `reused` result', 'failed at `pr`'],
+    'the created-not-reused rule',
+  );
+
+  // Invariant (F28): the title keeps the `docs:` type and follows `language.git` for its words.
+  const shape = prose(section(publication, '### Pull request shape'));
+  includesAll(
+    shape,
+    ['`docs: plan <plan title>`', '`language.git`', '`docs: Plan <plan title>`'],
+    'the title',
+  );
+});
+
+test('the marker plan publication asks pr to write is the marker the helper parses', () => {
+  // Invariant: the writer's template and the reader's grammar are one format. If they drift, every
+  // published plan becomes undiscoverable and the implementing run silently opens a second pull
+  // request.
+  const publication = source('src/shared/plan-publication.md');
+  const line = publication.split('\n').find((candidate) => candidate.startsWith('Plan marker: '));
+  assert.ok(line, 'plan-publication must carry a Plan marker: line');
+  const marker = line
+    .slice('Plan marker: '.length)
+    .replace('<plan.dir>/<file>.md', 'docs/plan/2026-01-01-example.md');
+  assert.deepEqual(inspectPlanPrMarker(`Implementation follows.\n\n${marker}`), {
+    status: 'valid',
+    plan: 'docs/plan/2026-01-01-example.md',
+  });
+});
+
+test('plan publication republishes as a new commit and forbids every history rewrite', () => {
+  const publication = source('src/shared/plan-publication.md');
+  const worktree = prose(section(publication, '### Temporary worktree'));
+
+  // Invariant: `-b` exists only for the first publication; a republication adds a commit to the
+  // existing head branch and pushes it without force.
+  includesAll(
+    worktree,
+    [
+      '`git worktree add <WORKTREE_PATH> -b <branch> <resolved base ref>`',
+      'never uses `-b`',
+      '`git worktree add <WORKTREE_PATH> <head-branch>`',
+    ],
+    'the worktree creation',
+  );
+  assert.equal(publication.split(' -b ').length - 1, 1, 'only the first publication may use -b');
+  assert.ok(publication.includes('`git -C <RUNTIME_STATE_ROOT> push origin <head-branch>`'));
+
+  // Invariant: an update warns that approvals may be stale, and a publication warns off
+  // merge-gate and iterate before apply.
+  const report = listItems(section(publication, '### Report vocabulary'));
+  assert.match(itemWith(report, 'updated'), /approvals may no longer apply/);
+  assert.match(
+    itemWith(report, 'published'),
+    /do not run `\{\{SKILL:merge-gate\}\}` or `\{\{SKILL:iterate\}\}` on the plan pull request before `\{\{SKILL:apply\}\}`/,
+  );
+
+  // Invariant: the ten history-rewriting or hook-bypassing forms are all named, and the most
+  // dangerous ones appear only inside that prohibition.
+  const prohibited = prose(section(publication, '### Prohibited on every path'));
+  const banSentence = boundedSlice(prohibited, 'Never use ', '. Never switch');
+  assert.deepEqual(
+    [...banSentence.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+    [
+      '--force',
+      '--force-with-lease',
+      '--no-verify',
+      'commit --amend',
+      'rebase',
+      'squash',
+      'reset --hard',
+      'checkout -f',
+      'clean',
+      'push --delete',
+    ],
+  );
+  for (const literal of ['`--force`', '`--no-verify`', '`reset --hard`', '`push --delete`']) {
+    assert.equal(publication.split(literal).length - 1, 1, `${literal} only in the prohibition`);
+  }
+  assert.match(prohibited, /Never switch, stash, or stage in the invocation checkout/);
+});
+
+test('publication and continuation share their filter, check 5, and branch-state rule byte for byte', () => {
+  // Invariant (F20, F26, F12): the published side and the implementing side decide "is this our
+  // plan pull request" and "may this local branch be used" by one mechanic. Two copies that drift
+  // would let publication accept a candidate the continuation then rejects, or the reverse.
+  const publication = source('src/shared/plan-publication.md');
+  const continuation = source('src/shared/plan-pr-continuation.md');
+
+  const check5 = '5. its head changes against the merge base touch only `P`.';
+  const publicationCheck5 = paragraphFrom(publication, check5);
+  const continuationCheck5 = paragraphFrom(continuation, check5);
+  assert.equal(publicationCheck5.block, continuationCheck5.block, 'check 5 must be byte-identical');
+
+  const filterOpening = 'Before the three-way rule, drop every returned item';
+  const filterStart = (text) => text.indexOf(filterOpening);
+  const filterBlock = (text, check5Paragraph) =>
+    text.slice(
+      filterStart(text),
+      text.indexOf(check5Paragraph.block) + check5Paragraph.block.length,
+    );
+  assert.notEqual(
+    filterStart(publication),
+    -1,
+    'publication must carry the same-repository filter',
+  );
+  assert.notEqual(
+    filterStart(continuation),
+    -1,
+    'continuation must carry the same-repository filter',
+  );
+  const publicationFilter = filterBlock(publication, publicationCheck5);
+  const continuationFilter = filterBlock(continuation, continuationCheck5);
+  assert.equal(publicationFilter, continuationFilter, 'filter plus checks must be byte-identical');
+  // The block ends exactly where each side's own decision begins.
+  assert.ok(publicationCheck5.after.startsWith('Apply the three-way rule:'));
+  assert.ok(continuationCheck5.after.startsWith('### Decision'));
+
+  const branchStateBlock = (text) =>
+    boundedSlice(
+      text,
+      '**Local-branch-state rule.**',
+      '- **Diverged:** stop, and name both OIDs.',
+    ) + '- **Diverged:** stop, and name both OIDs.';
+  assert.equal(
+    branchStateBlock(publication),
+    branchStateBlock(continuation),
+    'the local-branch-state rule must be byte-identical',
+  );
+
+  // The shared text still carries the mechanics it exists to share.
+  includesAll(
+    prose(continuationFilter),
+    [
+      '`sameRepository` is not `true`',
+      'never hydrated, so discovery never runs `pr-read`',
+      'never sees a body',
+      'ignored foreign pull request',
+      'check 1, 2, 4, or 5 blocks',
+      '`git -C <RUNTIME_STATE_ROOT> fetch origin refs/heads/<head-branch>:refs/remotes/origin/<head-branch>`',
+      '`git -C <RUNTIME_STATE_ROOT> rev-parse --verify refs/remotes/origin/<head-branch>^{commit}`',
+      '`git -C <RUNTIME_STATE_ROOT> merge-base <resolved base ref> <fetched head OID>`',
+      '`git -C <RUNTIME_STATE_ROOT> diff --name-status -z --no-renames <merge-base> <fetched head OID>`',
+      'deletion (`D`) of `A`',
+      '"head could not be fetched"',
+      'never forces the fetch',
+      'manual `git fetch`',
+    ],
+    'the shared filter and checks',
+  );
+  includesAll(
+    prose(branchStateBlock(continuation)),
+    [
+      '`git -C <RUNTIME_STATE_ROOT> merge-base --is-ancestor`',
+      'any other exit stops the run',
+      '`git -C <RUNTIME_STATE_ROOT> branch --track <head-branch> origin/<head-branch>`',
+      '`git -C <RUNTIME_STATE_ROOT> update-ref refs/heads/<head-branch> <fetched head OID> <local OID>`',
+      'Ahead',
+      'Diverged',
+    ],
+    'the shared branch-state rule',
+  );
+});
+
+test('the plan continuation hooks in after base resolution and supersedes only named steps', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+  const insertion = section(continuation, '### Insertion point');
+  const items = listItems(insertion);
+
+  // Invariant: with delivery active the continuation runs after "Shared preconditions" step 2
+  // resolved the base and before step 3.
+  includesAll(
+    itemWith(items, 'Delivery active:'),
+    ['"Shared preconditions" step 2', 'before step 3'],
+    'the delivery hook',
+  );
+
+  // Invariant: it supersedes exactly the mode result, the branch naming, the harness-checkout reuse
+  // (F16), and the `-b` creation.
+  const superseded = prose(insertion.slice(insertion.indexOf('supersedes')));
+  includesAll(
+    superseded,
+    [
+      '"Determine mode"',
+      "step 4's branch naming",
+      '"Worktree execution" step 1',
+      '"Worktree execution" step 2\'s `-b` creation',
+      'effective-flow-created',
+    ],
+    'the superseded list',
+  );
+
+  // The step numbers above are only meaningful while worktree-integration keeps them.
+  const preconditions = section(
+    source('src/shared/worktree-integration.md'),
+    '### Shared preconditions',
+  );
+  ordered(
+    preconditions,
+    '2. **Resolve `delivery.baseBranch`',
+    '3. If the current HEAD',
+    '4. Construct delivery branch names',
+  );
+
+  // Invariant: discovery reads only normalized helper fields and never runs `pr-read` — an absent
+  // `sameRepository` counts as foreign rather than being hydrated — so no body or comment reaches
+  // the run. (`pr`'s own step-8 lookup still hydrates; that is a different reader.)
+  const discovery = prose(section(continuation, '### Discovery'));
+  includesAll(
+    discovery,
+    [
+      '`pr-list`',
+      '`planPath` set to `P`',
+      'omit `body`',
+      '`sameRepository`',
+      'It never runs `pr-read`',
+      'never reads a pull-request body or comment',
+    ],
+    'discovery',
+  );
+  const flatContinuation = prose(continuation);
+  const prReads = [...flatContinuation.matchAll(/`pr-read`/g)];
+  assert.ok(prReads.length > 0, 'the continuation must name pr-read to forbid it');
+  for (const match of prReads) {
+    assert.match(
+      flatContinuation.slice(Math.max(0, match.index - 20), match.index),
+      /never runs $/,
+      'the continuation may name pr-read only as something discovery never runs',
+    );
+  }
+});
+
+test('every plan continuation pointer also fires for in-place without delivery, before archival', () => {
+  // Invariant (F15): a plan-file run in place without delivery would archive the plan without ever
+  // finishing its pull request. The continuation must therefore be reachable in that mode too,
+  // before any archival, and there stop on a verified plan pull request.
+  const determineMode = section(source('src/shared/worktree-integration.md'), '### Determine mode');
+  assert.ok(
+    determineMode.includes('in-place without delivery'),
+    'the trigger must name a real mode',
+  );
+
+  for (const tool of ['build', 'docs', 'fix', 'refactor']) {
+    const body = source(`src/tools/${tool}.md`);
+    const [pointer] = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
+      (match) => match[1].trim() === 'plan-pr-continuation',
+    );
+    assert.ok(pointer, `${tool}.md must defer plan-pr-continuation`);
+    includesAll(
+      pointer[2],
+      [
+        'source is a plan file',
+        'hidden mode is off',
+        '"Shared preconditions" step 2',
+        '"Determine mode" selected in-place without delivery',
+        'before any archival',
+      ],
+      `${tool}.md's continuation trigger`,
+    );
+  }
+
+  const inPlace = itemWith(
+    listItems(section(source('src/shared/plan-pr-continuation.md'), '### Insertion point')),
+    'In-place without delivery:',
+  );
+  includesAll(
+    inPlace,
+    [
+      '"Determine mode" selects that mode, before any archival',
+      '"Base-branch resolution"',
+      'stop before `plan-archival`',
+      'no-delivery stop',
+      'With no candidate, return',
+    ],
+    'the in-place branch',
+  );
+  ordered(inPlace, 'discovery and verification only', 'stop before `plan-archival`');
+});
+
+test('the plan continuation verifies five checks after the foreign filter and decides three ways', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+  const verification = section(continuation, '### Verification');
+  const checks = verification
+    .split(/\n(?=\d+\. )/)
+    .slice(1)
+    .map(prose);
+  assert.equal(checks.length, 5, 'the continuation must carry exactly five verification checks');
+
+  // Invariant: marker, open state, same repository, exact base, and a head that changes only the
+  // plan. The command-level detail of check 5 is pinned by the byte-equality test.
+  includesAll(checks[0], ['`planPrMarker`', '`planPrMarkerError`'], 'check 1');
+  assert.match(checks[1], /open/);
+  assert.ok(checks[2].includes('`sameRepository` is `true`'));
+  assert.ok(checks[3].includes('resolved local base branch'));
+  assert.ok(checks[4].includes('touch only `P`'));
+
+  // Invariant: zero continues unchanged, one continues on the plan branch, anything else stops
+  // without picking; unavailable discovery is decided separately.
+  const decision = prose(section(continuation, '### Decision'));
+  ordered(
+    decision,
+    'Zero candidates:',
+    'Exactly one verified candidate:',
+    'Several candidates, or one that fails verification:',
+    'Never pick one',
+    'Discovery unavailable:',
+  );
+  assert.match(
+    itemWith(listItems(section(continuation, '### Decision')), 'Several candidates'),
+    near(
+      'whose path set touches non-plan paths',
+      '`\\{\\{SKILL:iterate\\}\\}` nor `\\{\\{SKILL:merge-gate\\}\\}`',
+      160,
+    ),
+  );
+  // Invariant (X4): the foreign pull requests the filter dropped are never silent.
+  for (const file of ['src/shared/plan-publication.md', 'src/shared/plan-pr-continuation.md']) {
+    assert.match(
+      prose(
+        section(
+          source(file),
+          file.endsWith('publication.md') ? '### Report vocabulary' : '### Report',
+        ),
+      ),
+      /Each ignored foreign pull request is reported alongside that line/,
+      `${file} must report the ignored foreign pull requests`,
+    );
+  }
+});
+
+test('the plan continuation asks on unavailable discovery and on a differing plan, and stops non-interactively', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+  const asks = askContracts(continuation, 'plan-pr-continuation');
+  assert.equal(asks.length, 2, 'the continuation must carry exactly two ask fences');
+  const [unavailable, differs] = asks;
+
+  // Invariant (F13): unavailable discovery asks only when the effective completion is `pr` or
+  // `null` — a missing row is the default `merge` — and a non-interactive run stops.
+  assert.equal(unavailable.header, 'Plan PR');
+  assert.deepEqual(askLabels(unavailable), ['Continue', 'Stop']);
+  assert.match(unavailable.when, /discovery was unavailable/);
+  assert.match(unavailable.when, /effective completion is `pr` or `null`/);
+  const decision = prose(section(continuation, '### Decision'));
+  assert.match(decision, near('missing row', 'default `merge`', 40));
+  assert.match(decision, near('`merge` or `branch`', 'return and report', 40));
+  assert.match(decision, near('`pr` or `null`', 'a non-interactive run stops', 80));
+
+  // Invariant (F17, F14): a differing local plan — by the hash of its absolute source path — is
+  // republished only on an explicit answer, through publication under caller consent, which must
+  // report `updated`; then every check and the hash comparison rerun. A command failure, or a run
+  // that cannot ask, stops and overwrites neither copy.
+  assert.equal(differs.header, 'Plan differs');
+  assert.deepEqual(askLabels(differs), ['Republish', 'Stop']);
+  assert.match(differs.when, /local plan file differs/);
+  includesAll(differs.question, ['<audience>', '<findings, or none>'], 'the Plan differs question');
+  const local = section(continuation, '### Local and published plan');
+  const localProse = prose(local);
+  includesAll(
+    localProse,
+    [
+      '`git -C <RUNTIME_STATE_ROOT> hash-object -- <absolute plan path>`',
+      '`git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`',
+      'stops the run before provisioning',
+      '`consent: given-by-caller`',
+      'rerun all five checks and the hash comparison',
+      'A non-interactive run stops without asking',
+      'overwrites neither copy',
+    ],
+    'the republication path',
+  );
+  assert.ok(
+    local.includes('publication line to be **updated**'),
+    'republication must require `updated`',
+  );
+
+  // Invariant: plan-publication is loaded (nested) before the question, because it supplies the
+  // audience and the findings the question names.
+  const pointers = [...continuation.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'plan-publication',
+  );
+  assert.equal(pointers.length, 1, 'the continuation must defer plan-publication exactly once');
+  ordered(continuation, '```lazy-include\nplan-publication\n', 'header: Plan differs');
+});
+
+test('the plan continuation provisions the existing head branch without -b and resumes by adoption', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+  const provisioning = prose(section(continuation, '### Provisioning'));
+
+  // Invariant: the head branch is checked out as it is — never created with `-b` — in a dedicated
+  // worktree whose record starts at the fetched head OID; `worktree.enabled: false` is overridden
+  // because switching the user's checkout would collide with the untracked plan copy.
+  includesAll(
+    provisioning,
+    [
+      '`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> <head-branch>` without `-b`',
+      '`creationOid` set to the fetched head OID',
+      '`worktree.enabled: false`',
+      'override it for this run',
+      '`git -C <RUNTIME_STATE_ROOT> worktree list --porcelain`',
+    ],
+    'provisioning',
+  );
+  assert.doesNotMatch(continuation, /worktree add[^\n`]* -b /, 'no worktree add may pass -b');
+
+  // Invariant: under a harness-managed receipt the worktree is a sibling, never nested and never
+  // switching the harness worktree.
+  assert.match(provisioning, near('harness-managed receipt', 'sibling', 200));
+  includesAll(
+    provisioning,
+    ['never nested in the harness worktree', 'never switched'],
+    'the sibling rule',
+  );
+  ordered(
+    provisioning,
+    'another linked worktree:',
+    '"Resumption by adoption"',
+    'any other holder or state:',
+    'stop',
+  );
+
+  // Invariant: adoption revives exactly one proven record under its lock, keeps it Effective
+  // Flow-owned for every abort path (F21), and never adopts a harness-managed, user-managed, or
+  // recordless worktree.
+  const adoption = section(continuation, '### Resumption by adoption');
+  const adoptionProse = prose(adoption);
+  includesAll(
+    adoptionProse,
+    [
+      '`aborted`/`failed` → `active`',
+      'Acquire the record lock',
+      '`creationOid` equals the fetched head OID',
+      '`git worktree list --porcelain -z`',
+      '`git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none`',
+      'never an externally managed worktree',
+      '`active` → `aborted`',
+    ],
+    'adoption',
+  );
+  assert.match(
+    adoptionProse,
+    /A `harness-managed`, user-managed, or recordless worktree is never adopted/,
+  );
+  assert.equal(adoption.split(/\n(?=\d+\. )/).length - 1, 5, 'adoption must carry five proofs');
+});
+
+test('the plan continuation fixes pr completion, proves implementation before archival, and finishes through pr', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+
+  // Invariant (F13, X5): a found plan pull request fixes the completion to `pr`, decided on the
+  // effective completion — an explicit directive first, else the row, a missing row being the
+  // default `merge`. Only an effective merge/branch stops instead of merging around the open
+  // draft; an explicit `pr` directive continues, and a `null` or invalid row is overridden.
+  const completion = prose(section(continuation, '### Completion action'));
+  includesAll(
+    completion,
+    [
+      'fixes the completion to `pr`',
+      'Decide on the effective completion',
+      'An explicit `pr` directive continues',
+    ],
+    'the completion action',
+  );
+  assert.ok(
+    section(continuation, '### Completion action').includes(
+      'Decide on the **effective** completion',
+    ),
+  );
+  ordered(
+    completion,
+    'explicit directive in the current invocation first',
+    'else the configured row',
+    'missing row is the default `merge`',
+  );
+  assert.match(completion, near('An effective `merge` or `branch`', 'stops the run', 20));
+  assert.match(completion, near('`null` or invalid row', 'overridden', 20));
+
+  // Invariant: without a path beyond the plan and its archive path, nothing is archived, pushed,
+  // or finished; with it, the handback asks pr to finish exactly the verified pull request before
+  // the review publication.
+  const delivery = prose(section(continuation, '### Delivery'));
+  ordered(
+    delivery,
+    'before `plan-archival` runs',
+    'other than `P` and `A`',
+    '`git -C <EXECUTION_ROOT> diff --name-only -z --no-renames <creation OID>`',
+    'archive nothing',
+    'push nothing',
+    'draft untouched',
+    'State A',
+    '`Next steps: suppressed`',
+    '`Finalize plan draft: <PR number>`',
+    'PR review publication',
+    'stays a draft',
+  );
+  assert.ok(
+    prose(section(source('src/tools/pr.md'), '## Inputs', '\n## ')).includes(
+      '`Finalize plan draft: <PR number>`',
+    ),
+  );
+});
+
+test('worktree-lifecycle admits adoption only through the continuation and never for harness worktrees', () => {
+  const lifecycle = source('src/shared/worktree-lifecycle.md');
+
+  // Invariant: `aborted`/`failed` → `active` is a listed transition whose proof is owned by the
+  // continuation's adoption rule under the record lock; the harness-managed exclusion stays.
+  const [from, to, proof] = rowCells(tableRow(lifecycle, '`aborted` or `failed`'));
+  assert.equal(from, '`aborted` or `failed`');
+  assert.ok(to.includes('`active`'));
+  includesAll(proof, ['`plan-pr-continuation`', 'record lock'], 'the adoption proof');
+  assert.match(lifecycle, /`harness-managed` worktrees[^.]*never be adopted/);
+});
+
+test('exactly the four plan-consuming implementation tools defer the plan continuation once', () => {
+  const toolFiles = readdirSync(new URL('src/tools/', repositoryRoot))
+    .filter((entry) => entry.endsWith('.md'))
+    .sort();
+  const carriers = [];
+  const triggers = new Set();
+
+  // Invariant: each implementation tool that archives a plan also looks for its published pull
+  // request, through one pointer after plan-archival, and all four fire on the same trigger.
+  for (const file of toolFiles) {
+    const body = source(`src/tools/${file}`);
+    const pointers = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
+      (match) => match[1].trim() === 'plan-pr-continuation',
+    );
+    if (pointers.length === 0) continue;
+    carriers.push(file.slice(0, -3));
+    assert.equal(pointers.length, 1, `${file} must defer plan-pr-continuation exactly once`);
+    triggers.add(pointers[0][2]);
+    ordered(body, '```lazy-include\nplan-archival\n', '```lazy-include\nplan-pr-continuation\n');
+  }
+  assert.deepEqual(carriers, ['build', 'docs', 'fix', 'refactor']);
+  assert.equal(triggers.size, 1, 'the four continuation pointers must share one trigger');
+
+  // Invariant: plan-publication is reached only from plan and the continuation's republication;
+  // no other source may publish a plan, and none inlines it.
+  const publicationCarriers = [];
+  for (const dir of ['src/tools/', 'src/shared/']) {
+    for (const file of readdirSync(new URL(dir, repositoryRoot)).filter((entry) =>
+      entry.endsWith('.md'),
+    )) {
+      const { eager, lazy } = collectIncludeNames(source(`${dir}${file}`));
+      assert.equal(eager.has('plan-publication'), false, `${dir}${file} must not inline it`);
+      if (lazy.has('plan-publication')) publicationCarriers.push(`${dir}${file}`);
+    }
+  }
+  assert.deepEqual(publicationCarriers.sort(), [
+    'src/shared/plan-pr-continuation.md',
+    'src/tools/plan.md',
+  ]);
+});
+
+test('plan archival and plan numbering name the published-plan case', () => {
+  // Invariant: a published plan is tracked on its own branch, so archival takes the tracked-plan
+  // path (State A, `git mv`) rather than the untracked one; both conventions say so.
+  const archival = prose(source('src/shared/plan-archival.md'));
+  assert.match(
+    archival,
+    near(
+      'State C is the ordinary case for an unpublished plan',
+      'commits a plan only when it publishes one',
+      120,
+    ),
+  );
+  assert.match(
+    archival,
+    near('State A is the ordinary case for a published plan', "plan's own branch", 120),
+  );
+
+  const numbering = prose(
+    section(source('src/shared/plan-numbering.md'), '### Archive of implemented plans'),
+  );
+  assert.match(
+    numbering,
+    near(
+      "the plan branch that `\\{\\{SKILL:plan\\}\\}`'s publication created",
+      'ordinary case for a published plan',
+      80,
+    ),
+  );
+});
+
+test('the user guide explains publication, continuation, unavailable discovery, and the merge-gate warning', () => {
+  // Invariant: every page a user reaches for plan publication or delivery configuration names the
+  // whole lifecycle — publication, the continuation, the question on unavailable discovery, and
+  // the rule not to run merge-gate or iterate on a plan pull request before apply. The pages word
+  // these differently, so each concept is pinned by the stable literals every page must share.
+  const concepts = [
+    [
+      'the publication',
+      (text) =>
+        text.includes('publishing-the-plan-as-a-draft-pull-request') &&
+        /draft pull request/i.test(text),
+    ],
+    [
+      'the continuation',
+      (text) =>
+        text.includes('continuing-on-a-published-plans-pull-request') &&
+        /implementing run/i.test(text),
+    ],
+    [
+      'the discovery-unavailable question',
+      (text) =>
+        /(?:discovery\b[^.]{0,80}\b(?:fails|failed|unavailable)|unavailable discovery|cannot (?:check|rule out)[^.]{0,40}plan pull request)[\s\S]{0,600}\bask/i.test(
+          text,
+        ),
+    ],
+    [
+      'the no merge-gate or iterate before apply rule',
+      (text) =>
+        /(?:do not|don't|never) run[^.]{0,80}merge-gate[^.]{0,80}iterate[^.]{0,120}before[^.]{0,40}apply/i.test(
+          text,
+        ),
+    ],
+  ];
+  const gaps = [];
+  for (const page of [
+    'docs/user-guide/tools-understand.md',
+    'docs/user-guide/worktree-and-delivery.md',
+    'docs/user-guide/configuration.md',
+  ]) {
+    const text = prose(source(page));
+    for (const [name, holds] of concepts) {
+      if (!holds(text)) gaps.push(`${page} does not name ${name}`);
+    }
+  }
+  assert.deepEqual(gaps, []);
 });

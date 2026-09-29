@@ -87,7 +87,9 @@ only through a confirmed before/after change.
 implemented, the implementing workflow sets the status marker to `Umgesetzt`/`Implemented` and
 archives the file under `<plan.dir>/archive/` – still in the same delivery branch, so the move is
 part of the same pull request or merge. Which primitive that takes depends on whether the plan is
-already tracked in the delivery checkout's index.
+already tracked in the delivery checkout's index. A plan that `/effective-flow plan` published as a
+draft pull request is: its implementing run continues on that pull request's branch, where the
+plan is tracked, so archival renames it. An unpublished plan stays untracked until delivery.
 `src/shared/plan-archival.md` owns that state model, the detection behind it, and the cleanup of
 the redundant copy in the main checkout.
 In hidden mode (`visibility: hidden`) `plan.dir` is forced to `.effective-flow/plan` in the main

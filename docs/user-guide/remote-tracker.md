@@ -699,6 +699,93 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   adapter could not observe at all carries `true` there: a transport failure, and a `5xx` the forge
   answered with, which is that same unobservable outcome with a status line in front of it.
 
+## Plan pull-request operations
+
+[Plan publication](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) and the
+[continuation on a plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
+use the same remote-tracker helper as every other pull-request step. Like all PR work, they are
+forge-bound: they never evaluate `tracker.mode` and need only a Git repository, an `origin` remote,
+and an authenticated CLI.
+
+Two mutations finish a plan's draft pull request. Both default to a dry run and change nothing
+without `--apply`:
+
+| Operation         | Capability               | What it does                                                                                                                                                                                                                                      |
+| ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-update-title` | `pullRequestTitleUpdate` | Sets a pull request's title, which must not be empty. On GitHub it is the same REST `PATCH` that `pr-update-body` sends, carrying the title; on Forgejo it is `tea pulls edit --title`                                                            |
+| `pr-mark-ready`   | `pullRequestMarkReady`   | Takes a draft out of draft. On GitHub it runs `gh pr ready`, which leaves the title alone. On Forgejo it requires `payload.title`, the final title, and performs one title edit, so the retitle and the ready transition are one step (see below) |
+
+Forgejo stores no draft flag: a pull request is a draft while its title starts with a
+work-in-progress prefix (`WIP:` or `[WIP]` by default). Marking it ready is therefore one title edit
+that carries the final title, and a final title that itself starts with one of those default
+prefixes is refused (`INVALID_PAYLOAD`), because it would stay a draft. Because an operator can
+configure further prefixes the helper cannot see, the edit is not the verdict: `pr-mark-ready`
+reads the pull request back once and reports `ready` from the forge's own `draft` value. If the
+read-back fails, states no draft value, or still shows a draft, the operation fails with a
+structured error naming the `ready-read-back` step and stating that the title was already edited.
+
+On Forgejo the probe reports `pullRequestTitleUpdate` when `tea pulls edit` offers `--title`, and
+`pullRequestMarkReady` only when, in addition, `tea pulls create --draft` documents drafts as a
+`WIP` prefix and `tea api` offers `--include`, which the read-back needs. `pullRequestRead`,
+`pullRequestList`, and `pullRequestUpdate` now require that same `tea api --include` probe beside
+their subcommand flags, because all three read the raw pull-request object. GitHub states
+`pullRequestDraftCreate`, `pullRequestTitleUpdate`, and `pullRequestMarkReady` as `true`.
+`pullRequestDraftCreate` attests only that `pr-create` sends `draft`: a repository whose plan
+offers no draft pull requests answers with a 422 "Draft pull requests are not supported", which
+`pr-create` reports as `UNSUPPORTED_CAPABILITY` for `pullRequestDraftCreate` rather than as a
+failed command.
+
+`pr-list` and `pr-read` add four fields to each normalized pull request:
+
+- **`sameRepository`**: whether the head branch lives in the base repository – the field that
+  decides ownership. It is `true` when both repository ids match, or, where the ids are not both
+  stated, when the two full names match compared case-insensitively. It is `false` when the forge
+  states that no head repository exists, such as a deleted fork, or that the two differ. It is
+  absent when the payload does not state the head repository usably. `false` is foreign and never
+  a match. `/effective-flow pr` hydrates an absent value through `pr-read` and treats a value still
+  absent as incomplete output. Plan discovery never runs `pr-read`, so it counts an absent value as
+  foreign too. This is how both tell a fork's same-named branch from this repository's own.
+- **`headRepository`**: the head branch's repository as `owner/repo`, for reports only; `null` when
+  the forge states that no head repository exists, and absent when the payload says nothing about
+  it.
+- **`planPrMarker`**: present only when the body holds exactly one valid plan marker,
+  `<!-- effective-flow-plan-pr:v1 {"plan":"<path>"} -->`, on a line of its own. Its value is the
+  validated plan path.
+- **`planPrMarkerError`**: present instead when a marker line is invalid. Its stable codes are
+  `duplicate` (more than one marker line), `not-own-line` (other text on the marker's line),
+  `malformed`, and `unsafe-path`.
+
+Only a **marker line** counts: a line that, after leading spaces and tabs, begins with
+`<!-- effective-flow-plan-pr:`. A prose mention of the key that is not such a comment is ignored,
+so a pull request that merely talks about the marker gains no error and no `duplicate`; a
+`<!-- effective-flow-plan-pr:` comment with other text in front of it, when no marker line exists,
+yields `not-own-line`. Only spaces and tabs
+are trimmed; a no-break space, a zero-width character, or a line separator in front of the comment
+makes the line no marker line at all. The helper does not interpret Markdown: a marker line inside
+a fenced code block or a block quote is judged by the same rule as anywhere else. A body with no
+marker line carries neither field.
+
+A plan path, whether a marker's value or `pr-list`'s `planPath`, passes a strict allowlist. It is
+repository-relative and made of `/`-separated segments of letters, digits, `.`, `_`, and `-` only,
+none of them empty, `.`, or `..`, and none beginning with `-`. It is well-formed Unicode, contains no
+control, format, line-separator, or paragraph-separator character and no non-ASCII whitespace, and
+ends in `.md`. A leading `/`, a drive letter, and a backslash therefore never pass.
+
+`pr-list` also takes an optional `planPath`. It returns only the items whose parsed `planPrMarker`
+equals it and omits their `body`, so plan discovery never hands pull-request text to a workflow. A
+`planPath` that breaks the path rules fails with `INVALID_PAYLOAD` before any provider call. With
+`planPath` set, an error envelope carries no excerpt of the listing's stdout or stderr either, only
+each stream's length.
+
+On Forgejo, `pr-read` now reads the raw pull-request object through `tea api`, the object `pr-list`
+already reads, instead of tea's detail renderer. The renderer shows a fork's head only as
+`owner:branch` and drops the repository name, so it could not state the head repository. The raw
+read reports the bare branch, the head and base repositories, and a real `draft` value. A merged
+pull request still reads as `state: merged`, as it did through the renderer, although the raw
+object states it as `closed` beside `merged: true`. The stale-write guard of `pr-update-body` reads
+through it with its HTTP status checked, so a refused read is never taken as the current pull
+request.
+
 ## Hidden mode
 
 With `visibility: hidden` (see [Configuration](./configuration.md#hidden-mode)), nothing on the
@@ -724,10 +811,11 @@ Pull-request work still reaches the forge, but without markers:
   (`planning-comment-build`, `apply-comment-build`) refuse hidden mode outright, because their
   marker is the tracker's only record. An absent `visibility` means `standard`, so standard output
   is byte-for-byte unchanged.
-- The five publishing operations `issue-comment`, `issue-comment-update`, `pr-comment`,
-  `pr-update-body`, and `pr-create` accept the same `visibility` input. With `hidden`, they refuse
-  (`INVALID_PAYLOAD`) any title, body, or head branch that carries an `<!-- effective-flow-… -->`
-  marker or names the tool, before anything is sent.
+- The publishing operations `issue-comment`, `issue-comment-update`, `pr-comment`,
+  `pr-update-body`, `pr-create`, and `pr-update-title`, plus the title that `pr-mark-ready` sets on
+  Forgejo, accept the same `visibility` input. With `hidden`, they refuse (`INVALID_PAYLOAD`) any
+  title, body, or head branch that carries an `<!-- effective-flow-… -->` marker or names the
+  tool, before anything is sent.
 - `delivery.prReview` is forced to `off`, so no findings are published after a delivery. An
   explicit `review` of a pull request reports its findings in chat instead of posting them.
 - `iterate` still replies to review threads and posts its summary comment, unmarked and without

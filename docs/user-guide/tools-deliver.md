@@ -173,16 +173,32 @@ without that key it is the branch `origin/HEAD` names, and `main` where that ref
 retired `worktree.baseBranch` row is never read: without `delivery.baseBranch` beside it, `pr` stops
 before any fetch or push, on a direct invocation and a committed handoff alike, and points to
 `/effective-flow setup`. Output is the PR URL, head and
-base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
+base branches, the verified head OID, and `result: created` or `result: reused`. A detached checkout, the base branch itself, a branch with
 no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
 before publishing.
 
 **Existing pull requests:** After pushing the branch, `pr` queries the detected host for open
-pull requests and exact-matches both the requested head and base branches. Exactly one match is
-reused without changing its title or description; the workflow then follows the same checkout
-restoration and reporting path as a newly created pull request. Pull requests with another base,
-closed or merged pull requests, and other non-matches are ignored. A failed or unparseable lookup
-or multiple exact matches stops the workflow without attempting creation or guessing.
+pull requests and exact-matches the requested head and base branches, and requires the host to
+report the head as this repository's own (`sameRepository`, decided by repository id or by the
+full name compared case-insensitively). A fork's or deleted fork's pull request with the same head
+name therefore neither matches nor counts as a duplicate, and a match whose repository the host
+does not state even after a fresh read stops the lookup as incomplete. Exactly one match is reused without changing its title or description;
+the workflow then follows the same checkout restoration and reporting path as a newly created pull
+request. Pull requests with another base, closed or merged pull requests, and other non-matches are
+ignored. A failed or unparseable lookup or multiple exact matches stops the workflow without
+attempting creation or guessing.
+
+**Finishing a plan's draft:** A reused pull request is changed in exactly one case: it is the draft
+that [`plan` published](tools-understand.md#publishing-the-plan-as-a-draft-pull-request), and its
+branch now carries implementation beyond the plan. An implementing run's delivery names that pull
+request by number; a different number or a missing marker then refuses the finish, and when no
+pull request matches at all, `pr` stops before creating a new one. A direct `pr` call is the
+recovery path after a failed finish: it finishes a draft with a valid plan marker whose branch
+already holds the archived plan and no longer the plan itself. `pr` then derives the final title
+and description as for a new pull request, updates the title, updates the body while keeping the
+marker line, and marks the pull request ready, each as a dry run first. On Forgejo, while the pull
+request is still a draft, the retitle and the ready transition are one edit. The first failure
+stops it, the pull request stays a draft, and the report names the failed step.
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the

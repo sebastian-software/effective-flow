@@ -158,9 +158,11 @@ authored: that would have the handback edit a file in the user's own checkout wh
 commits — the same class of defect as an unrooted `git mv`. The cleanup's hash comparison depends on
 this order and would never match under the old one.
 
-State C is the ordinary case for a plan authored by `{{SKILL:plan}}`, which creates no commit and
-therefore leaves its plan file untracked. State D is what makes this step idempotent: a retry after a
-partially failed handback finds `A` tracked, refreshes it if needed, and succeeds.
+State C is the ordinary case for an unpublished plan: `{{SKILL:plan}}` commits a plan only when it
+publishes one, so an unpublished plan file stays untracked. State A is the ordinary case for a
+published plan, whose delivery continues on the plan's own branch, where `P` is tracked. State D is
+what makes this step idempotent: a retry after a partially failed handback finds `A` tracked,
+refreshes it if needed, and succeeds.
 
 `mkdir -p` is an ordered step, not a parenthetical: `git mv` and a direct write into a missing
 directory both fail.

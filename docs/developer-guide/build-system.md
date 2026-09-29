@@ -734,7 +734,8 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`.
+  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
+  `plan-publication`, `plan-pr-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -746,7 +747,11 @@ and directive syntax").
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
-  fragment. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  fragment. `plan-pr-continuation` sits beside it in the same four tools, with a two-armed trigger:
+  `worktree-integration`'s resolved base, because it supersedes that fragment's mode, branch-name,
+  and `-b` steps before step 3 runs, or the selection of in-place mode without delivery, before any
+  archival, where it runs discovery only and stops on a verified plan pull request. `plan-publication` is lazy from `plan`'s Phase 7 and nested in
+  `plan-pr-continuation` for a republication. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
   was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`,
   `issue-tracker-forge` from `issue-tracker`, and `config-migration-edge-cases` from
   `config-migration`; the first three remaining halves stay eager because their
@@ -757,7 +762,7 @@ and directive syntax").
   `merge-gate` fragment beside `issue-post-merge-observation` and `pr-merge-completion`, and the
   first that is **not** a split half: it holds tool-local text – the parts of
   `worktree-integration` that stay off in the gate, and the lifecycle close of the one checkout it
-  provisions. It is deliberately not folded into `worktree-integration`, whose seven consumers
+  provisions. It is deliberately not folded into `worktree-integration`, whose other consumers
   would then each carry one tool's inapplicability list. Its pointer reuses that fragment's
   existing trigger instead of inventing one, which is legitimate because both are meaningful only
   once Phase 2 step 1 provisions a checkout: reusing a trigger decides **when** a pointer fires,
