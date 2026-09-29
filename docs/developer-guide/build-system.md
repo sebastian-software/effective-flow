@@ -646,13 +646,15 @@ core or protocol modules:
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local
-  lifecycle, record, detailed-trace, anonymous gate-observation, reconciliation, aggregation,
-  evaluation, purge, and discard operations under
+  lifecycle, record, detailed-trace, anonymous gate-observation, incident (`record-incident`),
+  reconciliation, aggregation, evaluation, purge, and discard operations under
   `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`; the protocol module owns the
   immutable version, digest, limits, timing, metrics, gates, and enum registries. Reads never
   authenticate through an identity-bearing field; workflow, packet, and observation mutations use
-  operation-scoped capabilities, while lifecycle transitions require explicit digest-bound
-  confirmation. Detailed traces require explicit current-run consent. This capability ships before
+  operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation
+  operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
+  `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
+  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. This capability ships before
   activation: setup exposes no pilot action, and `build` and `refactor` request no Fast profile. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).

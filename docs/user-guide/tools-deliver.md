@@ -330,7 +330,9 @@ with the separately resolved configuration state, `merge|report` mode, and `clau
 The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
 path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
 period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
-states make observation a read-only no-op; observer-only post-merge re-entry records nothing.
+states make observation a read-only no-op; observer-only post-merge re-entry records nothing. The
+observation is also skipped, with nothing persisted and no effect on the pilot, when admission
+closes as it starts or while another measured run is still in flight.
 
 Reservation or finalization failure never changes whether the current run merges or reports ready.
 After a reservation, every normal, controlled, or early exit finalizes exactly once. A report-mode
