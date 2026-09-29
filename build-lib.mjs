@@ -3366,8 +3366,38 @@ function inlineCodeSpans(line) {
 }
 
 const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
-const INLINE_LINK = /!?\[[^\]]*\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
-const REFERENCE_DEFINITION = /^ {0,3}\[[^\]]+\]:\s*(\S+)/;
+// CommonMark reference definition: the label may hold backslash escapes but no
+// unescaped bracket, and it must contain at least one non-whitespace character.
+const REFERENCE_DEFINITION = /^ {0,3}\[((?:\\.|[^\\[\]])+)\]:\s*(\S+)/;
+const INLINE_LINK_DESTINATION = /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/y;
+
+// CommonMark inline link or image text: an unescaped `[` (optionally preceded
+// by `!`) opens it, a backslash escapes the next character, unescaped brackets
+// nest, and the text closes at the matching unescaped `]`, which must be
+// followed directly by the `(destination "title")` part. Every unescaped `[` is
+// tried as an opener, so a link inside another link's text is checked as well.
+function inlineLinkTargets(text) {
+  const brackets = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '\\') index += 1;
+    else if (char === '[' || char === ']') brackets.push({ index, char });
+  }
+  const targets = [];
+  for (let opener = 0; opener < brackets.length; opener += 1) {
+    if (brackets[opener].char !== '[') continue;
+    let depth = 0;
+    for (let next = opener; next < brackets.length; next += 1) {
+      depth += brackets[next].char === '[' ? 1 : -1;
+      if (depth > 0) continue;
+      INLINE_LINK_DESTINATION.lastIndex = brackets[next].index + 1;
+      const match = INLINE_LINK_DESTINATION.exec(text);
+      if (match) targets.push(match[1]);
+      break;
+    }
+  }
+  return targets;
+}
 
 function unwrapAngleBrackets(target) {
   return target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
@@ -3431,8 +3461,8 @@ export function findRepositoryOnlyReferences(
       text = `${text.slice(0, span.start)} ${text.slice(span.end)}`;
     }
     const definition = REFERENCE_DEFINITION.exec(text);
-    if (definition) checkLink(lineNumber, definition[1]);
-    for (const match of text.matchAll(INLINE_LINK)) checkLink(lineNumber, match[1]);
+    if (definition && /\S/.test(definition[1])) checkLink(lineNumber, definition[2]);
+    for (const target of inlineLinkTargets(text)) checkLink(lineNumber, target);
   }
 
   const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

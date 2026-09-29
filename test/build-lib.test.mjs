@@ -3639,6 +3639,71 @@ test('findRepositoryOnlyReferences sorts by line, kind and reference and normali
   ]);
 });
 
+test('findRepositoryOnlyReferences reports dead links whose text nests balanced brackets', () => {
+  const content = [
+    'See [the [guide]](../missing.md).',
+    '![a [b] c](../gone.png)',
+    'Deep [a [b [c]] d](../deep.md) nesting.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone.png' },
+    { line: 3, kind: 'link', reference: '../deep.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose text contains escaped brackets', () => {
+  const content = [
+    '[a \\] b](../missing.md)',
+    '[a \\[ b](../other.md)',
+    'Escaped backslash [x \\\\](../double.md) still closes the text.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../other.md' },
+    { line: 3, kind: 'link', reference: '../double.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows nested and escaped link text that resolves in the payload', () => {
+  const content = [
+    '[the [shared] fragment](../shared/x.md)',
+    '[x \\] y](../shared/x.md)',
+    '![icon [small]](../shared/x.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences reports reference definitions whose label contains escaped brackets', () => {
+  const content = [
+    '[a \\] b]: ../missing.md',
+    '[c \\[ d]: ../shared/x.md',
+    '[a [b]]: ../missing-def.md',
+    '[ ]: ../blank.md',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not treat an escaped opening bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('\\[not a link](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences does not treat text closed only by an escaped bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('[a\\](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences detects an inner link after an unbalanced outer bracket', () => {
+  assert.deepEqual(detectRepositoryOnly('[outer [inner](../inner-missing.md)'), [
+    { line: 1, kind: 'link', reference: '../inner-missing.md' },
+  ]);
+});
+
 test('findVerbatimSourceLocations lists every matching source line in path order', () => {
   const reference = '../../docs/developer-guide/skill-ownership.md';
   const sources = new Map([
