@@ -186,7 +186,8 @@ function fieldParts(cell) {
 }
 
 // Every label a language contributes to detection: a field prefix, an exact heading, or an exact
-// list item. Only the first code span of a cell carries a label; a second one is a value.
+// list item. Only the first code span of a cell carries a label; a second one is a value, which
+// FIELD_VALUE_MATCHERS covers.
 function languageMatchers(language) {
   const fields = new Set();
   const lines = new Set();
@@ -203,6 +204,20 @@ function languageMatchers(language) {
 }
 
 const LANGUAGE_MATCHERS = Object.freeze({ de: languageMatchers('de'), en: languageMatchers('en') });
+
+// Every canonical field value a language contributes to detection, bound to the labels of its own
+// row: the value half of a field cell plus each further code span of that cell. A value counts
+// under either language's label, so a label of one language with a value of the other is mixed.
+const FIELD_VALUE_MATCHERS = Object.freeze(
+  PLAN_CONTRACT_MAPPING.flatMap((row) => {
+    if (!FIELD_CELL.test(row.de[0]) || !FIELD_CELL.test(row.en[0])) return [];
+    const valuesOf = ([cell, ...alternatives]) =>
+      [fieldParts(cell).value, ...alternatives].filter((value) => value !== '');
+    const values = { de: valuesOf(row.de), en: valuesOf(row.en) };
+    if (values.de.length === 0 && values.en.length === 0) return [];
+    return [{ labels: [fieldParts(row.de[0]).label, fieldParts(row.en[0]).label], values }];
+  }),
+);
 
 // Per language: the status field label and its canonical values mapped to a status.
 const STATUS_VALUES = (() => {
@@ -354,10 +369,20 @@ function classifyStatus(outside) {
   return { status: 'unclear', statusReason: 'invalid-value' };
 }
 
+function fieldValueHit(entry, language) {
+  return FIELD_VALUE_MATCHERS.some(({ labels, values }) => {
+    const label = labels.find((candidate) => entry.text.startsWith(candidate));
+    return label !== undefined && values[language].includes(entry.text.slice(label.length).trim());
+  });
+}
+
 function languageHits(outside, language) {
   const { fields, lines } = LANGUAGE_MATCHERS[language];
   return outside.some(
-    (entry) => fields.some((label) => entry.text.startsWith(label)) || lines.has(lineKey(entry)),
+    (entry) =>
+      fields.some((label) => entry.text.startsWith(label)) ||
+      lines.has(lineKey(entry)) ||
+      fieldValueHit(entry, language),
   );
 }
 

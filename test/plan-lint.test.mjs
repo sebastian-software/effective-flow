@@ -242,6 +242,49 @@ test('labels inside fenced code do not decide the language', () => {
   assert.equal(classifyPlanText(text).language, 'de');
 });
 
+test('a review-result label of one language with a value of the other is mixed', () => {
+  assert.equal(classifyPlanText('**Result:** Freigegeben\n').language, 'mixed');
+  assert.equal(classifyPlanText('**Result:** Überarbeitung nötig\n').language, 'mixed');
+  assert.equal(classifyPlanText('**Ergebnis:** Approved\n').language, 'mixed');
+  assert.equal(classifyPlanText('**Ergebnis:** Revision required\n').language, 'mixed');
+  const crossedEnglish = ENGLISH_PLAN.replace('**Result:** Approved', '**Result:** Freigegeben');
+  assert.notEqual(crossedEnglish, ENGLISH_PLAN);
+  assert.equal(classifyPlanText(crossedEnglish).language, 'mixed');
+  const crossedGerman = GERMAN_PLAN.replace('**Ergebnis:** Freigegeben', '**Ergebnis:** Approved');
+  assert.notEqual(crossedGerman, GERMAN_PLAN);
+  assert.equal(classifyPlanText(crossedGerman).language, 'mixed');
+});
+
+test('a canonical review-result pair keeps its own language', () => {
+  assert.equal(classifyPlanText('**Ergebnis:** Freigegeben\n').language, 'de');
+  assert.equal(classifyPlanText('**Ergebnis:** Überarbeitung nötig\n').language, 'de');
+  assert.equal(classifyPlanText('**Result:** Approved\n').language, 'en');
+  assert.equal(classifyPlanText('**Result:** Revision required\n').language, 'en');
+  const revisedGerman = GERMAN_PLAN.replace(
+    '**Ergebnis:** Freigegeben',
+    '**Ergebnis:** Überarbeitung nötig',
+  );
+  assert.notEqual(revisedGerman, GERMAN_PLAN);
+  assert.equal(classifyPlanText(revisedGerman).language, 'de');
+  const revisedEnglish = ENGLISH_PLAN.replace(
+    '**Result:** Approved',
+    '**Result:** Revision required',
+  );
+  assert.notEqual(revisedEnglish, ENGLISH_PLAN);
+  assert.equal(classifyPlanText(revisedEnglish).language, 'en');
+});
+
+test('a status label of one language with a value of the other is mixed', () => {
+  const crossedEnglish = classifyPlanText('**Plan status:** Umgesetzt\n');
+  assert.equal(crossedEnglish.language, 'mixed');
+  assert.equal(crossedEnglish.statusReason, 'mixed-key-value');
+  const crossedGerman = classifyPlanText('**Planungsstatus:** Not implemented\n');
+  assert.equal(crossedGerman.language, 'mixed');
+  assert.equal(crossedGerman.statusReason, 'mixed-key-value');
+  assert.equal(classifyPlanText('**Planungsstatus:** Nicht umgesetzt\n').language, 'de');
+  assert.equal(classifyPlanText('**Plan status:** Implemented\n').language, 'en');
+});
+
 test('the legacy open-points heading counts as an English label', () => {
   assert.equal(classifyPlanText('## Open Points\n\n- No open points.\n').language, 'en');
 });
