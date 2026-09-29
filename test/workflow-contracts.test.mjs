@@ -8917,7 +8917,7 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   // no-op" for skipping the record too, and leave the marker on an item that closed itself.
   assert.match(
     lifecycle,
-    /not skipping the record: that revalidation read replaces the item's recorded observation outcome/,
+    /Skipping the transition for an already-terminal item is not skipping the record: that revalidation read replaces the item's recorded observation outcome/,
   );
   assert.match(
     lifecycle,
