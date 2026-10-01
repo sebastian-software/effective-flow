@@ -1720,6 +1720,22 @@ test('incidents are recorded by category and a failed finalize offers one same-r
   );
   assert.match(failureText, /only `discard-generation` or `purge` clears it/);
   assert.match(failureText, /a reviewed generation never resumes/);
+  // A later run observes only a suspension the helper persisted; an unpersisted incident leaves
+  // nothing durable, so the fragment names setup's `Disable` instead of promising a suspension.
+  const fragmentText = flat(fragment);
+  assert.doesNotMatch(
+    fragmentText,
+    /Every later run observes a suspension/,
+    'no unconditional promise that every later run observes a suspension',
+  );
+  assert.match(
+    failureText,
+    /Only a suspension the helper persisted, from a successful `record-incident` or an envelope with `controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted suspension until an explicit confirmed Guided `resume`/,
+  );
+  assert.match(
+    failureText,
+    /An incident that could not be persisted leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed recovery is `\{\{SKILL:setup\}\}` Guided block 10 `Disable`, and Fast returns only through a confirmed `Enable` there\./,
+  );
 });
 
 // Invariant: the token rule the fragment states is the rule the shipped helper enforces for every

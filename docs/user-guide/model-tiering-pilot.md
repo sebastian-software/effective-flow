@@ -82,8 +82,9 @@ source excerpts, absolute paths, URLs, and unknown fields.
 Configuration and generation state remain independent. Disabling the project key stops new
 measurement and Fast selection without deleting evidence or clearing a suspension. Suspension and
 incomplete records block later Fast until the owned evidence is reconciled. A critical safety,
-data-integrity, authorization, or scope incident suspends the generation, so Fast stops until an
-explicit resume. Only a still-suspended generation can resume; a generation in `review` is terminal
+data-integrity, authorization, or scope incident that the helper stores suspends the generation, so
+Fast stops until an explicit resume; an incident it cannot store suspends nothing, as described
+below. Only a still-suspended generation can resume; a generation in `review` is terminal
 and cannot return to admission.
 
 A `build` run reports such an incident to the helper by its category, and the helper records the

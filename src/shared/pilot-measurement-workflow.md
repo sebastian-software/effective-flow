@@ -319,5 +319,10 @@ A declined, unanswered, non-interactive, or failed reconciliation leaves the inc
 place. The completion report then states that it keeps every later measured run
 unmeasured and that only `discard-generation` or `purge` clears it.
 
-Every later run observes a suspension until an explicit confirmed Guided `resume` while the
-generation is still `suspended` with healthy evidence; a reviewed generation never resumes.
+Only a suspension the helper persisted, from a successful `record-incident` or an envelope with
+`controlStatePersisted: true`, keeps later runs off Fast: each later run observes that persisted
+suspension until an explicit confirmed Guided `resume` while the generation is still `suspended`
+with healthy evidence; a reviewed generation never resumes. An incident that could not be persisted
+leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed
+recovery is `{{SKILL:setup}}` Guided block 10 `Disable`, and Fast returns only through a confirmed
+`Enable` there.
