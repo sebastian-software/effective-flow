@@ -11118,8 +11118,11 @@ test('every plan pull-request marker error has its stable code', () => {
   assert.equal(inspectPlanPrMarker(`Plan: ${planMarker()}\n${planMarker()}`).status, 'valid');
 
   // `-->` inside the JSON is not the comment's end: the exact form is tried first, so the JSON and
-  // the path rules judge it, and the path's `>` is outside the allowlist.
-  assert.equal(error(planMarker('docs/plan/a-->b.md')), 'unsafe-path');
+  // the path rules judge it, and a `>` is an ordinary path character.
+  assert.deepEqual(inspectPlanPrMarker(planMarker('docs/plan/a-->b.md')), {
+    status: 'valid',
+    plan: 'docs/plan/a-->b.md',
+  });
   assert.equal(
     error(`<!-- effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}","x":"-->"} -->`),
     'malformed',
@@ -11137,6 +11140,8 @@ test('every plan pull-request marker error has its stable code', () => {
     '<!-- effective-flow-plan-pr:v1 ["docs/plan/a.md"] -->',
     '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/a.md" -->',
     '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/\\u0061.md"} -->',
+    // A `"` in a path travels JSON-escaped; the unescaped spelling is not JSON at all.
+    '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/a"b.md"} -->',
   ]) {
     assert.equal(error(body), 'malformed', body);
   }
@@ -11162,9 +11167,10 @@ test('every plan pull-request marker error has its stable code', () => {
   }
 });
 
-// The plan path allowlist, probed on both of its inputs: the marker's value and `pr-list`'s
-// `planPath`. It follows the configuration path contract, so a free-text `plan.dir` and a free
-// plan file name pass; every refusal is a character or shape no literal Git argument makes harmless.
+// The plan path rule, probed on both of its inputs: the marker's value and `pr-list`'s `planPath`.
+// It is the configuration path contract, so a free-text `plan.dir` and a free plan file name pass,
+// shell-significant characters included; every refusal is a shape or character that makes a path
+// structurally unsafe or ambiguous.
 const PLAN_PATH_PROBES = [
   // Admitted: the shapes a plan file has, letters of any script included.
   [PLAN_PATH, true],
@@ -11173,10 +11179,15 @@ const PLAN_PATH_PROBES = [
   ['docs/plan/über-änderung.md', true],
   ['docs/plan/計画.md', true],
   ['docs/plan/v1.2_final.md', true],
-  // Admitted: spaces, which a free-text `plan.dir` and a plan's file name may both carry.
+  ['.effective-flow/plan/2026-01-01-x.md', true],
+  // Admitted: spaces, which a free-text `plan.dir` and a plan's file name may both carry, and any
+  // other space separator, which is no control, format or line character.
   ['docs/my plans/2026-01-01-x.md', true],
   ['docs/plan/2026-01-01-über plan.md', true],
   ['docs/plan/a b.md', true],
+  ['docs/plan/ -a.md', true],
+  ['docs/plan/a\u00a0b.md', true],
+  ['docs/plan/a\u3000b.md', true],
   // Admitted: glob characters, which Git reads literally behind a `:(literal)` pathspec.
   ['docs/plan[1]/x.md', true],
   ['docs/plan/a*b.md', true],
@@ -11184,7 +11195,7 @@ const PLAN_PATH_PROBES = [
   ['docs/plan/[a].md', true],
   // Admitted: a decomposed umlaut (NFD), whose combining mark is `M`, beside the precomposed one.
   ['docs/plan/u\u0308ber.md', true],
-  // Admitted: ordinary punctuation and the ASCII symbols `+`, `=`, `^` and `~`.
+  // Admitted: punctuation and symbols of every kind.
   ['docs/plan/a#b.md', true],
   ['docs/plan/a%2e%2e.md', true],
   ['docs/plan/(draft) a, b!.md', true],
@@ -11192,19 +11203,36 @@ const PLAN_PATH_PROBES = [
   ['docs/plan/c++=^.md', true],
   ['~/plan.md', true],
   ['docs/plan/„Zitat“ – x….md', true],
-  // A segment that begins with `-` would read as an option to Git or a shell.
-  ['-rf.md', false],
-  ['docs/-plan/a.md', false],
-  ['docs/plan/--output=x.md', false],
-  // Only the leading character counts: a segment that begins with a space passes.
-  ['docs/plan/ -a.md', true],
+  ['docs/plan/a€.md', true],
+  ['docs/plan/a\u2215b.md', true],
+  // Admitted: the shell-significant characters, one probe each — a consumer passes the path as one
+  // literal, quoted argument, so none of them reaches a shell as syntax.
+  ['docs/R&D plans/2026-01-01-x.md', true],
+  ['docs/plan/a&b.md', true],
+  ['docs/plan/a;b.md', true],
+  ['docs/plan/$HOME.md', true],
+  ['docs/plan/$(id).md', true],
+  ['docs/plan/a`b.md', true],
+  ['docs/plan/a|b.md', true],
+  ['docs/plan/a<b.md', true],
+  ['docs/plan/a>b.md', true],
+  ['docs/plan/a"b.md', true],
+  ["docs/plan/a'b.md", true],
+  ["docs/plan/'; rm -rf ~; '.md", true],
+  // Admitted: a segment that begins with `-`, which behind `--` is no option.
+  ['-rf.md', true],
+  ['docs/-plan/a.md', true],
+  ['docs/plan/--output=x.md', true],
+  // Admitted: a `:` that is neither a drive letter nor the path's first character.
+  ['docs/plan:a.md', true],
+  ['docs/plan/a:b.md', true],
   // Bidirectional overrides and zero-width characters are `Cf`.
   ['docs/plan/\u202egpj.md', false],
   ['docs/plan/\u2066a\u2069.md', false],
   ['docs/plan/a\u200b.md', false],
   ['docs/plan/\ufeffa.md', false],
   ['docs/plan/a\u00ad.md', false],
-  // Line and paragraph separators, controls, and every whitespace but the ASCII space.
+  // Line and paragraph separators and controls, the tab and the line feed included.
   ['docs/plan/a\u2028.md', false],
   ['docs/plan/a\u2029.md', false],
   ['docs/plan/a\u0085.md', false],
@@ -11212,36 +11240,25 @@ const PLAN_PATH_PROBES = [
   ['docs/plan/a\n.md', false],
   ['docs/plan/a\r.md', false],
   ['docs/plan/a\t.md', false],
-  ['docs/plan/a\u00a0b.md', false],
-  ['docs/plan/a\u3000b.md', false],
-  ['docs/plan/a\u2003b.md', false],
+  ['docs/plan/a\u0000.md', false],
   // Not well-formed UTF-16: a lone surrogate half.
   ['docs/plan/a\ud800.md', false],
   ['docs/plan/\udc00a.md', false],
-  // The shell-significant characters, one probe each.
-  ['docs/plan/a`b.md', false],
-  ['docs/plan/$HOME.md', false],
-  ['docs/plan/a;b.md', false],
-  ['docs/plan/a|b.md', false],
-  ['docs/plan/a<b.md', false],
-  ['docs/plan/a>b.md', false],
-  ['docs/plan/a"b.md', false],
-  ["docs/plan/a'b.md", false],
-  ['docs/plan/a&b.md', false],
-  // A backslash, and a `:` — a drive letter, an NTFS stream name, or Git's pathspec magic.
+  // A backslash, a drive letter, and a leading `:`, which is Git's pathspec magic prefix.
   ['docs\\plan\\a.md', false],
-  ['docs/plan:a.md', false],
+  ['docs/plan/a\\b.md', false],
   ['C:/plan.md', false],
   ['c:plan.md', false],
+  ['Z:docs/plan/a.md', false],
   [':(glob)docs/*.md', false],
-  // Symbols outside the four admitted ASCII ones.
-  ['docs/plan/a€.md', false],
-  ['docs/plan/a\u2215b.md', false],
+  [':docs/plan/a.md', false],
   // Shape: absolute, empty, `.` and `..` segments, and the `.md` suffix.
   ['/docs/plan/a.md', false],
   ['docs//plan/a.md', false],
   ['docs/./plan/a.md', false],
+  ['./docs/plan/a.md', false],
   ['docs/plan/../a.md', false],
+  ['../plan.md', false],
   ['docs/plan/a.md/', false],
   ['docs/plan/a.md.txt', false],
   ['docs/plan/a.MD', false],
@@ -11249,7 +11266,7 @@ const PLAN_PATH_PROBES = [
   ['', false],
 ];
 
-test('the plan path allowlist decides the marker and planPath alike', async () => {
+test('the plan path rule decides the marker and planPath alike', async () => {
   for (const [path, admitted] of PLAN_PATH_PROBES) {
     const marker = inspectPlanPrMarker(planMarker(path));
     assert.deepEqual(

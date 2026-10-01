@@ -2846,39 +2846,36 @@ const PLAN_PR_MARKER_OPENER = '<!-- effective-flow-plan-pr:';
 // separators `.` would otherwise stop at are the path rule's to refuse, as `unsafe-path`.
 const PLAN_PR_MARKER_LINE = /^<!-- effective-flow-plan-pr:v1 (.*) -->$/s;
 
-// The allowlist a plan path has to pass, as a marker's value and as `pr-list`'s `planPath` alike.
-// It follows the configuration path contract: `plan.dir` is free text, canonicalized before it is
-// written, and a plan's file name is free too, so a path may carry spaces, glob characters, and any
-// script. A caller joins the path onto a checkout and hands it to Git as one literal argument —
-// behind `--` and as a `:(literal)` pathspec — never through a shell, so what this rule keeps out
-// is what no literal argument can make harmless:
-// - repository-relative POSIX segments, none empty, `.` or `..`, so no leading `/` and no
-//   traversal, and none beginning with `-` (which Git or a shell would read as an option);
-// - each segment made of Unicode letters (`L`), marks (`M`, so a decomposed `u\u0308` passes as
-//   well as a precomposed `ü`), numbers (`N`), punctuation (`P`), the ASCII space, and the ASCII
-//   symbols `+`, `=`, `^` and `~` — which admits the glob characters `*`, `?`, `[` and `]`;
-// - none of the shell-significant characters `` ` ``, `$`, `;`, `|`, `<`, `>`, `"`, `'` and `&`,
-//   no backslash, and no `:` — which is what keeps a drive letter (`C:/…`, `c:…`), an NTFS stream
-//   name and Git's pathspec magic prefix out;
-// - well-formed UTF-16, and no control (`Cc`, the line feed included), format (`Cf` — the
-//   bidirectional overrides and the zero-width characters), line- or paragraph-separator character,
-//   and no whitespace other than the ASCII space;
-// - a `.md` suffix.
-// `PLAN_PATH_FORBIDDEN` carries both character refusals. It is load-bearing for `;`, `"`, `'`, `&`,
-// `\` and `:`, which are punctuation and so inside the segment alphabet; the rest it names lie
-// outside that alphabet already and are stated there so the refusal survives a later widening of
-// it. A `plan.dir`
-// that carries a refused character makes plan publication unavailable for the project rather than
-// weakening the rule.
-const PLAN_PATH_SEGMENT = /^(?!-)[\p{L}\p{M}\p{N}\p{P} +=^~]+$/u;
-const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}`$;|<>"'&\\:]|(?! )\s/u;
+// The rule a plan path has to pass, as a marker's value and as `pr-list`'s `planPath` alike. It
+// is the configuration path contract and nothing narrower: `plan.dir` is free text, canonicalized
+// to a repository-relative directory before it is written, and a plan's file name is free too, so a
+// path may carry spaces, glob characters, shell-significant characters such as `&`, `;`, `$` and
+// quotes, and any script. Shell safety is the consumers' duty, not this rule's: a caller passes the
+// path as one literal, quoted argument behind `--` and as a `:(literal)` pathspec wherever Git reads
+// a pathspec, and never interpolates it unquoted. In the marker a `"` travels JSON-escaped, which the
+// canonical `JSON.stringify` comparison already requires. What this rule refuses is only what makes a
+// path structurally unsafe or ambiguous:
+// - ill-formed UTF-16 (a lone surrogate half);
+// - a control (`Cc`, the line feed included), format (`Cf` — the bidirectional overrides and the
+//   zero-width characters), line- or paragraph-separator character;
+// - a backslash, which a Windows checkout reads as a separator;
+// - an absolute path — a leading `/`, which is an empty first segment — or a drive letter (`C:/…`,
+//   `c:…`); a leading `:` is refused with it, because it is Git's pathspec magic prefix and would
+//   change what a caller's pathspec means; a `:` anywhere else is an ordinary character;
+// - an empty, `.` or `..` segment, so no traversal and no non-canonical spelling;
+// - a missing `.md` suffix.
+// A segment beginning with `-` passes: behind `--` neither Git nor a quoted argument reads it as an
+// option.
+const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/u;
+const PLAN_PATH_DRIVE_OR_MAGIC = /^(?:[A-Za-z]:|:)/;
 
 function isSafePlanPath(path) {
   if (typeof path !== 'string' || path === '' || !path.isWellFormed()) return false;
-  if (PLAN_PATH_FORBIDDEN.test(path)) return false;
+  if (PLAN_PATH_FORBIDDEN.test(path) || PLAN_PATH_DRIVE_OR_MAGIC.test(path)) return false;
   const segments = path.split('/');
-  if (segments.some((segment) => segment === '.' || segment === '..')) return false;
-  if (!segments.every((segment) => PLAN_PATH_SEGMENT.test(segment))) return false;
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return false;
+  }
   return path.endsWith('.md');
 }
 

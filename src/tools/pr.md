@@ -244,11 +244,11 @@ base-branch-resolution
    - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
      and description, do not invoke `pr-create` or any metadata mutation, skip steps 9 and 10, and
      continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below.
-   - **Plan draft finish:** `P` is the match's valid `planPrMarker` path, `A` its archive path.
+   - **Plan draft finish:** `P` is the match's valid `planPrMarker` path, `A` its archive path; each reaches a command only as one single-quoted literal argument (a `'` inside written as `'\''`), never unquoted.
      It applies when a supplied `Finalize plan draft:` number equals the match's; there a differing
      number or a missing marker refuses the finish and is reported. On a direct invocation without
      that line (recovery), it applies to a draft whose head tracks `A` and not `P`:
-     `git -C <execution-root> ls-tree --name-only -z <head OID> -- <P> <A>` lists only `A`. The
+     `git -C <execution-root> ls-tree --name-only -z <head OID> -- ':(literal)<P>' ':(literal)<A>'` lists only `A`. The
      match proves open, same repository, and exact base. Require implementation evidence:
      `git -C <execution-root> diff --name-only -z --no-renames <merge-base> <head OID>`, from the
      merge base of step 4's diff base and the head, lists a path other than `P` and `A`. Then run

@@ -18105,7 +18105,9 @@ test('pr finishes a plan draft only on its number or as recovery, with evidence,
   assert.match(finish, near('`Finalize plan draft:` number', "equals the match's", 40));
   assert.match(finish, near('differing number or a missing marker', 'refuses the finish', 40));
   assert.ok(
-    finish.includes('`git -C <execution-root> ls-tree --name-only -z <head OID> -- <P> <A>`'),
+    finish.includes(
+      "`git -C <execution-root> ls-tree --name-only -z <head OID> -- ':(literal)<P>' ':(literal)<A>'`",
+    ),
   );
   assert.match(finish, near('ls-tree', 'lists only `A`', 120));
 

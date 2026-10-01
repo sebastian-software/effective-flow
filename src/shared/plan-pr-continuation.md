@@ -19,9 +19,14 @@ when: a worktree creation, lifecycle-record read or write, or adoption transitio
 ```
 
 Throughout, `P` is the plan's repository-relative path `<plan.dir>/<file>.md` and `A` is
-`<plan.dir>/archive/<file>.md`. Every helper call carries the verified `RUNTIME_STATE_ROOT` as its
-`cwd`, and every Git call names its root with `git -C`. Nothing here resets, rebases, amends,
-squashes, or force-updates a ref, force-pushes, or bypasses hooks.
+`<plan.dir>/archive/<file>.md`. `P`, `A`, and every path built from `<plan.dir>` reach a command
+only as one literal, quoted argument each — single-quoted, with every `'` inside written as `'\''` —
+behind `--` where the command takes one, and as `':(literal)<path>'` wherever Git reads a pathspec;
+they are never interpolated unquoted. The helper's path rule admits whatever `plan.dir` may hold,
+`&`, `;`, `$`, and quotes included, so this quoting is the only shell boundary. Every helper call
+carries the verified `RUNTIME_STATE_ROOT` as its `cwd`, and every Git call names its root with
+`git -C`. Nothing here resets, rebases, amends, squashes, or force-updates a ref, force-pushes, or
+bypasses hooks.
 
 ### Insertion point
 

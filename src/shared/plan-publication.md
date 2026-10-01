@@ -41,6 +41,12 @@ when: the publication worktree, its lifecycle record, or its record lock below `
   accepts only the republication arm of the three-way rule; any other outcome stops and is reported
   to the caller.
 
+`P`, `A`, and every path built from `<plan.dir>` reach a command only as one literal, quoted
+argument each — single-quoted, with every `'` inside written as `'\''` — behind `--` where the
+command takes one, and as `':(literal)<path>'` wherever Git reads a pathspec; they are never
+interpolated unquoted. The helper's path rule admits whatever `plan.dir` may hold, `&`, `;`, `$`,
+and quotes included, so this quoting is the only shell boundary.
+
 ### Mode and gates
 
 Decide these before any Git operation. The first entry that applies ends publication; under
@@ -298,6 +304,8 @@ Draft: requested
 Plan marker: <!-- effective-flow-plan-pr:v1 {"plan":"<plan.dir>/<file>.md"} -->
 Next steps: suppressed
 ```
+
+The marker carries `P` in its `JSON.stringify` spelling, so a `"` in it is written `\"`.
 
 `{{SKILL:pr}}` performs the normal push of the branch in its own push step and returns its report
 here. Require its `result: created`. A `reused` result means an open pull request already existed

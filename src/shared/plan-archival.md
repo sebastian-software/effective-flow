@@ -51,13 +51,18 @@ configuration:
 
 ### Detection
 
-In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the
-hidden arm below. Otherwise derive the two paths from the supplied basis, and check the basis first. If the basis already lies
-under `<plan.dir>/archive/`, this run has nothing to archive — take the archived-basis arm below and
-derive nothing. Otherwise `<file>.md` is the basis's file name, `P` is `<plan.dir>/<file>.md` and `A`
-is `<plan.dir>/archive/<file>.md`, both repository-relative. Deriving `A` from an archived basis
-would produce a nested `<plan.dir>/archive/archive/<file>.md`, which is why the basis check precedes
-the derivation rather than sitting in the table as a comparison of two paths that can never be equal.
+In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the hidden
+arm below. Otherwise derive the two paths from the supplied basis, and check the basis first. If the
+basis already lies under `<plan.dir>/archive/`, this run has nothing to archive — take the
+archived-basis arm below and derive nothing. Otherwise `<file>.md` is the basis's file name, `P` is
+`<plan.dir>/<file>.md` and `A` is `<plan.dir>/archive/<file>.md`, both repository-relative. `P`,
+`A`, and every path built from `<plan.dir>` reach a command only as one literal, quoted argument
+each — single-quoted, with every `'` inside written as `'\''` — behind `--` where the command takes
+one, and as `':(literal)<path>'` wherever Git reads a pathspec; they are never interpolated
+unquoted. The helper's path rule admits whatever `plan.dir` may hold, `&`, `;`, `$`, and quotes
+included, so this quoting is the only shell boundary. Deriving `A` from an archived basis would
+produce a nested `<plan.dir>/archive/archive/<file>.md`, which is why the basis check precedes the
+derivation rather than sitting in the table as a comparison of two paths that can never be equal.
 
 **The index of the delivery checkout decides the action.** `EXECUTION_ROOT` is the delivery
 checkout's **repository root**; `ls-files` output is relative to the directory it runs in, so a probe
@@ -154,12 +159,12 @@ Keying on the index removes both and makes this step idempotent.
 
 ### States
 
-| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                               |
-| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
-| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                     |
-| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                        |
+| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv -- <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                            |
+| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
+| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                        |
+| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                           |
 
 **The mark is applied to the taken-over copy, in `EXECUTION_ROOT`, never to the original in the main
 checkout.** The order is read → take over → mark. This supersedes the earlier
@@ -268,7 +273,7 @@ the delivery shape — worktree, in-place with delivery, and in-place without de
    hidden counterpart of read → take over → mark: a failure before the move leaves an
    implemented-marked plan at top level, which a retry archives, never an archived plan still marked
    open.
-6. Run `mkdir -p <plan.dir>/archive`, then move `P` to `A` with a plain no-clobber move
+6. Run `mkdir -p -- <plan.dir>/archive`, then move `P` to `A` with a plain no-clobber move
    (`mv -n`) and verify that `A` exists and `P` is gone. A move that `-n` declined because `A`
    appeared in the meantime is the collision stop: report both paths and that `P` already carries
    the implemented marker; nothing else changed.
