@@ -249,7 +249,9 @@ For new functionality or a larger change, this is the usual three-step process:
    follow-up questions if needed, and writes an implementable plan to `docs/plan/` – still without
    any code change. At the end, `plan` names the exact path of the generated plan file
    (e.g. `docs/plan/2026-07-17-user-login.md`) and recommends the appropriate
-   follow-up workflow (usually `build`).
+   follow-up workflow (usually `build`). With `delivery.completion` set to `pr` or `null`, `plan`
+   also offers once to publish the plan as a draft pull request; `build` then continues on that
+   pull request and marks it ready at completion.
 2. **`/effective-flow build docs/plan/2026-07-17-user-login.md`** hands over exactly that
    plan file and implements it: implementation, tests, docs, validation, and review in
    one run. Pass the path reported in step 1 explicitly – `build`

@@ -188,6 +188,12 @@ Retention is intentional whenever Effective Flow cannot prove that normal remova
 | Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                            | Use the owning harness or your normal Git workflow to manage it.                                                                                     |
 | Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                       | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                   |
 
+An `aborted` or `failed` worktree that a run on a
+[published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
+left behind can be resumed instead of recovered by hand: run the implementing tool on the same plan
+again, and it adopts that worktree when exactly one lifecycle record matches and every fresh check
+passes. Otherwise it stops and names the retained worktree.
+
 If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-failed` with the
 reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
 registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but

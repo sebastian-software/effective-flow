@@ -563,13 +563,13 @@ Describes the delivery branch, its base, its generated name, and its completion 
 no `delivery.enabled` setting: delivery is implied whenever work happens in a worktree or on a
 dedicated delivery branch.
 
-| Key            | Values                             | Default          | Meaning                                                            |
-| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                              |
-| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
-| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
-| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
-| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+| Key            | Values                             | Default          | Meaning                                                                                                                         |
+| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                                                                                           |
+| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`)                                                              |
+| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time; `pr` and `null` also let `plan` publish its plan as a draft PR |
+| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                                                                                            |
+| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`                                                                   |
 
 An empty `branchPrefix` drops the prefix segment and its slash, so branches read `<skill>/<slug>`
 (for example `build/user-login`). Empty is valid in every mode and is the default in
@@ -587,6 +587,22 @@ and the applied override without editing the ADR. Negated, hypothetical, descrip
 mentioned actions are not override evidence. Alternatives or simultaneous requests for several
 actions trigger a focused question and abort before delivery mutation if no single action is
 confirmed.
+
+The same row governs plan publication. With `pr` or `null`, `/effective-flow plan` offers once to
+publish a finished plan as a draft pull request; with `merge`, `branch`, or no row, the plan stays
+local and nothing is asked. Hidden mode never publishes a plan, and an invalid value makes
+publication unavailable. An implementing run that finds an open pull request for its plan decides
+on the effective completion. It completes as `pr` over a `null` or invalid row, and on an explicit
+`pr` request, which it reports as an override of a configured or missing `merge` or `branch` row.
+An effective `merge` or `branch`, including a missing row without such a request, stops the run
+rather than merge around the draft. If that run's plan pull-request discovery
+fails and the effective completion is `pr` or `null`, an interactive run asks once whether to
+**Continue** on a new branch or **Stop**. Do not run `merge-gate` or `iterate` on the plan pull
+request before `apply`: a commit they push that changes a path other than the plan makes that
+run's verification fail, while a pure merge of the base into the head passes. See
+[Publishing the plan as a draft pull request](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request)
+and
+[Continuing on a published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request).
 
 `/effective-flow deliver` is deliberately narrower: invoking it is itself affirmative `pr` intent.
 It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an

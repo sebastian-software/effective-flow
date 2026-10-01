@@ -363,6 +363,30 @@ test('the completion action and the pr tool root their forge work in the runtime
   ]) {
     assert.match(pr, step, 'every helper invocation in pr.md must carry the execution root');
   }
+
+  // The step-8 lookup keys on the helper's same-repository fact too. A fork's pull request can
+  // reuse this repository's head-branch name, so matching on head and base alone would let `pr`
+  // adopt — and a plan draft finish then retitle and mark ready — a pull request whose branch lives
+  // elsewhere. Only an absent fact is hydrated; still absent, the lookup aborts; `false` never
+  // matches and is never hydrated.
+  const lookupStart = pr.indexOf('8. **Look up an existing open PR:**');
+  const lookupEnd = pr.indexOf('9. **Derive the PR title', lookupStart);
+  assert.ok(
+    lookupStart !== -1 && lookupEnd > lookupStart,
+    'pr.md must keep its step-8 lookup ahead of step 9',
+  );
+  const lookup = pr.slice(lookupStart, lookupEnd).replace(/\s+/g, ' ');
+  assert.ok(lookup.includes('`sameRepository === true`'), 'the exact filter must require it');
+  assert.ok(
+    lookup.includes('`head === <head-branch>`') && lookup.includes('`base === <base-branch>`'),
+  );
+  assert.match(
+    lookup,
+    /without `sameRepository` is hydrated[^.]*; still absent, it aborts the lookup as incomplete output/,
+    'an absent same-repository fact must be hydrated and otherwise abort',
+  );
+  assert.match(lookup, /`false` is never hydrated or matched/);
+  assert.equal(lookup.includes('headRepository ==='), false, 'no slug comparison may remain');
 });
 
 test('the remote helper contract documents the working directory it runs in', () => {
