@@ -18610,6 +18610,96 @@ test('a first publication never copies onto a plan the base already tracks', () 
   ordered(rule, 'First publication:', 'publish nothing', 'Republication,');
 });
 
+test('plan publication reconciles the staged set from NUL-separated, never C-quoted, paths', async () => {
+  const publication = source('src/shared/plan-publication.md');
+  const reconcile = itemWith(
+    listItems(section(publication, '### Staging')),
+    'Reconcile the staged set',
+  );
+
+  // Invariant: the staged set is read with `-z`, so Git never C-quotes a Unicode or quoted plan
+  // path, and with `--no-renames`, so the archive move is always the same two literal entries.
+  includesAll(
+    reconcile,
+    [
+      '`git -C <WORKTREE_PATH> diff --cached --name-status -z --no-renames`',
+      'Split its output at NUL',
+      'byte for byte with `P` and `A`',
+      'never C-quotes',
+      'exactly one entry naming `P`',
+      'deletion (`D`) of `A`',
+      'a nonzero exit, or an empty staged diff stops before the commit',
+    ],
+    'the staged-set reconciliation',
+  );
+  assert.equal(
+    /diff --cached --name-status`/.test(publication),
+    false,
+    'no staged-set read may omit -z',
+  );
+
+  // The mechanic itself, on a plan path the plan.dir contract admits: a non-ASCII directory and
+  // file name with a double quote, moved back from the archive and restaged.
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'ef-staged-set-'));
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const git = (...args) =>
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'core.excludesFile=/dev/null',
+        '-C',
+        root,
+        ...args,
+      ],
+      {
+        env,
+        encoding: 'utf8',
+      },
+    );
+  try {
+    const planDir = 'docs/plän "x"';
+    const P = `${planDir}/2026-01-01-über.md`;
+    const A = `${planDir}/archive/2026-01-01-über.md`;
+    git('init', '-q');
+    mkdirSync(join(root, planDir, 'archive'), { recursive: true });
+    writeFileSync(join(root, A), '# Plan\n');
+    git('add', '--', `:(literal)${A}`);
+    git('commit', '-q', '-m', 'base');
+    git('mv', '--', A, P);
+    writeFileSync(join(root, P), '# Plan\n\nRevised.\n');
+    git('add', '--', `:(literal)${P}`);
+
+    const fields = git('diff', '--cached', '--name-status', '-z', '--no-renames').split('\0');
+    assert.equal(fields.pop(), '', 'the output ends with a NUL');
+    const entries = [];
+    for (let index = 0; index < fields.length; index += 2) {
+      entries.push([fields[index], fields[index + 1]]);
+    }
+    assert.deepEqual(
+      entries.sort((a, b) => a[1].localeCompare(b[1])),
+      [
+        ['A', P],
+        ['D', A],
+      ].sort((a, b) => a[1].localeCompare(b[1])),
+    );
+    // Without `-z`, the same read C-quotes both paths, so a literal comparison would reject them.
+    const quoted = git('-c', 'core.quotePath=true', 'diff', '--cached', '--name-status');
+    assert.equal(quoted.includes(P), false);
+    assert.equal(quoted.includes(A), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('publication and continuation share their filter, check 5, and branch-state rule byte for byte', () => {
   // Invariant (F20, F26, F12): the published side and the implementing side decide "is this our
   // plan pull request" and "may this local branch be used" by one mechanic. Two copies that drift

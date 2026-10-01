@@ -278,10 +278,13 @@ exit `1` fails, and any other exit stops the run.
    `<WORKTREE_PATH>/<P>`.
 4. Stage by explicit path only: `git -C <WORKTREE_PATH> add -- ':(literal)<P>'`. Never use
    `git add -A` or `git add .`.
-5. Reconcile the staged set with `git -C <WORKTREE_PATH> diff --cached --name-status`. It is
-   exactly `P`, or the `A` → `P` rename. Any other path, or an empty staged diff, stops before the
-   commit. Record the staged-tree OID from `git -C <WORKTREE_PATH> write-tree` and the pre-commit
-   `HEAD`.
+5. Reconcile the staged set with
+   `git -C <WORKTREE_PATH> diff --cached --name-status -z --no-renames`. Split its output at NUL
+   into status and path fields and compare each path byte for byte with `P` and `A`, so Git never
+   C-quotes a path with Unicode, quotes, or other special characters. The set is exactly one entry
+   naming `P`, or that entry plus the deletion (`D`) of `A`: that pair is the `A` → `P` rename. Any
+   other path, a nonzero exit, or an empty staged diff stops before the commit. Record the
+   staged-tree OID from `git -C <WORKTREE_PATH> write-tree` and the pre-commit `HEAD`.
 
 The invocation checkout keeps its state: the plan stays untracked there, and a revision's unstaged
 move back from the archive stays unstaged.

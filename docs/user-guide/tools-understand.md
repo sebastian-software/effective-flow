@@ -169,8 +169,10 @@ worktree in a Claude Code or Codex worktree session), pushes the branch
 `<delivery.branchPrefix>/<workflow>/<slug>`, and opens the draft through `/effective-flow pr`. It
 then reads the new pull request back and claims a draft only when the forge states one: Forgejo can
 ignore the work-in-progress prefix a draft rests on, and a pull request that is not confirmed as a
-draft is reported as a failure at `pr`, because the implementing run accepts only a draft. The
-commit type is `docs`, and hooks run. The title is `docs: plan <plan title>`, and the body names
+draft is reported as a failure at `pr`, because the implementing run accepts only a draft. Before
+the commit, `plan` checks that only the plan is staged, comparing Git's NUL-separated path list
+literally, so a plan path with non-ASCII letters or quotes publishes like any other. The commit type
+is `docs`, and hooks run. The title is `docs: plan <plan title>`, and the body names
 the plan path and its requirement summary. Once the commit is verified, the temporary worktree is
 removed after the push and pull-request step, whatever its outcome; a stop before that keeps the
 worktree and its branch for inspection. Your checkout keeps the plan untracked, exactly as `plan`
