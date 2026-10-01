@@ -1,0 +1,43 @@
+{
+  "name": "A critical incident after a failed start is still recorded against the inventory-proven generation with no affected record",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "external": [
+    {
+      "at": "before-start",
+      "operation": "start"
+    }
+  ],
+  "startResult": "INCOMPLETE_EVIDENCE",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "incident": "scope"
+    }
+  ],
+  "completion": "failed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "record-incident"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": ["scope"],
+    "finalize": null,
+    "events": []
+  }
+}

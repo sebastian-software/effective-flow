@@ -45,18 +45,19 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                                         |
-| -------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                  |
-| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                      |
-| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                |
-| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (Fast unavailable: select Quality with `profile-unavailable`) `` |
-| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                     |
-| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                         |
+| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                            |
+| -------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                     |
+| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                         |
+| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                   |
+| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) `` |
+| `{{BUILD_TARGET}}`         | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                |
+| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                        |
+| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                            |
 
 For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
 `ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
-`{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
+`{{BUILD_TARGET}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
 lazy-include pointers, and `{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
 interaction syntax is target-specific before worker and tool references receive their final
 target syntax.
@@ -246,10 +247,13 @@ The build aborts with an error message if any of these guards is violated:
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
   `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
   accepts only `fast`, only for an implementation worker selected by the validated routing table,
-  and only in `src/tools/build.md` or `src/tools/refactor.md`. A legacy `sf-` prefix (see "No
-  legacy aliases" above) is deliberately rejected with a migration message. The same guard also
-  runs during rendering (`transformRefs`), so no accepted placeholder can produce a non-existent
-  target. Both authorized workflow sources remain profile-reference-free in this work package.
+  and only inside the initial implementation phase of `src/tools/build.md` (between
+  `### Phase 2: Implementation` and `### Phase 3: Documentation`) or `src/tools/refactor.md`
+  (between `### Phase 3: Refactoring` and `### Phase 3.5: Documentation sync`). A legacy `sf-`
+  prefix (see "No legacy aliases" above) is deliberately rejected with a migration message. The
+  same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
+  non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
+  lines; `refactor` keeps its authorization but carries no token yet.
 - **Native profile-mapping guard:** Every registered base worker must supply nonempty native model
   and effort metadata. The centralized Fast mapping is complete for Claude and Codex, Claude effort
   uses the supported vocabulary, and each Codex model/reasoning combination is validated. The
@@ -428,9 +432,10 @@ The build aborts with an error message if any of these guards is violated:
   value, or illegal combination aborts the build before any rendered output reaches the atomic
   `dist/` swap. Focused positive and mutation/error coverage lives in
   `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
-  separate from the rendered native capability: the build now emits the sanctioned Claude
-  sidecars and native inventories, but no workflow includes the policy fragment or requests Fast,
-  and portable output contains no native profile artifact.
+  separate from the rendered native capability: the build emits the sanctioned Claude sidecars
+  and native inventories, `build` Phase 2 is the only workflow that lazy-loads the policy fragment
+  and requests Fast, `refactor` stays unadopted, and portable output contains no native profile
+  artifact.
 - **Pilot-measurement projection guards:** The execution-profile contract is projected into
   `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
   drift in that closed policy subset. The same module exports a measurement-only documentation
@@ -654,8 +659,13 @@ core or protocol modules:
   operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation
   operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
   `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
-  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. This capability ships before
-  activation: setup exposes no pilot action, and `build` and `refactor` request no Fast profile. The
+  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Two
+  callers use it besides the `merge-gate` observation: `build` records its measured runs, calls
+  `activate` automatically in an enabled baseline generation's preflight, and records incidents
+  through `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup
+  block 10 runs the confirmed `begin-baseline` and `resume` actions through
+  `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`, and
+  `refactor` does not call the helper. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
@@ -923,11 +933,14 @@ validated before rendering. The current operational mapping is Claude `sonnet`/`
 `gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
 configuration or the durable representation decision.
 
-The same token renders an explicit Quality/`profile-unavailable` result for portable managers,
-which still receive the normal worker-delegation bootstrap. Build guards reject native metadata,
+The same token renders an explicit Quality-only notice for portable managers, which still receive
+the normal worker-delegation bootstrap. A portable build records no gate reason: the pilot
+fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as unmeasured, whatever
+host runs it. Build guards reject native metadata,
 mapped aliases, Fast sidecar identifiers, inventories, and unresolved profile tokens in portable
-output. At present the token is authorized only in `build` and `refactor`, and neither source uses
-it: the representation exists, but no workflow adopts Fast yet.
+output. The token is authorized only in the initial implementation phase of `build` and
+`refactor`. `build` Phase 2 uses it for its five Fast-capable implementers; `refactor` does not use
+it yet.
 
 Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
 identical across harnesses; Claude's `fastWorkers` lists the five generated sidecars and Codex's is

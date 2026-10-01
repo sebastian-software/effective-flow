@@ -132,6 +132,23 @@ the active run or keep it blocked. Only an independent admitted residual may be 
 under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
 appropriate implementation workflow.
 
+**Fast field pilot:** `build` is the one workflow that takes part in the opt-in Quality/Fast pilot.
+Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot
+generation is in `baseline` or `active`, every implementer runs Quality and nothing is recorded.
+With the opt-in on a native harness, `build` classifies every initial implementation packet (its
+routing bucket, or a narrower plan packet with independent ownership) through the fail-closed
+eligibility gate before the first implementer starts, and records the run locally. During the
+baseline every packet still runs Quality. In an active generation, an eligible packet uses the Fast
+implementer for its first attempt only; coupled packets, unclear ownership, missing native
+capability, or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. If the Fast attempt
+fails, the routed Quality implementer continues exactly once from the retained changes in the same
+checkout, and it never returns to Fast. Every later correction—requirements repair, validator
+repair, review incorporation, final-validator repair, conflict resolution, and retries—uses Quality.
+Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
+each measured run first asks the helper to activate the generation, which happens automatically
+once the preregistered window and sample are met. Setup and baseline start are described under
+[Setup](tools-setup.md#fast-pilot-block); `refactor` has not adopted Fast.
+
 ## `/effective-flow fix`
 
 **Purpose:** Orchestrates the bugfix workflow: investigation, reproduction, gap analysis,

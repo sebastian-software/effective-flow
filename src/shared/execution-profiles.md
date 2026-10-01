@@ -6,8 +6,10 @@ native lower-cost, lower-latency implementation capability only for a bounded pa
 every gate below. Neither name identifies a provider model, and an enabled project key is never
 proof that the current host can enforce Fast.
 
-This fragment is reserved policy until an adopting workflow loads it. It defines no worker,
-requests no profile, writes no runtime state, and changes neither `build` nor `refactor` behavior.
+`build` adopts this policy for its Phase 2 initial implementation packets and loads it on demand;
+`refactor` and every other workflow have not adopted it. The fragment itself defines no worker and
+writes no runtime state: the adopting workflow requests the profile, and the workflow-record
+fragment and the shipped helper own measurement.
 
 <!-- execution-profile-profile:start -->
 
@@ -22,8 +24,8 @@ requests no profile, writes no runtime state, and changes neither `build` nor `r
 
 `executionProfiles.fast.enabled` is Boolean. Configuration and persisted generation state are
 independent: changing or removing the key never rewrites `generationState`, clears suspension, or
-starts a baseline. Setup remains the sole configuration writer, but does not expose this reserved
-key until a workflow adopts the policy.
+starts a baseline. Setup remains the sole configuration writer; `build`, the adopting workflow,
+only reads the key.
 
 <!-- execution-profile-config:start -->
 
@@ -105,7 +107,10 @@ not represented by these rows is illegal.
 <!-- execution-profile-state:end -->
 
 Disabled or invalid configuration stops new measurement and returns `not-evaluated + quality`
-without rewriting the persisted generation. `none` produces no pilot record. Baseline and active
+without rewriting the persisted generation. `none` produces no pilot record. An unmeasured run
+takes `generationState=none` as its effective envelope, not as a claim about the persisted
+generation; the orchestrator keeps an inventory-proven persisted state separately as the incident
+target. Baseline and active
 classify every packet; baseline always executes Quality while recording counterfactual
 eligibility. Suspended and review reject new reservations. Review may finalize already captured
 records without relabelling them.
@@ -137,9 +142,11 @@ Quality for retained-state continuation.
 ## Lifecycle and suspension interface
 
 Work package 3 is the sole owner of lifecycle persistence, the guarded operations below, the
-gitignored suspension record, and its digest-bound clear operation. Work package 4 may expose
-`begin-baseline` and `resume` only as guided setup actions after the stated disclosure and explicit
-confirmation. This work package defines the interface but creates no state.
+gitignored suspension record, and its digest-bound clear operation. Guided setup exposes
+`begin-baseline` and `resume` only as confirmed actions after the stated disclosure and explicit
+confirmation; no workflow run calls them. `activate` needs no confirmation of its own: the adopting
+workflow calls it automatically in a measured run's preflight, and the helper transitions only once
+the preregistered conditions pass. This fragment defines the interface but creates no state.
 
 <!-- execution-profile-transition:start -->
 
@@ -184,8 +191,9 @@ inventory before Fast.
 
 <!-- execution-profile-rule:end -->
 
-Portable is Quality-only in V1. A missing native mapping or spawn mechanism prevents a Fast
-attempt and records `profile-unavailable`. The same applies when
+Portable is Quality-only and unmeasured in V1: it evaluates no gate and records no reason. On a
+native build, a missing native mapping or spawn mechanism prevents a Fast attempt and records
+`profile-unavailable`. The same applies when
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present: detect presence only and never read, relay, or
 persist its value. A Fast spawn that was actually attempted but rejected consumes the sole attempt,
 records `spawn-rejected`, and continues once with Quality. Never claim profile enforcement that

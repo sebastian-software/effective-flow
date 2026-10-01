@@ -455,11 +455,15 @@ spawn parameters. The mappings and eligible route classification are centralized
 Portable builds do not receive inventories, Fast sidecars, aliases, or native profile metadata and
 remain Quality-only.
 
-This capability is rendered but not adopted: `src/tools/build.md` and
-`src/tools/refactor.md` are the only sources authorized to use a Fast profile reference, and both
-remain reference-free. A native artifact or valid inventory therefore does not make a current run
-select Fast. Later workflow adoption must still execute the runtime eligibility and capability gate
-immediately before selection. On Claude Code, the presence of
+`src/tools/build.md` and `src/tools/refactor.md` are the only sources authorized to use a Fast
+profile reference, each only inside its initial implementation phase. `build` adopts it: its
+Phase 2 carries the five Fast references inline on the implementer selector lines and lazy-loads
+the policy and the workflow-record fragment. `refactor` remains reference-free. A native artifact or
+valid inventory therefore does not make a run select Fast by itself: `build` executes the runtime
+eligibility and capability gate for every initial packet immediately before selection, uses Fast
+only for the first attempted spawn of an eligible packet in an active generation, and continues a
+failed attempt exactly once with the routed Quality implementer from the retained state in the same
+checkout. On Claude Code, the presence of
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` produces `profile-unavailable` and selects Quality; an actual
 host rejection after a Fast request remains the distinct `spawn-rejected` fallback.
 
@@ -477,9 +481,27 @@ gates, and enums. The build reconciles its policy projection with
 Configuration, lifecycle state, and native representation are intentionally independent. The
 strict `executionProfiles.fast.enabled` row admits a project to the lifecycle, a generation owns
 baseline/active/suspended/review state, and native inventories prove only that artifacts agree with
-their installation. No one layer activates another. In particular, setup exposes no pilot action
-and `build` and `refactor` still contain no Fast-profile reference. The subsystem can therefore be
-built and tested without changing current workflow selection.
+their installation. No one layer activates another. Guided setup block 10 writes the row and
+offers the confirmed `begin-baseline` and `resume` actions; `build` reads the row and the
+generation, never calls either action, and lets the helper activate a baseline generation, which
+it does only once the preregistered window and sample are met.
+
+`build` owns its workflow record through
+[`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md), loaded
+lazily in Phase 2. A measured run (enabled configuration, native harness, proven `baseline` or
+`active` generation) first calls `activate` when the generation is in `baseline`, classifies every
+initial packet under the state that results, reserves all of them with one `start`,
+calls `start-packet` immediately before each packet's first spawn and `finish-packet` when its
+initial phase ends, and calls `finalize` exactly once at every exit. Admission is serialized: any
+in-flight reservation makes `start` fail and the run proceeds as unmeasured Quality. A critical
+incident is recorded through `record-incident` by its category; the helper maps it to the
+suspending outcome. After any incident, no packet not yet spawned in that run attempts Fast, and an
+unpersisted incident is retried only on confirmation, otherwise pointing to Guided setup's
+`Disable`. The workflow never suspends for a failed finalization: the helper persists
+`finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
+the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
+because no later run holds the workflow capability; otherwise only `discard-generation` or `purge`
+clears the incomplete record. `refactor` records nothing yet.
 
 Minimal workflow records and optional detailed traces are separate channels. A trace requires an
 explicit request in the current run; project configuration cannot confer that consent and no

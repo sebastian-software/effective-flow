@@ -287,15 +287,60 @@ worktree-record-obligation
    receipt to every worker in phases 2–6 (implementation, docs, tests, validation, review);
    each write-capable boundary revalidates it and roots every operation there. Last, capture the
    diff baseline per "Diff baseline".
-1. Start the appropriate implementer skill with the agreed plan:
-   - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.`
-   - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.`
-   - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.`
-   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the {{AGENT:generic-product-implementer}} skill for this phase.`
-   - Tooling/CI/configuration/repository metadata: `Use the {{AGENT:generic-implementer}} skill for this phase.`
+
+```lazy-include
+execution-profiles
+when: Phase 2 classifies a packet, selects its implementation profile, or handles a Fast fallback
+```
+
+```lazy-include
+pilot-measurement-workflow
+when: step 0 is complete and packets are about to be classified, and at every exit once a pilot record is reserved
+```
+
+**Per-packet state.** After step 0, keep in transient orchestrator state a packet-to-path ownership
+map, the native profile-capability result, each coupling group, and per packet the four-field
+decision envelope, its decision-map `fallback`, `fastAttemptConsumed`, and any helper-returned
+`pilotControlOutcome`. A packet is the canonical routing bucket, or a narrower plan packet with
+independent ownership, requirements, and validation; never select a profile per file. Run the
+workflow-record preflight before the first implementation spawn; a reserved selection never
+changes. Only when the preflight proves a `baseline` or `active` generation, capture a freshly
+rooted **packet snapshot** (packet-scoped status and diff) immediately before every implementation
+spawn, for attribution and retained-state transfer only. Once a record is reserved, every exit
+applies the fragment's finalization.
+
+1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the
+   default; the Fast reference serves only the first attempted spawn of a packet whose envelope
+   selects `fast`, and `fastAttemptConsumed` is set immediately before that call:
+   - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
+   - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.
+   - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:rust-implementer:fast}}.
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the {{AGENT:generic-product-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:generic-product-implementer:fast}}.
+   - Tooling/CI/configuration/repository metadata: `Use the {{AGENT:generic-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:generic-implementer:fast}}.
    - Fullstack: both in parallel or in clearly separated subphases
-2. Check for the done protocol when delegating internally.
-3. Check the result against the requirements.
+
+2. Check for the done protocol when delegating internally. One keyword-less resume is the same
+   delegation; every retry is a new Quality spawn.
+3. Check the result against the requirements. For a packet whose Fast attempt returned without a
+   fallback, repairing a mismatch is its single `requirements-mismatch` transition of step 4,
+   before `finish-packet`. Every other mismatch, including one after a fallback's Quality
+   continuation, is a Quality correction round through the routed Quality implementer after
+   `finish-packet`; each packet has at most one Fast→Quality transition.
+4. **Fast→Quality transition.** Each of the eight post-attempt fallbacks consumes Fast and causes
+   exactly one transition: revalidate the receipt, then continue once with the routed Quality
+   implementer in the same checkout from the retained dirty state. The worktree stays `active`;
+   packet identity, scope, receipt, and Fast-consumed state never reset, every later spawn stays
+   Quality within the existing bounds, and a Quality failure never returns to Fast. After
+   `missing-context`, `scope-growth`, or `new-decision` the continuation first only inspects; a
+   write outside the original packet waits for orchestrator or user approval, and authorized growth
+   stays in that packet. Never append genuinely independent new work: stop and ask whether to
+   capture it as a future-work issue, or as a new plan without an issue tracker. The handoff is the
+   `execution-profiles` escalation transfer plus the approved source, write exclusions, initial
+   profile and tagged eligibility, packet snapshot summary, sibling dirty paths, skipped checks, and
+   `Fast consumed; no second Fast attempt`; it carries no pilot capability and ends with
+   `DONE`/`ABORT`. An unowned edit, terminal scope incident, or unrecoverable failure moves an owned
+   `active` worktree to `failed` only while receipt and runtime guards pass; otherwise preserve its
+   state and report that no safe transition was possible.
 
 ### Phase 3: Documentation
 
@@ -319,18 +364,19 @@ Start in parallel if possible:
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
 2. Give the user the complete list of all errors and warnings found.
-3. If errors are found: fix them directly or delegate again to the appropriate implementer.
+3. If errors are found: delegate the repair to the routed Quality implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
 
 ### Phase 6: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
-2. Aggregate all review findings, then make exactly one automatic incorporation pass for every new
-   finding that belongs to the authorized slice. Render again and re-run the affected review checks
-   once after that pass; do not weaken or consume the separate validator correction budget.
+2. Aggregate all review findings, then make exactly one automatic incorporation pass through the
+   routed Quality implementer for every new finding that belongs to the authorized slice. Render
+   again and re-run the affected review checks once after that pass; do not weaken or consume the
+   separate validator correction budget.
 3. Send the residual batch through the admission contract loaded by “Gated residual
    review-finding reports”. Severity remains review information, not an admission label:
-   - `current-scope`: correct or safely contain it now, then render again; completion stays blocked unless the user or
+   - `current-scope`: correct or safely contain it now through the routed Quality implementer, then render again; completion stays blocked unless the user or
      authorized plan/tracker owner explicitly reduces the slice
    - `admitted`: eligible for the common residual report path
    - `closed`: report only an aggregate count and short reason in chat
@@ -384,7 +430,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 ### Phase 7: Completion
 
-1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check.
+1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
 2. Document the completed workflow in the plan file, without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
@@ -437,8 +483,9 @@ Rules for the findings report:
 5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". Then discard the diff baseline.
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Run the worktree-record exit self-check.
-8. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
-9. Emit the next-step block per `next-steps` as the last element of the report.
+8. If Phase 2 reserved a pilot record, finalize it exactly once per the loaded `pilot-measurement-workflow` fragment, including its incident and finalization-failure paths.
+9. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
+10. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Rules
 
@@ -454,6 +501,7 @@ when: a commit message or Conventional Commit title is written
 - Always start independent specialist phases in parallel when they are truly independent
 - Give the user a short status update after each phase
 - If a phase reports errors, fix them before continuing
+- Every correction after the initial implementation phase – requirements, validator, review, final-validator, conflict-resolution, retry, and bounded completion corrections – is Quality-only through the routed Quality implementer
 - Skip optional steps only with a short justification; the documentation sync gate is not one of them
 - Give internal sub-agents the instruction:
   - first summarize the task in 2-3 sentences

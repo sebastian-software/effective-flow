@@ -1,12 +1,14 @@
 # Model-tiering pilot protocol
 
-This guide documents the shipped, local measurement protocol for the future Quality/Fast pilot.
-It explains the executable contract owned by
+This guide documents the shipped, local measurement protocol for the Quality/Fast field pilot of
+`build`. It explains the executable contract owned by
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
-[`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). It does
-not activate the pilot: setup exposes no baseline or activation action, `build` and `refactor`
-contain no Fast-profile reference, and portable execution remains Quality-only.
+[`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
+protocol itself activates nothing: Guided setup starts a baseline only through a confirmed action,
+`build` lets the helper activate that baseline automatically once its preregistered conditions
+pass, `build` is the only workflow that records runs and requests Fast, `refactor` has not adopted
+Fast, and portable execution remains Quality-only and unmeasured.
 
 ## Authority and drift control
 
@@ -136,6 +138,54 @@ closed lifecycle or packet lock grammar, validates the complete lock record and 
 the owner PID stale, and rechecks the same inode and digest before removal. Atomic-write temporary
 names contain the owning lock nonce; recovery authenticates that mapping and supports both lock
 classes.
+
+### Callers
+
+Three sources call the helper, each through a lazy fragment that owns its exact payloads:
+
+- **Guided setup block 10**
+  ([`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)) reads
+  `inventory` and offers at most one confirmed action for the proven state: `begin-baseline` for
+  `none`, and `resume` for a `suspended` generation whose evidence is healthy (every incomplete
+  count zero, no orphan temporary). `begin-baseline` binds the `protocol` version and digest;
+  `resume` binds the current inventory and suspension digests and restores only the stored prior
+  state. Setup never calls `activate`. `review` is terminal and never resumes. A portable build
+  offers no action.
+- **`build`**
+  ([`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md))
+  reads `inventory` only with an enabled configuration on a native Claude Code or Codex build, and
+  records only for a `baseline` or `active` generation. A portable build never calls the helper,
+  whatever host runs it. In a `baseline` generation every measured run first reads `protocol` and
+  calls `activate` without a confirmation: `activated` makes the reservation an `active` one, a
+  `not-ready` result with an unmet `window` or `sample` keeps the run a baseline run, `not-ready`
+  with `busy` keeps the baseline while the following `start` fails with `INCOMPLETE_EVIDENCE`, so
+  the run normally proceeds as unmeasured Quality, a `LOCKED` retry that stays locked keeps the
+  baseline, a genuine evidence fault makes the run unmeasured, and an ambiguous result is settled
+  by a fresh `inventory`. The order is then `start` once, after every initial packet is classified
+  and before the first implementation spawn; `start-packet` immediately before each packet's first
+  spawn, which is the start-before-spawn invariant the `attempt` rule relies on, and
+  `finish-packet` when its initial phase ends, including a failed Fast attempt and its single
+  Quality continuation; and `finalize` exactly once at every exit. A packet that never spawned gets
+  no timing operation and is recorded `not-started`; one still open when the run aborts is
+  recorded `started` with an unavailable duration. Any in-flight reservation makes `start` fail
+  with `INCOMPLETE_EVIDENCE`, so the run proceeds as unmeasured Quality. A critical incident is
+  recorded through `record-incident` by its category. After any critical incident, persisted or
+  not, no packet that has not yet spawned attempts Fast; a reserved Fast packet that runs Quality
+  for that reason finalizes as `scope-incident` with `escalated: true`, so it is charged to Fast
+  rather than counted as a Fast success. An incident the helper cannot persist yields only a
+  value-free alert and one same-run ask to retry it; otherwise the run reports that nothing durable
+  keeps later runs off Fast and that Guided setup's `Disable` is the confirmed recovery path.
+  `LOCKED` is retried with the identical payload at most twice more, after about two and then
+  about five seconds. A failed or impossible
+  finalization keeps the product diff and suspends nothing on the workflow side: the helper
+  persists `finalization-failed` itself on a mid-write fault. The run then offers a confirmed
+  `reconcile-record` once in the same run. For a still-open reservation it writes the record
+  `abandoned` with every packet `unknown`; for a record `finalize` already persisted before its
+  fault, it only drains the timing receipts and returns the stored `completionStatus`, which the
+  run reports. A declined or failed reconciliation leaves the record for `discard-generation` or `purge`. `build` never calls
+  `begin-baseline`, `resume`, or `suspend`.
+- **`merge-gate`** records the anonymous period observation described under "Evidence and
+  consent".
 
 ## Evidence and consent
 
@@ -312,7 +362,7 @@ manual deletion.
 
 - [Architecture](architecture.md#local-pilot-measurement-boundary) – separation between policy,
   representation, configuration, lifecycle state, and observations
-- [Configuration](configuration.md#reserved-execution-profile-key) – tracked ownership versus
+- [Configuration](configuration.md#execution-profile-key) – tracked ownership versus
   runtime ownership
 - [User privacy and retention guide](../user-guide/model-tiering-pilot.md) – operator-facing data,
   consent, review, and deletion contract

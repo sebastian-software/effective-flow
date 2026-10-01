@@ -48,9 +48,9 @@ resolution, or scope-growth continuation is Quality-only. If escalation is requi
 in the same verified checkout with the retained diff and a fresh orchestrator-owned transfer record;
 the Quality worker inspects that intermediate work first, and a second Fast attempt is forbidden.
 
-Pilot-control failures are separate from implementation fallback. The later protocol owner must
-persist suspension and incomplete-record controls where possible, block new Fast reservations until
-reconciliation, and require an explicit confirmed resume from suspended state. Configuration
+Pilot-control failures are separate from implementation fallback. The measurement protocol
+persists suspension and incomplete-record controls where possible, blocks new Fast reservations
+until reconciliation, and requires an explicit confirmed resume from suspended state. Configuration
 changes and a successful Quality run never clear that state automatically.
 
 The helper, not the workflow, decides each control outcome. A workflow records a critical incident
@@ -82,9 +82,13 @@ from project configuration. While a baseline or active generation exists, `merge
 anonymous period-level correction observations, but those observations carry no workflow-record or
 forge/repository identity and cannot be linked to a `build` or `refactor` run.
 
-Lifecycle capability still does not activate the pilot. Neither `build` nor `refactor` requests
-Fast, setup exposes no baseline action from which activation could follow, and portable output
-remains Quality-only.
+Lifecycle capability still does not activate the pilot by itself. `build` is the one adopting
+workflow: it reads the key and the generation, records its measured runs, lets the helper activate
+an enabled baseline generation automatically during a measured run's preflight once the
+preregistered conditions pass, and requests Fast only for an eligible native packet in an active
+generation. `refactor` has not adopted Fast. Guided setup exposes the opt-in and the confirmed
+`begin-baseline` and `resume` actions; no workflow run calls those two, and portable output remains
+Quality-only.
 Configuration, generation state, trace consent, native capability, and publication approval remain
 separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
 separately approved publication of a suppressed candidate. Normal purge is digest-bound and
@@ -119,8 +123,9 @@ generation identifier in the private review binding rather than either metric vi
 
 ## Consequences
 
-- Existing projects and current workflows retain Quality behavior until later adoption, an
-  explicitly confirmed baseline, and its automatic activation.
+- Existing projects retain Quality behavior until they opt in, explicitly confirm a baseline, and
+  that baseline activates automatically; `refactor` and every other non-adopting workflow stay
+  Quality-only.
 - The pilot can fail closed when configuration, evidence, lifecycle state, or native enforcement is
   uncertain.
 - A possible performance gain is deliberately forgone for excluded, coupled, corrective, portable,
@@ -147,7 +152,7 @@ rewriting the durable policy.
 ## References
 
 - [Execution-profile configuration](../user-guide/configuration.md#block-executionprofiles)
-- [Configuration ownership](../developer-guide/configuration.md#reserved-execution-profile-key)
+- [Configuration ownership](../developer-guide/configuration.md#execution-profile-key)
 - [Build-system guard](../developer-guide/build-system.md#guards)
 - [Pilot data and privacy](../user-guide/model-tiering-pilot.md)
 - [Pilot protocol](../developer-guide/model-tiering-pilot-protocol.md)
