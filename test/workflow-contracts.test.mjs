@@ -1566,6 +1566,19 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   );
   assert.deepEqual(sentPayloadKeys(text, 'Start'), pilotOperationKeys('beginBaseline'));
   assert.match(fragment, /`configState: "enabled"`, `fastEnabled: true`/);
+  // A failed, lost, or malformed begin-baseline response may still have written the baseline, so
+  // the outcome is reported only from a fresh read-only inventory, never as an unchanged state.
+  assert.doesNotMatch(fragment, /A failed action leaves proven state unchanged/);
+  assert.match(
+    fragment,
+    /A sent action whose response failed, was lost, or was malformed may still have completed its write, so the earlier proven state no longer holds/,
+  );
+  const afterStart = prose(boundedSlice(text, 'On `Start`, send exactly', '**`resume`.**'));
+  assert.match(
+    afterStart,
+    /After any failure, including a lost or malformed response, re-read the guarded, read-only `inventory` with exactly `runtimeStateRoot` and `repositoryIdentity` before reporting the outcome, and report the generation state it proves; never report the state as unchanged without that re-read, and an ambiguous or failed re-read reports the state as unknown/,
+  );
+  assert.match(afterStart, /Never re-send `begin-baseline` in the same run/);
 
   // activate is no setup action: the confirmed baseline is the only consent, and `build` activates
   // the generation automatically once the preregistered conditions pass.

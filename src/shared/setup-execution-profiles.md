@@ -63,8 +63,9 @@ positional argument and exactly one JSON object with exactly the listed keys on 
 absolute physical Git common directory. Accept only the single JSON envelope on standard output
 (`ok`, `operation`, and either `protocolDigest` plus `result` or `error`); never scrape standard
 error or interpolate prose into a payload. Report every failure value-free: the operation and its
-stable error code, never a payload value or rejected input. A failed action leaves proven state
-unchanged, and nothing is claimed that the helper did not return.
+stable error code, never a payload value or rejected input. A sent action whose response failed,
+was lost, or was malformed may still have completed its write, so the earlier proven state no
+longer holds; nothing is claimed that the helper did not return.
 
 1. Re-read `executionProfiles.fast.enabled` freshly through the configuration contract, then read
    the generation with `inventory` and exactly `runtimeStateRoot` and `repositoryIdentity`.
@@ -116,7 +117,12 @@ options:
 ```
 
 On `Start`, send exactly `runtimeStateRoot`, `repositoryIdentity`, `configState: "enabled"`,
-`fastEnabled: true`, `protocolVersion`, `protocolDigest`, and `confirmation: true`.
+`fastEnabled: true`, `protocolVersion`, `protocolDigest`, and `confirmation: true`. After any
+failure, including a lost or malformed response, re-read the guarded, read-only `inventory` with
+exactly `runtimeStateRoot` and `repositoryIdentity` before reporting the outcome, and report the
+generation state it proves; never report the state as unchanged without that re-read, and an
+ambiguous or failed re-read reports the state as unknown. Never re-send `begin-baseline` in the
+same run.
 
 **`resume`.** Offer it only while the guarded `inventory` proves `generationState=suspended` with
 healthy evidence and `configState=enabled`. Show the generation state and the exact
