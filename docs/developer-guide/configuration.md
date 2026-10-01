@@ -94,7 +94,8 @@ The canonical convention-file locator is:
 ## Worktree lifecycle runtime state
 
 `worktree-runs/` is runtime bookkeeping, not project configuration. Every newly created
-Effective Flow delivery, partial-diff, or `apply-review` component worktree receives a versioned
+Effective Flow delivery, partial-diff, plan-publication, or `apply-review` component worktree
+receives a versioned
 lifecycle record at
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`. The record binds the worktree to
 its verified repository, canonical path, branch, creation OID, workflow purpose, ownership,

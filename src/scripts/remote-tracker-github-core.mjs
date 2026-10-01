@@ -29,6 +29,7 @@ import {
   publishableText,
   publishedRef,
   publishedText,
+  publishedTitle,
   publishingVisibility,
   requireNumber,
   requireObject,
@@ -499,6 +500,24 @@ export function buildGithubCommandPlan(operation, input, repository) {
         jsonStdin({
           body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
         }),
+      );
+    // The same PATCH `pr-update-body` sends, carrying the title instead, and on stdin for the same
+    // reason: the dry-run preview publishes the argv.
+    case 'pr-update-title':
+      return mutationPlan(
+        'gh',
+        ['api', ...hostArgs, '-X', 'PATCH', ghEndpoint(`pulls/${prNumber(input)}`), '--input', '-'],
+        jsonStdin({ title: publishedTitle(payload, input) }),
+      );
+    // GitHub's draft state is its own field, and the REST API cannot clear it: only GraphQL's
+    // `markPullRequestReadyForReview` can, which `gh pr ready` wraps. The title is not touched here
+    // and a `payload.title` is not read — on GitHub the retitle is `pr-update-title`'s job.
+    case 'pr-mark-ready':
+      return mutationPlan(
+        'gh',
+        ['pr', 'ready', String(prNumber(input)), ...ghRepoArgs(repository)],
+        undefined,
+        { expectsJson: false },
       );
     case 'pr-comment':
       return mutationPlan(

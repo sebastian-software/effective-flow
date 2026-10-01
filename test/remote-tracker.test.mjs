@@ -29,6 +29,7 @@ import {
   compareDecompositionContainer,
   deduplicateFindings,
   executeOperation,
+  inspectPlanPrMarker,
   labelQueryVariants,
   parseIssueLifecycleReceipt,
   parseDecompositionChildWorkflow,
@@ -159,6 +160,13 @@ function teaProbeResults(overrides = {}) {
     // silently reassign every probe after it.
     help('labelList', '--output --exclude-org --page --limit'),
     help('apiInclude', '--include'),
+    // The two plan-publication probes, appended in the adapter's order: the title edit, then the
+    // draft flag together with tea's statement that a draft is a `WIP: ` title prefix.
+    help('pullEditTitle', '--title'),
+    help(
+      'pullCreateDraftWip',
+      '--draft  Create as a draft (prepends "WIP: " to the title; Gitea treats WIP-prefixed PRs as drafts)',
+    ),
   ];
 }
 
@@ -1054,12 +1062,13 @@ test('the ported Forgejo lists read labels as the array the raw API states', asy
 });
 
 test('the renderer label split survives for the paths that still consume tea output', async () => {
-  // The detail path still returns tea's rendering, so the whitespace split stays load-bearing there
-  // — and stays ambiguous for a multi-word label name, which is why the lists moved off it.
+  // The issue detail path still returns tea's rendering, so the whitespace split stays load-bearing
+  // there — and stays ambiguous for a multi-word label name, which is why the lists moved off it.
+  // `pr-read` moved to the raw API with them, because the renderer cannot state a head repository.
   const detail = async (labels) =>
     executeOperation(
-      'pr-read',
-      { repository: forgejoRepository, pullRequest: 6 },
+      'issue-read',
+      { repository: forgejoRepository, number: 6 },
       {
         runner: fakeRunner([
           {
@@ -10997,4 +11006,1482 @@ test('a probe reporting issueClose false refuses the close and performs zero run
     ]),
   );
   assert.equal(github.capabilities.issueClose, true);
+});
+
+// Plan publication: the head repository, the plan pull-request marker, the `planPath` filter, and
+// the two finishing mutations. The marker text is restated here rather than imported, so a change
+// to the wire format has to be made deliberately in both places.
+const PLAN_PATH = 'docs/plan/2026-08-20-plan-publication-before-implementation.md';
+
+function planMarker(plan = PLAN_PATH) {
+  return `<!-- effective-flow-plan-pr:v1 ${JSON.stringify({ plan })} -->`;
+}
+
+function planBody(marker = planMarker()) {
+  return `The implementation follows as further commits.\n\n${marker}`;
+}
+
+test('the plan pull-request marker parses only its exact own-line form', () => {
+  assert.deepEqual(inspectPlanPrMarker(planBody()), { status: 'valid', plan: PLAN_PATH });
+  // Whitespace around the line is the one tolerance, and every line ending is a line ending.
+  assert.deepEqual(inspectPlanPrMarker(`Intro\r\n   ${planMarker()}\t\r\nOutro`), {
+    status: 'valid',
+    plan: PLAN_PATH,
+  });
+  assert.deepEqual(inspectPlanPrMarker(planMarker('a.md')), { status: 'valid', plan: 'a.md' });
+
+  // A body that never has a marker line carries neither field — and a prose mention of the key,
+  // or a comment that is not spelled `<!-- effective-flow-plan-pr:`, is not a marker line.
+  for (const body of [
+    '',
+    'Plain body',
+    '<!-- effective-flow-issue-lifecycle:v1 {} -->',
+    undefined,
+    'effective-flow-plan-pr: docs/plan/a.md',
+    'The `effective-flow-plan-pr:` marker keys discovery.',
+    `<!--effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}"}-->`,
+    `<!--  effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}"} -->`,
+    '<!--\neffective-flow-plan-pr:v1 {"plan":"docs/plan/a.md"}\n-->',
+  ]) {
+    assert.deepEqual(inspectPlanPrMarker(body), { status: 'absent' }, JSON.stringify(body));
+  }
+
+  // A prose mention beside the one marker line is ignored rather than counted as a duplicate.
+  assert.deepEqual(
+    inspectPlanPrMarker(
+      `See effective-flow-plan-pr: below.\n${planMarker()}\nThe key is effective-flow-plan-pr:`,
+    ),
+    { status: 'valid', plan: PLAN_PATH },
+  );
+});
+
+test('the marker trim is spaces and tabs only, never String.prototype.trim()', () => {
+  assert.deepEqual(inspectPlanPrMarker(` \t ${planMarker()} \t `), {
+    status: 'valid',
+    plan: PLAN_PATH,
+  });
+  // Whitespace that `trim()` would remove is text here: in front of the comment it makes the line
+  // no marker line, so the comment has leading text; behind the closing `-->` it is trailing text.
+  for (const space of ['\u00a0', '\u2003', '\u3000', '\ufeff', '\v', '\f', '\u2028']) {
+    assert.deepEqual(
+      inspectPlanPrMarker(`${space}${planMarker()}`),
+      { status: 'invalid', error: 'not-own-line' },
+      `leading ${JSON.stringify(space)}`,
+    );
+  }
+  for (const space of ['\u00a0', '\u2003', '\u3000', '\ufeff', '\v', '\f']) {
+    assert.deepEqual(
+      inspectPlanPrMarker(`${planMarker()}${space}`),
+      { status: 'invalid', error: 'not-own-line' },
+      `trailing ${JSON.stringify(space)}`,
+    );
+  }
+});
+
+test('the marker parser does not interpret Markdown code fences', () => {
+  // A deliberate limit, pinned so it cannot drift silently: the line rule is the whole rule, so a
+  // marker line inside a fence is a marker line, and a fenced example beside the real marker makes
+  // the body a duplicate rather than being skipped as "only code".
+  const fenced = ['```', planMarker(), '```'].join('\n');
+  assert.deepEqual(inspectPlanPrMarker(fenced), { status: 'valid', plan: PLAN_PATH });
+  assert.deepEqual(inspectPlanPrMarker(`${fenced}\n\n${planMarker()}`), {
+    status: 'invalid',
+    error: 'duplicate',
+  });
+  // An indented block is a marker line too, because the indentation is spaces.
+  assert.deepEqual(inspectPlanPrMarker(`    ${planMarker()}`), {
+    status: 'valid',
+    plan: PLAN_PATH,
+  });
+  // A block quote's `> ` is text in front of the comment.
+  assert.deepEqual(inspectPlanPrMarker(`> ${planMarker()}`), {
+    status: 'invalid',
+    error: 'not-own-line',
+  });
+});
+
+test('every plan pull-request marker error has its stable code', () => {
+  const error = (body) => inspectPlanPrMarker(body).error;
+
+  // `duplicate`: two marker lines, whatever each of them holds.
+  assert.equal(error(`${planMarker()}\n${planMarker()}`), 'duplicate');
+  assert.equal(error(`${planMarker()}\n<!-- effective-flow-plan-pr:v2 -->`), 'duplicate');
+  assert.equal(error(`${planMarker()}\n  \t${planMarker('docs/plan/b.md')}`), 'duplicate');
+
+  // `not-own-line`: a marker comment with other text on its line — leading text when there is no
+  // marker line at all, or text after the closing `-->` of the one marker line.
+  assert.equal(error(`Plan: ${planMarker()}`), 'not-own-line');
+  assert.equal(error(`${planMarker()} trailing`), 'not-own-line');
+  assert.equal(error(`<!-- other --> ${planMarker()}`), 'not-own-line');
+  assert.equal(error(`Plan: ${planMarker()}\nAgain: ${planMarker()}`), 'not-own-line');
+  // With one marker line present, an embedded comment elsewhere is not judged at all.
+  assert.equal(inspectPlanPrMarker(`Plan: ${planMarker()}\n${planMarker()}`).status, 'valid');
+
+  // `-->` inside the JSON is not the comment's end: the exact form is tried first, so the JSON and
+  // the path rules judge it, and a `>` is an ordinary path character.
+  assert.deepEqual(inspectPlanPrMarker(planMarker('docs/plan/a-->b.md')), {
+    status: 'valid',
+    plan: 'docs/plan/a-->b.md',
+  });
+  assert.equal(
+    error(`<!-- effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}","x":"-->"} -->`),
+    'malformed',
+  );
+  assert.equal(error(`${planMarker('docs/plan/a-->b.md')} tail`), 'not-own-line');
+
+  // `malformed`: a marker line that is not the exact form, or not exactly `{"plan":"<string>"}`.
+  for (const body of [
+    `<!-- effective-flow-plan-pr:v2 {"plan":"${PLAN_PATH}"} -->`,
+    `<!-- effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}"}`,
+    `<!-- effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}"}-->`,
+    `<!-- effective-flow-plan-pr:v1 { "plan": "${PLAN_PATH}" } -->`,
+    `<!-- effective-flow-plan-pr:v1 {"plan":"${PLAN_PATH}","extra":1} -->`,
+    '<!-- effective-flow-plan-pr:v1 {"plan":42} -->',
+    '<!-- effective-flow-plan-pr:v1 ["docs/plan/a.md"] -->',
+    '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/a.md" -->',
+    '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/\\u0061.md"} -->',
+    // A `"` in a path travels JSON-escaped; the unescaped spelling is not JSON at all.
+    '<!-- effective-flow-plan-pr:v1 {"plan":"docs/plan/a"b.md"} -->',
+  ]) {
+    assert.equal(error(body), 'malformed', body);
+  }
+
+  // `unsafe-path`: the exact form with a path that breaks a rule.
+  for (const path of [
+    'docs/plan/../secrets.md',
+    '../plan.md',
+    '/etc/plan.md',
+    'C:/plan.md',
+    'c:plan.md',
+    'docs\\plan\\a.md',
+    'docs//plan.md',
+    'docs/./plan.md',
+    './plan.md',
+    'docs/plan/',
+    'docs/plan/a.txt',
+    'docs/plan/a.MD',
+    'docs/plan/a\n.md',
+    '',
+  ]) {
+    assert.equal(error(planMarker(path)), 'unsafe-path', JSON.stringify(path));
+  }
+});
+
+// The plan path rule, probed on both of its inputs: the marker's value and `pr-list`'s `planPath`.
+// It is the configuration path contract, so a free-text `plan.dir` and a free plan file name pass,
+// shell-significant characters included; every refusal is a shape or character that makes a path
+// structurally unsafe or ambiguous.
+const PLAN_PATH_PROBES = [
+  // Admitted: the shapes a plan file has, letters of any script included.
+  [PLAN_PATH, true],
+  ['a.md', true],
+  ['docs/plan/archive/2026-01-02-x.md', true],
+  ['docs/plan/über-änderung.md', true],
+  ['docs/plan/計画.md', true],
+  ['docs/plan/v1.2_final.md', true],
+  ['.effective-flow/plan/2026-01-01-x.md', true],
+  // Admitted: spaces, which a free-text `plan.dir` and a plan's file name may both carry, and any
+  // other space separator, which is no control, format or line character.
+  ['docs/my plans/2026-01-01-x.md', true],
+  ['docs/plan/2026-01-01-über plan.md', true],
+  ['docs/plan/a b.md', true],
+  ['docs/plan/ -a.md', true],
+  ['docs/plan/a\u00a0b.md', true],
+  ['docs/plan/a\u3000b.md', true],
+  // Admitted: glob characters, which Git reads literally behind a `:(literal)` pathspec.
+  ['docs/plan[1]/x.md', true],
+  ['docs/plan/a*b.md', true],
+  ['docs/plan/a?.md', true],
+  ['docs/plan/[a].md', true],
+  // Admitted: a decomposed umlaut (NFD), whose combining mark is `M`, beside the precomposed one.
+  ['docs/plan/u\u0308ber.md', true],
+  // Admitted: punctuation and symbols of every kind.
+  ['docs/plan/a#b.md', true],
+  ['docs/plan/a%2e%2e.md', true],
+  ['docs/plan/(draft) a, b!.md', true],
+  ['docs/plan/{x}@y.md', true],
+  ['docs/plan/c++=^.md', true],
+  ['~/plan.md', true],
+  ['docs/plan/„Zitat“ – x….md', true],
+  ['docs/plan/a€.md', true],
+  ['docs/plan/a\u2215b.md', true],
+  // Admitted: the shell-significant characters, one probe each — a consumer passes the path as one
+  // literal, quoted argument, so none of them reaches a shell as syntax.
+  ['docs/R&D plans/2026-01-01-x.md', true],
+  ['docs/plan/a&b.md', true],
+  ['docs/plan/a;b.md', true],
+  ['docs/plan/$HOME.md', true],
+  ['docs/plan/$(id).md', true],
+  ['docs/plan/a`b.md', true],
+  ['docs/plan/a|b.md', true],
+  ['docs/plan/a<b.md', true],
+  ['docs/plan/a>b.md', true],
+  ['docs/plan/a"b.md', true],
+  ["docs/plan/a'b.md", true],
+  ["docs/plan/'; rm -rf ~; '.md", true],
+  // Admitted: a segment that begins with `-`, which behind `--` is no option.
+  ['-rf.md', true],
+  ['docs/-plan/a.md', true],
+  ['docs/plan/--output=x.md', true],
+  // Admitted: a `:` that is neither a drive letter nor the path's first character.
+  ['docs/plan:a.md', true],
+  ['docs/plan/a:b.md', true],
+  // Bidirectional overrides and zero-width characters are `Cf`.
+  ['docs/plan/\u202egpj.md', false],
+  ['docs/plan/\u2066a\u2069.md', false],
+  ['docs/plan/a\u200b.md', false],
+  ['docs/plan/\ufeffa.md', false],
+  ['docs/plan/a\u00ad.md', false],
+  // Line and paragraph separators and controls, the tab and the line feed included.
+  ['docs/plan/a\u2028.md', false],
+  ['docs/plan/a\u2029.md', false],
+  ['docs/plan/a\u0085.md', false],
+  ['docs/plan/a\u007f.md', false],
+  ['docs/plan/a\n.md', false],
+  ['docs/plan/a\r.md', false],
+  ['docs/plan/a\t.md', false],
+  ['docs/plan/a\u0000.md', false],
+  // Not well-formed UTF-16: a lone surrogate half.
+  ['docs/plan/a\ud800.md', false],
+  ['docs/plan/\udc00a.md', false],
+  // A backslash, a drive letter, and a leading `:`, which is Git's pathspec magic prefix.
+  ['docs\\plan\\a.md', false],
+  ['docs/plan/a\\b.md', false],
+  ['C:/plan.md', false],
+  ['c:plan.md', false],
+  ['Z:docs/plan/a.md', false],
+  [':(glob)docs/*.md', false],
+  [':docs/plan/a.md', false],
+  // Shape: absolute, empty, `.` and `..` segments, and the `.md` suffix.
+  ['/docs/plan/a.md', false],
+  ['docs//plan/a.md', false],
+  ['docs/./plan/a.md', false],
+  ['./docs/plan/a.md', false],
+  ['docs/plan/../a.md', false],
+  ['../plan.md', false],
+  ['docs/plan/a.md/', false],
+  ['docs/plan/a.md.txt', false],
+  ['docs/plan/a.MD', false],
+  ['docs/plan/a', false],
+  ['', false],
+];
+
+test('the plan path rule decides the marker and planPath alike', async () => {
+  for (const [path, admitted] of PLAN_PATH_PROBES) {
+    const marker = inspectPlanPrMarker(planMarker(path));
+    assert.deepEqual(
+      marker,
+      admitted ? { status: 'valid', plan: path } : { status: 'invalid', error: 'unsafe-path' },
+      `marker ${JSON.stringify(path)}`,
+    );
+    const runner = fakeRunner([{ status: 0, stdout: '[]', stderr: '' }]);
+    const envelope = await executeOperation(
+      'pr-list',
+      { repository: githubRepository, planPath: path },
+      { runner, skipProbe: true },
+    );
+    assert.equal(envelope.ok, admitted, `planPath ${JSON.stringify(path)}`);
+    if (!admitted) {
+      assert.equal(envelope.error.details.field, 'planPath');
+      assert.equal(runner.calls.length, 0);
+    }
+  }
+});
+
+function githubPlanPull(overrides = {}) {
+  return {
+    number: 7,
+    title: 'docs: plan publication',
+    body: planBody(),
+    state: 'open',
+    draft: true,
+    html_url: 'https://github.com/example/flow/pull/7',
+    labels: [],
+    head: { ref: 'effective-flow/build/plan', repo: { full_name: 'example/flow' } },
+    base: { ref: 'develop', repo: { full_name: 'example/flow' } },
+    ...overrides,
+  };
+}
+
+function forgejoPlanPull(overrides = {}) {
+  return {
+    number: 7,
+    title: 'WIP: docs: plan publication',
+    body: planBody(),
+    state: 'open',
+    draft: true,
+    html_url: 'https://code.example.test/team/flow/pulls/7',
+    labels: [],
+    head: {
+      label: 'effective-flow/build/plan',
+      ref: 'effective-flow/build/plan',
+      repo: { full_name: 'team/flow', name: 'flow', owner: { login: 'team' } },
+    },
+    base: { label: 'develop', ref: 'develop', repo: { full_name: 'team/flow' } },
+    ...overrides,
+  };
+}
+
+const TEA_OK = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n';
+
+test('GitHub pr-read reports the head repository, a stated null, and a silent payload apart', async () => {
+  const read = async (pull) =>
+    executeOperation(
+      'pr-read',
+      { repository: githubRepository, number: 7 },
+      {
+        runner: fakeRunner([{ status: 0, stdout: JSON.stringify(pull), stderr: '' }]),
+        skipProbe: true,
+      },
+    );
+
+  const own = await read(githubPlanPull());
+  assert.equal(own.ok, true);
+  assert.equal(own.data.result.headRepository, 'example/flow');
+  assert.equal(own.data.result.planPrMarker, PLAN_PATH);
+  assert.equal(own.data.result.planPrMarkerError, undefined);
+  assert.equal(own.data.result.draft, true);
+
+  const fork = await read(
+    githubPlanPull({
+      head: { ref: 'effective-flow/build/plan', repo: { full_name: 'someone/flow' } },
+    }),
+  );
+  assert.equal(fork.data.result.headRepository, 'someone/flow');
+
+  // A deleted fork: GitHub states `head.repo: null`, which is a statement, and it stays one.
+  const deleted = await read(
+    githubPlanPull({ head: { ref: 'effective-flow/build/plan', repo: null } }),
+  );
+  assert.equal(Object.hasOwn(deleted.data.result, 'headRepository'), true);
+  assert.equal(deleted.data.result.headRepository, null);
+
+  // A payload that does not state the key says nothing, so the record carries no field at all.
+  const silent = await read(githubPlanPull({ head: { ref: 'effective-flow/build/plan' } }));
+  assert.equal(Object.hasOwn(silent.data.result, 'headRepository'), false);
+
+  const invalid = await read(githubPlanPull({ body: `Plan: ${planMarker()}` }));
+  assert.equal(invalid.data.result.planPrMarker, undefined);
+  assert.equal(invalid.data.result.planPrMarkerError, 'not-own-line');
+
+  const plain = await read(githubPlanPull({ body: 'No marker here.' }));
+  assert.equal(Object.hasOwn(plain.data.result, 'planPrMarker'), false);
+  assert.equal(Object.hasOwn(plain.data.result, 'planPrMarkerError'), false);
+});
+
+test('Forgejo pr-read reads the raw API object, which states the head repository', async () => {
+  const plan = buildCommandPlan('pr-read', { number: 7 }, forgejoRepository);
+  assert.deepEqual(plan, {
+    executable: 'tea',
+    args: ['api', 'repos/team/flow/pulls/7', '--include', '--login', 'work', '--repo', 'team/flow'],
+  });
+
+  const read = async (pull, stderr = TEA_OK) =>
+    executeOperation(
+      'pr-read',
+      { repository: forgejoRepository, number: 7 },
+      {
+        runner: fakeRunner([{ status: 0, stdout: JSON.stringify(pull), stderr }]),
+        skipProbe: true,
+      },
+    );
+
+  const own = await read(forgejoPlanPull());
+  assert.equal(own.ok, true);
+  assert.deepEqual(own.data.result, {
+    number: 7,
+    title: 'WIP: docs: plan publication',
+    body: planBody(),
+    state: 'open',
+    labels: [],
+    url: 'https://code.example.test/team/flow/pulls/7',
+    repository: 'team/flow',
+    head: 'effective-flow/build/plan',
+    base: 'develop',
+    draft: true,
+    headRepository: 'team/flow',
+    sameRepository: true,
+    planPrMarker: PLAN_PATH,
+  });
+
+  // A fork keeps its bare branch as `head`; only the head repository tells it apart.
+  const fork = await read(
+    forgejoPlanPull({
+      head: {
+        label: 'effective-flow/build/plan',
+        ref: 'effective-flow/build/plan',
+        repo: { full_name: 'someone/flow' },
+      },
+    }),
+  );
+  assert.equal(fork.data.result.head, 'effective-flow/build/plan');
+  assert.equal(fork.data.result.headRepository, 'someone/flow');
+
+  // `full_name` absent: the owner and name the object states compose the same slug.
+  const composed = await read(
+    forgejoPlanPull({
+      head: { ref: 'topic', repo: { name: 'flow', owner: { login: 'someone' } } },
+    }),
+  );
+  assert.equal(composed.data.result.headRepository, 'someone/flow');
+
+  // A deleted fork: `services/convert` leaves the ref at the pull ref and the repository at null.
+  const deleted = await read(
+    forgejoPlanPull({ head: { label: 'topic', ref: 'refs/pull/7/head', repo: null } }),
+  );
+  assert.equal(deleted.data.result.head, 'topic');
+  assert.equal(deleted.data.result.headRepository, null);
+
+  // An object without a usable name is no statement either.
+  const unusable = await read(forgejoPlanPull({ head: { ref: 'topic', repo: { id: 3 } } }));
+  assert.equal(Object.hasOwn(unusable.data.result, 'headRepository'), false);
+
+  const duplicated = await read(forgejoPlanPull({ body: `${planMarker()}\n${planMarker()}` }));
+  assert.equal(duplicated.data.result.planPrMarkerError, 'duplicate');
+
+  // `tea api` exits 0 on a 404, so the status line decides — a refusal is never a pull request.
+  const missing = await read({ message: 'not found' }, 'HTTP/1.1 404 Not Found\r\n');
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, 'COMMAND_FAILED');
+  assert.equal(missing.error.details.status, 404);
+});
+
+test('the Forgejo pr-update-body guard reads the raw pull request through its status line', async () => {
+  const current = 'Old body';
+  const input = {
+    repository: forgejoRepository,
+    number: 7,
+    expectedBodyHash: bodyHash(current),
+    payload: { body: `New body\n\n${planMarker()}` },
+  };
+  const runner = fakeRunner([
+    { status: 0, stdout: JSON.stringify(forgejoPlanPull({ body: current })), stderr: TEA_OK },
+    { status: 0, stdout: '', stderr: '' },
+  ]);
+  const applied = await executeOperation('pr-update-body', input, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.deepEqual(runner.calls[0].args.slice(0, 3), [
+    'api',
+    'repos/team/flow/pulls/7',
+    '--include',
+  ]);
+  assert.deepEqual(runner.calls[1].args.slice(0, 3), ['pulls', 'edit', '7']);
+
+  const refused = await executeOperation('pr-update-body', input, {
+    runner: fakeRunner([
+      {
+        status: 0,
+        stdout: '{"message":"token is required"}',
+        stderr: 'HTTP/1.1 401 Unauthorized\r\n',
+      },
+    ]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(refused.error.details.status, 401);
+});
+
+test('pr-list reports the head repository on both providers', async () => {
+  const github = await executeOperation(
+    'pr-list',
+    { repository: githubRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            githubPlanPull(),
+            githubPlanPull({ number: 8, head: { ref: 'effective-flow/build/plan', repo: null } }),
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(
+    github.data.result.map((item) => item.headRepository),
+    ['example/flow', null],
+  );
+  // Without `planPath` the list keeps its bodies, exactly as before.
+  assert.equal(github.data.result[0].body, planBody());
+
+  const forgejo = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            forgejoPlanPull(),
+            forgejoPlanPull({
+              number: 8,
+              head: { label: 'topic', ref: 'refs/pull/8/head', repo: null },
+            }),
+          ]),
+          stderr: TEA_OK,
+        },
+        { status: 0, stdout: '[]', stderr: TEA_OK },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.ok, true);
+  assert.deepEqual(
+    forgejo.data.result.map((item) => item.headRepository),
+    ['team/flow', null],
+  );
+});
+
+test('the planPath filter keeps only exact marker matches and never returns a body', async () => {
+  const other = 'docs/plan/2026-09-01-other.md';
+  const pulls = [
+    githubPlanPull({ number: 1 }),
+    githubPlanPull({ number: 2, body: planBody(planMarker(other)) }),
+    githubPlanPull({ number: 3, body: `${planMarker()}\n${planMarker()}` }),
+    githubPlanPull({ number: 4, body: `Plan: ${planMarker()}` }),
+    githubPlanPull({ number: 5, body: `Mentions ${PLAN_PATH} in prose only.` }),
+    githubPlanPull({
+      number: 6,
+      body: planBody(),
+      head: { ref: 'effective-flow/build/plan', repo: { full_name: 'someone/flow' } },
+    }),
+  ];
+  const list = async (repository, items, extra = {}) =>
+    executeOperation(
+      'pr-list',
+      { repository, planPath: PLAN_PATH, ...extra },
+      {
+        runner: fakeRunner([
+          {
+            status: 0,
+            stdout: JSON.stringify(items),
+            stderr: repository === forgejoRepository ? TEA_OK : '',
+          },
+          { status: 0, stdout: '[]', stderr: TEA_OK },
+        ]),
+        skipProbe: true,
+      },
+    );
+
+  const github = await list(githubRepository, pulls);
+  assert.equal(github.ok, true);
+  // The fork carries the same marker and is returned: the marker is a key, never a verdict, and
+  // the head repository beside it is what a caller decides with.
+  assert.deepEqual(
+    github.data.result.map((item) => [item.number, item.headRepository, item.planPrMarker]),
+    [
+      [1, 'example/flow', PLAN_PATH],
+      [6, 'someone/flow', PLAN_PATH],
+    ],
+  );
+  for (const item of github.data.result) assert.equal(Object.hasOwn(item, 'body'), false);
+  assert.deepEqual(Object.keys(github.data.result[0]).sort(), [
+    'base',
+    'draft',
+    'head',
+    'headRepository',
+    'labels',
+    'number',
+    'planPrMarker',
+    'repository',
+    'sameRepository',
+    'state',
+    'title',
+    'url',
+  ]);
+
+  // Composes with the head filter.
+  const headFiltered = await list(githubRepository, pulls, { head: 'other' });
+  assert.deepEqual(headFiltered.data.result, []);
+
+  const forgejo = await list(forgejoRepository, [
+    forgejoPlanPull(),
+    forgejoPlanPull({ number: 9, body: planBody(planMarker(other)) }),
+  ]);
+  assert.equal(forgejo.ok, true);
+  assert.deepEqual(
+    forgejo.data.result.map((item) => item.number),
+    [7],
+  );
+  assert.equal(Object.hasOwn(forgejo.data.result[0], 'body'), false);
+});
+
+test('a planPath pr-list states each item draft flag on both providers', async () => {
+  // Plan publication and continuation accept a candidate only while its `draft` is `true`, and
+  // publication confirms a created plan pull request through this same read. Both providers state
+  // the flag on the raw API object; an item that states none is reported as not a draft, so an
+  // unstated draft state can never pass for a draft.
+  const { draft: _omitted, ...unstated } = githubPlanPull({ number: 3 });
+  const github = await executeOperation(
+    'pr-list',
+    { repository: githubRepository, planPath: PLAN_PATH },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            githubPlanPull({ number: 1 }),
+            githubPlanPull({ number: 2, draft: false }),
+            unstated,
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(github.ok, true);
+  assert.deepEqual(
+    github.data.result.map((item) => [item.number, item.draft]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+    ],
+  );
+
+  const { draft: _forgejoOmitted, ...forgejoUnstated } = forgejoPlanPull({ number: 3 });
+  const forgejo = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository, planPath: PLAN_PATH },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            forgejoPlanPull({ number: 1 }),
+            // Forgejo computes `draft` from the title, so a WIP request it ignored reads as ready.
+            forgejoPlanPull({ number: 2, title: 'docs: plan publication', draft: false }),
+            forgejoUnstated,
+          ]),
+          stderr: TEA_OK,
+        },
+        { status: 0, stdout: '[]', stderr: TEA_OK },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.ok, true);
+  assert.deepEqual(
+    forgejo.data.result.map((item) => [item.number, item.draft]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+    ],
+  );
+});
+
+test('an unsafe planPath is refused before any provider call', async () => {
+  for (const planPath of ['../plan.md', '/abs/plan.md', 'docs/plan/a.txt', 42, '']) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'pr-list',
+      { repository: githubRepository, planPath },
+      { runner },
+    );
+    assert.equal(envelope.ok, false, String(planPath));
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(envelope.error.details.field, 'planPath');
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
+test('the probes report the title-update and mark-ready capabilities', async () => {
+  const github = await probeProvider(
+    githubRepository,
+    fakeRunner([
+      { status: 0, stdout: 'gh version 2.70.0\n', stderr: '' },
+      { status: 0, stdout: '', stderr: '' },
+    ]),
+  );
+  assert.equal(github.capabilities.pullRequestTitleUpdate, true);
+  assert.equal(github.capabilities.pullRequestMarkReady, true);
+  assert.equal(github.capabilities.pullRequestDraftCreate, true);
+
+  const forgejo = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(forgejo.capabilities.pullRequestTitleUpdate, true);
+  assert.equal(forgejo.capabilities.pullRequestMarkReady, true);
+  assert.equal(forgejo.capabilities.pullRequestDraftCreate, true);
+
+  // Calls 21 and 22 are the two new probes, and they ask exactly these questions.
+  const runner = fakeRunner(teaProbeResults());
+  await probeProvider(forgejoRepository, runner);
+  assert.deepEqual(runner.calls.at(-2).args, ['pulls', 'edit', '--help']);
+  assert.deepEqual(runner.calls.at(-1).args, ['pulls', 'create', '--help']);
+
+  // A tea whose `--draft` does not state the WIP-prefix semantics cannot be finished by a title
+  // edit, so mark-ready is unsupported there even though drafts can still be created.
+  const silentDraft = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({
+        pullCreateDraftWip: { status: 0, stdout: '--draft  Create as a draft', stderr: '' },
+      }),
+    ),
+  );
+  assert.equal(silentDraft.capabilities.pullRequestDraftCreate, true);
+  assert.equal(silentDraft.capabilities.pullRequestTitleUpdate, true);
+  assert.equal(silentDraft.capabilities.pullRequestMarkReady, false);
+
+  const noTitle = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({ pullEditTitle: { status: 1, stdout: '', stderr: 'unknown flag' } }),
+    ),
+  );
+  assert.equal(noTitle.capabilities.pullRequestTitleUpdate, false);
+  assert.equal(noTitle.capabilities.pullRequestMarkReady, false);
+  assert.equal(noTitle.capabilities.pullRequestUpdate, true);
+});
+
+test('GitHub pr-update-title plans a title PATCH, dry run first', async () => {
+  const input = {
+    repository: githubRepository,
+    number: 7,
+    payload: { title: 'feat: publish the plan before implementation' },
+  };
+  const dryRun = await executeOperation('pr-update-title', input, { skipProbe: true });
+  assert.equal(dryRun.ok, true);
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(dryRun.data.command, {
+    executable: 'gh',
+    args: ['api', '-X', 'PATCH', 'repos/example/flow/pulls/7', '--input', '-'],
+    stdin: `${JSON.stringify({ title: 'feat: publish the plan before implementation' })}\n`,
+  });
+  assert.equal(dryRun.data.capability, true);
+
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify(
+        githubPlanPull({ title: 'feat: publish the plan before implementation' }),
+      ),
+      stderr: '',
+    },
+  ]);
+  const applied = await executeOperation('pr-update-title', input, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.dryRun, false);
+  assert.equal(runner.calls.length, 1);
+  assert.equal(runner.calls[0].stdin, dryRun.data.command.stdin);
+  assert.equal(applied.data.result.title, 'feat: publish the plan before implementation');
+  // Only the two reads carry the discovery fields.
+  assert.equal(Object.hasOwn(applied.data.result, 'headRepository'), false);
+  assert.equal(Object.hasOwn(applied.data.result, 'planPrMarker'), false);
+
+  const unsupported = await executeOperation(
+    'pr-update-title',
+    { ...input, probe: { executable: 'gh', capabilities: { pullRequestTitleUpdate: false } } },
+    { skipProbe: true, apply: true, runner: fakeRunner([]) },
+  );
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(unsupported.error.details.capability, 'pullRequestTitleUpdate');
+});
+
+test('pr-update-title checks, and redacts, the title on both providers', async () => {
+  for (const repository of [githubRepository, forgejoRepository]) {
+    const run = (payload, extra = {}) =>
+      executeOperation(
+        'pr-update-title',
+        { repository, number: 7, payload, ...extra },
+        { skipProbe: true },
+      );
+    for (const payload of [{}, { title: '' }, { title: '   ' }]) {
+      const envelope = await run(payload);
+      assert.equal(envelope.error.code, 'INVALID_PAYLOAD', JSON.stringify(payload));
+    }
+    const attributed = await run({ title: 'feat: x Generated with Claude Code' });
+    assert.equal(attributed.error.code, 'INVALID_PAYLOAD');
+    const hidden = await run({ title: 'feat: effective-flow plan' }, { visibility: 'hidden' });
+    assert.equal(hidden.ok, false);
+    assert.equal(hidden.error.code, 'INVALID_PAYLOAD');
+    const standard = await run({ title: 'feat: effective-flow plan' });
+    assert.equal(standard.ok, true);
+
+    const secret = await run({ title: 'fix: rotate ghp_abcdefghijklmnop' });
+    assert.equal(JSON.stringify(secret.data.command).includes('ghp_abcdefghijklmnop'), false);
+    assert.equal(JSON.stringify(secret.data.command).includes('[REDACTED]'), true);
+  }
+});
+
+test('Forgejo pr-update-title plans a porcelain title edit', async () => {
+  const input = { repository: forgejoRepository, number: 7, payload: { title: 'docs: plan x' } };
+  const dryRun = await executeOperation('pr-update-title', input, { skipProbe: true });
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(dryRun.data.command, {
+    executable: 'tea',
+    args: [
+      'pulls',
+      'edit',
+      '7',
+      '--login',
+      'work',
+      '--repo',
+      'team/flow',
+      '--title',
+      'docs: plan x',
+    ],
+    expectsJson: false,
+  });
+
+  const applied = await executeOperation('pr-update-title', input, {
+    runner: fakeRunner([{ status: 0, stdout: 'edited', stderr: '' }]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.deepEqual(applied.data.result, {
+    completed: true,
+    output: 'edited',
+    repository: 'team/flow',
+  });
+
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({ pullEditTitle: { status: 1, stdout: '', stderr: 'unknown flag' } }),
+    ),
+  );
+  const unsupported = await executeOperation(
+    'pr-update-title',
+    { ...input, probe },
+    { skipProbe: true, apply: true, runner: fakeRunner([]) },
+  );
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(unsupported.error.details.capability, 'pullRequestTitleUpdate');
+});
+
+test('GitHub pr-mark-ready runs gh pr ready against the repository', async () => {
+  const input = { repository: githubRepository, number: 7 };
+  const dryRun = await executeOperation('pr-mark-ready', input, { skipProbe: true });
+  assert.equal(dryRun.ok, true);
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(dryRun.data.command, {
+    executable: 'gh',
+    args: ['pr', 'ready', '7', '--repo', 'example/flow'],
+    expectsJson: false,
+  });
+
+  const enterprise = buildCommandPlan('pr-mark-ready', input, {
+    ...githubRepository,
+    host: 'ghe.example.test',
+  });
+  assert.deepEqual(enterprise.args, [
+    'pr',
+    'ready',
+    '7',
+    '--repo',
+    'ghe.example.test/example/flow',
+  ]);
+
+  // A title is not GitHub's draft state, so a supplied one is not part of this command.
+  const titled = buildCommandPlan(
+    'pr-mark-ready',
+    { ...input, payload: { title: 'feat: x' } },
+    githubRepository,
+  );
+  assert.deepEqual(titled.args, dryRun.data.command.args);
+
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: '✓ Pull request example/flow#7 is marked as "ready for review"',
+      stderr: '',
+    },
+  ]);
+  const applied = await executeOperation('pr-mark-ready', input, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(runner.calls.length, 1);
+  assert.deepEqual(applied.data.result, {
+    number: 7,
+    repository: 'example/flow',
+    ready: true,
+    output: '✓ Pull request example/flow#7 is marked as "ready for review"',
+  });
+
+  const failed = await executeOperation('pr-mark-ready', input, {
+    runner: fakeRunner([{ status: 1, stdout: '', stderr: 'GraphQL: Resource not accessible' }]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.error.code, 'COMMAND_FAILED');
+
+  const unsupported = await executeOperation(
+    'pr-mark-ready',
+    { ...input, probe: { executable: 'gh', capabilities: { pullRequestMarkReady: false } } },
+    { skipProbe: true, apply: true, runner: fakeRunner([]) },
+  );
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(unsupported.error.details.capability, 'pullRequestMarkReady');
+});
+
+test('Forgejo pr-mark-ready is one title edit carrying the final title', async () => {
+  const input = {
+    repository: forgejoRepository,
+    number: 7,
+    payload: { title: 'feat: publish the plan before implementation' },
+  };
+  const dryRun = await executeOperation('pr-mark-ready', input, { skipProbe: true });
+  assert.equal(dryRun.ok, true);
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(dryRun.data.command, {
+    executable: 'tea',
+    args: [
+      'pulls',
+      'edit',
+      '7',
+      '--login',
+      'work',
+      '--repo',
+      'team/flow',
+      '--title',
+      'feat: publish the plan before implementation',
+    ],
+    expectsJson: false,
+  });
+  // Not tea's `--ready`, which would keep the draft-time title.
+  assert.equal(dryRun.data.command.args.includes('--ready'), false);
+
+  // The edit is followed by exactly one raw `pr-read`, and `ready` is what that read states.
+  const runner = fakeRunner([
+    { status: 0, stdout: 'edited', stderr: '' },
+    {
+      status: 0,
+      stdout: JSON.stringify(
+        forgejoPlanPull({ title: 'feat: publish the plan before implementation', draft: false }),
+      ),
+      stderr: TEA_OK,
+    },
+  ]);
+  const applied = await executeOperation('pr-mark-ready', input, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(runner.calls.length, 2);
+  assert.deepEqual(runner.calls[1].args.slice(0, 3), [
+    'api',
+    'repos/team/flow/pulls/7',
+    '--include',
+  ]);
+  assert.deepEqual(applied.data.result, {
+    number: 7,
+    repository: 'team/flow',
+    ready: true,
+    title: 'feat: publish the plan before implementation',
+    output: 'edited',
+  });
+  assert.deepEqual(
+    applied.data.steps.map((step) => step.step),
+    ['title-edit', 'ready-read-back'],
+  );
+  assert.deepEqual(applied.data.command, dryRun.data.command);
+
+  // The final title is required, and one that is itself a draft form is refused.
+  for (const payload of [
+    {},
+    { title: '' },
+    { title: 'WIP: feat: x' },
+    { title: 'wip:feat: x' },
+    { title: '  [WIP] feat: x' },
+    { title: '[wip] feat: x' },
+  ]) {
+    const refused = await executeOperation(
+      'pr-mark-ready',
+      { ...input, payload },
+      { skipProbe: true, apply: true, runner: fakeRunner([]) },
+    );
+    assert.equal(refused.ok, false, JSON.stringify(payload));
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  }
+  const hidden = await executeOperation(
+    'pr-mark-ready',
+    { ...input, visibility: 'hidden', payload: { title: 'feat: Effective Flow plan' } },
+    { skipProbe: true },
+  );
+  assert.equal(hidden.error.code, 'INVALID_PAYLOAD');
+
+  // A tea that does not state the WIP-prefix draft semantics reports the capability unsupported.
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({
+        pullCreateDraftWip: { status: 0, stdout: '--draft  Create as a draft', stderr: '' },
+      }),
+    ),
+  );
+  const unsupported = await executeOperation(
+    'pr-mark-ready',
+    { ...input, probe },
+    { skipProbe: true, apply: true, runner: fakeRunner([]) },
+  );
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(unsupported.error.details.capability, 'pullRequestMarkReady');
+});
+
+test('sameRepository decides by repository id, then by case-insensitive slug', async () => {
+  const read = async (repository, pull) =>
+    executeOperation(
+      'pr-read',
+      { repository, number: 7 },
+      {
+        runner: fakeRunner([
+          {
+            status: 0,
+            stdout: JSON.stringify(pull),
+            stderr: repository === forgejoRepository ? TEA_OK : '',
+          },
+        ]),
+        skipProbe: true,
+      },
+    );
+  const same = async (head, base, repository = githubRepository) => {
+    const envelope = await read(
+      repository,
+      githubPlanPull({
+        head: { ref: 'effective-flow/build/plan', ...head },
+        base: { ref: 'develop', ...base },
+      }),
+    );
+    assert.equal(envelope.ok, true);
+    return Object.hasOwn(envelope.data.result, 'sameRepository')
+      ? envelope.data.result.sameRepository
+      : 'absent';
+  };
+
+  // The slug the forge reports in another casing than the canonical one is still this repository.
+  assert.equal(
+    await same({ repo: { full_name: 'Example/Flow' } }, { repo: { full_name: 'example/flow' } }),
+    true,
+  );
+  // A renamed repository: the two ends state the old and the new name, and the same id.
+  assert.equal(
+    await same(
+      { repo: { id: 41, full_name: 'example/old-flow' } },
+      { repo: { id: 41, full_name: 'example/flow' } },
+    ),
+    true,
+  );
+  // A fork that happens to carry this repository's name, told apart by its id.
+  assert.equal(
+    await same(
+      { repo: { id: 99, full_name: 'example/flow' } },
+      { repo: { id: 41, full_name: 'example/flow' } },
+    ),
+    false,
+  );
+  // One id missing: the slugs decide.
+  assert.equal(
+    await same(
+      { repo: { full_name: 'someone/flow' } },
+      { repo: { id: 41, full_name: 'example/flow' } },
+    ),
+    false,
+  );
+  // Non-ASCII case folding is not applied: only A–Z fold.
+  assert.equal(
+    await same({ repo: { full_name: 'example/FLÖW' } }, { repo: { full_name: 'example/flöw' } }),
+    false,
+  );
+  // A deleted fork is never this repository, whatever the base states.
+  assert.equal(await same({ repo: null }, { repo: { full_name: 'example/flow' } }), false);
+  assert.equal(await same({ repo: null }, {}), false);
+  // Silence, and an unusable end, leave the field absent.
+  assert.equal(await same({}, { repo: { full_name: 'example/flow' } }), 'absent');
+  assert.equal(await same({ repo: { id: 3 } }, { repo: { full_name: 'example/flow' } }), 'absent');
+  assert.equal(await same({ repo: { full_name: 'example/flow' } }, {}), 'absent');
+  assert.equal(await same({ repo: { full_name: 'example/flow' } }, { repo: null }), 'absent');
+  assert.equal(
+    await same({ repo: 'example/flow' }, { repo: { full_name: 'example/flow' } }),
+    'absent',
+  );
+
+  // Forgejo states the same objects; the composed owner/name slug takes part like `full_name`.
+  assert.equal(
+    await same(
+      { repo: { name: 'Flow', owner: { login: 'Team' } } },
+      { repo: { full_name: 'team/flow' } },
+      forgejoRepository,
+    ),
+    true,
+  );
+
+  // The list reports it per item, beside the report-only slug.
+  const listed = await executeOperation(
+    'pr-list',
+    { repository: githubRepository, planPath: PLAN_PATH },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            githubPlanPull({ number: 1 }),
+            githubPlanPull({ number: 2, head: { ref: 'x', repo: { full_name: 'someone/flow' } } }),
+            githubPlanPull({ number: 3, head: { ref: 'x', repo: null } }),
+            githubPlanPull({ number: 4, head: { ref: 'x' } }),
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(
+    listed.data.result.map((item) => [item.number, item.sameRepository]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+      [4, undefined],
+    ],
+  );
+  assert.equal(Object.hasOwn(listed.data.result[3], 'sameRepository'), false);
+});
+
+test('a planPath discovery error reports output lengths, never the listing text', async () => {
+  const leaked = 'SECRET-BODY-TEXT from a fork';
+  const list = (repository, result, extra = {}) =>
+    executeOperation(
+      'pr-list',
+      { repository, ...extra },
+      { runner: fakeRunner([result]), skipProbe: true },
+    );
+
+  const malformed = { status: 0, stdout: `[{"body":"${leaked}"`, stderr: '' };
+  const withPlan = await list(githubRepository, malformed, { planPath: PLAN_PATH });
+  assert.equal(withPlan.ok, false);
+  assert.equal(withPlan.error.code, 'INVALID_PAYLOAD');
+  assert.equal(JSON.stringify(withPlan).includes(leaked), false);
+  assert.equal(Object.hasOwn(withPlan.error.details, 'stdout'), false);
+  assert.equal(withPlan.error.details.stdoutLength, malformed.stdout.length);
+  // Without the filter the diagnostic excerpt stays what it was.
+  const withoutPlan = await list(githubRepository, malformed);
+  assert.equal(withoutPlan.error.details.stdout.includes(leaked), true);
+
+  const failed = { status: 1, stdout: '', stderr: `gh: ${leaked}` };
+  const refused = await list(githubRepository, failed, { planPath: PLAN_PATH });
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(JSON.stringify(refused).includes(leaked), false);
+  assert.equal(refused.error.details.stderrLength, failed.stderr.length);
+
+  // Forgejo: a response without a status line quotes stderr, and loses the quote the same way.
+  const noStatus = await list(
+    forgejoRepository,
+    { status: 0, stdout: '[]', stderr: leaked },
+    { planPath: PLAN_PATH },
+  );
+  assert.equal(noStatus.ok, false);
+  assert.equal(JSON.stringify(noStatus).includes(leaked), false);
+  assert.equal(noStatus.error.details.stderrLength, leaked.length);
+});
+
+test('the Forgejo pull-request reads and the body update require the tea api transport', async () => {
+  const withoutInclude = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  for (const capability of [
+    'pullRequestRead',
+    'pullRequestList',
+    'pullRequestUpdate',
+    'pullRequestMarkReady',
+  ]) {
+    assert.equal(withoutInclude.capabilities[capability], false, capability);
+  }
+  // The porcelain writes that read nothing back keep their own flags.
+  assert.equal(withoutInclude.capabilities.pullRequestTitleUpdate, true);
+  assert.equal(withoutInclude.capabilities.pullRequestCreate, true);
+  assert.equal(withoutInclude.capabilities.pullRequests, true);
+
+  const full = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  for (const capability of ['pullRequestRead', 'pullRequestList', 'pullRequestUpdate']) {
+    assert.equal(full.capabilities[capability], true, capability);
+  }
+
+  // The existing subcommand flags still take part in the conjunction.
+  const withoutPulls = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ pulls: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  assert.equal(withoutPulls.capabilities.pullRequestRead, false);
+  assert.equal(withoutPulls.capabilities.pullRequestList, false);
+
+  const refused = await executeOperation(
+    'pr-read',
+    { repository: forgejoRepository, number: 7, probe: withoutInclude },
+    { runner: fakeRunner([]), skipProbe: true },
+  );
+  assert.equal(refused.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(refused.error.details.capability, 'pullRequestRead');
+});
+
+test('Forgejo pr-read states a merged pull request as merged, as the renderer did', async () => {
+  const read = async (repository, pull) =>
+    executeOperation(
+      'pr-read',
+      { repository, number: 7 },
+      {
+        runner: fakeRunner([
+          {
+            status: 0,
+            stdout: JSON.stringify(pull),
+            stderr: repository === forgejoRepository ? TEA_OK : '',
+          },
+        ]),
+        skipProbe: true,
+      },
+    );
+  const merged = await read(
+    forgejoRepository,
+    forgejoPlanPull({ state: 'closed', merged: true, draft: false, title: 'feat: x' }),
+  );
+  assert.equal(merged.ok, true);
+  assert.equal(merged.data.result.state, 'merged');
+  assert.equal(merged.data.result.headRepository, 'team/flow');
+
+  const closed = await read(forgejoRepository, forgejoPlanPull({ state: 'closed', merged: false }));
+  assert.equal(closed.data.result.state, 'closed');
+  const open = await read(forgejoRepository, forgejoPlanPull());
+  assert.equal(open.data.result.state, 'open');
+
+  // GitHub's read was the REST object before and after, and keeps its `closed`.
+  const github = await read(githubRepository, githubPlanPull({ state: 'closed', merged: true }));
+  assert.equal(github.data.result.state, 'closed');
+});
+
+test('Forgejo pr-mark-ready fails, naming the step, when the read-back is not ready', async () => {
+  const input = {
+    repository: forgejoRepository,
+    number: 7,
+    payload: { title: 'feat: publish the plan before implementation' },
+  };
+  const markReady = (readBack) =>
+    executeOperation('pr-mark-ready', input, {
+      runner: fakeRunner([{ status: 0, stdout: 'edited', stderr: '' }, readBack]),
+      skipProbe: true,
+      apply: true,
+    });
+
+  // An operator-configured prefix the adapter cannot know keeps the pull request a draft.
+  const stillDraft = await markReady({
+    status: 0,
+    stdout: JSON.stringify(forgejoPlanPull({ title: 'DRAFT feat: x', draft: true })),
+    stderr: TEA_OK,
+  });
+  assert.equal(stillDraft.ok, false);
+  assert.equal(stillDraft.error.code, 'COMMAND_FAILED');
+  assert.equal(stillDraft.error.retryable, false);
+  assert.deepEqual(stillDraft.error.details, {
+    number: 7,
+    step: 'ready-read-back',
+    titleEdited: true,
+    draft: true,
+  });
+
+  // A read that states no boolean draft flag is no confirmation.
+  const { draft: _draft, ...withoutDraft } = forgejoPlanPull();
+  const silent = await markReady({
+    status: 0,
+    stdout: JSON.stringify(withoutDraft),
+    stderr: TEA_OK,
+  });
+  assert.equal(silent.ok, false);
+  assert.equal(silent.error.code, 'INVALID_PAYLOAD');
+  assert.equal(silent.error.details.step, 'ready-read-back');
+
+  // A refused read-back is a structured failure that says the edit was applied.
+  const refused = await markReady({
+    status: 0,
+    stdout: '{"message":"token is required"}',
+    stderr: 'HTTP/1.1 401 Unauthorized\r\n',
+  });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(refused.error.details.step, 'ready-read-back');
+  assert.equal(refused.error.details.titleEdited, true);
+  assert.equal(refused.error.details.cause.code, 'COMMAND_FAILED');
+
+  // A failed edit never reaches the read-back, and says so: its step is the edit, nothing was
+  // edited, and the code and retryability are the command failure's own.
+  const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'edit refused' }]);
+  const failedEdit = await executeOperation('pr-mark-ready', input, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(failedEdit.error.code, 'COMMAND_FAILED');
+  assert.equal(failedEdit.error.retryable, true);
+  assert.equal(failedEdit.error.details.step, 'title-edit');
+  assert.equal(failedEdit.error.details.titleEdited, false);
+  assert.equal(failedEdit.error.details.stderr, 'edit refused');
+  assert.equal(runner.calls.length, 1);
+
+  const missingCli = await executeOperation('pr-mark-ready', input, {
+    runner: fakeRunner([{ status: null, error: { code: 'ENOENT' } }]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(missingCli.error.code, 'CLI_MISSING');
+  assert.equal(missingCli.error.details.step, 'title-edit');
+  assert.equal(missingCli.error.details.titleEdited, false);
+});
+
+test('Forgejo pr-mark-ready reports its title redacted', async () => {
+  const input = {
+    repository: forgejoRepository,
+    number: 7,
+    payload: { title: 'fix: rotate ghp_abcdefghijklmnop' },
+  };
+  const applied = await executeOperation('pr-mark-ready', input, {
+    runner: fakeRunner([
+      { status: 0, stdout: 'edited', stderr: '' },
+      {
+        status: 0,
+        stdout: JSON.stringify(forgejoPlanPull({ draft: false })),
+        stderr: TEA_OK,
+      },
+    ]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(JSON.stringify(applied).includes('ghp_abcdefghijklmnop'), false);
+  assert.equal(applied.data.result.title.includes('[REDACTED]'), true);
+});
+
+test('GitHub pr-create maps a refused draft to the draft-create capability', async () => {
+  const input = (draft) => ({
+    repository: githubRepository,
+    payload: {
+      title: 'docs: plan x',
+      body: planBody(),
+      head: 'effective-flow/build/plan',
+      base: 'develop',
+      draft,
+    },
+  });
+  const refusal = {
+    status: 1,
+    stdout: JSON.stringify({
+      message: 'Validation Failed',
+      errors: [
+        {
+          resource: 'PullRequest',
+          code: 'custom',
+          message: 'Draft pull requests are not supported in this repository.',
+        },
+      ],
+    }),
+    stderr: 'gh: Validation Failed (HTTP 422)\n',
+  };
+  const create = (payload, result) =>
+    executeOperation('pr-create', payload, {
+      runner: fakeRunner([result]),
+      skipProbe: true,
+      apply: true,
+    });
+
+  const draft = await create(input(true), refusal);
+  assert.equal(draft.ok, false);
+  assert.equal(draft.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.deepEqual(draft.error.details, {
+    operation: 'pr-create',
+    capability: 'pullRequestDraftCreate',
+  });
+
+  // The phrase on stderr alone is enough, as long as the 422 is stated.
+  const stderrOnly = await create(input(true), {
+    status: 1,
+    stdout: '',
+    stderr: 'Draft pull requests are not supported in this repository. (HTTP 422)\n',
+  });
+  assert.equal(stderrOnly.error.code, 'UNSUPPORTED_CAPABILITY');
+
+  // Only a draft create is mapped, and only this refusal.
+  const notDraft = await create(input(false), refusal);
+  assert.equal(notDraft.error.code, 'COMMAND_FAILED');
+  const otherRefusal = await create(input(true), {
+    ...refusal,
+    stdout: JSON.stringify({
+      message: 'Validation Failed',
+      errors: [{ message: 'A pull request already exists for example:branch.' }],
+    }),
+  });
+  assert.equal(otherRefusal.error.code, 'COMMAND_FAILED');
+  const no422 = await create(input(true), {
+    status: 1,
+    stdout: '',
+    stderr: 'draft pull requests are not supported (HTTP 500)',
+  });
+  assert.equal(no422.error.code, 'COMMAND_FAILED');
+});
+
+test('the Forgejo pr-update-body guard returns the normalized record as the unchanged item', async () => {
+  const body = planBody();
+  const runner = fakeRunner([
+    { status: 0, stdout: JSON.stringify(forgejoPlanPull({ body })), stderr: TEA_OK },
+  ]);
+  const envelope = await executeOperation(
+    'pr-update-body',
+    {
+      repository: forgejoRepository,
+      number: 7,
+      expectedBodyHash: bodyHash(body),
+      payload: { body },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.unchanged, true);
+  // The precondition read is the only call: nothing is edited when the body already matches.
+  assert.equal(runner.calls.length, 1);
+  assert.equal(envelope.data.item.body, body);
+  assert.equal(envelope.data.item.headRepository, 'team/flow');
+  assert.equal(envelope.data.item.sameRepository, true);
+  assert.equal(envelope.data.item.planPrMarker, PLAN_PATH);
+  assert.equal(envelope.data.item.draft, true);
+});
+
+test('gh pr ready confirms on stderr, so a successful mark-ready carries an empty output', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: '',
+      stderr: '✓ Pull request example/flow#7 is marked as "ready for review"\n',
+    },
+  ]);
+  const applied = await executeOperation(
+    'pr-mark-ready',
+    { repository: githubRepository, number: 7 },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(applied.ok, true);
+  assert.deepEqual(applied.data.result, {
+    number: 7,
+    repository: 'example/flow',
+    ready: true,
+    output: '',
+  });
+  assert.equal(runner.calls.length, 1);
 });

@@ -361,6 +361,16 @@ export function publishedRef(value, field, visibility) {
   return visibility === 'hidden' ? assertUndisclosed(text, field) : text;
 }
 
+// A pull-request title a mutation sets: published text under the caller's visibility, and never
+// empty, because an empty title is a refusal on both forges rather than a value either can store.
+export function publishedTitle(payload, input) {
+  const title = publishedText(payload.title, 'payload.title', publishingVisibility(input, payload));
+  if (title.trim() === '') {
+    fail('INVALID_PAYLOAD', 'payload.title must not be empty', { field: 'payload.title' });
+  }
+  return title;
+}
+
 export function publishableText(value, field) {
   const text = assertPublishable(value, field);
   if (text.trim() === '') fail('INVALID_PAYLOAD', `${field} must not be empty`, { field });

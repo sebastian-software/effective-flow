@@ -26,11 +26,16 @@ import {
   prNumber,
   publishedRef,
   publishedText,
+  publishedTitle,
   publishingVisibility,
   requireNumber,
   requireString,
   teaApiReadPlan,
 } from './remote-tracker-shared-core.mjs';
+
+// Forgejo's default work-in-progress prefixes, which make a pull request a draft (see
+// `pr-mark-ready` below).
+const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
 
 export function buildForgejoCommandPlan(operation, input, repository) {
   const { owner, repository: repo, slug, host } = repository;
@@ -266,15 +271,14 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         undefined,
         { expectsJson: false },
       );
-    // Class B: tea's detail renderer, as `issue-read` is.
+    // Class A: raw API JSON (`modules/structs.PullRequest`), the object `pr-list` already reads.
+    // It moved off tea's detail renderer because that surface cannot state the head repository at
+    // all: `head` there is `formatPRHead`'s display string, `owner:branch` for a fork with the
+    // repository name dropped, so a same-named branch in a fork could not be told apart from this
+    // repository's own. The raw object states `head.repo` — `null` once the fork is gone — plus the
+    // bare branch name and a real `draft`, which is what `pr-list` reports for the same pull request.
     case 'pr-read':
-      return mutationPlan('tea', [
-        'pulls',
-        String(prNumber(input)),
-        ...teaJson,
-        '--fields',
-        'index,title,state,body,labels,url,head,base',
-      ]);
+      return teaApiReadPlan(repository, apiEndpoint(`pulls/${prNumber(input)}`));
     // Class B: tea renderer output.
     case 'pr-comments-read':
       return mutationPlan('tea', [
@@ -335,6 +339,53 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         undefined,
         { expectsJson: false },
       );
+    // `tea pulls edit --title`, the same porcelain edit `pr-update-body` uses; the probe attests the
+    // flag. On Forgejo the title **is** the draft state (see `pr-mark-ready` below), so a new title
+    // without a work-in-progress prefix also takes a draft out of draft. A caller finishing a draft
+    // therefore sends the final title through `pr-mark-ready` alone, so one edit does both.
+    case 'pr-update-title':
+      return mutationPlan(
+        'tea',
+        [
+          'pulls',
+          'edit',
+          String(prNumber(input)),
+          ...teaTarget,
+          '--title',
+          publishedTitle(payload, input),
+        ],
+        undefined,
+        { expectsJson: false },
+      );
+    // Forgejo stores no draft flag. A pull request is a draft while its title starts with one of the
+    // instance's `[repository.pull-request] WORK_IN_PROGRESS_PREFIXES` (default `WIP:,[WIP]`,
+    // compared case-insensitively), and the API's `draft` field is computed from that title. tea
+    // states the same on the flag this adapter creates drafts with: `pulls create --draft` "prepends
+    // "WIP: " to the title; Gitea treats WIP-prefixed PRs as drafts" (tea 0.16.0 `--help`), and the
+    // probe requires that wording before it reports this capability.
+    //
+    // So marking ready is exactly one title edit, and it carries the final title rather than
+    // stripping the prefix off whatever title is there: the retitle and the transition cannot
+    // separate, and a failed edit leaves the pull request a draft. tea's own `pulls edit --ready`
+    // is not used, because it strips the prefix and keeps the draft-time title. A final title that
+    // itself starts with a default prefix would leave the pull request a draft, so it is refused up
+    // front. A prefix only an operator configured cannot be known here, which is why the edit is
+    // not the verdict: `executeOperation` reads the pull request back once and reports `ready`
+    // from the forge's own `draft`, failing with a structured error while it is still a draft.
+    case 'pr-mark-ready': {
+      const title = publishedTitle(payload, input);
+      if (WORK_IN_PROGRESS_PREFIX.test(title.trimStart())) {
+        fail('INVALID_PAYLOAD', 'payload.title must not carry a work-in-progress prefix', {
+          field: 'payload.title',
+        });
+      }
+      return mutationPlan(
+        'tea',
+        ['pulls', 'edit', String(prNumber(input)), ...teaTarget, '--title', title],
+        undefined,
+        { expectsJson: false },
+      );
+    }
     case 'pr-comment':
       return mutationPlan('tea', [
         'comment',

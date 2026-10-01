@@ -201,7 +201,8 @@ src/
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
   or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
-  its seven consumers now loads on demand). `execution-location` is the canonical nested fragment
+  its consumers now loads on demand: seven tools directly, and `plan` through the
+  `plan-publication` fragment). `execution-location` is the canonical nested fragment
   for repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup;
   both delivery and `apply-review` component worktrees include it instead of duplicating the
   contract.
@@ -328,14 +329,15 @@ action.
 ## Persisted worktree lifecycle
 
 [`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md) is the common lifecycle
-contract for every Effective Flow-created delivery, partial-diff, and `apply-review` component
-worktree. It consumes the canonical execution-location receipt and runtime-state safety contracts
+contract for every Effective Flow-created delivery, partial-diff, plan-publication, and
+`apply-review` component worktree. It consumes the canonical execution-location receipt and runtime-state safety contracts
 instead of restating repository identity, path containment, ignore, or tracked-state rules. The
 delivery and component-worktree creation paths both register through this shared contract;
 user-created, reused, and harness-managed worktrees remain outside Effective Flow ownership.
 
-Seven tools can create an Effective Flow-owned worktree: `build`, `fix`, `docs`, `refactor`,
-`maintain`, `iterate` and `merge-gate`. They reach `worktree-integration` only through a lazy
+Eight tools can create an Effective Flow-owned worktree: `build`, `fix`, `docs`, `refactor`,
+`maintain`, `iterate`, `merge-gate` and `plan`, whose publication commits the plan in a temporary
+worktree under its own `<SESSION_ID>-plan-publication` path. They reach `worktree-integration` only through a lazy
 pointer, so each also eagerly includes
 [`src/shared/worktree-record-obligation.md`](../../src/shared/worktree-record-obligation.md). That
 short fragment makes loading `worktree-integration` mandatory before any `git worktree add`, requires
@@ -370,6 +372,15 @@ closed and blocks cleanup.
 The state machine is explicit: creation starts at `active`; durably securing the intended changes
 on the branch or completing component integration moves to `cleanup-ready`; controlled stops and
 errors move to `aborted` or `failed`.
+The one way back is adoption, `aborted` or `failed` → `active`, which only
+[`src/shared/plan-pr-continuation.md`](../../src/shared/plan-pr-continuation.md) performs to resume
+an interrupted run on a published plan's pull request. Under the record lock it freshly proves an
+Effective Flow-created `delivery` record with no foreign lock or claim, the same repository,
+runtime-state root, branch, and workflow, exactly one matching Git registration that is neither
+locked nor prunable, a `creationOid` equal to the freshly fetched remote head and an ancestor of
+the local tip, and a clean worktree. It then rewrites only `status`, `reason`, `updatedAt`, and
+`sessionId`; `creationOid`, the branch, and the receipt snapshot never change. A harness-managed,
+user-managed, or recordless worktree is never adopted.
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
 claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
 A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
