@@ -1,0 +1,33 @@
+{
+  "name": "Enabled opt-in with generation absent reads inventory and reserves nothing",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "absent",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "none",
+    "operations": ["inventory"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": [],
+    "finalize": null,
+    "events": []
+  }
+}

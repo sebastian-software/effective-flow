@@ -299,6 +299,145 @@ test('inventory discovers zero or one current generation and rejects ambiguity',
   });
 });
 
+function activationInput(fx, generationId, overrides = {}) {
+  return {
+    ...fx.common,
+    generationId,
+    configState: 'enabled',
+    protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+    confirmation: true,
+    ...overrides,
+  };
+}
+
+async function generationStateOf(fx, generationId) {
+  return (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps)).result
+    .generationState;
+}
+
+// One completed baseline record whose packets meet the preregistered eligible-packet minimum.
+async function finalizeReadySample(fx, generationId) {
+  const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum;
+  const reservation = await startWorkflow(
+    fx,
+    generationId,
+    Array.from({ length: minimum }, () => packetReservation()),
+  );
+  for (const packet of reservation.packets) {
+    const identity = packetIdentity(fx, generationId, reservation, packet);
+    await executeOperation('start-packet', identity, fx.deps);
+    fx.clock.wallMs += 10;
+    fx.clock.monotonicNs += 10_000_000n;
+    fx.clock.uptime += 0.01;
+    await executeOperation('finish-packet', identity, fx.deps);
+  }
+  await executeOperation(
+    'finalize',
+    { ...fx.common, generationId, ...terminalPayload(reservation) },
+    fx.deps,
+  );
+}
+
+const BASELINE_WINDOW_MS =
+  PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * 86_400_000;
+
+test('activate reports an unmet baseline as incomplete evidence and leaves the state unchanged', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+
+  await assert.rejects(
+    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
+    { code: 'INCOMPLETE_EVIDENCE' },
+    'neither the window nor the eligible sample is met',
+  );
+  assert.equal(await generationStateOf(fx, generationId), 'baseline');
+
+  fx.clock.wallMs += BASELINE_WINDOW_MS;
+  await finalizeOne(fx, generationId);
+  await assert.rejects(
+    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
+    { code: 'INCOMPLETE_EVIDENCE' },
+    'an elapsed window without the eligible-packet minimum is not ready',
+  );
+  assert.equal(await generationStateOf(fx, generationId), 'baseline');
+
+  for (const overrides of [
+    { confirmation: false },
+    { configState: 'disabled' },
+    { protocolDigest: `sha256:${'0'.repeat(64)}` },
+  ]) {
+    await assert.rejects(
+      () => executeOperation('activate', activationInput(fx, generationId, overrides), fx.deps),
+      (error) => ['INVALID_PAYLOAD', 'PROTOCOL_DRIFT'].includes(error.code),
+    );
+  }
+  const { confirmation, ...unconfirmed } = activationInput(fx, generationId);
+  assert.equal(confirmation, true);
+  await assert.rejects(() => executeOperation('activate', unconfirmed, fx.deps), {
+    code: 'INVALID_PAYLOAD',
+  });
+  assert.equal(await generationStateOf(fx, generationId), 'baseline');
+});
+
+test('activate rejects a suspended generation before readiness and keeps its suspension', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  fx.clock.wallMs += BASELINE_WINDOW_MS;
+  await executeOperation(
+    'suspend',
+    {
+      ...fx.common,
+      generationId,
+      pilotControlOutcome: 'critical-safety-incident',
+      affectedRecordIds: [],
+    },
+    fx.deps,
+  );
+  const before = (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps))
+    .result;
+
+  // The sample is unmet, so a readiness check would answer INCOMPLETE_EVIDENCE: INVALID_STATE
+  // proves the suspended state is rejected before readiness is ever evaluated.
+  await assert.rejects(
+    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
+    { code: 'INVALID_STATE' },
+  );
+  const after = (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps))
+    .result;
+  assert.equal(after.generationState, 'suspended');
+  assert.equal(after.suspensionDigest, before.suspensionDigest);
+  assert.equal(after.inventoryDigest, before.inventoryDigest);
+});
+
+test('activate transitions a ready baseline to active exactly once', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  await finalizeReadySample(fx, generationId);
+  fx.clock.wallMs += BASELINE_WINDOW_MS;
+
+  const activated = await executeOperation('activate', activationInput(fx, generationId), fx.deps);
+  assert.deepEqual(activated, {
+    ok: true,
+    operation: 'activate',
+    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+    result: { generationId, generationState: 'active' },
+  });
+  assert.equal(await generationStateOf(fx, generationId), 'active');
+  const state = JSON.parse(readFileSync(join(generationRoot(fx, generationId), 'state.json')));
+  assert.equal(state.activatedAt, new Date(fx.clock.wallMs).toISOString());
+
+  await assert.rejects(
+    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
+    { code: 'INVALID_STATE' },
+    'an active generation cannot be activated again',
+  );
+  await assert.rejects(() => startWorkflow(fx, generationId), { code: 'INVALID_PAYLOAD' });
+  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
+  assert.equal(reservation.cohort, 'pilot');
+  assert.equal(reservation.generationState, 'active');
+});
+
 test('baseline initialization recovers only validated staged namespace and generation states', async (t) => {
   await t.test('namespace staging interrupted before owner publication', async (t) => {
     const fx = fixture(t);

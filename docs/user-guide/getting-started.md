@@ -107,15 +107,15 @@ installer reject missing, extra, malformed, or cross-target-inconsistent sidecar
 an installation. Those artifacts establish build and installation consistency, not runtime
 discovery or activation.
 
-No current workflow requests that representation: `build` and `refactor` have not adopted Fast,
-setup offers no profile switch, and current runs therefore remain Quality-only. When a later work
-package adopts the policy, Fast may be requested only for the first implementation attempt of an
-eligible native packet. Any retry, correction, validation repair, review incorporation, conflict
-resolution, or scope-growth continuation uses Quality; coupled packets also share Quality.
-Portable installations remain Quality-only in V1 and contain no native sidecar inventory or model
-metadata. See the
-[configuration reference](./configuration.md#block-executionprofiles) for the reserved default-off
-key.
+`build` is the one workflow that requests that representation, and only inside its opt-in field
+pilot: the project sets `executionProfiles.fast.enabled` in Guided setup, starts a Quality-only
+baseline, and later activates the generation through confirmed setup actions. In an active
+generation, Fast may be requested only for the first implementation attempt of an eligible native
+packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
+scope-growth continuation uses Quality; coupled packets also share Quality. `refactor` has not
+adopted Fast, and a project without the opt-in stays Quality-only. Portable installations remain
+Quality-only in V1 and contain no native sidecar inventory or model metadata. See the
+[configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
 Claude skills can request a different caller model or effort for their current turn, but that
 selection does not persist across the next user prompt. Effective Flow deliberately leaves this
@@ -138,7 +138,8 @@ profile-aware workflow reaches selection, Effective Flow checks presence only—
 displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
 without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
 attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
-with Quality. Current `build` and `refactor` runs do not reach this selection path yet.
+with Quality. Only a native `build` run with the opt-in enabled and a baseline or active pilot
+generation reaches this selection path; `refactor` does not.
 
 ## First invocation
 

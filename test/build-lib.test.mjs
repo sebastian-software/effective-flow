@@ -109,6 +109,7 @@ import {
   canonicalizeJson,
 } from '../src/scripts/pilot-measurement-protocol.mjs';
 import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from '../src/scripts/plan-lint-core.mjs';
+import { AGENT_PROFILE_MAPPINGS, FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
@@ -2296,7 +2297,22 @@ test('profile refs render the exact Claude, Codex, and portable contracts', () =
   );
   assert.equal(
     transformRefs(token, 'portable', profileRefConfig),
-    '`effective-flow-nodejs-implementer` (Fast unavailable: select Quality with `profile-unavailable`)',
+    '`effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only)',
+  );
+});
+
+// Invariant: `{{BUILD_TARGET}}` renders the consumer target itself, so a shared fragment can tell a
+// portable installation from a native one without inferring it from the host that runs it.
+test('BUILD_TARGET renders the consumer target and rejects an unknown one', () => {
+  for (const target of ['claude', 'codex', 'portable']) {
+    assert.equal(
+      transformRefs('This is the `{{BUILD_TARGET}}` build.', target, refConfig),
+      `This is the \`${target}\` build.`,
+    );
+  }
+  assert.throws(
+    () => transformRefs('{{BUILD_TARGET}}', 'native', { ...refConfig, context: 'target.md' }),
+    /Unknown rendered target "native" \(in target\.md\)/,
   );
 });
 
@@ -3363,13 +3379,17 @@ const sourceAgentNames = readdirSync(sourceAgentsUrl)
 // Deliberately marker-only: this config lists every tool as exposed, although
 // apply-plan, apply-issues and apply-review are internal in the real build and
 // therefore render as `tools/<name>.md`. Use it for presence/absence markers only;
-// never add invocation-shape assertions on top of it.
+// never add invocation-shape assertions on top of it. `build` Phase 2 carries Fast-profile
+// tokens, so the config also supplies the native profile mapping and the Fast-capable
+// implementers, both derived from build.mjs by the shared test support module.
 const sourceRenderConfig = {
   exposedTools: sourceToolNames,
   agentPrefix: 'effective-flow-',
   skillName: 'effective-flow',
   knownTools: new Set(sourceToolNames),
   knownAgents: new Set(sourceAgentNames),
+  profileMappings: AGENT_PROFILE_MAPPINGS,
+  fastProfileAgents: FAST_PROFILE_AGENTS,
 };
 
 // Resolve a tool body once — eager-include resolution is harness-independent.
@@ -3538,7 +3558,7 @@ test('renderBody adds the portable bootstrap for a profile-only worker reference
   assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
   assert.match(
     rendered,
-    /`effective-flow-nodejs-implementer` \(Fast unavailable: select Quality with `profile-unavailable`\)/,
+    /`effective-flow-nodejs-implementer` \(portable build: Fast unavailable, Quality only\)/,
   );
   assert.doesNotMatch(rendered, /AGENT_PROFILE/);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);

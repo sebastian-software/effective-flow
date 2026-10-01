@@ -1,0 +1,48 @@
+{
+  "name": "A capacity-exhausted start reports only the persisted control state and runs unmeasured",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "replay": false,
+  "replayReason": "The helper reaches CAPACITY_EXHAUSTED on start only past 128 packets or 10,000 records; the pilot-measurement suite covers that persistence, and this fixture pins the orchestrator's handling of the envelope.",
+  "startResult": "CAPACITY_EXHAUSTED",
+  "startControl": {
+    "pilotControlOutcome": "capacity-exhausted",
+    "controlStatePersisted": true,
+    "alert": "none"
+  },
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "active",
+    "operations": ["inventory", "start"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": [],
+    "finalize": null,
+    "events": [
+      {
+        "kind": "control",
+        "operation": "start",
+        "pilotControlOutcome": "capacity-exhausted",
+        "report": "persisted"
+      }
+    ]
+  }
+}

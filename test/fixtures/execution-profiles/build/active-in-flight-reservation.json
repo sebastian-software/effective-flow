@@ -1,0 +1,40 @@
+{
+  "name": "A concurrent in-flight reservation makes start fail and the run unmeasured",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "external": [
+    {
+      "at": "before-start",
+      "operation": "start"
+    }
+  ],
+  "startResult": "INCOMPLETE_EVIDENCE",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "active",
+    "operations": ["inventory", "start"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": [],
+    "finalize": null,
+    "events": []
+  }
+}

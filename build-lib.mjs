@@ -3380,6 +3380,9 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
   }
 }
 
+// The three rendered consumer targets, in build order.
+export const RENDERED_TARGETS = Object.freeze(['claude', 'codex', 'portable']);
+
 // --- Reference transforms ---
 //
 // {{SKILL:X}} -> harness-specific exposed tool invocation, or
@@ -3390,7 +3393,10 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 // same identifier to a bundled worker contract and the built-in/general
 // subagent mechanism.
 // {{AGENT_PROFILE:X:fast}} -> the native Fast representation for the target,
-// or an explicit Quality fallback on portable managers.
+// or an explicit Quality-only notice on portable managers.
+// {{BUILD_TARGET}} -> the rendered target itself (`claude`, `codex`, or
+// `portable`), so a shared fragment can tell a portable installation from a
+// native one deterministically even when a portable skill runs on a native host.
 //
 // The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
 // agent prefix are passed in from the single source of truth in build.mjs, so a
@@ -3438,8 +3444,12 @@ export function transformRefs(
   const command =
     harness === 'codex' ? `$${skillName}` : harness === 'portable' ? skillName : `/${skillName}`;
   const skillInvocation = (raw) => `${command} ${raw}`;
+  if (/\{\{BUILD_TARGET\}\}/.test(body) && !RENDERED_TARGETS.includes(harness)) {
+    throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+  }
   return body
     .replace(/\{\{FLOW\}\}/g, command)
+    .replace(/\{\{BUILD_TARGET\}\}/g, harness)
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )
@@ -3451,7 +3461,7 @@ export function transformRefs(
         return `\`${name}\` with \`model: "${model}"\` and \`reasoning_effort: "${effort}"\``;
       }
       if (harness === 'portable') {
-        return `\`${name}\` (Fast unavailable: select Quality with \`profile-unavailable\`)`;
+        return `\`${name}\` (portable build: Fast unavailable, Quality only)`;
       }
       throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
     })

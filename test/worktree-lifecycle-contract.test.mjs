@@ -13,6 +13,7 @@ import {
   resolveEagerIncludes,
   resolveLazyIncludes,
 } from '../build-lib.mjs';
+import { AGENT_PROFILE_MAPPINGS, FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -32,12 +33,16 @@ const agentNames = new Set(
     .filter((name) => name.endsWith('.md'))
     .map((name) => name.slice(0, -3)),
 );
+// `build` Phase 2 carries Fast-profile tokens, so rendering it needs the native profile mapping and
+// the Fast-capable implementers, both derived from build.mjs by the shared test support module.
 const renderConfig = {
   exposedTools: [...toolNames],
   agentPrefix: 'effective-flow-',
   skillName: 'effective-flow',
   knownTools: toolNames,
   knownAgents: agentNames,
+  profileMappings: AGENT_PROFILE_MAPPINGS,
+  fastProfileAgents: FAST_PROFILE_AGENTS,
 };
 
 const lifecycle = readShared('worktree-lifecycle');

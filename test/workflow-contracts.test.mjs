@@ -14,6 +14,7 @@ import {
   resolveEagerIncludes,
   resolveLazyIncludes,
 } from '../build-lib.mjs';
+import { pilotOperationKeys } from './support/pilot-helper-contract.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -1369,6 +1370,222 @@ test('the external profile alone captures reproducible connection context and ve
     /freshly replay the exact proposed tool\/hint, connection\/context, and every validity-affecting state property immediately before writing/,
   );
   assert.match(contract, /Drift invalidates the preview/);
+});
+
+// The field-pilot opt-in `executionProfiles.fast.enabled` has exactly one writer, Guided setup, and
+// exactly one entry into it: advanced block 10, whose lazy fragment owns the question and the
+// generation actions. The setup core carries only that block's entry, its pointer, and the schema
+// row, so the invocation set and the always-loaded budget stay what they were.
+function setupExecutionProfilesFragment() {
+  return source('src/shared/setup-execution-profiles.md');
+}
+
+function setupPilotAsk(header) {
+  const asks = askContracts(
+    setupExecutionProfilesFragment(),
+    'src/shared/setup-execution-profiles.md',
+  );
+  const matches = asks.filter((ask) => ask.header === header);
+  assert.equal(matches.length, 1, `the setup pilot fragment must pose exactly one ${header} ask`);
+  return matches[0];
+}
+
+function sentPayloadKeys(text, label) {
+  const sentence = boundedSlice(prose(text), `On \`${label}\`, send exactly`, '.');
+  return [...sentence.matchAll(/`([A-Za-z]+)(?:: [^`]+)?`/g)].map(([, key]) => key).slice(1);
+}
+
+test('setup exposes the field-pilot opt-in only through Guided block 10 and its schema row', () => {
+  const setup = source('src/tools/setup.md');
+  const schema = boundedSlice(setup, '## Config schema', '### Safe defaults');
+  const advanced = boundedSlice(
+    setup,
+    '### Step 5: Advanced settings',
+    '#### Block 9: the merge gate',
+  );
+
+  const row = bullets(schema).filter((line) => line.includes('**`executionProfiles`**'));
+  assert.equal(row.length, 1, 'the Config schema must carry exactly one executionProfiles row');
+  assert.match(row[0], /`fast\.enabled` \(strict Boolean/);
+  assert.match(row[0], /never a provider model name/);
+  assert.match(
+    row[0],
+    /Set only in Guided block 10; Profile and Express preserve an existing value/,
+  );
+
+  ordered(advanced, '9. `mergeGate`', '10. `executionProfiles`', '```lazy-include');
+  const pointers = new Map(
+    [...advanced.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.deepEqual([...pointers.keys()], ['setup-execution-profiles']);
+  assert.match(pointers.get('setup-execution-profiles'), /advanced settings and block 10/);
+
+  // Outside the schema row and block 10 the setup core names neither the key nor the fragment.
+  const rest = setup.replace(schema, '').replace(advanced, '');
+  assert.doesNotMatch(rest, /executionProfiles|setup-execution-profiles/);
+  for (const file of readdirSync(new URL('src/tools/', repositoryRoot))) {
+    if (file === 'setup.md') continue;
+    assert.doesNotMatch(
+      source(`src/tools/${file}`),
+      /setup-execution-profiles/,
+      `${file} must not load the Guided pilot block`,
+    );
+  }
+
+  const fragment = prose(setupExecutionProfilesFragment());
+  assert.match(fragment, /loaded only when Guided Step 5 opens advanced block 10/);
+  assert.match(fragment, /writes a workflow record, or adds a setup invocation/);
+  assert.match(fragment, /Profile, Express, and `\{\{SKILL:setup\}\} hidden` never load it/);
+});
+
+test('the Guided opt-in writes only literal true or false and never repairs or names a model', () => {
+  const fragment = prose(setupExecutionProfilesFragment());
+  const ask = setupPilotAsk('Fast pilot');
+
+  assert.deepEqual(
+    ask.options.map(({ label }) => label),
+    ['Keep', 'Enable', 'Disable'],
+  );
+  const [keep, enable, disable] = ask.options.map(({ description }) => description);
+  assert.match(keep, /exactly as recorded, including a missing row or an invalid value/);
+  assert.match(enable, /executionProfiles\.fast\.enabled = true/);
+  assert.match(enable, /no baseline starts and nothing activates/);
+  assert.match(disable, /executionProfiles\.fast\.enabled = false/);
+
+  assert.match(
+    fragment,
+    /`Enable` writes the literal `true`, `Disable` the literal `false`, and `Keep` writes nothing/,
+  );
+  assert.match(fragment, /Accept no other value, no free text, and no model or provider name/);
+  assert.match(
+    fragment,
+    /Preview an invalid value as `invalid – runs as Quality` and never repair it silently/,
+  );
+  assert.match(fragment, /no model or provider name is ever configured/);
+  assert.match(fragment, /goes through the Step 6 before\/after list and confirmation/);
+  assert.match(
+    fragment,
+    /hidden mode it is written to the local `<RUNTIME_STATE_ROOT>\/\.effective-flow\/project-setup\.md`/,
+  );
+  assert.match(
+    fragment,
+    /Profile and Express never ask this block and never add, change, or repair the row/,
+  );
+  assert.match(
+    fragment,
+    /carried over byte-for-byte, exactly as Guided does when the user declines the advanced settings/,
+  );
+  assert.match(fragment, /deletes nothing, and starts no generation action/);
+
+  // No provider model identifier may reach the configuration surface: the native mapping lives in
+  // build.mjs, never in a setup answer.
+  const surfaces = [
+    setupExecutionProfilesFragment(),
+    boundedSlice(source('src/tools/setup.md'), '## Config schema', '### Safe defaults'),
+  ];
+  for (const text of surfaces) {
+    assert.doesNotMatch(text, /\b(?:sonnet|opus|haiku|gpt-[\w.-]+|claude-[\w.-]+)\b/i);
+  }
+
+  const encoding = prose(source('src/shared/config-migration.md'));
+  assert.match(
+    encoding,
+    /Only Guided setup \(advanced block 10\) sets it; Profile and Express preserve an existing value and never enable it/,
+  );
+  assert.doesNotMatch(encoding, /not yet an interactive setup choice/);
+});
+
+test('Guided generation actions are confirmed, digest-bound, disclosed, and state-gated', () => {
+  const text = setupExecutionProfilesFragment();
+  const fragment = prose(text);
+
+  // Placement: after the configuration is written, never as a side effect of the Boolean.
+  assert.match(fragment, /after Step 6 has finished without stopping and before Step 7/);
+  assert.match(
+    fragment,
+    /No action writes, rewrites, or removes `executionProfiles\.fast\.enabled`/,
+  );
+  assert.match(
+    fragment,
+    /Send `confirmation: true` only after the user's explicit confirmation of that action in this same run/,
+  );
+  assert.match(fragment, /A refused, skipped, unanswered, or non-interactive ask sends nothing/);
+  assert.match(fragment, /Report every failure value-free/);
+  assert.match(fragment, /never scrape standard error/);
+
+  // State gating: one action per proven state, and only with an enabled configuration.
+  // The table sits inside a numbered list item, so its rows are dedented before being read.
+  const gating = boundedSlice(text, '| Proven generation state', '\n\n').replace(/^ {3}/gm, '');
+  assert.deepEqual(firstColumnCells(gating).slice(2), [
+    '`none`',
+    '`baseline`',
+    '`suspended` with healthy evidence',
+    '`active`, `review`, or unhealthy `suspended`',
+  ]);
+  assert.match(tableRow(gating, '`none`'), /`begin-baseline`/);
+  assert.match(tableRow(gating, '`baseline`'), /`activate`/);
+  assert.match(tableRow(gating, '`suspended` with healthy evidence'), /`resume`/);
+  assert.match(
+    fragment,
+    /Offer at most the one action the proven state allows, and only with `configState=enabled`/,
+  );
+  assert.match(
+    fragment,
+    /every `incompleteCounts` value is zero and no orphan temporary is listed/,
+  );
+  assert.match(
+    fragment,
+    /`review` is terminal under every configuration state, including disabled or invalid/,
+  );
+
+  for (const [header, state] of [
+    ['Baseline', /generationState=none/],
+    ['Activate', /generationState=baseline/],
+    ['Resume', /suspended generation with healthy evidence/],
+  ]) {
+    const ask = setupPilotAsk(header);
+    assert.match(ask.when, /configState=enabled/, `${header} requires an enabled configuration`);
+    assert.match(ask.when, state, `${header} names its proven generation state`);
+    assert.equal(ask.options.at(-1).label, 'Not now', `${header} offers a refusal`);
+  }
+
+  // begin-baseline: protocol digest displayed and local data disclosed before the confirmation.
+  assert.match(setupPilotAsk('Baseline').when, /showed the digest and disclosure/);
+  assert.match(fragment, /Call `protocol` with `\{\}`/);
+  assert.match(fragment, /display the exact digest and version and disclose/);
+  assert.match(fragment, /\.effective-flow\/model-tiering-pilot\//);
+  assert.match(
+    fragment,
+    /nothing leaves this machine; a detailed trace needs separate current-run consent/,
+  );
+  assert.deepEqual(sentPayloadKeys(text, 'Start'), pilotOperationKeys('beginBaseline'));
+  assert.match(fragment, /`configState: "enabled"`, `fastEnabled: true`/);
+
+  // activate: INCOMPLETE_EVIDENCE is "not ready", never a transition; other failures re-read.
+  assert.match(
+    fragment,
+    /Offer it only while the guarded `inventory` proves `generationState=baseline`/,
+  );
+  assert.deepEqual(sentPayloadKeys(text, 'Activate'), pilotOperationKeys('activate'));
+  assert.match(fragment, /`INCOMPLETE_EVIDENCE` means not ready/);
+  assert.match(fragment, /the state stays `baseline` and it is no transition/);
+  assert.match(
+    fragment,
+    /After any other failure, read a fresh `inventory` before reporting any state/,
+  );
+
+  // resume: digest-bound, no cause summary, no caller-selected target.
+  assert.match(setupPilotAsk('Resume').when, /showed both digests/);
+  assert.match(
+    fragment,
+    /Show no cause summary, because the inventory exposes none, and offer no target/,
+  );
+  assert.match(fragment, /restores only its stored `resumeTo`/);
+  assert.deepEqual(sentPayloadKeys(text, 'Resume'), pilotOperationKeys('resumeGeneration'));
+  assert.match(fragment, /never retry with new digests without showing them and asking again/);
 });
 
 test('all setup modes share the preview gate while Express and Guided retain their paths', () => {

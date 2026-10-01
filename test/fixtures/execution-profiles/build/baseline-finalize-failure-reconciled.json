@@ -1,0 +1,60 @@
+{
+  "name": "A failed finalize suspends and a confirmed same-run reconciliation marks the record abandoned",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "finalizeResult": "failed",
+  "reconcileAnswer": "Reconcile",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize",
+      "suspend",
+      "inventory",
+      "reconcile-record"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": ["finalization-failed"],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

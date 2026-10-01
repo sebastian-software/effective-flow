@@ -1,10 +1,11 @@
 # Model-tiering pilot data and privacy
 
-Effective Flow includes a local measurement subsystem for a future opt-in Quality/Fast field
-pilot. The subsystem can create a preregistered Quality-only baseline, retain pilot evidence,
-evaluate the protocol gates, and remove one reviewed generation safely. It does **not** currently
-activate the pilot: `build` and `refactor` do not select Fast, and `/effective-flow setup` exposes
-neither baseline start nor activation.
+Effective Flow includes a local measurement subsystem for the opt-in Quality/Fast field pilot of
+`/effective-flow build`. The subsystem can create a preregistered Quality-only baseline, retain
+pilot evidence, evaluate the protocol gates, and remove one reviewed generation safely. Nothing
+starts by itself: you opt in and start or activate a generation through confirmed actions in
+`/effective-flow setup guided`. `build` is the only workflow that records runs and may select Fast;
+`refactor` has not adopted Fast.
 
 ## Where evidence lives
 
@@ -42,10 +43,25 @@ exactly once; an early report-mode stop is `reported-blocked` with unavailable c
 ## Activation and detailed consent are different decisions
 
 `executionProfiles.fast.enabled: true` is project-level admission to the pilot lifecycle. It is not
-activation, does not start measurement, and does not authorize a detailed trace. A future guided
-setup action must separately display the exact shipped protocol digest, disclose local minimal-data
-collection, and obtain explicit confirmation before starting a Quality-only baseline. Activation
-then requires the preregistered baseline conditions to pass.
+activation, does not start measurement, and does not authorize a detailed trace. Guided setup block
+10 offers the lifecycle steps as separate confirmed actions, at most one per run and only for the
+state the stored generation proves:
+
+1. **Start the baseline.** Setup displays the exact shipped protocol digest and version, discloses
+   the local minimal-data collection, names the preregistered minimum baseline window and eligible
+   packet count, and starts a Quality-only baseline only after your confirmation. From then on,
+   native `build` runs record minimal measurements while every packet still runs Quality.
+2. **Activate.** While the generation is in `baseline`, setup can ask the helper to activate it
+   under the shown digest. The helper refuses while the preregistered window or sample is not yet
+   met, or while evidence is unhealthy; setup reports that as "not ready" and the baseline continues
+   unchanged. In an active generation, an eligible native `build` packet uses Fast for its first
+   implementation attempt only.
+3. **Resume.** A suspended generation with healthy evidence can be resumed after setup shows the
+   inventory and suspension digests the resume is bound to. The helper restores the state stored
+   at suspension. A generation in `review` never resumes.
+
+Disabling the key or keeping an invalid value needs no migration, deletes nothing, and starts no
+action. A project that never opts in stays Quality-only and records nothing.
 
 A detailed trace has a separate, current-run consent boundary. The workflow may attest
 `detailOptIn: true` only after an explicit request in that run. Consent is not stored as text or
@@ -60,6 +76,12 @@ Configuration and generation state remain independent. Disabling the project key
 measurement and Fast selection without deleting evidence or clearing a suspension. Suspension and
 incomplete records block later Fast until the owned evidence is reconciled. Only a still-suspended
 generation can resume; a generation in `review` is terminal and cannot return to admission.
+
+A `build` run suspends the generation after a critical safety, data-integrity, authorization, or
+scope incident; your product changes are kept either way. If a run cannot finalize its own pilot
+record, it suspends the generation and asks once, in the same run, whether to mark that record
+abandoned. Only that run can do so. If you decline, or the run cannot ask, the incomplete record
+stays, and the generation can leave suspension only through `discard-generation` or purge.
 
 Review freezes new reservations but lets already captured work finish or reconcile. Aggregation
 then produces two local views:

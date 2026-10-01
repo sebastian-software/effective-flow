@@ -232,7 +232,7 @@ Unknown valid rows are retained across setup maintenance. The user guide's
 [configuration reference](../user-guide/configuration.md) lists all current keys, values, and
 defaults.
 
-### Reserved execution-profile key
+### Execution-profile key
 
 `executionProfiles.fast.enabled` is a strict Boolean owned by
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md). Missing or literal `false`
@@ -245,13 +245,24 @@ The tagged state and selection policy is separately owned by
 [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md). Configuration state and
 persisted generation state are independent, so changing or removing the row must not rewrite a
 generation or clear suspension. The key has no legacy migration and stores no model name. Setup
-remains the only configuration writer and still exposes no setup UI for the reserved row. The build
-now emits native profile capability—five generated Claude Fast sidecars, Codex per-spawn rendering,
-strict native inventories, and a local measurement helper—but `build` and `refactor` contain no
-Fast-profile reference and do not consume this key yet. Setup exposes neither baseline nor
-activation actions. Portable output remains Quality-only. The existence of native artifacts
-or a valid inventory neither activates Fast nor proves that the running host can discover or accept
-the representation.
+remains the only configuration writer and exposes the row only in Guided advanced block 10, whose
+lazy fragment [`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)
+writes literal `true` or `false` (or nothing on Keep) through the ordinary before/after
+confirmation. Profile and Express never ask the block; they carry an existing row, valid or
+invalid, over byte-for-byte. After a completed Step 6, the same fragment offers at most one
+confirmed generation action for the inventory-proven state: `begin-baseline` for `none`,
+`activate` for `baseline`, and `resume` for a `suspended` generation with healthy evidence. None of
+them writes the row.
+
+`build` is the only consumer that reads the key for profile selection. Its reader is split: the
+configuration contract classifies `configState`, and only `enabled` on a native harness triggers the
+read-only helper `inventory` that yields the generation state. `none`, `suspended`, and `review`
+select Quality without a record; only `baseline` and `active` classify and measure packets. The
+build emits the native capability this needs—five generated Claude Fast sidecars, Codex per-spawn
+rendering, strict native inventories, and the local measurement helper—but `refactor` still
+contains no Fast-profile reference and does not consume the key. Portable output remains
+Quality-only and unmeasured. The existence of native artifacts or a valid inventory neither
+activates Fast nor proves that the running host can discover or accept the representation.
 
 Pilot generation state and evidence are owned below
 `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never by a tracked configuration row.

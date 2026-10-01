@@ -16,7 +16,7 @@ modes. **Hidden mode** instead keeps the whole configuration local and untracked
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
 planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
 (project and surface languages, worktree, completion action, tracker details, advanced
-review/apply-review values, or skill discovery), and Express when you intentionally want the safe
+review/apply-review values, skill discovery, or the `build` Fast pilot), and Express when you intentionally want the safe
 base without an interview. Any mode may offer the optional session-rename capability check
 described below.
 
@@ -231,7 +231,7 @@ it rewrites `prReview.*` rows as `mergeGate.*` (see
 tool stops or reports on such a row only if it resolves that row's successor key; any other tool
 ignores it. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
-`skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
+`skills.*`, `executionProfiles.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
@@ -297,6 +297,40 @@ legacy config does not run this prerequisite and therefore does not create a run
 If the runtime migration fails, setup leaves the config marker unwritten, preserves the selected
 source and safely copied partial state, and applies its existing conditional rollback to its own
 unchanged ADR/convention writes.
+
+### Fast pilot block
+
+Guided's advanced settings end with **Block 10 (`executionProfiles`)**, the opt-in for the
+Quality/Fast field pilot of `/effective-flow build`. Profile and Express never ask it and keep an
+existing `executionProfiles.fast.enabled` row exactly as recorded, including an invalid one. The
+block first explains that `true` only admits the project to the pilot, shows the recorded value as
+`enabled`, `disabled`, or `invalid – runs as Quality`, and asks with **Keep** pre-selected:
+
+- **Keep** writes nothing.
+- **Enable** writes `executionProfiles.fast.enabled = true`. No baseline starts and nothing
+  activates.
+- **Disable** writes `false`. Every workflow runs Quality, and stored pilot evidence stays
+  untouched.
+
+The change appears in the before/after list and needs the same confirmation as every other key; in
+hidden mode it goes to the local `.effective-flow/project-setup.md`. The row never takes a model
+or provider name.
+
+Once the configuration step has finished (a declined confirmation or a stopped run offers no
+action), the block reads the stored pilot generation and, only while the key is enabled, offers at
+most one confirmed action:
+
+| Stored generation                       | Offered action                                                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                                    | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
+| `baseline`                              | **Activate**; if the preregistered window or sample is not yet met, setup reports "not ready" and the baseline continues unchanged                                                                |
+| `suspended`, evidence healthy           | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
+| `active`, `review`, unhealthy suspended | none; `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                                                       |
+
+Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
+row, and the final report names the opt-in value, the stored generation state, and each offered
+action's outcome. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
+baseline records.
 
 ## `/effective-flow cleanup`
 

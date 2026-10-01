@@ -1,0 +1,82 @@
+{
+  "name": "A reserved packet that never spawned is still closed and the record finalizes as aborted",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "tooling",
+      "paths": [".github/workflows/ci.yml"]
+    },
+    {
+      "bucket": "rust",
+      "paths": ["crates/cli/src/main.rs"],
+      "initialOutcome": "never-spawned"
+    }
+  ],
+  "completion": "aborted",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": [],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": [],
+    "finalize": {
+      "completionStatus": "aborted",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

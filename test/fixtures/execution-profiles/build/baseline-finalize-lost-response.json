@@ -1,0 +1,50 @@
+{
+  "name": "A lost finalize response is re-sent once with the identical payload and deduplicated",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "tooling",
+      "paths": [".github/workflows/ci.yml"]
+    }
+  ],
+  "completion": "completed",
+  "finalizeResult": "lost-response",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize", "finalize"],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false
+      }
+    ],
+    "suspend": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

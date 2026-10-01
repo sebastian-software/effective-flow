@@ -1,0 +1,247 @@
+{
+  "name": "Each post-attempt fallback consumes Fast and makes exactly one Quality continuation",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-0.mjs"],
+      "initialOutcome": "spawn-rejected"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-1.mjs"],
+      "initialOutcome": "worker-abort"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-2.mjs"],
+      "initialOutcome": "missing-context"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-3.mjs"],
+      "initialOutcome": "scope-growth"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-4.mjs"],
+      "initialOutcome": "new-decision"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-5.mjs"],
+      "initialOutcome": "requirements-mismatch"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-6.mjs"],
+      "initialOutcome": "keywordless-exhausted"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/feature-7.mjs"],
+      "initialOutcome": "scope-incident",
+      "incident": "scope boundary"
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "suspend",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "spawn-rejected",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "worker-abort",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "missing-context",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "scope-growth",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "new-decision",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "requirements-mismatch",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "keywordless-exhausted",
+        "fastAttemptConsumed": true
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "scope-incident",
+        "fastAttemptConsumed": true
+      }
+    ],
+    "suspend": ["critical-scope-incident"],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "spawn-rejected",
+          "escalated": true
+        },
+        {
+          "fallback": "worker-abort",
+          "escalated": true
+        },
+        {
+          "fallback": "missing-context",
+          "escalated": true
+        },
+        {
+          "fallback": "scope-growth",
+          "escalated": true
+        },
+        {
+          "fallback": "new-decision",
+          "escalated": true
+        },
+        {
+          "fallback": "requirements-mismatch",
+          "escalated": true
+        },
+        {
+          "fallback": "keywordless-exhausted",
+          "escalated": true
+        },
+        {
+          "fallback": "scope-incident",
+          "escalated": true
+        }
+      ]
+    },
+    "events": []
+  }
+}

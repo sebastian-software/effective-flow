@@ -1,12 +1,13 @@
 # Model-tiering pilot protocol
 
-This guide documents the shipped, local measurement protocol for the future Quality/Fast pilot.
-It explains the executable contract owned by
+This guide documents the shipped, local measurement protocol for the Quality/Fast field pilot of
+`build`. It explains the executable contract owned by
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
-[`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). It does
-not activate the pilot: setup exposes no baseline or activation action, `build` and `refactor`
-contain no Fast-profile reference, and portable execution remains Quality-only.
+[`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
+protocol itself activates nothing: Guided setup starts a baseline or activates a generation only
+through a confirmed action, `build` is the only workflow that records runs and requests Fast,
+`refactor` has not adopted Fast, and portable execution remains Quality-only and unmeasured.
 
 ## Authority and drift control
 
@@ -71,6 +72,36 @@ the owner PID stale, and rechecks the same inode and digest before removal. Atom
 names contain the owning lock nonce; recovery authenticates that mapping and supports both lock
 classes.
 
+### Callers
+
+Three sources call the helper, each through a lazy fragment that owns its exact payloads:
+
+- **Guided setup block 10**
+  ([`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)) reads
+  `inventory` and offers at most one confirmed action for the proven state: `begin-baseline` for
+  `none`, `activate` for `baseline`, and `resume` for a `suspended` generation whose evidence is
+  healthy (every incomplete count zero, no orphan temporary). `begin-baseline` and `activate` bind
+  the `protocol` version and digest; `resume` binds the current inventory and suspension digests
+  and restores only the stored prior state. `activate` failing with `INCOMPLETE_EVIDENCE` means the
+  preregistered window or sample is not yet met, or evidence is unhealthy; the state stays
+  `baseline`. `review` is terminal and never resumes. A portable build offers no action.
+- **`build`**
+  ([`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md))
+  reads `inventory` only with an enabled configuration on a native Claude Code or Codex build, and
+  records only for a `baseline` or `active` generation. A portable build never calls the helper,
+  whatever host runs it. The order is `start` once, after every initial packet is
+  classified and before the first implementation spawn; `start-packet` and `finish-packet` around
+  each packet's initial phase, including a failed Fast attempt and its single Quality
+  continuation; and `finalize` exactly once at every exit. Any in-flight reservation makes `start`
+  fail with `INCOMPLETE_EVIDENCE`, so the run proceeds as unmeasured Quality. A critical incident
+  calls `suspend` with the fixed outcome of its class. A failed or impossible finalization keeps
+  the product diff, calls `suspend` with `finalization-failed`, and offers a confirmed
+  `reconcile-record` once in the same run; a declined or failed reconciliation leaves the record
+  for `discard-generation` or `purge`. `build` never calls `begin-baseline`, `activate`, or
+  `resume`.
+- **`merge-gate`** records the anonymous period observation described under "Evidence and
+  consent".
+
 ## Evidence and consent
 
 All owned state stays under
@@ -126,6 +157,16 @@ stratum, ordinal-half, and period-observation minima; insufficient or incompatib
 `unavailable`, never a favorable default. The protocol identifies the analysis as observational and
 unpaired.
 
+**Known bias: never-spawned packets.** `finalize` requires a finished timing receipt for every
+reserved packet, so `build` closes a packet that never spawned with `start-packet` directly followed
+by `finish-packet` and finalizes the record as `aborted` or `failed`. The helper cannot tell that
+closure from a real interval. It records a near-zero `available` duration, which enters the cohort's
+duration contributors and outcomes. `cohortMetrics` also counts a never-spawned packet reserved as
+`fast` in `attemptedFastCount` and as Fast without escalation, although no Fast attempt happened.
+This bias is contained, not corrected, and awaits a helper follow-up that records such a closure as
+unattempted with an unavailable duration. Until then, a run's never-spawned packets are visible only
+through its `aborted` or `failed` completion outcome.
+
 Review binds an inventory digest before aggregation. The private pre-suppression decision view is
 used for evaluation. In the publication candidate, a fixed or dynamic distribution is visible only
 when every member meets the suppression minimum; otherwise the entire distribution is replaced by
@@ -166,7 +207,7 @@ the workflow-record cap.
 
 - [Architecture](architecture.md#local-pilot-measurement-boundary) – separation between policy,
   representation, configuration, lifecycle state, and observations
-- [Configuration](configuration.md#reserved-execution-profile-key) – tracked ownership versus
+- [Configuration](configuration.md#execution-profile-key) – tracked ownership versus
   runtime ownership
 - [User privacy and retention guide](../user-guide/model-tiering-pilot.md) – operator-facing data,
   consent, review, and deletion contract
