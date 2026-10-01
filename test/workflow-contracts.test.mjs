@@ -18503,12 +18503,12 @@ test('plan publication republishes as a new commit and forbids every history rew
     [
       '`git worktree add <WORKTREE_PATH> -b <branch> <resolved base ref>`',
       'never uses `-b`',
-      '`git worktree add <WORKTREE_PATH> <head-branch>`',
+      "`git worktree add <WORKTREE_PATH> '<head-branch>'`",
     ],
     'the worktree creation',
   );
   assert.equal(publication.split(' -b ').length - 1, 1, 'only the first publication may use -b');
-  assert.ok(publication.includes('`git -C <RUNTIME_STATE_ROOT> push origin <head-branch>`'));
+  assert.ok(publication.includes("`git -C <RUNTIME_STATE_ROOT> push origin '<head-branch>'`"));
 
   // Invariant: an update warns that approvals may be stale, and a publication warns off
   // merge-gate and iterate before apply.
@@ -18645,8 +18645,12 @@ test('publication and continuation share their filter, check 5, and branch-state
       'never sees a body',
       'ignored foreign pull request',
       'check 1, 2, 4, or 5 blocks',
-      '`git -C <RUNTIME_STATE_ROOT> fetch origin refs/heads/<head-branch>:refs/remotes/origin/<head-branch>`',
-      '`git -C <RUNTIME_STATE_ROOT> rev-parse --verify refs/remotes/origin/<head-branch>^{commit}`',
+      "`git -C <RUNTIME_STATE_ROOT> check-ref-format --branch '<head-branch>'`",
+      'prints the name unchanged',
+      '"unsafe head branch name"',
+      'reaches no further command',
+      "`git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<head-branch>:refs/remotes/origin/<head-branch>'`",
+      "`git -C <RUNTIME_STATE_ROOT> rev-parse --verify 'refs/remotes/origin/<head-branch>^{commit}'`",
       '`git -C <RUNTIME_STATE_ROOT> merge-base <resolved base ref> <fetched head OID>`',
       '`git -C <RUNTIME_STATE_ROOT> diff --name-status -z --no-renames <merge-base> <fetched head OID>`',
       'deletion (`D`) of `A`',
@@ -18661,12 +18665,76 @@ test('publication and continuation share their filter, check 5, and branch-state
     [
       '`git -C <RUNTIME_STATE_ROOT> merge-base --is-ancestor`',
       'any other exit stops the run',
-      '`git -C <RUNTIME_STATE_ROOT> branch --track <head-branch> origin/<head-branch>`',
-      '`git -C <RUNTIME_STATE_ROOT> update-ref refs/heads/<head-branch> <fetched head OID> <local OID>`',
+      "`git -C <RUNTIME_STATE_ROOT> branch --track '<head-branch>' 'origin/<head-branch>'`",
+      "`git -C <RUNTIME_STATE_ROOT> update-ref 'refs/heads/<head-branch>' <fetched head OID> <local OID>`",
       'Ahead',
       'Diverged',
     ],
     'the shared branch-state rule',
+  );
+});
+
+test('a plan pull request head branch is validated and reaches every command single-quoted', () => {
+  // Invariant: `<head-branch>` comes from `pr-list`, and Git admits branch names such as
+  // `x/$(id)` or `a;b`. Both fragments validate it with `check-ref-format --branch` before any other
+  // command, and every command that receives it receives it inside one single-quoted argument, on
+  // both the continuation's provisioning and publication's republication path.
+  const files = ['src/shared/plan-publication.md', 'src/shared/plan-pr-continuation.md'];
+  const rules = files.map((file) => {
+    const text = source(file);
+    const rule = paragraphFrom(
+      text,
+      "A candidate's head branch, `<head-branch>`, comes from",
+    ).block;
+    // The statement sits next to the plan-path quoting rule it extends.
+    ordered(text, 'so this quoting is the only shell boundary.', rule);
+    return rule;
+  });
+  assert.equal(rules[0], rules[1], 'the head-branch quoting rule must be byte-identical');
+  includesAll(
+    prose(rules[0]),
+    [
+      '`$(...)`, `;`, or quotes',
+      'the `fetch` refspec, `rev-parse`, `merge-base`, `branch`, `update-ref`, `worktree add`, and `push`',
+      'one literal, single-quoted argument, never interpolated unquoted',
+      "fails check 5's `check-ref-format` reaches no further command",
+    ],
+    'the head-branch quoting rule',
+  );
+
+  for (const file of files) {
+    const text = source(file);
+    // Validation is the first command check 5 runs.
+    ordered(
+      text,
+      "check-ref-format --branch '<head-branch>'",
+      "fetch origin 'refs/heads/<head-branch>:refs/remotes/origin/<head-branch>'",
+    );
+    // Every command template that carries the head branch quotes the argument holding it.
+    const templates = [...text.matchAll(/`(git [^`]*<head-branch>[^`]*)`/g)].map((m) => m[1]);
+    assert.ok(templates.length >= 5, `${file} must name its head-branch commands`);
+    for (const template of templates) {
+      const unquoted = template.replace(/'[^']*'/g, '');
+      assert.equal(
+        unquoted.includes('<head-branch>'),
+        false,
+        `${file}: ${template} must pass <head-branch> only inside a single-quoted argument`,
+      );
+    }
+  }
+  const publication = source('src/shared/plan-publication.md');
+  includesAll(
+    publication,
+    [
+      "`git worktree add <WORKTREE_PATH> '<head-branch>'`",
+      "`git -C <RUNTIME_STATE_ROOT> push origin '<head-branch>'`",
+    ],
+    'the republication path',
+  );
+  assert.ok(
+    source('src/shared/plan-pr-continuation.md').includes(
+      "`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> '<head-branch>'`",
+    ),
   );
 });
 
@@ -18900,7 +18968,7 @@ test('the plan continuation provisions the existing head branch without -b and r
   includesAll(
     provisioning,
     [
-      '`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> <head-branch>` without `-b`',
+      "`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> '<head-branch>'` without `-b`",
       '`creationOid` set to the fetched head OID',
       '`worktree.enabled: false`',
       'override it for this run',

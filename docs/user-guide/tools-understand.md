@@ -176,9 +176,10 @@ wrote it.
 Running `plan` again on a revised plan that already has an open plan pull request **republishes**
 it as a new commit on that pull request instead of opening a second one; existing approvals may
 then no longer apply. An unchanged plan has nothing to republish. Several matching pull requests
-from this repository, or one whose branch changes a path other than the plan or whose head could
-not be fetched, make publication unavailable, and the report lists each with its URL and the failed
-check.
+from this repository, or one whose branch changes a path other than the plan, whose head could not
+be fetched, or whose branch name fails `git check-ref-format --branch`, make publication
+unavailable, and the report lists each with its URL and the failed check. The head branch name
+reaches every command as one single-quoted argument.
 
 The report carries one publication line: published (with URL, branch, and audience), updated,
 declined, unavailable, not attempted, or failed at a named step. Each ignored foreign pull request

@@ -23,10 +23,17 @@ Throughout, `P` is the plan's repository-relative path `<plan.dir>/<file>.md` an
 only as one literal, quoted argument each — single-quoted, with every `'` inside written as `'\''` —
 behind `--` where the command takes one, and as `':(literal)<path>'` wherever Git reads a pathspec;
 they are never interpolated unquoted. The helper's path rule admits whatever `plan.dir` may hold,
-`&`, `;`, `$`, and quotes included, so this quoting is the only shell boundary. Every helper call
-carries the verified `RUNTIME_STATE_ROOT` as its `cwd`, and every Git call names its root with
-`git -C`. Nothing here resets, rebases, amends, squashes, or force-updates a ref, force-pushes, or
-bypasses hooks.
+`&`, `;`, `$`, and quotes included, so this quoting is the only shell boundary.
+
+A candidate's head branch, `<head-branch>`, comes from `pr-list`, and Git admits branch names that
+carry `$(...)`, `;`, or quotes, so it follows the same rule: every command that receives it — the
+`fetch` refspec, `rev-parse`, `merge-base`, `branch`, `update-ref`, `worktree add`, and `push` —
+receives it only inside one literal, single-quoted argument, never interpolated unquoted. A name
+that fails check 5's `check-ref-format` reaches no further command.
+
+Every helper call carries the verified `RUNTIME_STATE_ROOT` as its `cwd`, and every Git call names
+its root with `git -C`. Nothing here resets, rebases, amends, squashes, or force-updates a ref,
+force-pushes, or bypasses hooks.
 
 ### Insertion point
 
@@ -85,12 +92,14 @@ A remaining candidate counts only when all five checks hold:
 2. its `state` is open;
 3. its `sameRepository` is `true`, as the filter above already established;
 4. its `base` equals the resolved local base branch;
-5. its head changes against the merge base touch only `P`. Fetch its head branch into a named
-   remote-tracking ref with
-   `git -C <RUNTIME_STATE_ROOT> fetch origin refs/heads/<head-branch>:refs/remotes/origin/<head-branch>`,
+5. its head changes against the merge base touch only `P`. First validate its head branch with
+   `git -C <RUNTIME_STATE_ROOT> check-ref-format --branch '<head-branch>'`: unless that exits `0`
+   and prints the name unchanged, the check fails as "unsafe head branch name", and the name reaches
+   no further command. Then fetch the head branch into a named remote-tracking ref with
+   `git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<head-branch>:refs/remotes/origin/<head-branch>'`,
    which commits nothing, moves no local branch, and stages nothing, and read the **fetched head
    OID** with
-   `git -C <RUNTIME_STATE_ROOT> rev-parse --verify refs/remotes/origin/<head-branch>^{commit}`.
+   `git -C <RUNTIME_STATE_ROOT> rev-parse --verify 'refs/remotes/origin/<head-branch>^{commit}'`.
    Take `<merge-base>` from
    `git -C <RUNTIME_STATE_ROOT> merge-base <resolved base ref> <fetched head OID>`, then list
    `git -C <RUNTIME_STATE_ROOT> diff --name-status -z --no-renames <merge-base> <fetched head OID>`.
@@ -195,11 +204,11 @@ Every ancestry check is `git -C <RUNTIME_STATE_ROOT> merge-base --is-ancestor`; 
 exit `1` fails, and any other exit stops the run.
 
 - **Absent:** create it as a tracking branch with
-  `git -C <RUNTIME_STATE_ROOT> branch --track <head-branch> origin/<head-branch>`, require it to
+  `git -C <RUNTIME_STATE_ROOT> branch --track '<head-branch>' 'origin/<head-branch>'`, require it to
   resolve to the fetched head OID, and record that this run created the branch.
 - **Equal:** use it.
 - **Ancestor of the fetched head OID:** fast-forward it with the guarded
-  `git -C <RUNTIME_STATE_ROOT> update-ref refs/heads/<head-branch> <fetched head OID> <local OID>`.
+  `git -C <RUNTIME_STATE_ROOT> update-ref 'refs/heads/<head-branch>' <fetched head OID> <local OID>`.
 - **Ahead** (the fetched head OID is its ancestor): stop, and name both OIDs.
 - **Diverged:** stop, and name both OIDs.
 
@@ -208,7 +217,7 @@ is ahead is resumed only through the worktree that holds its commits ("Resumptio
 
 **Dedicated worktree.** Derive `WORKTREE_PATH` and guard every parent directory exactly as "Worktree
 execution" step 2 prescribes, then run
-`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> <head-branch>` without `-b`. Issue and
+`git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> '<head-branch>'` without `-b`. Issue and
 verify its `effective-flow-created` receipt with purpose `delivery`, record the worktree as created
 by this run, and immediately write its lifecycle record as `active` with `creationOid` set to the
 fetched head OID. Setup follows "Worktree execution" step 3.
