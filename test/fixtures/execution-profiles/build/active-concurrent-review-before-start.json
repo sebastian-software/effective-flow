@@ -21,6 +21,7 @@
     "configState": "enabled",
     "generationState": "none",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": ["inventory", "start"],
     "packets": [
       {
@@ -30,10 +31,11 @@
         "wire": null,
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": null
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": null,
     "events": []
   }

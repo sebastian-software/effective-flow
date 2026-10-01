@@ -1,28 +1,32 @@
 {
-  "name": "A begin-review after start makes an incident's suspend fail with only an alert, and the record still finalizes",
+  "name": "A lost activate response is settled by a fresh inventory that proves the generation active",
   "harness": "claude",
   "config": "true",
-  "inventory": "active",
-  "external": [
-    {
-      "at": "after-start",
-      "operation": "begin-review"
-    }
-  ],
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "activation": "lost-response",
   "packets": [
     {
       "bucket": "node-backend-cli",
-      "paths": ["src/server/handler.mjs"],
-      "incident": "safety",
-      "suspendResult": "failed"
+      "paths": ["src/server/handler.mjs"]
     }
   ],
-  "completion": "failed",
+  "completion": "completed",
   "expected": {
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
-    "operations": ["inventory", "start", "start-packet", "suspend", "finish-packet", "finalize"],
+    "activation": "ambiguous:active",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
     "packets": [
       {
         "eligibility": "eligible",
@@ -38,12 +42,13 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       }
     ],
-    "suspend": ["critical-safety-incident"],
+    "incidents": [],
     "finalize": {
-      "completionStatus": "failed",
+      "completionStatus": "completed",
       "qualityCorrectionRounds": 0,
       "packets": [
         {
@@ -52,12 +57,6 @@
         }
       ]
     },
-    "events": [
-      {
-        "kind": "alert",
-        "operation": "suspend",
-        "report": "value-free-alert"
-      }
-    ]
+    "events": []
   }
 }

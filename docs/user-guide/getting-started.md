@@ -108,8 +108,9 @@ an installation. Those artifacts establish build and installation consistency, n
 discovery or activation.
 
 `build` is the one workflow that requests that representation, and only inside its opt-in field
-pilot: the project sets `executionProfiles.fast.enabled` in Guided setup, starts a Quality-only
-baseline, and later activates the generation through confirmed setup actions. In an active
+pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and starts a Quality-only
+baseline through a confirmed setup action; a later `build` run activates the generation
+automatically once the preregistered baseline conditions are met. In an active
 generation, Fast may be requested only for the first implementation attempt of an eligible native
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
 scope-growth continuation uses Quality; coupled packets also share Quality. `refactor` has not

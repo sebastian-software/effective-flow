@@ -320,16 +320,17 @@ Once the configuration step has finished (a declined confirmation or a stopped r
 action), the block reads the stored pilot generation and, only while the key is enabled, offers at
 most one confirmed action:
 
-| Stored generation                       | Offered action                                                                                                                                                                                    |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| none                                    | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
-| `baseline`                              | **Activate**; if the preregistered window or sample is not yet met, setup reports "not ready" and the baseline continues unchanged                                                                |
-| `suspended`, evidence healthy           | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
-| `active`, `review`, unhealthy suspended | none; `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                                                       |
+| Stored generation                                   | Offered action                                                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
+| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
+| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                   |
 
 Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
 row, and the final report names the opt-in value, the stored generation state, and each offered
-action's outcome. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
+action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
+and the next measured native `build` run activates it automatically once the preregistered window
+and sample are met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
 baseline records.
 
 ## `/effective-flow cleanup`

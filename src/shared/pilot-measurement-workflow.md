@@ -1,13 +1,14 @@
 ## Pilot workflow record
 
-This fragment owns the pilot workflow record of an adopting implementation workflow: preflight,
-reservation, packet timing, finalization, incident suspension, and same-run reconciliation. The
-anonymous merge-gate observation is a different record owned by the `pilot-measurement` fragment.
-The loaded `execution-profiles` fragment stays the canonical profile policy; this fragment adds no
-gate row, state, fallback, or outcome.
+This fragment owns the pilot workflow record of an adopting implementation workflow: preflight with
+automatic activation, reservation, packet timing, finalization, incident recording, and same-run
+reconciliation. The anonymous merge-gate observation is a different record owned by the
+`pilot-measurement` fragment. The loaded `execution-profiles` fragment stays the canonical profile
+policy; this fragment adds no gate row, state, fallback, or outcome.
 
-A workflow run never calls `begin-baseline`, `activate`, or `resume`. Those three are confirmed
-Guided setup actions. A run only reads the generation and writes its own record.
+A workflow run never calls `begin-baseline` or `resume`; those two are confirmed Guided setup
+actions. A run reads the generation, lets the helper activate a baseline generation, and writes
+only its own record and incidents.
 
 ### Helper contract
 
@@ -23,10 +24,16 @@ closed outcome, never a capability, run or packet identifier, or payload value.
 orchestrator's transient state for the current run. Never write them to the wisdom file, chat, a
 worker handoff, a retained-state continuation, a commit, a pull request, or any tracked artifact.
 
-Before the first implementation spawn, a nonzero exit, a malformed envelope, `PROTOCOL_DRIFT`, or
-an unknown key prevents Fast; while no reservation exists it makes the run an unmeasured run.
-After `start`, a helper failure preserves the product diff, never starts, restarts, or re-routes an
-implementation worker by itself, and blocks every later Fast attempt in the run.
+`LOCKED` is the one retryable error: the helper changed nothing. Re-send the identical payload at
+most twice more, after about two and then about five seconds; an exhausted retry counts as that
+operation's failure. Never re-send after any other error, except a lost response where a step
+allows it.
+
+Before the first implementation spawn, a failure no step below handles by name (a nonzero exit, a
+malformed envelope, `PROTOCOL_DRIFT`, or an unknown key or result) prevents Fast; while no
+reservation exists it makes the run an unmeasured run. After `start`, a helper failure preserves
+the product diff, never starts, restarts, or re-routes an implementation worker by itself, and
+blocks every later Fast attempt in the run.
 
 ### Preflight
 
@@ -35,10 +42,10 @@ and before the first packet is classified for `start`.
 
 With `configState=enabled`, an **unmeasured run** holds no usable generation: every packet takes
 `generationState=none` with `not-evaluated + quality`, the legal `no-generation` row, runs Quality
-without Fast, and is never recorded. A portable build, an ambiguous or failed inventory, and a
-failed `start` each make the run unmeasured. That `generationState=none` is the run's effective
-envelope, not a claim about the persisted generation: the orchestrator keeps an inventory-proven
-persisted state separately as the target of an incident's `suspend`.
+without Fast, and is never recorded. A portable build, an ambiguous or failed inventory, a genuine
+activation fault, and a failed `start` each make the run unmeasured. That `generationState=none` is
+the run's effective envelope, not a claim about the persisted generation: the orchestrator keeps an
+inventory-proven persisted state separately as the incident target.
 
 1. Resolve `executionProfiles.fast.enabled` fresh through the loaded configuration contract and
    classify it as `configState=disabled|invalid|enabled`. Do not repair or write it. Disabled or
@@ -61,6 +68,37 @@ persisted state separately as the target of an incident's `suspend`.
    `generationId` and exact `generationState`. `none`, `suspended`, and `review` select
    `not-evaluated + quality` and reserve nothing. Only `baseline` and `active` classify packets. An
    ambiguous or failed inventory is an unmeasured run and calls no mutating operation.
+
+4. **Automatic activation.** A proven `baseline` is activated by the helper, never by a user
+   confirmation. Call `protocol` with `{}`, take `protocolVersion` from `result.version` and
+   `protocolDigest` from the envelope, which must equal `result.digest`, then call `activate` once
+   with exactly these keys and no `confirmation`:
+
+   ```json
+   {
+     "runtimeStateRoot": "<verified RUNTIME_STATE_ROOT>",
+     "repositoryIdentity": "<verified repository identity>",
+     "generationId": "<inventory generationId>",
+     "configState": "enabled",
+     "protocolVersion": "<protocol result.version>",
+     "protocolDigest": "<protocol digest>"
+   }
+   ```
+
+   - `activated` makes the generation `active`, persisted and effective alike.
+   - `not-ready` whose `unmet` is a nonempty subset of `busy`, `window`, and `sample` keeps it
+     `baseline`. With `busy`, another run is in flight and the `start` below fails.
+   - `LOCKED`, once its retry is exhausted, keeps it `baseline`: a held lock fails before any check.
+   - `INVALID_STATE`, `WRITE_FAILED`, a lost or malformed response, or an unknown result is
+     ambiguous: re-read `inventory` with the `generationId` and take its proven state as in step 3,
+     without a second `activate`. An unprovable re-read makes the run unmeasured.
+   - Every other failure makes the run unmeasured: a protocol mismatch, which sends no `activate`,
+     and the genuine evidence faults `INCOMPLETE_EVIDENCE` and `UNSAFE_STORAGE` among them.
+
+   In every unmeasured case the generation the first inventory proved stays the incident target.
+
+   A reservation made after `activated` is an `active` reservation. The state decided here is the
+   one every packet is classified under; a baseline reservation is never relabelled.
 
 ### Reservation
 
@@ -103,11 +141,11 @@ packet entry per classified initial packet in a fixed order:
 ```
 
 A success returns `runId`, `workflowCapability`, and one `packetId`/`packetCapability` pair per
-packet in the same order. Never re-send `start`. Any failure creates no usable record: the run
-becomes an unmeasured run, the classification is discarded, and the value-free reason is reported.
-The inventory-proven persisted state stays known and remains the incident `suspend` target.
-An in-flight reservation, including an unfinished merge-gate observation or timing receipt, makes
-`start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized.
+packet in the same order. Never re-send `start` other than after `LOCKED`. Any failure creates no
+usable record: the run becomes an unmeasured run, the classification is discarded, and the
+value-free reason is reported. The inventory-proven persisted state stays known and remains the
+incident target. An in-flight reservation, including an unfinished merge-gate observation or timing
+receipt, makes `start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized.
 
 ### Packet timing
 
@@ -125,18 +163,19 @@ The packet timing and identity operations take exactly these keys:
 }
 ```
 
-- Call `start-packet` immediately before a packet's first implementation spawn, after its packet
-  snapshot.
+- **Start before spawn.** Call `start-packet` immediately before a packet's first implementation
+  spawn, after its packet snapshot, and never spawn that packet before it succeeded. The helper
+  reads a missing receipt as proof that the packet never started, so this order is what makes its
+  `attempt` true.
 - Call `finish-packet` once when that packet's initial phase ends: its Quality attempt, its Fast
   success, or its failed Fast attempt plus the single retained-state Quality continuation. Never
   finish or restart the timer between the Fast attempt and that continuation.
 - Validation, review, retry, and correction spawns lie outside the interval and count only through
   `qualityCorrectionRounds`. Missing or incompatible data stays unavailable, never zero.
-- Close every reserved packet on every exit path. A packet that never spawned is closed at the exit
-  by `start-packet` followed directly by `finish-packet`, and the record then finalizes as
-  `aborted` or `failed`, never `completed`. Known bias, awaiting a helper follow-up: the helper
-  records that near-zero interval as an available duration, and counts such a packet reserved as
-  `fast` as an attempted Fast packet without escalation.
+- An exit that ends the run before every packet completed finalizes as `aborted` or `failed`,
+  never `completed`. A packet that never spawned gets no timing operation; the helper records it as
+  `not-started` and excludes it from every packet metric. A packet whose initial phase is still open
+  at that exit is not finished; the helper records it as `started` with an unavailable duration.
 - A lost `start-packet` or `finish-packet` response may be re-sent once with the identical payload.
   Any other failure leaves the record unfinalizable: send no further packet operation or fabricated
   outcome, continue implementation with Quality, and apply "Finalization failure" at the exit.
@@ -173,11 +212,11 @@ keys:
 ```
 
 - `fallback` is the packet's exact decision-map value, and `escalated` equals `fallback != "none"`.
-  Baseline and Quality-selected packets always send `none`.
+  Baseline and Quality-selected packets, and every packet that never spawned, always send `none`.
 - `costProxy` is `null`, recorded as unavailable, unless the harness exposes a cost measure; then
   it is `{kind, unit, value}` from that measure: `kind` and `unit` are tokens, and `value` is a
   canonical unsigned decimal string (`0` or no leading zero, at most 39 digits). Never invent a
-  cost source.
+  cost source. A packet that never spawned sends `null`.
 - A token is lowercase `[a-z0-9._-]`, starts and ends alphanumeric, has at most 128 characters,
   and holds no credential-like material. The rule covers `costProxy.kind` and `unit` and the
   trace's `role`, `id`, and `category`.
@@ -199,39 +238,40 @@ keys:
   `findings` (`id`, `severity`, `status`, `category`, `path`, `line`). Diffs, escalation detail, and
   handoff prose never enter it.
 - A lost response may be re-sent once with the identical payload; the helper deduplicates it.
+  Every other failure, `LOCKED` after its retry included, is a finalization failure.
 
 ### Incidents and pilot control
 
-A critical incident preserves all state, never reverts potentially user- or sibling-owned work
-automatically, and calls `suspend` with the fixed outcome of its class:
+A critical incident preserves all state and never reverts potentially user- or sibling-owned work
+automatically. Record it with `record-incident`, naming only its `category`: `safety`,
+`data-integrity`, `authorization`, or `scope` for a scope-boundary incident. Never name a
+`critical-*` outcome and never call `suspend`: the helper maps the category to its outcome.
 
-| Incident class      | `pilotControlOutcome`              |
-| ------------------- | ---------------------------------- |
-| safety              | `critical-safety-incident`         |
-| data integrity      | `critical-data-integrity-incident` |
-| authorization       | `critical-authorization-incident`  |
-| scope boundary      | `critical-scope-incident`          |
-| failed finalization | `finalization-failed`              |
-
-The `suspend` payload has exactly `runtimeStateRoot`, `repositoryIdentity`, `generationId`,
-`pilotControlOutcome`, and `affectedRecordIds`, which holds the current `runId` when a record exists
-and is empty otherwise. Only an inventory-proven `baseline`, `active`, or `suspended` generation is
-suspended, also in an unmeasured run after a failed `start`. If `suspend` fails, report only a stable value-free alert, claim no persisted
-suspension, and keep later preflights fail-closed on storage or inventory uncertainty.
+The `record-incident` payload has exactly `runtimeStateRoot`, `repositoryIdentity`,
+`generationId`, `category`, and `affectedRecordIds`, which holds the current `runId` when a record
+exists and is empty otherwise. Only an inventory-proven `baseline`, `active`, or `suspended`
+generation is the incident target, also in an unmeasured run after a failed activation or `start`.
+A success returns the persisted suspension. `LOCKED` follows the retry policy; once exhausted, or
+after any other failure, report only a stable value-free alert, claim no persisted suspension, and
+keep later preflights fail-closed on storage or inventory uncertainty.
 
 A reserved record still finalizes after an incident. Implementation fallback and pilot control
-stay independent: a scope incident may set both `scope-incident` and `critical-scope-incident`.
-From a helper error envelope consume only explicit `pilotControlOutcome`,
+stay independent: a scope incident may set both the `scope-incident` fallback and the `scope`
+category. From a helper error envelope consume only explicit `pilotControlOutcome`,
 `controlStatePersisted`, and `alert`; report a suspension or incomplete evidence only when
-`controlStatePersisted` is `true`. `capacity-exhausted`, `evidence-gap`, `incomplete-record`, and
-`control-state-unpersistable` set only the control axis, never start a worker, and never change a
-successful product diff. `control-state-unpersistable` relays only its value-free alert.
+`controlStatePersisted` is `true`. `capacity-exhausted`, `evidence-gap`, `incomplete-record`,
+`finalization-failed`, and `control-state-unpersistable` set only the control axis, never start a
+worker, and never change a successful product diff. `control-state-unpersistable` relays only its
+value-free alert.
 
 ### Finalization failure
 
-A failed `finalize`, or a record left unfinalizable, keeps every product change and calls `suspend`
-with `finalization-failed` and `[runId]`. It never becomes an implementation fallback. Still in the
-same run, ask once, because no later run holds the capability:
+A failed `finalize`, or a record left unfinalizable, keeps every product change and never becomes
+an implementation fallback. The workflow suspends nothing for it: on a genuine mid-write fault the
+helper itself persists `finalization-failed` and reports it in the envelope, while a rejected
+request, lock contention, or a location or version fault leaves the pilot state unchanged. Report
+exactly what the envelope confirms. Still in the same run, ask once, because no later run holds the
+capability:
 
 ```ask
 header: Pilot record
@@ -245,10 +285,14 @@ options:
 
 On **Reconcile**, read a fresh `inventory` with the `generationId`, then call `reconcile-record` with
 exactly `runtimeStateRoot`, `repositoryIdentity`, `generationId`, `runId`, `workflowCapability`,
-`expectedInventoryDigest` (that fresh `inventoryDigest`), and `confirmation: true`. A declined,
-unanswered, non-interactive, or failed reconciliation leaves the incomplete record in place. The
-completion report then states that the generation can leave suspension only through
-`discard-generation` or `purge`.
+`expectedInventoryDigest` (that fresh `inventoryDigest`), and `confirmation: true`. The helper
+acts on the record's state. For a reservation still open, it writes the record as `abandoned` with
+every packet's `attempt` `unknown`, which never counts as a success. When `finalize` faulted after
+persisting the record, for example while removing a timing receipt, the helper only drains the
+remaining receipts and returns the stored `completionStatus`. Report the status the helper returns.
+A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in
+place. The completion report then states that it keeps every later measured run
+unmeasured and that only `discard-generation` or `purge` clears it.
 
-Every later run observes the suspension until an explicit confirmed Guided `resume` while the
+Every later run observes a suspension until an explicit confirmed Guided `resume` while the
 generation is still `suspended` with healthy evidence; a reviewed generation never resumes.

@@ -26,7 +26,8 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
-    "operations": ["inventory", "start", "start-packet", "finish-packet", "suspend"],
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet"],
     "packets": [
       {
         "eligibility": "eligible",
@@ -42,7 +43,8 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": null
       },
       {
         "eligibility": "eligible",
@@ -58,10 +60,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": null
       }
     ],
-    "suspend": ["finalization-failed"],
+    "incidents": [],
     "finalize": null,
     "events": [
       {

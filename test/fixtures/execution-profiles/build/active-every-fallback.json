@@ -43,7 +43,7 @@
       "bucket": "node-backend-cli",
       "paths": ["src/feature-7.mjs"],
       "initialOutcome": "scope-incident",
-      "incident": "scope boundary"
+      "incident": "scope"
     }
   ],
   "completion": "completed",
@@ -51,6 +51,7 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": [
       "inventory",
       "start",
@@ -69,7 +70,7 @@
       "start-packet",
       "finish-packet",
       "start-packet",
-      "suspend",
+      "record-incident",
       "finish-packet",
       "finalize"
     ],
@@ -88,7 +89,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "spawn-rejected",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -104,7 +106,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "worker-abort",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -120,7 +123,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "missing-context",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -136,7 +140,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "scope-growth",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -152,7 +157,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "new-decision",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -168,7 +174,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "requirements-mismatch",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -184,7 +191,8 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "keywordless-exhausted",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -200,10 +208,11 @@
         },
         "attempts": ["fast", "quality"],
         "fallback": "scope-incident",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       }
     ],
-    "suspend": ["critical-scope-incident"],
+    "incidents": ["scope"],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

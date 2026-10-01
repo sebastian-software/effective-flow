@@ -18,6 +18,7 @@ const regressionBranch = phase6.slice(
 );
 const successBranch = phase6.slice(phase6.indexOf('3. If no regressions:'));
 
+// Invariant: Phase 4 writes no report or backlink; its findings stay provisional and are replaced per run.
 test('refactor review results remain provisional until regression validation succeeds', () => {
   assert.match(phase4, /provisional/i);
   assert.match(phase4, /replace\s+the previous provisional (?:finding|review) set/i);
@@ -25,6 +26,7 @@ test('refactor review results remain provisional until regression validation suc
   assert.doesNotMatch(phase4, /add a short implementation note/);
 });
 
+// Invariant: a regression loops back through review with a bounded retry and never finalizes state.
 test('refactor regression branch re-reviews with bounded retry and no finalization', () => {
   assert.match(regressionBranch, /back to Phase 3, then phases 4, 5 and 6 again/);
   assert.match(regressionBranch, /bound the internal correction rounds/);
@@ -34,6 +36,7 @@ test('refactor regression branch re-reviews with bounded retry and no finalizati
   assert.doesNotMatch(regressionBranch, /implementation note/);
 });
 
+// Invariant: only the no-regression branch finalizes, writing at most one report from the latest review.
 test('refactor success branch alone finalizes the latest provisional review', () => {
   assert.match(successBranch, /finalize external review state/i);
   assert.match(successBranch, /latest provisional review/i);
@@ -43,11 +46,13 @@ test('refactor success branch alone finalizes the latest provisional review', ()
   assert.equal(phase6.match(/finalize external review state/gi)?.length, 1);
 });
 
+// Invariant: a rerun reuses its own marked report and note instead of duplicating them, and stops on ambiguity.
 test('refactor success finalization is idempotent for reports and backlinks', () => {
   assert.match(successBranch, /session ID as the stable finalization marker/i);
   assert.match(
     successBranch,
-    /search `.effective-flow\/review\/` for a report whose `Source workflow` is `\{\{SKILL:refactor\}\}` and whose `Source review` contains this run's finalization marker/,
+    /search `.effective-flow\/review\/`[^\n]*`Source workflow` is `\{\{SKILL:refactor\}\}` and whose `Source review` contains this run's finalization marker/,
+    "the reuse lookup must key on this workflow and on this run's finalization marker",
   );
   assert.match(
     successBranch,
@@ -65,6 +70,7 @@ test('refactor success finalization is idempotent for reports and backlinks', ()
   assert.match(successBranch, /do not append another note/i);
 });
 
+// Invariant: external review state is persisted before the wisdom file is deleted and delivery hands back.
 test('refactor report finalization precedes wisdom deletion and delivery handback', () => {
   const reportFinalization = successBranch.indexOf(
     'at most one new file under `.effective-flow/review/`',

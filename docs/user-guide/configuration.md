@@ -276,9 +276,10 @@ Set the row with `/effective-flow setup guided` → **Advanced settings** → **
 (`executionProfiles`)**: **Keep** leaves the recorded value unchanged, **Enable** writes `true`, and
 **Disable** writes `false`. Profile and Express never ask this question and keep an existing value
 exactly as recorded. After the configuration write, the same block offers at most one confirmed
-generation action, depending on the stored pilot state: start the Quality-only baseline, activate a
-baseline generation once its preregistered window and sample are met, or resume a suspended
-generation with healthy evidence. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
+generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
+a suspended generation with healthy evidence. Activation needs no action: the next measured native
+`build` run activates a baseline generation automatically once its preregistered window and sample
+are met. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
 
 Once a generation is active, `build` may use the native **Fast** implementer for the first
 implementation attempt of an eligible packet. During the baseline every packet runs Quality and is

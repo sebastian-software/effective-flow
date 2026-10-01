@@ -616,6 +616,7 @@ test('session-rename dispatches each established host to its own native section'
   assert.doesNotMatch(dispatch, /^\| Codex\s+\|/m);
 });
 
+// Invariant: Desktop renames only the calling task, once, never by id or retry, and fails visibly.
 test('the Desktop section requires one title-only current-task call and visible failure fallback', () => {
   const fragment = source('src/shared/session-rename.md');
   const desktop = section(
@@ -790,6 +791,7 @@ test('the Claude Code section renames the calling session by sentinel and never 
   );
 });
 
+// Invariant: setup's Desktop probe is one id-free, non-retrying call and installs no hook path.
 test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
@@ -813,6 +815,7 @@ test('setup probes the Desktop capability directly without reinstalling the reti
   assert.doesNotMatch(desktop, /"hooks"\s*:|\[\[hooks\.Stop\]\]|statusMessage/);
 });
 
+// Invariant: declining or failing the setup probe never switches rename off for later runs.
 test('setup No and a failed probe never persistently disable later rename attempts', () => {
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
@@ -864,6 +867,7 @@ test('setup No and a failed probe never persistently disable later rename attemp
   );
 });
 
+// Invariant: the user guide tells users a declined or failed probe affects only that probe.
 test('the delivered setup guide keeps Desktop probe outcomes call-local', () => {
   const guide = source('docs/user-guide/tools-setup.md');
   const contract = prose(

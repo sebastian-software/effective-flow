@@ -1,5 +1,5 @@
 {
-  "name": "A failed finalize suspends and a confirmed same-run reconciliation marks the record abandoned",
+  "name": "A rejected finalize suspends nothing, and a confirmed same-run reconciliation records every packet unknown",
   "harness": "claude",
   "config": "true",
   "inventory": "baseline",
@@ -10,19 +10,26 @@
     }
   ],
   "completion": "completed",
-  "finalizeResult": "failed",
+  "finalizeResult": "rejected",
+  "finalizeControl": {
+    "pilotControlOutcome": "none",
+    "controlStatePersisted": false,
+    "alert": "none"
+  },
   "reconcileAnswer": "Reconcile",
   "expected": {
     "configState": "enabled",
     "generationState": "baseline",
     "persistedGenerationState": "baseline",
+    "activation": "not-ready:window,sample",
     "operations": [
       "inventory",
+      "protocol",
+      "activate",
       "start",
       "start-packet",
       "finish-packet",
       "finalize",
-      "suspend",
       "inventory",
       "reconcile-record"
     ],
@@ -41,10 +48,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "unknown"
       }
     ],
-    "suspend": ["finalization-failed"],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,
@@ -55,6 +63,13 @@
         }
       ]
     },
-    "events": []
+    "events": [
+      {
+        "kind": "control",
+        "operation": "finalize",
+        "pilotControlOutcome": "none",
+        "report": "none"
+      }
+    ]
   }
 }

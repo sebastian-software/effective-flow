@@ -1,5 +1,5 @@
 {
-  "name": "A reserved packet that never spawned is still closed and the record finalizes as aborted",
+  "name": "An aborted run records a never-spawned packet as not-started and an interrupted one as started",
   "harness": "codex",
   "config": "true",
   "inventory": "baseline",
@@ -7,6 +7,11 @@
     {
       "bucket": "tooling",
       "paths": [".github/workflows/ci.yml"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/routes.mjs"],
+      "interrupted": true
     },
     {
       "bucket": "rust",
@@ -19,13 +24,15 @@
     "configState": "enabled",
     "generationState": "baseline",
     "persistedGenerationState": "baseline",
+    "activation": "not-ready:window,sample",
     "operations": [
       "inventory",
+      "protocol",
+      "activate",
       "start",
       "start-packet",
       "finish-packet",
       "start-packet",
-      "finish-packet",
       "finalize"
     ],
     "packets": [
@@ -43,7 +50,25 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -59,14 +84,19 @@
         },
         "attempts": [],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "not-started"
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": {
       "completionStatus": "aborted",
       "qualityCorrectionRounds": 0,
       "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
         {
           "fallback": "none",
           "escalated": false

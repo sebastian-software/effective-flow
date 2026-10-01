@@ -110,7 +110,7 @@ Disabled or invalid configuration stops new measurement and returns `not-evaluat
 without rewriting the persisted generation. `none` produces no pilot record. An unmeasured run
 takes `generationState=none` as its effective envelope, not as a claim about the persisted
 generation; the orchestrator keeps an inventory-proven persisted state separately as the incident
-suspension target. Baseline and active
+target. Baseline and active
 classify every packet; baseline always executes Quality while recording counterfactual
 eligibility. Suspended and review reject new reservations. Review may finalize already captured
 records without relabelling them.
@@ -143,9 +143,10 @@ Quality for retained-state continuation.
 
 Work package 3 is the sole owner of lifecycle persistence, the guarded operations below, the
 gitignored suspension record, and its digest-bound clear operation. Guided setup exposes
-`begin-baseline`, `activate`, and `resume` only as confirmed actions after the stated disclosure
-and explicit confirmation; no workflow run calls them. This fragment defines the interface but
-creates no state.
+`begin-baseline` and `resume` only as confirmed actions after the stated disclosure and explicit
+confirmation; no workflow run calls them. `activate` needs no confirmation of its own: the adopting
+workflow calls it automatically in a measured run's preflight, and the helper transitions only once
+the preregistered conditions pass. This fragment defines the interface but creates no state.
 
 <!-- execution-profile-transition:start -->
 
@@ -247,7 +248,9 @@ blocks Fast until reconciliation and, only for suspended state, a confirmed `res
 <!-- execution-profile-control:end -->
 
 `control-state-unpersistable` emits a value-free alert because no durable reason can be proven.
-No incident detail enters tracked configuration.
+A workflow records a critical incident only through the helper's incident operation
+(`record-incident`) by naming its category; it never names a `critical-*` outcome itself, and the
+helper maps the category to the outcome. No incident detail enters tracked configuration.
 
 ## Escalation transfer
 

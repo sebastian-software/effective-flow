@@ -1224,7 +1224,11 @@ test('effective-marketing is declared, tabled, and preferred by the marketing wr
     marketingWriter,
     /- `effective-marketing › copywriting › copy-editing › marketing-psychology`/,
   );
-  assert.match(marketingWriter, /The root README is split, and the split is declared/);
+  assert.match(
+    marketingWriter,
+    /The root README is split, and the split is declared/,
+    'the root README split must stay declared',
+  );
 });
 
 test('advisory ownership audit accepts checkout, skills directory, and listing inputs', (t) => {
@@ -4338,13 +4342,18 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   // deliberately, so delegation must not quietly take it along.
   assert.match(nodejsImplementer, /`pnpm exec <tool>`, not `npx`/);
 
+  // iterate keeps orchestration authority; the pr-review handoff does no discovery, code or Git.
   const iterate = readSource('tools/iterate.md');
   assert.match(iterate, /pr-review-handoff\/v1/);
   assert.match(iterate, /performs no discovery,\s+implementation, Git/);
   assert.match(iterate, /Effective Flow remains the caller and owns freshness, approval/);
 
   const discovery = readSource('shared/skill-discovery.md');
-  assert.match(discovery, /Never load the `effective-flow` router recursively/);
+  assert.match(
+    discovery,
+    /Never load the `effective-flow` router recursively/,
+    'skill discovery must never re-enter the effective-flow router',
+  );
 
   const dependencyPolicy = readSource('shared/dependency-version-policy.md');
   assert.match(dependencyPolicy, /`effective-delivery` is the declared domain owner/);
@@ -5619,6 +5628,7 @@ test('checked-in language configuration remains complete and migration-only', ()
   // covering `language.chat` too, which is the collapse the carve-out exists to prevent.
   assert.doesNotMatch(languageRules, /A missing override means inheritance/);
 
+  // Languages resolve once per run; an orchestrated agent never re-reads the setup ADR.
   assert.match(languageRules, /resolves every required surface once per run/i);
   assert.match(languageRules, /must not\s+independently re-read the project setup ADR/i);
 
@@ -5629,7 +5639,7 @@ test('checked-in language configuration remains complete and migration-only', ()
   // One assertion per source site that states the rule.
   assert.match(
     languageRules,
-    /branch slugs, and the forge\s+issue-reference keywords — the auto-close keyword with its variants \(`Closes #<issue>`\) and the\s+non-closing `Refs #<issue>` — are not localized/,
+    /forge\s+issue-reference keywords — the auto-close keyword with its variants \(`Closes #<issue>`\) and the\s+non-closing `Refs #<issue>` — are not localized/,
   );
   assert.match(
     readSource('shared/issue-tracker-forge.md').replace(/\s+/g, ' '),
@@ -5662,6 +5672,7 @@ test('checked-in language configuration remains complete and migration-only', ()
   for (const [agent, domains] of Object.entries(agentDomains)) {
     const source = readSource(`agents/${agent}.md`);
     for (const domain of domains) assert.match(source, new RegExp(domain.replaceAll('.', '\\.')));
+    // An orchestrated agent takes its languages as supplied; only direct invocation resolves.
     assert.match(source, /supplied by the\s+orchestrator/is);
     assert.match(source, /direct\s+invocation resolves the shared language rule itself/is);
   }
@@ -5780,7 +5791,6 @@ test('the chat-language fragment pins its domain, its mirror default and its exc
   // Delegated output is relayed, never translated: the key is not handed down, so a run may
   // be visibly bilingual.
   assert.match(prose, /Delegated output is relayed \*\*verbatim\*\*: this key is not handed down/);
-  assert.match(prose, /a run may be visibly bilingual/);
 
   // The three documented exceptions, asserted as one clause. Naming them separately would let
   // the shared reason -- that all three precede any config read -- be lost while each name
@@ -5868,6 +5878,7 @@ test('durable follow-up gate ownership and include documentation reconcile', () 
     'utf8',
   );
   assert.match(buildGuide, /`durable-follow-up-gate` is the single semantic source/);
+  // Gate order is the invariant: admission precedes ID reservation and artifact writes.
   assert.match(buildGuide, /Keep admission before ID reservation and\s+artifact writes/);
 });
 

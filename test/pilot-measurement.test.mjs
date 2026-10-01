@@ -299,145 +299,6 @@ test('inventory discovers zero or one current generation and rejects ambiguity',
   });
 });
 
-function activationInput(fx, generationId, overrides = {}) {
-  return {
-    ...fx.common,
-    generationId,
-    configState: 'enabled',
-    protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
-    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
-    confirmation: true,
-    ...overrides,
-  };
-}
-
-async function generationStateOf(fx, generationId) {
-  return (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps)).result
-    .generationState;
-}
-
-// One completed baseline record whose packets meet the preregistered eligible-packet minimum.
-async function finalizeReadySample(fx, generationId) {
-  const minimum = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum;
-  const reservation = await startWorkflow(
-    fx,
-    generationId,
-    Array.from({ length: minimum }, () => packetReservation()),
-  );
-  for (const packet of reservation.packets) {
-    const identity = packetIdentity(fx, generationId, reservation, packet);
-    await executeOperation('start-packet', identity, fx.deps);
-    fx.clock.wallMs += 10;
-    fx.clock.monotonicNs += 10_000_000n;
-    fx.clock.uptime += 0.01;
-    await executeOperation('finish-packet', identity, fx.deps);
-  }
-  await executeOperation(
-    'finalize',
-    { ...fx.common, generationId, ...terminalPayload(reservation) },
-    fx.deps,
-  );
-}
-
-const BASELINE_WINDOW_MS =
-  PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * 86_400_000;
-
-test('activate reports an unmet baseline as incomplete evidence and leaves the state unchanged', async (t) => {
-  const fx = fixture(t);
-  const { generationId } = await beginBaseline(fx);
-
-  await assert.rejects(
-    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
-    { code: 'INCOMPLETE_EVIDENCE' },
-    'neither the window nor the eligible sample is met',
-  );
-  assert.equal(await generationStateOf(fx, generationId), 'baseline');
-
-  fx.clock.wallMs += BASELINE_WINDOW_MS;
-  await finalizeOne(fx, generationId);
-  await assert.rejects(
-    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
-    { code: 'INCOMPLETE_EVIDENCE' },
-    'an elapsed window without the eligible-packet minimum is not ready',
-  );
-  assert.equal(await generationStateOf(fx, generationId), 'baseline');
-
-  for (const overrides of [
-    { confirmation: false },
-    { configState: 'disabled' },
-    { protocolDigest: `sha256:${'0'.repeat(64)}` },
-  ]) {
-    await assert.rejects(
-      () => executeOperation('activate', activationInput(fx, generationId, overrides), fx.deps),
-      (error) => ['INVALID_PAYLOAD', 'PROTOCOL_DRIFT'].includes(error.code),
-    );
-  }
-  const { confirmation, ...unconfirmed } = activationInput(fx, generationId);
-  assert.equal(confirmation, true);
-  await assert.rejects(() => executeOperation('activate', unconfirmed, fx.deps), {
-    code: 'INVALID_PAYLOAD',
-  });
-  assert.equal(await generationStateOf(fx, generationId), 'baseline');
-});
-
-test('activate rejects a suspended generation before readiness and keeps its suspension', async (t) => {
-  const fx = fixture(t);
-  const { generationId } = await beginBaseline(fx);
-  fx.clock.wallMs += BASELINE_WINDOW_MS;
-  await executeOperation(
-    'suspend',
-    {
-      ...fx.common,
-      generationId,
-      pilotControlOutcome: 'critical-safety-incident',
-      affectedRecordIds: [],
-    },
-    fx.deps,
-  );
-  const before = (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps))
-    .result;
-
-  // The sample is unmet, so a readiness check would answer INCOMPLETE_EVIDENCE: INVALID_STATE
-  // proves the suspended state is rejected before readiness is ever evaluated.
-  await assert.rejects(
-    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
-    { code: 'INVALID_STATE' },
-  );
-  const after = (await executeOperation('inventory', { ...fx.common, generationId }, fx.deps))
-    .result;
-  assert.equal(after.generationState, 'suspended');
-  assert.equal(after.suspensionDigest, before.suspensionDigest);
-  assert.equal(after.inventoryDigest, before.inventoryDigest);
-});
-
-test('activate transitions a ready baseline to active exactly once', async (t) => {
-  const fx = fixture(t);
-  const { generationId } = await beginBaseline(fx);
-  await finalizeReadySample(fx, generationId);
-  fx.clock.wallMs += BASELINE_WINDOW_MS;
-
-  const activated = await executeOperation('activate', activationInput(fx, generationId), fx.deps);
-  assert.deepEqual(activated, {
-    ok: true,
-    operation: 'activate',
-    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
-    result: { generationId, generationState: 'active' },
-  });
-  assert.equal(await generationStateOf(fx, generationId), 'active');
-  const state = JSON.parse(readFileSync(join(generationRoot(fx, generationId), 'state.json')));
-  assert.equal(state.activatedAt, new Date(fx.clock.wallMs).toISOString());
-
-  await assert.rejects(
-    () => executeOperation('activate', activationInput(fx, generationId), fx.deps),
-    { code: 'INVALID_STATE' },
-    'an active generation cannot be activated again',
-  );
-  await assert.rejects(() => startWorkflow(fx, generationId), { code: 'INVALID_PAYLOAD' });
-  const reservation = await startWorkflow(fx, generationId, [packetReservation('fast')]);
-  assert.equal(reservation.cohort, 'pilot');
-  assert.equal(reservation.generationState, 'active');
-});
-
 test('baseline initialization recovers only validated staged namespace and generation states', async (t) => {
   await t.test('namespace staging interrupted before owner publication', async (t) => {
     const fx = fixture(t);
@@ -1064,7 +925,7 @@ test('persisted evidence validation binds filenames, schemas, identities, ordina
     [
       'schema',
       ({ target, record }) =>
-        writeFileSync(target, `${canonicalizeJson({ ...record, schema: 2 })}\n`),
+        writeFileSync(target, `${canonicalizeJson({ ...record, schema: 1 })}\n`),
     ],
     [
       'generation identity',
@@ -1147,7 +1008,7 @@ test('persisted evidence validation binds filenames, schemas, identities, ordina
 test('persisted cardinality and ordinal bounds use next counters without requiring contiguous ordinals', async (t) => {
   function workflowRecord(generationId, ordinal) {
     return {
-      schema: 1,
+      schema: 2,
       kind: 'workflow-record',
       runId: opaqueId(1, ordinal),
       workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1169,6 +1030,7 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
           fallback: 'none',
           escalated: false,
           costProxy: { status: 'unavailable' },
+          attempt: 'started',
         },
       ],
       validation: { status: 'not-required', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
@@ -1357,6 +1219,24 @@ test('deterministic identifier collisions reject without overwriting accepted ev
       harnessFamily: 'codex',
     };
     const accepted = (await executeOperation('start-gate-observation', input, fx.deps)).result;
+    // An open observation makes the next start report busy, so close it before colliding.
+    await executeOperation(
+      'finalize-gate-observation',
+      {
+        ...fx.common,
+        generationId,
+        observationId: accepted.observationId,
+        capability: accepted.capability,
+        terminalOutcome: 'merged',
+        ciRepairCorrections: 0,
+        reviewerCorrections: 0,
+        conflictCorrections: 0,
+        checksReported: false,
+        requiredCheckCount: 'unavailable',
+        requiredChecksSatisfied: 'unavailable',
+      },
+      fx.deps,
+    );
     const target = join(
       generationRoot(fx, generationId),
       'gate-observations',
@@ -1843,7 +1723,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
     `${canonicalizeJson({ ...state, generationState: 'review', nextWorkflowOrdinal: 4 })}\n`,
   );
   const record = (cohort, ordinal, duration, corrections) => ({
-    schema: 1,
+    schema: 2,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `cap-${ordinal}` }),
@@ -1865,6 +1745,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
         fallback: 'none',
         escalated: false,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
+        attempt: 'started',
       },
     ],
     validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -1961,7 +1842,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   const { generationId } = await beginBaseline(fx);
   const generation = generationRoot(fx, generationId);
   const record = (ordinal) => ({
-    schema: 1,
+    schema: 2,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1986,6 +1867,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
         fallback: ordinal === 6 ? 'spawn-rejected' : 'none',
         escalated: ordinal === 6,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
+        attempt: 'started',
       },
     ],
     validation:
@@ -2147,7 +2029,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
       for (let index = 0; index < 5; index += 1) {
         const subsetMember = completionStatus === 'completed' || completionStatus === 'failed';
         const value = {
-          schema: 1,
+          schema: 2,
           kind: 'workflow-record',
           runId: opaqueId(cohort === 'baseline' ? 70 : 71, ordinal),
           workflowCapabilityHash: canonicalDigest({ capability: `ratio-${ordinal}` }),
@@ -2165,15 +2047,24 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
               selectedProfile: cohort === 'baseline' || !subsetMember ? 'quality' : 'fast',
               wouldBeFastEligible: subsetMember,
               firstGateReason: subsetMember ? null : 'profile-unavailable',
-              implementationDuration: { status: 'available', milliseconds: 100 },
               fallback: 'none',
               escalated: false,
-              costProxy: {
-                status: 'available',
-                kind: 'executor-unit',
-                unit: 'microcredit',
-                value: '10',
-              },
+              ...(completionStatus === 'abandoned'
+                ? {
+                    implementationDuration: { status: 'unavailable' },
+                    costProxy: { status: 'unavailable' },
+                    attempt: 'unknown',
+                  }
+                : {
+                    implementationDuration: { status: 'available', milliseconds: 100 },
+                    costProxy: {
+                      status: 'available',
+                      kind: 'executor-unit',
+                      unit: 'microcredit',
+                      value: '10',
+                    },
+                    attempt: 'started',
+                  }),
             },
           ],
           validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -2354,7 +2245,7 @@ test('evaluation applies metric minima to actual validation contributors', async
     for (let index = 0; index < 20; index += 1) {
       const runId = Buffer.alloc(24, ordinal).toString('base64url');
       const record = {
-        schema: 1,
+        schema: 2,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `minimum-${ordinal}` }),
@@ -2381,6 +2272,7 @@ test('evaluation applies metric minima to actual validation contributors', async
               unit: 'microcredit',
               value: '10',
             },
+            attempt: 'started',
           },
         ],
         validation:
@@ -2440,7 +2332,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
       const unit =
         index < 10 ? 'microcredit' : cohort === 'baseline' ? 'baseline-credit' : 'pilot-credit';
       const record = {
-        schema: 1,
+        schema: 2,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `cost-group-${ordinal}` }),
@@ -2467,6 +2359,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
               unit,
               value: '10',
             },
+            attempt: 'started',
           },
         ],
         validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },

@@ -19,6 +19,7 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": [
       "inventory",
       "start",
@@ -43,7 +44,8 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(migration)",
@@ -59,10 +61,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

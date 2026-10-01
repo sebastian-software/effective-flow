@@ -62,16 +62,18 @@ closed to Quality. Literal `true` only admits the project to the pilot lifecycle
 measurement, activate a generation, or prove native capability. Setup remains the sole
 configuration writer and exposes the key only in Guided advanced block 10
 (`src/shared/setup-execution-profiles.md`), together with the confirmed generation actions
-`begin-baseline`, `activate`, and `resume`, each offered only for the inventory-proven state that
-allows it. Profile and Express never ask the block and preserve an existing value.
+`begin-baseline` and `resume`, each offered only for the inventory-proven state that allows it.
+Profile and Express never ask the block and preserve an existing value.
 
 `build` is the one adopting workflow. Its Phase 2 carries the five inline
 `{{AGENT_PROFILE:X:fast}}` tokens and lazy-loads the policy plus
 `src/shared/pilot-measurement-workflow.md`, which owns the measured-run record order
-(`inventory` → `start` → `start-packet`/`finish-packet` → `finalize`), incident suspension, and the
-same-run reconciliation after a failed finalization. A failed Fast attempt makes exactly one
-retained-state transition to Quality in the same checkout, and every later correction is
-Quality-only. No workflow run calls a generation action. `refactor` keeps its build-guard
+(`inventory` → automatic `activate` in a baseline generation → `start` →
+`start-packet`/`finish-packet` → `finalize`), incident recording through `record-incident`, and the
+same-run reconciliation after a failed finalization; the helper itself persists any
+`finalization-failed` suspension. A failed Fast attempt makes exactly one retained-state transition
+to Quality in the same checkout, and every later correction is Quality-only. No workflow run calls
+`begin-baseline` or `resume`. `refactor` keeps its build-guard
 authorization but carries no token and has not adopted Fast; portable output remains Quality-only
 and contains no native profile metadata. The build renders five Claude Fast implementer sidecars,
 Codex per-spawn `model` and `reasoning_effort` overrides, strict native-agent inventories, and
@@ -85,8 +87,10 @@ and identity; detailed traces do not feed metrics. While a baseline or active ge
 non-observer `merge-gate` runs may add anonymous period-level correction observations with no
 workflow-record link. Review freezes reservations, aggregation keeps a private decision view and a
 suppressed publication candidate, and deletion follows confirmed digest-bound purge or the narrower
-disabled/review `discard-generation` recovery path. Only the confirmed Guided generation actions
-move a generation into `baseline` or `active`; no configuration value or native artifact does.
+disabled/review `discard-generation` recovery path. Only a confirmed Guided `begin-baseline`
+starts a baseline; `active` is reached only through the helper's automatic `activate` in a measured
+`build` preflight or a confirmed Guided `resume` of a stored prior state. No configuration value or
+native artifact moves a generation.
 
 The guard mechanics are documented in
 [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration

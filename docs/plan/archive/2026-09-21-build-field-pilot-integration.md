@@ -6,7 +6,8 @@
 
 **Planned against:** `91afe89` on 2026-09-21.
 **Revised against:** `35b4523` on 2026-09-29, after an implementation attempt stopped at step 1 on
-interface drift against work packages 1–3.
+interface drift against work packages 1–3; revised again against `5f43f2e` on 2026-10-01 for helper
+protocol 1.1.0 (#512, `docs/plan/archive/2026-09-29-pilot-measurement-adoption-readiness.md`).
 **Working state:** Preserve the untracked `docs/concept/` tree and every other untracked plan under
 `docs/plan/`.
 **Depends on:**
@@ -44,31 +45,48 @@ state in the same verified checkout.
   measured cost of those lines. No new setup invocation is added: the accepted invocation set
   (empty, `profile`, `express`, `guided`, `hidden`) stays unchanged. In hidden mode the key is
   written to the local `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` like every other key.
-- **Activation owner (decided 2026-09-29):** `build` never calls `begin-baseline`, `activate`, or
-  `resume`. All three are confirmed Guided block-10 actions, because the helper's `confirmation`
-  field is a caller attestation that work package 3 permits only from an explicit user decision in
-  the same run:
+- **Activation (decided 2026-10-01, superseding the 2026-09-29 activation-owner decision):**
+  activation is automatic in `build`. Helper protocol 1.1.0 removed `confirmation` from `activate`
+  (passing it is `INVALID_PAYLOAD`), because the confirmed `begin-baseline` is the only consent, and
+  reports readiness as a result instead of an error. Guided block 10 therefore offers only the two
+  confirmed actions, and `build` never calls either of them:
   - `begin-baseline` reads `protocolVersion` and `protocolDigest` through the helper's `protocol`
     operation, displays the digest plus the local-data disclosure required by
-    `src/shared/execution-profiles.md`, and only after explicit confirmation sends
-    `configState: "enabled"`, `fastEnabled: true`, the protocol pair, and `confirmation: true`.
-  - `activate` is offered only while guarded `inventory` proves `generationState=baseline`. After
-    explicit confirmation it sends the generation ID, `configState: "enabled"`, the protocol pair,
-    and `confirmation: true`. `INCOMPLETE_EVIDENCE` means the preregistered window or sample is not
-    yet met (or evidence is unhealthy); report that value-free, leave the state unchanged, and never
-    treat it as a transition. Any other failure is reported value-free and followed by a fresh
-    `inventory` read before anything is claimed.
+    `src/shared/execution-profiles.md`, states that activation later follows automatically, and
+    only after explicit confirmation sends `configState: "enabled"`, `fastEnabled: true`, the
+    protocol pair, and `confirmation: true`.
   - `resume` is offered only while guarded `inventory` proves `generationState=suspended`,
     `configState` is `enabled`, and evidence is healthy. It is bound to the current inventory and
     suspension digests, shows the generation state and those digests (inventory exposes no cause
     text, so no cause summary is shown), accepts no target state, and restores only the
     helper-stored `resumeTo`. Terminal `review` is recognized and rejects resume even when the
     configuration was later disabled or became invalid. No generation action rewrites the Boolean.
+  - A `baseline` generation offers no setup action; setup reports that it is collecting its
+    baseline and that `build` activates it automatically.
 - In `build` preflight, an enabled configuration reads the generation through guarded, read-only
-  `inventory`. `baseline` executes eligible packets with Quality and records would-have-been-Fast;
-  `active` permits one Fast attempt per eligible packet; `none`, `suspended`, and `review` select
+  `inventory`. `none`, `suspended`, and `review` select
   `eligibility=not-evaluated + selectedProfile=quality` and reserve nothing. Inventory failure or
   ambiguity runs unmeasured Quality and calls no mutating operation.
+- **Automatic activation in preflight:** in an enabled `baseline` generation every measured run
+  reads `protocol` (version from `result.version`, digest from the envelope, which must equal
+  `result.digest`) and calls `activate` once, before classification and `start`, with exactly the
+  common keys, `configState: "enabled"`, and the protocol pair. It consumes the helper's results:
+  - `activated`: the generation is `active`, persisted and effective alike, and the run's
+    reservation is an `active` one;
+  - `not-ready` with `unmet` a nonempty subset of `busy`, `window`, `sample`: it stays `baseline`
+    and the run records a baseline reservation (with `busy`, the later `start` fails and the run is
+    unmeasured);
+  - `LOCKED` after the bounded retry: it stays `baseline`, because a held lock fails before any
+    check;
+  - `INVALID_STATE`, `WRITE_FAILED`, a lost or malformed response, or an unknown result is
+    ambiguous: one guarded `inventory` re-read with the `generationId` decides the state, without a
+    second `activate`; an unprovable re-read makes the run unmeasured Quality;
+  - every other failure, including a protocol mismatch and the genuine evidence faults
+    `INCOMPLETE_EVIDENCE` and `UNSAFE_STORAGE`, makes the run unmeasured Quality.
+
+  A baseline reservation is never relabelled: the state decided here is the one every packet is
+  classified under. `baseline` then executes eligible packets with Quality and records
+  would-have-been-Fast; `active` permits one Fast attempt per eligible packet.
 
 ### Packets and the decision envelope
 
@@ -149,20 +167,29 @@ state in the same verified checkout.
   (the existing `src/shared/pilot-measurement.md` covers only the merge-gate observation). It owns
   the order below; `build.md` carries only the pointer and its per-packet state.
 - Order per measured run (`configState=enabled`, proven `baseline|active`, native harness):
-  1. `start` once, after complete classification and before the first implementation spawn,
+  1. In a `baseline` generation, `protocol` and the automatic `activate` described above.
+  2. `start` once, after complete classification and before the first implementation spawn,
      reserving every initial packet. It returns `runId` and the workflow and packet capabilities,
      which exist only in transient orchestrator state and are never written to the wisdom file,
      chat, a handoff, a commit, or a pull request.
-  2. `start-packet` immediately before each packet's first implementation spawn, and
-     `finish-packet` when that packet's initial phase ends, including its single retained-state
-     Quality continuation. Every reserved packet is closed on every exit path, including a packet
-     that never spawned, following the placement rules of the archived work-package-3 plan;
-     `finalize` fails while any reserved packet lacks a finished receipt.
-  3. `finalize` exactly once with `completionStatus=completed|aborted|failed` (a missing outcome
+  3. `start-packet` immediately before each packet's first implementation spawn, and never a
+     spawn before it succeeded (the start-before-spawn invariant), and `finish-packet` when that
+     packet's initial phase ends, including its single retained-state Quality continuation. The
+     helper derives each stored packet's `attempt` from its receipt: a packet that never spawned
+     gets no timing operation and is recorded `not-started`, which only an `aborted` or `failed`
+     record may hold and which every packet metric excludes; a packet whose initial phase is still
+     open when the run aborts is not finished and is recorded `started` with an unavailable
+     duration; a `completed` record requires a finished receipt for every packet.
+  4. `finalize` exactly once with `completionStatus=completed|aborted|failed` (a missing outcome
      maps to `failed`; `abandoned` is reserved to reconciliation), `escalated` equal to
      `fallback != "none"`, and `costProxy` null (recorded as unavailable) unless the harness exposes a
      cost measure; no cost source is invented. A lost response may be re-sent once with the
      identical payload, because the helper deduplicates it.
+- **Bounded `LOCKED` retry:** `LOCKED` is the one retryable helper error, because the helper changed
+  nothing. Every locked operation `build` calls (`activate`, `start`, the packet operations,
+  `finalize`, `record-incident`, `reconcile-record`) re-sends the identical payload at most twice
+  more, after about two and then about five seconds; an exhausted retry counts as that operation's
+  failure. No other error is re-sent, except a lost response where the step allows it.
 - `start` failure creates no record and routes unmeasured Quality. Any in-flight reservation,
   including an unfinished merge-gate observation or timing receipt, makes `start` fail with
   `INCOMPLETE_EVIDENCE`; admission is therefore serialized, and such a run proceeds as unmeasured
@@ -181,36 +208,46 @@ state in the same verified checkout.
 - Invoke the helper with the operation as its sole positional argument and one exact-key JSON object
   on stdin. Parse only its stable stdout envelope and never scrape stderr or interpolate operational
   prose. Before the initial spawn, nonzero exit, malformed envelope, protocol-digest drift, or
-  unknown keys prevents Fast and, only when no reservation exists, routes unmeasured Quality.
+  unknown keys prevents Fast and, only when no reservation exists, routes unmeasured Quality; the
+  automatic `activate` results above are the named exceptions.
   Post-spawn mutation/finalization failure preserves the product diff, starts no implementation
   worker, and blocks later Fast. Guided control-operation failure reports the value-free failure and
   leaves proven state unchanged.
 
 ### Incidents, suspension, and reconciliation
 
-- **Incident suspension (decided 2026-09-29):** a critical safety, data-integrity, authorization, or
-  scope-boundary incident preserves state and calls `suspend` with the protocol outcome of that
-  closed class, one to one: `critical-safety-incident`, `critical-data-integrity-incident`,
-  `critical-authorization-incident`, or `critical-scope-incident`, with `affectedRecordIds` holding
-  the current `runId` when a record exists. It never reverts potentially user- or sibling-owned work
-  automatically. The mapping is the fixed class-to-outcome table above, never a free choice;
-  `suspend` itself rejects `none`, `incomplete-record`, and `control-state-unpersistable`.
-- If `suspend` fails, report only a stable value-free alert and keep later preflight fail-closed on
-  storage or inventory uncertainty; never claim a persisted suspension.
+- **Incident recording (decided 2026-10-01, superseding the 2026-09-29 incident decision):** a
+  critical safety, data-integrity, authorization, or scope-boundary incident preserves state and
+  calls the helper's `record-incident` with exactly the common keys, its `category` (`safety`,
+  `data-integrity`, `authorization`, or `scope`), and `affectedRecordIds` holding the current
+  `runId` when a record exists. The helper maps the category to its `critical-*` outcome; `build`
+  keeps no category-to-outcome map, never names a `critical-*` outcome, and never calls `suspend`,
+  which now rejects incident outcomes. The target is an inventory-proven `baseline`, `active`, or
+  `suspended` generation, also in an unmeasured run after a failed activation or `start`. It never
+  reverts potentially user- or sibling-owned work automatically.
+- `record-incident` takes the lifecycle lock itself and has no unlocked fallback; `LOCKED` follows
+  the bounded retry. If it is still locked or fails otherwise (for example `INVALID_STATE` under
+  `review`), report only a stable value-free alert and keep later preflight fail-closed on storage
+  or inventory uncertainty; never claim a persisted suspension.
 - Keep implementation fallback and pilot control independent. Fallback describes the initial
   implementation attempt; `pilotControlOutcome` controls the pilot lifecycle. A scope incident may
-  set both. `capacity-exhausted` (returned by the helper with `controlStatePersisted` and `alert`),
-  `evidence-gap`, `incomplete-record`, and `control-state-unpersistable` set only the control axis
-  and never start a worker or change a successful product diff.
-- **Finalization failure (decided 2026-09-29):** a failed `finalize` keeps the product changes and
-  calls `suspend` with `finalization-failed` and `[runId]`. Still in the same run, `build` asks the
-  user once whether to reconcile the incomplete record; on confirmation it calls `reconcile-record`
-  with the transient `workflowCapability`, a freshly read `expectedInventoryDigest`, and
-  `confirmation: true`. This is the only point at which reconciliation is possible, because no later
-  run holds that capability. A declined, unanswered, non-interactive, or failed reconciliation leaves
-  the incomplete record in place; the generation can then leave suspension only through
-  `discard-generation` or `purge`, and the completion report says so. It never becomes an
-  implementation fallback.
+  set both the `scope-incident` fallback and the `scope` category. `capacity-exhausted`,
+  `evidence-gap`, `incomplete-record`, `finalization-failed`, and `control-state-unpersistable`
+  (each read only from the helper's explicit `pilotControlOutcome`, `controlStatePersisted`, and
+  `alert`) set only the control axis and never start a worker or change a successful product diff.
+- **Finalization failure (decided 2026-10-01, superseding the 2026-09-29 reconciliation
+  decision):** a failed `finalize`, or a record left unfinalizable, keeps the product changes, never
+  becomes an implementation fallback, and suspends nothing on the workflow side. The helper persists
+  `finalization-failed` itself on a genuine mid-write fault and reports it in the envelope; caller
+  errors, lock contention, and location or version faults leave the pilot state unchanged, and
+  `build` reports exactly what the envelope confirms. Still in the same run, `build` asks the user
+  once whether to reconcile the incomplete record; on confirmation it calls `reconcile-record` with
+  the transient `workflowCapability`, a freshly read `expectedInventoryDigest`, and
+  `confirmation: true`, and the helper writes the record `abandoned` with every packet's `attempt`
+  `unknown`, which never counts as a success. This is the only point at which reconciliation is
+  possible, because no later run holds that capability. A declined, unanswered, non-interactive,
+  or failed reconciliation leaves the incomplete record in place; it keeps every later measured run
+  unmeasured until `discard-generation` or `purge`, and the completion report says so.
 - Every later run observes the suspension until an explicit confirmed Guided `resume` while the
   generation is still `suspended` and its evidence is healthy; a reviewed generation cannot resume.
 
@@ -229,29 +266,32 @@ preserve the existing lifecycle state and report that no safe transition was pos
 
 ## Affected files
 
-| File                                                                                                                                                                            | Planned change                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/tools/build.md`                                                                                                                                                            | Inline `{{AGENT_PROFILE:<implementer>:fast}}` on the five Phase 2 step 1 selector lines; lazy pointers to the policy and workflow-record fragments; per-packet state after step 0; Quality-only correction wording in Phases 2, 5–7. |
-| `src/shared/pilot-measurement-workflow.md` (new)                                                                                                                                | Workflow-record playbook: preflight inventory, wire mapping, `start`, `start-packet`/`finish-packet`, `finalize`, incident `suspend`, same-run `reconcile-record`, value-free reporting.                                             |
-| `src/tools/setup.md`                                                                                                                                                            | Guided Step 5 block 10 entry, its lazy pointer, and the Config schema row only.                                                                                                                                                      |
-| `src/shared/setup-execution-profiles.md` (new)                                                                                                                                  | Guided opt-in, preserve-in-other-modes rule, and the confirmed `begin-baseline`, `activate`, and `resume` actions with digest display and disclosure.                                                                                |
-| `src/shared/execution-profiles.md`, `src/shared/config-migration.md`                                                                                                            | Replace "reserved / not adopted / not yet an interactive setup choice" wording with `build` adoption; no policy change.                                                                                                              |
-| `build.mjs`                                                                                                                                                                     | Update the adoption comment near the profile-token scope check; adjust only the measured `build` and `setup` `CONTEXT_BUDGET_LINES` entries, each with at most ten lines of headroom.                                                |
-| `test/execution-profile-contract.test.mjs`                                                                                                                                      | Turn the no-adoption guard into an allowlist: `build.md` Phase 2 may carry the five tokens and the two lazy pointers; `refactor.md` and every other tool stay forbidden; update the isolated-build expectations.                     |
-| `test/execution-profile-rendering.test.mjs`                                                                                                                                     | Pin the rendered Claude `-fast` sidecar reference, the Codex per-spawn override, and the portable Quality-only text for the adopted `build` lines.                                                                                   |
-| `test/execution-profile-workflow-contract.test.mjs` (new)                                                                                                                       | Pin packet state, wire mapping, first-spawn consumption, correction boundaries, privacy, measurement order, incident suspension, and same-run reconciliation.                                                                        |
-| `test/workflow-contracts.test.mjs`                                                                                                                                              | Pin setup block 10, enable/disable, preservation in Profile/Express/hidden, the unchanged invocation set, Guided generation actions, invalid values, and no model-name configuration; keep the diff-baseline pins green.             |
-| `test/pilot-measurement.test.mjs`                                                                                                                                               | Add the missing `activate` coverage: not-ready `INCOMPLETE_EVIDENCE`, suspended `INVALID_STATE`, and a successful transition.                                                                                                        |
-| `test/fixtures/execution-profiles/build/*.json`                                                                                                                                 | Representative disabled, eligible, excluded, mixed, fallback, retry, correction, incident, and portable cases.                                                                                                                       |
-| `docs/user-guide/configuration.md`, `docs/user-guide/getting-started.md`, `docs/user-guide/model-tiering-pilot.md`                                                              | Replace the reserved/no-op wording with active `build` pilot semantics and the Guided actions.                                                                                                                                       |
-| `docs/user-guide/tools-setup.md`, `docs/user-guide/tools-implement.md`                                                                                                          | Explain opt-in, baseline start, activation, suspended-only resume, rollback, and `build` eligibility, fallback, corrections, and unchanged gates.                                                                                    |
-| `docs/developer-guide/configuration.md`, `docs/developer-guide/architecture.md`, `docs/developer-guide/build-system.md`, `docs/developer-guide/model-tiering-pilot-protocol.md` | Replace the "no workflow adopts Fast" statements; document the split configuration/generation reader, workflow-record order, and fail-closed behavior.                                                                               |
-| `docs/adr/native-execution-profile-representation.md`, `docs/adr/risk-aware-model-tiering-pilot-policy.md`                                                                      | Update the current-state statements that `build` has not adopted Fast; the decisions themselves stay unchanged.                                                                                                                      |
-| `AGENTS.md`                                                                                                                                                                     | Update the "Execution profiles (reserved policy)" section: `build` adopts Fast, `refactor` does not yet, setup exposes block 10.                                                                                                     |
+| File                                                                                                                                                                            | Planned change                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/build.md`                                                                                                                                                            | Inline `{{AGENT_PROFILE:<implementer>:fast}}` on the five Phase 2 step 1 selector lines; lazy pointers to the policy and workflow-record fragments; per-packet state after step 0; Quality-only correction wording in Phases 2, 5–7.                                                                                    |
+| `src/shared/pilot-measurement-workflow.md` (new)                                                                                                                                | Workflow-record playbook: preflight inventory, automatic `protocol`/`activate` with its result handling, wire mapping, `start`, start-before-spawn `start-packet`/`finish-packet` and the `attempt` rule, `finalize`, `record-incident`, the bounded `LOCKED` retry, same-run `reconcile-record`, value-free reporting. |
+| `src/tools/setup.md`                                                                                                                                                            | Guided Step 5 block 10 entry (opt-in, baseline start, resume; activation automatic in `build`), its lazy pointer, and the Config schema row only.                                                                                                                                                                       |
+| `src/shared/setup-execution-profiles.md` (new)                                                                                                                                  | Guided opt-in, preserve-in-other-modes rule, and the confirmed `begin-baseline` and `resume` actions with digest display and disclosure; a `baseline` generation offers no action because `build` activates it.                                                                                                         |
+| `src/shared/execution-profiles.md`, `src/shared/config-migration.md`                                                                                                            | Replace "reserved / not adopted / not yet an interactive setup choice" wording with `build` adoption; no policy change.                                                                                                                                                                                                 |
+| `build.mjs`                                                                                                                                                                     | Update the adoption comment near the profile-token scope check; adjust only the measured `build` and `setup` `CONTEXT_BUDGET_LINES` entries, each with at most ten lines of headroom.                                                                                                                                   |
+| `test/execution-profile-contract.test.mjs`                                                                                                                                      | Turn the no-adoption guard into an allowlist: `build.md` Phase 2 may carry the five tokens and the two lazy pointers; `refactor.md` and every other tool stay forbidden; update the isolated-build expectations.                                                                                                        |
+| `test/execution-profile-rendering.test.mjs`                                                                                                                                     | Pin the rendered Claude `-fast` sidecar reference, the Codex per-spawn override, and the portable Quality-only text for the adopted `build` lines.                                                                                                                                                                      |
+| `test/execution-profile-workflow-contract.test.mjs` (new)                                                                                                                       | Pin packet state, wire mapping, first-spawn consumption, correction boundaries, privacy, measurement order, automatic activation, incident recording, the `LOCKED` retry, packet `attempt` values, and same-run reconciliation; replay every replayable fixture against the merged helper.                              |
+| `test/workflow-contracts.test.mjs`                                                                                                                                              | Pin setup block 10, enable/disable, preservation in Profile/Express/hidden, the unchanged invocation set, the two Guided generation actions and the absence of a setup activation, invalid values, and no model-name configuration; keep the diff-baseline pins green.                                                  |
+| `test/pilot-measurement.test.mjs`                                                                                                                                               | None after the 2026-10-01 revision: #512 ships the `activate` coverage in `test/pilot-measurement-adoption.test.mjs`, so the earlier activation tests added here are removed again.                                                                                                                                     |
+| `test/fixtures/execution-profiles/build/*.json`                                                                                                                                 | Representative disabled, eligible, excluded, mixed, fallback, retry, correction, incident, portable, activation (activated, not ready by busy, window, or sample, locked, evidence fault, ambiguous), `LOCKED`, finalization-failure, and packet-attempt cases.                                                         |
+| `docs/user-guide/configuration.md`, `docs/user-guide/getting-started.md`, `docs/user-guide/model-tiering-pilot.md`                                                              | Replace the reserved/no-op wording with active `build` pilot semantics and the Guided actions.                                                                                                                                                                                                                          |
+| `docs/user-guide/tools-setup.md`, `docs/user-guide/tools-implement.md`                                                                                                          | Explain opt-in, baseline start, automatic activation, suspended-only resume, rollback, and `build` eligibility, fallback, corrections, and unchanged gates.                                                                                                                                                             |
+| `docs/developer-guide/configuration.md`, `docs/developer-guide/architecture.md`, `docs/developer-guide/build-system.md`, `docs/developer-guide/model-tiering-pilot-protocol.md` | Replace the "no workflow adopts Fast" statements; document the split configuration/generation reader, the workflow-record order with automatic activation, and fail-closed behavior; drop the protocol guide's never-spawned-packet bias note, which #512 resolved.                                                     |
+| `docs/adr/native-execution-profile-representation.md`, `docs/adr/risk-aware-model-tiering-pilot-policy.md`                                                                      | Update the current-state statements that `build` has not adopted Fast; the decisions themselves stay unchanged.                                                                                                                                                                                                         |
+| `AGENTS.md`                                                                                                                                                                     | Update the "Execution profiles (reserved policy)" section: `build` adopts Fast and activates automatically, `refactor` does not yet, setup exposes block 10 with two generation actions.                                                                                                                                |
 
-The helper modules and their protocol stay unchanged; if integration exposes a missing generic
-interface, stop for replanning instead of extending work package 3 inline. Do not duplicate the
-policy playbooks in `build.md` and do not edit `dist/**`.
+`test/support/pilot-helper-contract.mjs` reads the 1.1.0 key sets from the helper source, including
+`record-incident`, and the helper's incident categories.
+
+The helper modules and their protocol stay unchanged in this plan; #512 owns them. If integration
+exposes a missing generic interface, stop for replanning instead of extending the helper inline.
+Do not duplicate the policy playbooks in `build.md` and do not edit `dist/**`.
 
 ## Implementation details
 
@@ -274,17 +314,19 @@ policy playbooks in `build.md` and do not edit `dist/**`.
    when no issue tracker is available, a new plan.
 6. Replace ambiguous direct-fix/correction wording in Phases 2, 5, 6, and final completion loops
    (including Phase 5 step 3 "fix them directly") with the routed Quality implementer.
-7. Implement the measurement order (`start`, `start-packet`/`finish-packet`, `finalize`), incident
-   `suspend`, finalization-failure `suspend` plus same-run confirmed `reconcile-record`, and
-   value-free reporting, all through the sole-positional-operation/exact-JSON contract.
+7. Implement the measurement order (automatic `protocol`/`activate` in a baseline generation,
+   `start`, start-before-spawn `start-packet`/`finish-packet`, `finalize`), `record-incident`, the
+   bounded `LOCKED` retry, the same-run confirmed `reconcile-record` after a finalization failure
+   without a workflow-side suspension, and value-free reporting, all through the
+   sole-positional-operation/exact-JSON contract.
 8. Add `src/shared/setup-execution-profiles.md`, setup block 10, and the Config schema row; implement
-   the Guided `begin-baseline`, `activate`, and `resume` actions and preservation in Profile, Express,
-   and hidden mode.
+   the Guided `begin-baseline` and `resume` actions and preservation in Profile, Express, and hidden
+   mode.
 9. Update every statement listed under Affected files that describes the key as reserved or `build`
    as not adopted.
 10. Preserve documentation sync, tests, validation, Quality review, final validation, goal
     completion, plan archival, and delivery ordering.
-11. Add fixture-driven contract cases and the missing `activate` helper tests. The manual
+11. Add fixture-driven contract cases that replay against the shipped helper. The manual
     fresh-session behavioural eval is out of scope (see "Scope change 2026-09-29" below); real field
     records stay under `.effective-flow/`.
 12. Build, read the authoritative line report, and change only the measured `build` and `setup`
@@ -294,19 +336,25 @@ policy playbooks in `build.md` and do not edit `dist/**`.
 
 At minimum cover the full configuration×generation matrix (missing/false/invalid/true crossed with
 no generation/baseline/active/suspended/review), Guided `begin-baseline` confirmed/refused with the
-digest and disclosure shown, Guided `activate` confirmed while not ready (`INCOMPLETE_EVIDENCE`,
-state unchanged), confirmed with a successful transition, refused, and offered only in `baseline`,
-review under enabled/disabled/invalid configuration, concurrent `start`/`begin-review`, an in-flight
+digest and disclosure shown, no Guided activation offered for `baseline`, automatic preflight
+`activate` with `activated` (an `active` reservation), `not-ready` by `busy`, `window`, and
+`sample` (a baseline reservation, or an unmeasured run after `busy`), a `LOCKED` activation that
+stays locked, a genuine evidence fault, and an ambiguous response settled by an `inventory`
+re-read or left unprovable, review under enabled/disabled/invalid configuration, concurrent `start`/`begin-review`, an in-flight
 reservation that serializes admission into unmeasured Quality, both stored `resumeTo` values, legal
 suspended-state `resume`, rejected resume from every other generation state, eligible native,
 portable (unmeasured) and missing-native/missing-spawn/force-override pre-spawn unavailability,
 rejected attempted spawn, every ordered exclusion, disjoint mixed scope, coupled mixed scope,
 retained dirty fallback, keyword-less resume then Quality retry, requirements repair, validator
-repair, review repair, conflict-resolution repair, `start` failure, a packet that never spawned but
-is still closed, `finalize` retry after a lost response, finalization failure with confirmed and
-declined same-run reconciliation, each critical safety/data-integrity/authorization/scope-boundary
-incident → exact outcome via `suspend` → next-run suspended → confirmed resume, `suspend` failure,
-capacity/incomplete/evidence-gap/unpersistable-control-state paths, exact CLI operations/envelopes,
+repair, review repair, conflict-resolution repair, `start` failure, an aborted run with a packet
+that never spawned (`not-started`) and one interrupted in its initial phase (`started`, duration
+unavailable), `finalize` retry after a lost response and after one `LOCKED`, a `finalize` that
+stays `LOCKED`, a rejected `finalize` (no suspension), a mid-write `finalize` fault the helper
+suspends itself, confirmed (`unknown` attempts) and declined same-run reconciliation, each
+critical safety/data-integrity/authorization/scope incident → `record-incident` by category →
+next-run suspended → confirmed resume, a `record-incident` retried after `LOCKED`, one that stays
+`LOCKED`, and one rejected under `review`,
+capacity/incomplete/evidence-gap/finalization-failed/unpersistable-control-state paths, exact CLI operations/envelopes,
 baseline Quality, active gate-selected Quality, active Fast, all eight post-attempt fallbacks,
 correction measurement exclusion, pre-existing dirty allowed path, and safe/unsafe lifecycle failure
 update. Include authorized scope growth under the original packet and independent new work that
@@ -326,6 +374,8 @@ stops before mutation and offers issue-or-plan capture.
   reported to the user; Fast is never attempted again.
 - A non-interactive delegated run cannot pose the reconciliation question; it leaves the incomplete
   record and reports the `discard-generation`/`purge` route.
+- A crashed run's open reservation reads as `busy` to `activate` and fails the next `start`; such
+  runs stay unmeasured Quality until the record is reconciled or the generation is discarded.
 - No meaningful implementation diff follows the existing no-empty-delivery rule.
 
 ## Acceptance criteria
@@ -339,10 +389,14 @@ stops before mutation and offers issue-or-plan capture.
 - [ ] With enabled configuration, an active generation gives an eligible native packet exactly one
       attempted Fast initial spawn; a baseline generation executes the same packet with Quality and
       records `wouldBeFastEligible`.
-- [ ] `build` never calls `begin-baseline`, `activate`, or `resume`; the three are Guided block-10
-      actions that send `confirmation: true` only after an explicit user confirmation in the same
-      setup run. `activate` reports `INCOMPLETE_EVIDENCE` as "not ready" and leaves the state
-      unchanged; no baseline reservation can be relabelled.
+- [ ] `build` never calls `begin-baseline` or `resume`; the two are Guided block-10 actions that
+      send `confirmation: true` only after an explicit user confirmation in the same setup run.
+      Setup offers no activation. In an enabled `baseline` generation every measured `build` run
+      calls `activate` automatically before `start`, without `confirmation` and with the
+      `protocol` pair; `activated` yields an `active` reservation, `not-ready` (`busy`, `window`,
+      `sample`) and an exhausted `LOCKED` keep the baseline, genuine faults run unmeasured Quality,
+      and ambiguity is settled by a guarded `inventory` re-read or runs unmeasured Quality. No
+      baseline reservation can be relabelled.
 - [ ] Every `start` packet has the shipped wire shape, `firstReason` is null exactly for `eligible`,
       and `not-evaluated` runs reserve nothing; the classification is complete before `start` and a
       reserved packet's selection never changes afterwards.
@@ -357,18 +411,25 @@ stops before mutation and offers issue-or-plan capture.
       corrections are always Quality.
 - [ ] Minimal records contain no operational handoff details or prohibited data; a detailed trace
       carries only the helper's trace schema and only with current-run consent.
-- [ ] A measured run calls `start` once, `start-packet`/`finish-packet` around each packet's initial
-      phase, closes every reserved packet on every exit path, and calls `finalize` exactly once with
-      the closed `completionStatus`, `escalated`, and `costProxy` values; pilot capabilities appear in
-      no persisted or shared artifact.
+- [ ] A measured run calls `start` once, `start-packet` immediately before each packet's first spawn
+      and `finish-packet` when its initial phase ends, and `finalize` exactly once with the closed
+      `completionStatus`, `escalated`, and `costProxy` values; a never-spawned packet gets no timing
+      operation and is stored `not-started`, an interrupted one `started` with unavailable duration,
+      and a `completed` record holds only started packets; pilot capabilities appear in no
+      persisted or shared artifact.
+- [ ] `LOCKED` is re-sent with the identical payload at most twice more and then counts as the
+      operation's failure; no other error is re-sent except a lost response where allowed.
 - [ ] An in-flight reservation makes `start` fail and the run proceeds as unmeasured Quality without
       Fast.
 - [ ] Every critical safety, data-integrity, authorization, or scope-boundary incident calls
-      `suspend` with its one-to-one protocol outcome and preserves foreign/user state; a failed
-      `suspend` reports only a value-free alert.
-- [ ] A failed `finalize` suspends with `finalization-failed`, offers one confirmed same-run
-      `reconcile-record`, and otherwise reports the `discard-generation`/`purge` route; the product
-      diff is unchanged and no Quality fallback is requested.
+      `record-incident` with its helper category and preserves foreign/user state; `build` names no
+      `critical-*` outcome and never calls `suspend`; a still-locked or failed `record-incident`
+      reports only a value-free alert.
+- [ ] A failed `finalize` triggers no workflow-side suspension: only the helper's envelope reports a
+      helper-persisted `finalization-failed`, and caller errors, contention, and location faults
+      change no pilot state. The run offers one confirmed same-run `reconcile-record`, which stores
+      every packet `unknown`, and otherwise reports the `discard-generation`/`purge` route; the
+      product diff is unchanged and no Quality fallback is requested.
 - [ ] The next run observes suspension. Only an explicit confirmed Guided `resume` while
       `generationState=suspended` with healthy evidence can clear it; `review` is terminal and
       rejects resume.
@@ -434,8 +495,20 @@ coverage only.
   `build.mjs`); `docs/user-guide/tools-deliver.md` also carried a stale adoption sentence.
 - An unmeasured run (portable build, failed or ambiguous inventory, failed `start`) uses the
   effective envelope `generationState=none + not-evaluated + quality`; the inventory-proven
-  persisted state is kept separately as the incident `suspend` target.
+  persisted state is kept separately as the incident target.
 - Budgets: `build` 657/660 (was 617), `setup` 1927/1927 (was 1923).
+- Revision 2026-10-01, merged with `origin/develop` at `5f43f2e` (#512, helper protocol 1.1.0):
+  the workflow-record fragment gained the automatic `protocol`/`activate` preflight step, the
+  bounded `LOCKED` retry, the start-before-spawn invariant with the `attempt` rule, and
+  `record-incident`; the workflow-side `suspend` calls for incidents and failed finalization and
+  the never-spawned-packet closure with its "known bias" note are gone. Guided block 10 lost its
+  `activate` action. The same-run `reconcile-record` offer stays, because 1.1.0 still accepts it for
+  any incomplete reservation and now stores every packet `unknown`. The three `activate` tests this
+  branch had added to `test/pilot-measurement.test.mjs` were removed, because they asserted the
+  1.0 contract and #512 covers activation in `test/pilot-measurement-adoption.test.mjs`. The
+  fixture set grew from 32 to 44 cases; every replayable one runs against the merged helper, with
+  a held lifecycle lock for the `LOCKED` cases and a removed timing receipt for the mid-write
+  finalize fault. `build` and `setup` stayed within their budgets without a budget change.
 
 ## Test results
 
@@ -453,6 +526,15 @@ coverage only.
   `develop`; this change adds `shared/config-migration.md`. A re-recorded round is owed before
   the next release, not before merge.
 
+Revision run on 2026-10-01, after merging `origin/develop` at `5f43f2e` (helper protocol 1.1.0):
+
+- `pnpm agent:check`: passed (564 files).
+- `pnpm test`: 1797 tests, 1796 passed, 0 failed, 1 skipped (the same deliberate placeholder).
+- `node build.mjs`: passed; `build` 657/660, `setup` 1927/1927, `refactor` 920/922.
+- `pnpm test:distribution`: passed.
+- `test/execution-profile-workflow-contract.test.mjs`: 88 passed; all 44 fixtures check the model,
+  and every replayable one runs against the merged helper.
+
 ## Review findings
 
 **Date:** 2026-10-01
@@ -462,10 +544,13 @@ coverage only.
 
 | Status                 | Count |
 | ---------------------- | ----: |
-| Fixed                  |    11 |
-| Open / Not implemented |     1 |
+| Fixed                  |    12 |
+| Open / Not implemented |     0 |
 
-**External review report:** `.effective-flow/review/review-report-2026-10-01-plan-build-field-pilot-integration.md`
+The one open finding, that never-spawned packets were recorded as near-zero `available` durations
+and counted as Fast attempts without escalation, was resolved by #512: the helper now records such
+a packet as `not-started` and excludes it from every packet metric, and this plan's 2026-10-01
+revision adopts that rule.
 
 Two further observations were closed without a work artifact: the merge-gate observation fragment
 still decides portability at run time (unchanged by this plan's design), and
@@ -494,21 +579,44 @@ still decides portability at run time (unchanged by this plan's design), and
 | Maintainability | 0        | 0         | 0    |
 
 The table counts unresolved findings. The 2026-09-29 revision found 6 critical, 13 important, and 7
-note-level findings against `35b4523`; all are incorporated below.
+note-level findings against `35b4523`; the 2026-10-01 revision found 2 critical and 3 important
+findings against helper protocol 1.1.0; all are incorporated below.
 
 ### Findings
 
+#### Revision 2026-10-01 (helper protocol 1.1.0, #512)
+
+- **Critical — resolved activation decision (supersedes the 2026-09-29 activation decision):**
+  1.1.0 rejects `confirmation` on `activate` and returns `activated` or `not-ready` with `unmet`
+  from `busy`, `window`, `sample`. Decision: activation is automatic in `build`'s preflight for an
+  enabled `baseline` generation, the results are consumed exactly as the helper defines them,
+  ambiguity is settled by one guarded `inventory` re-read, and Guided block 10 no longer offers
+  `activate`.
+- **Critical — resolved incident interface (supersedes the 2026-09-29 incident decision):**
+  `suspend` now rejects every `critical-*` outcome. Decision: `build` calls `record-incident` with
+  the helper category and keeps no outcome map.
+- **Important — resolved finalization failure (supersedes the 2026-09-29 reconciliation decision
+  where it called `suspend`):** the helper persists `finalization-failed` itself on a mid-write
+  fault, and caller errors, contention, and location faults never suspend. Decision: no
+  workflow-side suspension; the same-run `reconcile-record` offer stays, now storing `unknown`
+  attempts.
+- **Important — resolved packet timing:** the start-before-spawn invariant and the `attempt` rule
+  replace the closure of never-spawned packets, so the "known bias" containment text is removed.
+- **Important — resolved lock contention:** #512 left the bounded `LOCKED` retry to this plan.
+  Decision: the identical payload is re-sent at most twice more, after about two and then about five
+  seconds, for every locked operation `build` calls.
+
 #### Revision 2026-09-29 (drift against `35b4523`)
 
-- **Critical — resolved activation decision:** `activate` requires a same-run user attestation
+- **Critical — superseded activation decision:** `activate` requires a same-run user attestation
   (`confirmation: true`) and reports "not ready" as `INCOMPLETE_EVIDENCE`, so automatic preflight
   activation in `build` was impossible. Decision: activation is a confirmed Guided setup action;
   `build` only reads the generation through `inventory`.
 - **Critical — resolved timing gap:** the helper measures duration through `start-packet` and
   `finish-packet`, and `finalize` fails while any reserved packet lacks a finished receipt. The
   measurement order now includes both operations and closes every reserved packet on every exit
-  path.
-- **Critical — resolved incident interface:** no typed-event input exists; `suspend` takes the
+  path. (The closure of never-spawned packets is superseded on 2026-10-01 by the `attempt` rule.)
+- **Critical — superseded incident interface:** no typed-event input exists; `suspend` takes the
   caller's closed outcome, and helper failures carry no control outcome. Decision: `build` calls
   `suspend` with a fixed one-to-one class-to-outcome mapping and reports a failed `suspend`
   value-free.
@@ -519,7 +627,7 @@ note-level findings against `35b4523`; all are incorporated below.
 - **Critical — resolved setup budget:** `setup` has no line headroom. Decision: the Guided opt-in and
   actions go into a lazy fragment behind a new block 10; `setup.md` gains only the entry, the
   pointer, and the schema row.
-- **Important — resolved reconciliation decision:** `reconcile-record` needs the originating run's
+- **Important — partly superseded reconciliation decision:** `reconcile-record` needs the originating run's
   raw capability, so no later run can clear an incomplete record. Decision: a failed `finalize`
   offers one confirmed same-run reconciliation; otherwise only `discard-generation` or `purge`
   remain, and resume shows no cause summary because inventory exposes none.
@@ -545,7 +653,8 @@ note-level findings against `35b4523`; all are incorporated below.
   `pnpm eval merge-gate verify`. The planned `evals/build/` suite was later moved out of scope (see
   "Scope change 2026-09-29").
 - **Important — resolved:** a missing spawn mechanism is also `excluded(profile-unavailable)`.
-- **Important — resolved:** `activate` has no helper test; the missing coverage is added.
+- **Important — resolved:** `activate` has no helper test; the missing coverage is added. (Since
+  #512 the coverage lives in `test/pilot-measurement-adoption.test.mjs`.)
 - **Note — resolved:** concurrency serializes admission; an in-flight reservation yields unmeasured
   Quality.
 - **Note — resolved:** closed `finalize` values (`completionStatus`, `escalated`, `costProxy`) and a
@@ -563,9 +672,9 @@ note-level findings against `35b4523`; all are incorporated below.
 - **Important — resolved late-packet decision:** Authorized scope growth remains under its original
   packet identity. Genuinely independent work cannot be appended at finalization; the workflow stops
   and asks whether to create a future-work issue, or a new plan when no issue tracker is available.
-- **Important — superseded activation-boundary decision:** The 2026-09-21 decision that every
-  enabled baseline workflow invokes `activate` in preflight is superseded by the 2026-09-29
-  activation decision above.
+- **Important — restored activation-boundary decision:** The 2026-09-21 decision that every
+  enabled baseline workflow invokes `activate` in preflight was superseded on 2026-09-29 and is
+  restored, on helper protocol 1.1.0, by the 2026-10-01 activation decision above.
 - **Important — resolved failure-phase finding:** Helper failures are phase-specific: pre-spawn
   uncertainty prevents Fast, post-spawn failures preserve the product diff and start no worker, and
   Guided control failures leave proven state unchanged. Incomplete inventory blocks Fast even when

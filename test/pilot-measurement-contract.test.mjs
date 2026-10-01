@@ -19,6 +19,7 @@ function ordered(text, ...needles) {
   }
 }
 
+// Invariant: the observation never links a record, leaks identity or content, or alters the gate result.
 test('the workflow contract keeps observation local, anonymous, and unable to change the gate result', () => {
   const normalizedFragment = fragment.replace(/\s+/g, ' ');
   for (const clause of [
@@ -41,6 +42,7 @@ test('the workflow contract keeps observation local, anonymous, and unable to ch
   );
 });
 
+// Invariant: reservation precedes gate work and every ending finalizes once before wisdom deletion.
 test('reservation, correction counters, and exactly-once finalization are placed at observable boundaries', () => {
   ordered(
     mergeGate,
@@ -64,6 +66,7 @@ test('reservation, correction counters, and exactly-once finalization are placed
   assert.match(fragment, /finalization failure leaves the current merge\/report result unchanged/);
 });
 
+// Invariant: only an actually dispatched correction increments a counter.
 test('correction counters exclude waits, resumes, assessment-only work, and undispatched attempts', () => {
   const counterSection = fragment.slice(
     fragment.indexOf('### Correction counters'),
@@ -77,6 +80,7 @@ test('correction counters exclude waits, resumes, assessment-only work, and undi
   assert.match(counterSection, /dispatch\/start event itself is the only\s+counter authority/);
 });
 
+// Invariant: report-mode readiness drops merge authorization from the measurement only, never from the gate.
 test('report-mode readiness excludes only merge authorization and preserves the check-list waiver', () => {
   assert.match(fragment, /projection of Phase-4 conditions 2–10/);
   assert.match(fragment, /existing no-check-list waiver semantics/);

@@ -4,7 +4,7 @@
   "config": "true",
   "inventory": "active",
   "replay": false,
-  "replayReason": "The helper emits control-state-unpersistable only from merge-gate observation operations; this fixture pins the fragment's generic handling of a failed finalize envelope.",
+  "replayReason": "The helper reports control-state-unpersistable from finalize only when a mid-write fault meets an unwritable suspension, which the replay cannot stage; this fixture pins the fragment's handling of that envelope.",
   "packets": [
     {
       "bucket": "node-backend-cli",
@@ -12,7 +12,7 @@
     }
   ],
   "completion": "completed",
-  "finalizeResult": "failed",
+  "finalizeResult": "fault",
   "finalizeControl": {
     "pilotControlOutcome": "control-state-unpersistable",
     "controlStatePersisted": false,
@@ -23,7 +23,8 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
-    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize", "suspend"],
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
     "packets": [
       {
         "eligibility": "eligible",
@@ -39,10 +40,11 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": null
       }
     ],
-    "suspend": ["finalization-failed"],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

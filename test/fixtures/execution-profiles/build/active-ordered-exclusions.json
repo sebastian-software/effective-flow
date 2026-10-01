@@ -69,6 +69,7 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": [
       "inventory",
       "start",
@@ -113,7 +114,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(trust-boundary)",
@@ -129,7 +131,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(destructive-data)",
@@ -145,7 +148,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(migration)",
@@ -161,7 +165,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(concurrency)",
@@ -177,7 +182,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(unsafe-code)",
@@ -193,7 +199,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(public-compatibility)",
@@ -209,7 +216,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(merge-conflict)",
@@ -225,7 +233,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(unclear-ownership)",
@@ -241,7 +250,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(cross-domain-dependency)",
@@ -257,7 +267,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(unknown-evidence)",
@@ -273,7 +284,8 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       },
       {
         "eligibility": "excluded(migration)",
@@ -289,10 +301,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

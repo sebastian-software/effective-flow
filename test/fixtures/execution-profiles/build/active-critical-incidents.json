@@ -1,5 +1,5 @@
 {
-  "name": "Critical incidents suspend with their one-to-one outcome and still finalize",
+  "name": "Critical incidents are recorded by category, a held lock is retried, and the record still finalizes",
   "harness": "claude",
   "config": "true",
   "inventory": "active",
@@ -12,12 +12,13 @@
     {
       "bucket": "node-backend-cli",
       "paths": ["src/b.mjs"],
-      "incident": "data integrity"
+      "incident": "data-integrity"
     },
     {
       "bucket": "node-backend-cli",
       "paths": ["src/c.mjs"],
-      "incident": "authorization"
+      "incident": "authorization",
+      "incidentLocked": 1
     }
   ],
   "completion": "failed",
@@ -25,17 +26,19 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": [
       "inventory",
       "start",
       "start-packet",
-      "suspend",
+      "record-incident",
       "finish-packet",
       "start-packet",
-      "suspend",
+      "record-incident",
       "finish-packet",
       "start-packet",
-      "suspend",
+      "record-incident",
+      "record-incident",
       "finish-packet",
       "finalize"
     ],
@@ -54,7 +57,8 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -70,7 +74,8 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       },
       {
         "eligibility": "eligible",
@@ -86,14 +91,11 @@
         },
         "attempts": ["fast"],
         "fallback": "none",
-        "fastAttemptConsumed": true
+        "fastAttemptConsumed": true,
+        "attempt": "started"
       }
     ],
-    "suspend": [
-      "critical-safety-incident",
-      "critical-data-integrity-incident",
-      "critical-authorization-incident"
-    ],
+    "incidents": ["safety", "data-integrity", "authorization"],
     "finalize": {
       "completionStatus": "failed",
       "qualityCorrectionRounds": 0,

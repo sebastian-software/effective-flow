@@ -144,9 +144,10 @@ capability, or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. 
 fails, the routed Quality implementer continues exactly once from the retained changes in the same
 checkout, and it never returns to Fast. Every later correction—requirements repair, validator
 repair, review incorporation, final-validator repair, conflict resolution, and retries—uses Quality.
-Documentation, tests, validation, review, and delivery are unchanged. Setup, baseline start, and
-activation are described under [Setup](tools-setup.md#fast-pilot-block); `refactor` has not adopted
-Fast.
+Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
+each measured run first asks the helper to activate the generation, which happens automatically
+once the preregistered window and sample are met. Setup and baseline start are described under
+[Setup](tools-setup.md#fast-pilot-block); `refactor` has not adopted Fast.
 
 ## `/effective-flow fix`
 

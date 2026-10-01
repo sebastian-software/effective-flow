@@ -19,6 +19,7 @@ export const PILOT_OPERATION_FUNCTIONS = Object.freeze({
   'finish-packet': 'finishPacket',
   finalize: 'finalizeWorkflow',
   suspend: 'suspendGeneration',
+  'record-incident': 'recordIncident',
   resume: 'resumeGeneration',
   'reconcile-record': 'reconcileRecord',
 });
@@ -54,4 +55,12 @@ export function pilotOperationKeys(nameOrOperation) {
 // The optional stdin keys the same operation accepts in addition.
 export function pilotOperationOptionalKeys(nameOrOperation) {
   return validatedKeys(PILOT_OPERATION_FUNCTIONS[nameOrOperation] ?? nameOrOperation).optional;
+}
+
+// The closed incident categories `record-incident` accepts, in the helper's declaration order. The
+// helper maps each one to its control outcome, so a caller names only the category.
+export function pilotIncidentCategories() {
+  const block = CORE.match(/const INCIDENT_OUTCOMES = Object\.freeze\(\{([\s\S]*?)\}\);/);
+  assert.ok(block, 'the helper must declare its incident categories in INCIDENT_OUTCOMES');
+  return [...block[1].matchAll(/^\s*'?([a-z-]+)'?: '/gm)].map(([, category]) => category);
 }

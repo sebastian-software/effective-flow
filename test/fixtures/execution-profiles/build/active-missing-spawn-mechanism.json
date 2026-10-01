@@ -17,6 +17,7 @@
     "configState": "enabled",
     "generationState": "active",
     "persistedGenerationState": "active",
+    "activation": null,
     "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
     "packets": [
       {
@@ -33,10 +34,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

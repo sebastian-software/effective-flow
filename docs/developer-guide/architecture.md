@@ -471,20 +471,24 @@ Configuration, lifecycle state, and native representation are intentionally inde
 strict `executionProfiles.fast.enabled` row admits a project to the lifecycle, a generation owns
 baseline/active/suspended/review state, and native inventories prove only that artifacts agree with
 their installation. No one layer activates another. Guided setup block 10 writes the row and
-offers the confirmed `begin-baseline`, `activate`, and `resume` actions; `build` only reads the row
-and the generation, and never calls a generation action.
+offers the confirmed `begin-baseline` and `resume` actions; `build` reads the row and the
+generation, never calls either action, and lets the helper activate a baseline generation, which
+it does only once the preregistered window and sample are met.
 
 `build` owns its workflow record through
 [`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md), loaded
 lazily in Phase 2. A measured run (enabled configuration, native harness, proven `baseline` or
-`active` generation) classifies every initial packet, reserves all of them with one `start`, brackets
-each packet's initial phase with `start-packet` and `finish-packet`, and calls `finalize` exactly
-once at every exit. Admission is serialized: any in-flight reservation makes `start` fail and the
-run proceeds as unmeasured Quality. A critical incident calls `suspend` with the one outcome fixed
-for its class. A failed finalization keeps the product diff, suspends the generation with
-`finalization-failed`, and offers a confirmed `reconcile-record` in the same run, because no later
-run holds the workflow capability; otherwise only `discard-generation` or `purge` leaves that
-suspension. `refactor` records nothing yet.
+`active` generation) first calls `activate` when the generation is in `baseline`, classifies every
+initial packet under the state that results, reserves all of them with one `start`,
+calls `start-packet` immediately before each packet's first spawn and `finish-packet` when its
+initial phase ends, and calls `finalize` exactly once at every exit. Admission is serialized: any
+in-flight reservation makes `start` fail and the run proceeds as unmeasured Quality. A critical
+incident is recorded through `record-incident` by its category; the helper maps it to the
+suspending outcome. The workflow never suspends for a failed finalization: the helper persists
+`finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
+the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
+because no later run holds the workflow capability; otherwise only `discard-generation` or `purge`
+clears the incomplete record. `refactor` records nothing yet.
 
 Minimal workflow records and optional detailed traces are separate channels. A trace requires an
 explicit request in the current run; project configuration cannot confer that consent and no

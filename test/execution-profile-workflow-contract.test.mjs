@@ -28,9 +28,11 @@ import {
   PILOT_MEASUREMENT_PROTOCOL,
   PILOT_MEASUREMENT_PROTOCOL_DIGEST,
   PILOT_MEASUREMENT_PROTOCOL_VERSION,
+  canonicalizeJson,
 } from '../src/scripts/pilot-measurement-protocol.mjs';
 import { FAST_CAPABLE_ROUTE_IDS } from './support/native-profile-config.mjs';
 import {
+  pilotIncidentCategories,
   pilotOperationKeys,
   pilotOperationOptionalKeys,
 } from './support/pilot-helper-contract.mjs';
@@ -77,7 +79,8 @@ function proseKeys(text, marker, end) {
   return [...sentence.matchAll(/`([A-Za-z]+)(?:: [^`]+)?`/g)].map(([, key]) => key);
 }
 
-// The exact stdin keys the fragment documents for each of the six operations `build` calls.
+// The exact stdin keys the fragment documents for each of the eight operations `build` calls with
+// a payload (`protocol` takes the empty object).
 const FRAGMENT_KEYS = (() => {
   const preflight = section(fragment, '### Preflight', '### Reservation');
   const reservation = section(fragment, '### Reservation', '### Packet timing');
@@ -92,12 +95,13 @@ const FRAGMENT_KEYS = (() => {
   const packetKeys = Object.keys(jsonBlocks(timing)[0]);
   return {
     inventory: Object.keys(jsonBlocks(preflight)[0]),
+    activate: Object.keys(jsonBlocks(preflight)[1]),
     start: Object.keys(jsonBlocks(reservation)[1]),
     'start-packet': packetKeys,
     'finish-packet': packetKeys,
     finalize: Object.keys(jsonBlocks(finalization)[0]),
-    suspend: proseKeys(incidents, 'payload has exactly', ', which holds'),
-    'reconcile-record': proseKeys(failure, 'call `reconcile-record` with exactly', '. A declined'),
+    'record-incident': proseKeys(incidents, 'payload has exactly', ', which holds'),
+    'reconcile-record': proseKeys(failure, 'call `reconcile-record` with exactly', '. The helper'),
   };
 })();
 
@@ -112,15 +116,14 @@ const POST_ATTEMPT_FALLBACKS = contract.decisionMappings
   .filter(({ fastAttemptConsumed }) => fastAttemptConsumed === 'true')
   .map(({ fallback }) => fallback);
 const INSPECTING_FALLBACKS = new Set(['missing-context', 'scope-growth', 'new-decision']);
-const INCIDENT_OUTCOMES = new Map([
-  ['safety', 'critical-safety-incident'],
-  ['data integrity', 'critical-data-integrity-incident'],
-  ['authorization', 'critical-authorization-incident'],
-  ['scope boundary', 'critical-scope-incident'],
-  ['failed finalization', 'finalization-failed'],
-]);
+const INCIDENT_CATEGORIES = pilotIncidentCategories();
 const MEASURED_STATES = new Set(['baseline', 'active']);
 const SUSPENDABLE_STATES = new Set(['baseline', 'active', 'suspended']);
+const BASELINE_EVIDENCE = ['fresh', 'window-met', 'sample-met', 'ready'];
+// One send plus at most two retries, as the fragment's `LOCKED` policy states.
+const LOCKED_SENDS = 3;
+// A `LOCKED` envelope changes nothing, so it carries no control state to report.
+const LOCKED_CONTROL = { pilotControlOutcome: 'none', controlStatePersisted: false, alert: 'none' };
 
 function configStateOf(input) {
   const row = contract.configCases.find((candidate) => candidate.input === input);
@@ -147,6 +150,7 @@ function unrecorded() {
     attempts: ['quality'],
     fallback: 'none',
     fastAttemptConsumed: false,
+    attempt: null,
   };
 }
 
@@ -187,6 +191,19 @@ function wireOf(eligibility, selectedProfile) {
   };
 }
 
+// What the helper's `activate` returns for the fixture's stored baseline: `busy` alone while another
+// run is in flight, otherwise the unmet preregistered conditions, otherwise the transition.
+function activationResult(fixture) {
+  const evidence = fixture.baselineEvidence ?? 'fresh';
+  assert.ok(BASELINE_EVIDENCE.includes(evidence), `unknown baseline evidence: ${evidence}`);
+  const busy = (fixture.external ?? []).some(({ at }) => at === 'before-activate');
+  if (busy) return { status: 'not-ready', unmet: ['busy'] };
+  const unmet = [];
+  if (!['window-met', 'ready'].includes(evidence)) unmet.push('window');
+  if (!['sample-met', 'ready'].includes(evidence)) unmet.push('sample');
+  return unmet.length === 0 ? { status: 'activated' } : { status: 'not-ready', unmet };
+}
+
 // What the orchestrator may say about a helper error envelope: a persisted control state, only the
 // value-free alert, or nothing.
 function controlEvent(operation, control) {
@@ -211,46 +228,60 @@ function controlEvent(operation, control) {
 
 // Returns the fixture's expected-shape result plus the detailed step list the replay executes.
 // `generationState` is the run's effective envelope; `persistedGenerationState` is the state an
-// inventory proved (`null` when none was read), which an incident suspends even when the run itself
-// is unmeasured.
+// inventory proved (`null` when none was read), which an incident targets even when the run itself
+// is unmeasured. Every `LOCKED` send is its own step, so the retry policy shows in `operations`.
 function runScenario(fixture) {
   const configState = configStateOf(fixture.config);
   const steps = [];
   const events = [];
+  const incidents = [];
   let persistedGenerationState = null;
+  let activation = null;
   const shape = (generationState, packets, finalize = null) => ({
     configState,
     generationState,
     persistedGenerationState,
+    activation,
     operations: steps.map(({ operation }) => operation),
     packets,
-    suspend: steps
-      .filter(({ operation }) => operation === 'suspend')
-      .map(({ pilotControlOutcome }) => pilotControlOutcome),
+    incidents,
     finalize,
     events,
   });
-  // A critical incident suspends only an inventory-proven baseline, active, or suspended
-  // generation, whether or not the run holds a record.
-  const incident = (packet) => {
+  // Sends one operation under the `LOCKED` retry policy: the first `locked` sends meet a held lock.
+  // Returns whether a send got past the lock.
+  const send = (step, locked = 0) => {
+    for (let attempt = 0; attempt < Math.min(locked, LOCKED_SENDS); attempt += 1) {
+      steps.push({ ...step, result: 'LOCKED' });
+    }
+    if (locked >= LOCKED_SENDS) return false;
+    steps.push(step);
+    return true;
+  };
+  // A critical incident is recorded by its category against an inventory-proven baseline, active,
+  // or suspended generation, whether or not the run holds a record.
+  const incident = (packet, runId) => {
     if (packet.incident === undefined) return;
-    assert.ok(INCIDENT_OUTCOMES.has(packet.incident), `unknown incident: ${packet.incident}`);
+    assert.ok(
+      INCIDENT_CATEGORIES.includes(packet.incident),
+      `unknown incident: ${packet.incident}`,
+    );
     if (!SUSPENDABLE_STATES.has(persistedGenerationState)) return;
-    const suspendResult = packet.suspendResult ?? 'persisted';
-    assert.ok(['persisted', 'failed'].includes(suspendResult));
-    steps.push({
-      operation: 'suspend',
-      pilotControlOutcome: INCIDENT_OUTCOMES.get(packet.incident),
-      result: suspendResult,
-    });
-    if (suspendResult === 'failed') {
-      events.push({ kind: 'alert', operation: 'suspend', report: 'value-free-alert' });
+    const result = packet.incidentResult ?? 'persisted';
+    assert.ok(['persisted', 'rejected'].includes(result));
+    incidents.push(packet.incident);
+    const sent = send(
+      { operation: 'record-incident', category: packet.incident, withRecord: runId, result },
+      packet.incidentLocked ?? 0,
+    );
+    if (!sent || result !== 'persisted') {
+      events.push({ kind: 'alert', operation: 'record-incident', report: 'value-free-alert' });
     }
   };
   // Disabled and invalid keep their own fail-closed rows; every other unrecorded run is either a
   // proven none/suspended/review generation or an unmeasured run, which takes the `none` row.
   const quiet = (generationState) => {
-    for (const packet of fixture.packets) incident(packet);
+    for (const packet of fixture.packets) incident(packet, false);
     return {
       steps,
       result: shape(
@@ -264,8 +295,44 @@ function runScenario(fixture) {
   assert.ok(['claude', 'codex'].includes(fixture.harness));
   steps.push({ operation: 'inventory' });
   if (fixture.inventory === 'failed') return quiet('none');
-  const generationState = fixture.inventory === 'absent' ? 'none' : fixture.inventory;
+  let generationState = fixture.inventory === 'absent' ? 'none' : fixture.inventory;
   persistedGenerationState = generationState;
+
+  // Automatic activation: a proven baseline is offered to the helper before classification.
+  if (generationState === 'baseline') {
+    steps.push({ operation: 'protocol' });
+    const helper = activationResult(fixture);
+    const fault = fixture.activation;
+    if (fault === 'locked') {
+      send({ operation: 'activate' }, LOCKED_SENDS);
+      activation = 'locked';
+    } else if (fault === 'evidence-fault') {
+      steps.push({ operation: 'activate', result: 'INCOMPLETE_EVIDENCE' });
+      activation = 'fault';
+      return quiet('none');
+    } else if (fault === 'lost-response' || fault === 'unprovable') {
+      steps.push({ operation: 'activate', result: 'response-lost' });
+      steps.push({
+        operation: 'inventory',
+        withGeneration: true,
+        settles: 'activation',
+        result: fault === 'unprovable' ? 'failed' : 'read',
+      });
+      if (fault === 'unprovable') {
+        activation = 'ambiguous:unprovable';
+        return quiet('none');
+      }
+      generationState = helper.status === 'activated' ? 'active' : 'baseline';
+      activation = `ambiguous:${generationState}`;
+    } else {
+      assert.equal(fault, undefined, `unknown activation fault: ${fault}`);
+      steps.push({ operation: 'activate', result: helper });
+      if (helper.status === 'activated') generationState = 'active';
+      activation =
+        helper.status === 'activated' ? 'activated' : `not-ready:${helper.unmet.join(',')}`;
+    }
+    persistedGenerationState = generationState;
+  }
   if (!MEASURED_STATES.has(generationState)) return quiet(generationState);
 
   const groupSizes = new Map();
@@ -287,8 +354,8 @@ function runScenario(fixture) {
     return quiet('none');
   }
 
+  const completion = fixture.completion ?? 'failed';
   let unfinalizable = false;
-  const deferred = [];
   const packets = classified.map(({ packet, eligibility, selectedProfile }, index) => {
     const outcome = packet.initialOutcome ?? 'none';
     const result = {
@@ -299,12 +366,23 @@ function runScenario(fixture) {
       attempts: [],
       fallback: 'none',
       fastAttemptConsumed: false,
+      attempt: 'not-started',
     };
+    // A packet the run never reached gets no timing operation; the helper records it unstarted.
     if (outcome === 'never-spawned') {
-      deferred.push(index);
+      assert.notEqual(completion, 'completed', 'an unspawned packet cannot complete');
       return result;
     }
-    if (!unfinalizable) steps.push({ operation: 'start-packet', packet: index });
+    // Start before spawn: the timer starts before the packet's first implementation spawn. A
+    // `LOCKED` start is retried; an exhausted retry leaves the record unfinalizable.
+    if (!unfinalizable) {
+      const started = send({ operation: 'start-packet', packet: index }, packet.startPacketLocked);
+      if (!started) {
+        events.push(controlEvent('start-packet', LOCKED_CONTROL));
+        unfinalizable = true;
+      }
+    }
+    result.attempt = 'started';
     // A helper failure after `start` blocks every later Fast attempt in the run.
     if (selectedProfile === 'fast' && !unfinalizable) {
       result.fastAttemptConsumed = true;
@@ -329,54 +407,69 @@ function runScenario(fixture) {
         events.push({ kind: 'ask', topic: 'capture-independent-new-work' });
       }
     }
-    incident(packet);
+    incident(packet, true);
     if (packet.finishFailure !== undefined) {
       steps.push({ operation: 'finish-packet', packet: index, result: 'failed' });
       events.push(controlEvent('finish-packet', packet.finishFailure));
       unfinalizable = true;
+    } else if (packet.interrupted) {
+      // The run ends inside this packet's initial phase, so its timer is never finished.
+      assert.notEqual(completion, 'completed', 'an interrupted packet cannot complete');
     } else if (!unfinalizable) {
-      steps.push({ operation: 'finish-packet', packet: index });
+      const finished = send(
+        { operation: 'finish-packet', packet: index },
+        packet.finishPacketLocked,
+      );
+      if (!finished) {
+        events.push(controlEvent('finish-packet', LOCKED_CONTROL));
+        unfinalizable = true;
+      }
     }
     return result;
   });
-  for (const index of deferred) {
-    assert.notEqual(fixture.completion, 'completed', 'an unspawned packet cannot complete');
-    if (!unfinalizable) {
-      steps.push({ operation: 'start-packet', packet: index });
-      steps.push({ operation: 'finish-packet', packet: index });
-    }
-  }
 
   const finalize = {
-    completionStatus: fixture.completion ?? 'failed',
+    completionStatus: completion,
     qualityCorrectionRounds: (fixture.corrections ?? []).length,
     packets: packets.map(({ fallback }) => ({ fallback, escalated: fallback !== 'none' })),
   };
   const finalizeResult = fixture.finalizeResult ?? 'finalized';
-  assert.ok(['finalized', 'lost-response', 'failed'].includes(finalizeResult));
+  assert.ok(
+    ['finalized', 'lost-response', 'locked-once', 'locked', 'rejected', 'fault'].includes(
+      finalizeResult,
+    ),
+  );
   let failed = unfinalizable;
   if (!unfinalizable) {
     if (finalizeResult === 'lost-response') {
       steps.push({ operation: 'finalize', result: 'response-lost' });
       steps.push({ operation: 'finalize', result: 'finalized' });
+    } else if (finalizeResult === 'locked-once') {
+      send({ operation: 'finalize', result: 'finalized' }, 1);
+    } else if (finalizeResult === 'locked') {
+      send({ operation: 'finalize' }, LOCKED_SENDS);
+      failed = true;
+    } else if (finalizeResult === 'finalized') {
+      steps.push({ operation: 'finalize', result: 'finalized' });
     } else {
       steps.push({ operation: 'finalize', result: finalizeResult });
-    }
-    if (finalizeResult === 'failed') {
-      if (fixture.finalizeControl) events.push(controlEvent('finalize', fixture.finalizeControl));
       failed = true;
+    }
+    // Only the helper's envelope says whether a failed finalize suspended the pilot.
+    if (failed) {
+      assert.ok(fixture.finalizeControl, 'a failed finalize states its helper envelope');
+      events.push(controlEvent('finalize', fixture.finalizeControl));
     }
   }
   if (failed) {
-    steps.push({
-      operation: 'suspend',
-      pilotControlOutcome: INCIDENT_OUTCOMES.get('failed finalization'),
-      result: 'persisted',
-    });
-    if (fixture.reconcileAnswer === 'Reconcile') {
-      steps.push({ operation: 'inventory', withGeneration: true });
+    // The workflow suspends nothing for it; the same run may only reconcile, which records every
+    // packet as unknown, or leave the reservation in place.
+    const reconciled = fixture.reconcileAnswer === 'Reconcile';
+    if (reconciled) {
+      steps.push({ operation: 'inventory', withGeneration: true, result: 'read' });
       steps.push({ operation: 'reconcile-record' });
     }
+    for (const packet of packets) packet.attempt = reconciled ? 'unknown' : null;
   }
   return { steps, result: shape(generationState, packets, unfinalizable ? null : finalize) };
 }
@@ -443,6 +536,32 @@ function freshRepository(name) {
   return runtime(root, { wallMs: 1_800_000_000_000, monotonicNs: 10_000_000_000n, uptime: 1000 });
 }
 
+const generationRoot = (rt, generationId) =>
+  join(rt.root, '.effective-flow/model-tiering-pilot/generations', generationId);
+
+// Holds the generation's lifecycle lock as a live writer would, so the next locked operation meets
+// `LOCKED`; the returned function releases it.
+function holdLifecycleLock(rt, generationId) {
+  const target = join(generationRoot(rt, generationId), 'locks', 'lifecycle.lock');
+  writeFileSync(
+    target,
+    canonicalizeJson({
+      schema: 1,
+      operation: 'aggregate',
+      generationId,
+      ownerPid: process.pid,
+      nonce: 'N'.repeat(32),
+    }),
+  );
+  return () => rmSync(target);
+}
+
+function storedRecord(rt, generationId, runId) {
+  return JSON.parse(
+    readFileSync(join(generationRoot(rt, generationId), 'records', `${runId}.json`), 'utf8'),
+  );
+}
+
 const quality = (eligible) => ({
   selectedProfile: 'quality',
   wouldBeFastEligible: eligible,
@@ -451,11 +570,63 @@ const quality = (eligible) => ({
     : { eligibility: 'excluded', firstReason: 'unknown-evidence' },
 });
 
-// Each generation state is prepared once, by the helper's own operations, and copied per scenario.
+const PROTOCOL = {
+  configState: 'enabled',
+  protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+  protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+};
+
+// Each stored state is prepared once, by the helper's own operations, and copied per scenario. A
+// baseline is prepared fresh, with its window elapsed, with its eligible sample collected, or ready.
 const templates = new Map();
 function template(state) {
   if (!templates.has(state)) templates.set(state, prepareTemplate(state));
   return templates.get(state);
+}
+
+async function completedSample(rt, scoped) {
+  const sample = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum;
+  const reservation = (
+    await rt.call('start', {
+      ...scoped,
+      configState: 'enabled',
+      workflow: 'build',
+      harnessFamily: 'codex',
+      packets: Array.from({ length: sample }, () => quality(true)),
+    })
+  ).result;
+  const packets = [];
+  for (const packet of reservation.packets) {
+    const identity = {
+      ...scoped,
+      runId: reservation.runId,
+      packetId: packet.packetId,
+      workflowCapability: reservation.workflowCapability,
+      packetCapability: packet.packetCapability,
+    };
+    await rt.call('start-packet', identity);
+    rt.advance(10);
+    await rt.call('finish-packet', identity);
+    packets.push({
+      packetId: packet.packetId,
+      packetCapability: packet.packetCapability,
+      fallback: 'none',
+      escalated: false,
+      costProxy: null,
+    });
+  }
+  await rt.call('finalize', {
+    ...scoped,
+    runId: reservation.runId,
+    workflowCapability: reservation.workflowCapability,
+    packets,
+    validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
+    review: { status: 'completed', severityCounts: { critical: 0, important: 0, note: 0 } },
+    completionStatus: 'completed',
+    qualityCorrectionRounds: 0,
+    detailOptIn: false,
+    trace: null,
+  });
 }
 
 async function prepareTemplate(state) {
@@ -463,75 +634,26 @@ async function prepareTemplate(state) {
   if (state === 'absent') return { root: rt.root, clock: { ...rt.clock }, generationId: null };
   const baseline = await rt.call('begin-baseline', {
     ...rt.common,
-    configState: 'enabled',
+    ...PROTOCOL,
     fastEnabled: true,
-    protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
-    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
     confirmation: true,
   });
   const { generationId } = baseline.result;
   const scoped = { ...rt.common, generationId };
+  const window = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * DAY_MS;
+  if (['active', 'baseline-sample-met', 'baseline-ready'].includes(state)) {
+    await completedSample(rt, scoped);
+  }
+  if (['active', 'baseline-window-met', 'baseline-ready'].includes(state)) rt.advance(window);
   if (state === 'active') {
-    const sample = PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum;
-    const reservation = (
-      await rt.call('start', {
-        ...scoped,
-        configState: 'enabled',
-        workflow: 'build',
-        harnessFamily: 'codex',
-        packets: Array.from({ length: sample }, () => quality(true)),
-      })
-    ).result;
-    const packets = [];
-    for (const packet of reservation.packets) {
-      const identity = {
-        ...scoped,
-        runId: reservation.runId,
-        packetId: packet.packetId,
-        workflowCapability: reservation.workflowCapability,
-        packetCapability: packet.packetCapability,
-      };
-      await rt.call('start-packet', identity);
-      rt.advance(10);
-      await rt.call('finish-packet', identity);
-      packets.push({
-        packetId: packet.packetId,
-        packetCapability: packet.packetCapability,
-        fallback: 'none',
-        escalated: false,
-        costProxy: null,
-      });
-    }
-    await rt.call('finalize', {
-      ...scoped,
-      runId: reservation.runId,
-      workflowCapability: reservation.workflowCapability,
-      packets,
-      validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
-      review: { status: 'completed', severityCounts: { critical: 0, important: 0, note: 0 } },
-      completionStatus: 'completed',
-      qualityCorrectionRounds: 0,
-      detailOptIn: false,
-      trace: null,
-    });
-    rt.advance(PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * DAY_MS);
-    await rt.call('activate', {
-      ...scoped,
-      configState: 'enabled',
-      protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
-      protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
-      confirmation: true,
-    });
+    const { result } = await rt.call('activate', { ...scoped, ...PROTOCOL });
+    assert.equal(result.status, 'activated');
   } else if (state === 'suspended') {
-    await rt.call('suspend', {
-      ...scoped,
-      pilotControlOutcome: 'critical-safety-incident',
-      affectedRecordIds: [],
-    });
+    await rt.call('record-incident', { ...scoped, category: 'safety', affectedRecordIds: [] });
   } else if (state === 'review') {
     await beginReview(rt, generationId);
   } else {
-    assert.equal(state, 'baseline');
+    assert.ok(state.startsWith('baseline'), `unknown template: ${state}`);
   }
   return { root: rt.root, clock: { ...rt.clock }, generationId };
 }
@@ -545,6 +667,12 @@ async function beginReview(rt, generationId) {
     expectedInventoryDigest: inventoryDigest,
     confirmation: true,
   });
+}
+
+function templateOf(fixture) {
+  if (fixture.inventory !== 'baseline') return fixture.inventory;
+  const evidence = fixture.baselineEvidence ?? 'fresh';
+  return evidence === 'fresh' ? 'baseline' : `baseline-${evidence}`;
 }
 
 let clones = 0;
@@ -565,14 +693,25 @@ function payload(operation, values) {
 }
 
 async function expectFailure(promise, code, message) {
+  let failure;
   await assert.rejects(promise, (error) => {
     assert.equal(error.code, code, message);
+    failure = error;
     return true;
   });
+  return failure;
 }
 
+const controlOf = (error) => ({
+  pilotControlOutcome: error.pilotControlOutcome,
+  controlStatePersisted: error.controlStatePersisted,
+  alert: error.alert,
+});
+
+const NEUTRAL = { pilotControlOutcome: 'none', controlStatePersisted: false, alert: 'none' };
+
 async function replay(fixture, scenario) {
-  const rt = await cloneTemplate(fixture.inventory);
+  const rt = await cloneTemplate(templateOf(fixture));
   const external = (at) => (fixture.external ?? []).filter((action) => action.at === at);
   const runExternal = async (at) => {
     for (const { operation } of external(at)) {
@@ -589,6 +728,19 @@ async function replay(fixture, scenario) {
         });
       }
     }
+  };
+  // Runs one call, under a held lifecycle lock when the step expects `LOCKED`; a locked call must
+  // change nothing and carry no control state.
+  const locked = async (step, call) => {
+    if (step.result !== 'LOCKED') return call();
+    const release = holdLifecycleLock(rt, rt.generationId);
+    try {
+      const error = await expectFailure(call(), 'LOCKED', `${step.operation} meets the held lock`);
+      if (error.pilotControlOutcome !== undefined) assert.deepEqual(controlOf(error), NEUTRAL);
+    } finally {
+      release();
+    }
+    return null;
   };
   const values = {
     ...rt.common,
@@ -607,6 +759,7 @@ async function replay(fixture, scenario) {
     packetId: reservation.packets[index].packetId,
     packetCapability: reservation.packets[index].packetCapability,
   });
+  const expectedAttempts = () => scenario.result.packets.map(({ attempt }) => attempt);
   for (const step of scenario.steps) {
     switch (step.operation) {
       case 'inventory': {
@@ -615,7 +768,35 @@ async function replay(fixture, scenario) {
         const { result } = await rt.call('inventory', input);
         if (fixture.inventory === 'absent') assert.equal(result.generationStatus, 'absent');
         else if (!step.withGeneration) assert.equal(result.generationState, fixture.inventory);
+        else if (step.settles === 'activation') {
+          assert.equal(result.generationState, scenario.result.generationState);
+        }
         inventoryDigest = result.inventoryDigest ?? null;
+        break;
+      }
+      case 'protocol': {
+        const envelope = await rt.call('protocol', {});
+        assert.equal(envelope.protocolDigest, envelope.result.digest);
+        values.protocolVersion = envelope.result.version;
+        values.protocolDigest = envelope.protocolDigest;
+        break;
+      }
+      case 'activate': {
+        await runExternal('before-activate');
+        const call = () => rt.call('activate', payload('activate', values));
+        if (step.result === 'INCOMPLETE_EVIDENCE') {
+          // A genuine evidence fault: a member the helper cannot classify.
+          writeFileSync(join(generationRoot(rt, rt.generationId), 'records', 'stray'), 'x');
+          await expectFailure(call(), 'INCOMPLETE_EVIDENCE', 'activate reports the fault');
+        } else if (step.result === 'response-lost') {
+          await call();
+        } else if (step.result === 'LOCKED') {
+          await locked(step, call);
+        } else {
+          const { result } = await call();
+          assert.equal(result.status, step.result.status);
+          assert.deepEqual(result.unmet, step.result.unmet);
+        }
         break;
       }
       case 'start': {
@@ -630,29 +811,43 @@ async function replay(fixture, scenario) {
         await runExternal('after-start');
         break;
       }
-      case 'start-packet':
-        await rt.call('start-packet', payload('start-packet', packetValues(step.packet)));
-        rt.advance(25);
-        break;
-      case 'finish-packet': {
-        const { result } = await rt.call(
-          'finish-packet',
-          payload('finish-packet', packetValues(step.packet)),
-        );
-        assert.equal(result.duration.status, 'available');
+      case 'start-packet': {
+        const call = () =>
+          rt.call('start-packet', payload('start-packet', packetValues(step.packet)));
+        if (step.result === 'LOCKED') await locked(step, call);
+        else {
+          await call();
+          rt.advance(25);
+        }
         break;
       }
-      case 'suspend': {
-        const call = rt.call(
-          'suspend',
-          payload('suspend', {
-            ...values,
-            pilotControlOutcome: step.pilotControlOutcome,
-            affectedRecordIds: reservation === null ? [] : [reservation.runId],
-          }),
-        );
-        if (step.result === 'failed') await expectFailure(call, 'INVALID_STATE', 'suspend fails');
-        else assert.equal((await call).result.generationState, 'suspended');
+      case 'finish-packet': {
+        const call = () =>
+          rt.call('finish-packet', payload('finish-packet', packetValues(step.packet)));
+        if (step.result === 'LOCKED') await locked(step, call);
+        else assert.equal((await call()).result.duration.status, 'available');
+        break;
+      }
+      case 'record-incident': {
+        const call = () =>
+          rt.call(
+            'record-incident',
+            payload('record-incident', {
+              ...values,
+              category: step.category,
+              affectedRecordIds: step.withRecord && reservation ? [reservation.runId] : [],
+            }),
+          );
+        if (step.result === 'LOCKED') await locked(step, call);
+        else if (step.result === 'rejected') {
+          const error = await expectFailure(call(), 'INVALID_STATE', 'review rejects incidents');
+          assert.deepEqual(controlOf(error), NEUTRAL);
+        } else {
+          const { result } = await call();
+          assert.equal(result.generationState, 'suspended');
+          assert.equal(result.controlStatePersisted, true);
+          assert.match(result.pilotControlOutcome, /^critical-[a-z-]+-incident$/);
+        }
         break;
       }
       case 'finalize': {
@@ -679,12 +874,34 @@ async function replay(fixture, scenario) {
           detailOptIn: false,
           trace: null,
         });
-        if (step.result === 'failed') {
-          // A genuine failure: the helper refuses a capability it never issued.
+        if (step.result === 'LOCKED') {
+          await locked(step, () => rt.call('finalize', input));
+        } else if (step.result === 'rejected') {
+          // A caller error: the helper refuses a capability it never issued and suspends nothing.
           const forged = { ...input, workflowCapability: `${'A'.repeat(42)}forged` };
-          await expectFailure(rt.call('finalize', forged), 'AUTHENTICATION_FAILED');
+          const error = await expectFailure(rt.call('finalize', forged), 'AUTHENTICATION_FAILED');
+          assert.deepEqual(controlOf(error), fixture.finalizeControl);
+        } else if (step.result === 'fault') {
+          // A genuine mid-write fault: a finished timing receipt vanished from storage.
+          const receipt = join(
+            generationRoot(rt, rt.generationId),
+            'records',
+            `${reservation.runId}.${reservation.packets[0].packetId}.timing.json`,
+          );
+          rmSync(receipt);
+          const error = await expectFailure(rt.call('finalize', input), 'NOT_FOUND');
+          assert.deepEqual(controlOf(error), fixture.finalizeControl);
+          const { result } = await rt.call('inventory', { ...rt.common });
+          assert.equal(result.generationState, 'suspended', 'the helper suspended by itself');
         } else {
+          assert.ok(['finalized', 'response-lost'].includes(step.result));
           assert.equal((await rt.call('finalize', input)).result.status, 'finalized');
+          const record = storedRecord(rt, rt.generationId, reservation.runId);
+          assert.deepEqual(
+            record.packets.map(({ attempt }) => attempt),
+            expectedAttempts(),
+            'the helper derives every packet attempt as the model states',
+          );
         }
         break;
       }
@@ -699,6 +916,11 @@ async function replay(fixture, scenario) {
           }),
         );
         assert.equal(result.status, 'abandoned');
+        const record = storedRecord(rt, rt.generationId, reservation.runId);
+        assert.deepEqual(
+          record.packets.map(({ attempt }) => attempt),
+          expectedAttempts(),
+        );
         break;
       }
       default:
@@ -721,30 +943,66 @@ for (const fixture of fixtures) {
     assert.deepEqual(result, fixture.expected, fixture.file);
 
     const operations = result.operations;
-    for (const forbidden of ['begin-baseline', 'activate', 'resume', 'begin-review']) {
+    const count = (name) => operations.filter((operation) => operation === name).length;
+    for (const forbidden of ['begin-baseline', 'resume', 'begin-review', 'suspend']) {
       assert.ok(!operations.includes(forbidden), `build never calls ${forbidden}`);
     }
-    assert.ok(operations.filter((operation) => operation === 'start').length <= 1);
+    // Activation is automatic, once per run, and only for an inventory-proven baseline.
+    if (operations.includes('activate')) {
+      assert.equal(fixture.inventory, 'baseline', 'only a proven baseline is activated');
+      assert.ok(operations.indexOf('protocol') < operations.indexOf('activate'));
+      assert.ok(count('activate') <= LOCKED_SENDS, 'activate is retried only after LOCKED');
+      if (operations.includes('start')) {
+        assert.ok(operations.lastIndexOf('activate') < operations.indexOf('start'));
+      }
+    } else if (operations.includes('start')) {
+      assert.notEqual(fixture.inventory, 'baseline', 'a baseline run activates before start');
+    }
+    if (result.activation === 'activated') assert.equal(result.generationState, 'active');
+    if (result.activation?.startsWith('not-ready') || result.activation === 'locked') {
+      assert.equal(result.persistedGenerationState, 'baseline', 'an unready baseline stays one');
+    }
+    assert.ok(count('start') <= 1);
     assert.ok(
-      operations.filter((operation) => operation === 'finalize').length <=
-        (fixture.finalizeResult === 'lost-response' ? 2 : 1),
-      'finalize is sent once, re-sent only after a lost response',
+      count('finalize') <=
+        ({ 'lost-response': 2, 'locked-once': 2, locked: LOCKED_SENDS }[fixture.finalizeResult] ??
+          1),
+      'finalize is sent once, re-sent only after a lost response or LOCKED',
     );
+    // A packet timing operation is re-sent only after `LOCKED`; its locked sends are retries.
+    const retries = (key) =>
+      fixture.packets.reduce((sum, packet) => sum + Math.min(packet[key] ?? 0, LOCKED_SENDS), 0);
+    const timed = {
+      'start-packet': count('start-packet') - retries('startPacketLocked'),
+      'finish-packet': count('finish-packet') - retries('finishPacketLocked'),
+    };
     if (operations.includes('finalize')) {
-      const starts = operations.filter((operation) => operation === 'start-packet').length;
-      const finishes = operations.filter((operation) => operation === 'finish-packet').length;
-      assert.equal(starts, fixture.packets.length, 'every reserved packet starts its timer');
-      assert.equal(finishes, fixture.packets.length, 'every reserved packet is closed');
+      const spawned = fixture.packets.filter(
+        ({ initialOutcome }) => initialOutcome !== 'never-spawned',
+      );
+      assert.equal(timed['start-packet'], spawned.length, 'every spawned packet starts its timer');
+      assert.equal(
+        timed['finish-packet'],
+        spawned.filter(({ interrupted }) => !interrupted).length,
+        'every packet whose initial phase ended is finished',
+      );
+      if (result.finalize.completionStatus === 'completed') {
+        assert.equal(timed['start-packet'], fixture.packets.length);
+        assert.equal(timed['finish-packet'], fixture.packets.length);
+      }
       assert.ok(operations.lastIndexOf('finish-packet') < operations.indexOf('finalize'));
     }
     if (result.configState !== 'enabled' || fixture.harness === 'portable') {
       assert.deepEqual(operations, [], 'disabled, invalid, and portable runs call no operation');
     }
     // The effective envelope never overwrites the inventory-proven persisted state, and only that
-    // persisted state decides whether an incident suspends.
+    // persisted state decides whether an incident is recorded.
     if (!operations.includes('inventory')) assert.equal(result.persistedGenerationState, null);
-    if (result.suspend.length > 0) {
-      assert.ok(SUSPENDABLE_STATES.has(result.persistedGenerationState), 'suspend needs a target');
+    if (result.incidents.length > 0) {
+      assert.ok(
+        SUSPENDABLE_STATES.has(result.persistedGenerationState),
+        'an incident needs a target',
+      );
     }
     if (MEASURED_STATES.has(result.generationState)) {
       assert.equal(result.persistedGenerationState, result.generationState);
@@ -765,12 +1023,22 @@ for (const fixture of fixtures) {
       assert.equal(row.selectedProfile, packet.selectedProfile, 'the envelope is a legal row');
       if (!packet.recorded) {
         assert.ok(!packet.attempts.includes('fast'), 'an unrecorded packet never runs Fast');
+        assert.equal(packet.attempt, null, 'an unrecorded packet has no stored attempt');
+      }
+      if (packet.attempt !== null) {
+        assert.ok(PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts.includes(packet.attempt));
       }
     }
     if (result.finalize !== null) {
       assert.ok(['completed', 'aborted', 'failed'].includes(result.finalize.completionStatus));
       if (result.generationState === 'baseline') {
         assert.ok(result.finalize.packets.every(({ fallback }) => fallback === 'none'));
+      }
+      if (result.finalize.completionStatus === 'completed') {
+        assert.ok(
+          result.packets.every(({ attempt }) => attempt !== 'not-started'),
+          'a completed record holds only started packets',
+        );
       }
     }
   });
@@ -796,23 +1064,25 @@ test('every replayable fixture runs against the shipped helper', { concurrency: 
   );
 });
 
-// Invariant: the fragment documents, for each of the six operations `build` calls, exactly the
-// stdin keys the helper validates; `inventory` also accepts the `generationId` its reconciliation
-// read adds.
+// Invariant: the fragment documents, for each of the eight payload-bearing operations `build`
+// calls, exactly the stdin keys the helper validates; `inventory` also accepts the `generationId`
+// its re-reads add. `activate` carries no `confirmation`, which the helper now rejects.
 test('the fragment documents exactly the helper keys of every build operation', () => {
   for (const [operation, keys] of Object.entries(FRAGMENT_KEYS)) {
     assert.deepEqual([...keys].sort(), [...pilotOperationKeys(operation)].sort(), operation);
   }
   assert.deepEqual(pilotOperationOptionalKeys('inventory'), ['generationId']);
+  assert.ok(!FRAGMENT_KEYS.activate.includes('confirmation'));
   assert.match(
     flat(fragment),
     /On \*\*Reconcile\*\*, read a fresh `inventory` with the `generationId`/,
   );
+  assert.match(flat(fragment), /re-read `inventory` with the `generationId`/);
 });
 
 // Invariant: the fixtures together exercise every configuration state, generation state, gate
-// reason, fallback, suspending outcome, and helper-envelope path, so a shrunk fixture set cannot
-// hide a vocabulary.
+// reason, fallback, incident category, activation result, packet attempt, and helper-envelope
+// path, so a shrunk fixture set cannot hide a vocabulary.
 test('the fixture set covers the configuration, generation, gate, and fallback matrix', () => {
   const seen = (select) => new Set(fixtures.flatMap(select));
   assert.deepEqual([...seen((fixture) => [configStateOf(fixture.config)])].sort(), [
@@ -836,9 +1106,28 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
     [...PILOT_MEASUREMENT_POLICY_PROJECTION.fallbacks].sort(),
   );
   assert.deepEqual(
-    [...seen((fixture) => fixture.expected.suspend)].sort(),
-    [...INCIDENT_OUTCOMES.values()].sort(),
+    [...seen((fixture) => fixture.expected.incidents)].sort(),
+    [...INCIDENT_CATEGORIES].sort(),
   );
+  assert.deepEqual(
+    [...seen((fixture) => fixture.expected.packets.map(({ attempt }) => attempt))]
+      .filter(Boolean)
+      .sort(),
+    [...PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts].sort(),
+  );
+  // Every activation result `build` consumes: the transition, each unmet condition, a lock that
+  // stays held, a genuine evidence fault, and an ambiguous response settled or left unprovable.
+  assert.deepEqual([...seen((fixture) => [fixture.expected.activation])].filter(Boolean).sort(), [
+    'activated',
+    'ambiguous:active',
+    'ambiguous:unprovable',
+    'fault',
+    'locked',
+    'not-ready:busy',
+    'not-ready:sample',
+    'not-ready:window',
+    'not-ready:window,sample',
+  ]);
   for (const harness of ['claude', 'codex', 'portable']) {
     assert.ok(
       fixtures.some((fixture) => fixture.harness === harness),
@@ -848,28 +1137,49 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   const events = [
     ...seen((fixture) => fixture.expected.events.map((event) => JSON.stringify(event))),
   ];
-  for (const outcome of ['capacity-exhausted', 'evidence-gap', 'control-state-unpersistable']) {
+  for (const outcome of [
+    'none',
+    'capacity-exhausted',
+    'evidence-gap',
+    'finalization-failed',
+    'control-state-unpersistable',
+  ]) {
     assert.ok(
       events.some((event) => event.includes(`"pilotControlOutcome":"${outcome}"`)),
       `no fixture exercises a ${outcome} envelope`,
     );
   }
-  for (const needle of ['"operation":"suspend"', '"capture-independent-new-work"']) {
+  for (const needle of ['"operation":"record-incident"', '"capture-independent-new-work"']) {
     assert.ok(
       events.some((event) => event.includes(needle)),
       `no fixture emits ${needle}`,
     );
   }
-  assert.ok(fixtures.some((fixture) => fixture.finalizeResult === 'lost-response'));
+  for (const result of ['lost-response', 'locked-once', 'locked', 'rejected', 'fault']) {
+    assert.ok(
+      fixtures.some((fixture) => fixture.finalizeResult === result),
+      `no fixture finalizes with ${result}`,
+    );
+  }
+  // `LOCKED` is retried and then given up, for an incident as for every locked operation.
+  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked === 1)));
+  assert.ok(
+    fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked >= LOCKED_SENDS)),
+  );
+  // A packet timing operation recovers from one `LOCKED` and fails the record once exhausted.
+  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)));
+  assert.ok(
+    fixtures.some((fixture) => fixture.packets.some((p) => p.finishPacketLocked >= LOCKED_SENDS)),
+  );
   assert.ok(
     fixtures.some(
       (fixture) =>
         fixture.expected.generationState === 'none' &&
         MEASURED_STATES.has(fixture.expected.persistedGenerationState) &&
         fixture.expected.operations.includes('start') &&
-        fixture.expected.suspend.length > 0,
+        fixture.expected.incidents.length > 0,
     ),
-    'no fixture suspends the inventory-proven generation after a failed start',
+    'no fixture records an incident against the inventory-proven generation after a failed start',
   );
   assert.ok(
     fixtures.some((fixture) => fixture.packets.some((p) => p.scopeGrowth === 'authorized')),
@@ -1033,9 +1343,10 @@ test('every correction seam after the initial phase is Quality-only', () => {
   }
 });
 
-// Invariant: a reserved pilot record is finalized exactly once before the completion report, and
-// build never calls the confirmed Guided lifecycle operations itself.
-test('build finalizes a reserved record once and never drives the generation lifecycle', () => {
+// Invariant: a reserved pilot record is finalized exactly once before the completion report, build
+// never calls the confirmed Guided lifecycle operations, and `activate` is automatic and confined to
+// the preflight.
+test('build finalizes a reserved record once and activates only automatically', () => {
   const phase7 = section(build, '### Phase 7: Completion', '\n## Rules');
   ordered(
     phase7,
@@ -1049,12 +1360,51 @@ test('build finalizes a reserved record once and never drives the generation lif
   }
   assert.match(
     flat(fragment),
-    /A workflow run never calls `begin-baseline`, `activate`, or `resume`\. Those three are confirmed Guided setup actions\./,
+    /A workflow run never calls `begin-baseline` or `resume`; those two are confirmed Guided setup actions\./,
   );
+  assert.equal(fragment.match(/`begin-baseline`/g).length, 1, 'begin-baseline is only excluded');
   assert.equal(
-    fragment.match(/`(?:begin-baseline|activate|resume)`/g).length,
-    4,
-    'the fragment names the lifecycle operations only to exclude them, plus the Guided resume',
+    fragment.match(/`resume`/g).length,
+    2,
+    'resume is named only to exclude it and as the Guided way out of a suspension',
+  );
+  // Every `activate` lies in the preflight's automatic-activation step, which runs before start.
+  const activation = section(fragment, '4. **Automatic activation.**', '### Reservation');
+  assert.equal(
+    fragment.match(/`activate`/g).length,
+    activation.match(/`activate`/g).length,
+    'activate is called only by the automatic preflight step',
+  );
+  const text = flat(activation);
+  assert.match(
+    text,
+    /A proven `baseline` is activated by the helper, never by a user confirmation/,
+  );
+  assert.match(text, /call `activate` once with exactly these keys and no `confirmation`/);
+  assert.match(
+    text,
+    /take `protocolVersion` from `result\.version` and `protocolDigest` from the envelope, which must equal `result\.digest`/,
+  );
+  assert.match(text, /`activated` makes the generation `active`, persisted and effective alike/);
+  assert.match(
+    text,
+    /`not-ready` whose `unmet` is a nonempty subset of `busy`, `window`, and `sample` keeps it `baseline`/,
+  );
+  assert.match(text, /`LOCKED`, once its retry is exhausted, keeps it `baseline`/);
+  assert.match(
+    text,
+    /ambiguous: re-read `inventory` with the `generationId` and take its proven state as in step 3, without a second `activate`\. An unprovable re-read makes the run unmeasured/,
+  );
+  assert.match(text, /the genuine evidence faults `INCOMPLETE_EVIDENCE` and `UNSAFE_STORAGE`/);
+  assert.match(
+    text,
+    /A reservation made after `activated` is an `active` reservation\. The state decided here is the one every packet is classified under; a baseline reservation is never relabelled/,
+  );
+  const preflight = flat(section(fragment, '### Preflight', '### Reservation'));
+  ordered(preflight, 'call the read-only `inventory`', '**Automatic activation.**');
+  assert.match(
+    flat(section(fragment, '### Helper contract', '### Preflight')),
+    /`LOCKED` is the one retryable error: the helper changed nothing\. Re-send the identical payload at most twice more, after about two and then about five seconds; an exhausted retry counts as that operation's failure/,
   );
 });
 
@@ -1080,15 +1430,15 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   );
   assert.match(
     preflight,
-    /With `configState=enabled`, an \*\*unmeasured run\*\* holds no usable generation: every packet takes `generationState=none` with `not-evaluated \+ quality`, the legal `no-generation` row, runs Quality without Fast, and is never recorded\. A portable build, an ambiguous or failed inventory, and a failed `start` each make the run unmeasured/,
+    /With `configState=enabled`, an \*\*unmeasured run\*\* holds no usable generation: every packet takes `generationState=none` with `not-evaluated \+ quality`, the legal `no-generation` row, runs Quality without Fast, and is never recorded\. A portable build, an ambiguous or failed inventory, a genuine activation fault, and a failed `start` each make the run unmeasured/,
   );
   assert.match(
     preflight,
-    /That `generationState=none` is the run's effective envelope, not a claim about the persisted generation: the orchestrator keeps an inventory-proven persisted state separately as the target of an incident's `suspend`/,
+    /That `generationState=none` is the run's effective envelope, not a claim about the persisted generation: the orchestrator keeps an inventory-proven persisted state separately as the incident target/,
   );
   assert.match(
     flat(source('src/shared/execution-profiles.md')),
-    /An unmeasured run takes `generationState=none` as its effective envelope, not as a claim about the persisted generation; the orchestrator keeps an inventory-proven persisted state separately as the incident suspension target/,
+    /An unmeasured run takes `generationState=none` as its effective envelope, not as a claim about the persisted generation; the orchestrator keeps an inventory-proven persisted state separately as the incident target/,
   );
   assert.match(
     preflight,
@@ -1122,7 +1472,7 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   assert.match(flat(reservation), /`firstReason` is `null` exactly for `eligible`/);
   assert.match(flat(reservation), /`not-evaluated` is never sent/);
   assert.match(flat(reservation), /Classify every initial packet completely before `start`/);
-  assert.match(flat(reservation), /Never re-send `start`/);
+  assert.match(flat(reservation), /Never re-send `start` other than after `LOCKED`/);
   assert.match(
     flat(reservation),
     /makes `start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized/,
@@ -1133,7 +1483,7 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   );
   assert.match(
     flat(reservation),
-    /The inventory-proven persisted state stays known and remains the incident `suspend` target/,
+    /The inventory-proven persisted state stays known and remains the incident target/,
   );
 
   const timing = section(fragment, '### Packet timing', '### Finalization');
@@ -1149,14 +1499,19 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   ordered(flat(timing), 'Call `start-packet` immediately before', 'Call `finish-packet` once');
   assert.match(
     flat(timing),
+    /\*\*Start before spawn\.\*\* Call `start-packet` immediately before a packet's first implementation spawn, after its packet snapshot, and never spawn that packet before it succeeded\. The helper reads a missing receipt as proof that the packet never started/,
+  );
+  assert.match(
+    flat(timing),
     /Never finish or restart the timer between the Fast attempt and that continuation/,
   );
-  assert.match(flat(timing), /Close every reserved packet on every exit path/);
   assert.match(flat(timing), /Missing or incompatible data stays unavailable, never zero/);
   assert.match(
     flat(timing),
-    /Known bias, awaiting a helper follow-up: the helper records that near-zero interval as an available duration, and counts such a packet reserved as `fast` as an attempted Fast packet without escalation/,
+    /A packet that never spawned gets no timing operation; the helper records it as `not-started` and excludes it from every packet metric\. A packet whose initial phase is still open at that exit is not finished; the helper records it as `started` with an unavailable duration/,
   );
+  assert.match(flat(timing), /finalizes as `aborted` or `failed`, never `completed`/);
+  assert.doesNotMatch(timing, /Known bias|near-zero/, 'the never-spawned bias is resolved');
 
   const finalization = section(fragment, '### Finalization', '### Incidents and pilot control');
   const payload = JSON.parse(finalization.match(/```json\n([\s\S]*?)```/)[1]);
@@ -1215,40 +1570,45 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
   assert.match(rules, /only with the user's explicit detailed-trace consent in the current run/);
   assert.match(rules, /Diffs, escalation detail, and handoff prose never enter it/);
   assert.match(rules, /A lost response may be re-sent once with the identical payload/);
+  assert.match(
+    rules,
+    /Every other failure, `LOCKED` after its retry included, is a finalization failure/,
+  );
 });
 
-// Invariant: each critical incident class maps to exactly one suspending pilot-control outcome,
-// and a failed finalize can be reconciled only in the same run, by explicit confirmation.
-test('incidents suspend one to one and a failed finalize offers one same-run reconciliation', () => {
+// Invariant: an incident is recorded by its helper category alone, the workflow never names a
+// control outcome or suspends, and a failed finalize can be reconciled only in the same run, by
+// explicit confirmation.
+test('incidents are recorded by category and a failed finalize offers one same-run reconciliation', () => {
   const incidents = section(
     fragment,
     '### Incidents and pilot control',
     '### Finalization failure',
   );
-  const rows = [...incidents.matchAll(/^\| ([a-z ]+?)\s+\| `([a-z-]+)`\s+\|$/gm)].map(
-    ([, incident, outcome]) => [incident, outcome],
-  );
-  assert.deepEqual(rows, [...INCIDENT_OUTCOMES]);
-  for (const [, outcome] of rows) {
-    const control = contract.controls.find((row) => row.outcome === outcome);
-    assert.ok(control, `${outcome} must be a pilot-control outcome`);
-    assert.notEqual(control.suspensionReason, 'none', `${outcome} must persist a suspension`);
-    assert.equal(control.implementationFallback, 'none');
-  }
   const text = flat(incidents);
+  const marker = 'naming only its `category`:';
+  const categories = section(text, marker, '. Never name').slice(marker.length);
+  assert.deepEqual(
+    [...categories.matchAll(/`([a-z-]+)`/g)].map(([, category]) => category),
+    INCIDENT_CATEGORIES,
+    'the fragment lists exactly the helper incident categories',
+  );
+  assert.match(text, /Never name a `critical-\*` outcome and never call `suspend`/);
+  assert.doesNotMatch(fragment, /`critical-[a-z-]+-incident`/, 'no local category-to-outcome map');
+  assert.equal(fragment.match(/`suspend`/g).length, 1, 'suspend is named only to forbid it');
   assert.match(text, /never reverts potentially user- or sibling-owned work automatically/);
   assert.match(text, /holds the current `runId` when a record exists and is empty otherwise/);
   assert.match(
     text,
-    /Only an inventory-proven `baseline`, `active`, or `suspended` generation is suspended, also in an unmeasured run after a failed `start`/,
+    /Only an inventory-proven `baseline`, `active`, or `suspended` generation is the incident target, also in an unmeasured run after a failed activation or `start`/,
   );
   assert.match(
     text,
-    /If `suspend` fails, report only a stable value-free alert, claim no persisted suspension/,
+    /`LOCKED` follows the retry policy; once exhausted, or after any other failure, report only a stable value-free alert, claim no persisted suspension/,
   );
   assert.match(
     text,
-    /a scope incident may set both `scope-incident` and `critical-scope-incident`/,
+    /a scope incident may set both the `scope-incident` fallback and the `scope` category/,
   );
   assert.match(
     text,
@@ -1260,9 +1620,12 @@ test('incidents suspend one to one and a failed finalize offers one same-run rec
   const failureText = flat(failure);
   assert.match(
     failureText,
-    /keeps every product change and calls `suspend` with `finalization-failed` and `\[runId\]`/,
+    /A failed `finalize`, or a record left unfinalizable, keeps every product change and never becomes an implementation fallback/,
   );
-  assert.match(failureText, /It never becomes an implementation fallback/);
+  assert.match(
+    failureText,
+    /The workflow suspends nothing for it: on a genuine mid-write fault the helper itself persists `finalization-failed` and reports it in the envelope, while a rejected request, lock contention, or a location or version fault leaves the pilot state unchanged/,
+  );
   const asks = [...failure.matchAll(/```ask\n([\s\S]*?)```/g)];
   assert.equal(asks.length, 1, 'reconciliation is offered by exactly one ask');
   assert.doesNotMatch(asks[0][1], /type: scored/, 'an irreversible choice stays unscored');
@@ -1274,9 +1637,17 @@ test('incidents suspend one to one and a failed finalize offers one same-run rec
   );
   assert.match(
     failureText,
+    /The helper acts on the record's state\. For a reservation still open, it writes the record as `abandoned` with every packet's `attempt` `unknown`, which never counts as a success/,
+  );
+  assert.match(
+    failureText,
+    /When `finalize` faulted after persisting the record, for example while removing a timing receipt, the helper only drains the remaining receipts and returns the stored `completionStatus`\. Report the status the helper returns\./,
+  );
+  assert.match(
+    failureText,
     /A declined, unanswered, non-interactive, or failed reconciliation leaves the incomplete record in place/,
   );
-  assert.match(failureText, /only through `discard-generation` or `purge`/);
+  assert.match(failureText, /only `discard-generation` or `purge` clears it/);
   assert.match(failureText, /a reviewed generation never resumes/);
 });
 

@@ -789,6 +789,8 @@ test('the escalation transfer is complete, ordered, and pins authority per field
   }, /Duplicate execution-profile transfer field "executionLocationReceipt"/);
 });
 
+// Invariant: repository text is untrusted data that cannot widen authority, and any unknown
+// condition fails closed to Quality through `unknown-evidence`.
 test('untrusted repository text cannot grant authority or bypass unknown-to-Quality', () => {
   assert.match(
     executionProfileSource,
@@ -800,7 +802,8 @@ test('untrusted repository text cannot grant authority or bypass unknown-to-Qual
   );
   assert.match(
     executionProfileSource,
-    /An unknown\s+condition therefore reaches `unknown-evidence` and selects Quality/,
+    /\.\s+An\s+unknown\s+condition\s+(?:therefore\s+)?reaches `unknown-evidence` and selects Quality, never Fast\./,
+    'fail closed: every unknown condition must reach `unknown-evidence` and select Quality, never Fast',
   );
   assert.match(executionProfileSource, /Coupled or mixed-scope packets share Quality/);
 });

@@ -15,7 +15,17 @@
     "configState": "enabled",
     "generationState": "baseline",
     "persistedGenerationState": "baseline",
-    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize", "finalize"],
+    "activation": "not-ready:window,sample",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize",
+      "finalize"
+    ],
     "packets": [
       {
         "eligibility": "eligible",
@@ -31,10 +41,11 @@
         },
         "attempts": ["quality"],
         "fallback": "none",
-        "fastAttemptConsumed": false
+        "fastAttemptConsumed": false,
+        "attempt": "started"
       }
     ],
-    "suspend": [],
+    "incidents": [],
     "finalize": {
       "completionStatus": "completed",
       "qualityCorrectionRounds": 0,

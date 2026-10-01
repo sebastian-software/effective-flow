@@ -250,14 +250,15 @@ lazy fragment [`src/shared/setup-execution-profiles.md`](../../src/shared/setup-
 writes literal `true` or `false` (or nothing on Keep) through the ordinary before/after
 confirmation. Profile and Express never ask the block; they carry an existing row, valid or
 invalid, over byte-for-byte. After a completed Step 6, the same fragment offers at most one
-confirmed generation action for the inventory-proven state: `begin-baseline` for `none`,
-`activate` for `baseline`, and `resume` for a `suspended` generation with healthy evidence. None of
-them writes the row.
+confirmed generation action for the inventory-proven state: `begin-baseline` for `none` and
+`resume` for a `suspended` generation with healthy evidence. Neither writes the row, and setup never
+activates: `build` calls `activate` automatically in a measured run's preflight.
 
 `build` is the only consumer that reads the key for profile selection. Its reader is split: the
 configuration contract classifies `configState`, and only `enabled` on a native harness triggers the
 read-only helper `inventory` that yields the generation state. `none`, `suspended`, and `review`
-select Quality without a record; only `baseline` and `active` classify and measure packets. The
+select Quality without a record; only `baseline` and `active` classify and measure packets, and a
+`baseline` is first offered to the helper's automatic `activate`. The
 build emits the native capability this needs—five generated Claude Fast sidecars, Codex per-spawn
 rendering, strict native inventories, and the local measurement helper—but `refactor` still
 contains no Fast-profile reference and does not consume the key. Portable output remains

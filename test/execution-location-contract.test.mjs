@@ -47,6 +47,7 @@ const resolvedApplyReviewMechanics = resolveEagerIncludes(
   extractBody(readSource('tools', 'apply-review-commit-mechanics.md')),
 );
 
+// Invariant: every delivery and apply-review path carries the canonical execution-location contract.
 test('delivery and apply-review paths include the canonical execution-location contract', () => {
   const deliveryTools = ['build', 'docs', 'fix', 'maintain', 'refactor'];
 
@@ -129,6 +130,7 @@ test('the canonical receipt fails closed and roots every write-capable operation
   }
 });
 
+// Invariant: local report and memory consumers use absolute RUNTIME_STATE_ROOT handles, never worktree-relative paths.
 test('every local report consumer retains and uses the absolute main-checkout handle', () => {
   const sourceDetection = readShared('apply-source-detection');
   const backlinks = readShared('review-report-backlinks');
@@ -180,6 +182,7 @@ test('every local report consumer retains and uses the absolute main-checkout ha
   );
 });
 
+// Invariant: the separate execution and runtime roots survive every harness render.
 test('the dual-root contract survives every harness render', () => {
   for (const harness of ['claude', 'codex', 'portable']) {
     const renderedDelivery = renderBody(resolvedDeliveryFragment, harness, {
@@ -199,6 +202,7 @@ test('the dual-root contract survives every harness render', () => {
   }
 });
 
+// Invariant: a red baseline aborts before implementation and cleans up only run-owned artifacts without force.
 test('maintenance red-baseline abort uses ownership-safe delivery handback', () => {
   const maintain = extractBody(readSource('tools', 'maintain.md'));
   const abortClauses = [
@@ -229,6 +233,7 @@ test('maintenance red-baseline abort uses ownership-safe delivery handback', () 
   assert.match(maintain, /before any commit, completion prompt, push, pull request or[\s\S]*merge/);
 });
 
+// Invariant: removed arbitrary-CWD and unconditional-cleanup wording stays gone; every removal is ownership-gated.
 test('legacy arbitrary-CWD delegation and unconditional cleanup wording stay removed', () => {
   const relevantSources = [
     readShared('execution-location'),
@@ -262,10 +267,9 @@ test('forge operations are rooted in the runtime state root, not the execution w
   const requiredClauses = [
     [/Root every forge operation in `RUNTIME_STATE_ROOT`/, 'forge rooting category'],
     [
-      /provider CLI such as `gh` or `tea` resolves its repository context from its working\s+directory/,
-      'provider working-directory rationale',
+      /Pass the absolute runtime root as the\s+per-call working directory for every remote-helper invocation/,
+      'runtime root as every remote-helper working directory',
     ],
-    [/may already have been withdrawn/, 'withdrawn-worktree rationale'],
     [
       /repository-wide Git\s+operations that accompany a completion action/,
       'repository-wide scope of the redirected Git operations',
@@ -306,6 +310,7 @@ test('the pr tool consumes a prepared branch without creating or restoring a che
   );
 });
 
+// Invariant: deliver leaves the source checkout untouched and never substitutes one receipt for the other.
 test('deliver keeps dirty or detached source evidence separate from its owned delivery root', () => {
   const deliver = extractBody(readSource('tools', 'deliver.md'));
 
