@@ -89,7 +89,8 @@ URL. Only a remaining candidate that fails check 1, 2, 4, or 5 blocks.
 A remaining candidate counts only when all five checks hold:
 
 1. its `planPrMarker` is present and equals `P`, and no `planPrMarkerError` is present;
-2. its `state` is open;
+2. its `state` is open and its `draft` is `true`; a ready pull request, or a `draft` that is absent
+   or any other value, fails this check;
 3. its `sameRepository` is `true`, as the filter above already established;
 4. its `base` equals the resolved local base branch;
 5. its head changes against the merge base touch only `P`. First validate its head branch with

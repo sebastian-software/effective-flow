@@ -18467,6 +18467,28 @@ test('plan publication commits only the plan, in a temporary worktree, and opens
     'the created-not-reused rule',
   );
 
+  // Invariant: a created pull request is claimed as a draft only after a body-less read-back states
+  // `draft: true`; Forgejo can ignore the work-in-progress prefix, so anything else fails at `pr`.
+  const confirmation = boundedSlice(push, 'Then confirm the draft', 'Republication.');
+  includesAll(
+    confirmation,
+    [
+      'Forgejo can ignore the work-in-progress prefix',
+      '`pr-list` again with `planPath` set to `P`',
+      'require its `draft` to be `true`',
+      'A failed read, no such item, or any other `draft` value',
+      'never claim one',
+      'failed at `pr`',
+      'open but not confirmed as a draft',
+    ],
+    'the draft confirmation',
+  );
+  ordered(push, '`result: created`', 'Then confirm the draft', 'Republication.');
+  assert.match(
+    itemWith(listItems(section(publication, '### Report vocabulary')), 'published'),
+    /draft pull request that the read-back confirmed/,
+  );
+
   // Invariant (F28): the title keeps the `docs:` type and follows `language.git` for its words.
   const shape = prose(section(publication, '### Pull request shape'));
   includesAll(
@@ -18866,6 +18888,12 @@ test('the plan continuation verifies five checks after the foreign filter and de
   // plan. The command-level detail of check 5 is pinned by the byte-equality test.
   includesAll(checks[0], ['`planPrMarker`', '`planPrMarkerError`'], 'check 1');
   assert.match(checks[1], /open/);
+  // Invariant: only a draft is a plan pull request; a ready one, or an unstated draft state, fails.
+  includesAll(
+    checks[1],
+    ['`draft` is `true`', 'a ready pull request', 'absent or any other value, fails this check'],
+    'check 2',
+  );
   assert.ok(checks[2].includes('`sameRepository` is `true`'));
   assert.ok(checks[3].includes('resolved local base branch'));
   assert.ok(checks[4].includes('touch only `P`'));

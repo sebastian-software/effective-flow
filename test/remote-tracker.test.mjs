@@ -11614,6 +11614,72 @@ test('the planPath filter keeps only exact marker matches and never returns a bo
   assert.equal(Object.hasOwn(forgejo.data.result[0], 'body'), false);
 });
 
+test('a planPath pr-list states each item draft flag on both providers', async () => {
+  // Plan publication and continuation accept a candidate only while its `draft` is `true`, and
+  // publication confirms a created plan pull request through this same read. Both providers state
+  // the flag on the raw API object; an item that states none is reported as not a draft, so an
+  // unstated draft state can never pass for a draft.
+  const { draft: _omitted, ...unstated } = githubPlanPull({ number: 3 });
+  const github = await executeOperation(
+    'pr-list',
+    { repository: githubRepository, planPath: PLAN_PATH },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            githubPlanPull({ number: 1 }),
+            githubPlanPull({ number: 2, draft: false }),
+            unstated,
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(github.ok, true);
+  assert.deepEqual(
+    github.data.result.map((item) => [item.number, item.draft]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+    ],
+  );
+
+  const { draft: _forgejoOmitted, ...forgejoUnstated } = forgejoPlanPull({ number: 3 });
+  const forgejo = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository, planPath: PLAN_PATH },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            forgejoPlanPull({ number: 1 }),
+            // Forgejo computes `draft` from the title, so a WIP request it ignored reads as ready.
+            forgejoPlanPull({ number: 2, title: 'docs: plan publication', draft: false }),
+            forgejoUnstated,
+          ]),
+          stderr: TEA_OK,
+        },
+        { status: 0, stdout: '[]', stderr: TEA_OK },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.ok, true);
+  assert.deepEqual(
+    forgejo.data.result.map((item) => [item.number, item.draft]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+    ],
+  );
+});
+
 test('an unsafe planPath is refused before any provider call', async () => {
   for (const planPath of ['../plan.md', '/abs/plan.md', 'docs/plan/a.txt', 42, '']) {
     const runner = fakeRunner([]);

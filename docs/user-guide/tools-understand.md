@@ -166,7 +166,10 @@ finding; **Keep local**, or no answer, publishes nothing.
 
 On **Publish**, `plan` commits the plan file alone in a temporary Effective Flow worktree (a sibling
 worktree in a Claude Code or Codex worktree session), pushes the branch
-`<delivery.branchPrefix>/<workflow>/<slug>`, and opens the draft through `/effective-flow pr`. The
+`<delivery.branchPrefix>/<workflow>/<slug>`, and opens the draft through `/effective-flow pr`. It
+then reads the new pull request back and claims a draft only when the forge states one: Forgejo can
+ignore the work-in-progress prefix a draft rests on, and a pull request that is not confirmed as a
+draft is reported as a failure at `pr`, because the implementing run accepts only a draft. The
 commit type is `docs`, and hooks run. The title is `docs: plan <plan title>`, and the body names
 the plan path and its requirement summary. Once the commit is verified, the temporary worktree is
 removed after the push and pull-request step, whatever its outcome; a stop before that keeps the
@@ -176,10 +179,10 @@ wrote it.
 Running `plan` again on a revised plan that already has an open plan pull request **republishes**
 it as a new commit on that pull request instead of opening a second one; existing approvals may
 then no longer apply. An unchanged plan has nothing to republish. Several matching pull requests
-from this repository, or one whose branch changes a path other than the plan, whose head could not
-be fetched, or whose branch name fails `git check-ref-format --branch`, make publication
-unavailable, and the report lists each with its URL and the failed check. The head branch name
-reaches every command as one single-quoted argument.
+from this repository, or one that is no longer a draft, whose branch changes a path other than the
+plan, whose head could not be fetched, or whose branch name fails `git check-ref-format --branch`,
+make publication unavailable, and the report lists each with its URL and the failed check. The head
+branch name reaches every command as one single-quoted argument.
 
 The report carries one publication line: published (with URL, branch, and audience), updated,
 declined, unavailable, not attempted, or failed at a named step. Each ignored foreign pull request

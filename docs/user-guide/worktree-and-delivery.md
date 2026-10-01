@@ -295,8 +295,10 @@ Discovery goes through the remote helper and uses only the marker it parses; no 
 comment reaches the run. A marker-carrying pull request whose head branch is not in this repository
 – a fork's, a deleted fork's, or one whose repository the forge does not state, since discovery
 never reads a single pull request back – is ignored and reported, never blocking. A remaining candidate counts only when its marker names this plan, it
-is open, its base is the resolved local base branch, and its branch changes nothing but the plan
-against the merge base with that base. A pure merge of the base into the head therefore passes.
+is open and still a draft – a ready pull request, or one whose draft state the forge does not
+state, fails the check – its base is the resolved local base branch, and its branch changes nothing
+but the plan against the merge base with that base. A pure merge of the base into the head therefore
+passes.
 Because Git allows branch names such as `x/$(id)` or `a;b`, the head branch must first pass
 `git check-ref-format --branch`; a name that fails is reported as an unsafe head branch name and is
 never used in a command, and every command receives the name as one single-quoted argument. The

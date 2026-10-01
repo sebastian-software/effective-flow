@@ -122,7 +122,8 @@ URL. Only a remaining candidate that fails check 1, 2, 4, or 5 blocks.
 A remaining candidate counts only when all five checks hold:
 
 1. its `planPrMarker` is present and equals `P`, and no `planPrMarkerError` is present;
-2. its `state` is open;
+2. its `state` is open and its `draft` is `true`; a ready pull request, or a `draft` that is absent
+   or any other value, fails this check;
 3. its `sameRepository` is `true`, as the filter above already established;
 4. its `base` equals the resolved local base branch;
 5. its head changes against the merge base touch only `P`. First validate its head branch with
@@ -320,6 +321,13 @@ here. Require its `result: created`. A `reused` result means an open pull reques
 for this branch, so the branch was not this plan's own: stop, report the reused pull request's URL
 as not this plan's, and report publication as failed at `pr`.
 
+Then confirm the draft, because Forgejo can ignore the work-in-progress prefix a draft request
+rests on. Run `pr-list` again with `planPath` set to `P`, take the item whose URL equals the
+reported one, and require its `draft` to be `true`. A failed read, no such item, or any other
+`draft` value means the pull request is not confirmed as a draft: never claim one, and report
+publication as failed at `pr`, naming the pull request's URL as open but not confirmed as a draft,
+which the implementing run's verification rejects until it is a draft again.
+
 **Republication.** Require the local branch still to resolve to the verified commit, then push it
 normally with `git -C <RUNTIME_STATE_ROOT> push origin '<head-branch>'`. `{{SKILL:pr}}` is not called,
 because the open pull request already carries the new commit. A rejected push means the remote head
@@ -357,7 +365,7 @@ invocation checkout.
 
 Exactly one publication line, in one of these shapes:
 
-- **published** as a draft pull request, with its URL, the branch, and the audience, plus the note:
+- **published** as a draft pull request that the read-back confirmed, with its URL, the branch, and the audience, plus the note:
   do not run `{{SKILL:merge-gate}}` or `{{SKILL:iterate}}` on the plan pull request before
   `{{SKILL:apply}}`. Their rounds can push commits onto the plan branch, and a commit that changes a
   path other than the plan then fails the continuation's verification; a pure merge of the base into
