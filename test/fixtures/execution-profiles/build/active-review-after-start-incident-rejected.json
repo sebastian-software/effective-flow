@@ -66,6 +66,10 @@
         "kind": "alert",
         "operation": "record-incident",
         "report": "value-free-alert"
+      },
+      {
+        "kind": "ask",
+        "topic": "retry-incident"
       }
     ]
   }

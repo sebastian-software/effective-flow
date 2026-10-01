@@ -87,7 +87,11 @@ explicit resume. Only a still-suspended generation can resume; a generation in `
 and cannot return to admission.
 
 A `build` run reports such an incident to the helper by its category, and the helper records the
-suspension; your product changes are kept either way. If a run cannot finalize its own pilot
+suspension; your product changes are kept either way. From that point the same run starts no
+further Fast attempt: every packet it has not yet started runs Quality. If the helper cannot store
+the suspension, the run shows an alert and offers once to retry. Without a stored suspension
+nothing stops a later run from selecting Fast, so the run says so; disable the pilot in Guided
+setup to keep later runs on Quality until you enable it again. If a run cannot finalize its own pilot
 record, a genuine storage fault makes the helper suspend the generation itself, while lock
 contention, a rejected request, or a location fault leaves the pilot state unchanged. Either way
 the run asks once, in the same run, whether to mark that record abandoned; an abandoned record

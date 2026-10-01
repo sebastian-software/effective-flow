@@ -495,7 +495,9 @@ calls `start-packet` immediately before each packet's first spawn and `finish-pa
 initial phase ends, and calls `finalize` exactly once at every exit. Admission is serialized: any
 in-flight reservation makes `start` fail and the run proceeds as unmeasured Quality. A critical
 incident is recorded through `record-incident` by its category; the helper maps it to the
-suspending outcome. The workflow never suspends for a failed finalization: the helper persists
+suspending outcome. After any incident, no packet not yet spawned in that run attempts Fast, and an
+unpersisted incident is retried only on confirmation, otherwise pointing to Guided setup's
+`Disable`. The workflow never suspends for a failed finalization: the helper persists
 `finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
 the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
 because no later run holds the workflow capability; otherwise only `discard-generation` or `purge`

@@ -235,6 +235,8 @@ function runScenario(fixture) {
   const steps = [];
   const events = [];
   const incidents = [];
+  // Set by the first critical incident, persisted or not; no later packet attempts Fast.
+  let incidentSeen = false;
   let persistedGenerationState = null;
   let activation = null;
   const shape = (generationState, packets, finalize = null) => ({
@@ -266,6 +268,7 @@ function runScenario(fixture) {
       INCIDENT_CATEGORIES.includes(packet.incident),
       `unknown incident: ${packet.incident}`,
     );
+    incidentSeen = true;
     if (!SUSPENDABLE_STATES.has(persistedGenerationState)) return;
     const result = packet.incidentResult ?? 'persisted';
     assert.ok(['persisted', 'rejected'].includes(result));
@@ -274,7 +277,18 @@ function runScenario(fixture) {
       { operation: 'record-incident', category: packet.incident, withRecord: runId, result },
       packet.incidentLocked ?? 0,
     );
-    if (!sent || result !== 'persisted') {
+    if (sent && result === 'persisted') return;
+    // An unpersisted incident leaves nothing durable to stop a later run from selecting Fast, so
+    // the run asks once whether to retry it; only a Retry answer re-sends the identical payload.
+    events.push({ kind: 'alert', operation: 'record-incident', report: 'value-free-alert' });
+    events.push({ kind: 'ask', topic: 'retry-incident' });
+    if (packet.incidentRetry === undefined) return;
+    assert.equal(packet.incidentRetry, 'Retry', 'only a Retry answer sends anything');
+    const retried = send(
+      { operation: 'record-incident', category: packet.incident, withRecord: runId, result },
+      packet.incidentRetryLocked ?? 0,
+    );
+    if (!retried || result !== 'persisted') {
       events.push({ kind: 'alert', operation: 'record-incident', report: 'value-free-alert' });
     }
   };
@@ -383,8 +397,14 @@ function runScenario(fixture) {
       }
     }
     result.attempt = 'started';
-    // A helper failure after `start` blocks every later Fast attempt in the run.
-    if (selectedProfile === 'fast' && !unfinalizable) {
+    // A helper failure after `start` blocks every later Fast attempt in the run, and so does any
+    // earlier critical incident: that reservation runs Quality and is charged as `scope-incident`.
+    if (selectedProfile === 'fast' && !unfinalizable && incidentSeen) {
+      assert.equal(outcome, 'none', 'a forfeited Fast reservation makes no Fast attempt');
+      result.fastAttemptConsumed = true;
+      result.fallback = 'scope-incident';
+      result.attempts.push('quality');
+    } else if (selectedProfile === 'fast' && !unfinalizable) {
       result.fastAttemptConsumed = true;
       result.attempts.push('fast');
       if (outcome !== 'none') {
@@ -1007,15 +1027,27 @@ for (const fixture of fixtures) {
     if (MEASURED_STATES.has(result.generationState)) {
       assert.equal(result.persistedGenerationState, result.generationState);
     }
+    // After the first critical incident, persisted or not, no later packet attempts Fast.
+    const firstIncident = fixture.packets.findIndex(({ incident }) => incident !== undefined);
+    if (firstIncident !== -1) {
+      for (const packet of result.packets.slice(firstIncident + 1)) {
+        assert.ok(!packet.attempts.includes('fast'), 'no Fast attempt after a critical incident');
+      }
+    }
     for (const packet of result.packets) {
       assert.ok(packet.attempts.filter((profile) => profile === 'fast').length <= 1);
       assert.ok(packet.attempts.indexOf('fast') <= 0, 'Fast is only ever the first attempt');
       assert.ok(packet.attempts.length <= 2, 'one Fast to Quality transition at most');
-      assert.equal(packet.fastAttemptConsumed, packet.attempts.includes('fast'));
+      // A Fast reservation an earlier incident forfeited consumes its attempt without a Fast spawn.
+      const forfeited =
+        packet.selectedProfile === 'fast' &&
+        packet.fallback === 'scope-incident' &&
+        !packet.attempts.includes('fast');
+      assert.equal(packet.fastAttemptConsumed, packet.attempts.includes('fast') || forfeited);
       if (packet.fallback !== 'none') {
         const row = contract.decisionMappings.find(({ fallback }) => fallback === packet.fallback);
         assert.equal(row.fastAttemptConsumed, 'true');
-        assert.deepEqual(packet.attempts, ['fast', 'quality']);
+        assert.deepEqual(packet.attempts, forfeited ? ['quality'] : ['fast', 'quality']);
       }
       // Every envelope, recorded or not, is a legal row of the state table.
       const row = legalRow(result.configState, result.generationState, packet.eligibility);
@@ -1149,7 +1181,11 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
       `no fixture exercises a ${outcome} envelope`,
     );
   }
-  for (const needle of ['"operation":"record-incident"', '"capture-independent-new-work"']) {
+  for (const needle of [
+    '"operation":"record-incident"',
+    '"capture-independent-new-work"',
+    '"retry-incident"',
+  ]) {
     assert.ok(
       events.some((event) => event.includes(needle)),
       `no fixture emits ${needle}`,
@@ -1165,6 +1201,20 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked === 1)));
   assert.ok(
     fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked >= LOCKED_SENDS)),
+  );
+  // An unpersisted incident is retried only on an explicit Retry answer.
+  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.incidentRetry === 'Retry')));
+  // A later Fast reservation after an incident runs Quality and is charged as `scope-incident`.
+  assert.ok(
+    fixtures.some((fixture) =>
+      fixture.expected.packets.some(
+        (p) =>
+          p.selectedProfile === 'fast' &&
+          p.fallback === 'scope-incident' &&
+          !p.attempts.includes('fast'),
+      ),
+    ),
+    'no fixture forfeits a Fast reservation after an incident',
   );
   // A packet timing operation recovers from one `LOCKED` and fails the record once exhausted.
   assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)));
@@ -1610,6 +1660,27 @@ test('incidents are recorded by category and a failed finalize offers one same-r
     text,
     /a scope incident may set both the `scope-incident` fallback and the `scope` category/,
   );
+  // Any incident stops Fast for every packet not yet spawned, and the forfeited reservation is
+  // charged to Fast rather than credited as a Fast success.
+  assert.match(
+    text,
+    /After any critical incident in the run, persisted or not, no packet that has not yet spawned makes a Fast attempt: it runs Quality from its first spawn/,
+  );
+  assert.match(
+    text,
+    /a packet reserved as `fast` that ran Quality this way sends `scope-incident` with `escalated: true`/,
+  );
+  // An unpersisted incident is retried only on confirmation, and otherwise names the confirmed
+  // recovery path instead of claiming that a later run stays fail-closed.
+  const incidentAsks = [...incidents.matchAll(/```ask\n([\s\S]*?)```/g)];
+  assert.equal(incidentAsks.length, 1, 'an unpersisted incident offers exactly one ask');
+  assert.match(incidentAsks[0][1], /- label: Retry\n/);
+  assert.match(incidentAsks[0][1], /- label: Leave\n/);
+  assert.match(
+    text,
+    /A declined, unanswered, non-interactive, or failed retry leaves no suspension\. The completion report then states that no durable state keeps a later measured run off Fast, and that the confirmed recovery path is `\{\{SKILL:setup\}\}` Guided block 10 `Disable`/,
+  );
+  assert.doesNotMatch(text, /keep later preflights fail-closed/);
   assert.match(
     text,
     /report a suspension or incomplete evidence only when `controlStatePersisted` is `true`/,

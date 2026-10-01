@@ -1,5 +1,5 @@
 {
-  "name": "Critical incidents are recorded by category, a held lock is retried, and the record still finalizes",
+  "name": "Critical incidents are recorded by category, a held lock is retried, every later Fast reservation runs Quality as scope-incident, and the record still finalizes",
   "harness": "claude",
   "config": "true",
   "inventory": "active",
@@ -72,8 +72,8 @@
             "firstReason": null
           }
         },
-        "attempts": ["fast"],
-        "fallback": "none",
+        "attempts": ["quality"],
+        "fallback": "scope-incident",
         "fastAttemptConsumed": true,
         "attempt": "started"
       },
@@ -89,8 +89,8 @@
             "firstReason": null
           }
         },
-        "attempts": ["fast"],
-        "fallback": "none",
+        "attempts": ["quality"],
+        "fallback": "scope-incident",
         "fastAttemptConsumed": true,
         "attempt": "started"
       }
@@ -105,12 +105,12 @@
           "escalated": false
         },
         {
-          "fallback": "none",
-          "escalated": false
+          "fallback": "scope-incident",
+          "escalated": true
         },
         {
-          "fallback": "none",
-          "escalated": false
+          "fallback": "scope-incident",
+          "escalated": true
         }
       ]
     },

@@ -169,8 +169,14 @@ Three sources call the helper, each through a lazy fragment that owns its exact 
   no timing operation and is recorded `not-started`; one still open when the run aborts is
   recorded `started` with an unavailable duration. Any in-flight reservation makes `start` fail
   with `INCOMPLETE_EVIDENCE`, so the run proceeds as unmeasured Quality. A critical incident is
-  recorded through `record-incident` by its category. `LOCKED` is retried with the identical
-  payload at most twice more, after about two and then about five seconds. A failed or impossible
+  recorded through `record-incident` by its category. After any critical incident, persisted or
+  not, no packet that has not yet spawned attempts Fast; a reserved Fast packet that runs Quality
+  for that reason finalizes as `scope-incident` with `escalated: true`, so it is charged to Fast
+  rather than counted as a Fast success. An incident the helper cannot persist yields only a
+  value-free alert and one same-run ask to retry it; otherwise the run reports that nothing durable
+  keeps later runs off Fast and that Guided setup's `Disable` is the confirmed recovery path.
+  `LOCKED` is retried with the identical payload at most twice more, after about two and then
+  about five seconds. A failed or impossible
   finalization keeps the product diff and suspends nothing on the workflow side: the helper
   persists `finalization-failed` itself on a mid-write fault. The run then offers a confirmed
   `reconcile-record` once in the same run. For a still-open reservation it writes the record

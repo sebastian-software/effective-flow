@@ -253,7 +253,32 @@ exists and is empty otherwise. Only an inventory-proven `baseline`, `active`, or
 generation is the incident target, also in an unmeasured run after a failed activation or `start`.
 A success returns the persisted suspension. `LOCKED` follows the retry policy; once exhausted, or
 after any other failure, report only a stable value-free alert, claim no persisted suspension, and
-keep later preflights fail-closed on storage or inventory uncertainty.
+ask once, still in the same run, because no durable state then stops a later run from selecting
+Fast:
+
+```ask
+header: Incident
+question: A critical incident could not be persisted as a pilot suspension, so a later measured build run could still select Fast. Retry recording it now?
+options:
+  - label: Retry
+    description: Re-send the identical incident under the LOCKED retry policy; a success persists the suspension
+  - label: Leave
+    description: Record nothing more; later measured runs may select Fast until the pilot is disabled in Guided setup
+```
+
+On **Retry**, re-send the identical payload under the same policy and report the persisted
+suspension on success. A declined, unanswered, non-interactive, or failed retry leaves no
+suspension. The completion report then states that no durable state keeps a later measured run off
+Fast, and that the confirmed recovery path is `{{SKILL:setup}}` Guided block 10 `Disable`, after
+which Fast returns only through a confirmed `Enable` there.
+
+After any critical incident in the run, persisted or not, no packet that has not yet spawned makes
+a Fast attempt: it runs Quality from its first spawn, still timed by `start-packet` and
+`finish-packet`. A Fast attempt already spawned keeps its own outcome. At `finalize`, a packet
+reserved as `fast` that ran Quality this way sends `scope-incident` with `escalated: true`: the
+incident consumed its only Fast attempt, and the closed vocabulary's one incident fallback charges
+it to Fast, where `none` would credit a Quality execution as a Fast success. The incident's own
+category stays on the control axis.
 
 A reserved record still finalizes after an incident. Implementation fallback and pilot control
 stay independent: a scope incident may set both the `scope-incident` fallback and the `scope`

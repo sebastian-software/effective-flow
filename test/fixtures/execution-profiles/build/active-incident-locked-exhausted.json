@@ -1,5 +1,5 @@
 {
-  "name": "A record-incident that stays LOCKED after its retries reports only a value-free alert",
+  "name": "A record-incident that stays LOCKED after its retries reports a value-free alert and persists on a confirmed retry",
   "harness": "codex",
   "config": "true",
   "inventory": "active",
@@ -8,7 +8,8 @@
       "bucket": "node-backend-cli",
       "paths": ["src/server/handler.mjs"],
       "incident": "data-integrity",
-      "incidentLocked": 3
+      "incidentLocked": 3,
+      "incidentRetry": "Retry"
     }
   ],
   "completion": "failed",
@@ -21,6 +22,7 @@
       "inventory",
       "start",
       "start-packet",
+      "record-incident",
       "record-incident",
       "record-incident",
       "record-incident",
@@ -62,6 +64,10 @@
         "kind": "alert",
         "operation": "record-incident",
         "report": "value-free-alert"
+      },
+      {
+        "kind": "ask",
+        "topic": "retry-incident"
       }
     ]
   }
