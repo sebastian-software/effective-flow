@@ -2970,6 +2970,41 @@ test('release-please opens its pull request with an explicit non-default token',
   ordered(release, 'name: Create release token', 'name: Release Please');
 });
 
+// Immutable releases are enabled on this repository, and a published immutable release accepts
+// no further asset. The invariant: release-please creates the release as a draft that stays one
+// until its archive is attached and verified, while `force-tag-creation` still creates the tag
+// immediately so the next release pull request can compute its changelog; only then is the
+// release published, and only a published release is delivered to `main`.
+test('the release stays a draft until its verified archive is attached', () => {
+  const config = JSON.parse(source('release-please-config.json'));
+  assert.equal(config.packages['.'].draft, true);
+  assert.equal(config.packages['.']['force-tag-creation'], true);
+
+  const release = source('.github/workflows/release.yml');
+  const publishName = 'Publish the verified release';
+  const publish = workflowStep(release, publishName);
+  // Anchored at the step's key indent, so the rationale comment cannot satisfy them.
+  assert.match(
+    publish,
+    /^ {8}if: \$\{\{ steps\.release\.outputs\.release_created == 'true' \}\}$/m,
+  );
+  assert.match(
+    publish,
+    /^ {8}run: gh release edit "\$\{\{ steps\.release\.outputs\.tag_name \}\}" --draft=false$/m,
+  );
+  assert.match(publish, /^ {10}GH_TOKEN: \$\{\{ github\.token \}\}$/m);
+
+  // No asset upload after publication, and no delivery of a release that is still a draft.
+  ordered(
+    release,
+    '- name: Upload release archive',
+    '- name: Verify uploaded release archive',
+    `- name: ${publishName}`,
+    '- name: Create delivery token',
+    '- name: Deliver portable skill, consumer docs, and trusted automation to main',
+  );
+});
+
 test('the delivery push keeps the delivery app identity', () => {
   const release = source('.github/workflows/release.yml');
 

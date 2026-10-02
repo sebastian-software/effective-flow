@@ -3,7 +3,9 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "effective-flow"
+      "package-name": "effective-flow",
+      "draft": true,
+      "force-tag-creation": true
     }
   }
 }

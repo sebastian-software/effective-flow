@@ -103,6 +103,17 @@ jobs:
           gh release download "${{ steps.release.outputs.tag_name }}" --pattern "$asset" --dir "$verify_dir"
           node scripts/distribution-smoke.mjs archive "$verify_dir/$asset"
 
+      - name: Publish the verified release
+        # Immutable releases are enabled on this repository, and a published immutable release
+        # accepts no further asset. release-please therefore creates the release as a draft
+        # (`draft: true`, with `force-tag-creation: true` so the tag exists immediately), and
+        # it stays a draft until its archive is uploaded and verified above. Publishing comes
+        # before delivery to `main`.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ steps.release.outputs.tag_name }}" --draft=false
+
       - name: Create delivery token
         id: delivery-token
         if: ${{ steps.release.outputs.release_created == 'true' }}
@@ -312,7 +323,7 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           gh label create delivery-failed \
-            --description "A release was published but its delivery to main did not land" \
+            --description "A release was created but its delivery to main did not land" \
             --color B60205 || true
           # `origin/main` may be unfetched if the run failed before the delivery step;
           # an unknown value is fine here, an aborted alarm is not.
@@ -322,7 +333,7 @@ jobs:
             delivered="${delivered:-unknown}"
           fi
           body="$(printf '%s\n' \
-            "Release \`$TAG\` was published, but the run then failed before the payload was confirmed on \`main\`." \
+            "Release \`$TAG\` was created, but the run then failed before the payload was confirmed on \`main\`." \
             "" \
             "- Released tag: \`$TAG\`" \
             "- Currently delivered on \`main\`: \`${delivered:-unknown}\`" \
