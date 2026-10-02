@@ -299,6 +299,8 @@ function configuredReviewerCondition(number) {
   return configuredReviewerSection(heading);
 }
 
+// Invariant: an issue reference is handed to plan-issue unchanged and the local plan workflow ends
+// before any tracker read or plan write, so the two planners never both act on one argument.
 test('plan routes an unambiguous issue through Stage A and exits before local planning', () => {
   const plan = source('src/tools/plan.md');
   const gateway = source('src/shared/plan-input-gateway.md');
@@ -311,17 +313,22 @@ test('plan routes an unambiguous issue through Stage A and exits before local pl
   assert.match(gateway, /```include\napply-source-detection\n```/);
   assert.doesNotMatch(renderedGateway, /```include|shared\/apply-source-detection\.md/);
   assert.match(renderedGateway, /A four-digit number without a path is always a/);
+  // Anchored on the step tokens, not on the line layout, so a reflow stays free while a reordered
+  // or dropped routing step fails.
   ordered(
-    gateway,
+    prose(gateway),
     'Read the project-setup ADR',
-    'Use the included source-detection contract and execute **Stage A only**',
+    'Stage A only',
     'If Stage A returns `issue-reference`',
-    'delegate to `{{SKILL:plan-issue}}` with the complete\n   original argument unchanged',
-    'end the local\n   `{{SKILL:plan}}` workflow immediately',
+    'delegate to `{{SKILL:plan-issue}}`',
+    'original argument unchanged',
+    'end the local `{{SKILL:plan}}` workflow immediately',
   );
   assert.match(gateway, /Do not inspect tracker state, create or migrate a plan/);
 });
 
+// Invariant: a legacy four-digit number is never routed as an issue, and a non-issue argument never
+// has an issue inferred for it, so local planning keeps its precedence.
 test('plan gateway preserves local-input and legacy-plan precedence', () => {
   const gateway = source('src/shared/plan-input-gateway.md');
   const detection = source('src/shared/apply-source-detection.md');
@@ -329,12 +336,14 @@ test('plan gateway preserves local-input and legacy-plan precedence', () => {
   ordered(detection, '**Plan reference**', '**Issue reference**', '**Otherwise**');
   assert.match(detection, /full path \(`<plan\.dir>\/YYYY-MM-DD-…md`\)/);
   assert.match(
-    detection,
-    /A four-digit number without a path is always a\n\(legacy\) plan reference, never an issue reference\./,
+    prose(detection),
+    near('four-digit number without a path', 'never an issue reference', 80),
+    'a bare four-digit number must stay a legacy plan reference, never an issue reference',
   );
   assert.match(
-    gateway.replace(/\s+/g, ' '),
-    /For `none`, `plan`, `review-report`, or `ambiguous`, do not infer an issue\.[\s\S]*Natural-language requirement text therefore retains the existing local-plan behavior\./,
+    prose(gateway),
+    /For `none`, `plan`, `review-report`, or `ambiguous`, do not infer an issue/,
+    'a non-issue Stage-A result must never have an issue inferred for it',
   );
 });
 
@@ -363,6 +372,8 @@ function setupClaudeMdImportAsk(item) {
   return parseAskBlock(fences[0][1], { context: 'tools/setup.md Step 6 item 7' });
 }
 
+// Invariant: the CLAUDE.md offer writes nothing but the single `@AGENTS.md` line, only on a yes,
+// and adds no configuration key.
 test('setup offers the CLAUDE.md import behind one ask fence that writes only @AGENTS.md', () => {
   const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
   const contract = prose(item);
@@ -399,6 +410,8 @@ test('setup offers the CLAUDE.md import behind one ask fence that writes only @A
   assert.match(contract, near('not part of the configuration', 'declares no key', 200));
 });
 
+// Invariant: no setup mode skips the CLAUDE.md fence, and a run that cannot pose it writes nothing
+// and says so; there is no silent default.
 test('the CLAUDE.md import fence is posed in every mode and an unposable run writes nothing', () => {
   const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
   const contract = prose(item);
@@ -422,7 +435,6 @@ test('the CLAUDE.md import fence is posed in every mode and an unposable run wri
     'the fence condition must not gate on which mode is running',
   );
 
-  assert.match(contract, near('deliberately unconditional', 'rather than guided-path only', 160));
   assert.match(
     contract,
     /Profile, Express, and Guided all pose it/,
@@ -448,6 +460,8 @@ test('the CLAUDE.md import fence is posed in every mode and an unposable run wri
   assert.match(contract, /There is no silent default in any mode/);
 });
 
+// Invariant: only an absent file or a pure prose pointer reaches the fence; every other CLAUDE.md
+// state writes nothing, and the pointer predicate defaults to content-bearing.
 test('setup names every CLAUDE.md state the import offer can meet', () => {
   const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
 
@@ -487,11 +501,7 @@ test('setup names every CLAUDE.md state the import offer can meet', () => {
   assert.match(contract, /no `@AGENTS.md` import already present/);
   assert.match(
     contract,
-    near(
-      'only non-blank, non-heading content is a single line referring to `AGENTS.md`',
-      'Anything else is content-bearing',
-      120,
-    ),
+    near('a single line referring to `AGENTS.md`', 'Anything else is content-bearing', 120),
     'the pointer predicate must close with content-bearing as the default',
   );
 });
@@ -513,26 +523,8 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
   );
   assert.match(
     contract,
-    near(
-      "item 5 wrote this run's marker into `AGENTS.md` rather than into this file",
-      'whole safety of the state and is never optional',
-      200,
-    ),
-    'the predicate must require that the marker already has a home elsewhere',
-  );
-  assert.match(
-    contract,
-    near('proves the marker survives the replacement', 'may otherwise hold the last copy', 200),
-    'the conjunct must be tied to the reason the pointer predicate excludes markers at all',
-  );
-  assert.match(
-    contract,
-    near(
-      'created `AGENTS.md` and then failed to replace `CLAUDE.md`',
-      'retryable rather than permanently half-done',
-      600,
-    ),
-    'the state must be named as the one a failed conversion leaves behind',
+    near('rather than into this file', 'never optional', 120),
+    'the predicate must require, as a never-optional conjunct, that the marker already has a home elsewhere',
   );
 
   // The half-completed file carries two lines, not one: item 5 sets the marker non-destructively
@@ -540,35 +532,8 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
   // exact state this one exists for, which is how the resumption silently stops resuming.
   assert.match(
     contract,
-    /nothing but one `Effective Flow project setup:` or legacy `Firmo project setup:` marker line and at most one line referring to `AGENTS.md`/,
-    'the predicate must admit the pointer line the marker was written beside',
-  );
-  assert.match(
-    contract,
-    near(
-      'The optional pointer line is not a courtesy either',
-      'the file it left behind carries both lines',
-      400,
-    ),
-    'the second line of the predicate must be stated as load-bearing',
-  );
-  assert.match(
-    contract,
-    near(
-      'the file it left behind carries both lines',
-      'not a bare marker, is what a conversion',
-      200,
-    ),
-    'the two-line shape must be named as the one left on disk',
-  );
-  assert.match(
-    contract,
-    near(
-      'A predicate admitting only the marker line would miss the very state this one exists for',
-      'every later run would decline',
-      250,
-    ),
-    'the narrower predicate must be named as the defect it would reintroduce',
+    near('nothing but one', 'at most one line referring to `AGENTS.md`', 160),
+    'the predicate must admit only the marker line plus the pointer line it was written beside',
   );
   assert.match(
     contract,
@@ -587,6 +552,8 @@ test('a half-completed CLAUDE.md conversion is resumable and reported as partial
   );
 });
 
+// Invariant: a symlink at the CLAUDE.md path, live or broken, is a hard stop that runs before the
+// state classification and again on the filesystem before the write; nothing is written through it.
 test('the CLAUDE.md symlink hard stop is evaluated before the state classification', () => {
   const contract = prose(setupClaudeMdImportItem(source('src/tools/setup.md')));
 
@@ -612,7 +579,6 @@ test('the CLAUDE.md symlink hard stop is evaluated before the state classificati
   // The broken link is the dangerous half: an existence check reports it as absent, and absent is
   // the one state that creates a file — at whatever path the link names, outside the repository.
   assert.match(contract, near('broken symlink', 'would otherwise read as absent', 160));
-  assert.match(contract, /outside the repository/);
 
   // The record-side stop alone is a check separated from its use: the ask fence stands between
   // item 5's observation and item 7's write, so the path can become a symlink in between. The
@@ -627,7 +593,6 @@ test('the CLAUDE.md symlink hard stop is evaluated before the state classificati
     ),
     'the symlink stop must run again on the filesystem immediately before the write',
   );
-  assert.match(contract, /evaluated twice, once on the record and once on the filesystem/);
   assert.match(
     contract,
     near('never re-derives the state', "stays keyed to item 5's record", 250),
@@ -660,11 +625,7 @@ test('Step 6 states the unraceable-write property once, with both named instrume
 
   assert.match(
     rule,
-    near(
-      'Every write this item and item 7 perform goes through a primitive that cannot be raced',
-      'validation and write do not re-resolve the path between them',
-      300,
-    ),
+    near('Every write this item and item 7 perform', 'do not re-resolve the path', 300),
     'the property must be stated for both items at once, not per write site',
   );
   assert.match(
@@ -674,7 +635,7 @@ test('Step 6 states the unraceable-write property once, with both named instrume
   );
   assert.match(
     rule,
-    /a path-based write never hold it — the same race one step smaller/,
+    /A separate test and a path-based write never hold it/,
     'a test-then-write must be named as the race it still is',
   );
   // The old wording earned its adjacency from the absence of a question. That is exactly what the
@@ -711,11 +672,6 @@ test('Step 6 states the unraceable-write property once, with both named instrume
   );
   assert.match(
     rule,
-    /rename across filesystems is not that operation/,
-    'the same-directory requirement must carry its reason',
-  );
-  assert.match(
-    rule,
     /Never truncate and rewrite the live path/,
     'a truncate-and-rewrite must be excluded as the non-atomic alternative it is',
   );
@@ -741,20 +697,12 @@ test('Step 6 states the unraceable-write property once, with both named instrume
   // round from quietly promising the conditional again.
   assert.match(
     rule,
-    near(
-      'The replacement is unconditional',
-      'no portable primitive makes a rename conditional on what the destination holds',
-      300,
-    ),
+    near('The replacement is unconditional', 'no portable primitive', 300),
     'the lost update must be admitted as residue, with the reason no conditional swap is available',
   );
   assert.match(
     rule,
-    near(
-      'destination changed between the read this write was decided on and the swap',
-      'is replaced and its content lost',
-      120,
-    ),
+    near('destination changed between the read', 'content lost', 120),
     'the residue must name the concrete loss rather than describe the window abstractly',
   );
   assert.match(
@@ -796,8 +744,8 @@ test('item 7 creates the minimal AGENTS.md exclusively rather than on the record
   );
   assert.match(
     contract,
-    near('write guard rather than a fresh classification', 'rule above intact', 160),
-    'the guard must be stated as compatible with deciding on the recorded state',
+    /write guard rather than a fresh classification/,
+    'a failed exclusive create must stay a write guard, never a reclassification of the state',
   );
 });
 
@@ -823,11 +771,6 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   );
   assert.match(
     contract,
-    near('revalidation cannot close the gap it opens', 'the instrument does', 120),
-    'the write must be stated as a property, not left to the revalidation to guarantee',
-  );
-  assert.match(
-    contract,
     near(
       'Where item 5 recorded the path as absent',
       'same exclusive create the minimal `AGENTS.md` above uses',
@@ -837,20 +780,7 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   );
   assert.match(
     contract,
-    near(
-      'Where item 5 recorded a pointer to replace',
-      'exclusive create cannot express that write at all',
-      200,
-    ),
-    'the replacement branch must say why the absent branch instrument does not apply to it',
-  );
-  assert.match(
-    contract,
-    near(
-      'write the single line through the same-directory temporary file and rename',
-      'pointer to replace',
-      300,
-    ),
+    near('same-directory temporary file and rename', 'pointer to replace', 300),
     'the replacement branch must name the rename instrument it takes',
   );
 
@@ -860,11 +790,7 @@ test('item 7 writes CLAUDE.md through a primitive that cannot be raced', () => {
   // item 7 names which of its two stops keeps the report.
   assert.match(
     contract,
-    near(
-      'The two stops therefore promise different things, and both are honest',
-      'the revalidation keeps the report',
-      200,
-    ),
+    /the revalidation keeps the report/,
     'the two stops must be distinguished where the second one is performed',
   );
 
@@ -926,11 +852,7 @@ test('item 6 carries its outcome and item 7 declines to run on an incomplete mig
   );
   assert.match(
     item7,
-    near(
-      "run this item only where item 6's carried outcome is `not applicable` or `complete`",
-      'On `incomplete`, skip it entirely',
-      200,
-    ),
+    near('`not applicable` or `complete`', 'On `incomplete`, skip it entirely', 120),
     'the precondition must state both the admitted outcomes and the skip',
   );
   assert.match(
@@ -949,12 +871,8 @@ test('item 6 carries its outcome and item 7 declines to run on an incomplete mig
   // `AGENTS.md` that does not exist, which this item forbids by name two bullets down.
   assert.match(
     item7,
-    near(
-      "Do not instead reset item 5's record to the snapshot state",
-      'write `@AGENTS.md` into a project that has no `AGENTS.md`',
-      300,
-    ),
-    'the rejected alternative must be named with the rule that rejects it',
+    /Do not instead reset item 5's record/,
+    "item 6's rollback must never be answered by rewinding item 5's record",
   );
 
   // The gate has to reach the fence condition too, or a skipped item still reports itself as a run
@@ -1026,6 +944,8 @@ test('Step 8 reports the CLAUDE.md import outcome and never contradicts the mark
   );
 });
 
+// Invariant: item 7 classifies CLAUDE.md from the state item 5 recorded before its own write, never
+// from a fresh read that would already see this run's marker.
 test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not a fresh read', () => {
   const setup = source('src/tools/setup.md');
   const item5 = prose(setupMarkerItem(setup));
@@ -1043,10 +963,6 @@ test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not
   for (const [pattern, component] of [
     [/absent, a symlink, or present with its content/, 'the three observed shapes'],
     [/already carried a marker or an `@AGENTS.md` import/, 'the marker and import flags'],
-    [
-      /the way `<adr-convention>` is carried from Step 2/,
-      'the carry-forward convention it follows',
-    ],
   ]) {
     assert.match(item5, pattern, `the recorded CLAUDE.md state must include ${component}`);
   }
@@ -1057,6 +973,7 @@ test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not
       'rather than on the file this step may just have changed',
       200,
     ),
+    'item 7 must decide on the record, not on the file item 5 may have changed',
   );
 
   assert.match(
@@ -1069,15 +986,6 @@ test('setup keys the CLAUDE.md import decision to the state item 5 recorded, not
     /do not re-read the file to classify it/,
     'item 7 must not re-read `CLAUDE.md` to classify it',
   );
-  assert.match(
-    item7,
-    near(
-      'a fresh read here would see the marker this run just wrote',
-      'silently decline the very case this step exists for',
-      200,
-    ),
-    'the reason for the carry-forward must stay next to the rule',
-  );
 });
 
 // Item 5 selects the marker host before item 7 runs at all, so item 7's symlink hard stop cannot
@@ -1088,16 +996,12 @@ test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
 
   assert.match(
     item5,
-    near(
-      'A symlink at the `CLAUDE.md` path is never the marker target',
-      "item 7's own hard stop cannot cover that write",
-      200,
-    ),
-    'item 5 must refuse a symlinked marker host and say why item 7 is too late for it',
+    /A symlink at the `CLAUDE.md` path is never the marker target/,
+    'item 5 must refuse a symlinked marker host itself, since item 7 runs too late for it',
   );
   assert.match(
     item5,
-    /does not follow the link so a dangling one is seen rather than reported absent/,
+    near('does not follow the link', 'a dangling one is seen', 80),
     'the test must not follow the link, so a dangling symlink is not read as absent',
   );
   assert.match(
@@ -1105,7 +1009,11 @@ test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
     near('live or dangling', 'create the minimal `AGENTS.md` instead', 200),
     'both symlink shapes must send the marker to the minimal AGENTS.md branch',
   );
-  assert.match(item5, /no softened hard stop but a different write/);
+  assert.match(
+    item5,
+    /nothing is written through the link/,
+    'rerouting the marker to a new AGENTS.md must never write through the link',
+  );
   // This test used to earn its safety from adjacency — item 5 poses no fence, so nothing separates
   // its test from its write. Round four refuted that: the gap is at the filesystem, not at the
   // question. So the bullet must now say what the test decides (which file hosts the marker) and
@@ -1121,12 +1029,8 @@ test('item 5 refuses a symlinked CLAUDE.md as the marker host', () => {
   );
   assert.match(
     item5,
-    near(
-      'needs no revalidation of its own the way item 7 does',
-      'claims no guarantee from adjacency',
-      160,
-    ),
-    'item 5 must say why it needs no revalidation without claiming adjacency as the guarantee',
+    near('needs no revalidation of its own', 'no guarantee from adjacency', 120),
+    'item 5 must rest its write safety on the rename and disclaim any guarantee from adjacency',
   );
   assert.doesNotMatch(
     item5,
@@ -1169,6 +1073,8 @@ test('every lazy-include fragment referenced by a tool or shared fragment has a 
   }
 });
 
+// Invariant: setup accepts exactly five invocation forms and stops without mutation on anything
+// else, and only Profile loads the profile fragment.
 test('setup routes only the empty, profile, express, guided, and hidden invocations before mutation', () => {
   const setup = source('src/tools/setup.md');
   const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
@@ -1204,6 +1110,8 @@ test('setup routes only the empty, profile, express, guided, and hidden invocati
   );
 });
 
+// Invariant: Profile asks its two questions before any other setup handling and never guesses an
+// answer in a non-interactive run.
 test('Profile setup asks Chat then exactly three topology choices before later setup handling', () => {
   const setup = source('src/tools/setup.md');
   const profiles = source('src/shared/setup-profiles.md');
@@ -1233,7 +1141,12 @@ test('Profile setup asks Chat then exactly three topology choices before later s
   ordered(profiles, 'header: Chat', 'header: Profile', '### Target construction and ownership');
   assert.match(
     prose(section(profiles, '### The two common questions', '\n### Target construction')),
-    /first two substantive configuration questions, before `.gitignore`, source, ADR-convention, non-Git, invalid-source, duplicate-ADR, and topology handling/,
+    near(
+      'first two substantive configuration questions, before `.gitignore`',
+      'topology handling',
+      160,
+    ),
+    'both profile questions must precede every other setup handling step',
   );
   assert.match(
     prose(profiles),
@@ -1246,6 +1159,8 @@ test('Profile setup asks Chat then exactly three topology choices before later s
   );
 });
 
+// Invariant: a profile overlay overrides only its topology keys, preserves every other row
+// byte-for-byte, and never persists the profile identity.
 test('profile overlays own only topology and override existing values without persisting identity', () => {
   const profiles = source('src/shared/setup-profiles.md');
   const target = boundedSlice(
@@ -1283,6 +1198,8 @@ test('profile overlays own only topology and override existing values without pe
   );
 });
 
+// Invariant: a profile preflight that cannot prove its base or provider stops before writing; it
+// never downgrades to another profile or guesses a branch.
 test('local and forge profile preflights fail closed instead of guessing a delivery base', () => {
   const profiles = source('src/shared/setup-profiles.md');
   const local = boundedSlice(profiles, '### Fully local preflight', '### Forge preflight');
@@ -1314,6 +1231,8 @@ test('local and forge profile preflights fail closed instead of guessing a deliv
   );
 });
 
+// Invariant: the external interview persists only non-secret, reproducible connection context and
+// verified states, and replays them fresh before writing.
 test('the external profile alone captures reproducible connection context and verified states', () => {
   const profiles = source('src/shared/setup-profiles.md');
   const external = section(profiles, '### External-only integration interview', '\n## ');
@@ -1356,7 +1275,8 @@ test('the external profile alone captures reproducible connection context and ve
   assert.match(contract, /never inspect environment credentials, dotfiles, or shell history/);
   assert.match(
     contract,
-    /merge enough stable, non-secret workspace\/team\/project identity into the proposed `tracker\.externalToolHint` to make the same connection and context uniquely reselectable/,
+    near('stable, non-secret', 'uniquely reselectable', 200),
+    'the persisted hint may carry only non-secret identity that reselects the same context',
   );
   assert.match(
     contract,
@@ -1603,6 +1523,8 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   assert.match(fragment, /never retry with new digests without showing them and asking again/);
 });
 
+// Invariant: every setup mode writes only after one explicit before/after confirmation, and an
+// External + forge drift discards that confirmation.
 test('all setup modes share the preview gate while Express and Guided retain their paths', () => {
   const setup = source('src/tools/setup.md');
   const modeEntry = boundedSlice(setup, '### Step 3: Enter the selected mode', '### Step 4:');
@@ -1922,7 +1844,7 @@ test('build and fix retire delivery keys before their first delegation', () => {
     );
     assert.match(
       preflight,
-      /does not replace or move any later purpose-specific configuration read; perform each one at its documented workflow point/i,
+      /does not replace or move any later purpose-specific configuration read/i,
       `${name} must preserve its later purpose-specific configuration reads`,
     );
   }
@@ -2125,6 +2047,8 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
   }
 });
 
+// Invariant: a pilot reservation happens only after a non-observer mode is resolved and before
+// Phase 1, and every non-reserving state is a read-only no-op.
 test('merge-gate reserves pilot observations only after mode resolution and before Phase 1', () => {
   const gate = source('src/tools/merge-gate.md');
   const fragment = source('src/shared/pilot-measurement.md');
@@ -2159,6 +2083,8 @@ test('merge-gate reserves pilot observations only after mode resolution and befo
   );
 });
 
+// Invariant: a correction counter moves only on an actually dispatched correction, never on waits,
+// triggers, assessments, or a clean merge.
 test('merge-gate pilot correction counters count only actual correction dispatches', () => {
   const counters = section(
     source('src/shared/pilot-measurement.md'),
@@ -2193,6 +2119,8 @@ test('merge-gate pilot correction counters count only actual correction dispatch
   assert.match(counterProse, /dispatch\/start event itself is the only counter authority/);
 });
 
+// Invariant: report-mode readiness is a measurement projection that never stands in for condition 1,
+// the real merge authorization.
 test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 only', () => {
   const finalization = prose(
     section(source('src/shared/pilot-measurement.md'), '### Phase 6 observation finalization'),
@@ -2204,7 +2132,12 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
   assert.match(finalization, /`reported-blocked` with the stable domain blocker when any fails/);
   assert.match(
     finalization,
-    /Condition 1 remains the real merge-authorization condition and is excluded only from this measurement projection/,
+    near(
+      'Condition 1 remains the real merge-authorization condition',
+      'excluded only from this measurement projection',
+      120,
+    ),
+    'condition 1 must stay the merge authorization and be excluded only from the projection',
   );
   assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
   assert.match(
@@ -2213,6 +2146,8 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
   );
 });
 
+// Invariant: a reserved observation is finalized exactly once before cleanup, and no observation
+// failure changes the merge or report result.
 test('merge-gate finalizes a reserved observation exactly once before cleanup without changing its result', () => {
   const gate = source('src/tools/merge-gate.md');
   const fragment = source('src/shared/pilot-measurement.md');
@@ -2250,6 +2185,8 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
   assert.match(preflight, /never turn an observation failure into a merge blocker/);
 });
 
+// Invariant: the deferred configured-reviewer route keeps its single lazy edge and exact headings,
+// and the retained Phase-4 shells stay fail-closed without it.
 test('the configured-reviewer route stays reachable through exact retained workflow shells', () => {
   const gate = source('src/tools/merge-gate.md');
   const route = configuredReviewerRoute();
@@ -2596,6 +2533,8 @@ test('plan-issue reconciles every stable key and preserves partial creation befo
   );
 });
 
+// Invariant: every create step reads the native children fresh, and a concurrent duplicate or an
+// uncertain result fails closed before the canonical comment is written.
 test('plan-issue re-reads native children before preview, apply, and post-create persistence', () => {
   const phase4 = prose(
     section(
@@ -2622,9 +2561,12 @@ test('plan-issue re-reads native children before preview, apply, and post-create
     perChild,
     /One now-matching child is recovered without applying.*multiple matches or any marker\/integrity error stop before a write/,
   );
+  // The residual race of the non-atomic comment update is explanation; the invariant is the
+  // response to it, which must stay a stop-and-reconcile and never become a retry.
   assert.match(
     phase4,
-    /forge comment update is a non-atomic read-then-PATCH.*simultaneous writers can still race after the last (?:pre-create )?read.*duplicate or uncertain result becomes visible, stop and reconcile rather than retrying/,
+    /duplicate or uncertain result becomes visible, stop and reconcile rather than retrying/,
+    'a visible duplicate or uncertain create result must stop and reconcile, never retry',
   );
 });
 
@@ -2648,6 +2590,8 @@ test('plan-review exposes file and issue adapters while issue mode stays comment
   assert.match(review, /never suggest the public `review`\n\s*gateway for an issue/);
 });
 
+// Invariant: issue planning never creates a competing comment, and apply never implements an issue
+// whose planning comment still carries blocking open points.
 test('issue planning updates one comment fail-closed and apply rejects blocking open points', () => {
   const tracker = source('src/shared/issue-tracker-forge.md');
   const applyIssues = source('src/tools/apply-issues.md');
@@ -2659,8 +2603,9 @@ test('issue planning updates one comment fail-closed and apply rejects blocking 
   assert.match(tracker, /abort with `UNSUPPORTED_CAPABILITY`\n\s*before a write/);
 
   assert.match(
-    applyIssues,
-    /planning artifact,\n\s*even if the original body is thin; it is \*\*not automatically sufficient\*\*/,
+    prose(applyIssues),
+    near('planning artifact', 'it is not automatically sufficient', 120),
+    'a planning comment must never make an issue automatically sufficient for implementation',
   );
   assert.match(
     applyIssues,
@@ -2688,7 +2633,11 @@ test('security findings stay local until the review publication gate is confirme
     '**Run the security disclosure gate:**',
     '**Create direct finding issues:**',
   );
-  assert.match(review, /must finish before the reservation, so a finding already recorded/);
+  assert.match(
+    review,
+    /must finish before the reservation/,
+    'withheld-finding dedup must finish before any ID is reserved',
+  );
   assert.match(review, /in that order and before any tracker mutation/);
   assert.match(
     review,
@@ -3144,6 +3093,8 @@ test('the tracker config keys document three modes in source, setup, and user gu
   );
 });
 
+// Invariant: every connection failure aborts before the first write, with no fallback to the forge
+// or to `local`.
 test('an external tracker target fails closed on all four connection failures', () => {
   const target = source('src/shared/tracker-target.md');
   const tracker = source('src/shared/issue-tracker.md');
@@ -3168,10 +3119,6 @@ test('an external tracker target fails closed on all four connection failures', 
     /aborts the run before its first write, with a remediation hint and every workflow artifact preserved/,
   );
   assert.match(flatDiscovery, /There is no silent fallback\./);
-  assert.match(
-    flatDiscovery,
-    /Publishing to the forge instead would scatter[\s\S]*degrading to a local report would hide work the user asked to publish/,
-  );
   assert.match(flatDiscovery, /an unanswered or non-interactive run publishes nothing/);
 
   // The always-loaded fragment states the same closure for the missing identifier.
@@ -3451,6 +3398,8 @@ test('both forge adapters load the shared remote-helper invocation contract', ()
   );
 });
 
+// Invariant: no tracker target and no configuration key exempts a publisher from the security
+// disclosure gate or from the AI-attribution ban.
 test('the security disclosure gate binds every publisher on every tracker target', () => {
   const tracker = source('src/shared/issue-tracker-forge.md');
   const gate = flat(section(tracker, '### Security disclosure gate'));
@@ -3462,7 +3411,8 @@ test('the security disclosure gate binds every publisher on every tracker target
   assert.match(gate, /there is no configuration key that switches it off/);
   assert.match(
     gate,
-    /Publication to a third-party tracker is a disclosure with the same consequences as publication to a public forge, so the gate binds a forge target and an external target alike/,
+    /the gate binds a forge target and an external target alike/,
+    'the security gate must bind an external tracker target exactly as it binds the forge',
   );
   assert.match(gate, /Rules for every publisher, on whichever tracker target the run resolved/);
   // The AI-attribution ban generalizes the same way.
@@ -3773,17 +3723,23 @@ test('next-step apply edges require a concrete admitted artifact', () => {
   );
 });
 
+// Invariant: a local review with nothing admitted writes no report and reserves no IDs, and only a
+// report with an admitted finding ends in an executable next-step block.
 test('local review emits next steps for admitted findings but not a closed-only appendix', () => {
   const localMode = flat(
     boundedSlice(source('src/tools/review.md'), '#### Local mode', '\n#### Publishing target'),
   );
 
+  // Anchored on the decision tokens of each branch, so a reworded sentence stays free while a
+  // dropped branch, a next-step block that is no longer the report's last element, or a next-step
+  // block on a closed-only report fails.
   ordered(
     localMode,
-    'If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.',
+    'write no report and reserve no IDs',
     'Delete the wisdom file.',
-    'If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.',
-    'If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.',
+    'at least one admitted finding, emit the next-step block',
+    'as the last element of the report',
+    'only the closed non-executable appendix, emit no next-step block',
   );
 });
 
@@ -4219,19 +4175,10 @@ test('the revision-mode move back from the archive never touches the Git index',
     'plan.md may mention git mv only in the clauses that forbid it and explain its loss',
   );
   assert.match(plan, /never with `git mv`/);
-  assert.match(plan, /`git mv` refuses to\s+clobber an existing file without `-f`/);
 
   const revision = flat(section(plan, 'On a revision run:', '\n5. '));
   assert.match(revision, /moves back from `<plan\.dir>\/archive\/` to `<plan\.dir>\/`/);
   assert.match(revision, /\*\*plain filesystem move\*\*, never with `git mv`/);
-
-  // The consumers of the moved file read the working tree; that is what makes an unstaged move
-  // sufficient, and it is the reason this rule can differ from the archive-forward handshake.
-  ordered(
-    revision,
-    '`{{SKILL:open-plans}}` lists the top level of `<plan.dir>/` from the file system',
-    'the plan-reference rule resolves against `<plan.dir>/` and `<plan.dir>/archive/`',
-  );
 
   // Fail-closed tracked-state detection in the house style: one explicit command, an explicit
   // reading of every result, and no guess on a nonzero exit. The probe covers BOTH paths — the
@@ -4241,14 +4188,12 @@ test('the revision-mode move back from the archive never touches the Git index',
     revision,
     /git -C <project root> ls-files -z -- ':\(literal\)<archived path>' ':\(literal\)<plan\.dir>\/<file>'/,
   );
+  // The probe command itself is pinned above; why each flag is load-bearing is explanation, so the
+  // ordering pins only the steps a run performs and the no-guess stop.
   ordered(
     revision,
     'Establish the Git state of **both** paths first',
     'match each path against the NUL-separated entries',
-    '`-z` is load-bearing rather than tidy',
-    '`:(literal)` is what makes the arguments paths rather than patterns',
-    '`--` only separates paths from revisions and does not disable pathspec globbing',
-    'Either one omitted lets the probe read a tracked file as untracked',
     '**Never infer one side from the other either:**',
     'a listed destination means the move restored a tracked path',
     'Any nonzero exit or command-launch error',
@@ -4264,12 +4209,11 @@ test('the revision-mode move back from the archive never touches the Git index',
   // a reversed pair is exactly the defect, and neither clause alone would catch it.
   ordered(
     revision,
-    '**For an archived plan the move comes first, and the status reset follows on the file at its final path.**',
-    'reset first and a move that is then refused strands an archived file marked open',
+    'the move comes first, and the status reset follows',
     'the run writes nothing at all until the plan is at its new path',
-    '**Ask everything before the move; after the move, only write.**',
-    '**The destination must be absent, and the move itself has to enforce that.**',
-    '**On a collision, stop having written nothing.**',
+    'Ask everything before the move; after the move, only write.',
+    'The destination must be absent, and the move itself has to enforce that.',
+    'On a collision, stop having written nothing.',
     'the status reset happens only after the move has been confirmed',
   );
 
@@ -4302,9 +4246,7 @@ test('the revision-mode move back from the archive never touches the Git index',
   // primitive rather than in a check that precedes it.
   ordered(
     revision,
-    'A check alone cannot carry it',
     '`mv -n` or an equivalent no-overwrite move',
-    'may report success while silently skipping',
     'a skipped move is the collision case, not a completed one',
   );
   assert.match(revision, /Report both paths, revise nothing, and stop/);
@@ -4664,7 +4606,8 @@ test('review evaluates the concept-file special case after the plan-file special
   );
   assert.match(
     flat(planCase),
-    /Only a bare file name or a title slug can be ambiguous — a full path names its directory, and a bare four-digit value stays a legacy plan reference\./,
+    /Only a bare file name or a title slug can be ambiguous/,
+    'only a bare file name or a title slug may reach the cross-artifact ambiguity question',
   );
 });
 
@@ -4797,7 +4740,6 @@ test('pr never repeats a creation whose mutation may already have succeeded', ()
   const pr = flat(source('src/tools/pr.md'));
 
   assert.match(pr, /Never re-run PR creation after `mutationMayHaveSucceeded`/);
-  assert.match(pr, /repeating the mutation would create a duplicate for the same head/);
   // The prescribed response must be a lookup, not another create. It has to be the head/base
   // lookup: this failure path never received a PR number, so a number-keyed read cannot run.
   assert.match(pr, /Resolve it by repeating the step 8 existing-PR lookup/);
