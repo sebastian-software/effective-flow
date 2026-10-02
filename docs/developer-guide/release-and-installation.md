@@ -78,9 +78,7 @@ way there. When the head ref starts with `release-please--` — the prefix of re
 `release-please--branches--develop--components--effective-flow`, matched rather than the full name
 so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
 absent corpus in either suite fails the check. There is no waiver: without a current round of every
-suite there is no release. The `iterate` corpus has not been recorded yet, so it verifies `absent`
-and the release pull request fails this check until its first round is published beside a current
-`merge-gate` round.
+suite there is no release.
 
 A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
 the release branch, which release-please owns and force-pushes. Merging that pull request into

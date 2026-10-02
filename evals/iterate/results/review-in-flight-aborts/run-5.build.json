@@ -1,0 +1,48 @@
+{
+  "scenario": "review-in-flight-aborts",
+  "digest": "sha256:3291b46dabce0fd3f58d13c3752abd7a616a4c265102d0d50ad329b524bce809",
+  "skill": {
+    "digest": "sha256:f04b37a79b846073ff71aec590128d7237379a602205c9229b8a1802d13fb718",
+    "versionNeutralDigest": "sha256:00893ab634a550e26b3c4165d98504aa7e04e3bc98e2c5c0a6050a8a318afe61",
+    "files": {
+      "SKILL.md": "sha256:c8e7c4bec8d332597563ef624636f69550aa3d377e8a6592d7433d140ab5862f",
+      "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
+      "shared/config-migration-edge-cases.md": "sha256:88ffb0a856321e1a3fe44f3962e4a8bcd92fd245ce41338be754359135e1b373",
+      "shared/config-migration.md": "sha256:9779bb32962091a3f99f52665c70a30c22a6ec4d0617d4ddba2b3d19211d8c91",
+      "shared/durable-follow-up-gate.md": "sha256:fc9a5485a9567890bab1462a0c46a5d204b2e26edd1a39b0a5b205c55a1bd3b0",
+      "shared/effective-flow-dir-migration.md": "sha256:138441ccb26b75dd4ea6c540b0d05ba27fa2cf73aa640489f1f1b5111edeb567",
+      "shared/issue-tracker-forge.md": "sha256:a722523ecdec21d127d50193469526121c603e1ae3c049c4f457b8fbd1e44e27",
+      "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
+      "shared/next-steps.md": "sha256:d40d38a38c2f3b5160def55752e31180197010c6615d264d84ede407c16d212b",
+      "shared/pr-review-integration.md": "sha256:9330bac4b54812193fd255cd03ce2748529e2743aa4f9705a0674f8441d30463",
+      "shared/pr-thread-ledger.md": "sha256:ab8a47112ea57fa532f219b2cfce3b6c38294a0fe8c2bfb0fd2493e7cc6bd04e",
+      "shared/runtime-state-safety.md": "sha256:8f15d49689bd3eb7456e1bb3c1ca877a71669ae7f5f40ce966b2fccec3cb75f5",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "shared/worktree-integration.md": "sha256:b0eed300ae0a408cf2a6921808c73580842e69c9299dc0b7942f0c009d50c507",
+      "tools/iterate.md": "sha256:c57c619dfc37c457e5442c6d86d9d9bf257cffd7dbb5c91a76bd87b4bc039bac"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:0fb5128e21181381f3c2f55680c088f1b556fc15cc9569587b47e0d33e53a239",
+    "files": {
+      "evals/iterate/suite.config.mjs": "sha256:df7096b95557534315ecd74a6f853465e44bf18df80b3f8255b3cffd265c06ab",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:913ae65edbbace0035f809688f6989f460599172f89fa85ec9b919d94b4a8f89",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/iterate/_scaffold/scenario-setup.mjs": "sha256:681e225f19f4025b939bd6918f19cf1a898911de3824661afdc9c050a2188eae",
+      "evals/iterate/_scaffold/project-setup.mjs": "sha256:457cde8f263ab51d9ea6fb0e33c47fcdd723955953b2d4ed26795f140e0f0184",
+      "evals/iterate/_scaffold/checkout.mjs": "sha256:9c49ec1f828b7d230b1a6ac320fcdb5c0d74b14890ed4445889b94ade61b1181"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:9618241e09ad2a9d275afba19e974921191e566fec2a309d6fc8c5f2d85f2be4",
+    "files": {
+      "evals/iterate/fixtures/review-in-flight-aborts.json": "sha256:c704738b6c45143bda50392c7f5d1b29ee979e6d272929fd70d367c802f170d6",
+      "evals/iterate/scenarios/review-in-flight-aborts.md": "sha256:0b999990cace18deb181f3173081e89ffd5311751c381554bd1337650578ede6"
+    }
+  }
+}

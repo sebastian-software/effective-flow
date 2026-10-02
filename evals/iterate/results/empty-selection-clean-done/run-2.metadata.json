@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d",
+  "scenario": "empty-selection-clean-done",
+  "slot": 2,
+  "attempt": 2,
+  "sourceRevision": "469ac3b746c5794996c577caf36a30bc9337c339",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "codex-cli 0.159.3",
+    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+  },
+  "promptDigest": "sha256:e6d71408e0a75b4833107670a3bb25c2a0949e22fb4a769b5708fd17cf8283a9",
+  "fixtureDigest": "sha256:a6846bb5c94437d6fb7ee7f770b105565d61d090726dc6b00b46313309c09012",
+  "buildDigest": "sha256:bb13ec6643e7fe304205a70d7ceda4946bf9605077431bb6fc984228bf202ce7",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium",
+      "reportedVersion": "codex-cli 0.159.3",
+      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+    }
+  }
+}

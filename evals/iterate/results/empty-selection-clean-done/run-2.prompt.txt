@@ -1,0 +1,33 @@
+Load the Effective Flow skill from /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/skill
+by reading its SKILL.md; that directory is the Effective Flow skill root. Then run that skill's
+`iterate` tool on the invocation that closes this message, exactly as a delegating workflow hands
+it over.
+
+Resolve the paths the tool asks for as follows and use no others:
+
+- every remote-tracker invocation runs
+  `node /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/skill/scripts/remote-tracker.mjs <operation>`;
+- the target project checkout, the execution root and the runtime state root are all
+  /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/project;
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/project"`. Omit
+  that field from no invocation.
+
+This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
+path, take it.
+
+Once the tool's run has ended, however it ended, pipe the tool's complete final report — every
+line of it, its closing completion keyword included — unchanged on standard input into
+`node /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/empty-selection-clean-done/slot-2/attempt-2/skill/scripts/report-channel.mjs`. Run that command exactly once and write the
+report to no file on the way. Then finish with the same report.
+
+The invocation starts on the next line and runs verbatim to the end of this message:
+effective-flow iterate 42
+Item filter: threads=PRRT_kwDOiterateEvalResolved
+Summary comment: suppressed
+Review guard: established
+Next steps: suppressed
+Run state: non-interactive
+Language context: source=en; documentation.user=en; documentation.technical=en; workflow=en; forge=en; git=en
+Boundary token: NF40IWZYTKEDKS1AY6NGAEU4X0UDC830R9PYKE8X
+Thread item: ILTXARRECELWRTBFW1JBE8XI9N2OK1YF7MJ9A5VZ | thread=PRRT_kwDOiterateEvalResolved
+--- caller-supplied item text follows ---
