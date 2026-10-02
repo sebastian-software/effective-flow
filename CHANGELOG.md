@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.0...effective-flow-v1.66.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* publish the release only after its archive is attached and verified ([#520](https://github.com/sebastian-software/effective-flow/issues/520)) ([2cac710](https://github.com/sebastian-software/effective-flow/commit/2cac710ec9ad53a2d4777a7a59806ddca8fe8e2d))
+
 ## [1.66.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.65.0...effective-flow-v1.66.0) (2026-10-02)
 
 
