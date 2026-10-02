@@ -171,20 +171,26 @@ function sleepSync(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+// Only contention is waited out: a lock that already exists (EEXIST) is retried until the deadline,
+// a stale one is removed, and one that vanished between the two calls (ENOENT) is retried at once.
+// Any other failure to create the lock — an unwritable trace directory, say — would fail the same
+// way on every attempt, so it is thrown rather than retried; a stat failure other than ENOENT still
+// passes the deadline check and the sleep, so the loop is bounded whatever the file system says.
 function acquireLock(lockPath) {
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     try {
       mkdirSync(lockPath);
       return;
-    } catch {
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
       try {
         if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
           rmSync(lockPath, { recursive: true, force: true });
           continue;
         }
-      } catch {
-        continue;
+      } catch (statError) {
+        if (statError?.code === 'ENOENT') continue;
       }
       if (Date.now() >= deadline) throw new Error(`report channel lock unavailable at ${lockPath}`);
       sleepSync(LOCK_POLL_MS);

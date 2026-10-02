@@ -277,6 +277,42 @@ test('the exit channel refuses a terminal on standard input instead of waiting o
   }
 });
 
+// A lock that cannot be created for a reason other than contention — here a trace directory that
+// exists but is not writable — is a failure, not a wait. The lock loop once retried it without a
+// deadline or a sleep, spinning forever and hanging the recording slot. The helper runs as a child
+// with a kill timeout: a synchronous spin inside this process could not be interrupted by the test's
+// own timeout, so a regression must surface as a killed child, not a hung suite.
+test(
+  'the exit channel fails visibly when its lock cannot be created instead of spinning',
+  {
+    timeout: 30_000,
+    skip: process.getuid?.() === 0 ? 'root ignores directory permissions' : false,
+  },
+  () => {
+    const sandbox = channelSandbox();
+    const traceDirectory = join(sandbox.attempt, 'trace');
+    mkdirSync(traceDirectory);
+    chmodSync(traceDirectory, 0o500);
+    try {
+      const result = spawnSync(process.execPath, [sandbox.helper], {
+        cwd: sandbox.project,
+        input: 'ABORT: unparseable item filter\n',
+        encoding: 'utf8',
+        timeout: 10_000,
+        killSignal: 'SIGKILL',
+      });
+      assert.equal(result.signal, null, 'the helper had to be killed: the lock loop spun');
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /^report channel: EACCES: permission denied, mkdir /);
+      assert.equal(result.stdout, '', 'a failed append printed a receipt');
+      assert.equal(existsSync(sandbox.trace), false, 'a failed append wrote a record');
+    } finally {
+      chmodSync(traceDirectory, 0o700);
+      rmSync(sandbox.attempt, { recursive: true, force: true });
+    }
+  },
+);
+
 // Input that is not valid UTF-8 keeps its raw digest and byte count — the honest record of what was
 // sent — while the text is the replacement-decoded form, and the record says so. The evaluator then
 // reads such a report as a report rather than discarding it as evidence that fails its own hash.
