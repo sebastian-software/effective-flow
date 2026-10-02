@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427",
+  "roundId": "muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14",
   "scenario": "linked-issue-open-points",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "d0046fba5ac4f2784e47f308b78f06c597638cf5",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/linked-issue-open-points/slot-5/attempt-1/project",
+  "sourceRevision": "469ac3b746c5794996c577caf36a30bc9337c339",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14/slots/linked-issue-open-points/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
-    "model": "gpt-5.6-sol",
-    "reasoningEffort": "high",
-    "reportedVersion": "codex-cli 0.154.0",
-    "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "codex-cli 0.159.3",
+    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
   },
-  "promptDigest": "sha256:6b57dbc798e1957b48ce03b082b7eb5b380f6d8f8f7464fc3d1343b5b3863f38",
-  "fixtureDigest": "sha256:f4443361ef671ab7e1088562805469824a454bf6fdb04d8f12a6f7b22915ac7b",
-  "buildDigest": "sha256:0f5c864135f2186b98d6da324f7ef1a1ae73dd675097aaf84a1ba021115757e8",
+  "promptDigest": "sha256:57e82d888186ca1b4c0b935ca14493568c190206d5d4202086c4ca4a069c8a88",
+  "fixtureDigest": "sha256:157ac47e870c086344f2cb2bbc88cafcc179bee9a95aa095f2c163f3c598402c",
+  "buildDigest": "sha256:6d45a8f37cc38d6dc02f356d141ff1d078a5c0758fb6dc66ac2d14ebc56d2ea1",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/linked-issue-open-points/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14/slots/linked-issue-open-points/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high",
-      "reportedVersion": "codex-cli 0.154.0",
-      "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium",
+      "reportedVersion": "codex-cli 0.159.3",
+      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
     }
   }
 }

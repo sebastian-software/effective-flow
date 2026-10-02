@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d",
+  "scenario": "review-in-flight-aborts",
+  "slot": 4,
+  "attempt": 1,
+  "sourceRevision": "469ac3b746c5794996c577caf36a30bc9337c339",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-4/attempt-1/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "codex-cli 0.159.3",
+    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+  },
+  "promptDigest": "sha256:c11b5652ff4c78b2c251ad788b72273c469cf8cf5f464f49f00d2b57788a8834",
+  "fixtureDigest": "sha256:c704738b6c45143bda50392c7f5d1b29ee979e6d272929fd70d367c802f170d6",
+  "buildDigest": "sha256:3291b46dabce0fd3f58d13c3752abd7a616a4c265102d0d50ad329b524bce809",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-4/attempt-1/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium",
+      "reportedVersion": "codex-cli 0.159.3",
+      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+    }
+  }
+}

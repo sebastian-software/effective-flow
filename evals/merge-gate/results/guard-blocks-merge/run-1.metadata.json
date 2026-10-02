@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427",
+  "roundId": "muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14",
   "scenario": "guard-blocks-merge",
   "slot": 1,
   "attempt": 1,
-  "sourceRevision": "d0046fba5ac4f2784e47f308b78f06c597638cf5",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/guard-blocks-merge/slot-1/attempt-1/project",
+  "sourceRevision": "469ac3b746c5794996c577caf36a30bc9337c339",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14/slots/guard-blocks-merge/slot-1/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
-    "model": "gpt-5.6-sol",
-    "reasoningEffort": "high",
-    "reportedVersion": "codex-cli 0.154.0",
-    "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "codex-cli 0.159.3",
+    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
   },
-  "promptDigest": "sha256:b76c501a3f51ecc7d89b65ed20221f53e631a8f1dfef0fcf9d0d5f32f569e40d",
-  "fixtureDigest": "sha256:38622a81defdc8d3756a6b96028e8ed8cc600c0ddd0c15f6b461fb5df7819c64",
-  "buildDigest": "sha256:7738cc5346492b960018241f9cb2085f2005ef1148bdf9c083ec6f3f6c291fe1",
+  "promptDigest": "sha256:f380d0ba30fd9887bb09f9dc2f015dc2e1efbf2fac5070707b59a9aa6afe0009",
+  "fixtureDigest": "sha256:5bfcc792615c547d2fe87a302a23d6d77463c9d349975eeecaa654aafb381ff3",
+  "buildDigest": "sha256:4d1c2a20bda2739a82be59f3d5eccff72f91a8cb265400ec41d73d3cc72bfb6d",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mugqzgpa-652b3de6-10ca-4736-a6cd-898e25e64427/slots/guard-blocks-merge/slot-1/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/muqrilfc-924ea04c-88cb-4c99-a46b-01541bd9aa14/slots/guard-blocks-merge/slot-1/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
-      "model": "gpt-5.6-sol",
-      "reasoningEffort": "high",
-      "reportedVersion": "codex-cli 0.154.0",
-      "toolPolicy": "workspace-write;approve-for-me;attempt-root-add-dir;ephemeral;ignore-user-config;isolated-home"
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium",
+      "reportedVersion": "codex-cli 0.159.3",
+      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
     }
   }
 }

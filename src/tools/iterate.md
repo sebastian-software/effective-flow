@@ -187,7 +187,7 @@ The last two rows are the ones a caller must not read as an assessment: nobody j
 the item comes back explicitly **unassessed** and the caller's own gate decides what that costs.
 Returning `rejected` or `deferred` for either would claim a judgment this run never made.
 
-**Every `ABORT` this workflow returns is whole-run.** A per-item failure is an outcome and never a
+**Every `ABORT` this workflow returns is whole-run.** Its final line is the full `ABORT: <reason>` this file names for that stop, never a bare `ABORT`. A per-item failure is an outcome and never a
 per-item `ABORT`: `DONE`/`ABORT` is the completion protocol this run gives its **internal sub-agents**, and a
 sub-agent's `ABORT` marks that one item `unassessed` and continues with the next. Nothing this
 workflow returns to a delegating caller is scoped to a single item.
