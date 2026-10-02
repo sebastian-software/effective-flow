@@ -43,11 +43,15 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 1. `pnpm agent:check` (format check) and `pnpm test` (unit tests).
 2. `node build.mjs` builds the distribution into `dist/`.
 3. `release-please-action` creates or updates the release PR and, once merged, the Git tag and
-   the GitHub release.
+   a **draft** GitHub release. `release-please-config.json` sets `draft: true` together with
+   `force-tag-creation: true`, so the tag exists while the release is still a draft.
 4. The isolated distribution smoke verifies native/portable layouts, the staged delivery tree,
    and the release archive layout.
 5. On an actually created release, all three targets in `dist/` are packed as
-   `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
+   `effective-flow-<tag>.tar.gz`, uploaded to the draft, downloaded again, and verified. Only then
+   does `Publish the verified release` publish it with `gh release edit <tag> --draft=false`, and
+   publication comes before delivery in step 6. Immutable releases are enabled on the repository,
+   and a published immutable release accepts no asset.
 6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
    `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
    automation files as a fresh commit to `main` (no force push). The push
@@ -342,6 +346,16 @@ delivery means cutting the next release deliberately. The in-run retry described
 that rejected re-delivery: #278 rejects a _separate workflow reachable from `main`_, which cannot
 exist for the reason just given, whereas a retry inside the already running release job needs
 nothing on `main` at all and leaves that reasoning intact.
+
+A run that fails after `Release Please` but before `Publish the verified release` leaves the
+release a draft. The `delivery-failed` alarm still fires, because its gate is `release_created`,
+not publication. Re-running the workflow does not finish the job: release-please reports no new
+release, so every created-release step is skipped. Recover by hand. First confirm that the draft
+carries `effective-flow-<tag>.tar.gz` and that it passes
+`node scripts/distribution-smoke.mjs archive`; if it does not, upload and verify it the way the
+workflow does. Then publish the draft with `gh release edit <tag> --draft=false`, and only after
+that verification, because the published release accepts no further asset. Finally repair the
+delivery as described above, by cutting the next release deliberately.
 
 ### Trusted default-branch automation
 
