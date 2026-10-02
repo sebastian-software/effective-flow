@@ -2132,7 +2132,11 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
   assert.match(finalization, /`reported-blocked` with the stable domain blocker when any fails/);
   assert.match(
     finalization,
-    near('Condition 1', 'excluded only from this measurement projection', 120),
+    near(
+      'Condition 1 remains the real merge-authorization condition',
+      'excluded only from this measurement projection',
+      120,
+    ),
     'condition 1 must stay the merge authorization and be excluded only from the projection',
   );
   assert.match(finalization, /`merged` only when a fresh Phase-5 read verifies the merge/);
@@ -3727,12 +3731,14 @@ test('local review emits next steps for admitted findings but not a closed-only 
   );
 
   // Anchored on the decision tokens of each branch, so a reworded sentence stays free while a
-  // dropped branch or a next-step block on a closed-only report fails.
+  // dropped branch, a next-step block that is no longer the report's last element, or a next-step
+  // block on a closed-only report fails.
   ordered(
     localMode,
     'write no report and reserve no IDs',
     'Delete the wisdom file.',
     'at least one admitted finding, emit the next-step block',
+    'as the last element of the report',
     'only the closed non-executable appendix, emit no next-step block',
   );
 });
