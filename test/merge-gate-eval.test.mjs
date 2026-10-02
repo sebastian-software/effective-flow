@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   cpSync,
   existsSync,
   readFileSync,
@@ -22,12 +23,25 @@ import {
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from '../evals/_scaffold/build-identity.mjs';
-import { evaluateEvidence, mutatingTrackerOperations } from '../evals/_scaffold/evaluate.mjs';
+import {
+  alwaysAllowedOperations,
+  evaluateEvidence,
+  mutatingTrackerOperations,
+} from '../evals/_scaffold/evaluate.mjs';
 import { TRACKER_STUB_SKILL_PATH } from '../evals/_scaffold/scaffold.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
+import iterateSuite from '../evals/iterate/suite.config.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createRound, publishRound, sealAttempt } from '../evals/_scaffold/round-core.mjs';
+import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
+import {
+  FORGE_READING,
+  PHASE_ONE_READS as ITERATE_PHASE_ONE_READS,
+  PHASE_ZERO_REFUSALS,
+} from '../evals/iterate/_scaffold/evaluate.mjs';
+import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 
@@ -102,6 +116,27 @@ const SCAFFOLD_PATH = resolve(import.meta.dirname, '..', 'evals', '_scaffold', '
 const SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'merge-gate');
 const RESULTS_DIR = resolve(SUITE_ROOT, 'results');
 const FIXTURE_DIR = resolve(SUITE_ROOT, 'fixtures');
+const ITERATE_SUITE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'iterate');
+
+// Every suite whose published archive the structural checks below read. The checks that bind a run
+// to its stamp, its metadata, its schema and its runtime root, and that re-evaluate it through the
+// suite's own evaluator, are properties of the shared scaffold's archive rather than of the gate, so
+// each suite's `results/` is held to them — a suite with no runs yet skips with the reason, as the
+// gate's own scenarios do. The gate-specific assertions further down stay on the gate's archive.
+// `label` keeps the gate's test titles as they were and namespaces the other suite's.
+const MERGE_GATE_ARCHIVE = Object.freeze({
+  suite,
+  fixtures: FIXTURE_DIR,
+  results: RESULTS_DIR,
+  label: (scenario) => scenario,
+});
+const ITERATE_ARCHIVE = Object.freeze({
+  suite: iterateSuite,
+  fixtures: resolve(ITERATE_SUITE_ROOT, 'fixtures'),
+  results: resolve(ITERATE_SUITE_ROOT, 'results'),
+  label: (scenario) => `${iterateSuite.name}/${scenario}`,
+});
+const ARCHIVES = [MERGE_GATE_ARCHIVE, ITERATE_ARCHIVE];
 
 const LEGACY_KEYS = ['apply', 'at', 'cwd', 'operation', 'seq'];
 const START_KEYS = ['apply', 'at', 'callId', 'cwd', 'event', 'operation', 'seq'];
@@ -134,8 +169,6 @@ function operationStarts(records, operation) {
 // fixture defines. Whether it belongs in a given scenario's log is the question each scenario's own
 // assertion answers, and it is answered in both directions below.
 const STUB_ANSWERED_OPERATIONS = ['pr-merge'];
-
-const SCENARIOS = discoverSuite(suite).scenarios;
 
 // The predicate that separates a distorted run from a merely noisy one, asked of the shipped helper
 // itself rather than of a list kept here. A list kept here is wrong the day an operation is added,
@@ -351,65 +384,73 @@ test('no file a merge-gate run loads references the diff baseline', () => {
 // the unhashed module.
 const UNDECLARED_SCENARIO = 'a-scenario-that-does-not-exist-yet';
 
-test("adding a scenario leaves the instrument digest untouched, so a new scenario costs its own evidence and no other scenario's", () => {
-  const registryWithOneMoreName = Object.freeze([...suite.scenarios, UNDECLARED_SCENARIO]);
-  const baseline = instrumentIdentity(suite);
-  const widened = instrumentIdentity({ ...suite, scenarios: registryWithOneMoreName });
+// Every suite the shared scaffold runs. The registry split and the configuration hashing are
+// properties of that scaffold, so each suite is held to them rather than only the first one.
+const SUITES = [suite, iterateSuite];
 
-  assert.equal(
-    widened.digest,
-    baseline.digest,
-    `the instrument digest moved from ${baseline.digest} to ${widened.digest} when the scenario registry gained one name. A registry entry is a list of names no run reads, so hashing it invalidates every archived round of every other scenario for a change none of them could observe — six scenarios times five runs of hand-recorded sessions per added name. Keep the registry out of the instrument.`,
-  );
+for (const each of SUITES) {
+  test(`${each.name}: adding a scenario leaves the instrument digest untouched, so a new scenario costs its own evidence and no other scenario's`, () => {
+    const registryWithOneMoreName = Object.freeze([...each.scenarios, UNDECLARED_SCENARIO]);
+    const baseline = instrumentIdentity(each);
+    const widened = instrumentIdentity({ ...each, scenarios: registryWithOneMoreName });
 
-  // The other half of the same property, and the reason the assertion above is not merely true of
-  // a field nobody reads: the registry carried on the suite object is the one the scaffold
-  // actually consumes. Were it moved back into a hashed module, the parity contract would stop
-  // reading this field — and the digest would go back to moving with every added name while the
-  // assertion above kept passing.
-  assert.throws(
-    () => discoverSuite({ ...suite, scenarios: registryWithOneMoreName }),
-    new RegExp(`${UNDECLARED_SCENARIO} missing scenarios, fixtures`),
-    'the parity contract ignored a name added to the registry on the suite configuration, so the registry the scaffold reads is declared somewhere else — move it back to the unhashed configuration before the instrument starts hashing it again',
-  );
-});
-
-test('the scenario registry module is not an instrument file, so declaring a scenario cannot stale every archived round', async () => {
-  const registryPath = realpathSync(suite.scenarioRegistry);
-  const hashed = suite.instrumentFiles.map((path) => realpathSync(path));
-
-  assert.ok(
-    !hashed.includes(registryPath),
-    `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
-  );
-  assert.equal(
-    basename(registryPath),
-    'scenario-registry.mjs',
-    `the suite points scenarioRegistry at ${registryPath}. The unhashed module is meant to hold names and nothing else, and a suite that points the field at another file of its own has declared whatever that file contains exempt from the instrument.`,
-  );
-
-  // Ties the structural claim to the thing it protects. Asserting only that this path is unhashed
-  // says nothing while the registry lives elsewhere, so read the module back and require it to be
-  // where the registry is declared.
-  const registrySource = readFileSync(registryPath, 'utf8');
-  for (const scenario of suite.scenarios) {
-    assert.ok(
-      registrySource.includes(scenario),
-      `the scenario registry names ${scenario}, which ${registryPath} does not mention — so the registry is declared in some other module. Unless that module is unhashed too, adding a scenario is back to costing a re-record of every archived round.`,
+    assert.equal(
+      widened.digest,
+      baseline.digest,
+      `the instrument digest moved from ${baseline.digest} to ${widened.digest} when the scenario registry gained one name. A registry entry is a list of names no run reads, so hashing it invalidates every archived round of every other scenario for a change none of them could observe — six scenarios times five runs of hand-recorded sessions per added name. Keep the registry out of the instrument.`,
     );
-  }
 
-  // The other direction, and the one that keeps the exemption honest: this module is exempt because
-  // names are all it holds. A function, a path or a document template moved here would be unhashed
-  // behaviour, which is precisely what hashing the configuration closed.
-  const registryModule = await import(pathToFileURL(registryPath).href);
-  for (const [name, value] of Object.entries(registryModule)) {
-    assert.ok(
-      Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
-      `${registryPath} exports ${name}, which is not a list of names. The module is kept out of the instrument because a scenario registry changes nothing any run does; anything else declared here is behaviour no archived stamp would ever notice moving.`,
+    // The other half of the same property, and the reason the assertion above is not merely true of
+    // a field nobody reads: the registry carried on the suite object is the one the scaffold
+    // actually consumes. Were it moved back into a hashed module, the parity contract would stop
+    // reading this field — and the digest would go back to moving with every added name while the
+    // assertion above kept passing.
+    assert.throws(
+      () => discoverSuite({ ...each, scenarios: registryWithOneMoreName }),
+      new RegExp(`${UNDECLARED_SCENARIO} missing scenarios, fixtures`),
+      'the parity contract ignored a name added to the registry on the suite configuration, so the registry the scaffold reads is declared somewhere else — move it back to the unhashed configuration before the instrument starts hashing it again',
     );
-  }
-});
+  });
+}
+
+for (const each of SUITES) {
+  test(`${each.name}: the scenario registry module is not an instrument file, so declaring a scenario cannot stale every archived round`, async () => {
+    const registryPath = realpathSync(each.scenarioRegistry);
+    const hashed = each.instrumentFiles.map((path) => realpathSync(path));
+
+    assert.ok(
+      !hashed.includes(registryPath),
+      `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
+    );
+    assert.equal(
+      basename(registryPath),
+      'scenario-registry.mjs',
+      `the suite points scenarioRegistry at ${registryPath}. The unhashed module is meant to hold names and nothing else, and a suite that points the field at another file of its own has declared whatever that file contains exempt from the instrument.`,
+    );
+
+    // Ties the structural claim to the thing it protects. Asserting only that this path is unhashed
+    // says nothing while the registry lives elsewhere, so read the module back and require it to be
+    // where the registry is declared.
+    const registrySource = readFileSync(registryPath, 'utf8');
+    for (const scenario of each.scenarios) {
+      assert.ok(
+        registrySource.includes(scenario),
+        `the scenario registry names ${scenario}, which ${registryPath} does not mention — so the registry is declared in some other module. Unless that module is unhashed too, adding a scenario is back to costing a re-record of every archived round.`,
+      );
+    }
+
+    // The other direction, and the one that keeps the exemption honest: this module is exempt because
+    // names are all it holds. A function, a path or a document template moved here would be unhashed
+    // behaviour, which is precisely what hashing the configuration closed.
+    const registryModule = await import(pathToFileURL(registryPath).href);
+    for (const [name, value] of Object.entries(registryModule)) {
+      assert.ok(
+        Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
+        `${registryPath} exports ${name}, which is not a list of names. The module is kept out of the instrument because a scenario registry changes nothing any run does; anything else declared here is behaviour no archived stamp would ever notice moving.`,
+      );
+    }
+  });
+}
 
 // The two bindings the finding named, each rebound in the object literal rather than in the import
 // block: a rebinding is the change the file-level hash is there to catch, since it moves what every
@@ -429,50 +470,59 @@ const BEHAVIOUR_BEARING_REBINDINGS = [
   },
 ];
 
-test('rebinding a behaviour-bearing value in the suite configuration moves the instrument digest', () => {
-  const configPath = realpathSync(suiteConfigPath(suite.name));
-  assert.ok(
-    suite.instrumentFiles.map((path) => realpathSync(path)).includes(configPath),
-    `${configPath} is not an instrument file. It binds scenarioSetup, projectDocuments, the tracker stub and the overlay policy, so unhashed it can be re-pointed at other modules and every archived round goes on reporting current over evidence recorded against a different sandbox. Only the scenario registry is exempt, and it has its own module for that.`,
-  );
-
-  // Membership is half the claim; the other half is that the identity is computed from this file's
-  // bytes. Hash a copy of the real configuration, rebind one value in it, and hash again. The copy
-  // keeps one path across both hashes, so the difference can only come from the content.
-  const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-instrument-binding-'));
-  try {
-    const probePath = resolve(scratch, 'suite.config.mjs');
-    const instrumentFiles = suite.instrumentFiles.map((path) =>
-      realpathSync(path) === configPath ? probePath : path,
+for (const each of SUITES) {
+  test(`${each.name}: rebinding a behaviour-bearing value in the suite configuration moves the instrument digest`, () => {
+    const configPath = realpathSync(suiteConfigPath(each.name));
+    assert.ok(
+      each.instrumentFiles.map((path) => realpathSync(path)).includes(configPath),
+      `${configPath} is not an instrument file. It binds scenarioSetup, projectDocuments, the tracker stub and the overlay policy, so unhashed it can be re-pointed at other modules and every archived round goes on reporting current over evidence recorded against a different sandbox. Only the scenario registry is exempt, and it has its own module for that.`,
     );
-    const source = readFileSync(configPath, 'utf8');
-    writeFileSync(probePath, source);
-    const baseline = instrumentIdentity({ ...suite, instrumentFiles });
 
-    for (const { field, pattern, replacement, consequence } of BEHAVIOUR_BEARING_REBINDINGS) {
-      const rebound = source.replace(pattern, replacement);
-      assert.notEqual(
-        rebound,
-        source,
-        `the probe's ${field} rebinding matched nothing in ${configPath}, so this case proves nothing about it — re-anchor the pattern on however the suite binds ${field} now`,
+    // Membership is half the claim; the other half is that the identity is computed from this file's
+    // bytes. Hash a copy of the real configuration, rebind one value in it, and hash again. The copy
+    // keeps one path across both hashes, so the difference can only come from the content.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'effective-flow-instrument-binding-'));
+    try {
+      const probePath = resolve(scratch, 'suite.config.mjs');
+      const instrumentFiles = each.instrumentFiles.map((path) =>
+        realpathSync(path) === configPath ? probePath : path,
       );
-      writeFileSync(probePath, rebound);
-      const moved = instrumentIdentity({ ...suite, instrumentFiles });
-      assert.notEqual(
-        moved.digest,
-        baseline.digest,
-        `rebinding ${field} left the instrument digest at ${baseline.digest}. That rebinding changes ${consequence} without moving a byte of any other hashed file, so an unobserved one lets the sandbox drift while every archived round reports current.`,
-      );
+      const source = readFileSync(configPath, 'utf8');
       writeFileSync(probePath, source);
-    }
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-});
+      const baseline = instrumentIdentity({ ...each, instrumentFiles });
 
-function archivedRuns(scenario) {
-  const dir = join(RESULTS_DIR, scenario);
+      for (const { field, pattern, replacement, consequence } of BEHAVIOUR_BEARING_REBINDINGS) {
+        const rebound = source.replace(pattern, replacement);
+        assert.notEqual(
+          rebound,
+          source,
+          `the probe's ${field} rebinding matched nothing in ${configPath}, so this case proves nothing about it — re-anchor the pattern on however the suite binds ${field} now`,
+        );
+        writeFileSync(probePath, rebound);
+        const moved = instrumentIdentity({ ...each, instrumentFiles });
+        assert.notEqual(
+          moved.digest,
+          baseline.digest,
+          `rebinding ${field} left the instrument digest at ${baseline.digest}. That rebinding changes ${consequence} without moving a byte of any other hashed file, so an unobserved one lets the sandbox drift while every archived round reports current.`,
+        );
+        writeFileSync(probePath, source);
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+}
+
+// `auxiliaryPath` is the run's paired second evidence file under the suite's own archive suffix —
+// the gate's iterate echo trace, the iterate suite's exit-channel record — and `iteratePath` the
+// gate-specific name the configured-reviewer assertions below read it by. `sealedPath` is the
+// evidence the sealing step wrote — the iterate suite's sandbox git state — or `null` for a suite
+// that declares none, which the gate does.
+function archivedRuns(scenario, archive = MERGE_GATE_ARCHIVE, resultsDir = archive.results) {
+  const dir = join(resultsDir, scenario);
   if (!existsSync(dir)) return [];
+  const auxiliarySuffix = archive.suite.auxiliaryEvidence.archiveSuffix;
+  const sealedSuffix = archive.suite.sealedEvidence?.archiveSuffix ?? null;
   return readdirSync(dir)
     .filter((name) => /^run-\d+\.jsonl$/.test(name))
     .sort((left, right) => Number(left.match(/\d+/)[0]) - Number(right.match(/\d+/)[0]))
@@ -483,6 +533,9 @@ function archivedRuns(scenario) {
       stampPath: join(dir, name.replace(/\.jsonl$/, '.build.json')),
       iterateName: name.replace(/\.jsonl$/, '.iterate.jsonl'),
       iteratePath: join(dir, name.replace(/\.jsonl$/, '.iterate.jsonl')),
+      auxiliaryPath: join(dir, name.replace(/\.jsonl$/, `.${auxiliarySuffix}`)),
+      sealedPath:
+        sealedSuffix === null ? null : join(dir, name.replace(/\.jsonl$/, `.${sealedSuffix}`)),
       metadataPath: join(dir, name.replace(/\.jsonl$/, '.metadata.json')),
     }));
 }
@@ -921,7 +974,12 @@ test('the freshness verdict is ordered and names the waiver it applied', () => {
 // reading of this suite would get exactly backwards: a run that never started produces no `pr-merge`
 // record, which is indistinguishable from a correct refusal unless the emptiness itself is an error.
 // So it is one here, stated before any assertion about what the log contains.
-function readRun(run) {
+//
+// `allowEmpty` is the one exception, and it is never the gate's: a suite whose evaluator permits an
+// empty call log for a scenario — the iterate suite, whose correct refusals make no forge call —
+// proves the run happened through its exit-channel record instead, which the re-evaluation below
+// requires. The gate's scenarios pass nothing and keep the rule.
+function readRun(run, { allowEmpty = false } = {}) {
   const raw = readFileSync(run.path, 'utf8');
   const records = raw
     .split('\n')
@@ -934,18 +992,23 @@ function readRun(run) {
       }
     });
   assert.ok(
-    records.length > 0,
+    allowEmpty || records.length > 0,
     `${run.name} holds no records. A run that called nothing never reached the gate, and an empty log must never be read as a refusal.`,
   );
   return records;
 }
 
-// The schema `evals/merge-gate/_scaffold/remote-tracker.mjs` writes and
+// The schema `evals/_scaffold/remote-tracker.mjs` writes and
 // `test/eval-fixture-fidelity.test.mjs` pins. Re-checking it here is not redundant: that test proves
 // what the **current** stub writes, this one proves that an archived log — possibly written months
 // ago, possibly by hand — is a log these assertions can mean anything about.
-function assertSchema(scenario, run, records) {
-  if (scenario !== 'unreported-checks-at-phase-four') {
+function assertSchema(
+  scenario,
+  run,
+  records,
+  lifecycle = scenario === 'unreported-checks-at-phase-four',
+) {
+  if (!lifecycle) {
     records.forEach((record, index) => {
       assert.deepEqual(
         Object.keys(record).sort(),
@@ -1101,9 +1164,17 @@ test('archived runtime roots must be the exact scenario project root', () => {
   );
 });
 
-function answerableOperations(scenario) {
-  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
-  return new Set([...Object.keys(fixture.operations), ...STUB_ANSWERED_OPERATIONS]);
+// For the gate, the fixture's operations plus the one the stub answers itself. Another suite
+// declares what its runs may attempt unanswered through `alwaysAllowedOperations`, and the
+// contamination check has to honour that declaration: the iterate suite judges every call a Phase-0
+// run makes as a finding, so treating one as contamination here would contradict its evaluator.
+function answerableOperations(scenario, archive = MERGE_GATE_ARCHIVE) {
+  const fixture = JSON.parse(readFileSync(join(archive.fixtures, `${scenario}.json`), 'utf8'));
+  const unanswered =
+    archive === MERGE_GATE_ARCHIVE
+      ? STUB_ANSWERED_OPERATIONS
+      : alwaysAllowedOperations(archive.suite, scenario);
+  return new Set([...Object.keys(fixture.operations), ...unanswered]);
 }
 
 // No archived runs is **not** a pass, and it is not a failure either. Skipping is the honest report:
@@ -1118,9 +1189,11 @@ function answerableOperations(scenario) {
 // One to four runs describes a round somebody started and did not finish — the evidence exists and
 // falls short of the documented bar — and skipping there would let a three-run round be published
 // as a green suite, which is precisely the claim the bar exists to prevent.
-function skipWithoutRuns(scenario, runs) {
+function skipWithoutRuns(scenario, runs, archive = MERGE_GATE_ARCHIVE) {
+  const name = archive.suite.name;
+  const subject = archive === MERGE_GATE_ARCHIVE ? 'the merge gate' : `\`${name}\``;
   return runs.length === 0
-    ? `no archived runs under ${join(RESULTS_DIR, scenario)} — NOTHING IS PROVEN about the merge gate's behaviour. Produce runs with: pnpm eval merge-gate prepare --scenario ${scenario} (it builds first), hand each slot prompt to a fresh session, then seal every slot and publish the round (see evals/merge-gate/README.md).`
+    ? `no archived runs under ${join(archive.results, scenario)} — NOTHING IS PROVEN about ${subject}'s behaviour. Produce runs with: pnpm eval ${name} prepare --scenario ${scenario} (it builds first), hand each slot prompt to a fresh session, then seal every slot and publish the round (see evals/${name}/README.md).`
     : false;
 }
 
@@ -1295,95 +1368,228 @@ test('the configured scenario identity replaces production iterate without doubl
   );
 });
 
-for (const scenario of SCENARIOS) {
-  const runs = archivedRuns(scenario);
-  const skip = skipWithoutRuns(scenario, runs);
-
-  test(`${scenario}: every archived run is a log these assertions can read`, { skip }, async () => {
-    const answerable = answerableOperations(scenario);
-    for (const run of runs) {
-      assertStructurallyBound(scenario, run);
-      const records = readRun(run);
-      assertSchema(scenario, run, records);
+// The structural and re-evaluation checks every archived run of every suite is held to, as one
+// function so the synthetic publication test below can hold a freshly published round to exactly
+// the checks the committed archive faces.
+async function assertArchivedRunsReadable(archive, scenario, runs) {
+  const evaluator = archive.suite.evaluator;
+  const answerable = answerableOperations(scenario, archive);
+  for (const run of runs) {
+    assertStructurallyBound(scenario, run);
+    const records = readRun(run, {
+      allowEmpty: evaluator.permitsEmptyCallLog?.(scenario) === true,
+    });
+    assertSchema(
+      scenario,
+      run,
+      records,
+      archive === MERGE_GATE_ARCHIVE
+        ? scenario === 'unreported-checks-at-phase-four'
+        : evaluator.usesLifecycleSchema(scenario),
+    );
+    // For a suite whose evaluator names decisive calls, a counted call from a wrong root is a
+    // finding the re-evaluation below reports, not a structural defect to stop at first.
+    if ((evaluator.decisiveCalls?.({ scenario, records }) ?? []).length === 0) {
       assertRuntimeRoot(scenario, run, records);
-
-      const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
-      const projectRoot = existsSync(run.metadataPath)
-        ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
-        : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
-      const evaluated = evaluateEvidence(suite, {
-        scenario,
-        logText: readFileSync(run.path, 'utf8'),
-        fixture,
-        projectRoot,
-        buildIdentity: JSON.parse(readFileSync(run.stampPath, 'utf8')),
-        // No `expectedBuildIdentity`. The evaluator's identity comparison is the same freshness
-        // question as the one above, reached through a second door: passing the current identity
-        // here would keep every load-set edit red in `pnpm test` while the assertion it replaces
-        // was removed for exactly that reason. `publishRound` still passes it, because a round
-        // being published must describe the tree it was built from, and `verify` still asks it of
-        // the whole corpus.
-        auxiliaryText: existsSync(run.iteratePath) ? readFileSync(run.iteratePath, 'utf8') : null,
-      });
-      assert.deepEqual(
-        evaluated.validityProblems,
-        [],
-        `${run.name}: shared evaluator rejected the archived evidence`,
-      );
-      assert.deepEqual(
-        evaluated.findings,
-        [],
-        `${run.name}: shared evaluator found a behavioural deviation`,
-      );
-
-      // Contamination is a **divergence between the sandbox and production**, and that is narrower
-      // than "the fixture did not define it". An operation the shipped helper supports, left
-      // undefined by the fixture, is answered `UNSUPPORTED_CAPABILITY` here and would have been
-      // answered properly against a real forge: the run improvises onto a fallback path it would
-      // never have taken, and whatever it did afterwards is no longer a measurement of the scenario
-      // as composed. Two rounds were discarded for exactly that — `pr-checks-wait` and
-      // `repository-resolve`, both supported, both missing from the fixtures of the day, and one of
-      // them nearly waved through because the stray call looked harmless. Which of those is harmless
-      // is not a question this layer should answer one log at a time, so it is asserted.
-      //
-      // **A call to a name the shipped helper does not support is not contamination, and this must
-      // not be tightened back into treating it as one.** `executeOperation` answers an unknown name
-      // `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses at an invented
-      // capability probe — `capabilities`, `capability-probe-nonexistent` — receives an error in the
-      // sandbox and would receive an error in production. Nothing about its behaviour is distorted
-      // and the rest of its log is sound evidence. An earlier version of this assertion banned those
-      // too; it failed a complete round over a stray guess, which this layer pays for in agent quota
-      // and gets nothing back for. The fixture cannot fix such a call either — defining an envelope
-      // for a name the helper does not have would be the sandbox diverging from production in the
-      // other direction.
-      const contaminating = [];
-      for (const name of new Set(startRecords(records).map((record) => record.operation))) {
-        if (answerable.has(name)) continue;
-        if (await helperSupports(name)) contaminating.push(name);
-      }
-      assert.deepEqual(
-        contaminating,
-        [],
-        `${run.name}: the run asked for operation(s) the shipped helper supports and the ${scenario} fixture leaves undefined, so the stub answered UNSUPPORTED_CAPABILITY where the real helper would have answered and the run continued on an improvised path; define the operation in the fixture and re-run the scenario rather than reading this log`,
-      );
     }
-  });
 
-  // The plan's bar, enforced rather than printed. It was a diagnostic before, which left a round of
-  // three runs reporting green beside a note saying five were required — the documented requirement
-  // and the checked one disagreeing, with only the unchecked one written down.
-  test(
-    `${scenario}: the archived runs meet the plan's ${REQUIRED_RUNS}-of-${REQUIRED_RUNS} bar`,
-    { skip },
-    () => {
-      assert.equal(
-        runs.length,
-        REQUIRED_RUNS,
-        `${scenario} has ${runs.length} archived run(s), but a canonical generation must contain exactly slots 1 through ${REQUIRED_RUNS}. Finish or republish the round rather than reading partial or surplus evidence as one generation.`,
-      );
-    },
-  );
+    const fixture = JSON.parse(readFileSync(join(archive.fixtures, `${scenario}.json`), 'utf8'));
+    const projectRoot = existsSync(run.metadataPath)
+      ? JSON.parse(readFileSync(run.metadataPath, 'utf8')).projectRoot
+      : `/tmp/effective-flow-merge-gate-eval/${scenario}/project`;
+    const evaluated = evaluateEvidence(archive.suite, {
+      scenario,
+      logText: readFileSync(run.path, 'utf8'),
+      fixture,
+      projectRoot,
+      buildIdentity: JSON.parse(readFileSync(run.stampPath, 'utf8')),
+      // No `expectedBuildIdentity`. The evaluator's identity comparison is the same freshness
+      // question as the one above, reached through a second door: passing the current identity
+      // here would keep every load-set edit red in `pnpm test` while the assertion it replaces
+      // was removed for exactly that reason. `publishRound` still passes it, because a round
+      // being published must describe the tree it was built from, and `verify` still asks it of
+      // the whole corpus.
+      auxiliaryText: existsSync(run.auxiliaryPath) ? readFileSync(run.auxiliaryPath, 'utf8') : null,
+      sealedEvidenceText:
+        run.sealedPath && existsSync(run.sealedPath) ? readFileSync(run.sealedPath, 'utf8') : null,
+    });
+    assert.deepEqual(
+      evaluated.validityProblems,
+      [],
+      `${run.name}: shared evaluator rejected the archived evidence`,
+    );
+    assert.deepEqual(
+      evaluated.findings,
+      [],
+      `${run.name}: shared evaluator found a behavioural deviation`,
+    );
+
+    // Contamination is a **divergence between the sandbox and production**, and that is narrower
+    // than "the fixture did not define it". An operation the shipped helper supports, left
+    // undefined by the fixture, is answered `UNSUPPORTED_CAPABILITY` here and would have been
+    // answered properly against a real forge: the run improvises onto a fallback path it would
+    // never have taken, and whatever it did afterwards is no longer a measurement of the scenario
+    // as composed. Two rounds were discarded for exactly that — `pr-checks-wait` and
+    // `repository-resolve`, both supported, both missing from the fixtures of the day, and one of
+    // them nearly waved through because the stray call looked harmless. Which of those is harmless
+    // is not a question this layer should answer one log at a time, so it is asserted.
+    //
+    // **A call to a name the shipped helper does not support is not contamination, and this must
+    // not be tightened back into treating it as one.** `executeOperation` answers an unknown name
+    // `INVALID_PAYLOAD: unknown operation: <name>`, so a run that guesses at an invented
+    // capability probe — `capabilities`, `capability-probe-nonexistent` — receives an error in the
+    // sandbox and would receive an error in production. Nothing about its behaviour is distorted
+    // and the rest of its log is sound evidence. An earlier version of this assertion banned those
+    // too; it failed a complete round over a stray guess, which this layer pays for in agent quota
+    // and gets nothing back for. The fixture cannot fix such a call either — defining an envelope
+    // for a name the helper does not have would be the sandbox diverging from production in the
+    // other direction.
+    const contaminating = [];
+    for (const name of new Set(startRecords(records).map((record) => record.operation))) {
+      if (answerable.has(name)) continue;
+      if (await helperSupports(name)) contaminating.push(name);
+    }
+    assert.deepEqual(
+      contaminating,
+      [],
+      `${run.name}: the run asked for operation(s) the shipped helper supports and the ${scenario} fixture leaves undefined, so the stub answered UNSUPPORTED_CAPABILITY where the real helper would have answered and the run continued on an improvised path; define the operation in the fixture and re-run the scenario rather than reading this log`,
+    );
+  }
 }
+
+for (const archive of ARCHIVES)
+  for (const scenario of discoverSuite(archive.suite).scenarios) {
+    const runs = archivedRuns(scenario, archive);
+    const skip = skipWithoutRuns(scenario, runs, archive);
+    const label = archive.label(scenario);
+
+    test(`${label}: every archived run is a log these assertions can read`, { skip }, () =>
+      assertArchivedRunsReadable(archive, scenario, runs),
+    );
+
+    // The plan's bar, enforced rather than printed. It was a diagnostic before, which left a round of
+    // three runs reporting green beside a note saying five were required — the documented requirement
+    // and the checked one disagreeing, with only the unchecked one written down.
+    test(
+      `${label}: the archived runs meet the plan's ${REQUIRED_RUNS}-of-${REQUIRED_RUNS} bar`,
+      { skip },
+      () => {
+        assert.equal(
+          runs.length,
+          REQUIRED_RUNS,
+          `${scenario} has ${runs.length} archived run(s), but a canonical generation must contain exactly slots 1 through ${REQUIRED_RUNS}. Finish or republish the round rather than reading partial or surplus evidence as one generation.`,
+        );
+      },
+    );
+  }
+
+// The loop above skips the iterate archive until a round is published, so without this the checks
+// it holds that archive to — above all that an empty `run-<n>.jsonl` is readable evidence there and
+// never here — would first meet real evidence on the day three hours of runs are published. A
+// synthetic round is sealed and published through the real lifecycle instead, and the published
+// directory is held to exactly the checks the committed archive faces. Correct Phase-0 runs make no
+// forge call, so most of its logs are the empty files sealing materialises; one Phase-0 slot per
+// scenario carries a local `reference-parse`, which the Phase-0 verdict does not count.
+test(
+  'a published iterate round with empty call logs passes the archived-run checks',
+  { timeout: 600_000 },
+  async () => {
+    const temporary = mkdtempSync(resolve(tmpdir(), 'effective-flow-iterate-publish-'));
+    const base = resolve(temporary, 'rounds');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    const roundId = 'iterate-synthetic-publication';
+    const profile = {
+      ...iterateSuite.expectedProfile,
+      reportedVersion: 'test-version',
+      toolPolicy: 'test-policy',
+    };
+    const legacyLog = (projectRoot, operations) =>
+      operations
+        .map(
+          (operation, index) =>
+            `${JSON.stringify({ seq: index + 1, operation, apply: false, at: '2026-09-29T00:00:00.000Z', cwd: projectRoot })}\n`,
+        )
+        .join('');
+    const reportFor = (scenario) =>
+      Object.hasOwn(PHASE_ZERO_REFUSALS, scenario)
+        ? `Stopped before Phase 1.\n\n${PHASE_ZERO_REFUSALS[scenario]}\n`
+        : FORGE_READING[scenario].refusal === null
+          ? 'Selection: empty.\n\nDONE\n'
+          : `${FORGE_READING[scenario].refusal}: ${FORGE_READING[scenario].names.join(', ')} is running\n`;
+    try {
+      const prepared = createRound(iterateSuite, {
+        scenarios: [...iterateSuite.scenarios],
+        profile,
+        base,
+        roundId,
+      });
+      const empty = [];
+      for (const scenario of iterateSuite.scenarios) {
+        for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+          const paths = sandboxPaths(prepared.roundRoot, scenario, slot, 1);
+          if (!Object.hasOwn(PHASE_ZERO_REFUSALS, scenario)) {
+            writeFileSync(
+              paths.callLog,
+              legacyLog(paths.projectRoot, ['probe', 'pr-read', ...ITERATE_PHASE_ONE_READS]),
+            );
+          } else if (slot === REQUIRED_RUNS) {
+            writeFileSync(paths.callLog, legacyLog(paths.projectRoot, ['reference-parse']));
+          } else {
+            empty.push(`${scenario}/run-${slot}.jsonl`);
+          }
+          writeFileSync(
+            auxiliaryLogPath(iterateSuite, paths),
+            `${JSON.stringify({ ...reportRecord(reportFor(scenario)), seq: 1 })}\n`,
+          );
+          sealAttempt(iterateSuite, {
+            handle: prepared.manifestPath,
+            scenario,
+            slot,
+            hostReceipt: {
+              schemaVersion: 1,
+              nonForked: true,
+              initialWorkingRoot: paths.projectRoot,
+              taskInput: 'rendered-prompt-only',
+              completed: true,
+              profile: { ...profile },
+            },
+            base,
+          });
+        }
+      }
+
+      const published = publishRound(iterateSuite, {
+        handle: prepared.manifestPath,
+        base,
+        resultsDir,
+        publicationRoot,
+      });
+      assert.deepEqual(published.findings ?? [], []);
+
+      assert.ok(empty.length > 0);
+      for (const path of empty) {
+        assert.equal(readFileSync(resolve(resultsDir, path), 'utf8'), '', `${path} is not empty`);
+      }
+      for (const scenario of iterateSuite.scenarios) {
+        const runs = archivedRuns(scenario, ITERATE_ARCHIVE, resultsDir);
+        assert.equal(runs.length, REQUIRED_RUNS, scenario);
+        await assertArchivedRunsReadable(ITERATE_ARCHIVE, scenario, runs);
+      }
+      // The gate keeps its rule: the same empty log is not a readable gate run.
+      const [emptyRun] = archivedRuns(
+        Object.keys(PHASE_ZERO_REFUSALS)[0],
+        ITERATE_ARCHIVE,
+        resultsDir,
+      );
+      assert.throws(() => readRun(emptyRun), /holds no records/);
+    } finally {
+      const manifest = resolve(base, roundId, 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
 
 const CONFIGURED_REVIEWER_SCENARIO = 'configured-reviewer-set-aside-blocks';
 const configuredReviewerRuns = archivedRuns(CONFIGURED_REVIEWER_SCENARIO);

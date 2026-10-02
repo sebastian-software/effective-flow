@@ -62,20 +62,25 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    below. While it is enabled, a failure in this downstream job marks the release workflow as
    failed, but does not roll back the already published release, archive, or delivery commit.
 
-### The release pull request gates the merge-gate eval evidence
+### The release pull request gates the behavioural eval evidence
 
-The behavioural eval suite for `merge-gate` archives evidence about a build, and the build that
-matters is the one that ships, so the release pull request is where that evidence has to be current.
-The last step of the required `Format, test and build` job runs `pnpm eval merge-gate verify`: a
-read-only command that rebuilds the skill into a throwaway root and compares it against the archived
-stamps, writing nothing and launching no model. On an ordinary pull request it reports — the verdict
-goes to the job summary and the check stays green even when the corpus is stale, because a round
-costs six scenarios times five fresh agent sessions and the claim it supports is about the delivered
-build rather than about every merge on the way there. When the head ref starts with
-`release-please--` — the prefix of release-please's own
+The behavioural eval suites under `evals/<tool>/` — `merge-gate` and `iterate` — archive evidence
+about a build, and the build that matters is the one that ships, so the release pull request is
+where that evidence has to be current. The last step of the required `Format, test and build` job,
+`Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command
+that rebuilds the skill into a throwaway root and compares it against that suite's archived stamps,
+writing nothing and launching no model. Every suite is verified even after an earlier one failed,
+each verdict gets its own section of the job summary, and the step fails if any suite did. On an
+ordinary pull request it reports — the verdicts go to the job summary and the check stays green
+even when a corpus is stale, because a round costs six scenarios times five fresh agent sessions per
+suite and the claim it supports is about the delivered build rather than about every merge on the
+way there. When the head ref starts with `release-please--` — the prefix of release-please's own
 `release-please--branches--develop--components--effective-flow`, matched rather than the full name
 so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
-absent corpus fails the check. There is no waiver: without a current round there is no release.
+absent corpus in either suite fails the check. There is no waiver: without a current round of every
+suite there is no release. The `iterate` corpus has not been recorded yet, so it verifies `absent`
+and the release pull request fails this check until its first round is published beside a current
+`merge-gate` round.
 
 A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
 the release branch, which release-please owns and force-pushes. Merging that pull request into
@@ -228,11 +233,11 @@ both strings. Second, `ci.yml` currently runs on every `pull_request` with no `p
 is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
 every filtered pull request.
 
-The merge-gate eval freshness gate sits inside that same required job for exactly those reasons. It
+The behavioural eval freshness gate sits inside that same required job for exactly those reasons. It
 has to be strict on the release pull request and merely reporting everywhere else, and a job that an
 `if:` skips never reports at all — so it is a step of `Format, test and build` rather than a job of
 its own, carries no `if:` at either level, and selects its mode from inside the step. See
-[The release pull request gates the merge-gate eval evidence](#the-release-pull-request-gates-the-merge-gate-eval-evidence).
+[The release pull request gates the behavioural eval evidence](#the-release-pull-request-gates-the-behavioural-eval-evidence).
 `test/workflow-contracts.test.mjs` pins the step, its placement as the job's last, the absent
 condition, and the literal `release-please--` prefix it matches. Each of those is a literal, and
 without those assertions a rename of any one would turn the gate off while every CI run stayed green
@@ -406,9 +411,9 @@ Since `release-please-config.json` carries the single package `.` under the name
 The build stamps `<manifest version> (<git short hash>)` into all three routers. A drift guard
 makes the build fail unless native Claude, native Codex, and portable output agree.
 
-Because the stamp sits in `SKILL.md`, a release changes a file the merge-gate behavioural eval
+Because the stamp sits in `SKILL.md`, a release changes a file every behavioural eval suite
 binds its archived runs to — on the one pull request where that evidence is
-[enforced](#the-release-pull-request-gates-the-merge-gate-eval-evidence). That is handled and needs
+[enforced](#the-release-pull-request-gates-the-behavioural-eval-evidence). That is handled and needs
 no action: every archived round carries a version-neutral skill digest beside its exact one, and a
 bump that moves only the version token is accepted without re-recording, so an otherwise current
 corpus clears the strict check on its own. See

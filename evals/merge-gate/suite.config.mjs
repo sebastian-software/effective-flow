@@ -74,7 +74,12 @@ const LOAD_SET_SEEDS = Object.freeze([
 // The stub file itself, declared once and referenced twice below: as the file `scaffold.mjs` copies
 // into each slot, and as the instrument entry that hashes it. Two literals could name two different
 // files, and the one that is hashed would then not be the one that answers the run.
-const TRACKER_STUB_SOURCE = resolve(SCAFFOLD, 'remote-tracker.mjs');
+//
+// It lives in the shared scaffold since the `iterate` suite arrived, because nothing in it is about
+// the gate (see its own header). Moving it moved this suite's instrument digest and nothing else: a
+// run reaches the stub at `TRACKER_STUB_SKILL_PATH` inside its slot either way, so neither the
+// `skill` nor the `scenario_inputs` part of any stamp changed.
+const TRACKER_STUB_SOURCE = resolve(SHARED_SCAFFOLD, 'remote-tracker.mjs');
 
 const INSTRUMENT_FILES = Object.freeze([
   // This file. Every binding above and below it selects what a slot sees, so the selection is
@@ -116,6 +121,8 @@ const suite = {
   legacyInstrumentWaiver: {
     predecessorInstrumentDigest:
       'sha256:208fd4fb943e321cce20f4e7143a4602171c332507976cb6cf9abe93c7122040',
+    // The path the predecessor stamp recorded the stub under, which is historical by design: it names
+    // where the superseded stub lived, not where the current one does.
     trackerStubPath: 'evals/merge-gate/_scaffold/remote-tracker.mjs',
     // The sequenced Phase-4 scenario needs completion evidence and can never use this exception.
     excludedScenarios: Object.freeze(['unreported-checks-at-phase-four']),
@@ -136,6 +143,10 @@ const suite = {
   },
   scenarioSetup,
   projectDocuments,
+  // No checkout preparation beyond the shared seed commit: a gate run reads the forge through the
+  // stub and never fetches, so its sandbox keeps an `origin` no run reaches. Spelled out rather
+  // than omitted, for the same reason `auxiliaryEvidence` is: absence must not read as a choice.
+  prepareCheckout: null,
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate
   // rather than to keep spending runs; every other scenario has no cap.
