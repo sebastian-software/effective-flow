@@ -925,7 +925,7 @@ test('persisted evidence validation binds filenames, schemas, identities, ordina
     [
       'schema',
       ({ target, record }) =>
-        writeFileSync(target, `${canonicalizeJson({ ...record, schema: 2 })}\n`),
+        writeFileSync(target, `${canonicalizeJson({ ...record, schema: 1 })}\n`),
     ],
     [
       'generation identity',
@@ -1008,7 +1008,7 @@ test('persisted evidence validation binds filenames, schemas, identities, ordina
 test('persisted cardinality and ordinal bounds use next counters without requiring contiguous ordinals', async (t) => {
   function workflowRecord(generationId, ordinal) {
     return {
-      schema: 1,
+      schema: 2,
       kind: 'workflow-record',
       runId: opaqueId(1, ordinal),
       workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1030,6 +1030,7 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
           fallback: 'none',
           escalated: false,
           costProxy: { status: 'unavailable' },
+          attempt: 'started',
         },
       ],
       validation: { status: 'not-required', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
@@ -1218,6 +1219,24 @@ test('deterministic identifier collisions reject without overwriting accepted ev
       harnessFamily: 'codex',
     };
     const accepted = (await executeOperation('start-gate-observation', input, fx.deps)).result;
+    // An open observation makes the next start report busy, so close it before colliding.
+    await executeOperation(
+      'finalize-gate-observation',
+      {
+        ...fx.common,
+        generationId,
+        observationId: accepted.observationId,
+        capability: accepted.capability,
+        terminalOutcome: 'merged',
+        ciRepairCorrections: 0,
+        reviewerCorrections: 0,
+        conflictCorrections: 0,
+        checksReported: false,
+        requiredCheckCount: 'unavailable',
+        requiredChecksSatisfied: 'unavailable',
+      },
+      fx.deps,
+    );
     const target = join(
       generationRoot(fx, generationId),
       'gate-observations',
@@ -1704,7 +1723,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
     `${canonicalizeJson({ ...state, generationState: 'review', nextWorkflowOrdinal: 4 })}\n`,
   );
   const record = (cohort, ordinal, duration, corrections) => ({
-    schema: 1,
+    schema: 2,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `cap-${ordinal}` }),
@@ -1726,6 +1745,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
         fallback: 'none',
         escalated: false,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
+        attempt: 'started',
       },
     ],
     validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -1822,7 +1842,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   const { generationId } = await beginBaseline(fx);
   const generation = generationRoot(fx, generationId);
   const record = (ordinal) => ({
-    schema: 1,
+    schema: 2,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1847,6 +1867,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
         fallback: ordinal === 6 ? 'spawn-rejected' : 'none',
         escalated: ordinal === 6,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
+        attempt: 'started',
       },
     ],
     validation:
@@ -2008,7 +2029,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
       for (let index = 0; index < 5; index += 1) {
         const subsetMember = completionStatus === 'completed' || completionStatus === 'failed';
         const value = {
-          schema: 1,
+          schema: 2,
           kind: 'workflow-record',
           runId: opaqueId(cohort === 'baseline' ? 70 : 71, ordinal),
           workflowCapabilityHash: canonicalDigest({ capability: `ratio-${ordinal}` }),
@@ -2026,15 +2047,24 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
               selectedProfile: cohort === 'baseline' || !subsetMember ? 'quality' : 'fast',
               wouldBeFastEligible: subsetMember,
               firstGateReason: subsetMember ? null : 'profile-unavailable',
-              implementationDuration: { status: 'available', milliseconds: 100 },
               fallback: 'none',
               escalated: false,
-              costProxy: {
-                status: 'available',
-                kind: 'executor-unit',
-                unit: 'microcredit',
-                value: '10',
-              },
+              ...(completionStatus === 'abandoned'
+                ? {
+                    implementationDuration: { status: 'unavailable' },
+                    costProxy: { status: 'unavailable' },
+                    attempt: 'unknown',
+                  }
+                : {
+                    implementationDuration: { status: 'available', milliseconds: 100 },
+                    costProxy: {
+                      status: 'available',
+                      kind: 'executor-unit',
+                      unit: 'microcredit',
+                      value: '10',
+                    },
+                    attempt: 'started',
+                  }),
             },
           ],
           validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -2215,7 +2245,7 @@ test('evaluation applies metric minima to actual validation contributors', async
     for (let index = 0; index < 20; index += 1) {
       const runId = Buffer.alloc(24, ordinal).toString('base64url');
       const record = {
-        schema: 1,
+        schema: 2,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `minimum-${ordinal}` }),
@@ -2242,6 +2272,7 @@ test('evaluation applies metric minima to actual validation contributors', async
               unit: 'microcredit',
               value: '10',
             },
+            attempt: 'started',
           },
         ],
         validation:
@@ -2301,7 +2332,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
       const unit =
         index < 10 ? 'microcredit' : cohort === 'baseline' ? 'baseline-credit' : 'pilot-credit';
       const record = {
-        schema: 1,
+        schema: 2,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `cost-group-${ordinal}` }),
@@ -2328,6 +2359,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
               unit,
               value: '10',
             },
+            attempt: 'started',
           },
         ],
         validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },

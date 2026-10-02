@@ -110,6 +110,8 @@ base-branch-resolution
   branch deleted after its merge — would resolve no base at all.
 - **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
 - **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 9.
+- **Creation-only lines,** applied only when step 8 finds no match: `Draft: requested` sets `draft: true` on `pr-create`, and step 6 aborts when the probe lacks `pullRequestDraftCreate`; `Plan marker: <marker line>` places that exact line as its own body line after the prose.
+- **Finalize plan draft:** `Finalize plan draft: <PR number>`, the verified plan pull request whose draft step 8's plan draft finish completes.
 
 ## Approach
 
@@ -231,19 +233,37 @@ base-branch-resolution
    `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
    abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
-   normalized details using both `head === <head-branch>` and `base === <base-branch>`, where
-   `<base-branch>` is the resolved local base branch and never the resolved base ref, and require
-   state `open` and a parseable URL. The helper owns the provider-specific GitHub and
-   Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
+   normalized details using `head === <head-branch>`, `base === <base-branch>`, and
+   `sameRepository === true`, where `<base-branch>` is the resolved local base branch and never
+   the resolved base ref, and require state `open` and a parseable URL. An item matching head and
+   base without `sameRepository` is hydrated the same way; still absent, it aborts the lookup as
+   incomplete output. `false` is never hydrated or matched, so a fork's pull request with the same
+   head name neither matches nor counts as a duplicate. The helper owns
+   the provider-specific GitHub and Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
    pagination; do not bypass it with guessed `gh` or `tea` flags.
    - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
      and description, do not invoke `pr-create` or any metadata mutation, skip steps 9 and 10, and
-     continue with the shared restoration and reporting path in steps 11 and 12.
-   - **No exact match:** Continue with title/description derivation and PR creation. An open PR
-     for the same head but a different base, as well as a closed or merged PR, is not a match.
+     continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below.
+   - **Plan draft finish:** `P` is the match's valid `planPrMarker` path, `A` its archive path; each reaches a command only as one single-quoted literal argument (a `'` inside written as `'\''`), never unquoted.
+     It applies when a supplied `Finalize plan draft:` number equals the match's; there a differing
+     number or a missing marker refuses the finish and is reported. On a direct invocation without
+     that line (recovery), it applies to a draft whose head tracks `A` and not `P`:
+     `git -C <execution-root> ls-tree --name-only -z <head OID> -- ':(literal)<P>' ':(literal)<A>'` lists only `A`. The
+     match proves open, same repository, and exact base. Require implementation evidence:
+     `git -C <execution-root> diff --name-only -z --no-renames <merge-base> <head OID>`, from the
+     merge base of step 4's diff base and the head, lists a path other than `P` and `A`. Then run
+     step 9 for it, read the body fresh through `pr-read`, hash it with `body-hash`, and apply, each
+     dry run first: `pr-update-title` with the derived title; the hash-guarded `pr-update-body` with
+     the derived body plus the unchanged marker line as its own line; then `pr-mark-ready`, skipped
+     when it is no longer a draft. On Forgejo, only while it is a draft, the body update runs first and
+     `pr-mark-ready` with `payload.title` replaces `pr-update-title` as the final, combined edit; otherwise
+     `pr-update-title` runs on its own. Ready is always the last mutation, so any failure leaves a draft:
+     stop at the first failure, and the report names the step. The finish completes before the caller's PR review publication.
+   - **No exact match:** Continue with title/description derivation and PR creation; with `Finalize plan draft:` supplied,
+     stop before `pr-create` instead and report that number. An open PR for the same head but a different base, as well as a closed or merged PR, is not a match.
    - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear
      diagnostic and abort without attempting PR creation or guessing which PR to use.
-9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. A forge issue-reference keyword carried in a supplied reference — the auto-close keyword with its variants, or the non-closing `Refs` — is a machine token the code host parses: keep it in English whatever `language.forge` resolves to, never translated. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
+9. **Derive the PR title and description for a new PR or the plan draft finish (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. A forge issue-reference keyword carried in a supplied reference — the auto-close keyword with its variants, or the non-closing `Refs` — is a machine token the code host parses: keep it in English whatever `language.forge` resolves to, never translated. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
    **Hidden mode** (`visibility: hidden` from the local configuration `.effective-flow/project-setup.md` of the main checkout, config locator step 0): reference **no** plan file, and let neither the title nor the body contain a path under `.effective-flow/` or name Effective Flow (`effective-flow`, `Effective Flow`). Derive both from the changes alone.
 
@@ -271,9 +291,11 @@ base-branch-resolution
 11. **Reverify the published head:** Require the local head branch still resolves to the verified
     OID and report any unexpected ref movement. Never switch or otherwise restore a checkout: this
     tool did not create or change one. Preserve the PR head branch locally and remotely.
-12. **Report the result:** Output the PR URL, head and base branches, and verified head OID. Emit the
-    next-step block per `next-steps` as the last element of that report, unless the caller passed
-    the literal line `Next steps: suppressed`.
+12. **Report the result:** Output the PR URL, head and base branches, verified head OID, and
+    `result: created | reused`, where a match of step 10's `mutationMayHaveSucceeded` lookup counts
+    as `created`. After a plan draft finish, add one line: finished, with title and URL, or still a
+    draft, naming the failed step. Emit the next-step block per `next-steps` as the last element of
+    that report, unless the caller passed the literal line `Next steps: suppressed`.
 
 ## Rules
 

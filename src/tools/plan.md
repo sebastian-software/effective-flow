@@ -1,6 +1,6 @@
 ---
 description: "Routes explicit issue references to {{SKILL:plan-issue}} and otherwise creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Records the classified implementation workflow in the plan header, so the implementing run reads it from there."
-catalogHint: "Routes issue references to issue planning or writes an actionable local plan – without code."
+catalogHint: "Routes issue references to issue planning or writes an actionable local plan – without code – and can publish it."
 ---
 
 # Effective Flow Plan
@@ -102,6 +102,8 @@ when: the run reaches its completion report
 - In the local-plan path, only analysis, follow-up questions, and documentation changes under
   `<plan.dir>/` are allowed.
 - Creating `<plan.dir>/` is allowed if the directory is missing.
+- Phase 7 publication is the one exception: a temporary worktree, the plan branch, its push, and the
+  draft pull request are the only state this tool may create outside `<plan.dir>/`.
 - Changes to source code, tests, configuration, build files, README files, ADRs, and other project files outside `<plan.dir>/` are forbidden.
 - Implementer, test, validator, or reviewer phases that could generate or modify code are forbidden.
 - The plan itself should contain as little code as possible, or none. Describe the desired changes in natural language, with file references, interface names, data shapes, and acceptance criteria instead of complete code blocks.
@@ -189,16 +191,18 @@ On a revision run:
   where it lies.
 - **Ask everything before the move; after the move, only write.** Every question this revision owes
   the user — the revision question above, and the unclear-status confirmation below — is asked and
-  answered before the plan is moved, and no question is posed once it has been. This is the general
-  rule the two orderings above are instances of, and it is what makes a decline safe at every point:
-  before the move a decline changes nothing because nothing has been written, and after the move
-  there is nothing left to decline. Posing the unclear-status question after the move would leave
+  answered before the plan is moved, and no question is posed once it has been. The exceptions are
+  Phase 6b's deep-review question and the Phase 7 publication question: this revision does not owe
+  them, so they follow the move. This is the general rule the two orderings above are instances
+  of, and it is what makes a decline safe at every point: before the move a decline changes nothing
+  because nothing has been written, and declining either question after the move leaves the moved
+  plan valid. Posing the unclear-status question after the move would leave
   the declining user a plan sitting in `<plan.dir>/` without a valid status marker — visible only
   in `{{SKILL:open-plans}}`'s status-unclear list rather than among the open plans, and answering
   the same question again on the next `{{SKILL:apply}}`.
-- Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
-  commit, so a staged rename would sit in the user's index until some later, unrelated commit
-  swept it up. Nothing depends on the move being staged: `{{SKILL:open-plans}}` lists the top level
+- Perform that move back as a **plain filesystem move**, never with `git mv`. This run commits
+  nothing from the user's checkout, so a staged rename would sit in the user's index until some
+  later, unrelated commit swept it up. Nothing depends on the move being staged: `{{SKILL:open-plans}}` lists the top level
   of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
   `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
   moment the file lands at its new path.
@@ -506,7 +510,10 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 
 1. Write the plan file.
 2. Format only the new plan file if a formatter for Markdown is clearly configured; then rerun the Phase 5 mechanical check on the final file, now including the review placeholders.
-3. Report to the user:
+3. **Publication.** When the `plan-publication` pointer below applies, run that contract, handing
+   it the plan file's absolute and repository-relative paths, this run's state (`interactive` or
+   `non-interactive`), and the calling workflow `plan`. Run the worktree-record exit self-check.
+4. Report to the user:
    - the path of the created plan file
    - a brief summary of the planned approach
    - the recommended workflow with rationale
@@ -515,18 +522,29 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - on a revision run: that the existing file was revised in place, plus every confirmed header change
    - on a revision run that brought a plan back from `<plan.dir>/archive/`: the unstaged move and
      its Git effect, per the revision-mode reporting rule of Phase 1
-4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   - the publication line, when the publication contract was loaded
+5. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
    returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
    not the ready one — implementation comes after those points are closed.
+
+```lazy-include
+plan-publication
+when: Phase 7 step 2 passed and the resolved `delivery.completion` is `pr`, `null`, or an invalid value
+```
+
+```include
+worktree-record-obligation
+```
 
 ## Rules
 
 - Do not start any implementation phase.
 - Do not run any tests that could change project files.
-- Do not create any commits.
-- Do not stage anything or otherwise write to the Git index. The revision-mode move back
-  from `<plan.dir>/archive/` is the one file move this tool performs, and it is a plain
-  filesystem move for that reason — this tool has no step that would ever commit a staged
-  rename it left behind.
+- Do not create any commits, except the plan commit that Phase 7 publication makes in its own
+  temporary worktree.
+- Do not stage anything in the user's checkout or otherwise write to its Git index; publication
+  stages only in its temporary worktree. The revision-mode move back from `<plan.dir>/archive/` is
+  therefore a plain filesystem move: nothing commits from the user's checkout, so a staged rename
+  left there would ride along with some later, unrelated commit.
 - Give the user a brief status update after each phase.
 - If the plan would not be reliable due to missing information, ask instead of guessing.

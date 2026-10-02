@@ -300,9 +300,29 @@ test('a crash leaves incomplete evidence, then unavailable timing can be reconci
     controlledDeps(clock(5_000_000, 2_500, 80_000_000_000n)),
   );
 
+  // A completed run whose receipt is still started is a mid-write fault: it persists
+  // finalization-failed for this run instead of failing silently.
   await assert.rejects(
     executeOperation('finalize', finishWorkflowInput(fixture, packet), { runner: realRunner }),
-    (error) => error.code === 'INCOMPLETE_EVIDENCE',
+    (error) =>
+      error.code === 'INCOMPLETE_EVIDENCE' &&
+      error.pilotControlOutcome === 'finalization-failed' &&
+      error.controlStatePersisted === true &&
+      error.alert === 'none',
+  );
+  const generation = join(
+    fixture.root,
+    '.effective-flow',
+    'model-tiering-pilot',
+    'generations',
+    fixture.generationId,
+  );
+  const suspension = JSON.parse(readFileSync(join(generation, 'suspension.json'), 'utf8'));
+  assert.deepEqual(suspension.reasons, ['finalization-failed']);
+  assert.deepEqual(suspension.affectedRecordIds, [fixture.runId]);
+  assert.equal(
+    JSON.parse(readFileSync(join(generation, 'state.json'), 'utf8')).generationState,
+    'suspended',
   );
 
   const closed = await executeOperation(
@@ -312,21 +332,148 @@ test('a crash leaves incomplete evidence, then unavailable timing can be reconci
   );
   assert.deepEqual(closed.result.duration, { status: 'unavailable' });
   await executeOperation('finalize', finishWorkflowInput(fixture, packet), { runner: realRunner });
-
-  const recordPath = join(
-    fixture.root,
-    '.effective-flow',
-    'model-tiering-pilot',
-    'generations',
-    fixture.generationId,
-    'records',
-    `${fixture.runId}.json`,
+  // The retry drains the record, but the generation stays suspended until an explicit resume.
+  assert.equal(
+    JSON.parse(readFileSync(join(generation, 'state.json'), 'utf8')).generationState,
+    'suspended',
   );
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(generation, 'suspension.json'), 'utf8')),
+    suspension,
+  );
+
+  const recordPath = join(generation, 'records', `${fixture.runId}.json`);
   const record = JSON.parse(readFileSync(recordPath, 'utf8'));
   assert.deepEqual(record.packets[0].implementationDuration, { status: 'unavailable' });
   assert.equal(
     readdirSync(join(recordPath, '..')).some((name) => name.endsWith('.timing.json')),
     false,
+  );
+});
+
+test('an aborted or failed run records each packet attempt from its receipt', async (t) => {
+  for (const completionStatus of ['aborted', 'failed']) {
+    await t.test(completionStatus, async (t) => {
+      const fixture = await workflowFixture(t, 3);
+      const [missing, started, finished] = fixture.packets;
+      await executeOperation(
+        'start-packet',
+        timingInput(fixture, started),
+        controlledDeps(clock(7_000_000, 3_500, 100_000_000_000n)),
+      );
+      await executeOperation(
+        'start-packet',
+        timingInput(fixture, finished),
+        controlledDeps(clock(7_000_000, 3_500, 100_000_000_001n)),
+      );
+      await executeOperation(
+        'finish-packet',
+        timingInput(fixture, finished),
+        controlledDeps(clock(7_000_250, 3_500.25, 100_250_000_001n)),
+      );
+      const input = {
+        ...finishWorkflowInput(fixture, missing),
+        packets: fixture.packets.map((packet) => ({
+          packetId: packet.packetId,
+          packetCapability: packet.packetCapability,
+          fallback: 'none',
+          escalated: false,
+          costProxy: null,
+        })),
+        completionStatus,
+      };
+      const generation = join(
+        fixture.root,
+        '.effective-flow',
+        'model-tiering-pilot',
+        'generations',
+        fixture.generationId,
+      );
+      const records = join(generation, 'records');
+
+      // A caller outcome for a packet that never started is a caller error and never suspends.
+      await assert.rejects(
+        executeOperation(
+          'finalize',
+          {
+            ...input,
+            packets: input.packets.map((packet, index) =>
+              index === 0
+                ? {
+                    ...packet,
+                    costProxy: { kind: 'executor-unit', unit: 'microcredit', value: '1' },
+                  }
+                : packet,
+            ),
+          },
+          { runner: realRunner },
+        ),
+        (error) =>
+          error.code === 'INVALID_PAYLOAD' &&
+          error.pilotControlOutcome === 'none' &&
+          error.controlStatePersisted === false,
+      );
+      assert.equal(existsSync(join(generation, 'suspension.json')), false);
+      assert.equal(readdirSync(records).filter((name) => name.endsWith('.timing.json')).length, 2);
+
+      await executeOperation('finalize', input, { runner: realRunner });
+      const record = JSON.parse(readFileSync(join(records, `${fixture.runId}.json`), 'utf8'));
+      assert.equal(record.completionStatus, completionStatus);
+      assert.deepEqual(
+        record.packets.map(({ attempt, implementationDuration, costProxy }) => ({
+          attempt,
+          implementationDuration,
+          costProxy,
+        })),
+        [
+          {
+            attempt: 'not-started',
+            implementationDuration: { status: 'unavailable' },
+            costProxy: { status: 'unavailable' },
+          },
+          {
+            attempt: 'started',
+            implementationDuration: { status: 'unavailable' },
+            costProxy: { status: 'unavailable' },
+          },
+          {
+            attempt: 'started',
+            implementationDuration: { status: 'available', milliseconds: 250 },
+            costProxy: { status: 'unavailable' },
+          },
+        ],
+      );
+      assert.deepEqual(
+        readdirSync(records).filter((name) => name.endsWith('.timing.json')),
+        [],
+      );
+      assert.equal(existsSync(join(generation, 'suspension.json')), false);
+    });
+  }
+});
+
+test('a completed run without a receipt fails as a mid-write fault and suspends', async (t) => {
+  const fixture = await workflowFixture(t);
+  const packet = fixture.packets[0];
+  await assert.rejects(
+    executeOperation('finalize', finishWorkflowInput(fixture, packet), { runner: realRunner }),
+    (error) =>
+      error.code === 'NOT_FOUND' &&
+      error.pilotControlOutcome === 'finalization-failed' &&
+      error.controlStatePersisted === true,
+  );
+  const generation = join(
+    fixture.root,
+    '.effective-flow',
+    'model-tiering-pilot',
+    'generations',
+    fixture.generationId,
+  );
+  const suspension = JSON.parse(readFileSync(join(generation, 'suspension.json'), 'utf8'));
+  assert.deepEqual(suspension.reasons, ['finalization-failed']);
+  assert.equal(
+    JSON.parse(readFileSync(join(generation, 'records', `${fixture.runId}.json`), 'utf8')).kind,
+    'workflow-reservation',
   );
 });
 

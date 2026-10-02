@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.0.0';
+export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.1.0';
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -143,7 +143,7 @@ const limits = {
 };
 
 const aggregation = {
-  algorithmVersion: 1,
+  algorithmVersion: 2,
   groupingVersion: 1,
   exactRationalVersion: 1,
   suppressionMinimum: 5,
@@ -157,17 +157,26 @@ const aggregation = {
 };
 
 const metricRegistry = {
+  packetInclusion: {
+    started: 'counted in every packet metric',
+    notStarted: 'excluded from every packet metric and counted only in attemptOutcomes',
+    unknown:
+      'counted in packet, eligibility, attempted-Fast, fallback-outcome, and cost-unavailable counts; never a success; excluded from cost groups and duration',
+  },
+  attemptOutcomes: {
+    value: 'closed packet counts by attempt: started, not-started, unknown',
+  },
   attemptedFastPackets: {
     numerator: 'packets with selectedProfile fast and fallback none',
-    denominator: 'all packets with a consumed Fast attempt',
+    denominator: 'all packets with a consumed Fast attempt and attempt other than not-started',
   },
   fastWithoutEscalation: {
-    numerator: 'attempted-Fast packets without escalation',
-    denominator: 'all attempted-Fast packets',
+    numerator: 'attempted-Fast packets with attempt started and without escalation',
+    denominator: 'all attempted-Fast packets with attempt started or unknown',
   },
   fallbackRate: {
     numerator: 'attempted-Fast packets with fallback other than none',
-    denominator: 'all attempted-Fast packets',
+    denominator: 'all attempted-Fast packets with attempt started or unknown',
   },
   workflowCompletion: {
     numerator: 'terminal workflow records completed',
@@ -190,12 +199,12 @@ const metricRegistry = {
     denominator: 'completed observations grouped by mode and harness',
   },
   duration: {
-    value: 'bounded integer milliseconds for continuity-valid packet intervals',
-    unavailable: 'closed packet intervals without continuity proof',
+    value: 'bounded integer milliseconds for continuity-valid intervals of started packets',
+    unavailable: 'closed started-packet intervals without continuity proof',
   },
   cost: {
     value: 'canonical unsigned decimal totals grouped by compatible kind and unit',
-    unavailable: 'missing, incompatible, or unsupported attempt proxy',
+    unavailable: 'missing, incompatible, or unsupported attempt proxy, or attempt unknown',
   },
 };
 
@@ -280,6 +289,7 @@ const protocolSource = deepFreeze({
     observationModes: ['merge', 'report'],
     observationOutcomes: ['merged', 'reported-ready', 'reported-blocked', 'failed'],
     completionStatuses: ['completed', 'aborted', 'failed', 'abandoned'],
+    packetAttempts: ['started', 'not-started', 'unknown'],
     validationStatuses: ['passed', 'failed', 'not-required', 'unavailable'],
     reviewStatuses: ['completed', 'not-run', 'unavailable'],
     requirementStatuses: ['completed', 'incomplete', 'not-applicable'],

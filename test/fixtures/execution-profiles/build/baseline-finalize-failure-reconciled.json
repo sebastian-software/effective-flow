@@ -1,0 +1,75 @@
+{
+  "name": "A rejected finalize suspends nothing, and a confirmed same-run reconciliation records every packet unknown",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "finalizeResult": "rejected",
+  "finalizeControl": {
+    "pilotControlOutcome": "none",
+    "controlStatePersisted": false,
+    "alert": "none"
+  },
+  "reconcileAnswer": "Reconcile",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "activation": "not-ready:window,sample",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize",
+      "inventory",
+      "reconcile-record"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "unknown"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": [
+      {
+        "kind": "control",
+        "operation": "finalize",
+        "pilotControlOutcome": "none",
+        "report": "none"
+      }
+    ]
+  }
+}

@@ -31,7 +31,7 @@ export const TRACKER_STUB_SKILL_PATH = 'scripts/remote-tracker.mjs';
 // under test sees, and only the suite knows which tool that is. Everything below them — the seeded
 // README, the ignore file and the git history the checkout needs to look like a checkout — is the
 // same for any suite and stays here.
-function writeProject(suite, projectRoot, scenario, fixture, projectSetupRows) {
+export function writeProject(suite, projectRoot, scenario, fixture, projectSetupRows) {
   const { agents, setupAdr } = suite.projectDocuments({ scenario, rows: projectSetupRows });
 
   mkdirSync(resolve(projectRoot, 'docs', 'adr'), { recursive: true });
@@ -57,6 +57,14 @@ function writeProject(suite, projectRoot, scenario, fixture, projectSetupRows) {
   );
   git('add', '--all');
   git('commit', '--quiet', '--message', 'chore: seed the eval sandbox checkout');
+
+  // Whatever else a suite's runs need from the checkout's history, applied after the shared seed and
+  // never instead of it. `merge-gate` declares `null`: a gate run reads the forge through the stub
+  // and never fetches. A tool that fetches the pull-request head before it can decide anything —
+  // `iterate` does in its Phase 1 — needs an `origin` that answers, and only its suite knows which
+  // branches that answer has to carry. The hook is a binding in the suite configuration, which is
+  // hashed, so re-pointing it stales the archive like any other binding.
+  if (suite.prepareCheckout) suite.prepareCheckout({ scenario, fixture, projectRoot });
 }
 
 export function provisionSlot(

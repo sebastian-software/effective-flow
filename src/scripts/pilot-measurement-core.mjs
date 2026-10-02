@@ -37,6 +37,7 @@ export const PILOT_MEASUREMENT_OPERATIONS = Object.freeze([
   'start-gate-observation',
   'finalize-gate-observation',
   'suspend',
+  'record-incident',
   'resume',
   'reconcile-record',
   'reconcile-lock',
@@ -101,7 +102,7 @@ const ERROR_MESSAGES = Object.freeze({
 
 const OWNER = Object.freeze({ schema: 1, owner: 'effective-flow-model-tiering-pilot' });
 const STATE_SCHEMA = 1;
-const RECORD_SCHEMA = 1;
+const RECORD_SCHEMA = 2;
 const TRACE_SCHEMA = 1;
 const OBSERVATION_SCHEMA = 1;
 const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
@@ -120,6 +121,7 @@ const LIFECYCLE_LOCK_OPERATIONS = new Set([
   'start-gate-observation',
   'finalize-gate-observation',
   'suspend',
+  'record-incident',
   'begin-review',
   'resume',
   'reconcile-record',
@@ -127,6 +129,55 @@ const LIFECYCLE_LOCK_OPERATIONS = new Set([
   'purge',
   'discard-generation',
 ]);
+// Every suspension reason the protocol defines may leave a transition marker behind, and each of
+// them bypasses the raw-capacity check so a suspension can still be written at the capacity limit.
+const SUSPENSION_REASONS = Object.freeze([
+  ...new Set(
+    PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings
+      .map(({ suspensionReason }) => suspensionReason)
+      .filter((reason) => reason !== 'none'),
+  ),
+]);
+const TRANSITION_MARKER_OPERATIONS = new Set([...SUSPENSION_REASONS, 'suspend', 'resume']);
+const CAPACITY_EXEMPT_OPERATIONS = new Set([...SUSPENSION_REASONS, 'suspend']);
+// Temporary file names embed the writing operation. These names are fixed by the helper and the
+// protocol rather than supplied by a caller, so they are checked against this closed set instead
+// of the credential screen that applies to caller tokens: `critical-authorization-incident` would
+// otherwise read as credential material.
+const WRITE_OPERATIONS = new Set([
+  ...LIFECYCLE_LOCK_OPERATIONS,
+  ...TRANSITION_MARKER_OPERATIONS,
+  'begin-baseline',
+  'start-packet',
+  'finish-packet',
+  'namespace-lock',
+  'namespace-init-lock',
+]);
+// Incident categories map to their protocol outcome here, so no caller ever names the outcome.
+const INCIDENT_OUTCOMES = Object.freeze({
+  safety: 'critical-safety-incident',
+  'data-integrity': 'critical-data-integrity-incident',
+  authorization: 'critical-authorization-incident',
+  scope: 'critical-scope-incident',
+});
+const INCIDENT_OUTCOME_SET = new Set(Object.values(INCIDENT_OUTCOMES));
+for (const outcome of INCIDENT_OUTCOME_SET) {
+  if (!SUSPENSION_REASONS.includes(outcome)) {
+    throw new Error(`incident outcome ${outcome} is not a protocol suspension reason`);
+  }
+}
+// Codes that leave the pilot untouched when finalization or a gate observation fails: caller
+// errors, lock contention, location and version faults, and a missing generation or record.
+const CONTROL_NEUTRAL_CODES = new Set([
+  'INVALID_PAYLOAD',
+  'AUTHENTICATION_FAILED',
+  'LOCKED',
+  'UNSAFE_RUNTIME_ROOT',
+  'MIGRATION_REQUIRED',
+  'PROTOCOL_DRIFT',
+  'NOT_FOUND',
+]);
+const RECEIPT_FAULT = Symbol('pilot-measurement-receipt-fault');
 
 export class PilotMeasurementError extends Error {
   constructor(code, options = {}) {
@@ -181,6 +232,11 @@ function stringValue(value, maximum = PILOT_MEASUREMENT_PROTOCOL.limits.maxToken
   if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value) > maximum) {
     fail('INVALID_PAYLOAD');
   }
+  return value;
+}
+
+function writeOperationName(value) {
+  if (!WRITE_OPERATIONS.has(value) || !/^[a-z0-9-]+$/.test(value)) fail('INVALID_PAYLOAD');
   return value;
 }
 
@@ -665,33 +721,56 @@ function generationPath(context, generationId) {
   return path.join(context.namespace, 'generations', generationId);
 }
 
-async function regularFileSize(target, { missing = false } = {}) {
-  const info = await lstat(target).catch((error) =>
-    missing && error?.code === 'ENOENT' ? null : Promise.reject(error),
-  );
-  if (info === null) return null;
+async function regularFileSize(target, { missing = false } = {}, deps = {}) {
+  let info;
+  try {
+    info = await (deps.lstat ?? lstat)(target);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      if (missing) return null;
+      fail('NOT_FOUND', { cause: error });
+    }
+    fail('UNSAFE_STORAGE', { cause: error });
+  }
   if (info.isSymbolicLink() || !info.isFile()) fail('UNSAFE_STORAGE');
   return info.size;
 }
 
-async function rawTreeBytes(root) {
+// Sums the raw bytes below a generation. Packet writers publish their temporaries concurrently
+// (link, then unlink), so an entry that vanishes between listing and lstat, or a nested directory
+// that vanishes before it is listed, contributes nothing; every entry that still exists is counted.
+async function rawTreeBytes(root, deps = {}) {
   let total = 0;
-  async function visit(directory) {
-    for (const entry of await safeEntries(directory)) {
+  async function visit(directory, nested) {
+    if (!(await directoryState(directory))) {
+      if (nested) return;
+      fail('NOT_FOUND');
+    }
+    let entries;
+    try {
+      entries = await (deps.readdir ?? readdir)(directory, { withFileTypes: true });
+    } catch (error) {
+      if (nested && error?.code === 'ENOENT') return;
+      fail(error?.code === 'ENOENT' ? 'NOT_FOUND' : 'UNSAFE_STORAGE', { cause: error });
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) {
+        fail('UNSAFE_STORAGE');
+      }
       const target = path.join(directory, entry.name);
-      if (entry.isDirectory()) await visit(target);
+      if (entry.isDirectory()) await visit(target, true);
       else {
-        total += await regularFileSize(target);
+        total += (await regularFileSize(target, { missing: true }, deps)) ?? 0;
         if (!Number.isSafeInteger(total)) fail('CAPACITY_EXHAUSTED');
       }
     }
   }
-  await visit(root);
+  await visit(root, false);
   return total;
 }
 
 function capacityControlWrite(operation) {
-  return ['suspend', 'capacity-exhausted', 'evidence-gap'].includes(operation);
+  return CAPACITY_EXEMPT_OPERATIONS.has(operation);
 }
 
 async function atomicWrite(
@@ -711,7 +790,7 @@ async function atomicWrite(
   const nonce = randomOpaque(deps, 12);
   const temporary = path.join(
     path.dirname(target),
-    `.tmp-${token(operation)}-${generationId === 'namespace' ? 'namespace' : opaque(generationId)}-${ownerNonce}-${nonce}`,
+    `.tmp-${writeOperationName(operation)}-${generationId === 'namespace' ? 'namespace' : opaque(generationId)}-${ownerNonce}-${nonce}`,
   );
   await repositoryGuard(context.input, deps, { mutation: true });
   let handle;
@@ -731,8 +810,15 @@ async function atomicWrite(
   }
   if (generationId !== 'namespace' && !skipCapacity && !capacityControlWrite(operation)) {
     const root = generationPath(context, generationId);
-    const replacedBytes = (await regularFileSize(target, { missing: true })) ?? 0;
-    const projectedBytes = (await rawTreeBytes(root)) - replacedBytes;
+    let projectedBytes;
+    try {
+      const replacedBytes = (await regularFileSize(target, { missing: true }, deps)) ?? 0;
+      projectedBytes = (await rawTreeBytes(root, deps)) - replacedBytes;
+    } catch (error) {
+      await unlink(temporary).catch(() => {});
+      if (error instanceof PilotMeasurementError) throw error;
+      fail('UNSAFE_STORAGE', { cause: error });
+    }
     if (projectedBytes > PILOT_MEASUREMENT_PROTOCOL.limits.maxRawGenerationBytes) {
       await repositoryGuard(context.input, deps, { mutation: true });
       await unlink(temporary).catch(() => {});
@@ -843,6 +929,32 @@ function validateStagedLockRecord(value, generationId, temporaryName) {
     value.nonce !== identity.ownerNonce ||
     (!LIFECYCLE_LOCK_OPERATIONS.has(value.operation) &&
       !['start-packet', 'finish-packet'].includes(value.operation))
+  ) {
+    fail('UNSAFE_STORAGE');
+  }
+  return value;
+}
+
+// An unlocked control fallback stages its marker without a lock record; the staged marker proves
+// its own writer through the pid it carries.
+function validateStagedMarkerRecord(value, generationId, temporaryName) {
+  const identity = temporaryIdentity(temporaryName, generationId);
+  // Stored content that is no self-proving marker (such as a locked write's marker without a pid)
+  // is a storage mismatch, not a caller error.
+  try {
+    exactObject(value, ['schema', 'kind', 'generationId', 'operation', 'ownerNonce', 'ownerPid']);
+  } catch (error) {
+    fail('UNSAFE_STORAGE', { cause: error });
+  }
+  if (
+    value.schema !== 1 ||
+    value.kind !== 'suspension-transition' ||
+    value.generationId !== generationId ||
+    value.operation !== identity.operation ||
+    !SUSPENSION_REASONS.includes(value.operation) ||
+    value.ownerNonce !== identity.ownerNonce ||
+    !Number.isSafeInteger(value.ownerPid) ||
+    value.ownerPid <= 0
   ) {
     fail('UNSAFE_STORAGE');
   }
@@ -992,19 +1104,23 @@ async function transitionMarker(root) {
   exactObject(
     marker,
     ['schema', 'kind', 'generationId', 'operation', 'ownerNonce'],
-    ['expectedInventoryDigest', 'expectedSuspensionDigest', 'resumeTo'],
+    ['expectedInventoryDigest', 'expectedSuspensionDigest', 'resumeTo', 'ownerPid'],
   );
   if (
     marker.schema !== 1 ||
     marker.kind !== 'suspension-transition' ||
-    !['suspend', 'resume', 'evidence-gap', 'capacity-exhausted'].includes(marker.operation) ||
+    !TRANSITION_MARKER_OPERATIONS.has(marker.operation) ||
     !OPAQUE.test(marker.generationId) ||
     !OPAQUE.test(marker.ownerNonce) ||
     (marker.expectedInventoryDigest !== undefined &&
       !DIGEST.test(marker.expectedInventoryDigest)) ||
     (marker.expectedSuspensionDigest !== undefined &&
       !DIGEST.test(marker.expectedSuspensionDigest)) ||
-    (marker.resumeTo !== undefined && !['baseline', 'active'].includes(marker.resumeTo))
+    (marker.resumeTo !== undefined && !['baseline', 'active'].includes(marker.resumeTo)) ||
+    (marker.ownerPid !== undefined &&
+      (!Number.isSafeInteger(marker.ownerPid) ||
+        marker.ownerPid <= 0 ||
+        !SUSPENSION_REASONS.includes(marker.operation)))
   ) {
     fail('UNSAFE_STORAGE');
   }
@@ -1012,36 +1128,46 @@ async function transitionMarker(root) {
 }
 
 async function beginTransition(context, root, generationId, operation, deps, extra = {}) {
-  const current = await transitionMarker(root);
-  if (current !== null) {
-    const comparable = { ...current };
-    delete comparable.ownerNonce;
-    const requested = {
-      schema: 1,
-      kind: 'suspension-transition',
-      generationId,
-      operation,
-      ...extra,
-    };
-    if (canonicalizeJson(comparable) !== canonicalizeJson(requested)) fail('INVALID_STATE');
-    return current;
-  }
-  const marker = {
+  const requested = {
     schema: 1,
     kind: 'suspension-transition',
     generationId,
     operation,
-    ownerNonce: context.activeLock?.nonce ?? randomOpaque(deps, 24),
     ...extra,
   };
-  await atomicWrite(
-    context,
-    path.join(root, 'suspension-transition.json'),
-    marker,
-    operation,
-    generationId,
-    deps,
-  );
+  // An existing marker is reused only when it describes this very transition.
+  const reuse = (current) => {
+    const comparable = { ...current };
+    delete comparable.ownerNonce;
+    delete comparable.ownerPid;
+    if (canonicalizeJson(comparable) !== canonicalizeJson(requested)) fail('INVALID_STATE');
+    return current;
+  };
+  const current = await transitionMarker(root);
+  if (current !== null) return reuse(current);
+  const marker = {
+    ...requested,
+    ownerNonce: context.activeLock?.nonce ?? randomOpaque(deps, 24),
+  };
+  // Publish exclusively: a marker the unlocked fallback created after the read above must survive.
+  // An identical one is adopted and completed here; any other fails and is rolled forward later.
+  try {
+    await atomicWrite(
+      context,
+      path.join(root, 'suspension-transition.json'),
+      marker,
+      operation,
+      generationId,
+      deps,
+      undefined,
+      { noReplace: true, existsCode: 'INVALID_STATE' },
+    );
+  } catch (error) {
+    if (!(error instanceof PilotMeasurementError) || error.code !== 'INVALID_STATE') throw error;
+    const published = await transitionMarker(root);
+    if (published === null) throw error;
+    return reuse(published);
+  }
   return marker;
 }
 
@@ -1070,16 +1196,31 @@ function assertEvidenceHealthy(context, evidence) {
   if (evidence.locks.some(({ nonce }) => nonce !== currentNonce)) fail('UNSAFE_STORAGE');
 }
 
-async function assertAdmissionOpen(context, evidence) {
+async function admissionClosed(evidence) {
   const transition = await transitionMarker(evidence.root);
-  if (
+  return (
     evidence.suspension !== null ||
     transition !== null ||
     !['baseline', 'active'].includes(evidence.state.generationState)
-  ) {
-    fail('INVALID_STATE');
-  }
+  );
+}
+
+async function assertAdmissionOpen(context, evidence) {
+  if (await admissionClosed(evidence)) fail('INVALID_STATE');
   assertEvidenceHealthy(context, evidence);
+}
+
+// Busy means another run's reservation, packet timing, or observation is still open while the
+// evidence is otherwise sound. A crashed run's reservation is indistinguishable from a live one
+// and stays busy until reconcile-record resolves it.
+function evidenceBusy(evidence) {
+  return (
+    evidence.invalidMembers.length === 0 &&
+    evidence.orphanTemporaries.length === 0 &&
+    (evidence.incompleteRecords.length > 0 ||
+      evidence.incompleteTimings.length > 0 ||
+      evidence.incompleteObservations.length > 0)
+  );
 }
 
 async function loadState(context, generationId) {
@@ -1268,7 +1409,16 @@ async function safeEntries(directory, { missing = false } = {}) {
     if (missing) return [];
     fail('NOT_FOUND');
   }
-  const entries = await readdir(directory, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      if (missing) return [];
+      fail('NOT_FOUND', { cause: error });
+    }
+    fail('UNSAFE_STORAGE', { cause: error });
+  }
   for (const entry of entries) {
     if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) fail('UNSAFE_STORAGE');
   }
@@ -1372,7 +1522,16 @@ function validateStoredReservationPacket(value, generationState) {
   return value;
 }
 
-function validateStoredFinalPacket(value, generationState) {
+// A completed run started every packet; an aborted or failed run started a packet only when its
+// receipt existed; a reconciled (abandoned) run cannot tell, so every packet is unknown.
+const ATTEMPTS_BY_COMPLETION = Object.freeze({
+  completed: ['started'],
+  aborted: ['started', 'not-started'],
+  failed: ['started', 'not-started'],
+  abandoned: ['unknown'],
+});
+
+function validateStoredFinalPacket(value, generationState, completionStatus) {
   exactObject(value, [
     'packetId',
     'selectedProfile',
@@ -1382,8 +1541,11 @@ function validateStoredFinalPacket(value, generationState) {
     'fallback',
     'escalated',
     'costProxy',
+    'attempt',
   ]);
   opaque(value.packetId);
+  const attempt = enumValue(value.attempt, PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts);
+  if (!ATTEMPTS_BY_COMPLETION[completionStatus]?.includes(attempt)) fail('INVALID_PAYLOAD');
   const firstReason =
     value.firstGateReason === null
       ? null
@@ -1410,6 +1572,15 @@ function validateStoredFinalPacket(value, generationState) {
     fail('INVALID_PAYLOAD');
   }
   validateStoredCost(value.costProxy);
+  if (
+    attempt !== 'started' &&
+    (value.implementationDuration.status !== 'unavailable' ||
+      fallback !== 'none' ||
+      escalated ||
+      value.costProxy.status !== 'unavailable')
+  ) {
+    fail('INVALID_PAYLOAD');
+  }
   return value;
 }
 
@@ -1467,9 +1638,12 @@ function validateStoredWorkflow(value, generationId, runId) {
     if (value.packets.length > PILOT_MEASUREMENT_PROTOCOL.limits.maxPacketsPerWorkflow) {
       fail('CAPACITY_EXHAUSTED');
     }
+    const completionStatus = reservation
+      ? null
+      : enumValue(value.completionStatus, PILOT_MEASUREMENT_PROTOCOL.enums.completionStatuses);
     for (const packet of value.packets) {
       if (reservation) validateStoredReservationPacket(packet, value.generationState);
-      else validateStoredFinalPacket(packet, value.generationState);
+      else validateStoredFinalPacket(packet, value.generationState, completionStatus);
     }
     if (new Set(value.packets.map(({ packetId }) => packetId)).size !== value.packets.length) {
       fail('INVALID_PAYLOAD');
@@ -1480,7 +1654,6 @@ function validateStoredWorkflow(value, generationId, runId) {
     if (!reservation) {
       validateValidation(value.validation);
       validateReview(value.review);
-      enumValue(value.completionStatus, PILOT_MEASUREMENT_PROTOCOL.enums.completionStatuses);
       integer(value.qualityCorrectionRounds, 10_000);
       booleanValue(value.detailTrace);
     }
@@ -1915,6 +2088,7 @@ async function evidenceInventory(context, generationId) {
     root,
     state,
     suspension,
+    transition,
     locks,
     invalidMembers,
     workflows,
@@ -1996,6 +2170,7 @@ async function inventoryOperation(input, deps) {
     incompleteCounts: evidence.inventory.incompleteCounts,
     orphanTemporaries: evidence.orphanTemporaries,
     rawBytes: evidence.inventory.rawBytes,
+    transitionPending: evidence.transition !== null,
     normalTombstones,
     discardTombstones,
   };
@@ -2065,27 +2240,37 @@ async function beginBaseline(input, deps) {
 }
 
 async function activate(input, deps) {
-  commonInput(input, ['configState', 'protocolVersion', 'protocolDigest', 'confirmation']);
+  commonInput(input, ['configState', 'protocolVersion', 'protocolDigest']);
   enumValue(input.configState, ['enabled']);
-  if (!booleanValue(input.confirmation)) fail('INVALID_PAYLOAD');
   assertProtocol(input.protocolVersion, input.protocolDigest);
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'activate', deps, async () => {
     const evidence = await evidenceInventory(context, input.generationId);
-    await assertAdmissionOpen(context, evidence);
-    if (evidence.state.generationState !== 'baseline') fail('INVALID_STATE');
+    if ((await admissionClosed(evidence)) || evidence.state.generationState !== 'baseline') {
+      fail('INVALID_STATE');
+    }
+    const notReady = (unmet) => ({
+      status: 'not-ready',
+      generationId: input.generationId,
+      generationState: 'baseline',
+      unmet,
+    });
+    if (evidenceBusy(evidence)) return notReady(['busy']);
+    assertEvidenceHealthy(context, evidence);
     const elapsed = nowMs(deps) - Date.parse(evidence.state.baselineStartedAt);
     const records = evidence.workflows.filter(({ kind }) => kind === 'workflow-record');
     const eligiblePackets = records
       .filter((record) => record.cohort === 'baseline' && record.completionStatus === 'completed')
       .flatMap((record) => record.packets)
       .filter((packet) => packet.wouldBeFastEligible).length;
-    if (
-      elapsed < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * 86_400_000 ||
-      eligiblePackets < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum
-    ) {
-      fail('INCOMPLETE_EVIDENCE');
+    const unmet = [];
+    if (elapsed < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineWindowMinimumDays * 86_400_000) {
+      unmet.push('window');
     }
+    if (eligiblePackets < PILOT_MEASUREMENT_PROTOCOL.aggregation.baselineEligiblePacketMinimum) {
+      unmet.push('sample');
+    }
+    if (unmet.length > 0) return notReady(unmet);
     const next = { ...evidence.state, generationState: 'active', activatedAt: nowIso(deps) };
     await atomicWrite(
       context,
@@ -2095,7 +2280,7 @@ async function activate(input, deps) {
       input.generationId,
       deps,
     );
-    return { generationId: input.generationId, generationState: 'active' };
+    return { status: 'activated', generationId: input.generationId, generationState: 'active' };
   });
 }
 
@@ -2269,21 +2454,30 @@ async function suspensionValue(root) {
   }
 }
 
-async function suspendForCapacity(context, generationId, state, deps) {
-  if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return;
-  const root = generationPath(context, generationId);
-  const marker = await beginTransition(context, root, generationId, 'capacity-exhausted', deps);
-  const existing = await suspensionValue(root);
-  const reasons = [...new Set([...(existing?.reasons ?? []), 'capacity-exhausted'])].sort();
-  const resumeTo = existing?.resumeTo ?? state.generationState;
+async function writeSuspension(
+  context,
+  root,
+  generationId,
+  state,
+  reason,
+  affectedRecordIds,
+  deps,
+  markerOperation = reason,
+) {
+  const previous = await suspensionValue(root);
+  const resumeTo = previous?.resumeTo ?? state.generationState;
+  if (!['baseline', 'active'].includes(resumeTo)) fail('UNSAFE_STORAGE');
+  const marker = await beginTransition(context, root, generationId, markerOperation, deps);
   const suspension = {
     schema: 1,
     kind: 'pilot-suspension',
     generationId,
     status: 'suspended',
     resumeTo,
-    reasons,
-    affectedRecordIds: existing?.affectedRecordIds ?? [],
+    reasons: [...new Set([...(previous?.reasons ?? []), reason])].sort(),
+    affectedRecordIds: [
+      ...new Set([...(previous?.affectedRecordIds ?? []), ...affectedRecordIds]),
+    ].sort(),
   };
   await atomicWrite(
     context,
@@ -2304,47 +2498,43 @@ async function suspendForCapacity(context, generationId, state, deps) {
     );
   }
   await clearTransition(context, root, marker, deps);
+  return suspension;
+}
+
+// Completes a suspension-reason marker that a crashed or lock-contended control write left behind.
+// It runs under the lifecycle lock; a leftover suspend or resume marker keeps its own handling.
+async function rollForwardTransition(context, generationId, deps) {
+  const root = generationPath(context, generationId);
+  const marker = await transitionMarker(root);
+  if (marker === null || !SUSPENSION_REASONS.includes(marker.operation)) return;
+  if (marker.generationId !== generationId) fail('UNSAFE_STORAGE');
+  const { state } = await loadState(context, generationId);
+  if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return;
+  await writeSuspension(context, root, generationId, state, marker.operation, [], deps);
+}
+
+async function suspendForCapacity(context, generationId, state, deps) {
+  if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return;
+  const root = generationPath(context, generationId);
+  await writeSuspension(context, root, generationId, state, 'capacity-exhausted', [], deps);
 }
 
 async function persistPilotControl(input, deps, reason, affectedRecordIds = []) {
   try {
     const context = await ensureNamespace(input, deps);
     return await withLock(context, input.generationId, 'pilot-control', deps, async () => {
+      await rollForwardTransition(context, input.generationId, deps);
       const { root, state } = await loadState(context, input.generationId);
       if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return false;
-      const previous = await suspensionValue(root);
-      const resumeTo = previous?.resumeTo ?? state.generationState;
-      const marker = await beginTransition(context, root, input.generationId, reason, deps);
-      const suspension = {
-        schema: 1,
-        kind: 'pilot-suspension',
-        generationId: input.generationId,
-        status: 'suspended',
-        resumeTo,
-        reasons: [...new Set([...(previous?.reasons ?? []), reason])].sort(),
-        affectedRecordIds: [
-          ...new Set([...(previous?.affectedRecordIds ?? []), ...affectedRecordIds]),
-        ].sort(),
-      };
-      await atomicWrite(
+      await writeSuspension(
         context,
-        path.join(root, 'suspension.json'),
-        suspension,
-        'suspend',
+        root,
         input.generationId,
+        state,
+        reason,
+        affectedRecordIds,
         deps,
       );
-      if (state.generationState !== 'suspended') {
-        await atomicWrite(
-          context,
-          path.join(root, 'state.json'),
-          { ...state, generationState: 'suspended' },
-          'suspend',
-          input.generationId,
-          deps,
-        );
-      }
-      await clearTransition(context, root, marker, deps);
       return true;
     });
   } catch {
@@ -2353,21 +2543,34 @@ async function persistPilotControl(input, deps, reason, affectedRecordIds = []) 
       const root = generationPath(context, input.generationId);
       const target = path.join(root, 'suspension-transition.json');
       const existing = await transitionMarker(root);
-      if (existing !== null) return true;
+      // Only a marker for this exact reason carries it forward; any other marker loses it.
+      if (existing !== null) return existing.operation === reason;
+      // The marker carries its writer's pid, so a temporary left by a crash before publication can
+      // be proved stale by reconcile-temporary without a lock record of the same nonce.
+      const ownerNonce = randomOpaque(deps, 24);
       const marker = {
         schema: 1,
         kind: 'suspension-transition',
         generationId: input.generationId,
         operation: reason,
-        ownerNonce: randomOpaque(deps, 24),
+        ownerNonce,
+        ownerPid: process.pid,
       };
-      await repositoryGuard(input, deps, { mutation: true });
-      const handle = await open(target, WRITE_FLAGS, 0o600);
       try {
-        await handle.writeFile(`${canonicalizeJson(marker)}\n`, 'utf8');
-        await handle.sync();
-      } finally {
-        await handle.close();
+        await atomicWrite(
+          { ...context, activeLock: { nonce: ownerNonce } },
+          target,
+          marker,
+          reason,
+          input.generationId,
+          deps,
+          undefined,
+          { noReplace: true, existsCode: 'INVALID_STATE' },
+        );
+      } catch (error) {
+        if (!(error instanceof PilotMeasurementError) || error.code !== 'INVALID_STATE')
+          throw error;
+        return (await transitionMarker(root))?.operation === reason;
       }
       return true;
     } catch {
@@ -2376,28 +2579,52 @@ async function persistPilotControl(input, deps, reason, affectedRecordIds = []) 
   }
 }
 
-async function observationFailure(input, deps, error, affectedRecordIds = []) {
-  const persisted = await persistPilotControl(input, deps, 'evidence-gap', affectedRecordIds);
-  return new PilotMeasurementError(error.code ?? 'WRITE_FAILED', {
-    cause: error,
-    pilotControlOutcome: persisted ? 'evidence-gap' : 'control-state-unpersistable',
-    controlStatePersisted: persisted,
-    alert: persisted ? 'none' : 'value-free',
+function controlError(error, pilotControlOutcome, controlStatePersisted) {
+  const normalized =
+    error instanceof PilotMeasurementError
+      ? error
+      : new PilotMeasurementError('WRITE_FAILED', { cause: error });
+  return new PilotMeasurementError(normalized.code, {
+    cause: normalized,
+    pilotControlOutcome,
+    controlStatePersisted,
+    alert: pilotControlOutcome === 'control-state-unpersistable' ? 'value-free' : 'none',
   });
+}
+
+function receiptNotFound(cause) {
+  const error = new PilotMeasurementError('NOT_FOUND', { cause });
+  // A missing receipt is a mid-write fault, unlike a missing generation or record.
+  error[RECEIPT_FAULT] = true;
+  throw error;
+}
+
+// Exhaustive failure classification for finalize and both gate-observation operations.
+function classifyControlFailure(error) {
+  if (!(error instanceof PilotMeasurementError)) return 'fault';
+  if (error.code === 'CAPACITY_EXHAUSTED') return 'passthrough';
+  if (error.code === 'NOT_FOUND' && error[RECEIPT_FAULT] === true) return 'fault';
+  return CONTROL_NEUTRAL_CODES.has(error.code) ? 'neutral' : 'fault';
+}
+
+async function controlFailure(input, deps, error, reason, affectedRecordIds) {
+  const classification = classifyControlFailure(error);
+  if (classification === 'passthrough') return error;
+  if (classification === 'neutral') return controlError(error, 'none', false);
+  const persisted = await persistPilotControl(input, deps, reason, affectedRecordIds);
+  return controlError(error, persisted ? reason : 'control-state-unpersistable', persisted);
 }
 
 async function guardedObservationMutation(input, deps, affectedRecordIds, action) {
   try {
     return await action();
   } catch (error) {
-    if (
-      error instanceof PilotMeasurementError &&
-      ['INVALID_PAYLOAD', 'AUTHENTICATION_FAILED'].includes(error.code)
-    ) {
-      throw error;
-    }
-    throw await observationFailure(input, deps, error, affectedRecordIds);
+    throw await controlFailure(input, deps, error, 'evidence-gap', affectedRecordIds);
   }
+}
+
+async function assertGenerationExists(context, generationId) {
+  if (!(await directoryState(generationPath(context, generationId)))) fail('NOT_FOUND');
 }
 
 async function loadReservation(context, generationId, runId) {
@@ -2709,6 +2936,7 @@ async function finalizeWorkflow(input, deps) {
   const detailOptIn = booleanValue(input.detailOptIn);
   if (detailOptIn !== (input.trace !== null)) fail('INVALID_PAYLOAD');
   const context = await ensureNamespace(input, deps);
+  await assertGenerationExists(context, input.generationId);
   return await withLock(context, input.generationId, 'finalize', deps, async () => {
     const {
       root,
@@ -2758,22 +2986,45 @@ async function finalizeWorkflow(input, deps) {
         'records',
         `${input.runId}.${reserved.packetId}.timing.json`,
       );
-      const receipt = await readJson(timingTarget);
-      authenticate(outcome.packetCapability, receipt.packetCapabilityHash);
-      if (receipt.status !== 'finished') fail('INCOMPLETE_EVIDENCE');
-      timingTargets.push(timingTarget);
+      // The lifecycle lock held here excludes every packet lock, so no packet writer can change a
+      // receipt between this read and its removal below.
+      const receipt = await readJson(timingTarget, { missing: true });
+      let attempt;
+      let implementationDuration;
+      if (receipt === null) {
+        // Adopters call start-packet immediately before every implementation spawn, so a missing
+        // receipt proves the packet never started. A completed run must have started all of them.
+        if (completionStatus === 'completed') receiptNotFound();
+        if (outcome.fallback !== 'none' || outcome.escalated || outcome.costProxy !== null) {
+          fail('INVALID_PAYLOAD');
+        }
+        attempt = 'not-started';
+        implementationDuration = { status: 'unavailable' };
+      } else {
+        authenticate(outcome.packetCapability, receipt.packetCapabilityHash);
+        if (receipt.status === 'finished') {
+          implementationDuration = receipt.duration;
+        } else if (receipt.status === 'started' && completionStatus !== 'completed') {
+          implementationDuration = { status: 'unavailable' };
+        } else {
+          fail('INCOMPLETE_EVIDENCE');
+        }
+        attempt = 'started';
+        timingTargets.push(timingTarget);
+      }
       packets.push({
         packetId: reserved.packetId,
         selectedProfile: reserved.selectedProfile,
         wouldBeFastEligible: reserved.wouldBeFastEligible,
         firstGateReason: reserved.gate.firstReason,
-        implementationDuration: receipt.duration,
+        implementationDuration,
         fallback: outcome.fallback,
         escalated: outcome.escalated,
         costProxy:
           outcome.costProxy === null
             ? { status: 'unavailable' }
             : { status: 'available', ...outcome.costProxy },
+        attempt,
       });
     }
     const finalized = {
@@ -2825,83 +3076,126 @@ async function finalizeWorkflow(input, deps) {
   });
 }
 
+// Runs after finalize has released its lock, because persisting control state takes the lock.
+async function finalizeWorkflowGuarded(input, deps) {
+  try {
+    return await finalizeWorkflow(input, deps);
+  } catch (error) {
+    const affectedRecordIds =
+      isObject(input) && typeof input.runId === 'string' && OPAQUE.test(input.runId)
+        ? [input.runId]
+        : [];
+    throw await controlFailure(input, deps, error, 'finalization-failed', affectedRecordIds);
+  }
+}
+
 async function startGateObservation(input, deps) {
-  commonInput(input, ['configState', 'generationState', 'mode', 'harnessFamily']);
-  enumValue(input.configState, PILOT_MEASUREMENT_POLICY_PROJECTION.configStates);
-  enumValue(input.generationState, PILOT_MEASUREMENT_POLICY_PROJECTION.generationStates);
-  enumValue(input.mode, PILOT_MEASUREMENT_PROTOCOL.enums.observationModes);
-  enumValue(input.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
-  const context = await inspectNamespace(input, deps);
-  if (!context.exists) {
-    return { status: 'not-recorded', reason: 'no-generation', pilotControlOutcome: 'none' };
-  }
-  const { state } = await loadState(context, input.generationId);
-  if (
-    input.configState !== 'enabled' ||
-    !['baseline', 'active'].includes(state.generationState) ||
-    input.generationState !== state.generationState
-  ) {
-    return { status: 'not-recorded', reason: 'admission-closed', pilotControlOutcome: 'none' };
-  }
   return await guardedObservationMutation(input, deps, [], async () => {
-    const mutable = await ensureNamespace(input, deps);
-    return await withLock(mutable, input.generationId, 'start-gate-observation', deps, async () => {
-      const evidence = await evidenceInventory(mutable, input.generationId);
-      const { root, state: current } = evidence;
-      await assertAdmissionOpen(mutable, evidence);
-      if (current.generationState !== input.generationState) fail('INVALID_STATE');
-      const count = countBySuffix(await safeEntries(path.join(root, 'gate-observations')), '.json');
-      if (count >= PILOT_MEASUREMENT_PROTOCOL.limits.maxGateObservationsPerGeneration) {
-        await suspendForCapacity(mutable, input.generationId, current, deps);
-        fail('CAPACITY_EXHAUSTED');
-      }
-      const observationIds = new Set(
-        evidence.observations.map(({ observationId }) => observationId),
-      );
-      const observationId = await uniqueOpaque(
-        deps,
-        async (candidate) => pathExists(path.join(root, 'gate-observations', `${candidate}.json`)),
-        observationIds,
-      );
-      const capability = randomOpaque(deps, 32);
-      const reservation = {
-        schema: OBSERVATION_SCHEMA,
-        kind: 'gate-observation-reservation',
-        observationId,
-        capabilityHash: hashCapability(capability),
-        generationId: input.generationId,
-        protocolDigest: current.protocolDigest,
-        cohort: current.generationState === 'baseline' ? 'baseline' : 'pilot',
-        mode: input.mode,
-        harnessFamily: input.harnessFamily,
-        ordinal: current.nextObservationOrdinal,
-      };
-      await atomicWrite(
-        mutable,
-        path.join(root, 'state.json'),
-        { ...current, nextObservationOrdinal: current.nextObservationOrdinal + 1 },
-        'start-gate-observation',
-        input.generationId,
-        deps,
-      );
-      await atomicWrite(
-        mutable,
-        path.join(root, 'gate-observations', `${observationId}.json`),
-        reservation,
-        'start-gate-observation',
-        input.generationId,
-        deps,
-        undefined,
-        { noReplace: true },
-      );
-      return {
-        status: 'reserved',
-        observationId,
-        capability,
-        cohort: reservation.cohort,
-        ordinal: reservation.ordinal,
-      };
+    commonInput(input, ['configState', 'generationState', 'mode', 'harnessFamily']);
+    enumValue(input.configState, PILOT_MEASUREMENT_POLICY_PROJECTION.configStates);
+    enumValue(input.generationState, PILOT_MEASUREMENT_POLICY_PROJECTION.generationStates);
+    enumValue(input.mode, PILOT_MEASUREMENT_PROTOCOL.enums.observationModes);
+    enumValue(input.harnessFamily, PILOT_MEASUREMENT_PROTOCOL.enums.harnessFamilies);
+    const notRecorded = (reason) => ({
+      status: 'not-recorded',
+      reason,
+      pilotControlOutcome: 'none',
     });
+    const context = await inspectNamespace(input, deps);
+    if (!context.exists) return notRecorded('no-generation');
+    const { state } = await loadState(context, input.generationId);
+    if (
+      input.configState !== 'enabled' ||
+      !['baseline', 'active'].includes(state.generationState) ||
+      input.generationState !== state.generationState
+    ) {
+      return notRecorded('admission-closed');
+    }
+    const mutable = await ensureNamespace(input, deps);
+    let locked = false;
+    try {
+      return await withLock(
+        mutable,
+        input.generationId,
+        'start-gate-observation',
+        deps,
+        async () => {
+          locked = true;
+          const evidence = await evidenceInventory(mutable, input.generationId);
+          const { root, state: current } = evidence;
+          // An admission closed by a concurrent transition, such as an activation, records nothing.
+          if (
+            (await admissionClosed(evidence)) ||
+            current.generationState !== input.generationState
+          ) {
+            return notRecorded('admission-closed');
+          }
+          if (evidenceBusy(evidence)) return notRecorded('busy');
+          assertEvidenceHealthy(mutable, evidence);
+          const count = countBySuffix(
+            await safeEntries(path.join(root, 'gate-observations')),
+            '.json',
+          );
+          if (count >= PILOT_MEASUREMENT_PROTOCOL.limits.maxGateObservationsPerGeneration) {
+            await suspendForCapacity(mutable, input.generationId, current, deps);
+            fail('CAPACITY_EXHAUSTED');
+          }
+          const observationIds = new Set(
+            evidence.observations.map(({ observationId }) => observationId),
+          );
+          const observationId = await uniqueOpaque(
+            deps,
+            async (candidate) =>
+              pathExists(path.join(root, 'gate-observations', `${candidate}.json`)),
+            observationIds,
+          );
+          const capability = randomOpaque(deps, 32);
+          const reservation = {
+            schema: OBSERVATION_SCHEMA,
+            kind: 'gate-observation-reservation',
+            observationId,
+            capabilityHash: hashCapability(capability),
+            generationId: input.generationId,
+            protocolDigest: current.protocolDigest,
+            cohort: current.generationState === 'baseline' ? 'baseline' : 'pilot',
+            mode: input.mode,
+            harnessFamily: input.harnessFamily,
+            ordinal: current.nextObservationOrdinal,
+          };
+          await atomicWrite(
+            mutable,
+            path.join(root, 'state.json'),
+            { ...current, nextObservationOrdinal: current.nextObservationOrdinal + 1 },
+            'start-gate-observation',
+            input.generationId,
+            deps,
+          );
+          await atomicWrite(
+            mutable,
+            path.join(root, 'gate-observations', `${observationId}.json`),
+            reservation,
+            'start-gate-observation',
+            input.generationId,
+            deps,
+            undefined,
+            { noReplace: true },
+          );
+          return {
+            status: 'reserved',
+            observationId,
+            capability,
+            cohort: reservation.cohort,
+            ordinal: reservation.ordinal,
+          };
+        },
+      );
+    } catch (error) {
+      // Contention for the lifecycle lock means another run is in flight, not an evidence fault.
+      if (!locked && error instanceof PilotMeasurementError && error.code === 'LOCKED') {
+        return notRecorded('busy');
+      }
+      throw error;
+    }
   });
 }
 
@@ -2914,37 +3208,39 @@ function unavailableOrBoolean(value) {
 }
 
 async function finalizeGateObservation(input, deps) {
-  commonInput(input, [
-    'observationId',
-    'capability',
-    'terminalOutcome',
-    'ciRepairCorrections',
-    'reviewerCorrections',
-    'conflictCorrections',
-    'checksReported',
-    'requiredCheckCount',
-    'requiredChecksSatisfied',
-  ]);
-  opaque(input.observationId);
-  enumValue(input.terminalOutcome, PILOT_MEASUREMENT_PROTOCOL.enums.observationOutcomes);
-  const corrections = {
-    ciRepair: integer(input.ciRepairCorrections, 10_000),
-    configuredReviewer: integer(input.reviewerCorrections, 10_000),
-    conflictResolution: integer(input.conflictCorrections, 10_000),
-  };
-  booleanValue(input.checksReported);
-  const requiredCheckCount = unavailableOrInteger(input.requiredCheckCount);
-  const requiredChecksSatisfied = unavailableOrBoolean(input.requiredChecksSatisfied);
-  if (
-    (!input.checksReported &&
-      (requiredCheckCount !== 'unavailable' || requiredChecksSatisfied !== 'unavailable')) ||
-    (input.checksReported && requiredCheckCount === 'unavailable') ||
-    (input.checksReported && requiredChecksSatisfied === 'unavailable')
-  ) {
-    fail('INVALID_PAYLOAD');
-  }
-  return await guardedObservationMutation(input, deps, [input.observationId], async () => {
+  const affectedRecordIds = [];
+  return await guardedObservationMutation(input, deps, affectedRecordIds, async () => {
+    commonInput(input, [
+      'observationId',
+      'capability',
+      'terminalOutcome',
+      'ciRepairCorrections',
+      'reviewerCorrections',
+      'conflictCorrections',
+      'checksReported',
+      'requiredCheckCount',
+      'requiredChecksSatisfied',
+    ]);
+    affectedRecordIds.push(opaque(input.observationId));
+    enumValue(input.terminalOutcome, PILOT_MEASUREMENT_PROTOCOL.enums.observationOutcomes);
+    const corrections = {
+      ciRepair: integer(input.ciRepairCorrections, 10_000),
+      configuredReviewer: integer(input.reviewerCorrections, 10_000),
+      conflictResolution: integer(input.conflictCorrections, 10_000),
+    };
+    booleanValue(input.checksReported);
+    const requiredCheckCount = unavailableOrInteger(input.requiredCheckCount);
+    const requiredChecksSatisfied = unavailableOrBoolean(input.requiredChecksSatisfied);
+    if (
+      (!input.checksReported &&
+        (requiredCheckCount !== 'unavailable' || requiredChecksSatisfied !== 'unavailable')) ||
+      (input.checksReported && requiredCheckCount === 'unavailable') ||
+      (input.checksReported && requiredChecksSatisfied === 'unavailable')
+    ) {
+      fail('INVALID_PAYLOAD');
+    }
     const context = await ensureNamespace(input, deps);
+    await assertGenerationExists(context, input.generationId);
     return await withLock(
       context,
       input.generationId,
@@ -2987,50 +3283,91 @@ async function suspendGeneration(input, deps) {
   const mapping = PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings.find(
     ({ outcome }) => outcome === input.pilotControlOutcome,
   );
-  if (!mapping || mapping.suspensionReason === 'none') fail('INVALID_PAYLOAD');
+  // Incidents are recorded only through record-incident, which maps the category itself.
+  if (
+    !mapping ||
+    mapping.suspensionReason === 'none' ||
+    INCIDENT_OUTCOME_SET.has(mapping.outcome)
+  ) {
+    fail('INVALID_PAYLOAD');
+  }
   const affectedRecordIds = boundedArray(input.affectedRecordIds, 256).map(opaque).sort();
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'suspend', deps, async () => {
+    await rollForwardTransition(context, input.generationId, deps);
     const { root, state } = await loadState(context, input.generationId);
     if (!['baseline', 'active', 'suspended'].includes(state.generationState)) fail('INVALID_STATE');
-    const previous = await suspensionValue(root);
-    const marker = await beginTransition(context, root, input.generationId, 'suspend', deps);
-    const suspension = {
-      schema: 1,
-      kind: 'pilot-suspension',
-      generationId: input.generationId,
-      status: 'suspended',
-      resumeTo: previous?.resumeTo ?? state.generationState,
-      reasons: [...new Set([...(previous?.reasons ?? []), mapping.suspensionReason])].sort(),
-      affectedRecordIds: [
-        ...new Set([...(previous?.affectedRecordIds ?? []), ...affectedRecordIds]),
-      ].sort(),
-    };
-    await atomicWrite(
+    const suspension = await writeSuspension(
       context,
-      path.join(root, 'suspension.json'),
-      suspension,
-      'suspend',
+      root,
       input.generationId,
+      state,
+      mapping.suspensionReason,
+      affectedRecordIds,
       deps,
+      'suspend',
     );
-    if (state.generationState !== 'suspended') {
-      await atomicWrite(
-        context,
-        path.join(root, 'state.json'),
-        { ...state, generationState: 'suspended' },
-        'suspend',
-        input.generationId,
-        deps,
-      );
-    }
-    await clearTransition(context, root, marker, deps);
     return {
       generationState: 'suspended',
       suspensionDigest: canonicalDigest(suspension),
       pilotControlOutcome: input.pilotControlOutcome,
     };
   });
+}
+
+async function recordIncident(input, deps) {
+  // 'pending' before the lock, 'locked' while checking state, 'writing' once the suspension write
+  // may have started, and 'persisted' after it completed.
+  let stage = 'pending';
+  let outcome;
+  try {
+    commonInput(input, ['category', 'affectedRecordIds']);
+    outcome = INCIDENT_OUTCOMES[enumValue(input.category, Object.keys(INCIDENT_OUTCOMES))];
+    const affectedRecordIds = boundedArray(input.affectedRecordIds, 256).map(opaque).sort();
+    const context = await ensureNamespace(input, deps);
+    await assertGenerationExists(context, input.generationId);
+    return await withLock(context, input.generationId, 'record-incident', deps, async () => {
+      stage = 'locked';
+      const { state } = await loadState(context, input.generationId);
+      if (!['baseline', 'active', 'suspended'].includes(state.generationState)) {
+        fail('INVALID_STATE');
+      }
+      stage = 'writing';
+      await rollForwardTransition(context, input.generationId, deps);
+      const { root, state: current } = await loadState(context, input.generationId);
+      const suspension = await writeSuspension(
+        context,
+        root,
+        input.generationId,
+        current,
+        outcome,
+        affectedRecordIds,
+        deps,
+      );
+      stage = 'persisted';
+      return {
+        generationState: 'suspended',
+        suspensionDigest: canonicalDigest(suspension),
+        pilotControlOutcome: outcome,
+        controlStatePersisted: true,
+        alert: 'none',
+      };
+    });
+  } catch (error) {
+    // No unlocked fallback: a held lock stays a retryable LOCKED so an incident can never be
+    // written behind a concurrent resume.
+    if (stage === 'persisted') throw controlError(error, outcome, true);
+    if (error instanceof PilotMeasurementError && error.code === 'CAPACITY_EXHAUSTED') throw error;
+    if (
+      (stage === 'pending' && classifyControlFailure(error) === 'neutral') ||
+      (stage === 'locked' &&
+        error instanceof PilotMeasurementError &&
+        error.code === 'INVALID_STATE')
+    ) {
+      throw controlError(error, 'none', false);
+    }
+    throw controlError(error, 'control-state-unpersistable', false);
+  }
 }
 
 async function beginReview(input, deps) {
@@ -3074,6 +3411,7 @@ async function resumeGeneration(input, deps) {
   if (!booleanValue(input.confirmation)) fail('INVALID_PAYLOAD');
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'resume', deps, async () => {
+    await rollForwardTransition(context, input.generationId, deps);
     const { root, state } = await loadState(context, input.generationId);
     const pending = await transitionMarker(root);
     const suspension = await suspensionValue(root);
@@ -3176,6 +3514,7 @@ async function reconcileRecord(input, deps) {
         fallback: 'none',
         escalated: false,
         costProxy: { status: 'unavailable' },
+        attempt: 'unknown',
       })),
       validation: { status: 'unavailable', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
       review: {
@@ -3279,8 +3618,24 @@ async function reconcileTemporary(input, deps) {
     }
   }
   if (ownerLock === null) {
-    if (path.dirname(target) !== path.join(root, 'locks')) fail('LOCKED');
-    ownerLock = validateStagedLockRecord(await readJson(target), input.generationId, temporaryName);
+    if (path.dirname(target) === path.join(root, 'locks')) {
+      ownerLock = validateStagedLockRecord(
+        await readJson(target),
+        input.generationId,
+        temporaryName,
+      );
+    } else if (
+      path.dirname(target) === root &&
+      SUSPENSION_REASONS.includes(temporaryIdentity(temporaryName, input.generationId).operation)
+    ) {
+      ownerLock = validateStagedMarkerRecord(
+        await readJson(target),
+        input.generationId,
+        temporaryName,
+      );
+    } else {
+      fail('LOCKED');
+    }
   }
   if (probePid(ownerLock.ownerPid, deps) !== 'stale-provable') fail('LOCKED');
   await repositoryGuard(input, deps, { mutation: true });
@@ -3388,7 +3743,11 @@ function integerDistribution(values) {
 function cohortMetrics(records, cohort) {
   const selected = records.filter((record) => record.cohort === cohort);
   const completed = selected.filter((record) => record.completionStatus === 'completed');
-  const packets = selected.flatMap((record) => record.packets);
+  const recordedPackets = selected.flatMap((record) => record.packets);
+  // A not-started packet leaves every packet metric; an unknown packet stays in the counts but
+  // never counts as a success, has no duration, and keeps the cost gate unavailable.
+  const packets = recordedPackets.filter((packet) => packet.attempt !== 'not-started');
+  const startedPackets = packets.filter((packet) => packet.attempt === 'started');
   const attemptedFast = packets.filter(
     (packet) => packet.selectedProfile === 'fast' || packet.fallback !== 'none',
   );
@@ -3401,7 +3760,7 @@ function cohortMetrics(records, cohort) {
       : attemptedFast;
   const requiredValidation = selected.filter((record) => record.validation.requiredCount > 0);
   const completedReview = selected.filter((record) => record.review.status === 'completed');
-  const availableDurations = packets.filter(
+  const availableDurations = startedPackets.filter(
     (packet) => packet.implementationDuration.status === 'available',
   );
   const halves = ordinalHalves(selected);
@@ -3425,8 +3784,12 @@ function cohortMetrics(records, cohort) {
       PILOT_MEASUREMENT_POLICY_PROJECTION.fallbacks,
     ),
     durationOutcomes: closedCounts(
-      packets.map((packet) => packet.implementationDuration.status),
+      startedPackets.map((packet) => packet.implementationDuration.status),
       ['available', 'unavailable'],
+    ),
+    attemptOutcomes: closedCounts(
+      recordedPackets.map(({ attempt }) => attempt),
+      PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts,
     ),
     validationOutcomes: closedCounts(
       selected.map((record) => record.validation.status),
@@ -3438,7 +3801,9 @@ function cohortMetrics(records, cohort) {
     ),
     fallbackOccurrences: attemptedFast.filter((packet) => packet.fallback !== 'none').length,
     fastWithoutEscalation: rational(
-      BigInt(attemptedFast.filter((packet) => !packet.escalated).length),
+      BigInt(
+        attemptedFast.filter((packet) => packet.attempt === 'started' && !packet.escalated).length,
+      ),
       BigInt(attemptedFast.length),
     ),
     workflowCompletion: rational(BigInt(completed.length), BigInt(selected.length)),
@@ -3456,8 +3821,10 @@ function cohortMetrics(records, cohort) {
     durationMedianMs: median(
       availableDurations.map((packet) => BigInt(packet.implementationDuration.milliseconds)),
     ),
-    costGroups: costGroups(costPackets),
-    costUnavailableCount: costPackets.filter((packet) => sumCost(packet) === null).length,
+    costGroups: costGroups(costPackets.filter((packet) => packet.attempt === 'started')),
+    costUnavailableCount: costPackets.filter(
+      (packet) => packet.attempt === 'unknown' || sumCost(packet) === null,
+    ).length,
   };
 }
 
@@ -4242,7 +4609,7 @@ async function executeOperationUnchecked(operation, input, deps) {
       result = await finishPacket(input, deps);
       break;
     case 'finalize':
-      result = await finalizeWorkflow(input, deps);
+      result = await finalizeWorkflowGuarded(input, deps);
       break;
     case 'start-gate-observation':
       result = await startGateObservation(input, deps);
@@ -4252,6 +4619,9 @@ async function executeOperationUnchecked(operation, input, deps) {
       break;
     case 'suspend':
       result = await suspendGeneration(input, deps);
+      break;
+    case 'record-incident':
+      result = await recordIncident(input, deps);
       break;
     case 'resume':
       result = await resumeGeneration(input, deps);

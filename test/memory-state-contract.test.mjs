@@ -74,10 +74,12 @@ test('the canonical memory contract covers locking, merging, atomic replacement,
   }
 });
 
+// Invariant: every memory writer goes through the shared locked mutation contract.
 test('all checked-in memory writers route through the shared contract', () => {
   assert.deepEqual(findMemoryStateContractViolations(collectRuntimeSources()), []);
 });
 
+// Invariant: the locked, atomic memory protocol survives every harness render.
 test('all consumer targets preserve the memory mutation protocol', () => {
   for (const harness of ['claude', 'codex', 'portable']) {
     const rendered = renderBody(`${memoryContract}\n`, harness, {
@@ -97,6 +99,7 @@ test('all consumer targets preserve the memory mutation protocol', () => {
   }
 });
 
+// Invariant: finding numbers are reserved after filtering and before publication.
 test('finding producers reserve only after filtering and before publication', () => {
   const review = readSource('tools', 'review.md');
   const unresolved = readSource('shared', 'unresolved-review-report.md');
@@ -127,6 +130,7 @@ test('finding producers reserve only after filtering and before publication', ()
   );
 });
 
+// Invariant: every migration marker writes through the shared memory mutation contract.
 test('every existing migration marker delegates its owned subtree to the protocol', () => {
   assert.match(
     readSource('shared', 'effective-flow-dir-migration.md'),
@@ -146,6 +150,7 @@ test('every existing migration marker delegates its owned subtree to the protoco
   );
 });
 
+// Invariant: legacy memory is the base of one replacement, so the finding counter is never lost.
 test('root legacy memory is the base for the prerequisite and the following reservation', () => {
   const legacySection = memoryContract.slice(
     memoryContract.indexOf('### Legacy `.sf-memory.json`'),

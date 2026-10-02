@@ -53,13 +53,13 @@ jobs:
       # docs/developer-guide/release-and-installation.md. The step therefore always runs and
       # always reports; only whether a stale verdict is fatal varies.
       #
-      # It never runs a model. `verify` rebuilds the skill into a throwaway root and compares the
-      # archived merge-gate eval evidence against the working tree. On an ordinary pull request
+      # It never runs a model. `verify` rebuilds the skill into a throwaway root and compares each
+      # behavioural eval suite's archived evidence against the working tree. On an ordinary pull request
       # that verdict is a report — printed to the step summary, green even when stale, because
       # re-recording a round on every merge is the cost this gate exists to remove. On the
       # release pull request it is strict: that is the one point where the evidence has to
       # describe the build that actually ships, and a stale, absent or short corpus fails.
-      - name: Merge-gate eval evidence
+      - name: Behavioural eval evidence
         env:
           # Read through the environment rather than expanded into the script with `${{ }}`: a
           # head-ref is attacker-controlled text on a fork pull request, and a direct expansion
@@ -77,20 +77,28 @@ jobs:
             pull_request:release-please--*) mode=strict ;;
           esac
 
-          verdict="$RUNNER_TEMP/merge-gate-eval-verify.txt"
-          # The exit status is captured rather than inherited: the verdict belongs in the step
-          # summary whether the command passed or failed, and piping into `tee` would report
-          # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
+          # One verdict per suite, every suite verified and reported even when an earlier one
+          # failed, so one stale corpus never hides another's verdict; the step fails if any did.
+          # test/workflow-contracts.test.mjs pins this list to the suites under evals/, so a new
+          # suite cannot be left out of the release gate unnoticed.
           status=0
-          pnpm eval merge-gate verify --mode "$mode" > "$verdict" 2>&1 || status=$?
-          cat "$verdict"
-          {
-            echo "### Merge-gate eval evidence (\`--mode $mode\`)"
-            echo
-            echo '```'
+          for suite in merge-gate iterate; do
+            verdict="$RUNNER_TEMP/$suite-eval-verify.txt"
+            # The exit status is captured rather than inherited: the verdict belongs in the step
+            # summary whether the command passed or failed, and piping into `tee` would report
+            # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
+            suite_status=0
+            pnpm eval "$suite" verify --mode "$mode" > "$verdict" 2>&1 || suite_status=$?
             cat "$verdict"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "### $suite eval evidence (\`--mode $mode\`)"
+              echo
+              echo '```'
+              cat "$verdict"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$suite_status" -ne 0 ]; then status=$suite_status; fi
+          done
           exit "$status"
 
   shellcheck:

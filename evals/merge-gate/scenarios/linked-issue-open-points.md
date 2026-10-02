@@ -15,7 +15,7 @@ that already knows the expected outcome tests that session's memory rather than 
 would silently remove the only Phase 5.5 coverage the suite has.**
 
 The stub resolves an envelope by operation name alone — one canned document per operation, no state
-(`_scaffold/remote-tracker.mjs`). A _merging_ scenario's post-merge `pr-read` therefore returns the
+(`evals/_scaffold/remote-tracker.mjs`). A _merging_ scenario's post-merge `pr-read` therefore returns the
 same open-pull-request document it returned before the merge, so the fresh read that Phase 5.5 entry
 requires never proves the merge and the phase is never entered. That is exactly what
 [`merge-proceeds`](merge-proceeds.md) records as its known limit, and a stateful stub is deferred.

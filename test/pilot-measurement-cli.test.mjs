@@ -231,3 +231,101 @@ test('a failed mutation leaves no namespace behind', (t) => {
   assert.equal(parseSingleEnvelope(result).error.code, 'PROTOCOL_DRIFT');
   assert.equal(existsSync(join(fixture.root, '.effective-flow/model-tiering-pilot')), false);
 });
+
+test('the spawned CLI activates without confirmation and records an incident by category', (t) => {
+  const fixture = repository(t);
+  const common = {
+    runtimeStateRoot: fixture.root,
+    repositoryIdentity: fixture.repositoryIdentity,
+  };
+  const { generationId } = parseSingleEnvelope(
+    runCli(
+      ['begin-baseline'],
+      {
+        ...common,
+        configState: 'enabled',
+        fastEnabled: true,
+        protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+        protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+        confirmation: true,
+      },
+      { cwd: fixture.root },
+    ),
+  ).result;
+  const activation = {
+    ...common,
+    generationId,
+    configState: 'enabled',
+    protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+  };
+  const activate = runCli(['activate'], activation, { cwd: fixture.root });
+  assert.equal(activate.status, 0, activate.stderr);
+  assert.deepEqual(parseSingleEnvelope(activate), {
+    ok: true,
+    operation: 'activate',
+    protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+    result: {
+      status: 'not-ready',
+      generationId,
+      generationState: 'baseline',
+      unmet: ['window', 'sample'],
+    },
+  });
+  const confirmed = runCli(
+    ['activate'],
+    { ...activation, confirmation: true },
+    { cwd: fixture.root },
+  );
+  assert.equal(confirmed.status, 2);
+  assert.equal(parseSingleEnvelope(confirmed).error.code, 'INVALID_PAYLOAD');
+
+  const incident = { ...common, generationId, category: 'data-integrity', affectedRecordIds: [] };
+  for (const [label, input] of [
+    ['named outcome', { ...incident, pilotControlOutcome: 'critical-data-integrity-incident' }],
+    ['unknown category', { ...incident, category: 'privacy' }],
+  ]) {
+    const rejected = runCli(['record-incident'], input, { cwd: fixture.root });
+    assert.equal(rejected.status, 2, label);
+    assert.deepEqual(parseSingleEnvelope(rejected), {
+      ok: false,
+      operation: 'record-incident',
+      error: {
+        code: 'INVALID_PAYLOAD',
+        message: 'pilot measurement input does not match the closed schema',
+        exitCode: 2,
+      },
+      pilotControlOutcome: 'none',
+      controlStatePersisted: false,
+      alert: 'none',
+    });
+  }
+
+  const recorded = runCli(['record-incident'], incident, { cwd: fixture.root });
+  assert.equal(recorded.status, 0, recorded.stderr);
+  assert.equal(recorded.stderr, '');
+  const envelope = parseSingleEnvelope(recorded);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.operation, 'record-incident');
+  assert.match(envelope.result.suspensionDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.deepEqual(envelope.result, {
+    generationState: 'suspended',
+    suspensionDigest: envelope.result.suspensionDigest,
+    pilotControlOutcome: 'critical-data-integrity-incident',
+    controlStatePersisted: true,
+    alert: 'none',
+  });
+  const suspension = JSON.parse(
+    readFileSync(
+      join(
+        fixture.root,
+        '.effective-flow/model-tiering-pilot/generations',
+        generationId,
+        'suspension.json',
+      ),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(suspension.reasons, ['critical-data-integrity-incident']);
+  assert.equal(suspension.resumeTo, 'baseline');
+});
