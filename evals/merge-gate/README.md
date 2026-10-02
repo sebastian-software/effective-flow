@@ -65,7 +65,8 @@ both halves, and neither is safe alone.
 
 The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
 deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
-sealing, retry, publication and recovery logic), `scaffold.mjs` (provisioning one isolated slot from
+sealing, retry, publication and recovery logic), `host-abort.mjs` (the provider error lines a
+host-abort stop receipt may cite, per harness), `scaffold.mjs` (provisioning one isolated slot from
 the round's shared build), `build-identity.mjs` (the three-part identity an archived run is bound
 by), `sandbox.mjs` (the round, scenario, slot and attempt layout), `prompt.mjs`, `suite.mjs`,
 `evaluate.mjs` (the generic evidence rules), `run-evidence.mjs` (the call-log/build-stamp/paired-trace
@@ -233,13 +234,17 @@ pnpm eval merge-gate seal \
   --receipt HOST_RECEIPT_JSON
 ```
 
+A session the host stopped is not sealed, even when it left a log: the receipt attests
+`completed: true`, which that session cannot truthfully claim. Such an attempt goes through
+`retry-aborted` instead (see §4).
+
 Sealing refuses an empty log or a live call-log lock — and, for the configured-reviewer scenario, a
 missing echo trace or a live trace lock — then recomputes the actual slot's fixture,
 project configuration, prompt, metadata, stub, and loaded-build identity before writing an atomic
 receipt. The configured-reviewer seal also covers the echo trace. Publication recomputes the sealed
 digests, so a later write to either becomes `changed-after-seal` and cannot be published.
 
-### 4. Retry only non-evidence or invalid evidence
+### 4. Retry only non-evidence, host aborts, or invalid evidence
 
 If a stopped host task produced no non-empty log, attest that fact in a separate stop receipt:
 
@@ -257,8 +262,57 @@ pnpm eval merge-gate retry-aborted \
   --receipt STOP_RECEIPT_JSON
 ```
 
-`retry-aborted` refuses a sealed attempt and any non-empty log. A log that exists must be sealed and
-evaluated even if the host calls the task aborted.
+`retry-aborted` refuses a sealed attempt, and on this receipt any non-empty log. A log that exists
+must be sealed and evaluated even if the host calls the task aborted — with one exception.
+
+**The provider stopped the session after it had called the stub.** A provider that refuses a
+session for capacity — under `codex exec`, `ERROR: exceeded retry limit, last status: 429 Too Many
+Requests` or `ERROR: Selected model is at capacity` — ends it non-zero, often after the first
+reads. Such an attempt can be neither sealed (it did not complete) nor plainly retried (it left a
+log). Attest the abort with its cause and the host's error line, copied verbatim:
+
+```json
+{
+  "schemaVersion": 1,
+  "stopped": true,
+  "reason": "codex exec exited non-zero",
+  "cause": "provider-capacity",
+  "hostError": "ERROR: exceeded retry limit, last status: 429 Too Many Requests"
+}
+```
+
+and pass it to the same `retry-aborted` command. Three checks stand between that receipt and a
+discarded attempt:
+
+- **The error line has to be one the round's harness prints.** `cause` is one of a closed set
+  (`provider-capacity` today), and `hostError` has to match one of that cause's anchored, one-line
+  patterns for the harness in the round manifest — never the harness the receipt names. The set
+  lives in `../_scaffold/host-abort.mjs`; a harness with no entry admits no host abort at all. A
+  session that ended on its own conclusion printed no such line, so attesting an early end as a
+  capacity abort takes a fabricated receipt rather than a misread one. This stays an operator
+  attestation like every other receipt: the scaffold cannot see the host's output.
+- **The partial evidence has to be readable.** A live call-log or trace lock, a log line that is not
+  a stub record, or a trace the echo did not write refuses the retry: what cannot be read says
+  nothing about what the run did, so nothing is discarded either.
+- **It must not already hold a decisive finding.** The evaluator's `decisiveFindings` names what no
+  continuation of the run could undo: a `pr-merge` the scenario refuses, dry run included; a second
+  applied merge in `merge-proceeds`; an applied mutation in the observer scenario; and a
+  configured-reviewer handoff the echo has recorded. Any of them refuses the retry and the attempt
+  stays as it is: a behavioural deviation is never retried away, and a slot holding one needs
+  investigation, not another run. An omission — guard reads not yet taken, no merge yet, no
+  delegation yet — is not decisive, because a stopped run is expected to be missing things.
+
+That last point is also the limit of the check. A regression whose deviation is an omission, such
+as `merge-proceeds` refusing to merge, leaves nothing in a partial log that a capacity abort would
+not; only the error line distinguishes the two.
+
+A discarded host abort is quarantined like every other retried attempt, partial log and trace
+included, and its `retry.json` records the cause and the error line beside the reason; the
+transition's reason is prefixed with the cause. `status` shows no separate value for it. Before the
+retry the instrument has only the log, which reads `unsealed` whether the task is still running or
+was stopped, and the host's word arrives with the receipt; after it, the slot's row is the fresh
+attempt, and a published run's `metadata.json` names its `attempt`, so a slot that needed retries
+stays visible in the archive.
 
 Use `retry-invalid` only for a sealed attempt that `status` classifies as invalid, or one that
 changed after sealing:

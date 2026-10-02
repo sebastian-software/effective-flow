@@ -1725,6 +1725,104 @@ test(
   },
 );
 
+// The invariant: a host-aborted iterate attempt that left evidence is discarded only when nothing
+// it already did is a deviation. A report means the run concluded, so it is judged in full; without
+// one, a counted forge call and a moved git state are what no continuation could undo. A discarded
+// attempt keeps its evidence, the git state it was judged on included.
+test(
+  'a host-aborted iterate attempt is judged in full once it reported and on its git state before',
+  { timeout: 180_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-host-abort-'));
+    const base = resolve(temporary, 'rounds');
+    const scenario = 'unparseable-item-filter-aborts';
+    const roundId = 'iterate-host-abort';
+    const hostAbort = {
+      schemaVersion: 1,
+      stopped: true,
+      reason: 'codex exec exited non-zero',
+      cause: 'provider-capacity',
+      hostError: 'ERROR: Selected model is at capacity',
+    };
+    try {
+      const prepared = createRound(suite, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId,
+      });
+      const fixture = fixtureFor(scenario);
+      const slot = (n) => sandboxPaths(prepared.roundRoot, scenario, n, 1);
+      const retry = (n) =>
+        retryAborted(suite, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: n,
+          assertion: hostAbort,
+          base,
+        });
+      const rootedLog = (paths, operations) =>
+        callLog(operations.map((operation) => ({ operation, cwd: paths.projectRoot })));
+
+      // Slot 1: the correct refusal was reported, then the provider stopped the session. Nothing
+      // is wrong with what the run did, so the attempt is discarded with its evidence retained.
+      const first = slot(1);
+      const refusal = reportLine(PHASE_ZERO_REFUSALS[scenario]);
+      writeFileSync(auxiliaryLogPath(suite, first), refusal);
+      assert.equal(retry(1).attempt, 2);
+      const retained = resolve(first.quarantineRoot, 'attempt-1', 'trace');
+      assert.equal(readFileSync(resolve(retained, 'report-channel.jsonl'), 'utf8'), refusal);
+      assert.deepEqual(
+        JSON.parse(readFileSync(resolve(retained, GIT_STATE_FILE), 'utf8')),
+        untouchedGitState(fixture),
+      );
+
+      // Slot 2: a concluded run with the wrong refusal is a finding, whatever stopped it after.
+      writeFileSync(auxiliaryLogPath(suite, slot(2)), reportLine('ABORT: duplicated control line'));
+      assert.throws(
+        () => retry(2),
+        /already holds a behavioural finding \(the report does not carry `ABORT: unparseable item filter`; the report carries a second refusal/,
+      );
+
+      // Slot 3: no report yet, but a forge read a Phase-0 refusal is failed by.
+      const third = slot(3);
+      writeFileSync(third.callLog, rootedLog(third, ['review-threads-read']));
+      assert.throws(
+        () => retry(3),
+        /already holds a behavioural finding \(the run made 1 forge call\(s\) before refusing/,
+      );
+
+      // Slot 4: only a pure local call, but a commit the run left in the checkout.
+      const fourth = slot(4);
+      writeFileSync(fourth.callLog, rootedLog(fourth, ['reference-parse']));
+      writeFileSync(resolve(fourth.projectRoot, HEAD_CHANGE_PATH), '# Add the change\n');
+      git(fourth.projectRoot, ...NO_HOOKS, 'commit', '--quiet', '--all', '--message', 'fix: x');
+      assert.throws(() => retry(4), /already holds a behavioural finding \(the checkout's HEAD is/);
+      assert.equal(existsSync(resolve(fourth.traceDir, GIT_STATE_FILE)), false);
+
+      // Slot 5: a pure local call and an untouched checkout — nothing decisive, so it is discarded.
+      const fifth = slot(5);
+      writeFileSync(fifth.callLog, rootedLog(fifth, ['reference-parse']));
+      assert.equal(retry(5).attempt, 2);
+
+      assert.deepEqual(
+        roundStatus(suite, prepared.manifestPath, { base }).map((row) => [row.attempt, row.status]),
+        [
+          [2, 'prepared'],
+          [1, 'unsealed'],
+          [1, 'unsealed'],
+          [1, 'unsealed'],
+          [2, 'prepared'],
+        ],
+      );
+    } finally {
+      const manifest = resolve(base, roundId, 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 // Publication carries the sealed git state into the archive beside each run, checks the copy
 // against its seal, and re-judges it from there — the path a carried-forward run is evaluated on.
 // The suite is narrowed to one scenario in a copy of the corpus so a generation can be completed
