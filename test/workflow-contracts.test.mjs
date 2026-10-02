@@ -17329,8 +17329,9 @@ test('goal-completion states every invariant of the completion contract', () => 
 // files, Git history, or forge prose. Each assertion pins one load-bearing rule of the mechanism.
 // ---------------------------------------------------------------------------------------------
 
-// Invariant: the only hidden-setup write is one idempotent, symlink-safe append to the common
-// directory's info/exclude, reached only after the non-Git and tracked-content stops.
+// Invariant: hidden setup's Step 1 makes exactly one idempotent, symlink-safe append to the common
+// directory's info/exclude, never touches .gitignore, and reaches it only after the non-Git and
+// tracked-content stops.
 test('hidden setup writes the ignore entry into the common-dir info/exclude and never into .gitignore', () => {
   const setup = source('src/tools/setup.md');
   const step1 = prose(boundedSlice(setup, '### Step 1 (hidden):', '### Step 2:'));
@@ -17544,8 +17545,9 @@ test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed 
   }
 });
 
-// Invariant: the resolver forces the hidden values, so no tool, argument or signal can reach the
-// forge or disclose Effective Flow.
+// Invariant: the resolver, not each tool, forces the hidden values, so no issue reference or
+// per-run signal can select the forge or an external tool as the tracker, and no published prose
+// names Effective Flow or a `.effective-flow/` path.
 test('hidden mode forced values are enforced by the resolver, not by individual tools', () => {
   const edge = source('src/shared/config-migration-edge-cases.md');
   const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
