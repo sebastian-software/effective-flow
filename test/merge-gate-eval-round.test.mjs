@@ -24,7 +24,12 @@ import {
   buildPortableSkill,
   pristineScenarioBuildIdentity,
 } from '../evals/_scaffold/build-identity.mjs';
-import { evaluateEvidence, supportedTrackerOperations } from '../evals/_scaffold/evaluate.mjs';
+import {
+  assessAbortedEvidence,
+  evaluateEvidence,
+  supportedTrackerOperations,
+} from '../evals/_scaffold/evaluate.mjs';
+import { HOST_ABORT_CAUSES, stopReceiptHostAbort } from '../evals/_scaffold/host-abort.mjs';
 import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
 import {
   createRound,
@@ -39,7 +44,10 @@ import {
 import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { loadSuite, suiteConfigPath, validateSuite } from '../evals/_scaffold/suite-loader.mjs';
-import { findings as evaluatorFindings } from '../evals/merge-gate/_scaffold/evaluate.mjs';
+import {
+  decisiveFindings as evaluatorDecisiveFindings,
+  findings as evaluatorFindings,
+} from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import { findings as iterateEvaluatorFindings } from '../evals/iterate/_scaffold/evaluate.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
@@ -2553,4 +2561,267 @@ test('merge-gate: an empty call log is still invalid evidence in every gate scen
   assert.deepEqual(evaluateEmpty(truthy, 'guard-blocks-merge').validityProblems, [
     'the call log contains no records',
   ]);
+});
+
+// --- Host aborts after partial evidence ------------------------------------------------------------
+
+// The stop receipt for a session the provider refused for capacity after it had already called the
+// stub: the plain stop receipt plus the cause and the host's error line, copied verbatim.
+const HOST_ABORT = Object.freeze({
+  schemaVersion: 1,
+  stopped: true,
+  reason: 'codex exec exited non-zero',
+  cause: 'provider-capacity',
+  hostError: 'ERROR: exceeded retry limit, last status: 429 Too Many Requests',
+});
+
+// A stopped run's call log, in the record form the scenario's stub writes: the legacy single record,
+// or a correlated start and completion for the sequenced scenario.
+function partialLog(projectRoot, operations, { lifecycle = false } = {}) {
+  const records = [];
+  operations.forEach((operation, index) => {
+    const start = {
+      seq: records.length + 1,
+      operation: typeof operation === 'string' ? operation : operation.operation,
+      apply: typeof operation === 'string' ? false : operation.apply,
+      at: '2026-10-02T00:00:00.000Z',
+      cwd: projectRoot,
+    };
+    if (!lifecycle) {
+      records.push(start);
+      return;
+    }
+    const callId = `call-${index + 1}`;
+    records.push({ ...start, event: 'start', callId });
+    records.push({ seq: records.length + 1, event: 'complete', callId, at: start.at });
+  });
+  return records.map((record) => `${JSON.stringify(record)}\n`).join('');
+}
+
+// The invariant: an attempt that left evidence is discarded only on a receipt naming a known
+// provider error line for the round's harness, only when its partial evidence is readable and
+// holds no decisive finding, and the discarded attempt keeps that evidence in quarantine.
+test(
+  'retry-aborted discards a host-aborted partial attempt only on a provider error line and without a decisive finding',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-host-abort-'));
+    const base = resolve(temporary, 'rounds');
+    const scenario = 'guard-blocks-merge';
+    try {
+      const prepared = createRound(suite, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId: 'host-abort-round',
+      });
+      const slot = (n) => sandboxPaths(prepared.roundRoot, scenario, n, 1);
+      const retry = (n, assertion) =>
+        retryAborted(suite, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: n,
+          assertion,
+          base,
+        });
+      const row = (n) =>
+        roundStatus(suite, prepared.manifestPath, { base }).find(
+          ({ slot: number }) => number === n,
+        );
+      const reads = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
+
+      // Slot 1: the first guard reads, then the provider refused the session.
+      const first = slot(1);
+      const firstLog = partialLog(first.projectRoot, reads);
+      writeFileSync(first.callLog, firstLog);
+      assert.throws(
+        () => retry(1, { schemaVersion: 1, stopped: true, reason: 'host cancelled it' }),
+        /non-empty log must be sealed and evaluated before any retry/,
+      );
+      const refusedReceipts = [
+        [{ ...HOST_ABORT, cause: 'model-gave-up' }, /cause must be one of provider-capacity/],
+        [{ ...HOST_ABORT, hostError: 'The gate blocks the merge.' }, /not one provider-capacity/],
+        [{ ...HOST_ABORT, hostError: `${HOST_ABORT.hostError} (request 1)` }, /not one/],
+        [{ ...HOST_ABORT, hostError: `${HOST_ABORT.hostError}\nDONE` }, /not one/],
+        [{ ...HOST_ABORT, hostError: undefined }, /not one/],
+        [{ ...HOST_ABORT, completed: false }, /retry-aborted requires/],
+      ];
+      for (const [assertion, refusal] of refusedReceipts) {
+        assert.throws(() => retry(1, assertion), refusal, JSON.stringify(assertion));
+      }
+      assert.equal(row(1).status, 'unsealed');
+      assert.equal(existsSync(first.quarantineRoot), false, 'a refused retry quarantined nothing');
+
+      const retried = retry(1, HOST_ABORT);
+      assert.equal(retried.attempt, 2);
+      assert.deepEqual([row(1).attempt, row(1).status], [2, 'prepared']);
+      const retained = resolve(first.quarantineRoot, 'attempt-1');
+      assert.equal(
+        readFileSync(resolve(retained, 'trace', 'tracker-calls.jsonl'), 'utf8'),
+        firstLog,
+      );
+      const record = JSON.parse(readFileSync(resolve(retained, 'retry.json'), 'utf8'));
+      assert.equal(record.reason, 'provider-capacity: codex exec exited non-zero');
+      assert.deepEqual(record.hostAbort, {
+        cause: HOST_ABORT.cause,
+        hostError: HOST_ABORT.hostError,
+      });
+
+      // Slot 2: the same abort after the run had already asked to merge under the guard. The merge
+      // is the deviation the scenario exists to catch, so the attempt is retained, not discarded.
+      const second = slot(2);
+      writeFileSync(
+        second.callLog,
+        partialLog(second.projectRoot, [...reads, { operation: 'pr-merge', apply: false }]),
+      );
+      assert.throws(
+        () => retry(2, HOST_ABORT),
+        /already holds a behavioural finding \(the gate requested pr-merge under an active guard\); it is retained and may not be retried/,
+      );
+      assert.deepEqual([row(2).attempt, row(2).status], [1, 'unsealed']);
+      assert.equal(existsSync(second.quarantineRoot), false);
+
+      // Slot 3: a log that does not parse says nothing about what the run did, so nothing is
+      // discarded either.
+      writeFileSync(slot(3).callLog, 'not json\n');
+      assert.throws(() => retry(3, HOST_ABORT), /cannot be judged \(line 1 is not JSON/);
+
+      // Slot 4: a stub call still writing is not a stopped session.
+      const fourth = slot(4);
+      writeFileSync(fourth.callLog, partialLog(fourth.projectRoot, reads));
+      mkdirSync(fourth.callLogLock);
+      assert.throws(() => retry(4, HOST_ABORT), /call-log lock is still live/);
+      rmSync(fourth.callLogLock, { recursive: true });
+      assert.equal(
+        retry(4, { ...HOST_ABORT, hostError: 'ERROR: Selected model is at capacity' }).attempt,
+        2,
+      );
+
+      // Slot 5: an attempt that left nothing accepts the host-abort receipt too, and records it.
+      assert.equal(retry(5, HOST_ABORT).attempt, 2);
+      assert.deepEqual(
+        JSON.parse(readFileSync(resolve(slot(5).quarantineRoot, 'attempt-1', 'retry.json'), 'utf8'))
+          .hostAbort,
+        { cause: HOST_ABORT.cause, hostError: HOST_ABORT.hostError },
+      );
+    } finally {
+      const manifest = resolve(base, 'host-abort-round', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// The invariant: error lines are keyed by the round's harness, so a harness nobody has named lines
+// for admits no host abort at all.
+test('a host abort is refused for a harness with no known error lines', () => {
+  assert.equal(
+    stopReceiptHostAbort({ schemaVersion: 1, stopped: true, reason: 'x' }, 'other-cli'),
+    null,
+  );
+  assert.throws(() => stopReceiptHostAbort(HOST_ABORT, 'other-cli'), /round's harness other-cli/);
+  for (const cause of Object.keys(HOST_ABORT_CAUSES)) {
+    for (const patterns of Object.values(HOST_ABORT_CAUSES[cause])) {
+      for (const pattern of patterns) {
+        assert.ok(pattern.source.startsWith('^') && pattern.source.endsWith('$'), String(pattern));
+      }
+    }
+  }
+});
+
+// The invariant: only what no continuation could undo is decisive in a stopped gate run, so an
+// omission never blocks a retry and a merge the scenario refuses always does.
+test('merge-gate: decisive findings are the irreversible ones, never an omission', () => {
+  const projectRoot = '/tmp/round/project';
+  const fixtureOf = (scenario) =>
+    JSON.parse(
+      readFileSync(
+        resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'fixtures', `${scenario}.json`),
+        'utf8',
+      ),
+    );
+  const decisive = (scenario, operations, auxiliaryText = '') => {
+    const assessment = assessAbortedEvidence(suite, {
+      scenario,
+      logText: partialLog(projectRoot, operations, {
+        lifecycle: suite.evaluator.usesLifecycleSchema(scenario),
+      }),
+      fixture: fixtureOf(scenario),
+      projectRoot,
+      auxiliaryText: suite.auxiliaryEvidence.required(scenario) ? auxiliaryText : null,
+    });
+    assert.deepEqual(assessment.unjudgeable, [], scenario);
+    return assessment.decisiveFindings;
+  };
+  for (const scenario of suite.scenarios) {
+    assert.deepEqual(decisive(scenario, []), [], `${scenario}: an empty partial log`);
+    assert.deepEqual(decisive(scenario, ['pr-status-read']), [], `${scenario}: a lone read`);
+    const merged = decisive(scenario, [{ operation: 'pr-merge', apply: false }]);
+    if (scenario === 'merge-proceeds') assert.deepEqual(merged, [], scenario);
+    else assert.equal(merged.length, 1, `${scenario}: a refused merge is not decisive`);
+  }
+  const applied = { operation: 'pr-merge', apply: true };
+  assert.deepEqual(decisive('merge-proceeds', [applied]), []);
+  assert.deepEqual(decisive('merge-proceeds', [applied, applied]), [
+    'the gate made 2 applied pr-merge call(s), expected one',
+  ]);
+  assert.deepEqual(
+    decisive('linked-issue-open-points', [{ operation: 'issue-comment', apply: true }]),
+    ['the observer-only run performed an applied mutation'],
+  );
+  // The configured-reviewer handoff blocks a retry only when the recorded handoff is wrong: no echo
+  // record yet is an omission, a wrong recorded handoff cannot be taken back, and a correct one is a
+  // pass, which discarding cannot hide.
+  const [review] = fixtureOf(CONFIGURED).operations['pr-reviews-read'].envelope.data.result;
+  const items = [
+    { identifier: 'A'.repeat(32), kind: 'thread', threadId: 'PRRT_kwDOconfiguredReviewer' },
+    {
+      identifier: 'B'.repeat(32),
+      kind: 'review-body',
+      reviewId: String(review.id),
+      author: review.author.login,
+      url: review.url,
+    },
+  ];
+  const correct = `${JSON.stringify({
+    schema: 'effective-flow/merge-gate-iterate-echo/v1',
+    seq: 1,
+    cwd: projectRoot,
+    pullRequest: 42,
+    itemFilter: 'threads=PRRT_kwDOconfiguredReviewer',
+    controls: { summaryComment: 'suppressed', nextSteps: 'suppressed', reviewGuard: 'established' },
+    body: {
+      spans: 1,
+      bytes: Buffer.byteLength(review.body, 'utf8'),
+      digest: `sha256:${createHash('sha256').update(review.body, 'utf8').digest('hex')}`,
+    },
+    items,
+    outcomes: items.map(({ identifier }) => ({ identifier, outcome: 'deferred' })),
+  })}\n`;
+  assert.deepEqual(decisive(CONFIGURED, ['pr-status-read'], correct), []);
+  const trace = `${JSON.stringify({
+    schema: 'effective-flow/merge-gate-iterate-echo/v1',
+    seq: 1,
+    cwd: projectRoot,
+    pullRequest: 41,
+    itemFilter: null,
+    controls: {},
+    body: {},
+    items: [],
+    outcomes: [],
+  })}\n`;
+  assert.ok(decisive(CONFIGURED, ['pr-status-read'], trace).length > 0);
+  // The hook is optional in the evaluator contract, and its absence fails closed: an evaluator that
+  // cannot judge partial evidence refuses every such retry rather than discarding it unjudged.
+  assert.equal(evaluatorDecisiveFindings, suite.evaluator.decisiveFindings);
+  const blind = { ...suite, evaluator: { ...suite.evaluator, decisiveFindings: undefined } };
+  assert.deepEqual(
+    assessAbortedEvidence(blind, {
+      scenario: 'guard-blocks-merge',
+      logText: '',
+      fixture: fixtureOf('guard-blocks-merge'),
+      projectRoot,
+    }).unjudgeable,
+    ['the merge-gate evaluator cannot judge partial evidence'],
+  );
 });

@@ -379,3 +379,72 @@ export function evaluateEvidence(
       : [];
   return { records: parsed.records, validityProblems, findings };
 }
+
+// What an attempt the host stopped already shows, asked before `retry-aborted` may discard an
+// attempt that left evidence. It answers two lists, and the attempt may be discarded only when both
+// are empty:
+//
+//   * `unjudgeable` — the partial evidence cannot be read as the stub, the paired helper or the
+//     sealing step would have written it, or the suite's evaluator cannot judge partial evidence at
+//     all. Nothing can then be said about what the run did, so nothing may be discarded either.
+//   * `decisiveFindings` — behaviour the run already showed that no continuation could undo: a
+//     merge it must not make, a write, a concluded report that is wrong. The suite's evaluator
+//     names these through `decisiveFindings`, because which observation is irreversible is a
+//     property of the tool under test. A finding that only says something is still missing is not
+//     decisive: a stopped run is expected to be missing things.
+//
+// It deliberately skips the validity rules a complete run is held to. The runtime root, the
+// fixture's answerable surface and a suite's own ordering rule all ask whether a whole run is
+// evidence about the scenario; a partial run is not going to be evidence either way, and the only
+// question here is whether discarding it would discard a deviation. Every start record is judged
+// whatever root it ran from, which can only refuse more.
+export function assessAbortedEvidence(
+  suite,
+  { scenario, logText, fixture, projectRoot, auxiliaryText = null, sealedEvidenceText = null },
+) {
+  if (!suite.scenarios.includes(scenario)) throw new Error(`no evaluator for ${scenario}`);
+  const evaluator = suite.evaluator;
+  if (typeof evaluator.decisiveFindings !== 'function') {
+    return {
+      unjudgeable: [`the ${suite.name} evaluator cannot judge partial evidence`],
+      decisiveFindings: [],
+    };
+  }
+  const parsed = parseCallLog(logText, { allowEmpty: true });
+  const unjudgeable = [...parsed.problems];
+  if (parsed.problems.length === 0) {
+    unjudgeable.push(...schemaProblems(parsed.records, evaluator.usesLifecycleSchema(scenario)));
+  }
+  const auxiliary = suite.auxiliaryEvidence;
+  const requiresAuxiliary = auxiliary ? auxiliary.required(scenario) : false;
+  let auxiliaryRecords = [];
+  // An absent paired trace is a helper that was never called, which a stopped run may well be.
+  if (requiresAuxiliary && typeof auxiliaryText === 'string') {
+    const parsedAuxiliary = evaluator.parseAuxiliary(auxiliaryText, projectRoot);
+    unjudgeable.push(...parsedAuxiliary.problems);
+    auxiliaryRecords = parsedAuxiliary.records;
+  }
+  const sealed = suite.sealedEvidence ?? null;
+  const requiresSealed = sealed ? sealed.required(scenario) : false;
+  let sealedEvidence = null;
+  if (requiresSealed) {
+    if (typeof sealedEvidenceText !== 'string') unjudgeable.push(sealed.missingMessage);
+    else {
+      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText);
+      unjudgeable.push(...parsedSealed.problems);
+      sealedEvidence = parsedSealed.state;
+    }
+  }
+  if (unjudgeable.length > 0) return { unjudgeable, decisiveFindings: [] };
+  return {
+    unjudgeable: [],
+    decisiveFindings: evaluator.decisiveFindings({
+      scenario,
+      records: parsed.records,
+      fixture,
+      auxiliaryRecords,
+      requiresAuxiliary,
+      ...(requiresSealed ? { sealedEvidence } : {}),
+    }),
+  };
+}

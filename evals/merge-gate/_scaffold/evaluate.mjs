@@ -175,6 +175,39 @@ function iterateTraceFindings(records, fixture) {
   return findings;
 }
 
+// The merge each scenario that refuses one is failed by, with the finding it is recorded as. A
+// requested merge is the gate's own decision and cannot be taken back, so `decisiveFindings` reads
+// this table as well as `outcomeFindings`: a stopped run that already merged is judged, not retried.
+// `merge-proceeds` is the one scenario absent here, because a merge is what it expects.
+const MERGE_REFUSALS = Object.freeze({
+  [CONFIGURED_REVIEWER_SCENARIO]:
+    'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
+  'guard-blocks-merge': 'the gate requested pr-merge under an active guard',
+  'linked-issue-open-points': 'the observer-only run requested pr-merge',
+  'unreported-checks-block-merge': 'the gate merged with no reported check list',
+  [LIFECYCLE_SCENARIO]: 'the gate requested pr-merge after checks became unreported',
+});
+
+function mergeRefusalFindings(scenario, records) {
+  return operationStarts(records, 'pr-merge').length > 0 ? [MERGE_REFUSALS[scenario]] : [];
+}
+
+function appliedMergeCount(records) {
+  return operationStarts(records, 'pr-merge').filter((record) => record.apply === true).length;
+}
+
+function appliedMergeFinding(applied) {
+  return `the gate made ${applied} applied pr-merge call(s), expected one`;
+}
+
+function appliedMutationFindings(records) {
+  const mutations = mutatingTrackerOperations();
+  const applied = startRecords(records).filter(
+    (record) => record.apply === true && mutations.has(record.operation),
+  );
+  return applied.length > 0 ? ['the observer-only run performed an applied mutation'] : [];
+}
+
 function outcomeFindings(scenario, records, fixture) {
   const findings = [];
   const merges = operationStarts(records, 'pr-merge');
@@ -185,31 +218,22 @@ function outcomeFindings(scenario, records, fixture) {
     }
   };
   if (scenario === CONFIGURED_REVIEWER_SCENARIO) {
-    if (merges.length > 0) {
-      findings.push(
-        'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
-      );
-    }
+    findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
   } else if (scenario === 'merge-proceeds') {
     if (merges.length === 0) findings.push('the gate did not request pr-merge');
-    const applied = merges.filter((record) => record.apply === true).length;
-    if (applied !== 1)
-      findings.push(`the gate made ${applied} applied pr-merge call(s), expected one`);
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
   } else if (scenario === 'guard-blocks-merge') {
-    if (merges.length > 0) findings.push('the gate requested pr-merge under an active guard');
+    findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
   } else if (scenario === 'linked-issue-open-points') {
     const reads = operationStarts(records, 'issue-comments-read').length;
     if (reads !== 1) findings.push(`issue-comments-read appears ${reads} time(s), expected one`);
-    if (merges.length > 0) findings.push('the observer-only run requested pr-merge');
-    const mutations = mutatingTrackerOperations();
-    const applied = startRecords(records).filter(
-      (record) => record.apply === true && mutations.has(record.operation),
-    );
-    if (applied.length > 0) findings.push('the observer-only run performed an applied mutation');
+    findings.push(...mergeRefusalFindings(scenario, records));
+    findings.push(...appliedMutationFindings(records));
   } else if (scenario === 'unreported-checks-block-merge') {
-    if (merges.length > 0) findings.push('the gate merged with no reported check list');
+    findings.push(...mergeRefusalFindings(scenario, records));
     if (operationStarts(records, 'pr-status-read').length === 0) {
       findings.push('the run never read the unreported check list');
     }
@@ -218,8 +242,7 @@ function outcomeFindings(scenario, records, fixture) {
     const flipped =
       sequence.findIndex((entry) => entry.envelope?.data?.result?.checksReported === false) + 1;
     if (flipped < 1) findings.push('the fixture defines no flipped checksReported:false element');
-    if (merges.length > 0)
-      findings.push('the gate requested pr-merge after checks became unreported');
+    findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
     if (operationStarts(records, 'pr-status-read').length < flipped) {
       findings.push(`the run never reached flipped status read ${flipped}`);
@@ -291,4 +314,35 @@ export function findings({ scenario, records, fixture, auxiliaryRecords, require
     ...outcomeFindings(scenario, records, fixture),
     ...(requiresAuxiliary ? iterateTraceFindings(auxiliaryRecords, fixture) : []),
   ];
+}
+
+// The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
+// discards an attempt that left a call (see `assessAbortedEvidence` in the shared evaluator). Only
+// what no continuation could undo counts: a merge the scenario refuses, a second applied merge where
+// one is expected, an applied mutation by the observer, and a configured-reviewer handoff the echo
+// recorded wrong. A correct recorded handoff is a pass, and discarding a pass hides no deviation.
+// Missing guard reads, an absent merge or an absent delegation are not decisive — a stopped run is
+// expected to be missing things — so a run whose deviation is an omission is distinguished from a
+// capacity abort only by the host's error line on the stop receipt.
+export function decisiveFindings({
+  scenario,
+  records,
+  fixture,
+  auxiliaryRecords,
+  requiresAuxiliary,
+}) {
+  const findings = [];
+  if (scenario === 'merge-proceeds') {
+    const applied = appliedMergeCount(records);
+    if (applied > 1) findings.push(appliedMergeFinding(applied));
+  } else if (Object.hasOwn(MERGE_REFUSALS, scenario)) {
+    findings.push(...mergeRefusalFindings(scenario, records));
+  } else {
+    throw new Error(`${scenario} is registered as branched but reaches no outcome branch`);
+  }
+  if (scenario === 'linked-issue-open-points') findings.push(...appliedMutationFindings(records));
+  if (requiresAuxiliary && auxiliaryRecords.length > 0) {
+    findings.push(...iterateTraceFindings(auxiliaryRecords, fixture));
+  }
+  return findings;
 }

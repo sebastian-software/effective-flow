@@ -27,7 +27,8 @@ import {
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from './build-identity.mjs';
-import { evaluateEvidence } from './evaluate.mjs';
+import { assessAbortedEvidence, evaluateEvidence } from './evaluate.mjs';
+import { stopReceiptHostAbort } from './host-abort.mjs';
 import { assertProfileMatchesPin, normalizeProfile, PROFILE_KEYS, sameKeys } from './profile.mjs';
 import { sealedEvidencePath, validateArchivedPairing } from './run-evidence.mjs';
 import { provisionSlot, TRACKER_STUB_SKILL_PATH } from './scaffold.mjs';
@@ -107,18 +108,31 @@ function archivedPartners(suite, scenario) {
   return partners;
 }
 
-// Write the sealed evidence the suite observes for this attempt, replacing whatever is at its path.
-// A run could have left a file there, and the point of evidence the seal writes is that the run did
-// not author it. Written through a temporary file and a rename, so an interrupted seal leaves either
-// the old file or the whole new one, and a resumed seal observes and writes again.
-function writeSealedEvidence(suite, scenario, paths) {
+// Observe the sealed evidence the suite declares for this attempt, without writing it. `null` for a
+// scenario that has none.
+function captureSealedEvidence(suite, scenario, paths) {
   const sealed = sealedFor(suite, scenario);
-  if (!sealed) return;
-  const target = sealedEvidencePath(suite, paths);
+  if (!sealed) return null;
   const text = sealed.capture({ scenario, paths });
   if (typeof text !== 'string') {
     throw new Error(`${scenario}: the suite's sealed-evidence capture returned no text`);
   }
+  return text;
+}
+
+// Write the sealed evidence the suite observes for this attempt, replacing whatever is at its path.
+// A run could have left a file there, and the point of evidence the seal writes is that the run did
+// not author it. Written through a temporary file and a rename, so an interrupted seal leaves either
+// the old file or the whole new one, and a resumed seal observes and writes again. A caller that
+// already observed the state passes that text, so what it judged is what is written.
+function writeSealedEvidence(
+  suite,
+  scenario,
+  paths,
+  text = captureSealedEvidence(suite, scenario, paths),
+) {
+  if (text === null) return;
+  const target = sealedEvidencePath(suite, paths);
   const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
   writeFileSync(temporary, text, { flag: 'wx' });
   renameSync(temporary, target);
@@ -921,7 +935,18 @@ function recoverRetryTransition({ roundRoot, scenario, slot }) {
   return finishRetryTransition({ roundRoot, scenario, slot, transition });
 }
 
-function reprovision({ suite, manifest, roundRoot, scenario, slot, state, paths, reason }) {
+function reprovision({
+  suite,
+  manifest,
+  roundRoot,
+  scenario,
+  slot,
+  state,
+  paths,
+  reason,
+  hostAbort = null,
+  sealedEvidenceText = null,
+}) {
   const discardLimit = suite.retryDiscardLimit(scenario);
   if (state.discardedAttempts >= discardLimit) {
     throw new Error(
@@ -929,6 +954,7 @@ function reprovision({ suite, manifest, roundRoot, scenario, slot, state, paths,
         `${discardLimit}; stop for investigation`,
     );
   }
+  writeSealedEvidence(suite, scenario, paths, sealedEvidenceText);
   const next = state.currentAttempt + 1;
   const provisioned = provisionSlot(suite, {
     roundRoot,
@@ -942,6 +968,7 @@ function reprovision({ suite, manifest, roundRoot, scenario, slot, state, paths,
   atomicJson(resolve(paths.attemptRoot, 'retry.json'), {
     reason,
     retainedAt: new Date().toISOString(),
+    ...(hostAbort ? { hostAbort } : {}),
   });
   const transition = {
     schemaVersion: 1,
@@ -996,6 +1023,26 @@ export function retryInvalid(suite, { handle, scenario, slot, reason, base = sui
   });
 }
 
+// Retries an attempt the host stopped. Two shapes of stop receipt are accepted, and which one an
+// attempt needs depends on what it left.
+//
+// **An attempt that left nothing** is retried on the plain receipt `{schemaVersion, stopped,
+// reason}`, as it always was: there is no evidence to lose.
+//
+// **An attempt that left evidence** is retried only when the host stopped it for a reason outside
+// the run, and only when what it left shows no deviation. The receipt adds `cause` and `hostError`,
+// the provider's own error line, checked against the closed set in `host-abort.mjs` for the round's
+// harness. That is what keeps an early end from being attested as a capacity abort: a session that
+// ended on its own conclusion printed no such line. Before anything moves, the partial evidence —
+// the call log, the paired trace, and for a suite that declares it the sealed evidence, observed now
+// exactly as `seal` would — is judged by `assessAbortedEvidence`. Evidence that cannot be read, and
+// evidence that already holds a decisive finding, refuse the retry: a deviation is retained, never
+// discarded, and the slot then needs investigation rather than another run. Otherwise the observed
+// sealed evidence is written into the attempt and the whole attempt is quarantined like any other
+// retried one, its `retry.json` carrying the cause and the error line beside the reason.
+//
+// The completed-session seal is no alternative for such an attempt and is not offered one: its
+// receipt attests `completed: true`, which a stopped session cannot truthfully claim.
 export function retryAborted(
   suite,
   { handle, scenario, slot, assertion, base = suite.sandboxBase },
@@ -1006,21 +1053,17 @@ export function retryAborted(
     const recovered = recoverRetryTransition({ roundRoot, scenario, slot });
     if (recovered) return recovered;
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
-    if (
-      !assertion ||
-      !sameKeys(assertion, ['reason', 'schemaVersion', 'stopped']) ||
-      assertion.schemaVersion !== 1 ||
-      assertion.stopped !== true ||
-      typeof assertion.reason !== 'string' ||
-      assertion.reason.trim() === ''
-    ) {
-      throw new Error('retry-aborted requires {schemaVersion:1, stopped:true, reason}');
-    }
+    const hostAbort = stopReceiptHostAbort(assertion, manifest.profile.harness);
     if (existsSync(paths.sealReceipt)) throw new Error('sealed attempts use retry-invalid');
+    let sealedEvidenceText = null;
     if (attemptLeftEvidence(suite, scenario, paths)) {
-      throw new Error(
-        `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry`,
-      );
+      if (!hostAbort) {
+        throw new Error(
+          `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry, ` +
+            'unless the stop receipt attests a host abort with its cause and hostError',
+        );
+      }
+      sealedEvidenceText = discardableSealedEvidence(suite, scenario, slot, paths);
     }
     return reprovision({
       suite,
@@ -1030,9 +1073,47 @@ export function retryAborted(
       slot,
       state,
       paths,
-      reason: assertion.reason,
+      reason: hostAbort ? `${hostAbort.cause}: ${assertion.reason}` : assertion.reason,
+      hostAbort,
+      sealedEvidenceText,
     });
   });
+}
+
+// The judgement `retryAborted` makes of an attempt that left evidence. Returns the sealed evidence
+// it observed — `null` for a suite that declares none — which `reprovision` writes into the attempt
+// before quarantining it, so the retained attempt carries the state it was judged on.
+function discardableSealedEvidence(suite, scenario, slot, paths) {
+  if (existsSync(paths.callLogLock)) {
+    throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
+  }
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  if (auxiliaryLog && existsSync(`${auxiliaryLog}.lock`)) {
+    throw new Error(`auxiliary-trace lock is still live at ${auxiliaryLog}.lock`);
+  }
+  const sealedText = captureSealedEvidence(suite, scenario, paths);
+  const assessment = assessAbortedEvidence(suite, {
+    scenario,
+    logText: existsSync(paths.callLog) ? readFileSync(paths.callLog, 'utf8') : '',
+    fixture: json(paths.fixture),
+    projectRoot: paths.projectRoot,
+    auxiliaryText:
+      auxiliaryLog && existsSync(auxiliaryLog) ? readFileSync(auxiliaryLog, 'utf8') : null,
+    sealedEvidenceText: sealedText,
+  });
+  if (assessment.unjudgeable.length > 0) {
+    throw new Error(
+      `${scenario}/${slot} partial evidence cannot be judged (${assessment.unjudgeable.join('; ')}); ` +
+        'it is retained, stop for investigation',
+    );
+  }
+  if (assessment.decisiveFindings.length > 0) {
+    throw new Error(
+      `${scenario}/${slot} partial evidence already holds a behavioural finding ` +
+        `(${assessment.decisiveFindings.join('; ')}); it is retained and may not be retried`,
+    );
+  }
+  return sealedText;
 }
 
 function filesUnder(root, directory = root) {
