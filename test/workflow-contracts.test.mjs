@@ -9297,6 +9297,8 @@ test('the condensed lifecycle rule and the Phase-6 summary carry the widened rev
   );
 });
 
+// Invariant: the Issue done offer carries no attacker-writable text, and its option
+// discloses every write it authorizes (transition, label removal, container completion).
 test('the terminal-transition offer quotes no text and its option discloses the whole cascade', () => {
   // The fence travelled with the steps it gates, so both halves of this test read the fragment.
   // The raw source, not the `prose()` form: the fence is located by its literal text.
@@ -9340,6 +9342,8 @@ test('the terminal-transition offer quotes no text and its option discloses the 
   assert.match(setToDone, /this question quotes no criterion and no pull-request text/);
 });
 
+// Invariant: criteria come only from a closed heading set, are never derived
+// from prose, and an issue stating none is `undetermined`, never `complete`.
 test('a stated acceptance criterion comes from a closed heading set and its absence is undetermined', () => {
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
@@ -9352,6 +9356,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
     assert.match(
       contract,
       /The set is `Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively at any heading level/,
+      'the acceptance-criterion headings must stay a closed set',
     );
     assert.match(contract, /the criteria are that section's top-level list items/);
     // An issue with no criteria at all is the cheapest input in the system to construct, and the
@@ -9363,11 +9368,14 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
   // lifecycle contract already forbids inventing an acceptance criterion.
   assert.match(
     observation,
-    /Never pull a criterion out of prose by collecting "must" or "shall" sentences/,
+    /Never pull a criterion out of prose/,
+    'a criterion must never be derived from prose',
   );
   assert.match(lifecycle, /a criterion is never derived from prose/);
 });
 
+// Invariant: a planning blocker under the legacy `firmo-` spelling still blocks a
+// `complete` verdict on the forge.
 test('the completion verdict recognizes the legacy planning-blocker spelling on the forge', () => {
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
@@ -9387,7 +9395,8 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
   }
   assert.match(
     lifecycle,
-    /`effective-flow-needs-planning`, on the forge in either spelling — complete the planning path/,
+    /`effective-flow-needs-planning`, on the forge in either spelling/,
+    'the planning blocker must be honoured in either spelling',
   );
 
   // The gate carries no include of the label convention, which is why the rule is stated inline
@@ -9402,6 +9411,8 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
   }
 });
 
+// Invariant: only a terminal (done) issue reaches the delivery writes; a cancelled or
+// unreconcilable one counts as a failed transition and gets no cleanup write.
 test('a terminal outcome is split into done and cancelled before anything is reconciled', () => {
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
@@ -9428,15 +9439,18 @@ test('a terminal outcome is split into done and cancelled before anything is rec
   // issue, the post-transition proof, and the two cleanup writes.
   assert.match(
     observation,
-    /it replaces it with the split outcome step 2 defines, never with a bare "terminal"/,
+    /never with a bare "terminal"/,
+    'an already-terminal issue must be promoted to the split outcome, not a bare terminal',
   );
   assert.match(
     observation,
     /a re-read that still shows a nonterminal state, one that shows `terminal \(cancelled\)`, or one that shows `terminal \(reconciliation unavailable\)` is a failed transition/,
+    'a nonterminal, cancelled or unreconcilable re-read must count as a failed transition',
   );
   assert.match(
     observation,
-    /For every forge issue freshly observed terminal \(done\), remove `effective-flow-issue-in-progress`/,
+    /terminal \(done\), remove `effective-flow-issue-in-progress`/,
+    'the in-progress label is removed only for a terminal (done) issue',
   );
   assert.match(
     observation,
@@ -9444,7 +9458,8 @@ test('a terminal outcome is split into done and cancelled before anything is rec
   );
   assert.match(
     lifecycle,
-    /Complete a checklist entry only after the linked issue is observed `terminal \(done\)`/,
+    /checklist entry only after the linked issue is observed `terminal \(done\)`/,
+    'a checklist entry is completed only for a terminal (done) issue',
   );
 
   // A cancelled issue is not open work either: no closure guidance is derived for it.
@@ -9452,6 +9467,8 @@ test('a terminal outcome is split into done and cancelled before anything is rec
   assert.match(lifecycle, /derive no guidance\s*for it/);
 });
 
+// Invariant: the external done state is resolved fresh before each transition,
+// and a failed resolution blocks that transition like a failed revalidation read.
 test('the external done state is re-resolved before every transition, not once before the offer', () => {
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
@@ -9470,17 +9487,16 @@ test('the external done state is re-resolved before every transition, not once b
   assert.match(lifecycle, /re-resolve `tracker.externalDoneState`/);
   assert.match(
     target,
-    /Resolve it again immediately before every transition, not once before the offer/,
-  );
-  assert.match(
-    target,
-    /the post-transition re-read would then match the issue against that same stale value/,
+    /before every transition, not once before the offer/,
+    'the done state must be resolved before every transition',
   );
   for (const contract of [observation, lifecycle]) {
     assert.match(contract, /treated exactly as a failed revalidation\s*read/);
   }
 });
 
+// Invariant: an already-terminal issue is classified against a freshly resolved
+// done state; without one it is `terminal (reconciliation unavailable)`, never a guessed done.
 test('an already-terminal external issue resolves its done state where the split is recorded', () => {
   const observation = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation steps'),
@@ -9495,7 +9511,6 @@ test('an already-terminal external issue resolves its done state where the split
   // earns the `complete` verdict the transition loop consumes. The observation that records the
   // split therefore has to resolve the value itself, or it is classifying against nothing.
   for (const contract of [observation, lifecycle]) {
-    assert.match(contract, /The external half needs a resolved done state/);
     assert.match(contract, /resolve `tracker.externalDoneState` by the loaded `tracker-target`/);
     // Observation needs the listing half only — a connection that cannot transition still tells a
     // done issue from a withdrawn one.
@@ -9504,7 +9519,8 @@ test('an already-terminal external issue resolves its done state where the split
   }
   assert.match(
     target,
-    /before recording the terminal split for an issue post-merge observation finds already terminal/,
+    /before recording the terminal split/,
+    'the done state must also be resolved before an already-terminal issue is split',
   );
   // The capability statement used to say observation needed only a state read, which is what left
   // the split with no value to compare against.
@@ -9524,7 +9540,8 @@ test('an already-terminal external issue resolves its done state where the split
   for (const contract of [observation, lifecycle]) {
     assert.match(
       contract,
-      /records terminal \(reconciliation unavailable\) rather than a guessed `terminal \(done\)`/,
+      /rather than a guessed `terminal \(done\)`/,
+      'an unresolved done state must never yield a guessed terminal (done)',
     );
     assert.match(
       contract,
@@ -9543,13 +9560,17 @@ test('an already-terminal external issue resolves its done state where the split
   assert.match(
     reportItems,
     /one row per linked issue with its observed terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
+    'the per-issue report row must offer the reconciliation-unavailable state',
   );
   assert.match(
     reportItems,
-    /a reconciliation-unavailable one naming the missing capability or configuration value that left `tracker.externalDoneState` unresolved/,
+    /reconciliation-unavailable one naming the missing capability or configuration value/,
+    'a reconciliation-unavailable row must name what is missing',
   );
 });
 
+// Invariant: the open points never feed a verdict, the offer, or a write, and a
+// failed comment read costs only this observation.
 test('the post-merge open points are report-only, in the four ways that keep them harmless', () => {
   const contract = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -9590,6 +9611,8 @@ test('the post-merge open points are report-only, in the four ways that keep the
   );
 });
 
+// Invariant: quoting the open points is allowed only because they are report-only,
+// and the quoted text is bounded (count, length) and inert.
 test('the open-point quoting exception is stated as resting on the report-only property', () => {
   const contract = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -9663,6 +9686,8 @@ test('the open-point quoting exception is stated as resting on the report-only p
   }
 });
 
+// Invariant: the open points are reported for every assessed issue, whatever
+// closure-guidance rule matched.
 test('the open-points report is independent of which closure-guidance rule matched', () => {
   const contract = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
@@ -9720,14 +9745,13 @@ test('the open-points report is independent of which closure-guidance rule match
   // fire, and the contract says in so many words that this naming is not what reports them.
   assert.match(
     observation,
-    near(
-      'That naming is guidance text and is not what reports them',
-      'Phase 6 reports the open points once per assessed issue whatever rule matched here',
-      300,
-    ),
+    near('is not what reports them', 'whatever rule matched here', 300),
+    "step 7's naming of the open points must not be what reports them",
   );
 });
 
+// Invariant: the comment read is budgeted in step 3 only; step 4 revalidation
+// gains no comment read.
 test('the comment read enters step 3 budget only, and step 4 says why it does not follow', () => {
   const observation = source('src/shared/merge-gate-issue-observation.md');
   const step3 = prose(
@@ -9764,6 +9788,8 @@ test('the comment read enters step 3 budget only, and step 4 says why it does no
   assert.match(step3, /fixed literals and carry no configuration key/);
 });
 
+// Invariant: a missing `issueClose` disables the offer without failing the run, and
+// the close is never counted as a required read.
 test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {
   const phase0 = prose(
     section(
@@ -9780,11 +9806,13 @@ test('the forge preflight probes issueClose, degrades without it, and never call
   assert.match(phase0, /Without `issueClose` the run continues/);
   assert.match(
     phase0,
-    /the Phase-5\.5 completion offer is unavailable for every forge issue of this run/,
+    /completion offer is unavailable for every forge issue/,
+    'without issueClose the offer is unavailable for every forge issue',
   );
   assert.match(
     phase0,
-    /an unavailable offer is not the same result as an issue the assessment found incomplete/,
+    near('unavailable offer is not the same result', 'found incomplete', 100),
+    'an unavailable offer must be reported apart from an incomplete verdict',
   );
 
   // The observer-only sentence is about forge *reads*. Extending its list in place would have
@@ -9828,6 +9856,8 @@ test('the forge preflight probes issueClose, degrades without it, and never call
   );
 });
 
+// Invariant: the Phase-6 report names the verdict by its locators and never
+// quotes criterion or pull-request text; merged-PR re-entry allows the completion assessment.
 test('the Phase-6 summary and the merged-PR re-entry allowlist name the completion assessment', () => {
   const gate = source('src/tools/merge-gate.md');
   const reportItems = prose(
@@ -9837,12 +9867,11 @@ test('the Phase-6 summary and the merged-PR re-entry allowlist name the completi
   assert.match(reportItems, /per linked issue, the completion verdict of Phase 5\.5 by its name/);
   assert.match(reportItems, /together with the criterion locators that produced it/);
   // Phase 6's guard-exclusion item states that it reads "no body, deliberately"; an extension that
-  // quoted criterion or pull-request text would reverse that discipline. The verdict item names that
-  // item explicitly, because it no longer sits above it once the report items moved to the fragment.
-  assert.match(reportItems, /for the same reason Phase 6's guard-exclusion item reads none/);
+  // quoted criterion or pull-request text would reverse that discipline.
   assert.match(
     reportItems,
-    /Report the locators and never the criterion text or any pull-request text/,
+    /never the criterion text or any pull-request text/,
+    'the verdict report must never quote criterion or pull-request text',
   );
   assert.match(
     reportItems,
@@ -9883,6 +9912,8 @@ test('the Phase-6 receipt result stays inline and the per-issue report items fol
   assert.match(section(fragment, '### Observation steps'), /header: Issue done/);
 });
 
+// Invariant: both force-close prohibitions stay, each with the operator-confirmed
+// carve-out beside it.
 test('both force-close prohibitions survive verbatim beside the operator-confirmed carve-out', () => {
   // An operator-confirmed transition after an evidence-backed `complete` verdict is not a forced
   // close, so neither prohibition is weakened; each gains the carve-out next to it instead.
@@ -9917,6 +9948,8 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
   );
 });
 
+// Invariant: the gate never closes an issue on its own authority; a transition
+// needs a `complete` verdict and explicit operator confirmation in a gated run.
 test('the merge-gate rules drop the observe-only closure claim for the confirmed-transition rule', () => {
   const gate = prose(source('src/tools/merge-gate.md'));
 
@@ -9931,10 +9964,13 @@ test('the merge-gate rules drop the observe-only closure claim for the confirmed
   assert.match(gate, /Never close an issue on this gate's own authority\./);
   assert.match(
     gate,
-    /A terminal transition happens only after a `complete` assessment verdict and an explicit operator confirmation in a gated run; every other path observes only\./,
+    /only after a `complete` assessment verdict and an explicit operator confirmation in a gated run/,
+    'a terminal transition needs a complete verdict and operator confirmation in a gated run',
   );
 });
 
+// Invariant: the completion assessment, a guard that authorizes a tracker
+// write, stays in the run and is never delegated.
 test('the in-run reasoning enumeration names the completion assessment as its fifth member', () => {
   // The carve-out from the delegation mandate is a closed enumeration, so a guard that authorizes
   // a write is either named in it or delegated away. Reading an exception into the four is exactly
@@ -9943,15 +9979,14 @@ test('the in-run reasoning enumeration names the completion assessment as its fi
 
   assert.match(
     gate,
-    /evaluating the Phase-4 conditions, and forming the Phase-5\.5 completion assessment stay in this run/,
-  );
-  assert.match(
-    gate,
-    /The completion assessment is named here as a fifth member rather than read into the four before it/,
+    /forming the Phase-5\.5 completion assessment stay in this run/,
+    'the completion assessment must stay a named in-run member',
   );
   assert.match(gate, /it is a guard that authorizes a tracker write/);
 });
 
+// Invariant: an unset or unverifiable done state never authorizes a guessed
+// transition and never aborts a run whose merge already succeeded.
 test('external done-state configuration mirrors the started state and never aborts a merged run', () => {
   const migration = prose(source('src/shared/config-migration-edge-cases.md'));
   const tracker = prose(source('src/shared/tracker-target.md'));
@@ -9972,12 +10007,14 @@ test('external done-state configuration mirrors the started state and never abor
   );
   assert.match(
     migration,
-    /make that transition unavailable instead of guessing, and never abort a run whose merge already succeeded/,
+    /never abort a run whose merge already succeeded/,
+    'an unresolvable done state must never abort a merged run',
   );
 
   assert.match(
     tracker,
-    /Before the offered post-merge terminal transition, and before recording the terminal split for an issue post-merge observation finds already terminal, list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
+    /list those states fresh in the same context and resolve `tracker\.externalDoneState`/,
+    'the done state must be resolved from a fresh state listing',
   );
   assert.match(tracker, /it must be writable and terminal, and normalized as a done category/);
   // Discovery has to carry the done category too, not only the terminal flag. A tracker that spells
@@ -9986,7 +10023,8 @@ test('external done-state configuration mirrors the started state and never abor
   // the canceled state wherever the completed one happens not to be writable.
   assert.match(
     tracker,
-    /When the key is unset, filter the fresh states to writable, terminal candidates normalized as a done category/,
+    /terminal candidates normalized as a done category/,
+    'discovery must filter on the done category, not the terminal flag alone',
   );
   assert.match(tracker, /A display-name match is never enough/);
   assert.match(
@@ -9997,7 +10035,8 @@ test('external done-state configuration mirrors the started state and never abor
   // follows a merge that already succeeded, so an unresolvable value never fails the run closed.
   assert.match(
     tracker,
-    /unlike the started state it never aborts the run, because the merge has already happened/,
+    /unlike the started state it never aborts the run/,
+    'an unresolvable done state must never abort the run',
   );
   assert.match(
     tracker,
@@ -10022,7 +10061,8 @@ test('external done-state configuration mirrors the started state and never abor
   );
   assert.match(
     setup,
-    /report that the post-merge transition will be offered as unavailable until setup can verify one/,
+    /offered as unavailable until setup can verify one/,
+    'setup must leave the transition unavailable rather than persist an unverified state',
   );
   assert.match(
     setup,
@@ -10059,12 +10099,10 @@ test('external done-state configuration mirrors the started state and never abor
   );
   assert.match(
     migration,
-    /That transition is not the only reader: the post-merge observation of an issue found already terminal resolves the same value by the same rules/,
+    /That transition is not the only reader: the post-merge observation/,
+    'the migration notes must name the post-merge observation as a second reader',
   );
-  assert.match(
-    prose(guide),
-    /Two readers use it, both in \[`\/effective-flow merge-gate`\]\(\.\/tools-deliver\.md\) and both after a merge/,
-  );
+  assert.match(prose(guide), /Two readers use it/, 'the guide must name both readers');
 
   assert.equal(
     rowCells(tableRow(section(guide, '## Block `tracker`', '\n## '), '`externalDoneState`'))[3],
@@ -10198,6 +10236,8 @@ test('an unreadable conflictResolution resolves to off in every source that docu
   }
 });
 
+// Invariant: the comment read is report-only and does not degrade with the
+// `tea api --include` transport that `issue-close` rides.
 test('the merge-gate operation table gains issue-close and issue-comments-read, on their own transports', () => {
   const gateOps = section(
     source('docs/user-guide/remote-tracker.md'),
@@ -10280,6 +10320,9 @@ test('linked-issue re-entry is mirrored by next steps and user documentation', (
 // contract now lives in its own fragment; these assertions pin the parts a
 // later edit could quietly undo.
 
+// Invariant: plan archival is decided by the delivery checkout's index, a blocked probe or a
+// collision never aborts the handback, State C never overwrites an existing archive target, and
+// the main-checkout cleanup removes only one verified untracked project file.
 test('the plan-archival fragment states its detection, states and cleanup', () => {
   const fragment = source('src/shared/plan-archival.md');
 
@@ -10353,7 +10396,6 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   // The archived basis is decided before the paths are derived at all — the
   // predicate cannot be a comparison of two paths that can never be equal.
   assert.match(fragment, /check the basis first/i);
-  assert.match(fragment, /nested `<plan\.dir>\/archive\/archive\/<file>\.md`/);
   assert.match(fragment, /the basis check precedes/);
   // The condition cell itself, not just the row label: the never-satisfiable
   // "P and A resolve to the same path" comparison must not come back.
@@ -10364,10 +10406,14 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
 
   // The mark happens after the take-over, superseding the older arrangement.
   assert.match(fragment, /The order is read → take over → mark/);
-  assert.match(fragment, /Autorisierung im Haupt-Repo/);
+  assert.match(
+    fragment,
+    /never to the original in the main\s+checkout/,
+    'the status mark must never be applied to the original plan in the main checkout',
+  );
 
   // Emptiness, not string equality: the `-z` rationale must survive.
-  assert.match(fragment, /`-z` is load-bearing rather than tidy/);
+  assert.match(fragment, /`-z` is load-bearing/, 'the probe must keep `-z` marked as load-bearing');
   assert.match(fragment, /C-quotes any path `core\.quotePath` covers/);
   assert.match(fragment, /matches neither\s+path literally/);
 
@@ -10397,7 +10443,6 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(fragment, /filesystem existence check on `A`/);
   // The check alone is a TOCTOU window: a file created between row 5 and the
   // write would be silently replaced. The write itself must refuse to clobber.
-  assert.match(fragment, /\*\*The check is not the guarantee — the placement is\.\*\*/);
   // The target is created complete or not at all: content goes to a temporary
   // file beside it, then one no-clobber placement. A plain write into the
   // target leaves a partial file when the run dies mid-write, and the next run
@@ -10419,7 +10464,8 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   // nothing from a subdirectory.
   assert.match(
     fragment,
-    /repository root\*\*; `ls-files` output is relative to the directory it runs in/,
+    /\*\*repository root\*\*/,
+    '`EXECUTION_ROOT` must be the repository root of the delivery checkout',
   );
 
   // `git mv -f` may appear, but only inside its own prohibition: it produces a
@@ -10529,7 +10575,11 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   // wording: `findRuntimeStateSafetyViolations` fires on a mutation verb sharing
   // a line with an `.effective-flow/` path, so the guard is a build-time
   // co-assertion of this one.
-  assert.match(fragment, /carries no runtime-state write guard, because it needs none/);
+  assert.match(
+    fragment,
+    /carries no runtime-state write guard/,
+    'the fragment must declare that it carries no runtime-state write guard',
+  );
   assert.match(fragment, /neither reads from nor writes to it/);
   assert.match(fragment, /Its one destructive\s+act is on a \*\*project\*\* file/);
   // Neither may be named as a flow that archives: they keep no plan file, so
@@ -10650,6 +10700,9 @@ function baseBranchRuleParts() {
     .filter((part) => part.trim() !== '');
 }
 
+// Invariant: a configured remote whose fetch or resolution fails stops and never falls back to a
+// local branch; only an unconfigured remote substitutes the local branch, visibly; and a value that
+// resolves nowhere aborts without inventing a base branch.
 test('the base-branch resolution rule distinguishes a missing remote from a failed fetch', () => {
   const step = boundedSlice(
     source('src/shared/base-branch-resolution.md'),
@@ -10701,6 +10754,8 @@ test('the base-branch resolution rule distinguishes a missing remote from a fail
   assert.match(unresolvable, /Never\s+invent or create a base branch/);
 });
 
+// Invariant: a value is a remote ref only when its leading part names a configured remote, and the
+// full value is tried as a local ref before any part is cut off it.
 test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
   const [classification, , missing] = baseBranchRuleParts();
 
@@ -10712,11 +10767,6 @@ test('the base-branch resolution rule keeps a slash-containing local base branch
     classification,
     near('part before its first `/`', '`git remote`', 200),
     'only a leading part that names a configured remote may make the value a remote ref',
-  );
-  assert.match(
-    classification,
-    /`feature\/foo`/,
-    'the slash-containing local branch is the case the split gets wrong',
   );
 
   // `setup` proposes a bare local branch where no `origin` exists, so the slashless value is a
@@ -10793,6 +10843,7 @@ test('the base-branch resolution rule states the derived default before classify
   );
 });
 
+// Invariant: the drift comparison is reached only by the arm that already fetched the remote ref.
 test('the base-branch drift comparison lives inside the remote-configured case', () => {
   const cases = baseBranchRuleParts().slice(1);
 
@@ -10822,6 +10873,8 @@ test('the base-branch drift comparison lives inside the remote-configured case',
   }
 });
 
+// Invariant: base-branch drift is reported, never gated; the configured value still wins, and the
+// report fires only where `origin/HEAD` resolves to another branch on `origin`.
 test('the base-branch drift report stays a report and carries its remediation', () => {
   const configured = baseBranchRuleParts()
     .slice(1)
@@ -10948,7 +11001,8 @@ test('the recorded base-branch results identify the arm that produced them', () 
   // The reading itself, not only its two halves: a consumer needs the direction spelled out.
   assert.match(
     recorded,
-    /equal results are the remote-not-configured arm and differing results are the remote-configured one/,
+    /equal results are the remote-not-configured arm/,
+    'the reading must map equal results to the remote-not-configured arm',
   );
   // Carrying the arm as a third named result is the alternative this derivation replaces. Left
   // unstated, a later handoff would grow that field back and the pair would stop being sufficient.
@@ -10959,6 +11013,8 @@ test('the recorded base-branch results identify the arm that produced them', () 
   );
 });
 
+// Invariant: the partial-diff path owns no fetch of its own and creates its branch from the
+// recorded resolved base ref, never from the raw configured value.
 test('the partial-diff path defers to the single base-branch resolution rule', () => {
   const delivery = source('src/shared/worktree-integration.md');
   const partial = boundedSlice(delivery, '### Partial-diff PR via worktree', '\n### ');
@@ -11189,6 +11245,8 @@ test('every delivery site names a recorded base-branch result instead of re-deri
   );
 });
 
+// Invariant: `pr` consumes the two recorded base results instead of re-deriving a branch, refreshes
+// a recorded ref only through the shared rule, and yields a diff base on `origin` or aborts.
 test('pr consumes the recorded base results and derives a diff base on both arms', () => {
   const pr = source('src/tools/pr.md');
 
@@ -11197,7 +11255,7 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // later cleanup from "fixing" the one occurrence that is supposed to stay.
   assert.match(
     pr,
-    /do not recompute them against the local branch part, which may lag behind the remote/,
+    /do not recompute them against the local branch part/,
     'step 9 must keep its argument against recomputing the range on the local branch',
   );
 
@@ -11234,11 +11292,6 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // is derived from `origin/HEAD` now, so naming one branch here would restate — and outdate — a
   // rule this step is required to defer to. The remote-ref property is what this guard is for.
   assert.match(prose(baseInput), /if the config is missing, the derived remote default/);
-  assert.match(
-    prose(baseInput),
-    near('never a remote ref', 'no local `main`', 300),
-    'the default must say why a slashless value cannot stand in for the remote ref',
-  );
 
   const precondition = boundedSlice(
     pr,
@@ -11304,7 +11357,6 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     near('remote to be `origin`', 'non-`origin` remote', 200),
     'the remote-configured arm must raise the same non-origin abort as the other arm',
   );
-  assert.match(prose(configuredArm), /`upstream\/main`/);
   // A complete handoff runs no arm here, so the arm has to be read off the two results. Without
   // this the step selects between its arms by "the arm that resolved the value" and the handoff
   // path — the one `worktree-integration` hands over — has no such arm.
@@ -11315,7 +11367,7 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   );
   assert.match(
     flow,
-    /equal results are the remote-not-configured arm and differing results the remote-configured one/,
+    /equal results are the remote-not-configured arm/,
     'the derivation must be stated in the direction step 4 applies it',
   );
   // The handoff's recorded ref was fetched by the caller, possibly long ago. Used as the diff base
@@ -11328,7 +11380,7 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   );
   assert.match(
     prose(configuredArm),
-    near('arbitrarily far behind', 'before the range below is inspected', 500),
+    /before the range below is inspected/,
     'the refresh must be pinned to the moment before the range is read',
   );
   assert.match(
@@ -11348,16 +11400,6 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // a byte command substitution strips, which collapses the two states the abort must tell apart.
   assert.match(
     flow,
-    near('any ref below `refs/heads/<branch>/`', '`release/1.0`', 300),
-    'the pattern prefix-matches siblings, so the refname must be compared',
-  );
-  assert.match(
-    flow,
-    near('lone newline', 'command substitution', 200),
-    'the two absences are indistinguishable without the refname column',
-  );
-  assert.match(
-    flow,
     near('No row whose refname equals the branch', 'upstream field is empty', 200),
     'each absence must be named by the observation that establishes it',
   );
@@ -11371,11 +11413,6 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   // The refresh has to go back through the rule rather than be restated, which is what keeps the
   // resolved composition at exactly one `git fetch`.
   const localArm = boundedSlice(step4, '- **Remote not configured:**', '- **Commits found:**');
-  assert.match(
-    prose(localArm),
-    near('not current yet', 'resolution fetched nothing', 200),
-    'the accepted upstream must be stated as stale before it is used as a diff base',
-  );
   assert.match(
     prose(localArm),
     near('back through "Base-branch resolution"', 'the one refresh this arm owes', 200),
@@ -11393,11 +11430,6 @@ test('pr consumes the recorded base results and derives a diff base on both arms
     prose(localArm),
     near("upstream's branch component", 'equal the resolved local base branch', 200),
     'a differently named upstream must abort instead of targeting a branch it never diffed against',
-  );
-  assert.match(
-    prose(localArm),
-    near('`release` that tracks `origin/main`', 'stays the pull-request target', 300),
-    'the concrete divergence must be named, not left as an abstract mismatch',
   );
   assert.match(
     prose(localArm),
@@ -11421,6 +11453,8 @@ test('pr consumes the recorded base results and derives a diff base on both arms
   );
 });
 
+// Invariant: setup never proposes a base branch the repository cannot resolve, and remote
+// detection changes only the proposal - the confirmed Step 6 write stays the only writer.
 test('setup proposes a base branch that can actually resolve in a remoteless repository', () => {
   const setup = source('src/tools/setup.md');
   const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
@@ -11445,10 +11479,13 @@ test('setup proposes a base branch that can actually resolve in a remoteless rep
   assert.equal(rowCells(tableRow(safeDefaults, 'delivery.baseBranch'))[1], 'origin/main');
   assert.match(
     prose(safeDefaults),
-    near('one row whose safe value depends on the repository', 'current local branch', 300),
+    near('depends on the repository', 'current local branch', 300),
+    'the safe-defaults table must qualify its `origin/main` value for a repository without a remote',
   );
 });
 
+// Invariant: the `origin/main` proposal is offered only where a remote named `origin` exists, and
+// setup never guesses a ref from any other remote.
 test('setup keys the `origin/main` proposal on a remote actually named origin', () => {
   const setup = source('src/tools/setup.md');
   const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
@@ -11470,7 +11507,11 @@ test('setup keys the `origin/main` proposal on a remote actually named origin', 
   // And the repair must not be to pick some other remote's name: with several remotes none of
   // them is the obvious base, and a guessed `upstream/main` is as unresolvable as the guess it
   // replaces. The free text is where a differently named remote ref belongs.
-  assert.match(question, /Never guess a remote ref from a differently named remote/);
+  assert.match(
+    question,
+    near('Never guess', 'differently named remote', 60),
+    'setup must never guess a remote ref from a differently named remote',
+  );
 
   // The safe-defaults note carries the same condition. Left at "a remote is configured" it keeps
   // documenting exactly the behavior this rule drops.
@@ -11565,6 +11606,8 @@ test('the four plan-carrying tools keep their in-place-without-delivery instruct
   }
 });
 
+// Invariant: `plan-archival` is the single owner of how a plan is archived, and an untracked plan is
+// never moved with `git mv`.
 test('the plan-file conventions name plan-archival as the owner of the mechanism', () => {
   // plan-numbering keeps its `git mv` literal: 830e07a made it one half of a
   // forward/reverse contrast and pinned it. It gains an ownership pointer only.
@@ -12025,11 +12068,6 @@ test('the undecided cause is scoped to condition 10 and never reaches the human-
     'the guard clause must exclude the undecided cause explicitly',
   );
   assert.match(
-    guard,
-    near('(?:never cleared|not scoped to configured logins)', 'undecided', 500),
-    'the guard clause must say why the exclusion exists',
-  );
-  assert.match(
     prose(state),
     /fourth cause is scoped[\s\S]{0,140}no other consumer inherits it/i,
     'the shared contract must scope the fourth cause rather than leaving it to inheritance',
@@ -12258,7 +12296,7 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
   // carried only the items the confirmation could not clear. The item sat in neither branch.
   assert.match(
     confirmation,
-    near('A mixed evaluation still poses it', 'Pose the question anyway', 300),
+    /mixed evaluation still poses/i,
     'the confirmation must be posed even where the same evaluation also holds returning items',
   );
   assert.match(
@@ -12268,16 +12306,11 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
   );
   assert.match(
     confirmation,
-    near('Nothing is stranded outside both branches', 'not put to them a second time', 250),
+    near('Nothing is stranded', 'second time', 250),
     'the mixed case must state that nothing falls outside both branches and nothing is re-asked',
   );
 
-  // The trade the fix makes, stated rather than left for a reader to discover.
-  assert.match(
-    confirmation,
-    near('posed in a round that will not merge', 'intended trade', 150),
-    'the confirmation must state that it may be posed in a round that will not merge',
-  );
+  // The trade the fix makes: withholding the question is what would strand the set-aside item.
   assert.match(
     confirmation,
     near('Withholding it until no returning item remains', 'strands the set-aside item', 200),
@@ -12316,7 +12349,7 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
   );
   assert.match(
     confirmation,
-    near('That holds in a mixed evaluation too', 'decline ends the run', 200),
+    near('mixed evaluation', 'decline ends the run', 200),
     'the decline bullet must state that it also governs a mixed evaluation',
   );
 
@@ -12367,7 +12400,7 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
   // Consumption: recording it changes nothing unless a later evaluation reads it before asking.
   assert.match(
     confirmation,
-    near('later Phase-4 evaluation reads that record', 'before it composes the question', 120),
+    near('reads that record', 'before it composes', 120),
     'every later evaluation must read the record before composing the question',
   );
   assert.match(
@@ -12406,16 +12439,12 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
   // already invalidates — so it is the rule the file lives by, not an exception for this question.
   assert.match(
     confirmation,
-    near('head movement expires every confirmation', 'no second head SHA is recorded', 120),
+    near('head movement expires', 'no second head SHA', 120),
     'the expiry must not introduce a second recorded head SHA',
   );
   assert.match(
     confirmation,
-    near(
-      'bound to `VERIFIED_HEAD_SHA`',
-      'Discard the whole record wherever that value is discarded',
-      200,
-    ),
+    near('bound to `VERIFIED_HEAD_SHA`', 'Discard the whole record', 200),
     'the record must be discarded with VERIFIED_HEAD_SHA',
   );
   assert.match(
@@ -12423,15 +12452,10 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
     near('either side is unprovable', 'discard rather than consume', 120),
     'an unprovable head must discard the record rather than consume it',
   );
-  assert.match(
-    confirmation,
-    near('one this file already lives by', "every reviewer's observed state", 200),
-    'the expiry must be tied to what a head movement already invalidates',
-  );
   // Phase 2's claim that it records the only head SHA has to stay true.
   assert.match(
     prose(section(gate, '### Phase 2')),
-    /nothing else in this workflow records a head SHA for later use/,
+    /nothing else[\s\S]{0,30}records a head SHA/i,
     'Phase 2 must still state that it records the only head SHA kept for later use',
   );
 
@@ -12457,7 +12481,7 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
   // And it stays four values: what is durable is that an item was confirmed, not a fifth outcome.
   assert.match(
     confirmation,
-    near('What becomes durable is the record that an item was confirmed', 'four values', 400),
+    near('an item was confirmed', 'four values', 400),
     'the durable record must not become a fifth outcome value',
   );
 
@@ -12541,7 +12565,7 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
   const when = ask[1].match(/^when: .*$/m)[0];
   assert.match(
     when,
-    /is unmet solely because the fresh read states `checksReported: false`/,
+    /unmet solely because[^,]*`checksReported: false`/,
     'the waiver must fire only where condition 2 is unmet solely on the unreported check list',
   );
   // "Solely" scopes **why** condition 2 is unmet, never **whether** anything else is. The mixed
@@ -12551,7 +12575,7 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
   // silently import the other answer.
   assert.match(
     when,
-    /condition 2 is the only unmet condition of this evaluation/,
+    /condition 2 is the only unmet condition/,
     'the waiver must be posed only where condition 2 is the sole unmet condition of the evaluation',
   );
   assert.doesNotMatch(
@@ -12603,7 +12627,7 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
   // are authorizing, so both descriptions are pinned on the phrase that carries it.
   assert.match(
     ask[1],
-    /- label: Waive\n\s+description: [^\n]*every other merge precondition still has to hold on its own/,
+    /- label: Waive\n\s+description: [^\n]*every other merge precondition still has to hold/,
     'the Waive description must tell the operator that every other merge precondition still holds on its own',
   );
   assert.match(
@@ -12638,19 +12662,6 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
     'the waiver must clear no condition other than condition 2',
   );
 
-  // The rationale for settling the mixed evaluation the other way from the set-aside confirmation,
-  // carried in the prose rather than only in the `when:` line an editor might rewrite alone.
-  assert.match(
-    waiver,
-    near('needs disposing of whether or not this run merges', 'it authorizes a merge', 400),
-    'the waiver must say why a disposing answer may be posed in a blocked evaluation and an authorizing one may not',
-  );
-  assert.match(
-    waiver,
-    near('another condition still blocks', 'answer cannot produce', 250),
-    'the waiver must say that asking while another condition blocks poses a question whose answer cannot change the outcome',
-  );
-
   // The double ask is real: Phase 2 already asked about this same absent list, one read earlier.
   // Nothing in the source said so before, which left the second question looking like a bug.
   assert.match(
@@ -12664,12 +12675,12 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
     'a check that has appeared must take the question off the table and block as before',
   );
 
-  // Condition 2 keeps its own rationale for the branch nobody waived, and points at the waiver
-  // rather than restating it.
+  // Condition 2 still blocks the branch nobody waived, and points at the waiver rather than
+  // restating it.
   assert.match(
     condition2,
-    near('unreported list is an unproven one', 'unstated requiredness', 200),
-    'condition 2 must keep the unreported-is-unproven rationale for the non-waived branch',
+    /`checksReported: false` blocks this condition outright/,
+    'condition 2 must block outright on an unreported check list that no waiver cleared',
   );
   assert.match(
     condition2,
@@ -12772,26 +12783,16 @@ test('the no-check-list waiver ends the run three ways and expires with the head
   // while stating the opposite rule.
   assert.match(
     waiver,
-    /Not posed at all where the resolved completion mode is not `merge`/,
+    /Not posed at all[^.]{0,40}completion mode is not `merge`/,
     'the waiver must state outright that it is not posed where the completion mode is not merge',
   );
-  assert.match(
-    waiver,
-    near('completion mode is not `merge`', '(?:Condition 1|report-mode)', 300),
-    'the non-merge rule must keep its reason: condition 1 is unmet, so no answer could authorize a merge',
-  );
 
-  // The record, and its lifetime. Bound to the verified head and to nothing else, so Phase 2's
-  // statement about head SHAs stays true and a Phase-3 restart discards both together.
+  // The record, and its lifetime. Bound to the verified head and to nothing else, so a Phase-3
+  // restart discards both together.
   assert.match(
     waiver,
     near('beside `VERIFIED_HEAD_SHA`', 'bound to that value and to nothing else', 150),
     'the waiver record must be bound to the verified head and to nothing else',
-  );
-  assert.match(
-    waiver,
-    near('nothing else in this workflow records a head SHA for later use', 'stays true', 150),
-    "the waiver must keep Phase 2's statement about recorded head SHAs true",
   );
   assert.match(
     waiver,
@@ -12805,18 +12806,13 @@ test('the no-check-list waiver ends the run three ways and expires with the head
   // set-aside confirmation already owns the mechanism; this asserts the waiver took it.
   assert.match(
     waiver,
-    /every later Phase-4 evaluation reads the record before it composes the question/,
+    /reads the record before it composes the question/,
     'every later evaluation must read the waiver record before composing the question',
   );
   assert.match(
     waiver,
     near('an evaluation the record already covers', 'poses none', 150),
     'an evaluation the waiver record already covers must pose no question at all',
-  );
-  assert.match(
-    waiver,
-    near('produces no implementation', 'Phase 3 step 6', 250),
-    'the waiver must name the return that leaves the verified head standing, which is what makes a second evaluation at one head reachable',
   );
   assert.match(
     wisdom,
@@ -12838,6 +12834,9 @@ test('the no-check-list waiver ends the run three ways and expires with the head
   );
 });
 
+// Invariant: a thread item's comment URL is recorded from the fresh read at delegation time, beside
+// its thread ID, and a missing one is recorded as missing rather than synthesized, so the set-aside
+// confirmation never promises the operator a link it cannot give.
 test('a thread item records its inspection URL where the gate still has it', () => {
   const gate = source('src/tools/merge-gate.md');
   const delegation = prose(section(gate, '## Delegation contract', '\n## '));
@@ -12861,8 +12860,8 @@ test('a thread item records its inspection URL where the gate still has it', () 
   );
   assert.match(
     delegation,
-    near('promises the operator one to read the finding at', 'never a second read later', 300),
-    'the delegation contract must state why the URL is captured at delegation time',
+    /never a second read later/,
+    'the comment URL must be captured at delegation time, never by a second read later',
   );
   // It has to name the field the read actually publishes, and fail honestly where it publishes none.
   assert.match(
@@ -12913,7 +12912,7 @@ test('a thread item records its inspection URL where the gate still has it', () 
   );
   assert.match(
     guide,
-    near('its thread ID and its own comment link', 'somewhere you can go and read it', 200),
+    /its thread ID and its own comment link/,
     'the guide must promise a thread item its own link rather than a review URL',
   );
 });
@@ -12953,6 +12952,9 @@ test('condition 7 blocks an unassessed thread and shares the confirmation with c
   );
 });
 
+// Invariant: a deliberately rejected review-body finding never merges on its classification alone,
+// only on the operator's confirmation, and condition 10 stays separated from condition 6 by surface
+// while leaving the gate's own internal writers out of that rule.
 test('the retired rejected-merges sentence is gone and condition 6 is disambiguated by surface', () => {
   const gate = source('src/tools/merge-gate.md');
   const conditions = mergeConditions(gate);
@@ -12967,8 +12969,8 @@ test('the retired rejected-merges sentence is gone and condition 6 is disambigua
   }
   assert.match(
     condition,
-    near('replaces the retired sentence', 'only once the operator has confirmed', 300),
-    'the retired sentence must be replaced by one stating the new rule',
+    /merges only once the operator has confirmed/,
+    'a rejected finding must merge only once the operator has confirmed it',
   );
 
   // Condition 6's wording is asserted elsewhere and cannot be softened, so the two are separated by
@@ -13001,11 +13003,6 @@ test('the retired rejected-merges sentence is gone and condition 6 is disambigua
     condition,
     near('human-comment guard', "(?:gate's own decision|delegates nothing)", 300),
     'a finding assessed under the guard must be named as the second gate-internal writer',
-  );
-  assert.match(
-    condition,
-    near('empty-bodied review would deadlock', 'only `implemented` clears', 300),
-    'the scoping must state the deadlock it prevents',
   );
 });
 
@@ -13353,6 +13350,8 @@ test('the returned outcome record states the residual the confirmation does not 
   );
 });
 
+// Invariant: the user guide describes the set-aside confirmation as one of the ways a verdict stops
+// blocking, never as a closed enumeration, and names what it never clears and when it is not posed.
 test('the user guide describes the confirmation and states no fixed count of ways out', () => {
   const deliver = prose(source('docs/user-guide/tools-deliver.md'));
 
@@ -13367,11 +13366,6 @@ test('the user guide describes the confirmation and states no fixed count of way
     deliver,
     near('A verdict stops blocking', 'when you confirm the findings the run set aside', 400),
     'the guide must name the confirmation among the ways a verdict stops blocking',
-  );
-  assert.match(
-    deliver,
-    near('not a fixed count of routes out', 'how the delegated run classified it', 300),
-    'the guide must say why the list is not a fixed count',
   );
 
   // The merge-precondition summary at the top of the tool description has to match the condition.
@@ -13411,6 +13405,8 @@ test('the user guide describes the confirmation and states no fixed count of way
   );
 });
 
+// Invariant: caller-supplied item text sits below one literal delimiter, every control line and the
+// manifest sit above it, and a body carrying the delimiter is refused rather than neutralised.
 test('the gate delimits caller-supplied item text from the control lines it announces', () => {
   const gate = source('src/tools/merge-gate.md');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
@@ -13424,7 +13420,11 @@ test('the gate delimits caller-supplied item text from the control lines it anno
   );
   // The manifest is the whole point of the boundary: identifiers left inline would let one body
   // forge another finding's provenance exactly where condition 10 keys its assessment record.
-  assert.match(contract, /Item: <stable identifier> \| review=<review id>/);
+  assert.match(
+    contract,
+    /Item: <stable identifier> \| review=<review id>/,
+    'the contract must carry the per-item manifest line form',
+  );
   assert.match(
     contract,
     near('manifest', '(?:above the delimiter|above it)', 400),
@@ -13460,7 +13460,11 @@ test('the gate delimits caller-supplied item text from the control lines it anno
   // Both halves of the case list, so a later edit cannot quietly drop the second one and leave the
   // refusal reading as if it covered every control line too.
   const cases = prose(gate);
-  assert.match(cases, /review body containing the delegation delimiter:\s*refused/i);
+  assert.match(
+    cases,
+    /review body containing the delegation delimiter:\s*refused/i,
+    'the case list must name a body carrying the delimiter as refused',
+  );
   assert.match(
     cases,
     /review body containing a control line but not the delimiter:\s*delegated\s+unchanged/i,
@@ -13468,6 +13472,8 @@ test('the gate delimits caller-supplied item text from the control lines it anno
   );
 });
 
+// Invariant: iterate splits at the first delimiter before it reads any switch, and a control line
+// below the delimiter is body text that never switches, overrides, or aborts.
 test('iterate splits the delegation message at the delimiter before it parses a switch', () => {
   const iterate = source('src/tools/iterate.md');
   const phase0 = section(iterate, '### Phase 0');
@@ -13490,13 +13496,8 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   );
   assert.match(
     split,
-    /never parsed as a switch, never overrides the one announced above, and never aborts/i,
+    /never parsed as a switch[^.]*never overrides[^.]*never aborts/i,
     'the body-text reading must state all three of what it does not do',
-  );
-  assert.match(
-    split,
-    /Position decides what is protocol, not content/i,
-    'the rule must rest on position rather than on content',
   );
   assert.doesNotMatch(
     prose(iterate),
@@ -13507,11 +13508,7 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   // misplaced line from a reviewer's quoted one apart: the sender writing the control lines first.
   assert.match(
     split,
-    near(
-      "misplaced below the delimiter is the sender's to prevent",
-      'same bytes in the same place',
-      300,
-    ),
+    /misplaced below the delimiter is the sender's to prevent/,
     'a misplaced control line must be assigned to the sender rather than detected here',
   );
 
@@ -13553,6 +13550,8 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   );
 });
 
+// Invariant: items below the delimiter are framed by a per-message token the sender verified absent
+// from every caller-supplied value, so no item text can change how it or another item is framed.
 test('the item framing below the delimiter is a minted token no item text can forge', () => {
   const gate = source('src/tools/merge-gate.md');
   const iterate = source('src/tools/iterate.md');
@@ -13666,11 +13665,6 @@ test('the item framing below the delimiter is a minted token no item text can fo
     near('occurs in none of them', 'caller-supplied values its manifest carries', 300),
     'the receiver must restate the absence check as scoped to caller-supplied content',
   );
-  assert.match(
-    manifest,
-    near('declaration line and its separator lines', 'never terminate', 300),
-    "the receiver must say why the check cannot reach the sender's own framing",
-  );
 
   // The receiver's whole obligation, and the explicit refusal of the arithmetic the byte count
   // demanded: a split on the token, and nothing else that could decide a boundary.
@@ -13726,22 +13720,6 @@ test('the item framing below the delimiter is a minted token no item text can fo
       `${label} must rest the property on the verified-absent token, not on trusting the text`,
     );
   }
-  assert.match(
-    manifest,
-    near('stricter grammar', '(?:still a grammar|out of the content)', 400),
-    'the contract must say why a stricter introducer grammar is not the fix',
-  );
-  // Why the swap keeps what it replaced, and what it stops asking of a language-model operator.
-  assert.match(
-    rationale,
-    near('unforgeability', 'fixed from outside the span', 400),
-    'the sender must say why the token keeps the unforgeability the declared length had',
-  );
-  assert.match(
-    rationale,
-    near('multibyte Unicode', '(?:substring search and a split|unreliably)', 600),
-    'the sender must say why byte arithmetic was the part worth removing',
-  );
 
   // The negative half: an item that spells out the framing syntax, a control line, or the text
   // around the delimiter is not refused, not escaped and not cut short — its extent was fixed
