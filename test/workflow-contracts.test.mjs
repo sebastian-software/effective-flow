@@ -9039,7 +9039,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
   for (const contract of [observation, lifecycle]) {
     assert.match(
       contract,
-      /`Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively/,
+      /`Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively at any heading level/,
       'the acceptance-criterion headings must stay a closed set',
     );
     assert.match(contract, /the criteria are that section's top-level list items/);
@@ -9128,8 +9128,8 @@ test('a terminal outcome is split into done and cancelled before anything is rec
   );
   assert.match(
     observation,
-    /`terminal \(cancelled\)`, or one that shows `terminal \(reconciliation unavailable\)` is a failed transition/,
-    'a cancelled or unreconcilable re-read must count as a failed transition',
+    /a re-read that still shows a nonterminal state, one that shows `terminal \(cancelled\)`, or one that shows `terminal \(reconciliation unavailable\)` is a failed transition/,
+    'a nonterminal, cancelled or unreconcilable re-read must count as a failed transition',
   );
   assert.match(
     observation,
@@ -9243,7 +9243,7 @@ test('an already-terminal external issue resolves its done state where the split
   );
   assert.match(
     reportItems,
-    /terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
+    /one row per linked issue with its observed terminal-done\/terminal-cancelled\/terminal-reconciliation-unavailable\/open\/timed-out\/unobservable state/,
     'the per-issue report row must offer the reconciliation-unavailable state',
   );
   assert.match(
