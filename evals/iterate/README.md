@@ -132,10 +132,15 @@ nothing. `retry-aborted` stays for a session that was **stopped**, attested with
 the plain stop receipt it refuses an attempt that left a call or a report, and such an attempt is
 retried only as a host abort (see "Running a round"). Without that seal an honest operator with a
 completed but silent session would have no exit at all, and a regression that ends silently could
-be retried until some run happened to speak. A run that made no forge call leaves no call-log file at
-all; sealing materialises it as an empty file first, so the seal, the archive and every evaluation
-see one state, and every published run carries a `run-<n>.jsonl`. The merge-gate suite is unchanged:
-its evaluator answers `false`, so an attempt without a non-empty call log is not sealable there.
+be retried until some run happened to speak. A stopped attempt that left neither a call nor a report
+is not thereby empty, though: a commit, a push to the sandbox's `origin` or an edit of the checkout
+writes no call and no report. So `retry-aborted` observes the sealed git state exactly as `seal`
+would before it retries any attempt of this suite, on either receipt, and refuses the retry when
+that state holds a finding or cannot be read; a retried attempt carries the record in quarantine. A
+run that made no forge call leaves no call-log file at all; sealing materialises it as an empty file
+first, so the seal, the archive and every evaluation see one state, and every published run carries
+a `run-<n>.jsonl`. The merge-gate suite is unchanged: its evaluator answers `false`, so an attempt
+without a non-empty call log is not sealable there.
 
 **Which unanswered calls are judged rather than discarded.** In a Phase-0 scenario every forge call
 is a failure, so none may invalidate the run: a regression that proceeds into Phase 1 and asks for

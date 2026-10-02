@@ -1027,7 +1027,11 @@ export function retryInvalid(suite, { handle, scenario, slot, reason, base = sui
 // attempt needs depends on what it left.
 //
 // **An attempt that left nothing** is retried on the plain receipt `{schemaVersion, stopped,
-// reason}`, as it always was: there is no evidence to lose.
+// reason}`: no call log or paired trace holds anything to lose. The sealed evidence is the
+// exception, because the run does not write it — a commit, a push to the sandbox `origin` or an edit
+// leaves no call and no report — so for a scenario that declares it the attempt is judged below
+// before any retry, whichever receipt it carries, and a finding in that evidence or a record that
+// cannot be read refuses the retry as it would for an attempt that left a call.
 //
 // **An attempt that left evidence** is retried only when the host stopped it for a reason outside
 // the run, and only when what it left shows no deviation. The receipt adds `cause` and `hostError`,
@@ -1055,16 +1059,17 @@ export function retryAborted(
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
     const hostAbort = stopReceiptHostAbort(assertion, manifest.profile.harness);
     if (existsSync(paths.sealReceipt)) throw new Error('sealed attempts use retry-invalid');
-    let sealedEvidenceText = null;
-    if (attemptLeftEvidence(suite, scenario, paths)) {
-      if (!hostAbort) {
-        throw new Error(
-          `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry, ` +
-            'unless the stop receipt attests a host abort with its cause and hostError',
-        );
-      }
-      sealedEvidenceText = discardableSealedEvidence(suite, scenario, slot, paths);
+    const leftEvidence = attemptLeftEvidence(suite, scenario, paths);
+    if (leftEvidence && !hostAbort) {
+      throw new Error(
+        `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry, ` +
+          'unless the stop receipt attests a host abort with its cause and hostError',
+      );
     }
+    const sealedEvidenceText =
+      leftEvidence || sealedFor(suite, scenario)
+        ? discardableSealedEvidence(suite, scenario, slot, paths)
+        : null;
     return reprovision({
       suite,
       manifest,
@@ -1080,9 +1085,11 @@ export function retryAborted(
   });
 }
 
-// The judgement `retryAborted` makes of an attempt that left evidence. Returns the sealed evidence
-// it observed — `null` for a suite that declares none — which `reprovision` writes into the attempt
-// before quarantining it, so the retained attempt carries the state it was judged on.
+// The judgement `retryAborted` makes of an attempt that left evidence, and of every attempt whose
+// scenario declares sealed evidence, since only the seal's own observation shows what such an
+// attempt did outside its call log and paired trace. Returns the sealed evidence it observed —
+// `null` for a suite that declares none — which `reprovision` writes into the attempt before
+// quarantining it, so the retained attempt carries the state it was judged on.
 function discardableSealedEvidence(suite, scenario, slot, paths) {
   if (existsSync(paths.callLogLock)) {
     throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
