@@ -400,7 +400,9 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
 `mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
-than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
+than blocking the merge forever. Under either `mergeGate.requireAllChecks` setting, a check passes
+when it completed as `SUCCESS`, `SKIPPED`, or `NEUTRAL`, as GitHub counts it; any other conclusion
+blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
 

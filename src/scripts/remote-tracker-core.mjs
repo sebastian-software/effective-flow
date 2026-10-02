@@ -3283,8 +3283,8 @@ function flattenPullRequestStatus(raw) {
 // is the normalized output field `normalizeCheck` reads back; despite the shared name it is
 // unrelated to the raw input key above.
 //
-// `warning` and `skipped` are non-success **completed** checks and therefore block under
-// `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
+// `skipped` maps to a `SKIPPED` conclusion, which satisfies the merge gate's check criterion exactly
+// as GitHub's own `SKIPPED` does. `warning` is a non-success **completed** check and blocks.
 // Anything unknown is `PENDING`, so an unrecognized future state blocks a merge rather than reading
 // as a green result — the same discipline `PENDING_CHECK_STATES` applies on the GitHub side.
 const FORGEJO_CHECK_STATES = Object.freeze({
