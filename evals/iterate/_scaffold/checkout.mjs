@@ -58,33 +58,40 @@ export const REMOTE_DIRECTORY = 'remote.git';
 // The branch the shared scaffold seeds. A fixture naming another base cannot be served from it.
 const SEEDED_BRANCH = 'develop';
 
+// The environment every sandbox git command runs under, here and when the sealing step reads the
+// checkout back (`git-state.mjs`): one definition, so what provisioning wrote and what sealing
+// observes are read through the same switched-off host configuration.
+export function sandboxGitEnv(date = null) {
+  return {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_TERMINAL_PROMPT: '0',
+    // Without a global configuration git still falls back to the per-user ignore and attributes
+    // files under `$XDG_CONFIG_HOME/git/`; point both at nothing so the host's files neither
+    // shape the tree nor, where they are unreadable, fail the command.
+    GIT_CONFIG_COUNT: '4',
+    GIT_CONFIG_KEY_0: 'core.excludesFile',
+    GIT_CONFIG_VALUE_0: devNull,
+    GIT_CONFIG_KEY_1: 'core.attributesFile',
+    GIT_CONFIG_VALUE_1: devNull,
+    // Hooks live in the repository (`git init` copies a host's template hooks into it), so
+    // switching off the global configuration does not reach them; pointing the hooks path at
+    // nothing does. An empty template closes the remaining path a host could shape a message by.
+    GIT_CONFIG_KEY_2: 'core.hooksPath',
+    GIT_CONFIG_VALUE_2: devNull,
+    GIT_CONFIG_KEY_3: 'commit.template',
+    GIT_CONFIG_VALUE_3: '',
+    ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}),
+  };
+}
+
 function git(cwd, args, date = null) {
   return execFileSync('git', args, {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
-    env: {
-      ...process.env,
-      GIT_CONFIG_GLOBAL: devNull,
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_TERMINAL_PROMPT: '0',
-      // Without a global configuration git still falls back to the per-user ignore and attributes
-      // files under `$XDG_CONFIG_HOME/git/`; point both at nothing so the host's files neither
-      // shape the tree nor, where they are unreadable, fail the command.
-      GIT_CONFIG_COUNT: '4',
-      GIT_CONFIG_KEY_0: 'core.excludesFile',
-      GIT_CONFIG_VALUE_0: devNull,
-      GIT_CONFIG_KEY_1: 'core.attributesFile',
-      GIT_CONFIG_VALUE_1: devNull,
-      // Hooks live in the repository (`git init` copies a host's template hooks into it), so
-      // switching off the global configuration does not reach them; pointing the hooks path at
-      // nothing does. An empty template closes the remaining path a host could shape a message by.
-      GIT_CONFIG_KEY_2: 'core.hooksPath',
-      GIT_CONFIG_VALUE_2: devNull,
-      GIT_CONFIG_KEY_3: 'commit.template',
-      GIT_CONFIG_VALUE_3: '',
-      ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}),
-    },
+    env: sandboxGitEnv(date),
   }).trim();
 }
 

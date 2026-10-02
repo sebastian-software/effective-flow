@@ -76,6 +76,52 @@ const REQUIRED_FIELDS = {
   expectedProfile: isValidProfilePin,
 };
 
+// The one optional block, and why it may be absent where every field above may not. Sealed
+// evidence is written by the sealing step rather than by a run — the `iterate` suite records the
+// sandbox's git state there — so a suite that omits it loses an observable it never had, rather than
+// leaving one it does have unexamined, which is the hazard the required fields guard against. And it
+// was added after a suite already existed whose configuration is hashed into every archived stamp:
+// requiring the block would move that suite's instrument for a declaration that changes nothing it
+// does. Absent and `null` both mean none. Present, it is checked as strictly as the rest, including
+// that its names cannot collide with the files and digest keys a seal already owns.
+const RESERVED_SEAL_DIGEST_KEYS = new Set([
+  'buildIdentity',
+  'fixture',
+  'hostReceipt',
+  'log',
+  'projectAgents',
+  'projectConfig',
+  'prompt',
+  'runMetadata',
+  'trackerStub',
+]);
+const RESERVED_ARCHIVE_SUFFIXES = new Set(['jsonl', 'build.json', 'prompt.txt', 'metadata.json']);
+
+function sealedEvidenceAccepted(suite) {
+  const value = suite.sealedEvidence;
+  if (value === undefined || value === null) return true;
+  const auxiliary = suite.auxiliaryEvidence;
+  return (
+    typeof value?.fileName === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.fileName) &&
+    value.fileName !== auxiliary?.fileName &&
+    value.fileName !== 'tracker-calls.jsonl' &&
+    value.fileName !== 'build-identity.json' &&
+    typeof value?.archiveSuffix === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.archiveSuffix) &&
+    !RESERVED_ARCHIVE_SUFFIXES.has(value.archiveSuffix) &&
+    value.archiveSuffix !== auxiliary?.archiveSuffix &&
+    typeof value?.sealDigestKey === 'string' &&
+    value.sealDigestKey !== '' &&
+    !RESERVED_SEAL_DIGEST_KEYS.has(value.sealDigestKey) &&
+    value.sealDigestKey !== auxiliary?.sealDigestKey &&
+    typeof value?.required === 'function' &&
+    typeof value?.capture === 'function' &&
+    typeof value?.missingMessage === 'string' &&
+    typeof value?.orphanMessage === 'string'
+  );
+}
+
 // Path comparison that survives a checkout reached through a symlink: the suite declares its
 // instrument entries from `import.meta.dirname`, which is already resolved, but a suite could
 // legitimately declare one any other way. A path that does not exist yet compares as itself, so a
@@ -104,9 +150,16 @@ export function validateSuite(suite, label) {
   const problems = Object.entries(REQUIRED_FIELDS)
     .filter(([field, accepts]) => !(field in suite) || !accepts(suite[field]))
     .map(([field]) => field);
+  if (!sealedEvidenceAccepted(suite)) problems.push('sealedEvidence');
   if (problems.length > 0) {
     throw new Error(
       `${label} is not a usable suite configuration: ${problems.join(', ')} missing or malformed`,
+    );
+  }
+  // Evidence the evaluator cannot read is evidence nobody examines.
+  if (suite.sealedEvidence && typeof suite.evaluator.parseSealedEvidence !== 'function') {
+    throw new Error(
+      `${label} declares sealed evidence, but its evaluator cannot read the sealed evidence: parseSealedEvidence is missing`,
     );
   }
   // The stub that answers a run must be the stub the instrument hashes. Declared twice, the two

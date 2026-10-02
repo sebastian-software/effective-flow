@@ -266,6 +266,7 @@ export function evaluateEvidence(
     answerableOperations,
     supportedOperations = null,
     auxiliaryText = null,
+    sealedEvidenceText = null,
   },
 ) {
   if (!suite.scenarios.includes(scenario)) throw new Error(`no evaluator for ${scenario}`);
@@ -340,6 +341,27 @@ export function evaluateEvidence(
   } else if (auxiliaryText !== null && auxiliaryText !== undefined) {
     validityProblems.push(auxiliary ? auxiliary.orphanMessage : 'an auxiliary trace is orphaned');
   }
+  // **Sealed evidence is written by the sealing step, not by the run**, so it is read on different
+  // terms from the auxiliary trace above. A suite that declares it — `iterate`, whose sealing step
+  // records the sandbox's git state — has no run that could legitimately lack it or garble it: the
+  // seal replaces whatever a run left at its path. A missing or unreadable record therefore says the
+  // bench failed and is a validity problem, which publication refuses; what a readable record says
+  // the run did is the suite evaluator's finding to make. A suite that declares none —
+  // `merge-gate` — keeps exactly the evaluation it had, and any such text handed in is orphaned.
+  const sealed = suite.sealedEvidence ?? null;
+  const requiresSealed = sealed ? sealed.required(scenario) : false;
+  let sealedEvidence = null;
+  if (requiresSealed) {
+    if (typeof sealedEvidenceText !== 'string') {
+      validityProblems.push(sealed.missingMessage);
+    } else {
+      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText);
+      validityProblems.push(...parsedSealed.problems);
+      sealedEvidence = parsedSealed.state;
+    }
+  } else if (sealedEvidenceText !== null && sealedEvidenceText !== undefined) {
+    validityProblems.push(sealed ? sealed.orphanMessage : 'sealed evidence is orphaned');
+  }
   const findings =
     validityProblems.length === 0
       ? evaluator.findings({
@@ -351,6 +373,8 @@ export function evaluateEvidence(
           // pair a second evidence file" can disagree, and the one that decided whether the records
           // above were parsed at all is the one the findings have to be read against.
           requiresAuxiliary,
+          // Only a suite that declares sealed evidence receives it, and only parsed and valid.
+          ...(requiresSealed ? { sealedEvidence } : {}),
         })
       : [];
   return { records: parsed.records, validityProblems, findings };

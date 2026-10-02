@@ -1,6 +1,6 @@
 {
   "name": "A filter matching only a resolved thread ends cleanly",
-  "description": "A genuine, unmodified one-thread delegation whose only thread was resolved after the caller read it, on a pull request that also carries an open, unaddressed thread the filter does not name. The selection is empty, so iterate must report it and end with DONE, implementing, pushing, replying, resolving and commenting nothing.",
+  "description": "A genuine, unmodified one-thread delegation whose only thread was resolved after the caller read it, on a pull request that also carries an open thread the filter does not name: an exact fix request for one line of the change. The selection is empty, so iterate must report it and end with DONE, implementing, committing, pushing, replying, resolving and commenting nothing.",
   "viewerLogin": "flow-iterate",
   "pullRequest": 42,
   "repository": {
@@ -469,7 +469,7 @@
                           "id": "PRRC_kwDOiterateEvalUnselected_comment",
                           "databaseId": 800003,
                           "url": "https://github.com/example/flow/pull/42#discussion_r800003",
-                          "body": "The heading should say which change this is.",
+                          "body": "Change line 1 to exactly `# Add the iterate eval change`, so the heading names what this pull request does.",
                           "path": "docs/iterate-eval-change.md",
                           "line": 1,
                           "originalLine": 1,
@@ -534,7 +534,7 @@
                 {
                   "id": "PRRC_kwDOiterateEvalUnselected_comment",
                   "databaseId": 800003,
-                  "body": "The heading should say which change this is.",
+                  "body": "Change line 1 to exactly `# Add the iterate eval change`, so the heading names what this pull request does.",
                   "author": {
                     "login": "casey-reviewer",
                     "isBot": false,

@@ -29,7 +29,7 @@ import {
 } from './build-identity.mjs';
 import { evaluateEvidence } from './evaluate.mjs';
 import { assertProfileMatchesPin, normalizeProfile, PROFILE_KEYS, sameKeys } from './profile.mjs';
-import { validateArchivedPairing } from './run-evidence.mjs';
+import { sealedEvidencePath, validateArchivedPairing } from './run-evidence.mjs';
 import { provisionSlot, TRACKER_STUB_SKILL_PATH } from './scaffold.mjs';
 import { auxiliaryLogPath, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS, selectScenarios } from './suite.mjs';
@@ -76,6 +76,52 @@ function auxiliaryFor(suite, scenario) {
   const auxiliary = suite.auxiliaryEvidence;
   if (!auxiliary) return null;
   return auxiliary.required(scenario) ? auxiliary : null;
+}
+
+// The evidence the sealing step itself writes, for a scenario whose suite declares it — the
+// `iterate` suite's sandbox git state. `null` for every other scenario and for a suite that declares
+// none, which is every path `merge-gate` takes.
+function sealedFor(suite, scenario) {
+  const sealed = suite.sealedEvidence;
+  if (!sealed) return null;
+  return sealed.required(scenario) ? sealed : null;
+}
+
+// Every partner a scenario's archived run carries beside its call log and stamp, in the form
+// `validateArchivedPairing` reads: the auxiliary trace and the sealed evidence, each when the suite
+// declares it at all, marked required or not for this scenario.
+function archivedPartners(suite, scenario) {
+  const partners = [];
+  if (suite.auxiliaryEvidence) {
+    partners.push({
+      suffix: suite.auxiliaryEvidence.archiveSuffix,
+      required: auxiliaryFor(suite, scenario) !== null,
+    });
+  }
+  if (suite.sealedEvidence) {
+    partners.push({
+      suffix: suite.sealedEvidence.archiveSuffix,
+      required: sealedFor(suite, scenario) !== null,
+    });
+  }
+  return partners;
+}
+
+// Write the sealed evidence the suite observes for this attempt, replacing whatever is at its path.
+// A run could have left a file there, and the point of evidence the seal writes is that the run did
+// not author it. Written through a temporary file and a rename, so an interrupted seal leaves either
+// the old file or the whole new one, and a resumed seal observes and writes again.
+function writeSealedEvidence(suite, scenario, paths) {
+  const sealed = sealedFor(suite, scenario);
+  if (!sealed) return;
+  const target = sealedEvidencePath(suite, paths);
+  const text = sealed.capture({ scenario, paths });
+  if (typeof text !== 'string') {
+    throw new Error(`${scenario}: the suite's sealed-evidence capture returned no text`);
+  }
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, text, { flag: 'wx' });
+  renameSync(temporary, target);
 }
 
 function nonEmptyFile(path) {
@@ -638,12 +684,17 @@ function preparedDigests(suite, paths) {
 // A paired auxiliary trace — for `merge-gate`, the configured-reviewer scenario's echo trace — is
 // part of that scenario's sealed evidence unit, so a write to it after sealing is
 // `changed-after-seal` exactly as a write to the call log is.
+//
+// So is the sealed evidence the sealing step writes, under the suite's own digest key. A suite that
+// declares none — `merge-gate` — digests exactly the keys it always did.
 function sealDigests(suite, paths, scenario) {
   const auxiliary = auxiliaryFor(suite, scenario);
+  const sealed = sealedFor(suite, scenario);
   return {
     ...preparedDigests(suite, paths),
     hostReceipt: digestFile(paths.hostReceipt),
     ...(auxiliary ? { [auxiliary.sealDigestKey]: digestFile(auxiliaryLogPath(suite, paths)) } : {}),
+    ...(sealed ? { [sealed.sealDigestKey]: digestFile(sealedEvidencePath(suite, paths)) } : {}),
   };
 }
 
@@ -715,6 +766,9 @@ export function sealAttempt(
       atomicJson(paths.hostReceipt, hostReceipt, { exclusive: true });
     }
     pauseAtBoundary('host-receipt-written');
+    // Observed last, after every refusal above, so a refused seal leaves no such file behind and the
+    // state recorded is the one the session ended in.
+    writeSealedEvidence(suite, scenario, paths);
     const receipt = {
       schemaVersion: 1,
       scenario,
@@ -734,6 +788,8 @@ function changedAfterSeal(suite, paths, scenario) {
   const sealed = json(paths.sealReceipt);
   const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
   if (auxiliaryLog && !existsSync(auxiliaryLog)) return true;
+  const sealedPath = sealedFor(suite, scenario) ? sealedEvidencePath(suite, paths) : null;
+  if (sealedPath && !existsSync(sealedPath)) return true;
   const current = sealDigests(suite, paths, scenario);
   return JSON.stringify(sealed.digests) !== JSON.stringify(current);
 }
@@ -778,6 +834,7 @@ export function roundStatus(suite, handle, { base = suite.sandboxBase } = {}) {
 function evaluateAttempt(suite, manifest, scenario, paths) {
   const fixture = json(paths.fixture);
   const auxiliaryLog = auxiliaryLogPath(suite, paths);
+  const sealedPath = sealedEvidencePath(suite, paths);
   return evaluateEvidence(suite, {
     scenario,
     logText: readFileSync(paths.callLog, 'utf8'),
@@ -788,6 +845,8 @@ function evaluateAttempt(suite, manifest, scenario, paths) {
     answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
     auxiliaryText:
       auxiliaryLog && existsSync(auxiliaryLog) ? readFileSync(auxiliaryLog, 'utf8') : null,
+    sealedEvidenceText:
+      sealedPath && existsSync(sealedPath) ? readFileSync(sealedPath, 'utf8') : null,
   });
 }
 
@@ -1043,14 +1102,11 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
       throw new Error(`${scenario} candidate entry is not a regular directory`);
     }
     const auxiliary = auxiliaryFor(suite, scenario);
-    validateArchivedPairing(
-      directory,
-      suite.auxiliaryEvidence
-        ? { suffix: suite.auxiliaryEvidence.archiveSuffix, required: auxiliary !== null }
-        : null,
-    );
+    const sealed = sealedFor(suite, scenario);
+    validateArchivedPairing(directory, archivedPartners(suite, scenario));
     const suffixes = ['jsonl', 'build.json', 'prompt.txt', 'metadata.json'];
     if (auxiliary) suffixes.push(auxiliary.archiveSuffix);
+    if (sealed) suffixes.push(sealed.archiveSuffix);
     const names = readdirSync(directory).sort();
     for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
       for (const suffix of suffixes) {
@@ -1100,6 +1156,9 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
         answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
         auxiliaryText: auxiliary
           ? readFileSync(`${target}.${auxiliary.archiveSuffix}`, 'utf8')
+          : null,
+        sealedEvidenceText: sealed
+          ? readFileSync(`${target}.${sealed.archiveSuffix}`, 'utf8')
           : null,
       });
       if (evaluation.validityProblems.length > 0) {
@@ -1276,6 +1335,7 @@ function validateAllSealed(suite, manifest, roundRoot) {
 
 function assertCopiedArtifacts(suite, entry, target) {
   const auxiliary = auxiliaryFor(suite, entry.scenario);
+  const sealed = sealedFor(suite, entry.scenario);
   const copied = {
     log: digestFile(`${target}.jsonl`),
     buildIdentity: digestFile(`${target}.build.json`),
@@ -1283,6 +1343,7 @@ function assertCopiedArtifacts(suite, entry, target) {
     ...(auxiliary
       ? { [auxiliary.sealDigestKey]: digestFile(`${target}.${auxiliary.archiveSuffix}`) }
       : {}),
+    ...(sealed ? { [sealed.sealDigestKey]: digestFile(`${target}.${sealed.archiveSuffix}`) } : {}),
   };
   for (const [name, digest] of Object.entries(copied)) {
     if (digest !== entry.sealed.digests[name]) {
@@ -1360,6 +1421,13 @@ export function publishRound(
             const auxiliary = auxiliaryFor(suite, scenario);
             if (auxiliary) {
               copyFileSync(auxiliaryLogPath(suite, paths), `${target}.${auxiliary.archiveSuffix}`);
+            }
+            const sealedEvidence = sealedFor(suite, scenario);
+            if (sealedEvidence) {
+              copyFileSync(
+                sealedEvidencePath(suite, paths),
+                `${target}.${sealedEvidence.archiveSuffix}`,
+              );
             }
             const entry = evaluations.find(
               (evaluation) => evaluation.scenario === scenario && evaluation.slot === slot,

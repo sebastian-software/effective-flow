@@ -26,7 +26,9 @@ prompt ends by asking the agent to pipe the tool's final report into
 `scripts/report-channel.mjs`, which stores it as one bounded record beside the call log. The helper
 sits **beside** an unmodified `tools/iterate.md`: unlike the merge-gate echo, nothing the tool
 reads is replaced, and the instruction addresses the agent only after the tool's own report
-exists.
+exists. Neither observable sees git, so the round's sealing step adds a third record the run does
+not write: the sandbox's git state, which every verdict requires untouched (see "The seal records
+the sandbox's git state" below).
 
 ## The scenarios
 
@@ -37,7 +39,10 @@ exists.
 | `manifest-span-mismatch-aborts`  | two `Item:` entries, one span below the delimiter                                    | report carries `ABORT: manifest and body mismatch` and no other `ABORT:`; no forge call                   |
 | `unparseable-run-state-aborts`   | `Run state: unattended`                                                              | report carries `ABORT: unparseable run-state switch` and no other `ABORT:`; no forge call                 |
 | `review-in-flight-aborts`        | non-interactive, no `Review guard:` line, configured reviewer `recensor` pending     | report carries `ABORT: review still in flight` naming `recensor`; the three Phase-1 reads, each exactly once; no write at all |
-| `empty-selection-clean-done`     | `threads=` names only a thread resolved since the caller read it; a second, open thread is unnamed | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
+| `empty-selection-clean-done`     | `threads=` names only a thread resolved since the caller read it; a second, open thread — an exact fix request — is unnamed | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
+
+Every scenario additionally requires the sealed git state untouched: the sandbox's `origin` at the
+fixture's two SHAs, the checkout on the head branch at the head SHA, and an empty status.
 
 The three Phase-1 reads are `review-threads-read`, `pr-status-read` and `pr-reviews-read`, which
 `iterate` Phase 1 takes at one instant in PR mode. "No write" means no start record for any
@@ -45,9 +50,13 @@ operation the shipped helper classifies as a mutation, or `pr-merge` — a dry r
 dry run is the first half of a write. In `review-in-flight-aborts` each read has to occur exactly
 once, because the gated "Wait" branch sleeps and then re-reads the threads and the status: a second
 read is that branch's signature, whatever the report says. The empty-selection fixture carries an
-open thread the filter does not name, so a run that fell back to processing every item would select
-it and attempt a reply or a resolve — the write this scenario exists to catch. The report may still
-list that thread as deselected, which is a correct summary, so its absence is not asserted.
+open thread the filter does not name, phrased as an exact fix request for line 1 of the file the
+pull request adds, so a run that fell back to processing every item would most likely implement it
+— an edit, a commit and a push the sealed git state records — and reply to or resolve it, a forge
+write the call log records. That narrows the gap without closing it: a fallback run that classified
+the thread as a question or as unsupported and wrote nothing stays indistinguishable from a correct
+run. The report may still list that thread as deselected, which is a correct summary, so its
+absence is not asserted.
 
 "No forge call" is a deliberate refinement of the plan's "zero records". The built
 `tools/iterate.md` lets Phase 0 step 1 parse the pull-request reference through the helper's
@@ -81,10 +90,12 @@ region pairs with zero `Item:` entries.
 | `_scaffold/project-setup.mjs`         | The sandbox checkout's `AGENTS.md` and the project-setup ADR an `iterate` run reads                      |
 | `_scaffold/checkout.mjs`              | The pull-request history in the sandbox checkout and the local `origin` it fetches from                  |
 | `_scaffold/evaluate.mjs`              | The `iterate`-specific outcome rules over an archived run                                                |
+| `_scaffold/git-state.mjs`             | What the sealing step records of the sandbox's git state, and how the evaluator reads it back           |
 | `results/<name>/run-<n>.jsonl`        | Published call logs; empty for a correct Phase-0 run                                                     |
 | `results/<name>/run-<n>.report.jsonl` | Published exit-channel records — the positive observable, required for every run                         |
 | `results/<name>/run-<n>.build.json`   | Per-file hashes of what that scenario loads, binding both logs to a build                                |
 | `results/<name>/run-<n>.prompt.txt`   | The exact rendered prompt supplied to the fresh session                                                  |
+| `results/<name>/run-<n>.git-state.json`| The sandbox's git state as the sealing step recorded it — required for every run                      |
 | `results/<name>/run-<n>.metadata.json`| Safe slot, build, prompt, fixture, execution-profile and host-attestation metadata                      |
 
 `results/` does not exist until the first round is published. Until then `pnpm eval iterate verify`
@@ -156,7 +167,32 @@ works in place from. The commits are made with hooks pointed at nothing and an e
 template, so no host hook or template can reach a message or a SHA. The resulting SHAs depend on
 every byte of the seeded tree, and each fixture's `checkout` block states them: a mismatch fails
 provisioning, so editing `project-setup.mjs` owes regenerated `checkout` blocks. A push reaches only
-that local `origin`; the evidence observes forge writes, not git pushes.
+that local `origin`, where the sealed git state below observes it.
+
+**The seal records the sandbox's git state.** The call log sees the forge and nothing else, so a
+commit, a push to the local `origin` or an edit in the checkout would pass every scenario unseen.
+The suite therefore declares `sealedEvidence`, an optional hook of the shared round (the merge-gate
+suite declares none, and its seal, archive and evaluation are unchanged). When an attempt is sealed,
+after every other check and after the session has ended, `git-state.mjs` reads three things and
+writes them to `<attempt>/trace/git-state.json`: every ref of `<attempt>/remote.git`, the
+checkout's symbolic `HEAD` and the commit it resolves to, and `git status --porcelain` with
+untracked files. Each command names its repository explicitly and runs under the same
+switched-off host configuration provisioning uses. The seal replaces whatever a run left at that
+path, digests the file under `gitState` (an edit after sealing reads `changed-after-seal`), and
+publication archives it as `run-<n>.git-state.json`, checks the copy against the seal, and judges
+it from the archive.
+
+Every scenario requires the state provisioning left: `origin` holds exactly `develop` and the head
+branch at the fixture's `checkout` SHAs, the checkout stands on the head branch at the head SHA,
+and the status is empty. Fetching or fast-forward pulling the head branch, which Phase 1 does,
+changes none of them, and runtime state under `.effective-flow/` is ignored by the checkout's
+tracked `.gitignore`. A moved, added or deleted `origin` ref, a moved `HEAD`, another branch or a
+detached `HEAD`, or any uncommitted change is a **finding**, and so is a probe that failed because
+the run damaged the repository: the run is judged, never retried away. A record that is missing, not JSON,
+or not one the capture could have written is **invalid evidence**, because the run cannot author it
+— the bench failed, and publication refuses it. No reflog length is recorded: a no-op checkout of
+the current branch, which a correct run may issue, appends a reflog entry, so it is not the same for
+every correct run.
 
 **The fixture's delegation is genuine.** Every `delegation.built` is the verbatim output of the
 shipped `node scripts/delegation-envelope.mjs build` (the portable build's copy), and
@@ -243,9 +279,14 @@ find it inside prose is reading prose.
   reported, not which rule in the tool produced the report. A report carrying the right refusal
   from a run that made no call is the strongest statement available, and it is still a statement
   about the run rather than a proof about the text.
-- **Git writes.** The local `origin` and its explicit push URL make a push succeed silently inside
-  the sandbox; the forge-reading scenarios assert on forge writes, which is where a fallback to
-  processing every item would show first.
+- **Git history a run erased.** The sealed git state is the state the session ended in. A run that
+  committed and then reset the commit away, or pushed and then restored the ref, leaves nothing
+  there; one that leaves the commit, the push or the edit is caught.
+- **A fallback that writes nothing.** In `empty-selection-clean-done`, a run that ignored the filter
+  and processed every item, but classified the open fix request as a question or as unsupported and
+  wrote nothing, is indistinguishable from a correct run on every observable this suite has. The
+  fix request is phrased so that implementing it is the likely fallback, which the git state and the
+  call log both catch; that is a likelihood, not a proof.
 
 ## Adding a scenario
 

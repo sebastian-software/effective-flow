@@ -515,11 +515,14 @@ for (const each of SUITES) {
 
 // `auxiliaryPath` is the run's paired second evidence file under the suite's own archive suffix —
 // the gate's iterate echo trace, the iterate suite's exit-channel record — and `iteratePath` the
-// gate-specific name the configured-reviewer assertions below read it by.
+// gate-specific name the configured-reviewer assertions below read it by. `sealedPath` is the
+// evidence the sealing step wrote — the iterate suite's sandbox git state — or `null` for a suite
+// that declares none, which the gate does.
 function archivedRuns(scenario, archive = MERGE_GATE_ARCHIVE, resultsDir = archive.results) {
   const dir = join(resultsDir, scenario);
   if (!existsSync(dir)) return [];
   const auxiliarySuffix = archive.suite.auxiliaryEvidence.archiveSuffix;
+  const sealedSuffix = archive.suite.sealedEvidence?.archiveSuffix ?? null;
   return readdirSync(dir)
     .filter((name) => /^run-\d+\.jsonl$/.test(name))
     .sort((left, right) => Number(left.match(/\d+/)[0]) - Number(right.match(/\d+/)[0]))
@@ -531,6 +534,8 @@ function archivedRuns(scenario, archive = MERGE_GATE_ARCHIVE, resultsDir = archi
       iterateName: name.replace(/\.jsonl$/, '.iterate.jsonl'),
       iteratePath: join(dir, name.replace(/\.jsonl$/, '.iterate.jsonl')),
       auxiliaryPath: join(dir, name.replace(/\.jsonl$/, `.${auxiliarySuffix}`)),
+      sealedPath:
+        sealedSuffix === null ? null : join(dir, name.replace(/\.jsonl$/, `.${sealedSuffix}`)),
       metadataPath: join(dir, name.replace(/\.jsonl$/, '.metadata.json')),
     }));
 }
@@ -1405,6 +1410,8 @@ async function assertArchivedRunsReadable(archive, scenario, runs) {
       // being published must describe the tree it was built from, and `verify` still asks it of
       // the whole corpus.
       auxiliaryText: existsSync(run.auxiliaryPath) ? readFileSync(run.auxiliaryPath, 'utf8') : null,
+      sealedEvidenceText:
+        run.sealedPath && existsSync(run.sealedPath) ? readFileSync(run.sealedPath, 'utf8') : null,
     });
     assert.deepEqual(
       evaluated.validityProblems,

@@ -464,8 +464,13 @@ again through later changes to its load set, so step 4 remains owed regardless o
 **Guards the delivery owed.** A report record that is malformed UTF-8 keeps its raw bytes so its
 text stays bound to its digest, the helper streams and bounds its input and refuses a TTY, a second
 `ABORT:` on the same line is caught, the empty-selection fixture carries an unselected open thread
-so a fallback to processing every item is observable, and the fidelity test rebuilds every stored
-envelope from its input with the current helper.
+so a fallback to processing every item has something to act on, and the fidelity test rebuilds
+every stored envelope from its input with the current helper. That fallback is observable only
+where it writes: a reply or a resolve shows in the call log, and — since the review of #510 — an
+edit, a commit or a push shows in the git state the round's sealing step records for every run,
+with the open thread phrased as an exact fix request so that implementing it is the likely
+fallback. A fallback that classifies the thread as a question or as unsupported and writes nothing
+stays indistinguishable from a correct run.
 
 ## Test results
 

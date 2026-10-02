@@ -28,6 +28,13 @@
 //     reads Phase 1 prescribes, **and** it holds no write operation at all — a dry run of a mutation
 //     included, because a dry run is the first half of a write.
 //
+// **Both shapes add a third conjunct: the sandbox's git state is the one provisioning left.** The
+// call log sees the forge and nothing else, so a commit, a push to the sandbox's local `origin` or an
+// edit in the checkout would pass either shape unseen. The round's sealing step records the git
+// state after the session ends (`git-state.mjs`), and every scenario requires it untouched: `origin`
+// at the fixture's two SHAs, the checkout on the head branch at the head SHA, an empty status. No
+// correct run of this suite changes any of them, the Phase-1 head fetch included.
+//
 // **The report is read from the exit-channel record only, never from the fixture.** An item text may
 // legitimately contain any string, a refusal line included, so matching against anything the run
 // was handed would let the fixture answer for the run. And a record the helper marked truncated is
@@ -41,6 +48,7 @@ import {
   operationStarts,
   startRecords,
 } from '../../_scaffold/evaluate.mjs';
+import { gitStateFindings, parseGitState } from './git-state.mjs';
 import { REPORT_RECORD_KEYS, REPORT_SCHEMA, REPORT_TEXT_BOUND, sha256 } from './report-channel.mjs';
 
 // The three reads `iterate` Phase 1 prescribes "at the same instant" in PR mode: the review threads,
@@ -68,7 +76,8 @@ export const PHASE_ZERO_REFUSALS = Object.freeze({
 // the status before ending the run, so a run that took that branch — which a non-interactive run
 // must not — shows those reads twice, however its report reads. The empty-selection scenario keeps
 // "at least once": nothing on its path re-reads, but nothing there makes a second read the mark of
-// a particular wrong branch either, and its fallback regression shows as a write instead.
+// a particular wrong branch either; its fallback regression shows, where it shows at all, as a
+// write to the forge or to git (see the entry below).
 export const FORGE_READING = Object.freeze({
   // Phase 1.5 step 6: non-interactive, no `Review guard: established`, a reviewer running. The
   // refusal names the reviewers, so the configured login has to appear in the report.
@@ -79,10 +88,14 @@ export const FORGE_READING = Object.freeze({
   }),
   // Phase 2 step 2: a `threads=` filter whose only thread was resolved since the caller read it.
   // The run reports the empty selection and ends cleanly with `DONE`; it refuses nothing. The
-  // fixture also carries an open, unaddressed thread the filter does not name, so a run that fell
-  // back to processing every item would select it and attempt a reply or a resolve — a write, which
-  // fails the run. The report is deliberately not required to leave that thread unnamed: Phase 6
-  // lists a deselected item as such, and a correct summary may do exactly that.
+  // fixture also carries an open thread the filter does not name, phrased as an exact fix request
+  // for one line of the change, so a run that fell back to processing every item would most likely
+  // implement it — an edit, a commit and a push the sealed git state records — and reply to or
+  // resolve the thread, a forge write the call log records. Either fails the run. **That is a
+  // likelihood, not a proof:** a fallback run that classified the thread as a question or as
+  // unsupported and wrote nothing at all is indistinguishable from a correct run on every
+  // observable this suite has. The report is deliberately not required to leave that thread
+  // unnamed: Phase 6 lists a deselected item as such, and a correct summary may do exactly that.
   'empty-selection-clean-done': Object.freeze({
     refusal: null,
     names: Object.freeze([]),
@@ -185,7 +198,24 @@ function phaseZeroCalls(scenario, records) {
   return startRecords(records).filter((record) => !pure.has(record.operation));
 }
 
-function outcomeFindings(scenario, records, auxiliaryRecords) {
+function outcomeFindings(scenario, records, auxiliaryRecords, fixture, sealedEvidence) {
+  return [
+    ...verdictFindings(scenario, records, auxiliaryRecords),
+    ...sealedFindings(sealedEvidence, fixture),
+  ];
+}
+
+// The sealed git state, which every scenario requires untouched. The generic half passes `null`
+// only when it already recorded the missing or garbled record as a validity problem, and then never
+// asks for findings, so reaching here without one is a broken caller rather than a passing run.
+function sealedFindings(sealedEvidence, fixture) {
+  if (sealedEvidence === null || sealedEvidence === undefined) {
+    throw new Error('the iterate verdict was asked for without its sealed git state');
+  }
+  return gitStateFindings(sealedEvidence, fixture);
+}
+
+function verdictFindings(scenario, records, auxiliaryRecords) {
   const report = reportText(auxiliaryRecords);
   const findings = [...report.findings];
   if (Object.hasOwn(PHASE_ZERO_REFUSALS, scenario)) {
@@ -402,6 +432,12 @@ export function parseAuxiliary(text) {
   return parseReportChannel(text);
 }
 
-export function findings({ scenario, records, auxiliaryRecords }) {
-  return outcomeFindings(scenario, records, auxiliaryRecords);
+// The sealed git state, read the way the report channel is: what makes the record unreadable is a
+// validity problem; what it says the run did is a finding (see `git-state.mjs`).
+export function parseSealedEvidence(text) {
+  return parseGitState(text);
+}
+
+export function findings({ scenario, records, auxiliaryRecords, fixture, sealedEvidence }) {
+  return outcomeFindings(scenario, records, auxiliaryRecords, fixture, sealedEvidence);
 }

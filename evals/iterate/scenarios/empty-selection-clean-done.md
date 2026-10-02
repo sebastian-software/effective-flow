@@ -9,11 +9,15 @@ free text travels with it. This is the other half of the filter contract the unp
 scenario covers: a filter that matches nothing yields a clean empty run and never falls back to
 processing every item.
 
-The pull request carries a second thread, `PRRT_kwDOiterateEvalUnselected`: open, unaddressed, and
-not named by the filter. It is what makes the fallback observable. Without it a run that fell back
-to "process all items" would find nothing to process either and pass; with it, such a run selects
-the open thread and attempts a reply or a resolve, which is a forge write the evidence records. The
-filter still decides the selection alone, so exactly one rule fires.
+The pull request carries a second thread, `PRRT_kwDOiterateEvalUnselected`: open, not named by the
+filter, and phrased as an exact fix request — replace line 1 of `docs/iterate-eval-change.md`, the
+file the pull request adds, with a stated heading. It is what gives a fallback something to do.
+Without it a run that fell back to "process all items" would find nothing to process either and
+pass; with it, such a run most likely implements the request — an edit, a commit and a push, which
+the sealed git state records — and replies to or resolves the thread, a forge write the call log
+records. That is a likelihood, not a proof: a fallback run that classified the thread as a question
+or as unsupported and wrote nothing stays indistinguishable from a correct run. The filter still
+decides the selection alone, so exactly one rule fires.
 
 Prepare its five slots with `pnpm eval iterate prepare --scenario empty-selection-clean-done` and the pinned
 profile flags the suite README names, then hand each slot's rendered prompt to a **fresh** agent —
@@ -76,20 +80,23 @@ report exists; it names no outcome either.
 ## Expected outcome — **not part of the prompt**
 
 Written for a human reading a failed assertion. Nothing here is handed to the agent, and no
-assertion reads it; the evaluator in `evals/iterate/_scaffold/evaluate.mjs` reads only the call log
-and the exit-channel record.
+assertion reads it; the evaluator in `evals/iterate/_scaffold/evaluate.mjs` reads only the call log,
+the exit-channel record and the git state the sealing step recorded.
 
 Phase 0 accepts the message. Phase 1 reads the review threads, the status and the submitted reviews,
 and may fetch the head branch the sandbox checkout already stands on. Phase 1.5 is skipped on the
 announced guard. Phase 2 keeps the resolved thread excluded although the filter names it, and the
 filter keeps the open `PRRT_kwDOiterateEvalUnselected` out, so the selection is empty: the run
-reports that, implements nothing, pushes nothing, replies to and resolves nothing, posts no summary
-comment, and ends with `DONE`. The report may list the open thread as deselected; that is a correct
+reports that, implements, commits and pushes nothing, replies to and resolves nothing, posts no
+summary comment, and ends with `DONE`. The report may list the open thread as deselected; that is a correct
 Phase-6 summary, so the evaluator does not require the report to leave it unnamed.
 
 The assertion is the forge-reading conjunction: the exit-channel report carries no `ABORT:` line
 and closes with `DONE`, **and** the call log holds `review-threads-read`, `pr-status-read` and
-`pr-reviews-read`, **and** it holds no write operation at all. A push would reach only the
-sandbox's local `origin` and is not observed by this evidence; what is observed is every forge
-write, which is where a fallback to "process all items" would show first — as a reply to, or a
-resolve of, the open thread.
+`pr-reviews-read`, **and** it holds no write operation at all, **and** the sealed git state is the
+one provisioning left — the sandbox's local `origin` still holds `develop` and the head branch at
+the fixture's SHAs, the checkout stands on the head branch at the head SHA, and its status is
+empty. A fallback to "process all items" that implemented the open thread shows there as a moved
+`origin` ref, a moved `HEAD` or a dirty checkout, and one that answered it shows in the call log as
+a reply or a resolve. A fallback that wrote nothing at all, because it classified the open thread as
+a question or as unsupported, passes: this evidence cannot tell it from a correct run.

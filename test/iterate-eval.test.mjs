@@ -35,6 +35,7 @@ import {
 } from '../evals/_scaffold/evaluate.mjs';
 import {
   createRound,
+  publishRound,
   retryAborted,
   roundStatus,
   sealAttempt,
@@ -50,6 +51,12 @@ import {
   PHASE_ONE_READS,
   PHASE_ZERO_REFUSALS,
 } from '../evals/iterate/_scaffold/evaluate.mjs';
+import { HEAD_CHANGE_PATH, HEAD_CHANGE_TEXT } from '../evals/iterate/_scaffold/checkout.mjs';
+import {
+  GIT_STATE_FILE,
+  GIT_STATE_SCHEMA,
+  untouchedGitState,
+} from '../evals/iterate/_scaffold/git-state.mjs';
 import {
   main as reportChannelMain,
   MAX_REPORT_RECORDS,
@@ -176,6 +183,8 @@ test('the exit channel truncates visibly at its stated bound and never splits a 
         scenario: 'unparseable-item-filter-aborts',
         records: [],
         auxiliaryRecords: [stored],
+        fixture: fixtureFor('unparseable-item-filter-aborts'),
+        sealedEvidence: untouchedGitState(fixtureFor('unparseable-item-filter-aborts')),
       }),
       [
         `the report was truncated at ${REPORT_TEXT_BOUND} of ${stored.bytes} bytes; a truncated report is never matched`,
@@ -457,8 +466,16 @@ function fixtureFor(scenario) {
   return JSON.parse(readFileSync(resolve(ITERATE_ROOT, 'fixtures', `${scenario}.json`), 'utf8'));
 }
 
-function evaluate(scenario, { logText = '', reportText }) {
+function gitStateText(state) {
+  return `${JSON.stringify(state, null, 2)}\n`;
+}
+
+// Every run's sealed git state defaults to the one a correct run leaves — the provisioned checkout
+// untouched — so a case about the call log or the report is judged on that alone. `null` stands for
+// an attempt sealed without the file; a string is handed over as the archived text.
+function evaluate(scenario, { logText = '', reportText, gitState = undefined }) {
   const fixture = fixtureFor(scenario);
+  const sealed = gitState === undefined ? untouchedGitState(fixture) : gitState;
   return evaluateEvidence(suite, {
     scenario,
     logText,
@@ -466,6 +483,8 @@ function evaluate(scenario, { logText = '', reportText }) {
     projectRoot: PROJECT_ROOT,
     answerableOperations: new Set(Object.keys(fixture.operations)),
     auxiliaryText: reportText,
+    sealedEvidenceText:
+      sealed === null || typeof sealed === 'string' ? sealed : gitStateText(sealed),
   });
 }
 
@@ -827,6 +846,157 @@ test('which unanswered calls invalidate a run is decided per verdict shape', () 
   ]);
 });
 
+// --- The sealed git state --------------------------------------------------------------------------
+
+// What a passing run of each verdict shape looks like on the two other observables, so the cases
+// below change the git state and nothing else.
+function passingRun(scenario) {
+  if (Object.hasOwn(PHASE_ZERO_REFUSALS, scenario)) {
+    return { reportText: reportLine(PHASE_ZERO_REFUSALS[scenario]) };
+  }
+  const logText = callLog(['probe', 'pr-read', ...PHASE_ONE_READS]);
+  const { refusal } = FORGE_READING[scenario];
+  return {
+    logText,
+    reportText: reportLine(refusal === null ? 'Selection: empty.\n\nDONE' : `${refusal}: recensor`),
+  };
+}
+
+// The scenario's contract says the run implements, commits and pushes nothing, and the forge
+// evidence cannot see a push to the sandbox `origin`, a commit or an edit. The sealed git state can,
+// so every way a run can leave the checkout or its `origin` changed fails it — as a finding, because
+// it is what the run did — and only the untouched state passes.
+test('the sealed git state passes only the untouched checkout and origin, in every scenario', () => {
+  for (const scenario of suite.scenarios) {
+    const fixture = fixtureFor(scenario);
+    const { baseRef, headRef, baseSha, headSha } = fixture.checkout;
+    const run = passingRun(scenario);
+    const untouched = untouchedGitState(fixture);
+    assert.deepEqual(untouched, {
+      schema: GIT_STATE_SCHEMA,
+      remoteRefs: { [`refs/heads/${baseRef}`]: baseSha, [`refs/heads/${headRef}`]: headSha },
+      branch: `refs/heads/${headRef}`,
+      head: headSha,
+      status: [],
+      errors: [],
+    });
+    const clean = evaluate(scenario, run);
+    assert.deepEqual(clean.validityProblems, [], scenario);
+    assert.deepEqual(clean.findings, [], `${scenario}: the untouched state fails`);
+
+    const moved = 'a'.repeat(40);
+    const cases = {
+      'a push that moved the remote head branch': [
+        { remoteRefs: { ...untouched.remoteRefs, [`refs/heads/${headRef}`]: moved } },
+        `the run changed the sandbox origin: refs/heads/${headRef} moved from ${headSha} to ${moved}; a correct run pushes nothing`,
+      ],
+      'a push of a new branch': [
+        { remoteRefs: { ...untouched.remoteRefs, 'refs/heads/fix-heading': moved } },
+        `the run changed the sandbox origin: refs/heads/fix-heading appeared at ${moved}; a correct run pushes nothing`,
+      ],
+      'a push that deleted the base branch': [
+        { remoteRefs: { [`refs/heads/${headRef}`]: headSha } },
+        `the run changed the sandbox origin: refs/heads/${baseRef} is gone; a correct run pushes nothing`,
+      ],
+      'a local commit that moved HEAD': [
+        { head: moved },
+        `the checkout's HEAD is ${moved}, not the seeded head ${headSha}; a correct run commits nothing`,
+      ],
+      'a switch to another branch': [
+        { branch: `refs/heads/${baseRef}` },
+        `the checkout is on refs/heads/${baseRef}, not on refs/heads/${headRef}`,
+      ],
+      'a detached HEAD': [
+        { branch: null },
+        `the checkout is on a detached HEAD, not on refs/heads/${headRef}`,
+      ],
+      'an uncommitted edit': [
+        { status: [` M ${HEAD_CHANGE_PATH}`] },
+        `the checkout has 1 uncommitted change(s) ( M ${HEAD_CHANGE_PATH}); a correct run edits nothing`,
+      ],
+      'an untracked file': [
+        { status: ['?? notes.md', '?? more.md', '?? third.md', '?? fourth.md'] },
+        'the checkout has 4 uncommitted change(s) (?? notes.md, ?? more.md, ?? third.md, …); a correct run edits nothing',
+      ],
+      'an origin the sealing step could not read': [
+        { remoteRefs: null, errors: ['remoteRefs: git exited 128'] },
+        'the sealing step could not read the sandbox repository (remoteRefs: git exited 128); a correct run leaves it intact',
+      ],
+    };
+    for (const [label, [change, finding]] of Object.entries(cases)) {
+      const result = evaluate(scenario, { ...run, gitState: { ...untouched, ...change } });
+      assert.deepEqual(result.validityProblems, [], `${scenario}: ${label} was discarded`);
+      assert.deepEqual(result.findings, [finding], `${scenario}: ${label}`);
+    }
+  }
+});
+
+// The file is written by the sealing step, never by the run: sealing replaces whatever a run left at
+// its path. So a missing, unreadable or self-contradicting record says the bench failed, and it is
+// invalid evidence that publication refuses rather than a finding about the run.
+test('a missing or garbled sealed git state is invalid evidence, not a passing run', () => {
+  const scenario = 'empty-selection-clean-done';
+  const run = passingRun(scenario);
+  const untouched = untouchedGitState(fixtureFor(scenario));
+  assert.deepEqual(evaluate(scenario, { ...run, gitState: null }).validityProblems, [
+    'the run has no sealed git-state evidence',
+  ]);
+  const garbled = {
+    'text that is not JSON': 'not json\n',
+    'an array': '[]\n',
+    'an unknown schema': gitStateText({ ...untouched, schema: 'other/1' }),
+    'an unknown key': gitStateText({ ...untouched, note: 'x' }),
+    'a missing key': gitStateText(
+      Object.fromEntries(Object.entries(untouched).filter(([key]) => key !== 'status')),
+    ),
+    'a remote ref that is not a SHA': gitStateText({
+      ...untouched,
+      remoteRefs: { ...untouched.remoteRefs, 'refs/heads/develop': 'HEAD' },
+    }),
+    'a HEAD that is not a SHA': gitStateText({ ...untouched, head: 'main' }),
+    'a status that is not a list of lines': gitStateText({ ...untouched, status: 'clean' }),
+    'an unread probe that names no error': gitStateText({ ...untouched, head: null }),
+    'an error beside a value it claims was not read': gitStateText({
+      ...untouched,
+      errors: ['head: git exited 128'],
+    }),
+    'an error for no known probe': gitStateText({
+      ...untouched,
+      errors: ['reflog: git exited 128'],
+    }),
+  };
+  for (const [label, text] of Object.entries(garbled)) {
+    const result = evaluate(scenario, { ...run, gitState: text });
+    assert.ok(result.validityProblems.length > 0, `${label} was accepted as evidence`);
+    assert.deepEqual(result.findings, [], `${label} was judged instead of rejected`);
+  }
+});
+
+// The fallback the empty-selection scenario exists to catch is a run that ignores the filter and
+// processes every item. The unselected thread is therefore an unambiguous fix request — an exact
+// replacement for a named line of the file the seeded head commit adds — so such a run most likely
+// edits, commits and pushes, which the sealed git state records, and replies or resolves, which the
+// call log records. A thread that reads as a question would let it classify the item and write
+// nothing, indistinguishable from a correct run.
+test('the empty-selection fixture carries an open, concrete in-scope fix request it does not select', () => {
+  const fixture = fixtureFor('empty-selection-clean-done');
+  const threads = fixture.operations['review-threads-read'].envelope.data.result;
+  const filtered = fixture.delegation.message.match(/^Item filter: threads=(\S+)$/m)[1].split(',');
+  const unselected = threads.filter((thread) => !filtered.includes(thread.id));
+  assert.equal(unselected.length, 1);
+  const [thread] = unselected;
+  assert.equal(thread.isResolved, false);
+  assert.equal(thread.path, HEAD_CHANGE_PATH, 'the request targets a file the run has not got');
+  const lines = HEAD_CHANGE_TEXT.split('\n');
+  assert.ok(thread.line >= 1 && thread.line <= lines.length, 'the request names no seeded line');
+  const [comment] = thread.comments;
+  assert.doesNotMatch(comment.body, /\?/, 'the request reads as a question');
+  const replacement = comment.body.match(/`([^`]+)`/)?.[1];
+  assert.ok(replacement, 'the request states no exact replacement text');
+  assert.notEqual(replacement, lines[thread.line - 1], 'the request asks for no change');
+  assert.ok(comment.body.includes(`line ${thread.line}`), 'the request names no line');
+});
+
 test('an exit-channel record the helper did not write is invalid evidence, not a finding', () => {
   const scenario = 'unparseable-run-state-aborts';
   const genuine = JSON.parse(reportLine('ABORT: unparseable run-state switch'));
@@ -987,7 +1157,12 @@ test(
     const iterateInstrument = instrument
       .filter((path) => path.startsWith('evals/iterate/'))
       .map((path) => path.split('/').at(-1));
-    for (const unhashed of ['report-channel.mjs', 'evaluate.mjs', 'scenario-registry.mjs']) {
+    for (const unhashed of [
+      'report-channel.mjs',
+      'evaluate.mjs',
+      'git-state.mjs',
+      'scenario-registry.mjs',
+    ]) {
       assert.ok(
         !iterateInstrument.includes(unhashed),
         `evals/iterate/…/${unhashed} is hashed as an instrument file`,
@@ -1331,6 +1506,7 @@ test(
         projectRoot: second.projectRoot,
         answerableOperations: new Set(Object.keys(fixture.operations)),
         auxiliaryText: readFileSync(auxiliaryLogPath(suite, second), 'utf8'),
+        sealedEvidenceText: readFileSync(resolve(second.traceDir, GIT_STATE_FILE), 'utf8'),
       });
       assert.deepEqual(silent.validityProblems, []);
       assert.deepEqual(silent.findings, [
@@ -1413,6 +1589,222 @@ test(
             base,
           }),
         /already discarded 5 attempts, the limit being 5; stop for investigation/,
+      );
+    } finally {
+      const manifest = resolve(base, roundId, 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// --- The sealed git state, captured by the round ---------------------------------------------------
+
+// A commit a test makes in a sandbox checkout, kept free of the host's hooks so a hook cannot fail it.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+
+function sealSlot(prepared, base, scenario, slot, paths) {
+  return sealAttempt(suite, {
+    handle: prepared.manifestPath,
+    scenario,
+    slot,
+    hostReceipt: hostReceipt(paths.projectRoot),
+    base,
+  });
+}
+
+function evaluateSealed(scenario, paths) {
+  const fixture = JSON.parse(readFileSync(paths.fixture, 'utf8'));
+  return evaluateEvidence(suite, {
+    scenario,
+    logText: readFileSync(paths.callLog, 'utf8'),
+    fixture,
+    projectRoot: paths.projectRoot,
+    answerableOperations: new Set(Object.keys(fixture.operations)),
+    auxiliaryText: readFileSync(auxiliaryLogPath(suite, paths), 'utf8'),
+    sealedEvidenceText: readFileSync(resolve(paths.traceDir, GIT_STATE_FILE), 'utf8'),
+  });
+}
+
+// The git state is observed by the sealing step from the provisioned sandbox — the checkout and the
+// bare `origin` beside it — and digested into the seal like every other evidence file. A run cannot
+// author it: whatever it left at the path is replaced. A correct run's head-branch fetch leaves it
+// untouched; a commit, a push, an edit, or a damaged `origin` each become a finding.
+test(
+  'sealing captures the sandbox git state as evidence the run cannot author',
+  { timeout: 180_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-git-state-'));
+    const base = resolve(temporary, 'rounds');
+    const scenario = 'unparseable-item-filter-aborts';
+    const roundId = 'iterate-git-state';
+    try {
+      const prepared = createRound(suite, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId,
+      });
+      const fixture = fixtureFor(scenario);
+      const { headRef } = fixture.checkout;
+      const slot = (n) => sandboxPaths(prepared.roundRoot, scenario, n, 1);
+      const status = () =>
+        Object.fromEntries(
+          roundStatus(suite, prepared.manifestPath, { base }).map((row) => [row.slot, row.status]),
+        );
+      const refusal = reportLine(PHASE_ZERO_REFUSALS[scenario]);
+
+      // Slot 1: a correct run that also fetched and pulled the head branch, and left a forged state
+      // file behind. The seal observes the real state and overwrites the forgery.
+      const first = slot(1);
+      writeFileSync(auxiliaryLogPath(suite, first), refusal);
+      git(first.projectRoot, 'fetch', '--quiet', 'origin', headRef);
+      git(first.projectRoot, 'pull', '--quiet', '--ff-only');
+      mkdirSync(resolve(first.projectRoot, '.effective-flow'), { recursive: true });
+      writeFileSync(resolve(first.projectRoot, '.effective-flow', 'memory.json'), '{}\n');
+      const statePath = resolve(first.traceDir, GIT_STATE_FILE);
+      writeFileSync(statePath, gitStateText({ forged: true }));
+      const receipt = sealSlot(prepared, base, scenario, 1, first);
+      assert.deepEqual(JSON.parse(readFileSync(statePath, 'utf8')), untouchedGitState(fixture));
+      assert.equal(receipt.digests.gitState, digestFile(statePath));
+      assert.equal(status()[1], 'sealed');
+      const correct = evaluateSealed(scenario, first);
+      assert.deepEqual(correct.validityProblems, []);
+      assert.deepEqual(correct.findings, []);
+      // The state file is part of the sealed unit: an edit after sealing is detected.
+      const sealedText = readFileSync(statePath, 'utf8');
+      writeFileSync(statePath, gitStateText(untouchedGitState(fixture)).replace('[]', '[ ]'));
+      assert.equal(status()[1], 'changed-after-seal');
+      rmSync(statePath);
+      assert.equal(status()[1], 'changed-after-seal');
+      writeFileSync(statePath, sealedText);
+      assert.equal(status()[1], 'sealed');
+
+      // Slot 2: the fallback the empty-selection scenario guards against, carried out in git — an
+      // edit, a commit and a push. The forge log alone would never show it.
+      const second = slot(2);
+      writeFileSync(auxiliaryLogPath(suite, second), refusal);
+      writeFileSync(resolve(second.projectRoot, HEAD_CHANGE_PATH), '# Add the change\n');
+      git(second.projectRoot, ...NO_HOOKS, 'commit', '--quiet', '--all', '--message', 'fix: x');
+      git(second.projectRoot, 'push', '--quiet', 'origin', headRef);
+      sealSlot(prepared, base, scenario, 2, second);
+      assert.equal(status()[2], 'sealed', 'a pushing run is discarded instead of judged');
+      const pushed = git(second.projectRoot, 'rev-parse', 'HEAD');
+      assert.deepEqual(evaluateSealed(scenario, second).findings, [
+        `the run changed the sandbox origin: refs/heads/${headRef} moved from ${fixture.checkout.headSha} to ${pushed}; a correct run pushes nothing`,
+        `the checkout's HEAD is ${pushed}, not the seeded head ${fixture.checkout.headSha}; a correct run commits nothing`,
+      ]);
+
+      // Slot 3: an edit left uncommitted, and a new file left untracked.
+      const third = slot(3);
+      writeFileSync(auxiliaryLogPath(suite, third), refusal);
+      appendFileSync(resolve(third.projectRoot, HEAD_CHANGE_PATH), 'More.\n');
+      writeFileSync(resolve(third.projectRoot, 'notes.md'), 'A note.\n');
+      sealSlot(prepared, base, scenario, 3, third);
+      assert.deepEqual(evaluateSealed(scenario, third).findings, [
+        `the checkout has 2 uncommitted change(s) ( M ${HEAD_CHANGE_PATH}, ?? notes.md); a correct run edits nothing`,
+      ]);
+
+      // Slot 4: an `origin` the run removed. Sealing still succeeds and records the failed probe,
+      // so the run is judged rather than stranded or retried away.
+      const fourth = slot(4);
+      writeFileSync(auxiliaryLogPath(suite, fourth), refusal);
+      rmSync(resolve(fourth.attemptRoot, 'remote.git'), { recursive: true, force: true });
+      sealSlot(prepared, base, scenario, 4, fourth);
+      assert.equal(status()[4], 'sealed');
+      const [damaged] = evaluateSealed(scenario, fourth).findings;
+      assert.match(
+        damaged,
+        /^the sealing step could not read the sandbox repository \(remoteRefs: git exited \d+\); a correct run leaves it intact$/,
+      );
+    } finally {
+      const manifest = resolve(base, roundId, 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// Publication carries the sealed git state into the archive beside each run, checks the copy
+// against its seal, and re-judges it from there — the path a carried-forward run is evaluated on.
+// The suite is narrowed to one scenario in a copy of the corpus so a generation can be completed
+// with five sealed slots instead of thirty.
+test(
+  'publication archives the sealed git state beside every run and judges it from the archive',
+  { timeout: 300_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-git-state-publish-'));
+    const base = resolve(temporary, 'rounds');
+    const scenario = 'unparseable-item-filter-aborts';
+    const corpus = resolve(temporary, 'corpus');
+    const roundId = 'iterate-git-state-publish';
+    try {
+      for (const directory of ['scenarios', 'fixtures']) {
+        const extension = directory === 'scenarios' ? 'md' : 'json';
+        mkdirSync(resolve(corpus, directory), { recursive: true });
+        copyFileSync(
+          resolve(ITERATE_ROOT, directory, `${scenario}.${extension}`),
+          resolve(corpus, directory, `${scenario}.${extension}`),
+        );
+      }
+      const narrowed = {
+        ...suite,
+        root: corpus,
+        scenarios: Object.freeze([scenario]),
+        evaluator: { ...suite.evaluator, BRANCHED_SCENARIOS: Object.freeze([scenario]) },
+      };
+      const prepared = createRound(narrowed, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId,
+      });
+      const sealed = {};
+      for (let n = 1; n <= 5; n += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, scenario, n, 1);
+        writeFileSync(auxiliaryLogPath(suite, paths), reportLine(PHASE_ZERO_REFUSALS[scenario]));
+        // One run commits: its archived state has to carry the finding, not lose it in the copy.
+        if (n === 5) {
+          git(
+            paths.projectRoot,
+            ...NO_HOOKS,
+            'commit',
+            '--quiet',
+            '--allow-empty',
+            '-m',
+            'chore: x',
+          );
+        }
+        sealAttempt(narrowed, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: n,
+          hostReceipt: hostReceipt(paths.projectRoot),
+          base,
+        });
+        sealed[n] = readFileSync(resolve(paths.traceDir, GIT_STATE_FILE), 'utf8');
+      }
+      const published = publishRound(narrowed, {
+        handle: prepared.manifestPath,
+        base,
+        resultsDir: resolve(corpus, 'results'),
+        publicationRoot: corpus,
+      });
+      const archive = resolve(corpus, 'results', scenario);
+      for (let n = 1; n <= 5; n += 1) {
+        assert.equal(
+          readFileSync(resolve(archive, `run-${n}.${GIT_STATE_FILE}`), 'utf8'),
+          sealed[n],
+        );
+      }
+      assert.deepEqual(
+        published.findings.map(({ slot, finding }) => [slot, finding.split(';')[0]]),
+        [
+          [
+            5,
+            `the checkout's HEAD is ${JSON.parse(sealed[5]).head}, not the seeded head ${fixtureFor(scenario).checkout.headSha}`,
+          ],
+        ],
       );
     } finally {
       const manifest = resolve(base, roundId, 'manifest.json');

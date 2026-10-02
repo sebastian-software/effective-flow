@@ -310,6 +310,32 @@ for (const { suite: each } of SUITES) {
     );
     assert.doesNotThrow(() => validateSuite({ ...each, prepareCheckout: null }, label));
 
+    // Sealed evidence is the one optional block: absent and `null` both mean none, so a suite that
+    // predates it keeps its hashed configuration byte for byte. Present, it is checked like the rest,
+    // and its evaluator has to be able to read what the seal writes.
+    const { sealedEvidence, ...withoutSealed } = each;
+    assert.doesNotThrow(() => validateSuite(withoutSealed, label));
+    assert.doesNotThrow(() => validateSuite({ ...each, sealedEvidence: null }, label));
+    assert.throws(
+      () => validateSuite({ ...each, sealedEvidence: { fileName: 'x.json' } }, label),
+      /sealedEvidence missing or malformed/,
+    );
+    if (sealedEvidence) {
+      const { parseSealedEvidence: _removed, ...withoutParser } = each.evaluator;
+      assert.throws(
+        () => validateSuite({ ...each, evaluator: withoutParser }, label),
+        /evaluator cannot read the sealed evidence/,
+      );
+      assert.throws(
+        () =>
+          validateSuite(
+            { ...each, sealedEvidence: { ...sealedEvidence, sealDigestKey: 'log' } },
+            label,
+          ),
+        /sealedEvidence missing or malformed/,
+      );
+    }
+
     // The five functions the shared evaluator calls, and the branch list the parity contract reads.
     // `permitsEmptyCallLog` is among them because an evaluator that omitted it would silently inherit
     // one of the two answers, and the two answers decide whether a run that never started is evidence.
@@ -1069,6 +1095,24 @@ test(
         base,
       });
       assert.equal(resumedSeal.slot, 2);
+      // This suite declares no sealed evidence, so sealing writes no such file and digests exactly the
+      // files it always did: the hook another suite may declare leaves this seal unchanged.
+      assert.equal(suite.sealedEvidence, undefined);
+      assert.deepEqual(Object.keys(resumedSeal.digests).sort(), [
+        'buildIdentity',
+        'fixture',
+        'hostReceipt',
+        'log',
+        'projectAgents',
+        'projectConfig',
+        'prompt',
+        'runMetadata',
+        'trackerStub',
+      ]);
+      assert.deepEqual(readdirSync(replacement2Paths.traceDir).sort(), [
+        'build-identity.json',
+        'tracker-calls.jsonl',
+      ]);
 
       const retryMarker = resolve(temporary, 'retry-quarantined');
       const interruptedRetry = runCoreChild(

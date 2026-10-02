@@ -10,6 +10,7 @@
 import { resolve } from 'node:path';
 import { mutatingTrackerOperations, supportedTrackerOperations } from '../_scaffold/evaluate.mjs';
 import { prepareCheckout } from './_scaffold/checkout.mjs';
+import { captureGitState, GIT_STATE_FILE } from './_scaffold/git-state.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import {
   applyOverlay,
@@ -105,6 +106,21 @@ const suite = {
     required: requiresReportChannel,
     missingMessage: 'the run has no paired exit-channel report trace',
     orphanMessage: 'an exit-channel report trace is orphaned in a scenario without one',
+  },
+  // The sandbox's git state, observed by the sealing step after the session has ended: the refs of
+  // the local `origin`, the checkout's HEAD and its porcelain status. The call log sees the forge
+  // only, so without it a commit, a push to that `origin` or an edit would pass every scenario
+  // unseen. Every scenario requires it, because no correct run of this suite changes any of the
+  // three. The seal writes the file over whatever a run left at its path, digests it, and
+  // publication archives it beside the run as `run-<n>.git-state.json`.
+  sealedEvidence: {
+    fileName: GIT_STATE_FILE,
+    archiveSuffix: GIT_STATE_FILE,
+    sealDigestKey: 'gitState',
+    required: () => true,
+    capture: captureGitState,
+    missingMessage: 'the run has no sealed git-state evidence',
+    orphanMessage: 'sealed git-state evidence is orphaned in a scenario without it',
   },
   scenarioSetup,
   projectDocuments,
