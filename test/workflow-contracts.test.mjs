@@ -9039,7 +9039,7 @@ test('a stated acceptance criterion comes from a closed heading set and its abse
   for (const contract of [observation, lifecycle]) {
     assert.match(
       contract,
-      /`Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively at any heading level/,
+      /The set is `Acceptance criteria`, `Akzeptanzkriterien`, and `Done criteria`, matched case-insensitively at any heading level/,
       'the acceptance-criterion headings must stay a closed set',
     );
     assert.match(contract, /the criteria are that section's top-level list items/);
