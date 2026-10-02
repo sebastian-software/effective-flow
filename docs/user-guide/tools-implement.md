@@ -49,6 +49,16 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   `/effective-flow docs` finding. Most small
   changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
   manufacture busywork.
+- `build`, `fix`, and `refactor` capture a **diff baseline** of the working tree right before
+  their first implementation write (`refactor` after its behavior baseline). Whenever a step needs
+  "the files this run changed", they compute the delta since that point, so edits that already
+  existed when the run started never count as the run's change. That one path list drives the
+  documentation sync gate, validator routing, reviewer routing and, in `build`, the formatter.
+  Each reviewer receives the diff and assesses the hunks of its own routed paths instead of
+  relying on the implementer's report. When `iterate` or `apply-review` runs several items in one
+  checkout, each item's delta is limited to its own files. An aborted run leaves its snapshot under
+  `.effective-flow/runs/<RUN_ID>/diff-baseline/` for
+  [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -122,6 +132,23 @@ the active run or keep it blocked. Only an independent admitted residual may be 
 under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
 appropriate implementation workflow.
 
+**Fast field pilot:** `build` is the one workflow that takes part in the opt-in Quality/Fast pilot.
+Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot
+generation is in `baseline` or `active`, every implementer runs Quality and nothing is recorded.
+With the opt-in on a native harness, `build` classifies every initial implementation packet (its
+routing bucket, or a narrower plan packet with independent ownership) through the fail-closed
+eligibility gate before the first implementer starts, and records the run locally. During the
+baseline every packet still runs Quality. In an active generation, an eligible packet uses the Fast
+implementer for its first attempt only; coupled packets, unclear ownership, missing native
+capability, or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. If the Fast attempt
+fails, the routed Quality implementer continues exactly once from the retained changes in the same
+checkout, and it never returns to Fast. Every later correction—requirements repair, validator
+repair, review incorporation, final-validator repair, conflict resolution, and retries—uses Quality.
+Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
+each measured run first asks the helper to activate the generation, which happens automatically
+once the preregistered window and sample are met. Setup and baseline start are described under
+[Setup](tools-setup.md#fast-pilot-block); `refactor` has not adopted Fast.
+
 ## `/effective-flow fix`
 
 **Purpose:** Orchestrates the bugfix workflow: investigation, reproduction, gap analysis,
@@ -139,8 +166,11 @@ updated plan file (if referenced), and – with delivery/worktree mode active �
 usual delivery branch with a completion action.
 
 **Interplay:** Often builds directly on a `/effective-flow investigate` report. Unlike
-`investigate`, `fix` deliberately writes a reproduction test in phase 2, instead of only
-observing.
+`investigate`, `fix` does not stop at observing: phase 2 reproduces the defect and specifies a
+failing test (file, case, expected failure), and phase 3 writes that test and confirms it fails
+before any implementer starts. The test is written only after the diff baseline is captured, so it
+lands in the delivery checkout and counts as part of the fix. If it does not fail as expected, the
+run returns to diagnosis before any implementation.
 
 ## `/effective-flow refactor`
 

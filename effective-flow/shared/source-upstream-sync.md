@@ -19,6 +19,7 @@ Offer a fast-forward only in state `behind`. Report the upstream name and the `b
 ask:
 
 If upstream-status reports behind and the fetch was not attempted, or fetch.ok is true and fetch.stale is false: Ask the user: **Update the local branch from its upstream before selecting?**
+Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Fast-forward first -- Fast-forward the local branch to the reported upstream commit; uncommitted changes stay in place and hooks are skipped
 - Continue without update -- Keep the local branch as it is; the refreshed base still reaches the delivery branch through the existing three-way transfer
 - Abort -- End the run with the working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref

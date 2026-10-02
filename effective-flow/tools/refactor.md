@@ -73,6 +73,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
 
+**Load on demand:** Read `shared/plan-pr-continuation.md`, when the source is a plan file, hidden mode is off, and either "Shared preconditions" step 2 of `worktree-integration` has resolved the base or "Determine mode" selected in-place without delivery, before any archival.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent.
@@ -202,9 +204,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -263,7 +265,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
@@ -279,8 +281,7 @@ Rules:
 ## Delegation contract: generic audit reasoning
 
 The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
-(classification `delegate`, see
-[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+(classification `delegate`). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
 fallback.
@@ -309,8 +310,7 @@ two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
 `effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
-(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
-with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring).
 
 Cross-language or runtime migration and dependency updates are **not** special branches any more:
 `effective-delivery` owns them itself, so the default owner above already covers them and there is
@@ -373,6 +373,8 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
    - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, first step).
+
+**Load on demand:** Read `shared/diff-baseline.md`, when the diff baseline is captured at the end of Phase 2, or later rendered or discarded.
 
 ## Wisdom Accumulation
 
@@ -550,7 +552,7 @@ When the user references an existing plan file on invocation — for example `<p
 ### Check the status
 
 1. Read the plan file fresh from the file system.
-2. Determine the implementation status according to the plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
+2. Determine the implementation status according to the plan status convention: exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` and has a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
 3. Status rules (both marker languages are equivalent):
    - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
    - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.
@@ -591,24 +593,16 @@ embed. This reference rule does not duplicate that check separately.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this
-gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
-at **both** entry points: in the apply chain (`effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
-direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`,
-`effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
-Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
-clarification round too many over one too few.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
 ### Abort criteria (at least one applies → do not implement)
 
-- **Open points:** the plan contains an `## Offene Punkte` or canonical `## Open points` section
-  with entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
-  Continue to recognize the former English spelling `## Open Points` when reading existing plans.
-- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
-  formulated without a named check/metric (no concrete check, no verifiable
-  target state).
+**Load on demand:** Read `shared/plan-lint.md`, when the basis is a plan file, before its open-points and acceptance-criteria criteria are evaluated.
+
+- **Open points:** for a plan file, the gate lints the basis with `files: [<plan path>]` and plan-lint reports `openPoints` greater than 0, and a failed lint call blocks as well; for an issue or finding, an `Offene Punkte` / `Open points` section at any heading level (issue planning comments use `###`) has entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
+- **Missing measurable acceptance criteria:** for a plan file, plan-lint reports `acceptanceCriteria` other than `present`; for an issue or finding, there are none. Criteria formulated without a named check/metric (no concrete check, no verifiable target state) block as well — measurability stays judgment.
 - **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
   materially affect the behavior, scope, or risk of the implementation.
 - **Not self-contained (issues/findings):** an issue or finding does not describe the
@@ -714,7 +708,8 @@ Start in parallel:
    - run all existing tests and document the result
    - do not write new tests in this phase
 
-Document the baseline for the later comparison.
+Document the baseline for the later comparison. Then capture the diff baseline per
+"Diff baseline", so files the baseline checks generate never count as the refactoring's change.
 
 ## Skill discovery
 
@@ -762,8 +757,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -785,7 +780,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 ### Phase 3.5: Documentation sync
 
-Run the mandatory documentation sync gate for the files this refactoring changed, before review and
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline" before review and
 post-validation, so both cover the documentation changes. Documentation must describe the
 restructured code, never a behavior change — a refactoring that alters no public surface commonly
 ends in `no impact` verdicts, and the gate records them instead of skipping.
@@ -807,10 +802,10 @@ surface prevents completion under the blocking rule of the detail contract.
 
 ### Phase 4: Review
 
-1. Start every reviewer selected by project routing for the changed files, including
-   ``effective-flow-generic-product-reviewer`` for degraded product buckets.
+1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
+   routing selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets.
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
-   items. Run the affected review checks once after the pass, then classify the residual batch via
+   items. Render again and run the affected review checks once after the pass, then classify the residual batch via
    “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
    item blocks completion; only `admitted` residuals may become a report, and `closed` items do not.
 3. Present the review results in detail, including status per finding. Treat the results as
@@ -838,9 +833,9 @@ surface prevents completion under the blocking rule of the detail contract.
 
 ### Phase 5: Post-validation
 
-Start in parallel:
+Render the diff baseline, then start in parallel:
 
-1. ``effective-flow-code-validator``
+1. ``effective-flow-code-validator`` with the path list per "Diff baseline"
 2. ``effective-flow-test-writer``
    - runs all existing tests again
    - writes no new tests
@@ -870,7 +865,7 @@ Start in parallel:
      - add a short implementation note as the last entry directly in the affected finding
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via effective-flow refactor (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
-   - delete the wisdom file
+   - delete the wisdom file and discard the diff baseline
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** finding set of the latest Phase-4 review to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - Run the worktree-record exit self-check.
    - summarize what was refactored and state the worktree-record exit self-check result; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)

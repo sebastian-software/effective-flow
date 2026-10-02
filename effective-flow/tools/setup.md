@@ -15,7 +15,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 - always start from safe defaults; use **Profile** as the standard two-question path and retain
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
-- for an existing config, show and pre-select the currently recorded value at every choice
+- for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
 - do not run project validation such as linting, tests, or build checks
 
 **Load on demand:** Read `shared/language-rules.md`, when the language configuration keys are offered or the ADR output language must be resolved.
@@ -487,9 +487,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -660,6 +660,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; hidden mode forces `plan.dir`, `concept.dir`, `tracker.mode`, `delivery.prReview`, and an empty default `delivery.branchPrefix` (a prefix containing `effective-flow` in any letter case is rejected) as that building block's deferred part lists them.
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
+- **`executionProfiles`** (source: the configuration building block): `fast.enabled` (strict Boolean, unset by default — missing or `false` is disabled, a malformed, ambiguous, or unreadable value invalid, and both run Quality; `true` only admits the project to the `effective-flow build` field pilot; never a provider model name). Set only in Guided block 10; Profile and Express preserve an existing value.
 
 ### Safe defaults (the single base)
 
@@ -889,7 +890,8 @@ If several ADR directories exist and none is clearly `docs/adr/`: Ask the user: 
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
-   ("currently not set – default: …"). While parsing, record every retired row: every row
+   ("currently not set – default: …"). On a scored question, name that value in the question or
+   its explanation only; never mark it in a label and never move its option. While parsing, record every retired row: every row
    whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
    a `worktree.baseBranch`, `worktree.branchPrefix` or `worktree.completion` row is the former
    spelling of the same `delivery.*` key. For each such row note whether its successor row already
@@ -928,13 +930,15 @@ These core switches determine the everyday behavior. **Before** each question, p
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
 without assuming prior knowledge of Effective Flow – and state whether and with which value the
 switch is currently set in the config (see Step 2); pre-select this value or the safe
-default. Explain technical terms in one sentence at first mention.
+default, which on a scored question means naming it in that explanation while the options keep
+their order and labels. Explain technical terms in one sentence at first mention.
 
 **Worktree.** Explain: Effective Flow implements changes by default in a separate workspace
 with its own branch (a "worktree"), so that your current state stays untouched and the
 work is cleanly bundled; "No" works directly in your current checkout.
 
 Ask the user: **Should the implementation run in a separate Git worktree?**
+Before asking, score each option for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Yes -- worktree.enabled = true (default) — the implementation runs in a separate worktree with its own delivery branch
 - No -- worktree.enabled = false — in-place without a worktree; delivery branches are created in the main repo when needed
 
@@ -943,6 +947,7 @@ directly into the target branch, `pr` opens a pull request (review before integr
 just leaves the branch; "ask at run time" decides anew each time.
 
 Ask the user: **Which completion action should Effective Flow use by default?**
+Before asking, score each option except "Ask at run time" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Merge -- delivery.completion = merge (default) — merge the branch locally into the base branch, without a PR
 - Pull request -- delivery.completion = pr
 - Branch only -- delivery.completion = branch
@@ -1009,6 +1014,7 @@ rather than guessing when it cannot find exactly one usable connection. Pull req
 on the Git forge, whichever option is chosen.
 
 Ask the user: **Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?**
+Before asking, score each option for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Local -- tracker.mode = local (default) — Markdown report under .effective-flow/review/
 - Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 - External tool -- tracker.mode = external — issues live in the project-management tool named by tracker.externalTool
@@ -1082,6 +1088,9 @@ config value or default as the pre-selection:
 7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block: see below.
+10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `effective-flow build`. Profile and Express never ask this block and preserve an existing value.
+
+**Load on demand:** Read `shared/setup-execution-profiles.md`, when the user chose the advanced settings and block 10 (`executionProfiles`) is being asked.
 
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
 `review.validation: quick`, and `applyReview.finalValidation: changedScope` here.

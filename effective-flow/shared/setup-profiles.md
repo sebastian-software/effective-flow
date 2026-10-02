@@ -36,9 +36,23 @@ German bind `en` or `de`. Render the second ask and every later setup output in 
 language. The pending row addition or removal is applied only after the current values are known and
 the common Step 6 confirmation succeeds.
 
+Directly before the Profile ask, classify the `origin` remote read-only as the evidence its scores
+rest on. Invoke the shipped remote helper's read-only `repository-resolve` operation as
+`node <skill-root>/scripts/remote-tracker.mjs repository-resolve` with `{}` on standard input, run
+from the invocation directory without a `cwd` field. This is a deliberate pre-verification exception
+to the remote helper rule that `cwd` is the verified `RUNTIME_STATE_ROOT`: the operation is
+read-only and runs before that root is verified. Classify its result as no Git repository
+(`NOT_GIT_REPOSITORY`; every score reason then says setup will stop at the preflight), none
+(`NO_ORIGIN`), GitHub or Forgejo (the resolved `provider`), or other (`AMBIGUOUS_HOST`); any other
+failure counts as unknown. This step runs no fetch, asks nothing, changes no file, ref, or
+configuration row, and decides nothing: each score reason names the classification, for example
+"Fully local" fitting a repository without a remote, and the later topology preflight stays the
+only authority on whether a profile can proceed.
+
 Then ask exactly these three workflow topologies; Express and Guided are modes, not profile options:
 
 Ask the user: **Which workflow profile should Effective Flow apply?**
+Before asking, score each option for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Fully local -- Planning, findings, implementation, and completion stay local without forge issues or pull requests
 - Forge + issues -- Issue-backed planning and tracking plus development use GitHub or Forgejo, with pull-request delivery
 - External + forge -- Issue-backed planning and tracking use an external tool; branches and pull requests stay on GitHub or Forgejo

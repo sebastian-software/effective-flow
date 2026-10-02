@@ -1,10 +1,12 @@
 # Model-tiering pilot data and privacy
 
-Effective Flow includes a local measurement subsystem for a future opt-in Quality/Fast field
-pilot. The subsystem can create a preregistered Quality-only baseline, retain pilot evidence,
-evaluate the protocol gates, and remove one reviewed generation safely. It does **not** currently
-activate the pilot: `build` and `refactor` do not select Fast, and `/effective-flow setup` exposes
-neither baseline start nor activation.
+Effective Flow includes a local measurement subsystem for the opt-in Quality/Fast field pilot of
+`/effective-flow build`. The subsystem can create a preregistered Quality-only baseline, retain
+pilot evidence, evaluate the protocol gates, and remove one reviewed generation safely. Nothing
+starts by itself: you opt in and start the baseline through a confirmed action in
+`/effective-flow setup guided`, and a later `build` run activates the generation automatically once
+the preregistered baseline conditions pass. `build` is the only workflow that records runs and may
+select Fast; `refactor` has not adopted Fast.
 
 ## Where evidence lives
 
@@ -30,7 +32,9 @@ anonymous period observation. It records only the mode and terminal outcome, har
 required-check summary, and counts of actual CI repair, configured-reviewer implementation, and
 conflict-resolution work. It contains no PR, repository, branch, workflow-record, check-name,
 comment, finding, or path identifier and cannot be linked to a `build` or `refactor` run. An
-observer-only re-entry records nothing.
+observer-only re-entry records nothing. An observation is also skipped, without affecting the
+pilot, when admission closes as it starts (for example because the baseline is activating at that
+moment) or while another measured run is still in flight.
 
 Observation setup sends the verified runtime root and repository identity together with the
 generation, configuration and generation states, `merge|report` mode, and native harness family.
@@ -42,10 +46,29 @@ exactly once; an early report-mode stop is `reported-blocked` with unavailable c
 ## Activation and detailed consent are different decisions
 
 `executionProfiles.fast.enabled: true` is project-level admission to the pilot lifecycle. It is not
-activation, does not start measurement, and does not authorize a detailed trace. A future guided
-setup action must separately display the exact shipped protocol digest, disclose local minimal-data
-collection, and obtain explicit confirmation before starting a Quality-only baseline. Activation
-then requires the preregistered baseline conditions to pass.
+activation, does not start measurement, and does not authorize a detailed trace. Guided setup block
+10 offers the lifecycle steps you confirm as separate actions, at most one per run and only for the
+state the stored generation proves:
+
+1. **Start the baseline.** Setup displays the exact shipped protocol digest and version, discloses
+   the local minimal-data collection, names the preregistered minimum baseline window and eligible
+   packet count, and starts a Quality-only baseline only after your confirmation. From then on,
+   native `build` runs record minimal measurements while every packet still runs Quality.
+2. **Resume.** A suspended generation with healthy evidence can be resumed after setup shows the
+   inventory and suspension digests the resume is bound to. The helper restores the state stored
+   at suspension. A generation in `review` never resumes.
+
+The baseline confirmation is the only one for activation: activation follows automatically. Every
+measured native `build` run in a baseline generation asks the helper to activate it before
+reserving its record. The helper activates once the preregistered baseline window and sample
+conditions pass; until then the generation stays in its baseline and the run continues as a
+baseline run. While another measured run is still in flight, the generation also stays in its
+baseline, but this run's own reservation then fails, so it normally proceeds as an unmeasured
+Quality run. In an active generation, an eligible native `build` packet uses Fast for its first
+implementation attempt only.
+
+Disabling the key or keeping an invalid value needs no migration, deletes nothing, and starts no
+action. A project that never opts in stays Quality-only and records nothing.
 
 A detailed trace has a separate, current-run consent boundary. The workflow may attest
 `detailOptIn: true` only after an explicit request in that run. Consent is not stored as text or
@@ -58,8 +81,27 @@ source excerpts, absolute paths, URLs, and unknown fields.
 
 Configuration and generation state remain independent. Disabling the project key stops new
 measurement and Fast selection without deleting evidence or clearing a suspension. Suspension and
-incomplete records block later Fast until the owned evidence is reconciled. Only a still-suspended
-generation can resume; a generation in `review` is terminal and cannot return to admission.
+incomplete records block later Fast until the owned evidence is reconciled. A critical safety,
+data-integrity, authorization, or scope incident that the helper stores suspends the generation, so
+Fast stops until an explicit resume; an incident it cannot store suspends nothing, as described
+below. Only a still-suspended generation can resume; a generation in `review` is terminal
+and cannot return to admission.
+
+A `build` run reports such an incident to the helper by its category, and the helper records the
+suspension; your product changes are kept either way. From that point the same run starts no
+further Fast attempt: every packet it has not yet started runs Quality. If the helper cannot store
+the suspension, the run shows an alert and offers once to retry. Without a stored suspension
+nothing stops a later run from selecting Fast, so the run says so; disable the pilot in Guided
+setup to keep later runs on Quality until you enable it again. If a run cannot finalize its own pilot
+record, a genuine storage fault makes the helper suspend the generation itself, while lock
+contention, a rejected request, or a location fault leaves the pilot state unchanged. Either way
+the run asks once, in the same run, whether to mark that record abandoned; an abandoned record
+counts none of its packets as a success. Only that run can do so. If you decline, or the run cannot
+ask, the incomplete record stays and keeps later runs unmeasured until `discard-generation` or
+purge removes the generation.
+
+A packet that a `build` run never started, because the run stopped earlier, is recorded as not
+started and left out of every packet metric, so it cannot count as a Fast attempt.
 
 Review freezes new reservations but lets already captured work finish or reconcile. Aggregation
 then produces two local views:
@@ -92,7 +134,9 @@ emits no aggregate, and makes Keep unavailable. Manual recursive deletion is not
 recovery path.
 
 Suspension and resume use durable transition state. A crash during either operation keeps every
-admission path frozen until recovery completes. Generation-wide operations exclude packet writers;
+admission path frozen until recovery completes. The next suspension, incident, or resume operation
+completes an interrupted suspension, and the inventory reports the pending transition meanwhile.
+Generation-wide operations exclude packet writers;
 independent packet timers may still run in parallel when no exclusive lifecycle operation owns the
 generation. Stale-lock and temporary-file recovery validates the generation, operation, lock nonce,
 owner liveness, file identity, and digest before removing anything. Purge and discard use
@@ -116,10 +160,14 @@ evidence.
 The subsystem fails toward Quality. A missing baseline, protocol drift, invalid configuration,
 suspension, incomplete evidence, a live or unknown lock, capacity exhaustion, or an unsafe runtime
 path prevents new Fast admission. A measurement or observation failure never discards successful
-product changes and never changes the current merge result. Observation failures expose only the
-stable `pilotControlOutcome`, `controlStatePersisted`, and value-free `alert` metadata. A caller
-reports durable suspension or incomplete evidence only when those fields explicitly confirm it;
-otherwise it states that cross-run control could not be proven without echoing the rejected value.
+product changes and never changes the current merge result. Only a genuine fault partway through
+recording (finalizing a workflow record, or a gate observation, including damaged evidence it
+meets), capacity exhaustion, or a recorded incident suspends the pilot; an invalid request, a lock
+held by another run, an unsafe location or version, or a missing generation or record does not.
+Measurement and observation failures expose only the stable `pilotControlOutcome`,
+`controlStatePersisted`, and value-free `alert` metadata. A caller reports durable suspension or
+incomplete evidence only when those fields explicitly confirm it; otherwise it states that
+cross-run control could not be proven without echoing the rejected value.
 
 ## See also
 

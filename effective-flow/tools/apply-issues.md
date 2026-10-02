@@ -246,9 +246,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -347,6 +347,7 @@ At the start of the run, determine the effective mode in this order (the first m
 Only when step 4 above applies (no config value, no argument/per-run signal):
 
 Ask the user: **Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?**
+Before asking, score each option for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Local -- tracker.mode = local — Markdown report under .effective-flow/review/ (previous behavior)
 - Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 
@@ -653,24 +654,16 @@ argument type; report which target the argument selected.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this
-gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
-at **both** entry points: in the apply chain (`effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
-direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`,
-`effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
-Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
-clarification round too many over one too few.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
 ### Abort criteria (at least one applies → do not implement)
 
-- **Open points:** the plan contains an `## Offene Punkte` or canonical `## Open points` section
-  with entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
-  Continue to recognize the former English spelling `## Open Points` when reading existing plans.
-- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
-  formulated without a named check/metric (no concrete check, no verifiable
-  target state).
+**Load on demand:** Read `shared/plan-lint.md`, when the basis is a plan file, before its open-points and acceptance-criteria criteria are evaluated.
+
+- **Open points:** for a plan file, the gate lints the basis with `files: [<plan path>]` and plan-lint reports `openPoints` greater than 0, and a failed lint call blocks as well; for an issue or finding, an `Offene Punkte` / `Open points` section at any heading level (issue planning comments use `###`) has entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
+- **Missing measurable acceptance criteria:** for a plan file, plan-lint reports `acceptanceCriteria` other than `present`; for an issue or finding, there are none. Criteria formulated without a named check/metric (no concrete check, no verifiable target state) block as well — measurability stays judgment.
 - **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
   materially affect the behavior, scope, or risk of the implementation.
 - **Not self-contained (issues/findings):** an issue or finding does not describe the
@@ -935,10 +928,9 @@ creation, lock acquisition, owner-file write, temporary-record write, rename, re
 or lock release. A guard for one handle authorizes no other handle. Create or replace a record by
 writing a complete sibling temporary file and atomically renaming it onto the expected record
 handle; never expose a partially written record. If initial record creation fails, retain the
-worktree and branch and do not run setup or delegate work there.
-
-This temporary-file-and-rename sequence is the required atomic write; use an actual atomic
-`rename`, not a truncate-and-rewrite operation on the live record.
+worktree and branch and do not run setup or delegate work there. This temporary-file-and-rename
+sequence is the required atomic write; use an actual atomic `rename`, not a truncate-and-rewrite
+operation on the live record.
 
 ### Serialized mutations
 
@@ -974,13 +966,14 @@ The complete status vocabulary is:
 
 Only these transitions are valid:
 
-| From                                | To or terminal action                   | Required proof                                  |
-| ----------------------------------- | --------------------------------------- | ----------------------------------------------- |
-| newly created                       | `active`                                | verified receipt and atomic initial record      |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | owning workflow, under the record lock          |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | fresh eligibility checks plus cleanup run claim |
-| `cleanup-in-progress`               | `cleanup-failed`                        | claimed actor records the exact failure         |
-| `cleanup-in-progress`               | delete only this lifecycle record       | claimed actor proves complete cleanup           |
+| From                                | To or terminal action                   | Required proof                                                          |
+| ----------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| newly created                       | `active`                                | verified receipt and atomic initial record                              |
+| `active`                            | `cleanup-ready`, `aborted`, or `failed` | owning workflow, under the record lock                                  |
+| `aborted` or `failed`               | `active` (adoption)                     | only the adoption rule of `plan-pr-continuation`, under the record lock |
+| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | fresh eligibility checks plus cleanup run claim                         |
+| `cleanup-in-progress`               | `cleanup-failed`                        | claimed actor records the exact failure                                 |
+| `cleanup-in-progress`               | delete only this lifecycle record       | claimed actor proves complete cleanup                                   |
 
 Do not transition `active`, `aborted`, or `failed` into a cleanup claim. A controlled user or
 workflow stop becomes `aborted`; an implementation, integration, validation, ownership, or

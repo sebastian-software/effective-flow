@@ -49,13 +49,16 @@ Umgesetzt/Implemented marker is retained in the file.
   (creating the directory if needed), still on the delivery branch, so that the move is part
   of the same PR/merge (implementation documentation). This convention states the **what**;
   `plan-archival` owns the **how** — which state the plan is in and therefore whether `git mv` is
-  the right primitive at all. It is, for a plan already tracked on the delivery base; a plan the
-  authoring run left untracked is written into the archive and added instead, because `git mv`
-  cannot move an untracked path. See also "Delivery and worktree integration".
+  the right primitive at all. It is, for a plan already tracked in the delivery checkout — on its
+  base, or on the plan branch that `effective-flow plan`'s publication created, which is the ordinary
+  case for a published plan; a plan the authoring run left untracked is written into the archive
+  and added instead, because `git mv` cannot move an untracked path. See also "Delivery and
+  worktree integration".
 - The **reverse** move is not coupled to a delivery event and therefore not staged: when a
   revision run brings an archived plan back to `<plan.dir>/`, it moves the file with a plain
-  filesystem move, never with `git mv`. `effective-flow plan` creates no commit, so a staged rename
-  would outlive the run in the user's index. That path belongs to `effective-flow plan`; its
+  filesystem move, never with `git mv`. `effective-flow plan` creates no commit except through
+  publication, which commits in its own temporary worktree, so a staged rename in the user's
+  checkout would outlive the run in the user's index. That path belongs to `effective-flow plan`; its
   revision-mode rules carry the reporting duty that comes with the unstaged move.
 - `effective-flow open-plans` lists only the top level of `<plan.dir>/`, not the archive.
 - Resolvers (see below) search in `<plan.dir>/` **and** `<plan.dir>/archive/`.

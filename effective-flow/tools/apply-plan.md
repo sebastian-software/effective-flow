@@ -132,9 +132,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -193,7 +193,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
@@ -404,24 +404,16 @@ argument type; report which target the argument selected.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this
-gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
-at **both** entry points: in the apply chain (`effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
-direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`,
-`effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
-Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
-clarification round too many over one too few.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
 ### Abort criteria (at least one applies → do not implement)
 
-- **Open points:** the plan contains an `## Offene Punkte` or canonical `## Open points` section
-  with entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
-  Continue to recognize the former English spelling `## Open Points` when reading existing plans.
-- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
-  formulated without a named check/metric (no concrete check, no verifiable
-  target state).
+**Load on demand:** Read `shared/plan-lint.md`, when the basis is a plan file, before its open-points and acceptance-criteria criteria are evaluated.
+
+- **Open points:** for a plan file, the gate lints the basis with `files: [<plan path>]` and plan-lint reports `openPoints` greater than 0, and a failed lint call blocks as well; for an issue or finding, an `Offene Punkte` / `Open points` section at any heading level (issue planning comments use `###`) has entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
+- **Missing measurable acceptance criteria:** for a plan file, plan-lint reports `acceptanceCriteria` other than `present`; for an issue or finding, there are none. Criteria formulated without a named check/metric (no concrete check, no verifiable target state) block as well — measurability stays judgment.
 - **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
   materially affect the behavior, scope, or risk of the implementation.
 - **Not self-contained (issues/findings):** an issue or finding does not describe the
@@ -508,7 +500,7 @@ When the user references an existing plan file on invocation — for example `<p
 ### Check the status
 
 1. Read the plan file fresh from the file system.
-2. Determine the implementation status according to the plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
+2. Determine the implementation status according to the plan status convention: exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` and has a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
 3. Status rules (both marker languages are equivalent):
    - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
    - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.

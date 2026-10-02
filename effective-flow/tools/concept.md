@@ -154,8 +154,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -197,8 +197,7 @@ into the Effective Flow artifact form.
 
 Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
 concrete task crosses the declared boundary of a specialist, load its owner via the relevance
-gate (building block "Skill discovery") and the ownership inventory
-(`docs/developer-guide/skill-ownership.md`). Typical owners:
+gate (building block "Skill discovery"). The declared owners are exactly these:
 
 <!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
@@ -267,7 +266,7 @@ is used. Do not write configuration from this tool.
 Use the structural template from the concept contract, and observe:
 
 - Fill every mandatory section; an empty section is a defect, not brevity.
-- `## Non-goals` is mandatory and must not be empty — it is what keeps the concept shallow.
+- `### Non-goals` under `## Scope` is mandatory and must not be empty — it is what keeps the concept shallow.
 - `## Technical direction` names direction, not design: platform, stack candidates with a one-line
   rationale each, coarse architecture, external systems, and the data outline in prose.
 - `## Roadmap and work packages` carries only its empty state at this point; the deep review fills

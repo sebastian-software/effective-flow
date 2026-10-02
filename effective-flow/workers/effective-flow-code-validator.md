@@ -108,8 +108,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance

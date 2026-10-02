@@ -18,7 +18,7 @@ When the user references an existing plan file on invocation — for example `<p
 ### Check the status
 
 1. Read the plan file fresh from the file system.
-2. Determine the implementation status according to the plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
+2. Determine the implementation status according to the plan status convention: exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` and has a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
 3. Status rules (both marker languages are equivalent):
    - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
    - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.

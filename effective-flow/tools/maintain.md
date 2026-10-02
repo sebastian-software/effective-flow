@@ -208,9 +208,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -253,7 +253,7 @@ run, inform the user about the affected key, do **not** guess.
 
 ## Delegation contract
 
-`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
+`effective-delivery` is the **declared domain owner** for dependency updates (classification `delegate`). The skill reaches well beyond them – audits, documentation, pull-request judgment, porting, and repository-native validation belong to it as well – but the part `maintain` delegates is its dependency work, and there its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
 
 **The skill owns the update mechanics (the "how"):**
 
@@ -532,8 +532,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -601,6 +601,7 @@ For the actual update work, follow the dependency path of `effective-delivery` u
 1. **Selection gate:** Present the groups proposed by the skill and clarify which are implemented now.
 
 Ask the user: **Which of the proposed update groups should be implemented now?**
+Before asking, score each option except "Selection" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - All safe ones -- Safe batch (patch/minor) and security fixes automatically, skip major bumps
 - Major too -- Additionally the major bumps individually with breaking-change adaptation
 - Security only -- Apply audit/security fixes exclusively

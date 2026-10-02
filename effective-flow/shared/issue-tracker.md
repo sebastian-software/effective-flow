@@ -60,6 +60,7 @@ At the start of the run, determine the effective mode in this order (the first m
 Only when step 4 above applies (no config value, no argument/per-run signal):
 
 Ask the user: **Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?**
+Before asking, score each option for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Local -- tracker.mode = local — Markdown report under .effective-flow/review/ (previous behavior)
 - Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 

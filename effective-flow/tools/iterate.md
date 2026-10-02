@@ -163,9 +163,9 @@ language; changing `language.documentation.technical` does not translate an exis
   `false` is `disabled`; malformed, ambiguous, or unreadable input is `invalid`; both states select
   Quality and stop new measurement without rewriting persisted pilot-generation state. Only the
   literal `true` is `enabled`, and it admits the project to the pilot lifecycle but does not start a
-  baseline, activate a generation, prove native Fast capability, or itself permit Fast. The key is
-  reserved until an adopting workflow ships, has no legacy migration, names no provider model, and
-  is not yet an interactive setup choice.
+  baseline, activate a generation, prove native Fast capability, or itself permit Fast. Only Guided
+  setup (advanced block 10) sets it; Profile and Express preserve an existing value and never
+  enable it. It has no legacy migration and names no provider model.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
@@ -309,8 +309,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -602,7 +602,7 @@ delegates. Four grounds carry that, none of them about how a later read classifi
 summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
 rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
 request receives the same content in the gate's own chat summary. The gate's stated bound — its own
-items are trigger comments, **at most one per configured bot per verified head** — is exceeded the
+items are trigger comments, **at most one per configured bot per verified head** plus one re-trigger per changes-requested verdict at that head — is exceeded the
 moment a delegated round adds something else. And a gate authenticated as a **different**
 account than the delegated run reads that summary as someone else's, where it would hold the very
 merge the delegation was meant to reach. The content is handed back to the caller instead of being
@@ -613,10 +613,17 @@ dropped.
 Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
 in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
 the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
-one, URL), the forge's own merge state, and `headCommittedAt` — the head commit's committer
+one, URL, and for a check run `startedAt` and `completedAt` where supplied, while a status context or Forgejo status carries `completedAt` only, and `supersededRuns`), `supersededCheckCount`, the forge's own merge state, and `headCommittedAt` — the head commit's committer
 timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
 — exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
 deliberate: both values must be read at the same instant to be consistent.
+
+The check list holds **only the latest run per check identity**: name plus workflow id (the workflow's `databaseId`, since
+workflow names are not unique) and triggering event, or name plus app slug where the run states `workflowRun: null`, scoped by its check suite's `databaseId`. The run
+with the highest `databaseId` is kept whatever its state; a group with any run lacking a usable `databaseId`, or tied on the highest
+one, is not collapsed, nor is a group holding two runs of one workflow run (distinct jobs sharing a name: a re-run attempt stays in its workflow run, but the rollup lists only its latest attempt), nor is a group holding two runs of one check suite (an app may create several same-named runs in one suite, and nothing orders them as re-runs), nor is a run with an incomplete identity (no workflow id, no workflow-run id, no event, a check suite without a stated workflow run, or no check suite, app slug, or check-suite id). A commit-status context keeps its own identity, is never merged with a check run, and
+carries its `createdAt` as `completedAt` only, with no `startedAt`. `supersededCheckCount` counts the dropped runs (`0` on
+Forgejo, which already returns one status per context). Every check states `supersededRuns`, the number of earlier runs of its identity it replaced: at least 1 only for the kept run of a collapsed group, `0` for a singleton, for every entry of a group not collapsed, for a run with an incomplete identity, and for every status context or Forgejo status; the per-check values sum to `supersededCheckCount`.
 
 `headCommittedAt` is the reference side of every "newer than the current head" question, paired with
 the `createdAt` of a comment, thread, or reply. Both sides are required: with either one absent the
@@ -664,7 +671,7 @@ what supersedes a standing verdict, so neither tool restates that rule.
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
 inside the provider CLI until the checks are complete or the supplied timeout elapses and returns
-the same normalized check list; a timeout is a normalized timeout result, not an error. It is a read
+the normalized check list, not deduplicated and without timestamps; a timeout is a normalized timeout result, not an error. It is a read
 operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
 Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
@@ -884,18 +891,17 @@ account-class condition: collapse is decided before any read, and a configuratio
 account class to condition on. It needs none because a pair collapses only when one of the two
 spellings carries `[bot]` and therefore names the bot form of the other — two rows, two spellings of
 one bot account, whatever a surface later reports about either. A project may already list both
-spellings as a workaround; after this rule they
-de-duplicate to a single reviewer, which is the intended outcome — one round, one mention, one wait.
-**The surviving key is the first of the collapsing entries in `mergeGate.bots` list order**, and
-every `.trigger` and `.check` lookup for that reviewer uses that one configured spelling. A value set
-on exactly one of them is adopted for the collapsed reviewer: an unset key disagrees with nothing.
-Report the collapse, so a maintainer can drop the redundant entry instead of keeping a line that no
-longer does anything. If both entries set the same key to **different** values, that is a
-configuration conflict. Report it naming the key and both values, and treat that reviewer as
-unconfigured for triggering and for check lookup: post no trigger, and resolve its state without the
-primary signal of rule 1. A gate then blocks the merge on that reviewer. Never pick one of the two
-values and never combine them — a guessed trigger text and a guessed check context each decide a
-different action, and neither is the one the project configured.
+spellings as a workaround; after this rule they de-duplicate to a single reviewer, which is the
+intended outcome — one round, one mention, one wait. **The surviving key is the first of the
+collapsing entries in `mergeGate.bots` list order**, and every `.trigger` and `.check` lookup for
+that reviewer uses that one configured spelling. A value set on exactly one of them is adopted for
+the collapsed reviewer: an unset key disagrees with nothing. Report the collapse, so a maintainer can
+drop the redundant entry instead of keeping a line that no longer does anything. If both entries set
+the same key to **different** values, that is a configuration conflict. Report it naming the key and
+both values, and treat that reviewer as unconfigured for triggering and for check lookup: post no
+trigger, and resolve its state without the primary signal of rule 1. A gate then blocks the merge on
+that reviewer. Never pick one of the two values and never combine them — a guessed trigger text and a
+guessed check context each decide a different action, and neither is the one the project configured.
 
 ### The three states
 
@@ -904,10 +910,9 @@ different action, and neither is the one the project configured.
 - **not started** — nothing proves the reviewer has begun for the current head.
 - **has run** — the reviewer has produced its verdict for the current head.
 
-**running** and **not started** both mean the reviewer's output for this head is not there yet; they
-differ only in what a consumer may do about it. Only the primary signal below can establish
-**running** — a consumer that receives **not started** therefore learns that nothing is proven, not
-that nothing is happening.
+**running** and **not started** both mean the reviewer's output for this head is not there yet; they differ
+only in what a consumer may do about it. Only the primary signal below can establish **running** — a consumer
+that receives **not started** therefore learns that nothing is proven, not that nothing is happening.
 
 ### Precedence
 
@@ -923,6 +928,10 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
    - a matching entry with `status: COMPLETED` → **has run**, whatever its `conclusion`. A red review
      is a review: the conclusion states what the reviewer found, not whether it ran, and reading it
      as "has not run" would trigger a reviewer that already answered.
+   - **more than one matching entry** → any match with `status: PENDING` means **running**, otherwise
+     **has run**. `pr-status-read` reports only the latest run per check identity, so several entries
+     match when distinct identities share the name or a group stays uncollapsed: a missing or tied
+     `databaseId`, two same-named runs of one workflow run or check suite, or an incomplete identity, keeps every run of that group in the list.
    - **no matching entry in a reported list** → **not started**. A context that never appears is
      indistinguishable from one that is about to appear: a misconfigured value, an app that is not
      installed, and a queued run whose status is only set once a worker claims it all look the same
@@ -1045,7 +1054,8 @@ The state is shared; what it gates is not. Each entry therefore states what is t
 itself first, and what each consumer role does with it second.
 
 - **has run** — the reviewer's output for this head exists and may be read, classified, and answered.
-  A gate counts this reviewer's merge precondition as satisfied; a guard lets its run continue.
+  A gate counts this reviewer's merge precondition as satisfied and triggers it again only through the
+  single exception its own stale-verdict re-trigger states; a guard lets its run continue.
 - **running** — the reviewer's output is coming, and no consumer may ask it to start again. A trigger
   aimed at a reviewer already working either queues a redundant second run or, for a reviewer that
   reads a mention as a fresh request, discards the one in flight. A gate waits and keeps the merge
@@ -1136,7 +1146,7 @@ The last two rows are the ones a caller must not read as an assessment: nobody j
 the item comes back explicitly **unassessed** and the caller's own gate decides what that costs.
 Returning `rejected` or `deferred` for either would claim a judgment this run never made.
 
-**Every `ABORT` this workflow returns is whole-run.** A per-item failure is an outcome and never a
+**Every `ABORT` this workflow returns is whole-run.** Its final line is the full `ABORT: <reason>` this file names for that stop, never a bare `ABORT`. A per-item failure is an outcome and never a
 per-item `ABORT`: `DONE`/`ABORT` is the completion protocol this run gives its **internal sub-agents**, and a
 sub-agent's `ABORT` marks that one item `unassessed` and continues with the next. Nothing this
 workflow returns to a delegating caller is scoped to a single item.
@@ -1348,7 +1358,7 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
      comment per delegated round accumulates on someone's pull request — so an unsuppressed run
      publishes onto a discussion surface the caller is deliberately keeping bounded.
      effective-flow merge-gate is the example: it may delegate up to `mergeGate.maxRounds` rounds and
-     bounds its own items to one trigger comment per configured bot per verified head, and a gate
+     bounds its own items to one trigger comment per configured bot per verified head plus one re-trigger per changes-requested verdict, and a gate
      authenticated as a **different** account than this run additionally reads that summary as
      someone else's writing.
 

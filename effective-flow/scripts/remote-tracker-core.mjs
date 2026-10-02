@@ -116,6 +116,8 @@ const MUTATIONS = new Set([
   'sf-label-migrate',
   'pr-create',
   'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
   'pr-comment',
   'pr-merge',
   'review-create',
@@ -151,6 +153,8 @@ const REMOTE_OPERATIONS = new Set([
   'pr-checks-wait',
   'pr-create',
   'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
   'pr-comment',
   'pr-merge',
   'review-create',
@@ -189,6 +193,8 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-checks-wait': 'pullRequestChecksWait',
   'pr-create': 'pullRequestCreate',
   'pr-update-body': 'pullRequestUpdate',
+  'pr-update-title': 'pullRequestTitleUpdate',
+  'pr-mark-ready': 'pullRequestMarkReady',
   'pr-comment': 'prComment',
   'pr-merge': 'pullRequestMerge',
   'review-create': 'reviewCreate',
@@ -2117,6 +2123,51 @@ function reportsAlreadyExists(result) {
   );
 }
 
+// GitHub refuses a draft pull request in a repository whose plan offers none with a 422 whose
+// body states the reason: `errors: [{ message: "Draft pull requests are not supported in this
+// repository." }]`. That is a missing capability of this repository, not a failed command, and
+// the probe cannot see it — `pullRequestDraftCreate` attests only that `pr-create` sends `draft`.
+// So a draft `pr-create` runs through this wrapper, which turns exactly that refusal into the same
+// `UNSUPPORTED_CAPABILITY` the probe gate raises, and leaves every other outcome to `runChecked`.
+// Both halves are required: the 422 (gh's `(HTTP 422)` summary or the body's `Validation Failed`)
+// and the phrase, read from the body gh writes to stdout or from its stderr.
+const DRAFT_UNSUPPORTED_PHRASE = 'draft pull requests are not supported';
+
+function reportsDraftUnsupported(result) {
+  if (!result || result.status === 0) return false;
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+  let payload;
+  try {
+    payload = stdout === '' ? undefined : JSON.parse(stdout);
+  } catch {
+    payload = undefined;
+  }
+  const messages = [
+    payload?.message,
+    ...(Array.isArray(payload?.errors) ? payload.errors.map((entry) => entry?.message) : []),
+    stderr,
+  ].filter((message) => typeof message === 'string');
+  const unprocessable = /\(HTTP 422\)/.test(stderr) || payload?.message === 'Validation Failed';
+  return (
+    unprocessable &&
+    messages.some((message) => message.toLowerCase().includes(DRAFT_UNSUPPORTED_PHRASE))
+  );
+}
+
+function draftCreateRunner(runner) {
+  return async (call) => {
+    const result = await runner(call);
+    if (reportsDraftUnsupported(result)) {
+      fail('UNSUPPORTED_CAPABILITY', 'github does not support draft pull requests here', {
+        operation: 'pr-create',
+        capability: 'pullRequestDraftCreate',
+      });
+    }
+    return result;
+  };
+}
+
 function isNoRequiredChecksResponse(result, plan) {
   if (!result || result.status === 0) return false;
   if (!plan.args.includes('--required')) return false;
@@ -2335,7 +2386,18 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         pullRequestChecksWait: gateSupported,
         pullRequestMerge: gateSupported,
         pullRequestCreate: true,
+        // What this states is the client half only: `pr-create` sends `draft` in its REST body on
+        // every gh this adapter accepts. Whether the repository accepts a draft depends on its
+        // plan, which no probe can read, so a repository that refuses one is reported by
+        // `pr-create` itself as `UNSUPPORTED_CAPABILITY` on this key (see
+        // `reportsDraftUnsupported`). The key is stated rather than left absent so a caller that
+        // requires it before publishing a draft does not read GitHub's silence as a refusal.
+        pullRequestDraftCreate: true,
         pullRequestUpdate: true,
+        // The title PATCH is the same REST call `pullRequestUpdate` already makes with another
+        // field, and `gh pr ready` has existed with `--repo` since before this adapter's 2.0 floor.
+        pullRequestTitleUpdate: true,
+        pullRequestMarkReady: true,
         prComment: true,
         comments: true,
         labels: true,
@@ -2389,6 +2451,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     labelCreate,
     labelList,
     apiInclude,
+    pullEditTitle,
+    pullCreateDraftWip,
   ] = await Promise.all([
     probeTeaHelp(runner, ['issues'], ['--output']),
     probeTeaHelp(runner, ['issues'], ['--comments']),
@@ -2414,6 +2478,13 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     // 0.14.2 floor, so the transport needs no new version floor; `--include` is source-verified for
     // `v0.15.1`/`main` only, so it is probed rather than assumed and the floor stays where it is.
     probeTeaHelp(runner, ['api'], ['--include']),
+    // Appended rather than inserted, because the probe order is positional for every caller that
+    // scripts it. The title edit is its own flag on `pulls edit`, separate from `--description`.
+    probeTeaHelp(runner, ['pulls', 'edit'], ['--title']),
+    // Not a second `--draft` check but the evidence `pr-mark-ready` rests on: tea documents on this
+    // very flag that a draft is a `WIP: ` title prefix. See `pr-mark-ready` in
+    // `remote-tracker-forgejo-core.mjs` for why that decides the mapping.
+    probeTeaHelp(runner, ['pulls', 'create'], ['--draft', 'WIP']),
   ]);
   const labelCreateSupported = labelCreate && labelList;
   // The `tea api` transport probe the three gate capabilities are gated on: the reads need
@@ -2452,7 +2523,11 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       issueLabelRemove,
       labelMigration: issueLabelAdd && issueLabelRemove,
       pullRequests: pulls,
-      pullRequestRead: pulls,
+      // The pull-request read, the list and the body update's stale-write guard all read the raw
+      // API object over `tea api --include` — the renderer states no head repository — so each
+      // also needs that one transport flag. The subcommand flags stay in the conjunction because
+      // they are what the capabilities attested before the move.
+      pullRequestRead: pulls && apiInclude,
       prCommentsRead: pulls && pullComments,
       // The review listing is a raw-API read on the same `tea api` transport the status read and the
       // review-thread walk already ride, so it derives from that one probe exactly as `reviewThreads`
@@ -2460,7 +2535,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // whose `--help` could attest anything here, and the renderer that comes closest states no
       // login and no timestamp — the same reason the thread walk left it.
       prReviewsRead: teaApiTransport,
-      pullRequestList: pulls,
+      pullRequestList: pulls && apiInclude,
       // Two of the three gate operations ride on the `tea api` transport: the status read composes
       // the pull-request object, the combined commit status and the head commit's date, and the
       // merge sends `head_commit_id` as the server-side head guard. The watch is the one genuine
@@ -2472,7 +2547,13 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       pullRequestMerge: teaApiTransport,
       pullRequestCreate: pullCreate,
       pullRequestDraftCreate: pullCreate && pullCreateDraft,
-      pullRequestUpdate: pullEdit,
+      pullRequestUpdate: pullEdit && apiInclude,
+      pullRequestTitleUpdate: pullEditTitle,
+      // Forgejo has no draft flag of its own: a pull request is a draft while its title carries a
+      // work-in-progress prefix. Marking it ready is therefore one title edit, and it is offered only
+      // where the installed tea both edits titles and states that its drafts are that prefix. The
+      // edit is confirmed by one raw `pr-read`, so the transport flag that read needs is required too.
+      pullRequestMarkReady: pullEditTitle && pullCreateDraftWip && apiInclude,
       prComment: comment,
       comments: comment,
       labels: labelCreateSupported && issueLabelAdd && issueLabelRemove,
@@ -2651,6 +2732,226 @@ function normalizePullRequest(item, repository, metadata = {}) {
   };
 }
 
+// The repository a pull request's head branch lives in, as the canonical `owner/repo` string. Both
+// providers state it on the same key: GitHub's REST `head.repo` and Gitea/Forgejo's
+// `PRBranchInfo.Repository` (`json:"repo"`, no `omitempty`) are the full repository object, and
+// both state `null` once the head repository is gone — GitHub for a deleted fork, Forgejo whenever
+// `services/convert` finds no head repository record. A same-named branch in a fork is therefore
+// told apart from this repository's own branch by this field and never by `head`, which on Forgejo
+// is the bare branch even for a fork.
+//
+// The slug is for reports only. Whether the head is this repository's own is `sameRepository`
+// below, which a caller decides with instead of comparing this string against one it derived from
+// a remote URL: a slug differs in case from the canonical spelling, and survives no rename.
+//
+// Three outcomes, and the difference between the last two is load-bearing:
+// - a usable repository object yields its `owner/repo`;
+// - an explicit `null` yields `null` — the provider **stated** that no head repository exists, and
+//   a caller treats that as foreign;
+// - a payload that does not state the key at all, or states an object with no usable name, yields
+//   `undefined`, so the record carries no field. That is "the provider said nothing", which a
+//   caller hydrates through `pr-read` and otherwise treats as incomplete output — never as a match
+//   and never as a proven fork. Mapping it to `null` would turn a truncated payload into a
+//   statement the forge never made.
+const REPOSITORY_SLUG = /^[^/\s]+\/[^/\s]+$/;
+
+function repositorySlug(repo) {
+  if (typeof repo !== 'object' || repo === null) return undefined;
+  if (typeof repo.full_name === 'string' && REPOSITORY_SLUG.test(repo.full_name)) {
+    return repo.full_name;
+  }
+  const owner = repo.owner?.login ?? repo.owner?.username;
+  const name = repo.name;
+  const slug = typeof owner === 'string' && typeof name === 'string' ? `${owner}/${name}` : '';
+  return REPOSITORY_SLUG.test(slug) ? slug : undefined;
+}
+
+function normalizeHeadRepository(head) {
+  if (typeof head !== 'object' || head === null || !Object.hasOwn(head, 'repo')) return undefined;
+  if (head.repo === null) return null;
+  return repositorySlug(head.repo);
+}
+
+// Whether the head branch lives in the base repository — the one fact plan discovery decides
+// ownership with. Both ends come from the same payload, so no caller-derived slug takes part:
+//
+// - both repository objects state an integer `id`: the ids decide, so a renamed or transferred
+//   repository still matches itself and a same-named fork with another id never does;
+// - otherwise both slugs decide, compared ASCII case-insensitively, because both forges treat an
+//   owner and a repository name case-insensitively while reporting whatever casing was stored.
+//
+// Three outcomes, mirroring `headRepository`: `true`; `false` for an explicit `head.repo: null` (a
+// deleted fork is never this repository) or a stated difference; and `undefined` — no field — when
+// the payload does not state `head.repo`, or states either end unusably. Absence is "the provider
+// said nothing", which a caller hydrates through `pr-read` and never reads as either answer.
+function asciiLowerCase(text) {
+  return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
+function normalizeSameRepository(head, base) {
+  if (typeof head !== 'object' || head === null || !Object.hasOwn(head, 'repo')) return undefined;
+  if (head.repo === null) return false;
+  if (typeof head.repo !== 'object' || typeof base !== 'object' || base === null) return undefined;
+  const headRepo = head.repo;
+  const baseRepo = base.repo;
+  if (typeof baseRepo !== 'object' || baseRepo === null) return undefined;
+  if (Number.isSafeInteger(headRepo.id) && Number.isSafeInteger(baseRepo.id)) {
+    return headRepo.id === baseRepo.id;
+  }
+  const headSlug = repositorySlug(headRepo);
+  const baseSlug = repositorySlug(baseRepo);
+  if (headSlug === undefined || baseSlug === undefined) return undefined;
+  return asciiLowerCase(headSlug) === asciiLowerCase(baseSlug);
+}
+
+// The plan pull-request marker: the discovery key a published plan's draft pull request carries in
+// its body. It is parsed here, deterministically, so a workflow reads two normalized fields and
+// never the body itself — body text is attacker-influenceable, and a fork's pull request can carry
+// any text it likes. This follows the precedent of `inspectDecompositionKey`.
+//
+// The grammar is exact and has no tolerance beyond spaces and tabs around the line:
+//
+//   <!-- effective-flow-plan-pr:v1 {"plan":"<path>"} -->
+//
+// on a body line of its own, exactly once, with the JSON in its canonical `JSON.stringify` spelling
+// and a single `plan` key, carrying a path `isSafePlanPath` admits.
+//
+// Only a **marker line** takes part: a line that, after its leading spaces and tabs, begins with
+// `<!-- effective-flow-plan-pr:`. A prose mention of the key anywhere else is ignored, so a pull
+// request that merely talks about the marker neither gains an error nor becomes a `duplicate`. The
+// trim is spaces and tabs only, never `String.prototype.trim()`: a no-break space, a zero-width
+// character or a line separator in front of the comment is not whitespace here, so such a line is
+// not a marker line at all.
+//
+// The helper does not interpret Markdown. A marker inside a fenced code block, an indented block or
+// a block quote's `> ` prefix is judged by the same line rule as anywhere else — the fence neither
+// hides a marker line nor turns a quoted one into one — because the body is attacker-influenceable
+// text, and a second parser deciding what is "really" code would be a second place to disagree.
+//
+// Every body with a marker line, or with a marker comment that has other text in front of it,
+// yields exactly one of two fields, so a caller can tell a body without a marker from one whose
+// marker was rejected. The error codes are stable and checked in this precedence:
+// - `duplicate`    — more than one marker line;
+// - `not-own-line` — the marker comment has other text on its line: text after the closing `-->` of
+//                    the one marker line, or, when there is no marker line at all, text in front
+//                    of a `<!-- effective-flow-plan-pr:` comment;
+// - `malformed`    — anything else that is not the exact form, including a JSON object that is not
+//                    exactly `{"plan":"<string>"}`;
+// - `unsafe-path`  — the exact form, carrying a path that breaks the rules of `isSafePlanPath`.
+//
+// A comment with text in front of it never counts beside a marker line: with one marker line
+// present, that line alone is judged.
+const PLAN_PR_MARKER_OPENER = '<!-- effective-flow-plan-pr:';
+// `s`, because the body is already split into lines on `\r\n`, `\n` and `\r`, and the two Unicode
+// separators `.` would otherwise stop at are the path rule's to refuse, as `unsafe-path`.
+const PLAN_PR_MARKER_LINE = /^<!-- effective-flow-plan-pr:v1 (.*) -->$/s;
+
+// The rule a plan path has to pass, as a marker's value and as `pr-list`'s `planPath` alike. It
+// is the configuration path contract and nothing narrower: `plan.dir` is free text, canonicalized
+// to a repository-relative directory before it is written, and a plan's file name is free too, so a
+// path may carry spaces, glob characters, shell-significant characters such as `&`, `;`, `$` and
+// quotes, and any script. Shell safety is the consumers' duty, not this rule's: a caller passes the
+// path as one literal, quoted argument behind `--` and as a `:(literal)` pathspec wherever Git reads
+// a pathspec, and never interpolates it unquoted. In the marker a `"` travels JSON-escaped, which the
+// canonical `JSON.stringify` comparison already requires. What this rule refuses is only what makes a
+// path structurally unsafe or ambiguous:
+// - ill-formed UTF-16 (a lone surrogate half);
+// - a control (`Cc`, the line feed included), format (`Cf` — the bidirectional overrides and the
+//   zero-width characters), line- or paragraph-separator character;
+// - a backslash, which a Windows checkout reads as a separator;
+// - an absolute path — a leading `/`, which is an empty first segment — or a drive letter (`C:/…`,
+//   `c:…`); a leading `:` is refused with it, because it is Git's pathspec magic prefix and would
+//   change what a caller's pathspec means; a `:` anywhere else is an ordinary character;
+// - an empty, `.` or `..` segment, so no traversal and no non-canonical spelling;
+// - a missing `.md` suffix.
+// A segment beginning with `-` passes: behind `--` neither Git nor a quoted argument reads it as an
+// option.
+const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/u;
+const PLAN_PATH_DRIVE_OR_MAGIC = /^(?:[A-Za-z]:|:)/;
+
+function isSafePlanPath(path) {
+  if (typeof path !== 'string' || path === '' || !path.isWellFormed()) return false;
+  if (PLAN_PATH_FORBIDDEN.test(path) || PLAN_PATH_DRIVE_OR_MAGIC.test(path)) return false;
+  const segments = path.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return false;
+  }
+  return path.endsWith('.md');
+}
+
+function trimSpacesAndTabs(line) {
+  return line.replace(/^[ \t]+|[ \t]+$/g, '');
+}
+
+export function inspectPlanPrMarker(body) {
+  const text = typeof body === 'string' ? body : '';
+  const lines = text.split(/\r\n|\n|\r/).map(trimSpacesAndTabs);
+  const markerLines = lines.filter((line) => line.startsWith(PLAN_PR_MARKER_OPENER));
+  if (markerLines.length > 1) return { status: 'invalid', error: 'duplicate' };
+  if (markerLines.length === 0) {
+    return lines.some((line) => line.includes(PLAN_PR_MARKER_OPENER))
+      ? { status: 'invalid', error: 'not-own-line' }
+      : { status: 'absent' };
+  }
+  const line = markerLines[0];
+  const match = line.match(PLAN_PR_MARKER_LINE);
+  if (!match) {
+    // The exact form is tried first, so a `-->` inside the JSON is judged by the JSON and the path
+    // rules rather than read as the comment's end. Only a line that is not the exact form is
+    // searched for a closing `-->` with text after it.
+    const closer = line.indexOf('-->', PLAN_PR_MARKER_OPENER.length);
+    return closer !== -1 && closer + 3 < line.length
+      ? { status: 'invalid', error: 'not-own-line' }
+      : { status: 'invalid', error: 'malformed' };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return { status: 'invalid', error: 'malformed' };
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    typeof parsed.plan !== 'string' ||
+    JSON.stringify({ plan: parsed.plan }) !== match[1]
+  ) {
+    return { status: 'invalid', error: 'malformed' };
+  }
+  if (!isSafePlanPath(parsed.plan)) return { status: 'invalid', error: 'unsafe-path' };
+  return { status: 'valid', plan: parsed.plan };
+}
+
+function requirePlanPath(value) {
+  if (!isSafePlanPath(value)) {
+    fail('INVALID_PAYLOAD', 'planPath must be a safe repository-relative path ending in .md', {
+      field: 'planPath',
+    });
+  }
+  return value;
+}
+
+// The record `pr-read` and `pr-list` return: the normalized pull request plus the facts plan
+// discovery keys on. They are added only on these two reads, so every other operation that happens
+// to normalize a pull request — `pr-create`, `pr-update-body`, `pr-update-title` — keeps its
+// record exactly as it was. Each discovery field is absent, never guessed, when the payload does
+// not state what it rests on, which is also what keeps a payload without `head.repo` byte-identical
+// to the record it produced before these fields existed.
+function normalizePullRequestRecord(item, repository, metadata = {}) {
+  const pullRequest = normalizePullRequest(item, repository, metadata);
+  const headRepository = normalizeHeadRepository(item.head);
+  const sameRepository = normalizeSameRepository(item.head, item.base);
+  const marker = inspectPlanPrMarker(pullRequest.body);
+  return {
+    ...pullRequest,
+    ...(headRepository === undefined ? {} : { headRepository }),
+    ...(sameRepository === undefined ? {} : { sameRepository }),
+    ...(marker.status === 'valid' ? { planPrMarker: marker.plan } : {}),
+    ...(marker.status === 'invalid' ? { planPrMarkerError: marker.error } : {}),
+  };
+}
+
 // Provider timestamps arrive under several spellings, and a caller that has to decide whether a
 // comment is newer than the head commit must not parse three shapes to do it. The first usable
 // value wins and is re-emitted in UTC: Gitea reports a local offset while GitHub reports `Z`, so
@@ -2734,6 +3035,122 @@ function normalizeCheck(item) {
     ...(pending || conclusion === undefined ? {} : { conclusion }),
     ...(typeof url === 'string' && url !== '' ? { url } : {}),
     ...(required === undefined ? {} : { required }),
+  };
+}
+
+// The identity whose runs supersede one another, for a GitHub `CheckRun` only. A re-run keeps the
+// check's name, its workflow, and the workflow run's triggering event; the event belongs to the
+// identity because a `push` run and a `pull_request` run of one workflow test different trees, and
+// the workflow because two workflows may define a job of the same name — either way a green run
+// must not hide a red one of a different check. The workflow is identified by its numeric
+// `databaseId`, not its name: two workflow files may declare the same `name:`, so a name would
+// merge their runs. The run's scope id is returned beside the key: the workflow run's own
+// `databaseId`, since a check's `name` is only a job's display name: two distinct jobs of one
+// workflow run may share it, and `latestCheckRuns` must be able to tell them apart from a re-run of
+// one job. A run outside GitHub Actions, which GraphQL states as `workflowRun: null`, has no
+// workflow run, and its app slug takes that place; its scope id is its check suite's own
+// `databaseId`, because a GitHub App may create several same-named check runs in one check suite,
+// and nothing in the query orders them as re-runs. The Actions path ignores the check-suite id. A
+// status context, a Forgejo status, and a run whose identity is incomplete return nothing and are
+// never collapsed, so an incomplete payload is reported in full rather than merged on a guess: no
+// check suite, a suite without the `workflowRun` key (which states nothing, unlike `null`), a
+// workflow run without a safe-integer workflow id, without a safe-integer workflow-run id, or
+// without a string event, and a fallback run without an app slug or without a safe-integer
+// check-suite id.
+function checkRunIdentity(node) {
+  if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
+  const suite = node.checkSuite;
+  if (suite === null || typeof suite !== 'object' || !Object.hasOwn(suite, 'workflowRun')) {
+    return undefined;
+  }
+  const run = suite.workflowRun;
+  if (run !== null) {
+    const workflowId = run?.workflow?.databaseId;
+    const workflowRunId = run?.databaseId;
+    return Number.isSafeInteger(workflowId) &&
+      Number.isSafeInteger(workflowRunId) &&
+      typeof run?.event === 'string'
+      ? {
+          key: JSON.stringify(['workflow', node.name, workflowId, run.event]),
+          scopeId: workflowRunId,
+        }
+      : undefined;
+  }
+  const slug = suite.app?.slug;
+  const checkSuiteId = suite.databaseId;
+  return typeof slug === 'string' && Number.isSafeInteger(checkSuiteId)
+    ? { key: JSON.stringify(['app', node.name, slug]), scopeId: checkSuiteId }
+    : undefined;
+}
+
+// `pr-status-read` only: the rollup reports every run on the head commit, including runs a later run
+// of the same check superseded, so a red run that was re-run green would block the gate forever at
+// an unmoved head. Per identity only the run with the highest `databaseId` is kept — whatever its
+// state, so a latest run that is pending or failed blocks exactly as before — and the kept entries
+// stay in rollup order. The id is compared as a number: it exceeds 32 bits but is a safe integer.
+// A group fails closed to today's full report when any of its runs lacks a safe-integer id, or when
+// the highest id is not unique, because neither case says which run is the latest. It also fails
+// closed when two of its runs share one scope. For a GitHub Actions run the scope is its workflow
+// run: a re-run attempt of a job stays in its workflow run, but GitHub's rollup already lists only
+// that job's latest attempt, so two same-named runs of one workflow run are distinct jobs sharing a
+// display name, and GraphQL exposes no per-job id that could order them. For a run of the app-slug
+// fallback the scope is its check suite: an app may create several same-named runs in one suite,
+// and nothing in the query orders them as re-runs. Only runs of different workflow runs, or of
+// different check suites, supersede one another. Each kept run also carries how many runs of its
+// identity it superseded: at least 1 only for the kept run of a collapsed group, 0 everywhere else,
+// so a caller can tell a re-run from a first run that merely started late.
+// `pr-checks-wait` shares `normalizeCheck` but not this step; its output stays unchanged.
+function latestCheckRuns(rollup) {
+  const groups = new Map();
+  rollup.forEach((node, index) => {
+    const identity = checkRunIdentity(node);
+    if (identity === undefined) return;
+    const members = groups.get(identity.key);
+    const member = { index, scopeId: identity.scopeId };
+    if (members === undefined) groups.set(identity.key, [member]);
+    else members.push(member);
+  });
+  const superseded = new Set();
+  const supersededBy = new Map();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const scopeIds = members.map((member) => member.scopeId);
+    if (new Set(scopeIds).size !== scopeIds.length) continue;
+    const ids = members.map((member) => rollup[member.index].databaseId);
+    if (!ids.every((id) => Number.isSafeInteger(id))) continue;
+    const highest = Math.max(...ids);
+    if (ids.filter((id) => id === highest).length !== 1) continue;
+    members.forEach((member, position) => {
+      if (ids[position] !== highest) superseded.add(member.index);
+      else supersededBy.set(member.index, members.length - 1);
+    });
+  }
+  return {
+    runs: rollup.flatMap((node, index) =>
+      superseded.has(index) ? [] : [{ node, supersededRuns: supersededBy.get(index) ?? 0 }],
+    ),
+    supersededCount: superseded.size,
+  };
+}
+
+// One `pr-status-read` check: the shared record plus the instants the provider states, each omitted
+// when absent or unparseable, like `conclusion`. A GitHub status context has one instant, the
+// posting of its final state, which is a completion time, so it reports `completedAt` only: a start
+// time it does not have would let a slow first run pass for a re-run after a review. A Forgejo
+// record arrives with its `completedAt` already set by `forgejoCheckRecord`. Kept apart from
+// `normalizeCheck` so `pr-checks-wait` reports no timestamps.
+function statusCheck(item) {
+  const check = normalizeCheck(item);
+  const isStatusContext = item.__typename === 'StatusContext';
+  const startedAt = isStatusContext ? undefined : normalizeTimestamp(item.startedAt);
+  const completedAt = normalizeTimestamp(
+    item.completedAt,
+    isStatusContext ? item.createdAt : undefined,
+  );
+  return {
+    ...check,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(completedAt === undefined ? {} : { completedAt }),
   };
 }
 
@@ -2859,13 +3276,15 @@ function flattenPullRequestStatus(raw) {
 // `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
 // `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
 // one shape for both providers, and the record deliberately carries only `name`, `status`,
-// `conclusion` and `url`: no raw Gitea key (`context`, `target_url`, `status`, `id`,
-// `description`) survives into the envelope. The record's own `status` key is the normalized
-// output field `normalizeCheck` reads back; despite the shared name it is unrelated to the raw
-// input key above.
+// `conclusion`, `url`, and only a `completedAt` taken from `created_at`: no raw Gitea
+// key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
+// envelope. The combined status endpoint already returns one status per context, so nothing here
+// is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
+// is the normalized output field `normalizeCheck` reads back; despite the shared name it is
+// unrelated to the raw input key above.
 //
-// `warning` and `skipped` are non-success **completed** checks and therefore block under
-// `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
+// `skipped` maps to a `SKIPPED` conclusion, which satisfies the merge gate's check criterion exactly
+// as GitHub's own `SKIPPED` does. `warning` is a non-success **completed** check and blocks.
 // Anything unknown is `PENDING`, so an unrecognized future state blocks a merge rather than reading
 // as a green result — the same discipline `PENDING_CHECK_STATES` applies on the GitHub side.
 const FORGEJO_CHECK_STATES = Object.freeze({
@@ -2898,6 +3317,12 @@ function forgejoCheckRecord(item, index) {
   const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
+  // A commit status has one instant, the posting of its final state, which is a completion time
+  // and not a start, so it is reported as `completedAt` only, as for a GitHub status context. The
+  // Go zero instant is the marshalled "never set", so it states none.
+  const created = isGoZeroInstant(item.created_at)
+    ? undefined
+    : normalizeTimestamp(item.created_at);
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
   // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
   // default, never looser.
@@ -2906,6 +3331,7 @@ function forgejoCheckRecord(item, index) {
     status: mapped.status,
     ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
     ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(created === undefined ? {} : { completedAt: created }),
   };
 }
 
@@ -3001,7 +3427,8 @@ function normalizePullRequestStatus(item, repository) {
   // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
   // field, and an unstated mergeability fails closed everywhere it is consumed.
   const mergeable = upperCaseField(item.mergeable);
-  const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
+  const { runs, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
+  const checks = runs.map(({ node, supersededRuns }) => ({ ...statusCheck(node), supersededRuns }));
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
@@ -3027,6 +3454,9 @@ function normalizePullRequestStatus(item, repository) {
     // merge a commit whose CI never ran.
     checksReported: Array.isArray(rollup),
     checkCount: checks.length,
+    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was. It
+    // equals the sum of the per-check `supersededRuns`.
+    supersededCheckCount: supersededCount,
     checks,
   };
 }
@@ -3299,8 +3729,21 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       );
     case 'issue-comment-update':
       return normalizeComment(flattened);
-    case 'pr-read':
+    // Forgejo's raw object states a merged pull request as `state: "closed"` beside `merged: true`,
+    // while the tea renderer this read used to go through reported `merged` as the state itself.
+    // The state is restored from that flag so the move to the raw API changes no caller's reading
+    // of a merged pull request. GitHub's read was the REST object all along and keeps `closed`.
+    case 'pr-read': {
+      if (flattened?.output !== undefined) return { ...flattened, repository: repository.slug };
+      const record = normalizePullRequestRecord(flattened, repository, metadata);
+      return repository.provider === 'forgejo' && flattened?.merged === true
+        ? { ...record, state: 'merged' }
+        : record;
+    }
+    // GitHub answers both PATCHes with the full updated pull request; tea's `pulls edit` renders for
+    // humans, so the Forgejo branch reports the completed command and its output instead.
     case 'pr-update-body':
+    case 'pr-update-title':
       return flattened?.output !== undefined
         ? { ...flattened, repository: repository.slug }
         : normalizePullRequest(flattened, repository, metadata);
@@ -3308,10 +3751,36 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       return repository.provider === 'forgejo'
         ? normalizeTeaCreate(operation, flattened, repository, input)
         : normalizePullRequest(flattened, repository, metadata);
-    case 'pr-list':
-      return (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
-        .map((item) => normalizePullRequest(item, repository))
+    // `planPath` narrows the list to the plan pull requests of one plan, and in that mode every item
+    // leaves its `body` behind: discovery hands the caller the helper-parsed marker, never the text
+    // a fork or a third party wrote. The filter compares the parsed marker only, so an item whose
+    // marker was rejected can never match.
+    case 'pr-list': {
+      const planPath = input.planPath === undefined ? undefined : requirePlanPath(input.planPath);
+      const items = (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
+        .map((item) => normalizePullRequestRecord(item, repository))
         .filter((pullRequest) => !input.head || pullRequest.head === input.head);
+      if (planPath === undefined) return items;
+      return items
+        .filter((pullRequest) => pullRequest.planPrMarker === planPath)
+        .map(({ body: _body, ...pullRequest }) => pullRequest);
+    }
+    // Both providers report the transition as prose, so the record states what was asked and what
+    // the CLI said. On GitHub `ready: true` is `gh pr ready`'s success, which is GraphQL's own
+    // transition. On Forgejo it is what the read-back after the title edit states (`metadata.ready`,
+    // see the Forgejo `pr-mark-ready` branch of `executeOperation`), and the title is the redacted
+    // final title that edit set. `output` is what the CLI wrote to stdout; `gh pr ready` writes its
+    // confirmation to stderr, so an empty `output` is the normal success there.
+    case 'pr-mark-ready': {
+      const payload = input.payload ?? input;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        ready: metadata.ready ?? true,
+        ...(repository.provider === 'forgejo' ? { title: redact(payload.title) } : {}),
+        output: redact(flattened?.output ?? ''),
+      };
+    }
     case 'pr-status-read':
       return normalizePullRequestStatus(flattenPullRequestStatus(flattened), repository);
     // The wait reports its own outcome, so "the checks finished" and "the bound elapsed" stay
@@ -3707,7 +4176,12 @@ async function staleWriteGuard(operation, input, repository, runner, conditional
   const readOperation = operation === 'issue-update-body' ? 'issue-read' : 'pr-read';
   const readPlan = buildCommandPlan(readOperation, input, repository);
   const readResult = await runChecked(runner, readPlan, `${readOperation} precondition`);
-  const parsed = parseCommandOutput(readResult, readPlan, readOperation);
+  // Forgejo's `pr-read` is a `tea api --include` read, whose status line tea writes to stderr, so
+  // it is read through the status-checked path every other such plan uses; a refused read must not
+  // hand its error body on as the current pull request.
+  const parsed = isTeaApiIncludePlan(readPlan)
+    ? { raw: teaApiSuccess(readResult, `${readOperation} precondition`).body }
+    : parseCommandOutput(readResult, readPlan, readOperation);
   const current = normalizeRemoteData(readOperation, parsed.raw, repository, input, parsed);
   if (current.body === desired) return { unchanged: true, current };
   const actual = bodyHash(current.body);
@@ -4154,6 +4628,9 @@ export async function executeOperation(operation, input = {}, options = {}) {
       }
       return result;
     };
+    // Validated before the first provider call, so a malformed filter never costs a probe or a read
+    // and never reaches the list with the filter silently dropped.
+    if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
     const repository = await resolveRepositoryInput(input, runner);
     if (operation === 'repository-resolve') {
       return {
@@ -4491,6 +4968,87 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
+    // Forgejo's `pr-mark-ready` is a title edit (see the adapter), and a title edit is not proof of
+    // the transition: an instance whose `WORK_IN_PROGRESS_PREFIXES` an operator extended keeps a
+    // pull request a draft under a title this adapter cannot recognize. So the edit is followed by
+    // exactly one `pr-read`, and `ready` is what that read states — the raw object's boolean
+    // `draft`, which the forge computes from the stored title. A read that does not state a boolean
+    // is no confirmation. Both failures are structured and name the step: the edit has been applied
+    // by then, so a caller reports the pull request as still a draft rather than retrying blind.
+    if (operation === 'pr-mark-ready' && activeRepository.provider === 'forgejo') {
+      // A failed edit keeps its own code and retryability, and states which step failed and that
+      // nothing was edited, so a caller can tell it from a failed confirmation below.
+      let edited;
+      try {
+        edited = parseCommandOutput(await runChecked(runner, plan, operation), plan, operation);
+      } catch (error) {
+        if (!(error instanceof RemoteTrackerError)) throw error;
+        throw new RemoteTrackerError(
+          error.code,
+          error.message,
+          { ...error.details, step: 'title-edit', titleEdited: false },
+          error.retryable,
+        );
+      }
+      const readBackPlan = buildCommandPlan('pr-read', input, activeRepository);
+      let draft;
+      try {
+        const readBack = teaApiSuccess(
+          await runChecked(runner, readBackPlan, 'pr-mark-ready read-back'),
+          'pr-mark-ready read-back',
+        ).body;
+        draft = readBack?.draft;
+      } catch (error) {
+        fail(
+          'COMMAND_FAILED',
+          'pr-mark-ready edited the title but could not confirm the ready state',
+          {
+            number: prNumber(input),
+            step: 'ready-read-back',
+            titleEdited: true,
+            cause: {
+              code: error?.code ?? 'COMMAND_FAILED',
+              message: error?.message ?? 'unexpected failure',
+            },
+          },
+          false,
+        );
+      }
+      if (typeof draft !== 'boolean') {
+        fail(
+          'INVALID_PAYLOAD',
+          'pr-mark-ready read-back states no draft flag',
+          { number: prNumber(input), step: 'ready-read-back', titleEdited: true },
+          false,
+        );
+      }
+      if (draft) {
+        fail(
+          'COMMAND_FAILED',
+          'pr-mark-ready edited the title but the pull request is still a draft',
+          { number: prNumber(input), step: 'ready-read-back', titleEdited: true, draft: true },
+          false,
+        );
+      }
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, edited.raw, activeRepository, input, {
+            ready: draft === false,
+          }),
+          // `data.command` keeps naming the edit, as `pr-merge` does for its read-back.
+          command: preview,
+          steps: [
+            { step: 'title-edit', command: preview },
+            { step: 'ready-read-back', command: redact(readBackPlan) },
+          ],
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
     // The wait is two gh invocations because one cannot exist: `gh pr checks` rejects `--watch`
     // together with `--json`, so the blocking watch and the structured read never share an argument
     // vector. It stays a single blocking wait for the caller, not a prompt-driven poll loop — the
@@ -4531,7 +5089,15 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
-    const result = await runChecked(runner, plan, operation);
+    const result = await runChecked(
+      operation === 'pr-create' &&
+        activeRepository.provider === 'github' &&
+        (input.payload ?? input).draft === true
+        ? draftCreateRunner(runner)
+        : runner,
+      plan,
+      operation,
+    );
     // Every `tea api --include` plan reads its HTTP status before its body is trusted, whichever
     // operation built it. `parseCommandOutput` cannot do that: tea prints the header block to
     // stderr where `gh --include` prints it to stdout, so its `includesHeaders` branch would find
@@ -4556,8 +5122,35 @@ export async function executeOperation(operation, input = {}, options = {}) {
       dryRun: false,
     };
   } catch (error) {
-    return errorEnvelope(operation, error, dryRun);
+    return errorEnvelope(
+      operation,
+      operation === 'pr-list' && input?.planPath !== undefined
+        ? withoutOutputExcerpts(error)
+        : error,
+      dryRun,
+    );
   }
+}
+
+// A `planPath` discovery hands the caller the parsed marker and never a body (see `pr-list` in
+// `normalizeRemoteData`), and its failures keep that promise: a malformed listing's stdout excerpt
+// or a failed command's stderr is exactly the pull-request text discovery withholds. Every such
+// excerpt, at any depth of the details, is replaced by its length, which is still enough to tell
+// an empty stream from a populated one.
+function withoutOutputExcerpts(error) {
+  if (!(error instanceof RemoteTrackerError)) return error;
+  const scrub = (value) => {
+    if (Array.isArray(value)) return value.map(scrub);
+    if (typeof value !== 'object' || value === null) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) =>
+        (key === 'stdout' || key === 'stderr') && typeof entry === 'string'
+          ? [`${key}Length`, entry.length]
+          : [key, scrub(entry)],
+      ),
+    );
+  };
+  return new RemoteTrackerError(error.code, error.message, scrub(error.details), error.retryable);
 }
 
 export function errorEnvelope(operation, error, dryRun = false) {

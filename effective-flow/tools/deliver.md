@@ -327,10 +327,9 @@ creation, lock acquisition, owner-file write, temporary-record write, rename, re
 or lock release. A guard for one handle authorizes no other handle. Create or replace a record by
 writing a complete sibling temporary file and atomically renaming it onto the expected record
 handle; never expose a partially written record. If initial record creation fails, retain the
-worktree and branch and do not run setup or delegate work there.
-
-This temporary-file-and-rename sequence is the required atomic write; use an actual atomic
-`rename`, not a truncate-and-rewrite operation on the live record.
+worktree and branch and do not run setup or delegate work there. This temporary-file-and-rename
+sequence is the required atomic write; use an actual atomic `rename`, not a truncate-and-rewrite
+operation on the live record.
 
 ### Serialized mutations
 
@@ -366,13 +365,14 @@ The complete status vocabulary is:
 
 Only these transitions are valid:
 
-| From                                | To or terminal action                   | Required proof                                  |
-| ----------------------------------- | --------------------------------------- | ----------------------------------------------- |
-| newly created                       | `active`                                | verified receipt and atomic initial record      |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | owning workflow, under the record lock          |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | fresh eligibility checks plus cleanup run claim |
-| `cleanup-in-progress`               | `cleanup-failed`                        | claimed actor records the exact failure         |
-| `cleanup-in-progress`               | delete only this lifecycle record       | claimed actor proves complete cleanup           |
+| From                                | To or terminal action                   | Required proof                                                          |
+| ----------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| newly created                       | `active`                                | verified receipt and atomic initial record                              |
+| `active`                            | `cleanup-ready`, `aborted`, or `failed` | owning workflow, under the record lock                                  |
+| `aborted` or `failed`               | `active` (adoption)                     | only the adoption rule of `plan-pr-continuation`, under the record lock |
+| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | fresh eligibility checks plus cleanup run claim                         |
+| `cleanup-in-progress`               | `cleanup-failed`                        | claimed actor records the exact failure                                 |
+| `cleanup-in-progress`               | delete only this lifecycle record       | claimed actor proves complete cleanup                                   |
 
 Do not transition `active`, `aborted`, or `failed` into a cleanup claim. A controlled user or
 workflow stop becomes `aborted`; an implementation, integration, validation, ownership, or
@@ -575,8 +575,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance

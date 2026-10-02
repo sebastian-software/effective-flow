@@ -19,7 +19,7 @@ This fragment carries no runtime-state write guard, because it needs none: outsi
 private runtime directory is outside its scope entirely — it neither reads from nor writes to it.
 The hidden arm below is the one exception and applies "Runtime-state write safety" (the
 `runtime-state-safety` building block) to its archive directory and target. Its one destructive
-act is on a **project** file: the redundant untracked plan copy in the main checkout, whose
+act is on a **project** file: the redundant untracked plan copy in the plan's source checkout, whose
 preconditions and whose relationship to the worktree-cleanup prohibition are stated under
 "Main-checkout cleanup".
 
@@ -30,6 +30,16 @@ configuration:
 
 - `EXECUTION_ROOT` — the delivery checkout, as an absolute path.
 - `RUNTIME_STATE_ROOT` — the main checkout, as an absolute path.
+- `SOURCE_ROOT` — the plan's **source checkout**: the root of the checkout whose working tree holds
+  the plan file this run was given. It is a Claude Code or Codex worktree session's checkout, not
+  the main checkout, when the plan was written there. A caller may supply it; otherwise derive it
+  from the plan file's absolute path as the run resolved it, with
+  `git -C <physical parent> rev-parse --show-toplevel`, where `<physical parent>` is that path's
+  parent directory with symlinks resolved. Require
+  `git -C <SOURCE_ROOT> rev-parse --path-format=absolute --git-common-dir` to equal the same probe
+  on `RUNTIME_STATE_ROOT`, so the source shares this repository's identity. A failed derivation or
+  a foreign identity blocks archival and is reported. With no absolute path known, `SOURCE_ROOT`
+  defaults to `RUNTIME_STATE_ROOT`. The hidden arm never uses it.
 - `plan.dir` — the plan directory.
 - the plan file's repository-relative path.
 - the plan's complete language, for the status marker.
@@ -41,13 +51,18 @@ configuration:
 
 ### Detection
 
-In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the
-hidden arm below. Otherwise derive the two paths from the supplied basis, and check the basis first. If the basis already lies
-under `<plan.dir>/archive/`, this run has nothing to archive — take the archived-basis arm below and
-derive nothing. Otherwise `<file>.md` is the basis's file name, `P` is `<plan.dir>/<file>.md` and `A`
-is `<plan.dir>/archive/<file>.md`, both repository-relative. Deriving `A` from an archived basis
-would produce a nested `<plan.dir>/archive/archive/<file>.md`, which is why the basis check precedes
-the derivation rather than sitting in the table as a comparison of two paths that can never be equal.
+In hidden mode, skip this section, the state tables, and the main-checkout cleanup: take the hidden
+arm below. Otherwise derive the two paths from the supplied basis, and check the basis first. If the
+basis already lies under `<plan.dir>/archive/`, this run has nothing to archive — take the
+archived-basis arm below and derive nothing. Otherwise `<file>.md` is the basis's file name, `P` is
+`<plan.dir>/<file>.md` and `A` is `<plan.dir>/archive/<file>.md`, both repository-relative. `P`,
+`A`, and every path built from `<plan.dir>` reach a command only as one literal, quoted argument
+each — single-quoted, with every `'` inside written as `'\''` — behind `--` where the command takes
+one, and as `':(literal)<path>'` wherever Git reads a pathspec; they are never interpolated
+unquoted. The helper's path rule admits whatever `plan.dir` may hold, `&`, `;`, `$`, and quotes
+included, so this quoting is the only shell boundary. Deriving `A` from an archived basis would
+produce a nested `<plan.dir>/archive/archive/<file>.md`, which is why the basis check precedes the
+derivation rather than sitting in the table as a comparison of two paths that can never be equal.
 
 **The index of the delivery checkout decides the action.** `EXECUTION_ROOT` is the delivery
 checkout's **repository root**; `ls-files` output is relative to the directory it runs in, so a probe
@@ -144,12 +159,12 @@ Keying on the index removes both and makes this step idempotent.
 
 ### States
 
-| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                               |
-| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
-| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                     |
-| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                        |
+| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv -- <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                            |
+| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
+| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                        |
+| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                           |
 
 **The mark is applied to the taken-over copy, in `EXECUTION_ROOT`, never to the original in the main
 checkout.** The order is read → take over → mark. This supersedes the earlier
@@ -158,9 +173,11 @@ authored: that would have the handback edit a file in the user's own checkout wh
 commits — the same class of defect as an unrooted `git mv`. The cleanup's hash comparison depends on
 this order and would never match under the old one.
 
-State C is the ordinary case for a plan authored by `effective-flow plan`, which creates no commit and
-therefore leaves its plan file untracked. State D is what makes this step idempotent: a retry after a
-partially failed handback finds `A` tracked, refreshes it if needed, and succeeds.
+State C is the ordinary case for an unpublished plan: `effective-flow plan` commits a plan only when it
+publishes one, so an unpublished plan file stays untracked. State A is the ordinary case for a
+published plan, whose delivery continues on the plan's own branch, where `P` is tracked. State D is
+what makes this step idempotent: a retry after a partially failed handback finds `A` tracked,
+refreshes it if needed, and succeeds.
 
 `mkdir -p` is an ordered step, not a parenthetical: `git mv` and a direct write into a missing
 directory both fail.
@@ -180,25 +197,26 @@ alone cannot see such a file, so without that row State C would write straight o
 **This is not worktree cleanup.** The execution-location contract forbids removing, renaming or
 otherwise altering `RUNTIME_STATE_ROOT`, or using the runtime root as a cleanup target; that rule
 governs the withdrawal of an owned worktree and the root it must never point at. What follows removes
-exactly one **untracked project file** inside that root, never the root, never a directory, and never
-anything Git tracks. The two rules do not overlap.
+exactly one **untracked project file** inside `SOURCE_ROOT`, never the root, never a directory, and never
+anything Git tracks. The two rules do not overlap. `SOURCE_ROOT` is the main checkout unless the plan
+was written in a worktree session, and the section keeps the name of that ordinary case.
 
 Applies to States A, C, and D. The archived-basis arm runs none of it.
 
-The plan file was authored in the main checkout and its copy stays there after the take-over. That
+The plan file was authored in its source checkout and its copy stays there after the take-over. That
 redundant copy is what makes a later `git merge` or checkout refuse over an untracked working-tree
 file — Git refuses even when the content is byte-identical — and what leaves a phantom top-level plan
 that `effective-flow open-plans` reports as open. Remove it, under all of these preconditions, in order:
 
 1. The take-over is staged in `EXECUTION_ROOT`, or — in State D — `A` is confirmed tracked.
-2. The path resolves inside `RUNTIME_STATE_ROOT` as an absolute handle **and is untracked there**,
+2. The path resolves inside `SOURCE_ROOT` as an absolute handle **and is untracked there**,
    probed with the same `ls-files -z -- ':(literal)…'` shape. A tracked path is never touched. On a
    checkout that has already pulled the base, `P` is tracked and no untracked copy exists — that is
    the ordinary, correct outcome and is reported as "nothing to clean up", never as a refusal.
 3. The content comparison for this state passes:
-   - **States A and C:** the main-checkout copy still hashes to the value captured when this step
+   - **States A and C:** the source-checkout copy still hashes to the value captured when this step
      read it. A difference means someone edited the plan while the run was in flight.
-   - **State D:** the main-checkout copy matches the already-archived file with the status marker
+   - **State D:** the source-checkout copy matches the already-archived file with the status marker
      normalized. A self-comparison would be meaningless when nothing was taken over during this run,
      and local unmerged edits would be deleted unseen.
 4. The hash is re-verified immediately before removal, so a write between the comparison and the
@@ -212,11 +230,11 @@ gone, which precondition 2 reports as "nothing to clean up". The archived-basis 
 
 ### Execution roots
 
-| Operation                                                                                      | Root                                                                                                                                                                               |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ls-files` detection, `mkdir -p`, status-marker edit, `git mv`, direct write of `A`, `git add` | `EXECUTION_ROOT`, passed explicitly with `git -C` or as an absolute path                                                                                                           |
-| Reading the plan's final content for the take-over                                             | `RUNTIME_STATE_ROOT` — a project-file read from the runtime root, permitted here because that is where the authoring run left the file, and named explicitly rather than inherited |
-| Cleanup probe, cleanup hash, cleanup removal                                                   | `RUNTIME_STATE_ROOT`, from the retained absolute handle                                                                                                                            |
+| Operation                                                                                      | Root                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ls-files` detection, `mkdir -p`, status-marker edit, `git mv`, direct write of `A`, `git add` | `EXECUTION_ROOT`, passed explicitly with `git -C` or as an absolute path                                                                                                              |
+| Reading the plan's final content for the take-over                                             | `SOURCE_ROOT` — a project-file read from the plan's source checkout, permitted here because that is where the authoring run left the file, and named explicitly rather than inherited |
+| Cleanup probe, cleanup hash, cleanup removal                                                   | `SOURCE_ROOT`, from the retained absolute handle, under the same containment, untracked-only, and hash preconditions                                                                  |
 
 No operation relies on an inherited working directory. The status marker is written in the plan's own
 complete language; this contract changes only when and where it is written, never which marker.
@@ -255,7 +273,7 @@ the delivery shape — worktree, in-place with delivery, and in-place without de
    hidden counterpart of read → take over → mark: a failure before the move leaves an
    implemented-marked plan at top level, which a retry archives, never an archived plan still marked
    open.
-6. Run `mkdir -p <plan.dir>/archive`, then move `P` to `A` with a plain no-clobber move
+6. Run `mkdir -p -- <plan.dir>/archive`, then move `P` to `A` with a plain no-clobber move
    (`mv -n`) and verify that `A` exists and `P` is gone. A move that `-n` declined because `A`
    appeared in the meantime is the collision stop: report both paths and that `P` already carries
    the implemented marker; nothing else changed.

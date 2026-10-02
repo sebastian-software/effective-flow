@@ -103,7 +103,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
@@ -208,8 +208,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -250,8 +250,7 @@ into the Effective Flow artifact form.
 
 Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
 concrete task crosses the declared boundary of a specialist, load its owner via the relevance
-gate (building block "Skill discovery") and the ownership inventory
-(`docs/developer-guide/skill-ownership.md`). Typical owners:
+gate (building block "Skill discovery"). The declared owners are exactly these:
 
 <!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
@@ -351,14 +350,17 @@ For each point:
    - description
    - advantages
    - disadvantages
-   - whether it is recommended and why
-3. Additionally, always offer "Decide later".
+   - an absolute 1–10 fit score for this context with a short reason, written `n/10 – <reason>`
+     (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores), instead of a "(Recommended)" marker; keep the options in their listed order; the score starts the option's description
+3. Additionally, always offer "Decide later", unscored.
 4. If fewer than three meaningful domain options exist, do not invent
    artificial options. Name the existing options and still "Decide
    later".
 5. If a harness ask format supports only three choice options, the
-   domain options go in the question text and "Decide later" remains permissible
+   domain options go in the question text, each preceded by its score and reason, and "Decide later" remains permissible
    as an explicit choice or free-text answer.
+6. Scores are dialog-only: never write them into open points, the review section, or any other
+   artifact section.
 
 After the user's answer:
 

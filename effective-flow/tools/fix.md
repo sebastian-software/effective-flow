@@ -73,6 +73,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
 
+**Load on demand:** Read `shared/plan-pr-continuation.md`, when the source is a plan file, hidden mode is off, and either "Shared preconditions" step 2 of `worktree-integration` has resolved the base or "Determine mode" selected in-place without delivery, before any archival.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
@@ -107,7 +109,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
@@ -175,6 +177,8 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined.
 
+**Load on demand:** Read `shared/diff-baseline.md`, when the diff baseline is captured at the end of Phase 3, step 0, or later rendered or discarded.
+
 ## Investigation method
 
 This building block describes the read-only core of a bug and behavior investigation. The investigation steps described here are themselves read-only: they change no code and write no tests; a reproduction happens within these steps only through observation – running existing checks, describing logs and behavior – or through a documented reproduction guide. Whether the embedding workflow additionally produces a reproduction test is decided by that workflow itself (e.g. `effective-flow fix` additionally writes a failing test); `effective-flow investigate`, by contrast, stays fully read-only.
@@ -239,24 +243,16 @@ Current workflow for plan references: Bugfix (`effective-flow fix`).
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this
-gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
-at **both** entry points: in the apply chain (`effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
-direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`,
-`effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
-Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
-clarification round too many over one too few.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
 ### Abort criteria (at least one applies → do not implement)
 
-- **Open points:** the plan contains an `## Offene Punkte` or canonical `## Open points` section
-  with entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
-  Continue to recognize the former English spelling `## Open Points` when reading existing plans.
-- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
-  formulated without a named check/metric (no concrete check, no verifiable
-  target state).
+**Load on demand:** Read `shared/plan-lint.md`, when the basis is a plan file, before its open-points and acceptance-criteria criteria are evaluated.
+
+- **Open points:** for a plan file, the gate lints the basis with `files: [<plan path>]` and plan-lint reports `openPoints` greater than 0, and a failed lint call blocks as well; for an issue or finding, an `Offene Punkte` / `Open points` section at any heading level (issue planning comments use `###`) has entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
+- **Missing measurable acceptance criteria:** for a plan file, plan-lint reports `acceptanceCriteria` other than `present`; for an issue or finding, there are none. Criteria formulated without a named check/metric (no concrete check, no verifiable target state) block as well — measurability stays judgment.
 - **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
   materially affect the behavior, scope, or risk of the implementation.
 - **Not self-contained (issues/findings):** an issue or finding does not describe the
@@ -296,9 +292,9 @@ Run the read-only investigation per "Investigation method", section "Investigate
 
 ### Phase 2: Reproduction
 
-1. Try to reproduce the bug:
-   - ``effective-flow-code-validator`` for the current technical state
-   - if possible: ``effective-flow-test-writer`` for a failing test that documents the behavior
+1. Try to reproduce the bug with ``effective-flow-code-validator`` for the current technical state. If
+   possible, specify a failing test that documents the behavior (file, case, expected failure)
+   without writing it; Phase 3 writes it once the diff baseline exists.
 2. Perform a gap analysis for the diagnosis and fix strategy:
    - over-engineering
    - unspoken assumptions
@@ -366,8 +362,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -407,11 +403,15 @@ removes or claims a worktree and never creates or backfills a record.
    created – then, per "Delivery and worktree integration", determine the effective delivery/worktree mode and
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
-   roots every operation there.
-1. Start every implementer selected by the canonical routing contract. Before
+   roots every operation there. Last, capture the diff baseline per "Diff baseline".
+1. If Phase 2 specified a failing test, ``effective-flow-test-writer`` writes it and confirms that it
+   fails as expected, before any implementer starts; if it does not, start no implementer and
+   return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
+   diff baseline, and resumes here: the test-writer revises the already written test in place.
+2. Start every implementer selected by the canonical routing contract. Before
    ``effective-flow-generic-product-implementer``, emit the reduced-depth notice. Never send product code
    to ``effective-flow-generic-implementer``.
-2. Give a precise assignment:
+3. Give a precise assignment:
    - root cause
    - affected files
    - desired behavior after the fix
@@ -419,7 +419,7 @@ removes or claims a worktree and never creates or backfills a record.
 
 ### Phase 3.5: Documentation sync
 
-Run the mandatory documentation sync gate for the files this fix changed, before verification, so
+Render the diff baseline, then run the mandatory documentation sync gate for its path list per "Diff baseline" before verification, so
 the checks of Phase 4 cover the documentation changes as well. A minimal fix commonly ends in
 `no impact` verdicts; the gate still runs and still records them.
 
@@ -440,18 +440,17 @@ surface prevents completion under the blocking rule of the detail contract.
 
 ### Phase 4: Verification
 
-Start in parallel if possible:
-
-1. ``effective-flow-test-writer``
-   - confirms the failing test from Phase 2 or writes a regression test
-2. ``effective-flow-code-validator``
-   - repository-native lint, type, build and documentation checks that can be discovered safely
-3. For every degraded generic product bucket, ``effective-flow-generic-product-reviewer``
-   - performs a read-only qualitative review with the reduced-depth limitation
-   - reports all severities; critical findings must be fixed before completion
+1. First ``effective-flow-test-writer``
+   - confirms that the Phase 3 failing test now passes, or writes a regression test
+2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
+   - ``effective-flow-code-validator``: repository-native lint, type, build and documentation checks that
+     can be discovered safely
+   - for every degraded generic product bucket, ``effective-flow-generic-product-reviewer``: a read-only
+     qualitative review with the reduced-depth limitation, reporting all severities; critical
+     findings must be fixed before completion
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, then pass the residual batch through “Gated residual review-finding reports”. Document only
+items, render again, then pass the residual batch through “Gated residual review-finding reports”. Document only
 `admitted` residuals in the structured form below; a remaining `current-scope` or unresolved
 `uncertain` item blocks completion, and `closed` items produce no artifact:
 
@@ -471,7 +470,7 @@ items, then pass the residual batch through “Gated residual review-finding rep
 
 ### Phase 5: Completion
 
-1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
+1. If errors were found in Phase 4: fix them and re-verify Phase 4, including its render, per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
 2. If admitted findings or residual risks with a canonical open or unimplemented status in the complete
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
@@ -481,7 +480,7 @@ items, then pass the residual batch through “Gated residual review-finding rep
 3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-4. Delete the wisdom file.
+4. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
 7. Summarize:

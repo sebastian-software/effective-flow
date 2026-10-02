@@ -137,8 +137,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
 ## Delegation contract: generic audit reasoning
 
 The central skill `effective-delivery` is the **declared owner** of the generic audit reasoning
-(classification `delegate`, see
-[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+(classification `delegate`). Where this reasoning applies,
 its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
 the audit playbook – only the output contract, the lifecycle constraints, and a minimal
 fallback.
@@ -167,8 +166,7 @@ two persistence/delivery loops run in parallel.
 
 **Special branches** still route to their narrower owners when their declared scope applies:
 `effective-web` (frontend, accessibility, CSS architecture, React), `effective-engineering`
-(architecture and data-contract reasoning), and `effective-product` (ADR authoring) – consistent
-with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
+(architecture and data-contract reasoning), and `effective-product` (ADR authoring).
 
 Cross-language or runtime migration and dependency updates are **not** special branches any more:
 `effective-delivery` owns them itself, so the default owner above already covers them and there is
@@ -534,8 +532,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance

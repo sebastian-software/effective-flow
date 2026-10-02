@@ -6,7 +6,7 @@ argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.65.0 (c8c6016)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.66.1 (d5f7d1c)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -40,7 +40,7 @@ _Analysis & planning before code_
 
 - `effective-flow concept` — Creates the concept for a new application – complete, but still on the surface.
 - `effective-flow investigate` — Finds the cause of a bug or surprising behavior – pure analysis, no code.
-- `effective-flow plan` — Routes issue references to issue planning or writes an actionable local plan – without code.
+- `effective-flow plan` — Routes issue references to issue planning or writes an actionable local plan – without code – and can publish it.
 - `effective-flow open-plans` — Shows which plans are still open when you pick the thread back up.
 - `effective-flow plan-issue` — Completes the planning for issues that still need clarification.
 

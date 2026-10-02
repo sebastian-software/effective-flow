@@ -106,7 +106,7 @@ or translates a plan artifact loads it, a workflow that only recognizes the stat
 Rules:
 
 - The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
-- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The plan status only applies when exactly one line outside fenced code blocks that begins with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
 - The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
@@ -134,6 +134,8 @@ Rules:
 - In the local-plan path, only analysis, follow-up questions, and documentation changes under
   `<plan.dir>/` are allowed.
 - Creating `<plan.dir>/` is allowed if the directory is missing.
+- Phase 7 publication is the one exception: a temporary worktree, the plan branch, its push, and the
+  draft pull request are the only state this tool may create outside `<plan.dir>/`.
 - Changes to source code, tests, configuration, build files, README files, ADRs, and other project files outside `<plan.dir>/` are forbidden.
 - Implementer, test, validator, or reviewer phases that could generate or modify code are forbidden.
 - The plan itself should contain as little code as possible, or none. Describe the desired changes in natural language, with file references, interface names, data shapes, and acceptance criteria instead of complete code blocks.
@@ -197,8 +199,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      minimal fallback (point 6).
    - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
      Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+     guidance stays leading. The binding assignment is the one stated by this tool's or agent's own
+     source (its "Recommended skills" section and any delegation contract); where it states none, Effective Flow leads.
 6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
    available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
    **minimal generic fallback** left in the source applies — a short, essential core guidance
@@ -238,8 +240,7 @@ into the Effective Flow artifact form.
 
 Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
 concrete task crosses the declared boundary of a specialist, load its owner via the relevance
-gate (building block "Skill discovery") and the ownership inventory
-(`docs/developer-guide/skill-ownership.md`). Typical owners:
+gate (building block "Skill discovery"). The declared owners are exactly these:
 
 <!-- skill-ownership:relevance-gate-owners ["effective-product","effective-web","effective-engineering"] -->
 
@@ -288,6 +289,7 @@ handbook.
    path with the plan's title and status first, then ask exactly once:
 
 If the revision target was resolved from a legacy number or a title slug, or the resolved plan does not carry the canonical open status: Ask the user: **Revise the resolved plan file in place, start a new plan, or stop?**
+Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.
 - Revise in place -- Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan file back to <plan.dir>/ without staging that move
 - New plan -- Leave the resolved plan untouched and write a new dated plan file for this requirement
 - Abort -- End the run without changing any plan file
@@ -311,16 +313,18 @@ On a revision run:
   where it lies.
 - **Ask everything before the move; after the move, only write.** Every question this revision owes
   the user — the revision question above, and the unclear-status confirmation below — is asked and
-  answered before the plan is moved, and no question is posed once it has been. This is the general
-  rule the two orderings above are instances of, and it is what makes a decline safe at every point:
-  before the move a decline changes nothing because nothing has been written, and after the move
-  there is nothing left to decline. Posing the unclear-status question after the move would leave
+  answered before the plan is moved, and no question is posed once it has been. The exceptions are
+  Phase 6b's deep-review question and the Phase 7 publication question: this revision does not owe
+  them, so they follow the move. This is the general rule the two orderings above are instances
+  of, and it is what makes a decline safe at every point: before the move a decline changes nothing
+  because nothing has been written, and declining either question after the move leaves the moved
+  plan valid. Posing the unclear-status question after the move would leave
   the declining user a plan sitting in `<plan.dir>/` without a valid status marker — visible only
   in `effective-flow open-plans`'s status-unclear list rather than among the open plans, and answering
   the same question again on the next `effective-flow apply`.
-- Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
-  commit, so a staged rename would sit in the user's index until some later, unrelated commit
-  swept it up. Nothing depends on the move being staged: `effective-flow open-plans` lists the top level
+- Perform that move back as a **plain filesystem move**, never with `git mv`. This run commits
+  nothing from the user's checkout, so a staged rename would sit in the user's index until some
+  later, unrelated commit swept it up. Nothing depends on the move being staged: `effective-flow open-plans` lists the top level
   of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
   `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
   moment the file lands at its new path.
@@ -407,11 +411,7 @@ On a revision run:
 
 Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and none of these naming rules apply.
 
-Before writing, resolve `language.workflow` once through the shared language resolver and retain
-that concrete value for all planning/review delegates. For an existing plan, preserve its
-clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths
-are only the transitional read fallbacks defined centrally; report the setup recommendation when
-either is used. Do not write configuration from this tool.
+Before writing, resolve `language.workflow` once through the shared language resolver and retain that concrete value for all planning/review delegates. For an existing plan, preserve its clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths are only the transitional read fallbacks defined centrally; report the setup recommendation when either is used. Do not write configuration from this tool.
 
 The plan uses the complete German or English contract in "Plan status convention" — status,
 header fields, sections, review content, and open points all use one column. Stable workflow
@@ -419,8 +419,8 @@ values, skill references, doc-category values, and paths are not translated. Do 
 language explanations or template comments into the plan.
 
 The English form of the structural template is shown below. For `de`, render the complete German
-field/section mapping from the canonical bilingual plan contract, including German table headings
-and review prose; do not partially translate this example:
+field/section mapping from the canonical bilingual plan contract, including German table headings,
+review prose, and the fixed German placeholder tokens from its placeholder table; do not partially translate this example:
 
 ```markdown
 # [Title]
@@ -566,6 +566,10 @@ the judgment, Effective Flow the artifact form):
 
 If a criterion is not met, revise the plan or ask the user for the missing information.
 
+**Load on demand:** Read `shared/plan-lint.md`, when the plan file is written and its mechanical check runs in Phase 5 or reruns in Phase 7.
+
+**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to the next free numeric suffix per Phase 3); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.
+
 ### Phase 6: Plan review
 
 Before completion, perform a review of the plan itself. This review checks the planned changes at the plan level and is **not a code review**.
@@ -618,8 +622,11 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 ### Phase 7: Completion
 
 1. Write the plan file.
-2. Format only the new plan file if a formatter for Markdown is clearly configured.
-3. Report to the user:
+2. Format only the new plan file if a formatter for Markdown is clearly configured; then rerun the Phase 5 mechanical check on the final file, now including the review placeholders.
+3. **Publication.** When the `plan-publication` pointer below applies, run that contract, handing
+   it the plan file's absolute and repository-relative paths, this run's state (`interactive` or
+   `non-interactive`), and the calling workflow `plan`. Run the worktree-record exit self-check.
+4. Report to the user:
    - the path of the created plan file
    - a brief summary of the planned approach
    - the recommended workflow with rationale
@@ -628,18 +635,47 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - on a revision run: that the existing file was revised in place, plus every confirmed header change
    - on a revision run that brought a plan back from `<plan.dir>/archive/`: the unstaged move and
      its Git effect, per the revision-mode reporting rule of Phase 1
-4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   - the publication line, when the publication contract was loaded
+5. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
    returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
    not the ready one — implementation comes after those points are closed.
+
+**Load on demand:** Read `shared/plan-publication.md`, when Phase 7 step 2 passed and the resolved `delivery.completion` is `pr`, `null`, or an invalid value.
+
+## Worktree record obligation
+
+This binds a run only once it creates a worktree; a reused harness-managed, user-managed or
+in-place checkout creates no record, and this self-check stays silent for it. Before any
+`git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
+judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
+or delegation, write the lifecycle record
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
+`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
+every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
+handling" in `worktree-integration` assigns to it.
+
+**Worktree-record exit self-check.** Run it after the exit path's own transition and before the
+final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
+set from durable state, never from memory: the linked worktrees at this run's
+`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
+`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
+or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
+registered worktree no record names by `worktreePath` as its own entry with path and branch:
+`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
+`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
+and the runtime-state write-safety guard, and report only a failed write. The self-check never
+removes or claims a worktree and never creates or backfills a record.
 
 ## Rules
 
 - Do not start any implementation phase.
 - Do not run any tests that could change project files.
-- Do not create any commits.
-- Do not stage anything or otherwise write to the Git index. The revision-mode move back
-  from `<plan.dir>/archive/` is the one file move this tool performs, and it is a plain
-  filesystem move for that reason — this tool has no step that would ever commit a staged
-  rename it left behind.
+- Do not create any commits, except the plan commit that Phase 7 publication makes in its own
+  temporary worktree.
+- Do not stage anything in the user's checkout or otherwise write to its Git index; publication
+  stages only in its temporary worktree. The revision-mode move back from `<plan.dir>/archive/` is
+  therefore a plain filesystem move: nothing commits from the user's checkout, so a staged rename
+  left there would ride along with some later, unrelated commit.
 - Give the user a brief status update after each phase.
 - If the plan would not be reliable due to missing information, ask instead of guessing.

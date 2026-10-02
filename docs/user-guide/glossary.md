@@ -46,6 +46,17 @@ report or as an issue on the Git forge or in an external tool (see
 [Remote Tracker](./remote-tracker.md)), and are worked through by
 [`/effective-flow apply`](./tools-implement.md).
 
+## Fit score
+
+A rating Effective Flow shows on the options of many decision questions it asks you. Each scored
+option's description starts with `n/10 – <reason>`: an absolute fit from 1 (not recommended) to
+10 (clearly right) for your current context, not a ranking, so two options can share a score, and
+a 9 or 10 names its edge over the next-best option unless the two are tied. No option is additionally marked as
+"(Recommended)", and the options keep their order and labels. Scores exist only in the dialog and
+are never written into a plan, concept, configuration, or other file. Escape options such as
+"Decide later" or "Abort" stay unscored, and a question with an irreversible option, such as
+discarding work or deleting state, is not scored at all.
+
 ## Harness
 
 The environment in which Effective Flow runs as a skill – currently Claude Code and Codex.

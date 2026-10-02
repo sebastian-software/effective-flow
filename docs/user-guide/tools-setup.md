@@ -16,7 +16,7 @@ modes. **Hidden mode** instead keeps the whole configuration local and untracked
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
 planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
 (project and surface languages, worktree, completion action, tracker details, advanced
-review/apply-review values, or skill discovery), and Express when you intentionally want the safe
+review/apply-review values, skill discovery, or the `build` Fast pilot), and Express when you intentionally want the safe
 base without an interview. Any mode may offer the optional session-rename capability check
 described below.
 
@@ -53,7 +53,12 @@ source, ADR-convention, or topology question:
 1. **Chat** — mirror the language you write in, use English, or use German. The answer immediately
    controls the Profile question and the rest of this setup run. Mirror removes an existing
    `language.chat` row in the confirmed write; English and German persist `en` or `de`.
-2. **Profile** — choose one of the following topologies.
+2. **Profile** — choose one of the following topologies. Each option shows a
+   [fit score](glossary.md#fit-score) (`n/10 – <reason>`). The scores rest on a read-only
+   classification of the checkout: no Git repository (every reason then says that setup will stop
+   at the preflight), none (no `origin` remote), GitHub, Forgejo, or other, and unknown if the
+   lookup fails. The classification fetches nothing and changes nothing; the later topology
+   preflight still decides whether the chosen profile can proceed.
 
 | Profile                               | Issue-backed planning and tracking | Development and completion                                                                  |
 | ------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -95,7 +100,10 @@ profile does not turn every planning request into a remote issue.
 
 `/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly.
 `/effective-flow setup guided` enters the existing per-setting interview and its optional Advanced
-settings directly. Neither invocation asks for a profile first.
+settings directly. Neither invocation asks for a profile first. Guided scores its Worktree,
+Completion, and Tracker questions like the Profile question, while "Ask at run time" stays
+unscored; a value already recorded in your configuration is named in the question's explanation
+instead of being marked on an option.
 
 ### Visibility question
 
@@ -223,7 +231,7 @@ it rewrites `prReview.*` rows as `mergeGate.*` (see
 tool stops or reports on such a row only if it resolves that row's successor key; any other tool
 ignores it. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
-`skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
+`skills.*`, `executionProfiles.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
@@ -290,6 +298,41 @@ If the runtime migration fails, setup leaves the config marker unwritten, preser
 source and safely copied partial state, and applies its existing conditional rollback to its own
 unchanged ADR/convention writes.
 
+### Fast pilot block
+
+Guided's advanced settings end with **Block 10 (`executionProfiles`)**, the opt-in for the
+Quality/Fast field pilot of `/effective-flow build`. Profile and Express never ask it and keep an
+existing `executionProfiles.fast.enabled` row exactly as recorded, including an invalid one. The
+block first explains that `true` only admits the project to the pilot, shows the recorded value as
+`enabled`, `disabled`, or `invalid – runs as Quality`, and asks with **Keep** pre-selected:
+
+- **Keep** writes nothing.
+- **Enable** writes `executionProfiles.fast.enabled = true`. No baseline starts and nothing
+  activates.
+- **Disable** writes `false`. Every workflow runs Quality, and stored pilot evidence stays
+  untouched.
+
+The change appears in the before/after list and needs the same confirmation as every other key; in
+hidden mode it goes to the local `.effective-flow/project-setup.md`. The row never takes a model
+or provider name.
+
+Once the configuration step has finished (a declined confirmation or a stopped run offers no
+action), the block reads the stored pilot generation and, only while the key is enabled, offers at
+most one confirmed action:
+
+| Stored generation                                   | Offered action                                                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
+| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
+| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                   |
+
+Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
+row, and the final report names the opt-in value, the stored generation state, and each offered
+action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
+and the next measured native `build` run activates it automatically once the preregistered window
+and sample are met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
+baseline records.
+
 ## `/effective-flow cleanup`
 
 **Purpose:** Clears away legacy leftovers that Effective Flow's migrations deliberately leave
@@ -324,6 +367,14 @@ only when all independent checks agree: Effective Flow created it, its lifecycle
 path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
 The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
+Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
+directories that an aborted `build`, `fix`, or `refactor` run left behind (see
+[Implement a change](tools-implement.md)). They can contain working-tree content, including
+secrets. Each appears in the dry run with its run ID (the run's start timestamp) and a warning that
+a run still in progress needs its directory; its age is never taken as proof that it is abandoned.
+Stale diff baselines get their own confirmation instead of sharing the legacy-remnant question:
+remove all, select individually, or keep all.
+
 **When to use:** After Effective Flow has migrated a project from an older version (`.firmo/`,
 `.sf-plugin/`, `firmo-` labels) and you want to remove deliberately retained legacy data, or when
 a finished Effective Flow run left a linked worktree behind. Migration itself remains
@@ -356,9 +407,10 @@ directory's `info/exclude` as the active entry [hidden mode](#hidden-mode) relie
 removes it. The same holds for the hidden local configuration `.effective-flow/project-setup.md`
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
-`.effective-flow/` or remove a confirmed legacy config from that directory; otherwise it
-preserves active runtime state. A true no-op means there are no migration actions and no eligible
-worktrees, but the remaining-worktree report still appears.
+`.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
+stale diff baseline; otherwise it preserves active runtime state. A true no-op means there are no
+migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
+report still appears.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the
