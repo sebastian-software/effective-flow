@@ -1,0 +1,365 @@
+{
+  "name": "Every ordered exclusion selects Quality and records only the first failed row",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "documentation",
+      "paths": ["docs/guide-0.md"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-1.mjs"],
+      "failedEvidence": ["trust-boundary"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-2.mjs"],
+      "failedEvidence": ["destructive-data"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-3.mjs"],
+      "failedEvidence": ["migration"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-4.mjs"],
+      "failedEvidence": ["concurrency"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-5.mjs"],
+      "failedEvidence": ["unsafe-code"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-6.mjs"],
+      "failedEvidence": ["public-compatibility"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-7.mjs"],
+      "failedEvidence": ["merge-conflict"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/owned-8.mjs"],
+      "preExistingDirtyInFastPath": true
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-9.mjs"],
+      "failedEvidence": ["cross-domain-dependency"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/packet-10.mjs"],
+      "failedEvidence": ["unknown-evidence"]
+    },
+    {
+      "bucket": "rust",
+      "paths": ["crates/core/src/lib.rs"],
+      "failedEvidence": ["unknown-evidence", "concurrency", "migration"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "excluded(profile-unavailable)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "profile-unavailable"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(trust-boundary)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "trust-boundary"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(destructive-data)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "destructive-data"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(migration)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "migration"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(concurrency)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "concurrency"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(unsafe-code)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "unsafe-code"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(public-compatibility)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "public-compatibility"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(merge-conflict)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "merge-conflict"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(unclear-ownership)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "unclear-ownership"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(cross-domain-dependency)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "cross-domain-dependency"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(unknown-evidence)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "unknown-evidence"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(migration)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "migration"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

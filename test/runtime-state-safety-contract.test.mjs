@@ -84,6 +84,7 @@ test('the canonical guard specifies fail-closed Git predicates and non-mutation'
   }
 });
 
+// Invariant: report and memory writers resolve their handles from RUNTIME_STATE_ROOT, never the worktree.
 test('report producers and mutators route safety through the retained runtime root', () => {
   const sourceDetection = readShared('apply-source-detection');
   const backlinks = readShared('review-report-backlinks');
@@ -102,6 +103,7 @@ test('report producers and mutators route safety through the retained runtime ro
   assert.match(review, /retained absolute\s+memory handle/);
 });
 
+// Invariant: no source writes runtime state without the runtime-state-safety guard.
 test('automatic source coverage includes plan and finds no unguarded runtime writer', () => {
   const sources = collectRuntimeStateSources();
   assert.equal(sources.has('tools/plan.md'), true);
@@ -146,6 +148,7 @@ test('the canonical guard and lazy-load pointer survive every harness render', (
   }
 });
 
+// Invariant: review writes only ignored, untracked runtime state; its memory lookup stays read-only.
 test('review requires ignored untracked runtime state and keeps read-only lookup non-mutating', () => {
   const review = readSource('tools', 'review.md');
   assert.match(review, /The entire `\.effective-flow\/` directory must be ignored and untracked/);
@@ -160,6 +163,7 @@ test('review requires ignored untracked runtime state and keeps read-only lookup
   assert.doesNotMatch(review, /Create `\.effective-flow\/` if needed/);
 });
 
+// Invariant: the config fallback lookup never writes and never reads below a linked EXECUTION_ROOT.
 test('configuration fallback lookup remains read-only and is not a runtime writer', () => {
   const configMigration = readShared('config-migration');
   const configEdgeCases = readShared('config-migration-edge-cases');
@@ -215,6 +219,7 @@ test('setup repairs first, validates the target state, then guards and writes it
   );
 });
 
+// Invariant: setup migrates only the locator-selected source handle and rolls back or stops before any unsafe write.
 test('setup carries the locator-selected transitional source through migration', () => {
   const setup = readSource('tools', 'setup.md');
 
@@ -314,6 +319,7 @@ test('setup orders runtime migration between repair and config completion', () =
   );
 });
 
+// Invariant: cleanup never edits .gitignore; setup is the sole repair owner.
 test('cleanup inventories .gitignore remnants but leaves repair exclusively to setup', () => {
   const cleanup = readSource('tools', 'cleanup.md');
 
@@ -326,6 +332,7 @@ test('cleanup inventories .gitignore remnants but leaves repair exclusively to s
   assert.doesNotMatch(cleanup, /which `\.gitignore` lines were removed/);
 });
 
+// Invariant: cleanup lazily loads runtime-state safety before any runtime mutation.
 test('cleanup loads runtime safety for migrations, memory, and tracker markers', () => {
   const cleanup = readSource('tools', 'cleanup.md');
   assert.match(
@@ -355,6 +362,7 @@ test('cleanup verifies location and safety before migration-dependent deletion d
   }
 });
 
+// Invariant: a legacy directory that still roots a linked worktree is never deleted.
 test('cleanup blocks containing legacy directory while a linked worktree remains', () => {
   const cleanup = readSource('tools', 'cleanup.md');
 
@@ -376,6 +384,7 @@ test('cleanup blocks containing legacy directory while a linked worktree remains
   );
 });
 
+// Invariant: lifecycle records live below the verified runtime root and every mutation is guarded fail-closed.
 test('worktree lifecycle state is contained in the verified runtime root', () => {
   const lifecycle = readShared('worktree-lifecycle');
   const { eager, lazy } = collectIncludeNames(lifecycle);
@@ -399,6 +408,7 @@ test('worktree lifecycle state is contained in the verified runtime root', () =>
   assert.match(lifecycle, /fail(?:-| )closed/i);
 });
 
+// Invariant: cleanup guards every lifecycle lock, claim, and record removal and never removes its own roots.
 test('cleanup guards lifecycle claims, updates, and record removal at the main runtime root', () => {
   const cleanup = readSource('tools', 'cleanup.md');
   const { eager, lazy } = collectIncludeNames(cleanup);

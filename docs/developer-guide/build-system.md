@@ -45,18 +45,19 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                                         |
-| -------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                  |
-| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                      |
-| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                |
-| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (Fast unavailable: select Quality with `profile-unavailable`) `` |
-| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                     |
-| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                         |
+| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                            |
+| -------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                     |
+| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                         |
+| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                   |
+| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) `` |
+| `{{BUILD_TARGET}}`         | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                |
+| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                        |
+| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                            |
 
 For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
 `ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
-`{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
+`{{BUILD_TARGET}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
 lazy-include pointers, and `{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
 interaction syntax is target-specific before worker and tool references receive their final
 target syntax.
@@ -217,20 +218,23 @@ because re-entry or mutation always needs the conservative default; `review`, `i
 PR-review integration load it at their admission decision. Keep admission before ID reservation and
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
-One consequence is worth knowing before you write the fence. The merge-gate behavioural eval
-layer derives the content identity each archived round is stamped with by following exactly
-these rendered pointers through the built tree, so adding a `lazy-include` to a fragment the
-gate can reach widens that identity, invalidates every archived round, and owes a re-record of the
-affected scenario evidence by hand through fresh agent sessions. That debt comes due before the next
-release rather than before the next merge: `pnpm test` asserts only that the archived evidence is
-structurally sound, while `pnpm eval merge-gate verify` reports the staleness on every pull request
-and fails the required check on the release one. A conditional pointer widens it whether or not any
+One consequence is worth knowing before you write the fence. Each behavioural eval suite under
+`evals/<tool>/` — today `merge-gate` and `iterate` — derives the content identity each archived
+round is stamped with by following exactly these rendered pointers through the built tree from its
+own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
+invalidates every archived round of that suite, and owes a re-record of the affected scenario
+evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
+fragment `iterate` reaches stales both suites. That debt comes due before the next release rather
+than before the next merge: `pnpm test` asserts only that the archived evidence is structurally
+sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
+required check on the release one. A conditional pointer widens it whether or not any
 scenario takes its branch. The one build change that does **not** cost a re-record is the release
 version stamp: each round additionally carries a version-neutral skill
 digest, so a release-please bump of `.release-please-manifest.json` leaves the standing evidence
 valid as long as the built router is the only moved file and nothing but the version token moved in
 it. See
-[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
+[`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ, and
 `evals/_scaffold/build-identity.mjs` for the derivation itself.
 
 ## Guards
@@ -246,10 +250,13 @@ The build aborts with an error message if any of these guards is violated:
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
   `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
   accepts only `fast`, only for an implementation worker selected by the validated routing table,
-  and only in `src/tools/build.md` or `src/tools/refactor.md`. A legacy `sf-` prefix (see "No
-  legacy aliases" above) is deliberately rejected with a migration message. The same guard also
-  runs during rendering (`transformRefs`), so no accepted placeholder can produce a non-existent
-  target. Both authorized workflow sources remain profile-reference-free in this work package.
+  and only inside the initial implementation phase of `src/tools/build.md` (between
+  `### Phase 2: Implementation` and `### Phase 3: Documentation`) or `src/tools/refactor.md`
+  (between `### Phase 3: Refactoring` and `### Phase 3.5: Documentation sync`). A legacy `sf-`
+  prefix (see "No legacy aliases" above) is deliberately rejected with a migration message. The
+  same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
+  non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
+  lines; `refactor` keeps its authorization but carries no token yet.
 - **Native profile-mapping guard:** Every registered base worker must supply nonempty native model
   and effort metadata. The centralized Fast mapping is complete for Claude and Codex, Claude effort
   uses the supported vocabulary, and each Codex model/reasoning combination is validated. The
@@ -428,9 +435,10 @@ The build aborts with an error message if any of these guards is violated:
   value, or illegal combination aborts the build before any rendered output reaches the atomic
   `dist/` swap. Focused positive and mutation/error coverage lives in
   `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
-  separate from the rendered native capability: the build now emits the sanctioned Claude
-  sidecars and native inventories, but no workflow includes the policy fragment or requests Fast,
-  and portable output contains no native profile artifact.
+  separate from the rendered native capability: the build emits the sanctioned Claude sidecars
+  and native inventories, `build` Phase 2 is the only workflow that lazy-loads the policy fragment
+  and requests Fast, `refactor` stays unadopted, and portable output contains no native profile
+  artifact.
 - **Pilot-measurement projection guards:** The execution-profile contract is projected into
   `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
   drift in that closed policy subset. The same module exports a measurement-only documentation
@@ -646,14 +654,21 @@ core or protocol modules:
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
   envelope and uses nonzero exit codes for structured failures. The core owns guarded local
-  lifecycle, record, detailed-trace, anonymous gate-observation, reconciliation, aggregation,
-  evaluation, purge, and discard operations under
+  lifecycle, record, detailed-trace, anonymous gate-observation, incident (`record-incident`),
+  reconciliation, aggregation, evaluation, purge, and discard operations under
   `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`; the protocol module owns the
   immutable version, digest, limits, timing, metrics, gates, and enum registries. Reads never
   authenticate through an identity-bearing field; workflow, packet, and observation mutations use
-  operation-scoped capabilities, while lifecycle transitions require explicit digest-bound
-  confirmation. Detailed traces require explicit current-run consent. This capability ships before
-  activation: setup exposes no pilot action, and `build` and `refactor` request no Fast profile. The
+  operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation
+  operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
+  `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
+  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Two
+  callers use it besides the `merge-gate` observation: `build` records its measured runs, calls
+  `activate` automatically in an enabled baseline generation's preflight, and records incidents
+  through `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup
+  block 10 runs the confirmed `begin-baseline` and `resume` actions through
+  `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`, and
+  `refactor` does not call the helper. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
@@ -734,7 +749,8 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`.
+  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
+  `plan-publication`, `plan-pr-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -746,7 +762,11 @@ and directive syntax").
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that
-  fragment. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  fragment. `plan-pr-continuation` sits beside it in the same four tools, with a two-armed trigger:
+  `worktree-integration`'s resolved base, because it supersedes that fragment's mode, branch-name,
+  and `-b` steps before step 3 runs, or the selection of in-place mode without delivery, before any
+  archival, where it runs discovery only and stops on a verified plan pull request. `plan-publication` is lazy from `plan`'s Phase 7 and nested in
+  `plan-pr-continuation` for a republication. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
   was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`,
   `issue-tracker-forge` from `issue-tracker`, and `config-migration-edge-cases` from
   `config-migration`; the first three remaining halves stay eager because their
@@ -757,7 +777,7 @@ and directive syntax").
   `merge-gate` fragment beside `issue-post-merge-observation` and `pr-merge-completion`, and the
   first that is **not** a split half: it holds tool-local text – the parts of
   `worktree-integration` that stay off in the gate, and the lifecycle close of the one checkout it
-  provisions. It is deliberately not folded into `worktree-integration`, whose seven consumers
+  provisions. It is deliberately not folded into `worktree-integration`, whose other consumers
   would then each carry one tool's inapplicability list. Its pointer reuses that fragment's
   existing trigger instead of inventing one, which is legitimate because both are meaningful only
   once Phase 2 step 1 provisions a checkout: reusing a trigger decides **when** a pointer fires,
@@ -916,11 +936,14 @@ validated before rendering. The current operational mapping is Claude `sonnet`/`
 `gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
 configuration or the durable representation decision.
 
-The same token renders an explicit Quality/`profile-unavailable` result for portable managers,
-which still receive the normal worker-delegation bootstrap. Build guards reject native metadata,
+The same token renders an explicit Quality-only notice for portable managers, which still receive
+the normal worker-delegation bootstrap. A portable build records no gate reason: the pilot
+fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as unmeasured, whatever
+host runs it. Build guards reject native metadata,
 mapped aliases, Fast sidecar identifiers, inventories, and unresolved profile tokens in portable
-output. At present the token is authorized only in `build` and `refactor`, and neither source uses
-it: the representation exists, but no workflow adopts Fast yet.
+output. The token is authorized only in the initial implementation phase of `build` and
+`refactor`. `build` Phase 2 uses it for its five Fast-capable implementers; `refactor` does not use
+it yet.
 
 Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
 identical across harnesses; Claude's `fastWorkers` lists the five generated sidecars and Codex's is

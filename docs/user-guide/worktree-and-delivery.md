@@ -71,8 +71,8 @@ worktree-local runtime directory.
 
 ### Persisted worktree lifecycle
 
-Every newly created Effective Flow delivery, partial-diff, or `apply-review` component worktree
-gets its own lifecycle record under
+Every newly created Effective Flow delivery, partial-diff, plan-publication, or `apply-review`
+component worktree gets its own lifecycle record under
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. Effective Flow writes the record only after
 the execution-location receipt exists and records the repository and worktree identity, branch,
 branch creation commit (OID), workflow and purpose, ownership, timestamps, status, and
@@ -96,6 +96,11 @@ The lifecycle makes later cleanup explicit instead of relying on path or age heu
 | `failed`              | The workflow failed before cleanup eligibility. Cleanup keeps the worktree and its contents.                                 |
 | `cleanup-in-progress` | One verified actor has claimed the removal attempt. Other workflows and cleanup runs leave the worktree and claim untouched. |
 | `cleanup-failed`      | A normal removal attempt did not finish. A later cleanup may retry only after all safety checks pass again.                  |
+
+An `aborted` or `failed` record can return to `active` in exactly one case: a later run on the same
+published plan resumes the worktree the interrupted run left behind (see
+[Resumption by adoption](#resumption-by-adoption)). Nothing else adopts a worktree, and a
+user-created or harness-managed one is never adopted.
 
 All status changes use a per-record lock and fresh receipt, Git registration, and lifecycle
 checks. Before removing a worktree, the owning actor changes an eligible record to
@@ -218,6 +223,13 @@ affirmative request for `pr`, `merge`, or `branch`:
 If `delivery.completion` is not set (`null`), Effective Flow asks again on every run for the
 desired action.
 
+`delivery.completion` also governs plan publication. With `pr` or `null`,
+[`/effective-flow plan`](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) offers
+to publish the finished plan as a draft pull request; with `merge`, `branch`, or no row at all, the
+plan stays local. An implementing run that finds such a pull request for its plan
+[continues on it](#continuing-on-a-published-plans-pull-request) and completes as `pr`, or stops
+when the effective completion is `merge` or `branch`.
+
 An explicit completion request has precedence over the configured value for that run. Effective
 Flow records the evidence before delivery setup and reports both values when, for example, an
 explicit request for `pr` replaces configured `merge`; it does not modify the project-setup ADR.
@@ -253,12 +265,15 @@ under `<plan.dir>/archive/`. This status change is committed along with it and i
 PR or merge.
 
 What archiving does depends on the state the plan is in: a plan Git already tracks in the delivery
-checkout is renamed, a plan the planning run left untracked is written into the archive and added,
+checkout is renamed – the ordinary case for a published plan, which is tracked on its pull
+request's branch – a plan the planning run left untracked is written into the archive and added,
 and a plan an earlier run already archived is refreshed where it is rather than re-added at top
-level. The redundant, still untracked copy left behind in your main checkout is removed once the
-archived state is safely in the delivery branch and the copy has not changed in the meantime –
-that copy is what would otherwise make a later `git pull` refuse. Details on the plan format are
-in [Understanding tools](./tools-understand.md).
+level. The redundant, still untracked copy left behind where the plan was written is removed once
+the archived state is safely in the delivery branch and the copy has not changed in the meantime –
+that copy is what would otherwise make a later `git pull` refuse. That is your main checkout, or
+the checkout of the Claude Code or Codex worktree session in which the plan was written; the plan
+is also taken over from there, and a checkout that does not belong to this repository blocks
+archival. Details on the plan format are in [Understanding tools](./tools-understand.md).
 
 In [hidden mode](#hidden-mode) the plan lives only in your main checkout under
 `.effective-flow/plan/`, so there is nothing to commit. Whatever the delivery shape, Effective Flow
@@ -267,6 +282,118 @@ with a no-clobber move. It first checks that the plan is ignored and untracked. 
 takes nothing into the delivery branch, and does not remove the main-checkout copy, because that
 copy is the only one. If a file already exists at the archive path, it stops, reports both paths,
 and changes nothing.
+
+## Continuing on a published plan's pull request
+
+When [`/effective-flow plan`](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request)
+published a plan as a draft pull request, `build`, `fix`, `refactor`, and `docs` – directly or
+through `apply` – continue on that pull request instead of opening a second one. Once the base is
+resolved, a run whose source is a plan file looks for it. The check is skipped in
+[hidden mode](#hidden-mode) and for a plan under `<plan.dir>/archive/`.
+
+Discovery goes through the remote helper and uses only the marker it parses; no pull-request body or
+comment reaches the run. A marker-carrying pull request whose head branch is not in this repository
+– a fork's, a deleted fork's, or one whose repository the forge does not state, since discovery
+never reads a single pull request back – is ignored and reported, never blocking. A remaining candidate counts only when its marker names this plan, it
+is open and still a draft – a ready pull request, or one whose draft state the forge does not
+state, fails the check – its base is the resolved local base branch, and its branch changes nothing
+but the plan against the merge base with that base. A pure merge of the base into the head therefore
+passes.
+Because Git allows branch names such as `x/$(id)` or `a;b`, the head branch must first pass
+`git check-ref-format --branch`; a name that fails is reported as an unsafe head branch name and is
+never used in a command, and every command receives the name as one single-quoted argument. The
+head is never fetched with force: a head that cannot be fetched, such as one that was force-updated
+on the remote, is reported as "head could not be fetched", never as a change to other paths, and
+keeps failing the check until you run `git fetch` yourself. The outcome is one of:
+
+- **No plan pull request:** the run continues exactly as it would without one.
+- **Exactly one verified pull request:** the run continues on its head branch, with no new branch
+  name.
+- **Several, or one that fails a check:** the run stops and lists each with its number, URL, and
+  failed check. For a branch that changes a path other than the plan, the report adds that neither
+  `merge-gate` nor `iterate` finishes a plan pull request: neither archives the plan nor finishes
+  the draft.
+
+So do not run `merge-gate` or `iterate` on a plan pull request before `apply`: a commit they push
+onto the plan branch that changes a path other than the plan makes this verification fail.
+
+A found plan pull request fixes the completion action to `pr`. The run decides on the effective
+completion: an explicit request in the current invocation first, else the configured row, where a
+missing row means `merge`. An effective `merge` or `branch` stops the run and names the pull
+request, because the run never merges locally around an open draft. An explicit `pr` request
+continues and is reported as an override of a configured or missing `merge` or `branch` row. A
+`null` or invalid row is overridden, and both values are reported.
+
+If your local plan differs from the one on the pull request's branch, the run asks once, naming the
+audience and the content-check findings exactly as `plan`'s publication question does: **Republish**
+commits your local version onto the plan branch as a new commit and continues, **Stop** ends the
+run and leaves both versions unchanged. A non-interactive run stops without asking. After
+**Republish**, the run requires the publication to report the pull request as updated, fetches the
+head again, and repeats every check and the plan comparison; anything else stops the run.
+
+### Discovery unavailable
+
+If discovery fails – a missing or unauthenticated CLI, an unsupported operation, an unreachable
+forge, or an unreadable answer – the run cannot rule out a plan pull request. When the effective
+completion is `merge` or `branch`, including a missing row, which means `merge`, it continues and
+reports that. When it is `pr` or `null` (an invalid row counts as `null`), an interactive run asks
+once: **Continue** delivers on a new branch as if no plan pull request existed, **Stop**
+ends the run before any branch, worktree, or commit exists. A non-interactive run stops.
+
+### Where the run works
+
+The run works on the pull request's head branch and never creates a branch with `-b`:
+
+- If your checkout already has that branch checked out, clean and at the pull request's head, the
+  run works there in place.
+- If another linked worktree holds the branch, the run tries
+  [resumption by adoption](#resumption-by-adoption). Any other holder or state stops the run and
+  names it.
+- If no checkout holds the branch, it creates a dedicated Effective Flow worktree for it. With
+  `worktree.enabled: false` it still does so and says so, because switching your checkout would
+  collide with its untracked copy of the plan.
+- In a Claude Code or Codex worktree session, that worktree is a **sibling** under the configured
+  base directory of your main checkout, never nested in the session's worktree, and the report says
+  that the changes live there.
+
+A missing local branch is created as a tracking branch at the pull request's head, and a local
+branch that is behind is fast-forwarded. A local branch that is ahead or has diverged stops the run.
+
+A run in place **without any delivery action** only looks for the plan pull request. If it finds a
+verified one, it stops before the plan is archived, because archiving the plan there would leave
+the pull request unfinished. With no plan pull request it continues, several candidates or a
+failing one stop it as above, and unavailable discovery is reported while the run continues
+without delivery.
+
+### Resumption by adoption
+
+A run that stopped or failed keeps its worktree and branch, with lifecycle status `aborted` or
+`failed`. Running the implementing tool on the same plan again resumes that worktree when exactly
+one lifecycle record matches it: the same repository, branch, and workflow, with a creation commit
+equal to the pull request's current head. Under the record lock, Effective Flow then proves a clean
+worktree on the exact branch, and the record returns to `active`. The retained setup is not
+repeated, and the commits the earlier run made count as this run's own. If no record or several
+match, or a proof fails, the run stops and names the retained worktree.
+
+### Finishing the pull request
+
+At the delivery point, the run first requires implementation evidence: its commits and remaining
+output must touch at least one path other than the plan and its archive path. Without it, the run
+ends in a controlled stop. It keeps the worktree and branch, archives nothing, pushes nothing, and
+leaves the draft untouched.
+
+With evidence, the plan is archived in the final commit like any tracked plan. The run asks
+`/effective-flow pr` to finish the draft only when that archive succeeded. When archival stopped
+instead, for example on a collision or a failed probe, the delivery still commits and pushes the
+implementation, but the pull request stays a draft and the report names the archival outcome.
+Otherwise `/effective-flow pr` reuses the draft and finishes it before any PR review is published.
+It derives the final Conventional-Commit title and description and updates the body while keeping
+the plan marker. Then it marks the pull request ready for review, always as the last change; on
+Forgejo, while the pull request is still a draft, the body is updated first and the retitle and the
+ready transition follow as one final title edit. If the handoff names the draft but `pr` finds no
+matching pull request, it stops instead of creating a new one. If one of these steps fails, the pull
+request stays a draft and the report names the step. Recover by running `/effective-flow pr` on that
+branch yourself.
 
 ## Hidden mode
 
@@ -291,8 +418,10 @@ At effective `pr` completion, the final step delegates to
 [`/effective-flow pr`](./tools-deliver.md#effective-flow-pr) with the exact prepared head branch,
 base branch, verified head OID, and successful commit-only handoff. `pr` creates no branch and
 accepts no working-tree content: it pushes only the verified commit range and handles PR creation
-or exact head/base reuse, including host detection for `gh` or `tea` (see
-[Remote Tracker](./remote-tracker.md)).
+or exact head/base reuse of a pull request from this repository, including host detection for `gh` or `tea` (see
+[Remote Tracker](./remote-tracker.md)). On a
+[published plan's pull request](#continuing-on-a-published-plans-pull-request) the handoff also
+names the draft, and `pr` finishes it instead of leaving the reused pull request untouched.
 
 A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
 commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation

@@ -332,8 +332,10 @@ test('workflow guards each step, not the job, so an unmerged close concludes SUC
   // A job-level `if:` that is false skips the whole job, and GitHub reports a skipped job as a
   // SKIPPED check on the head commit. Every close without a merge — including the close/reopen
   // that refreshes a release pull request — therefore left a SKIPPED `Close referenced issues`
-  // run, which blocks the merge gate under `requireAllChecks: true` (#466). Guarding the steps
-  // instead lets the job run and succeed while checking out and executing nothing.
+  // run, which blocked the merge gate under `requireAllChecks: true` at the time (#466). The gate
+  // now counts a SKIPPED check as satisfied, as GitHub does, but guarding the steps instead still
+  // keeps the check list clean: the job runs and concludes SUCCESS while checking out and executing
+  // nothing.
   const { jobKeys, steps } = closeIssuesJob(readFileSync(WORKFLOW_PATH, 'utf8'));
 
   assert.ok(jobKeys.includes('name: Close referenced issues'), 'job keys were not found');

@@ -12,6 +12,17 @@
 // here either — `test/eval-fixture-fidelity.test.mjs` proves every canned envelope is one the real
 // `executeOperation` normalizer emits for the same provider payload, and proves this file's error
 // envelope has the shape the real `errorEnvelope` produces.
+//
+// **One stub for every suite, declared by each.** It started as a `merge-gate` instrument, and the
+// commentary below is still written from the gate, where every rule here was decided. It moved to
+// the shared scaffold when the `iterate` suite arrived, because nothing in it is about the gate:
+// what a call receives is looked up in the slot's fixture by operation name, sequences and the
+// call-log schema are properties of the fixture, and an operation the fixture does not define fails
+// loudly for any tool. The one rule that names an operation — `pr-merge` is recorded and refused
+// unless the fixture opts in — is a sandbox safety default rather than a gate policy, and it holds
+// for a suite that never expects a merge exactly as it holds for one that does. Each suite still
+// declares this file as its `trackerStub.source` and hashes it among its own `instrumentFiles`, so
+// a change here stales every suite that runs it and no other.
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';

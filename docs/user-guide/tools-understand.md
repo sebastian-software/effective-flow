@@ -3,7 +3,10 @@
 This group covers analysis and planning – **before** any code is written. The five tools either
 read only or keep their writes within the designated planning surfaces
 (`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, issue comments and labels, or
-approved native sub-issues); none changes source code, tests, or configuration.
+approved native sub-issues); none changes source code, tests, or configuration. The one write
+beyond those surfaces is `plan`'s optional
+[publication as a draft pull request](#publishing-the-plan-as-a-draft-pull-request), which commits
+the plan file alone onto a new branch from a temporary worktree and never touches your checkout.
 
 `<plan.dir>` is the `plan.dir` value and `<concept.dir>` the `concept.dir` value from the
 Effective Flow project-setup ADR (defaults `docs/plan` and `docs/concept`; see
@@ -129,6 +132,70 @@ to `<plan.dir>/` and resets its status), start a new plan instead, or abort. If 
 would change the `**Recommended workflow:**` value, `plan` reports the new classification and asks
 for explicit confirmation before rewriting the field — never a silent flip, since `apply` and
 `open-plans` both route on it.
+
+### Publishing the plan as a draft pull request
+
+When `delivery.completion` is `pr` or `null`, `plan` can publish the finished plan as a **draft pull
+request** that carries only the plan. The implementing run later continues on that same branch and
+pull request, so the plan, the implementation, and the archived plan end up in one pull request
+(see [Worktree and delivery](worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)).
+With `merge`, `branch`, or no `completion` row, the plan stays local as before and nothing is asked.
+Publication is never offered in [hidden mode](configuration.md#hidden-mode), and a run delegated
+non-interactively reports it as not attempted.
+
+The offer comes at the end of the run, after the deep plan review ended ready or you declined it.
+A review that returned `Revision required` or blocking open points skips it: close those points
+first. Publication is also unavailable, with the reason named, when the base branch is not
+resolved through the remote-configured arm on `origin`, when the forge CLI cannot create a draft,
+retitle a pull request, and mark it ready, or when the forge cannot be reached. A first publication
+is unavailable, too, when the base branch already tracks a plan at the same path, for example one
+that reached the base after this plan was named: `plan` names the path and never writes over that
+plan. `plan` looks for an existing plan pull request first. It matches only on a marker the helper
+parses, never on the branch name, and it reads no pull-request body itself. A marker-carrying pull request whose head
+branch is not in this repository, such as a fork's, or whose repository the forge does not state,
+is ignored and reported, never blocking.
+
+You get exactly **one question**. It names the remote, the base branch, the branch, that the pull
+request is a draft, and its audience, which is always "possibly public: everyone who can read
+`<remote>`", with the `origin` host and repository path as `<remote>`. It also lists the findings of a
+content check over the plan and the pull-request body: private-key or certificate headers, common
+token shapes, `password`/`secret`/`api_key` assignments with a literal value, and absolute paths
+under a home or drive root. Each finding is named by its class and line, never by the matched
+value, and "no findings" is stated explicitly. Answering **Publish** acknowledges every listed
+finding; **Keep local**, or no answer, publishes nothing.
+
+On **Publish**, `plan` commits the plan file alone in a temporary Effective Flow worktree (a sibling
+worktree in a Claude Code or Codex worktree session), pushes the branch
+`<delivery.branchPrefix>/<workflow>/<slug>`, and opens the draft through `/effective-flow pr`. It
+then reads the new pull request back and claims a draft only when the forge states one: Forgejo can
+ignore the work-in-progress prefix a draft rests on, and a pull request that is not confirmed as a
+draft is reported as a failure at `pr`, because the implementing run accepts only a draft. Before
+the commit, `plan` checks that only the plan is staged, comparing Git's NUL-separated path list
+literally, so a plan path with non-ASCII letters or quotes publishes like any other. The commit type
+is `docs`, and hooks run. The title is `docs: plan <plan title>`, and the body names
+the plan path and its requirement summary. Once the commit is verified, the temporary worktree is
+removed after the push and pull-request step, whatever its outcome; a stop before that keeps the
+worktree and its branch for inspection. Your checkout keeps the plan untracked, exactly as `plan`
+wrote it.
+
+Running `plan` again on a revised plan that already has an open plan pull request **republishes**
+it as a new commit on that pull request instead of opening a second one; existing approvals may
+then no longer apply. An unchanged plan has nothing to republish. Several matching pull requests
+from this repository, or one that is no longer a draft, whose branch changes a path other than the
+plan, whose head could not be fetched, or whose branch name fails `git check-ref-format --branch`,
+make publication unavailable, and the report lists each with its URL and the failed check. The head
+branch name reaches every command as one single-quoted argument.
+
+The report carries one publication line: published (with URL, branch, and audience), updated,
+declined, unavailable, not attempted, or failed at a named step. Each ignored foreign pull request
+is reported alongside that line. Do not run
+`/effective-flow merge-gate` or `/effective-flow iterate` on the plan pull request before
+`/effective-flow apply`: a commit they push that changes a path other than the plan makes the
+implementing run's verification fail, and neither of them archives the plan or finishes the draft.
+A pure merge of the base into the head passes. If the implementing run's plan pull-request discovery
+fails while its effective completion is `pr` or `null`, it cannot rule out a published plan, so an
+interactive run asks once whether to **Continue** on a new branch or **Stop** (see
+[Discovery unavailable](worktree-and-delivery.md#discovery-unavailable)).
 
 ## `/effective-flow open-plans`
 

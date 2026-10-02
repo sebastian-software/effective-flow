@@ -34,6 +34,11 @@ when: the delivery point of the handback is reached, or in-place execution archi
 ```
 
 ```lazy-include
+plan-pr-continuation
+when: the source is a plan file, hidden mode is off, and either "Shared preconditions" step 2 of `worktree-integration` has resolved the base or "Determine mode" selected in-place without delivery, before any archival
+```
+
+```lazy-include
 runtime-state-safety
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```

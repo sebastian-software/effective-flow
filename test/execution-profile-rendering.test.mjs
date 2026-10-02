@@ -21,8 +21,10 @@ import {
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
 } from '../build-lib.mjs';
+import { AGENT_PROFILE_MAPPINGS } from './support/native-profile-config.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const CODEX_FAST = AGENT_PROFILE_MAPPINGS.fast.codex;
 const FAST_SUFFIX =
   ' Fast-profile variant; use only for the first eligible implementation attempt.';
 const FAST_WORKERS = [
@@ -231,6 +233,90 @@ test('portable output contains only base workers and no native profile represent
     );
     assert.doesNotMatch(content, /\b(?:sonnet|gpt-5\.6-luna)\b/, path);
     for (const worker of FAST_WORKERS) assert.doesNotMatch(content, new RegExp(worker), path);
+  }
+});
+
+// `build` Phase 2 is the adopted Fast surface. Each of its five implementer selector lines keeps the
+// Quality reference and appends exactly one target-native Fast rendering; portable output keeps
+// the base worker and states that it runs Quality only, without naming a native profile or a gate
+// reason to record.
+test('the adopted build selector lines render the exact per-target Fast representation', () => {
+  const selectors = {
+    'ui-implementer': 'Frontend:',
+    'nodejs-implementer': 'Backend/CLI:',
+    'rust-implementer': 'Rust:',
+    'generic-product-implementer': 'Other clearly identified product code:',
+    'generic-implementer': 'Tooling/CI/configuration/repository metadata:',
+  };
+  const expected = {
+    claude: (worker) => `Fast: \`${worker}-fast\`.`,
+    codex: (worker) =>
+      `Fast: \`${worker}\` with \`model: "${CODEX_FAST.model}"\` and \`reasoning_effort: "${CODEX_FAST.reasoning_effort}"\`.`,
+    portable: (worker) => `Fast: \`${worker}\` (portable build: Fast unavailable, Quality only).`,
+  };
+  for (const [target, render] of Object.entries(expected)) {
+    const build = readFileSync(join(distRoot, target, 'effective-flow/tools/build.md'), 'utf8');
+    const phase2 = build.slice(
+      build.indexOf('\n### Phase 2: Implementation\n'),
+      build.indexOf('\n### Phase 3: Documentation\n'),
+    );
+    for (const [agent, label] of Object.entries(selectors)) {
+      const worker = `effective-flow-${agent}`;
+      const lines = phase2.split('\n').filter((line) => line.startsWith(`   - ${label}`));
+      assert.equal(lines.length, 1, `${target} ${agent}: one selector line`);
+      assert.ok(
+        lines[0].includes(`\`Use the \`${worker}\` skill for this phase.\``),
+        `${target} ${agent}: the Quality selector stays the default`,
+      );
+      assert.ok(lines[0].endsWith(render(worker)), `${target} ${agent}: ${lines[0]}`);
+    }
+    const fastReferences = build.match(/effective-flow-[a-z-]+-fast\b/g) ?? [];
+    assert.equal(fastReferences.length, target === 'claude' ? 5 : 0, `${target} Fast sidecars`);
+    const overrides = build.match(/reasoning_effort: "[a-z]+"/g) ?? [];
+    assert.equal(overrides.length, target === 'codex' ? 5 : 0, `${target} per-spawn overrides`);
+    assert.equal(
+      (build.match(/\(portable build: Fast unavailable, Quality only\)/g) ?? []).length,
+      target === 'portable' ? 5 : 0,
+      `${target} portable Quality-only notices`,
+    );
+    assert.doesNotMatch(
+      build,
+      /select Quality with `profile-unavailable`/,
+      `${target}: no selector line may read like an instruction to record a gate reason`,
+    );
+  }
+});
+
+// Invariant: a portable skill can run on a Claude Code or Codex host, so the pilot fragments must
+// not infer portability from the host. Each target renders its own name into both fragments, and
+// the portable rendering tells the run to call no pilot operation and the setup block to offer no
+// generation action.
+test('the pilot fragments render their own build target and keep portable runs unmeasured', () => {
+  for (const target of ['claude', 'codex', 'portable']) {
+    const shared = join(distRoot, target, 'effective-flow/shared');
+    const workflow = readFileSync(join(shared, 'pilot-measurement-workflow.md'), 'utf8');
+    const setup = readFileSync(join(shared, 'setup-execution-profiles.md'), 'utf8');
+    for (const [name, text] of [
+      ['pilot-measurement-workflow', workflow],
+      ['setup-execution-profiles', setup],
+    ]) {
+      const declared = [...text.matchAll(/This installation is the `([a-z]+)` build/g)];
+      assert.deepEqual(
+        declared.map(([, value]) => value),
+        [target],
+        `${target} ${name} must declare its own build target exactly once`,
+      );
+      assert.doesNotMatch(text, /\{\{BUILD_TARGET\}\}/, `${target} ${name} kept the placeholder`);
+    }
+    const flatWorkflow = workflow.replace(/\s+/g, ' ');
+    assert.match(
+      flatWorkflow,
+      /A `portable` build is an unmeasured run whatever host executes it: it calls no pilot operation, reads no inventory, and records nothing\./,
+    );
+    assert.match(
+      setup.replace(/\s+/g, ' '),
+      /A `portable` build offers none and calls no pilot operation/,
+    );
   }
 });
 

@@ -173,16 +173,34 @@ without that key it is the branch `origin/HEAD` names, and `main` where that ref
 retired `worktree.baseBranch` row is never read: without `delivery.baseBranch` beside it, `pr` stops
 before any fetch or push, on a direct invocation and a committed handoff alike, and points to
 `/effective-flow setup`. Output is the PR URL, head and
-base branches, and the verified head OID. A detached checkout, the base branch itself, a branch with
+base branches, the verified head OID, and `result: created` or `result: reused`. A detached checkout, the base branch itself, a branch with
 no commits against the refreshed base, contradictory handoff evidence, or a changed head OID stops
 before publishing.
 
 **Existing pull requests:** After pushing the branch, `pr` queries the detected host for open
-pull requests and exact-matches both the requested head and base branches. Exactly one match is
-reused without changing its title or description; the workflow then follows the same checkout
-restoration and reporting path as a newly created pull request. Pull requests with another base,
-closed or merged pull requests, and other non-matches are ignored. A failed or unparseable lookup
-or multiple exact matches stops the workflow without attempting creation or guessing.
+pull requests and exact-matches the requested head and base branches, and requires the host to
+report the head as this repository's own (`sameRepository`, decided by repository id or by the
+full name compared case-insensitively). A fork's or deleted fork's pull request with the same head
+name therefore neither matches nor counts as a duplicate, and a match whose repository the host
+does not state even after a fresh read stops the lookup as incomplete. Exactly one match is reused without changing its title or description;
+the workflow then follows the same checkout restoration and reporting path as a newly created pull
+request. Pull requests with another base, closed or merged pull requests, and other non-matches are
+ignored. A failed or unparseable lookup or multiple exact matches stops the workflow without
+attempting creation or guessing.
+
+**Finishing a plan's draft:** A reused pull request is changed in exactly one case: it is the draft
+that [`plan` published](tools-understand.md#publishing-the-plan-as-a-draft-pull-request), and its
+branch now carries implementation beyond the plan. An implementing run's delivery names that pull
+request by number, and only once the plan was archived on its branch; a different number or a
+missing marker then refuses the finish, and when no pull request matches at all, `pr` stops before
+creating a new one. A direct `pr` call is the recovery path after a failed finish: it finishes a
+draft with a valid plan marker whose branch already holds the archived plan and no longer the plan
+itself. `pr` then derives the final title and description as for a new pull request, updates the
+title, updates the body while keeping the marker line, and marks the pull request ready, each as a
+dry run first. On Forgejo, while the pull request is still a draft, the body is updated first and
+the retitle and the ready transition are one final edit, so marking the pull request ready is always
+the last change. The first failure stops it, the pull request stays a draft, and the report names
+the failed step.
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the
@@ -255,7 +273,8 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late). A reviewer that
    states its objection as a **verdict** rather than as a thread is handled by its own precondition;
    see [A reviewer that requests changes](#a-reviewer-that-requests-changes). "All checks green"
-   additionally means a check list was reported at all, and a repository that runs **no CI** never
+   counts a skipped or neutral check as passing, as GitHub does, and additionally means a check list
+   was reported at all, and a repository that runs **no CI** never
    reports one: there an interactive run with `mergeGate.completion: merge` asks you whether the
    absent list is expected – once while it waits for checks, and again at the verified head commit
    it would merge, because that second question is asked about the read the merge is actually
@@ -330,7 +349,9 @@ with the separately resolved configuration state, `merge|report` mode, and `clau
 The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
 path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
 period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
-states make observation a read-only no-op; observer-only post-merge re-entry records nothing.
+states make observation a read-only no-op; observer-only post-merge re-entry records nothing. The
+observation is also skipped, with nothing persisted and no effect on the pilot, when admission
+closes as it starts or while another measured run is still in flight.
 
 Reservation or finalization failure never changes whether the current run merges or reports ready.
 After a reservation, every normal, controlled, or early exit finalizes exactly once. A report-mode
@@ -339,8 +360,8 @@ evidence; a merge-mode failure records `failed`. The helper's explicit `pilotCon
 `controlStatePersisted`, and value-free `alert` metadata is the only authority for claiming an
 `evidence-gap` or durable suspension. The gate never infers either from an exit code, missing
 receipt, or failed write; if persistence cannot be proven, it says so without changing the gate
-result. The subsystem exists before workflow profile adoption, so this observation capability does
-not make `build` or `refactor` select Fast. See
+result. The observation never influences profile selection: only `build` selects Fast, and only
+for an eligible packet in an active generation. See
 [Model-tiering pilot data and privacy](model-tiering-pilot.md) for the local evidence and retention
 boundary.
 

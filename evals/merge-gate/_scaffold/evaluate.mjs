@@ -261,6 +261,14 @@ export function usesLifecycleSchema(scenario) {
   return scenario === LIFECYCLE_SCENARIO;
 }
 
+// Never, for any gate scenario. Every one of them reads the forge before it can decide anything, so
+// a call log with no record is a run that never started — invalid evidence to be redone, not a
+// behavioural result. The `iterate` suite answers this differently because its refusals happen
+// before the first forge read; this suite keeps the rule it has always had.
+export function permitsEmptyCallLog() {
+  return false;
+}
+
 // The suite-specific validity question, asked only of a call log that already parsed: whether the
 // sequenced Phase-4 run actually observed the flipped status element in the order the scenario is
 // about.

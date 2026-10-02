@@ -1,0 +1,35 @@
+{
+  "name": "Explicit false stays Quality and preserves the stored generation",
+  "harness": "codex",
+  "config": "false",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "disabled",
+    "generationState": null,
+    "persistedGenerationState": null,
+    "activation": null,
+    "operations": [],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": []
+  }
+}

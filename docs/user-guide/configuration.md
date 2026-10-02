@@ -265,18 +265,26 @@ absent because this example pins `tracker.mode: local`; they belong to an extern
 
 ## Block `executionProfiles`
 
-`executionProfiles.fast.enabled` is a reserved Boolean switch for the risk-aware implementation
-profile pilot. It does not contain a provider model name. Missing or `false` means disabled;
-malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to **Quality** and
-stop new pilot measurement. Only the literal `true` admits the project to the pilot lifecycle; it
-does not start a baseline, activate Fast, or prove that the current host can enforce Fast.
+`executionProfiles.fast.enabled` is the opt-in Boolean switch for the Quality/Fast field pilot of
+`/effective-flow build`. It does not contain a provider model name. Missing or `false` means
+disabled; malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to
+**Quality** and stop new pilot measurement. Only the literal `true` admits the project to the pilot
+lifecycle; it does not start a baseline, activate Fast, or prove that the current host can enforce
+Fast.
 
-Native builds now contain the representation and local measurement subsystem needed for a later
-pilot: five generated Claude Fast sidecars, a Codex per-spawn override form, native inventories, and
-the dependency-free pilot helper. That capability is not activation. Neither `build` nor `refactor`
-requests Fast yet, portable installations remain Quality-only, and `/effective-flow setup` still
-exposes no question for this row. Manually setting the row to `true` therefore changes no current
-workflow behavior. Changing or removing it does not rewrite a pilot generation, clear a suspension,
+Set the row with `/effective-flow setup guided` → **Advanced settings** → **Block 10
+(`executionProfiles`)**: **Keep** leaves the recorded value unchanged, **Enable** writes `true`, and
+**Disable** writes `false`. Profile and Express never ask this question and keep an existing value
+exactly as recorded. After the configuration write, the same block offers at most one confirmed
+generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
+a suspended generation with healthy evidence. Activation needs no action: the next measured native
+`build` run activates a baseline generation automatically once its preregistered window and sample
+are met. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
+
+Once a generation is active, `build` may use the native **Fast** implementer for the first
+implementation attempt of an eligible packet. During the baseline every packet runs Quality and is
+only measured. `refactor` has not adopted Fast, and portable installations remain Quality-only and
+unmeasured. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
 or delete evidence.
 
 Project admission is also separate from detailed-trace consent. The configuration row cannot grant
@@ -392,7 +400,10 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
 `mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
-than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
+than blocking the merge forever. Under `mergeGate.requireAllChecks: true` every reported check
+counts; under `false` only the checks the forge marks as required count, so a red optional check is
+reported but does not block. A counted check passes when it completed as `SUCCESS`, `SKIPPED`, or
+`NEUTRAL`, as GitHub counts it; any other conclusion blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
 
@@ -563,13 +574,13 @@ Describes the delivery branch, its base, its generated name, and its completion 
 no `delivery.enabled` setting: delivery is implied whenever work happens in a worktree or on a
 dedicated delivery branch.
 
-| Key            | Values                             | Default          | Meaning                                                            |
-| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                              |
-| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
-| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
-| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
-| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
+| Key            | Values                             | Default          | Meaning                                                                                                                         |
+| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                                                                                           |
+| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`)                                                              |
+| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time; `pr` and `null` also let `plan` publish its plan as a draft PR |
+| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                                                                                            |
+| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`                                                                   |
 
 An empty `branchPrefix` drops the prefix segment and its slash, so branches read `<skill>/<slug>`
 (for example `build/user-login`). Empty is valid in every mode and is the default in
@@ -587,6 +598,22 @@ and the applied override without editing the ADR. Negated, hypothetical, descrip
 mentioned actions are not override evidence. Alternatives or simultaneous requests for several
 actions trigger a focused question and abort before delivery mutation if no single action is
 confirmed.
+
+The same row governs plan publication. With `pr` or `null`, `/effective-flow plan` offers once to
+publish a finished plan as a draft pull request; with `merge`, `branch`, or no row, the plan stays
+local and nothing is asked. Hidden mode never publishes a plan, and an invalid value makes
+publication unavailable. An implementing run that finds an open pull request for its plan decides
+on the effective completion. It completes as `pr` over a `null` or invalid row, and on an explicit
+`pr` request, which it reports as an override of a configured or missing `merge` or `branch` row.
+An effective `merge` or `branch`, including a missing row without such a request, stops the run
+rather than merge around the draft. If that run's plan pull-request discovery
+fails and the effective completion is `pr` or `null`, an interactive run asks once whether to
+**Continue** on a new branch or **Stop**. Do not run `merge-gate` or `iterate` on the plan pull
+request before `apply`: a commit they push that changes a path other than the plan makes that
+run's verification fail, while a pure merge of the base into the head passes. See
+[Publishing the plan as a draft pull request](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request)
+and
+[Continuing on a published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request).
 
 `/effective-flow deliver` is deliberately narrower: invoking it is itself affirmative `pr` intent.
 It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
@@ -710,8 +737,8 @@ values are retained unless the user explicitly confirms a change. In Profile mod
 topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
 keys, while all other known and unknown rows remain untouched.
 
-The reserved `executionProfiles.fast.enabled` key is intentionally absent from this base and from
-the setup UI. Absence is its default-off form and selects Quality.
+The `executionProfiles.fast.enabled` key is intentionally absent from this base. Absence is its
+default-off form and selects Quality; only Guided block 10 writes it.
 
 `visibility` is absent too: a standard setup writes no `visibility` row, and absence means
 `standard`. Only the hidden local file carries `visibility | hidden`. That file also gets the forced
@@ -783,7 +810,7 @@ therefore gets that one behavior change without configuring anything; see
 There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
 with `review.profile: fast`, `review.validation: quick`, and
 `applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
-reserved **Fast** implementation profile and do not activate it.
+**Fast** implementation profile of the `build` field pilot and do not activate it.
 
 ## Runtime-state safety
 

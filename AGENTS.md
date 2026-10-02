@@ -27,7 +27,7 @@ pnpm test:distribution   # isolated build/archive/delivery smoke suite
 
 Package manager is **pnpm**; the root `package.json` `packageManager` field is the source of truth for the pinned version. Node.js 22 or newer is required for the build and the shipped runtime scripts. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
-Behavioural eval suites are a fourth layer and a deliberately manual one. Each suite lives in `evals/<tool>/` and is driven by `pnpm eval <tool> <command>`; the shared instrument they all run on is `evals/_scaffold/`, and each suite declares its own seeds, evaluator, tracker stub, overlay policy and sandbox namespace in its `evals/<tool>/suite.config.mjs`, which is hashed into that suite's instrument because each of those bindings decides what a run sees. Its scenario registry is the one declaration no run reads, so it lives in `evals/<tool>/scenario-registry.mjs` and stays out of the instrument: adding a scenario costs its own evidence and no other scenario's. `merge-gate` is the one recorded suite today: its evidence under `evals/merge-gate/results/` is recorded by hand in fresh agent sessions, and neither `pnpm test` nor CI ever runs a model for it. `pnpm test` asserts only that the archive is structurally sound; whether it still describes the working tree is answered by `pnpm eval merge-gate verify`, a read-only command that writes nothing and takes no lock. CI reports that verdict on every pull request and enforces it with `--mode strict` on the release pull request, so editing a source the gate loads owes a re-recorded round — six scenarios times five runs, roughly three hours — before the next release, not before the next merge. See [`evals/merge-gate/README.md`](evals/merge-gate/README.md).
+Behavioural eval suites are a fourth layer and a deliberately manual one. Each suite lives in `evals/<tool>/` and is driven by `pnpm eval <tool> <command>`; the shared instrument they all run on is `evals/_scaffold/`, and each suite declares its own seeds, evaluator, tracker stub, overlay policy and sandbox namespace in its `evals/<tool>/suite.config.mjs`, which is hashed into that suite's instrument because each of those bindings decides what a run sees. Its scenario registry is the one declaration no run reads, so it lives in `evals/<tool>/scenario-registry.mjs` and stays out of the instrument: adding a scenario costs its own evidence and no other scenario's. Two suites exist: `merge-gate` and `iterate`, whose first tranche covers `iterate`'s fail-closed input parsing. Evidence under `evals/<tool>/results/` is recorded by hand in fresh agent sessions, and neither `pnpm test` nor CI ever runs a model for it; the `iterate` corpus has not been recorded yet, so that suite verifies `absent` until its first round is published. `pnpm test` asserts only that an archive is structurally sound; whether it still describes the working tree is answered per suite by `pnpm eval <tool> verify`, a read-only command that writes nothing and takes no lock. CI's `Behavioural eval evidence` step reports that verdict for every suite on every pull request and enforces it with `--mode strict` on the release pull request, so editing a source a suite loads owes a re-recorded round of that suite — six scenarios times five runs each, roughly three hours per suite — before the next release, not before the next merge. See [`evals/merge-gate/README.md`](evals/merge-gate/README.md) for the shared round lifecycle and [`evals/iterate/README.md`](evals/iterate/README.md) for what the `iterate` suite does differently.
 
 ## Build architecture
 
@@ -47,30 +47,37 @@ The build emits three consumer targets:
 
 The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
 
-### Execution profiles (reserved policy)
+### Execution profiles (build field pilot)
 
 `src/shared/execution-profiles.md` is the provider-neutral policy source for the **Quality** and
-**Fast** implementation intents. Quality is the safe default; Fast is reserved for a bounded first
+**Fast** implementation intents. Quality is the safe default; Fast is limited to a bounded first
 implementation attempt that passes the ordered fail-closed gate. Unknown evidence, coupled scope,
 every newly spawned retry or correction, missing native capability, and portable execution select
 Quality. On Claude Code, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is detected by presence only; its value
-is never read, relayed, or persisted.
+is never read, relayed, or persisted, and its presence records `profile-unavailable`.
 
-The strict Boolean `executionProfiles.fast.enabled` is reserved and default-off. It never contains
-a provider model name: missing or `false` is disabled, malformed/ambiguous/unreadable is invalid,
-and both fail closed to Quality. Literal `true` only admits the project to the later pilot
-lifecycle; it does not start measurement, activate a generation, or prove native capability. Setup
-remains the sole configuration writer but has no UI for this key yet.
+The strict Boolean `executionProfiles.fast.enabled` is default-off. It never contains a provider
+model name: missing or `false` is disabled, malformed/ambiguous/unreadable is invalid, and both fail
+closed to Quality. Literal `true` only admits the project to the pilot lifecycle; it does not start
+measurement, activate a generation, or prove native capability. Setup remains the sole
+configuration writer and exposes the key only in Guided advanced block 10
+(`src/shared/setup-execution-profiles.md`), together with the confirmed generation actions
+`begin-baseline` and `resume`, each offered only for the inventory-proven state that allows it.
+Profile and Express never ask the block and preserve an existing value.
 
-The build now renders the native capability and ships the local pilot-measurement subsystem without
-adopting Fast in a workflow. It generates five Claude Fast implementer sidecars, supports Codex
-per-spawn `model` and `reasoning_effort` overrides, emits strict native-agent inventories, and
-copies the three pilot helper modules to every target. `build` and `refactor` still contain no
-profile reference, so neither requests Fast yet; portable output remains Quality-only and contains
-no native profile metadata. Setup exposes neither baseline nor activation. If
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present when a later
-profile-aware workflow evaluates capability, the gate records `profile-unavailable` and selects
-Quality.
+`build` is the one adopting workflow. Its Phase 2 carries the five inline
+`{{AGENT_PROFILE:X:fast}}` tokens and lazy-loads the policy plus
+`src/shared/pilot-measurement-workflow.md`, which owns the measured-run record order
+(`inventory` → automatic `activate` in a baseline generation → `start` →
+`start-packet`/`finish-packet` → `finalize`), incident recording through `record-incident`, and the
+same-run reconciliation after a failed finalization; the helper itself persists any
+`finalization-failed` suspension. A failed Fast attempt makes exactly one retained-state transition
+to Quality in the same checkout, and every later correction is Quality-only. No workflow run calls
+`begin-baseline` or `resume`. `refactor` keeps its build-guard
+authorization but carries no token and has not adopted Fast; portable output remains Quality-only
+and contains no native profile metadata. The build renders five Claude Fast implementer sidecars,
+Codex per-spawn `model` and `reasoning_effort` overrides, strict native-agent inventories, and
+copies the three pilot helper modules to every target.
 
 Pilot state is local/private runtime data below
 `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never tracked configuration or eval
@@ -80,8 +87,10 @@ and identity; detailed traces do not feed metrics. While a baseline or active ge
 non-observer `merge-gate` runs may add anonymous period-level correction observations with no
 workflow-record link. Review freezes reservations, aggregation keeps a private decision view and a
 suppressed publication candidate, and deletion follows confirmed digest-bound purge or the narrower
-disabled/review `discard-generation` recovery path. No capability described here activates a
-workflow or setup route.
+disabled/review `discard-generation` recovery path. Only a confirmed Guided `begin-baseline`
+starts a baseline; `active` is reached only through the helper's automatic `activate` in a measured
+`build` preflight or a confirmed Guided `resume` of a stored prior state. No configuration value or
+native artifact moves a generation.
 
 The guard mechanics are documented in
 [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration
@@ -94,7 +103,7 @@ The shipped measurement contract and its exact build-validated projection are do
 
 ### Placeholder / directive syntax in sources
 
-The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
+The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`, `{{BUILD_TARGET}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
 
 ### Adding a tool or agent
 

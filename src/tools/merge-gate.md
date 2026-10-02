@@ -1081,7 +1081,7 @@ run can push an unbounded number of commits onto someone's pull request.
      repetition, not a repeated question.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
 3. **Failed checks.** Delegate to `{{SKILL:iterate}} <PR>` an instruction derived from the failing
-   check names and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
+   check names – failing as step 4 defines it, never a `SKIPPED` or `NEUTRAL` one – and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
    dispatch it per "Building and dispatching a delegation", with no thread and no body item, so the
    message ends at the delimiter line. Where `build` refuses the instruction because a line of it
    could state protocol, delegate nothing and **end the run here**: the report names the failing
@@ -1089,14 +1089,17 @@ run can push an unbounded number of commits onto someone's pull request.
    round would rebuild and refuse the same instruction – and the round counter stays unchanged.
 4. **Re-read the status** and evaluate the check criterion:
    - `mergeGate.requireAllChecks: true` (default) – **every** reported check – the latest run per
-     check identity, as `pr-status-read` reports it – must have completed successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
-     this round and the next round starts again at step 1.
+     check identity, as `pr-status-read` reports it – must be **satisfied**: completed as `SUCCESS`,
+     `SKIPPED`, or `NEUTRAL`, the conclusions GitHub counts as passing. Any other completed conclusion
+     (failed, cancelled, timed out, `ACTION_REQUIRED`, `STALE`, `ERROR`, `WARNING`) or none fails; a
+     still-pending check ends this round and the next round starts again at step 1.
    - `mergeGate.requireAllChecks: false` – only checks the forge marks as required count, read from
      the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
      not a blocker. A check whose requiredness the provider does not state **fails closed** and is
      treated as blocking, because an unproven "optional" is exactly the value that would wave a red
      check through. **Forgejo states requiredness on no check at all**, because it has no such flag,
      so this setting treats every check there as blocking – stricter than the default, never looser.
+     A required check is judged by the same satisfied set as above.
      An **empty** required subset counts as satisfied: no reported check is required,
      so nothing required is outstanding, and the merge state below decides the rest.
    - That last rule has a known limit. The `required` flag exists only on checks that have

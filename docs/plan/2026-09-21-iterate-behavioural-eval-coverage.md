@@ -301,14 +301,14 @@ should conclude, matching the existing scenarios' discipline
 - [x] Adding a seventh scenario to the iterate suite — scenario stub, fixture stub and registry entry
       together, so suite parity holds — changes no archived run's `instrument` digest, demonstrated
       by recomputation before and after.
-- [ ] `evals/iterate/` contains no copy of `round-core.mjs`, `build-identity.mjs`, `sandbox.mjs`,
+- [x] `evals/iterate/` contains no copy of `round-core.mjs`, `build-identity.mjs`, `sandbox.mjs`,
       `prompt.mjs`, `scaffold.mjs` or `suite.mjs`.
-- [ ] The slot's `tools/iterate.md` is byte-identical to the built production file in every iterate
+- [x] The slot's `tools/iterate.md` is byte-identical to the built production file in every iterate
       run, asserted by the build identity rather than by inspection.
 - [x] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` all pass.
-- [ ] The CI eval-evidence step runs both suites, and its strict mode still triggers only on
+- [x] The CI eval-evidence step runs both suites, and its strict mode still triggers only on
       `release-please--*` head refs.
-- [ ] Section 5 of the architecture review states which `iterate` rules are now covered and that
+- [x] Section 5 of the architecture review states which `iterate` rules are now covered and that
       classification proper is not.
 
 ## Validation plan
@@ -418,6 +418,60 @@ the stub replaces it at that path.
 outcome chain throws on an unrecognised name. Lifting the registry out of the instrument removed the
 cost that used to make a mismatch noticeable, so the change owed this guard.
 
+### 2026-09-29 — steps 5 to 8 and 10, without recording
+
+The plan status stays `Not implemented` on purpose: steps 4 and 9 — re-recording the merge-gate
+corpus and recording the 30 iterate runs — are still owed. By maintainer decision this delivery
+carries no recorded run; the complete recording of both suites happens before the next release.
+Until then `pnpm eval iterate verify` reports all six scenarios `absent`, the merge-gate corpus
+stays `stale`, and the strict mode of the release pull request fails by design.
+
+**What landed.** The exit-channel helper `evals/iterate/_scaffold/report-channel.mjs`, the
+`evals/iterate/` suite with its configuration, registry, README, evaluator, six scenarios and six
+fixtures, and the CI step `Behavioural eval evidence`, which verifies both suites and keeps strict
+mode on `release-please--*` head refs. The documentation named in step 10 is reconciled, including
+the section 5 row of the architecture review, which stays `partial`.
+
+**Drift at execution time.** Planning ran against `91afe89`; this delivery ran against `35b4523`.
+The iterate abort rules still stand in `src/tools/iterate.md` with shifted line numbers, so the plan
+still described reality. The merge-gate corpus, re-recorded in the meantime by #464, had gone stale
+again through later changes to its load set, so step 4 remains owed regardless of this work.
+
+**Deviations from the plan as written, each deliberate.**
+
+- The tracker stub moved to the shared `evals/_scaffold/remote-tracker.mjs`: it is fixture-driven
+  and tool-agnostic, so both suites declare it and hash it as their own instrument. This moves only
+  the merge-gate `instrument` part; its `skill` and `scenario_inputs` parts are unchanged apart from
+  the stub path corrected in `linked-issue-open-points.md`.
+- A new suite hook `prepareCheckout` gives the iterate sandbox a real history and a local `origin`,
+  because `iterate` fetches the head branch before its approval gate. Pushes are pinned to the local
+  remote through both `insteadOf` and `pushurl`, and the resulting SHAs are fixed in each fixture.
+- The iterate seeds are `SKILL.md` and `tools/iterate.md` only. No scenario goes past Phase 2, so
+  seeding the workflows `iterate` hands implementation to would only stale this corpus; the first
+  scenario that goes further has to add them.
+- The exit channel reaches the run as an overlay file `scripts/report-channel.mjs`, hashed as
+  `skill`, and the delegated envelope is embedded in the prompt after the dispatch line rather than
+  stored in a file, which matches how a real dispatch sends it.
+- The Phase-0 verdict counts only calls outside the helper's pure local operations instead of
+  requiring literally zero records: `iterate` may parse its pull-request reference through the
+  helper before refusing. `probe`, every remote read and write, and the runtime-state ledger
+  operations still fail the run. This refines the plan's "zero records" wording to its intent — no
+  forge or state access before Phase 1.
+- An absent call log and an empty one are the same state: sealing writes an empty log. A completed
+  attempt with neither a call nor a report may be sealed in the iterate suite and evaluates as a
+  finding, so a silently ending regression cannot be retried away; the discard limit is 5.
+
+**Guards the delivery owed.** A report record that is malformed UTF-8 keeps its raw bytes so its
+text stays bound to its digest, the helper streams and bounds its input and refuses a TTY, a second
+`ABORT:` on the same line is caught, the empty-selection fixture carries an unselected open thread
+so a fallback to processing every item has something to act on, and the fidelity test rebuilds
+every stored envelope from its input with the current helper. That fallback is observable only
+where it writes: a reply or a resolve shows in the call log, and — since the review of #510 — an
+edit, a commit or a push shows in the git state the round's sealing step records for every run,
+with the open thread phrased as an exact fix request so that implementing it is the likely
+fallback. A fallback that classifies the thread as a question or as unsupported and writes nothing
+stays indistinguishable from a correct run.
+
 ## Test results
 
 | Check                                       | Result                                                                                |
@@ -432,6 +486,25 @@ cost that used to make a mismatch noticeable, so the change owed this guard.
 New regression coverage: the registry lift is permanently pinned by two tests, mutation-verified
 against four distinct mutations; the empty-list and version-stamp guards, the tracker-stub
 destination, the fourth parity member and the suite-name validation each carry their own case.
+
+### 2026-09-29 — steps 5 to 8 and 10
+
+| Check                                    | Result                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm agent:check`                       | exit 0                                                            |
+| `pnpm test`                              | exit 0 — 1718 tests, 1705 pass, 0 fail, 13 skipped                |
+| `node build.mjs`                         | exit 0 — every context budget within limits                       |
+| `pnpm test:distribution`                 | exit 0                                                            |
+| `pnpm eval iterate verify`               | exit 0 — all six scenarios `absent`, as decided                   |
+| `pnpm eval iterate verify --mode strict` | exit 1 — for the absent corpus, with every scenario named         |
+| `pnpm eval merge-gate verify`            | exit 0 — all six scenarios `stale`, owed by step 4 before release |
+
+The 13 skips are the archive checks of the unrecorded iterate suite. The new tests cover the exit
+channel, both verdict shapes, the registry lift with all four parity members, the overlay, a slot
+whose `tools/iterate.md` differs from the build, checkout provisioning and its SHA pin, the local
+push target, sealing without evidence, and a synthetic published iterate round; each was
+mutation-checked. `test/pilot-measurement-timing.test.mjs` failed twice under full-suite load during
+this delivery and passed alone; it predates this change and is tracked separately.
 
 ## Review findings
 
@@ -450,6 +523,20 @@ exact error message. Two of them — the empty-list digest and the unhashed trac
 were silent-failure paths this refactor introduced, not pre-existing defects. Seven notes were also
 fixed: a discard message reporting a threshold as a count, a duplicated seed rationale, an ignored
 `requiresAuxiliary` parameter, two wrong README paths, and a stray destructuring placement.
+
+**Date:** 2026-09-29
+**Reviewer:** effective-flow-nodejs-reviewer, effective-flow-code-validator
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    17 |
+| Open / Not implemented |     0 |
+
+No Critical findings. Six Important and eleven Note findings were incorporated in one pass, and a
+re-check confirmed each fix against the code and found no false pass and no weakening of the
+merge-gate evidence; the two Notes it raised were fixed as well. Two further observations were
+closed without follow-up work: a generic import-closure guard over suite-bound modules, which is a
+pre-existing pattern with no evidenced harm, and an informational note on CI step duration.
 
 ## Plan review
 
