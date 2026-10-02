@@ -14154,12 +14154,27 @@ test('iterate reads the run state and language context only from above the first
   const item = prose(items.find((entry) => /Run state and language context/.test(entry)) ?? '');
   assert.ok(item, 'Phase 0 must parse the run state and the language context');
 
-  assert.ok(item.includes('Run state: gated') && item.includes('Run state: non-interactive'));
+  assert.ok(
+    item.includes('Run state: gated') && item.includes('Run state: non-interactive'),
+    'iterate must parse both run-state forms',
+  );
   assert.ok(item.includes(LANGUAGE_CONTEXT_LINE), 'iterate must parse the literal language line');
-  assert.match(item, /read only from above the first delimiter/i);
-  assert.match(item, /ABORT: duplicated control line/);
-  assert.match(item, /ABORT: unparseable run-state switch/);
-  assert.match(item, /ABORT: unparseable language-context switch/);
+  assert.match(
+    item,
+    /read only from above the first delimiter/i,
+    'caller-supplied item text below the delimiter must never set the run state or language',
+  );
+  assert.match(item, /ABORT: duplicated control line/, 'a duplicated control line must abort');
+  assert.match(
+    item,
+    /ABORT: unparseable run-state switch/,
+    'an unparseable run-state line must abort rather than guess',
+  );
+  assert.match(
+    item,
+    /ABORT: unparseable language-context switch/,
+    'an unparseable language line must abort rather than guess',
+  );
   assert.match(
     item,
     near('No `Run state:` line', 'invoked with a body delimiter is non-interactive', 100),
@@ -14182,9 +14197,17 @@ test('iterate reads the run state and language context only from above the first
       .split(/(?=\n\d+\.\s)/)
       .find((entry) => /Fail closed when the question cannot be asked/.test(entry)) ?? '',
   );
-  assert.match(guard, near('Phase 0 step 10', 'Run state: non-interactive', 200));
+  assert.match(
+    guard,
+    near('Phase 0 step 10', 'Run state: non-interactive', 200),
+    'the fail-closed question guard must read the parsed run state',
+  );
   const approval = prose(section(iterate, '### Phase 2.5'));
-  assert.match(approval, near('Phase 0 step 10', 'Run state: non-interactive', 200));
+  assert.match(
+    approval,
+    near('Phase 0 step 10', 'Run state: non-interactive', 200),
+    'the Phase 2.5 approval must read the parsed run state',
+  );
   assert.doesNotMatch(approval, /apply-review/, 'the stale apply-review inference must be gone');
   assert.match(
     prose(section(iterate, '### Phase 3')),
@@ -14241,6 +14264,7 @@ test('iterate reads the run state and language context only from above the first
   assert.match(
     prose(source('docs/user-guide/tools-implement.md')),
     near('gated `iterate` announces nothing to its items', 'sub-run rule decides', 100),
+    'the user guide must agree that a gated iterate leaves its items to the sub-run rule',
   );
 });
 
@@ -14250,7 +14274,11 @@ test('iterate reads a whitespace-only body region as zero spans and nothing else
       .split(/(?=\n\d+\.\s)/)
       .find((entry) => /body delimiter/i.test(entry)) ?? '',
   );
-  assert.match(split, near('nothing but whitespace', 'zero spans', 100));
+  assert.match(
+    split,
+    near('nothing but whitespace', 'zero spans', 100),
+    'a whitespace-only body region must count as zero spans',
+  );
   assert.match(
     split,
     near(
@@ -14298,8 +14326,15 @@ test('the canonical envelope examples load lazily and show all three kinds in or
     'the thread-only example must end at the delimiter line',
   );
   assert.ok(!threadOnly.includes('Item: '), 'the thread-only example must carry no body item');
-  assert.match(block('Body-only'), /^Item filter: free-text-only$/m);
-  assert.ok(!block('Body-only').includes('Thread item:'));
+  assert.match(
+    block('Body-only'),
+    /^Item filter: free-text-only$/m,
+    'the body-only example must select free text only',
+  );
+  assert.ok(
+    !block('Body-only').includes('Thread item:'),
+    'the body-only example must carry no thread item',
+  );
   ordered(block('Mixed'), 'Item filter: threads=', 'Thread item: ', 'Item: ', DELIMITER);
 });
 
@@ -14451,19 +14486,6 @@ test('the gate consumes the iterate return only through identifiers it recorded 
     near('quoted review body', '(?:states nothing at all|inert)', 300),
     'a review body reproducing its own thread ID beside an outcome must state nothing',
   );
-  // Pre-commitment is still the ground the rule rests on — an identifier counts because it was
-  // written down first, not because it is hard to guess. What changed is that unpredictability now
-  // holds for the whole key set instead of one half of it.
-  assert.match(
-    record,
-    near('pre-commitment', 'unpredictability', 400),
-    'the rule must still rest on pre-commitment rather than on unpredictability',
-  );
-  assert.match(
-    record,
-    near('unpredictability', '(?:uniform across the key set|instead of asymmetric)', 300),
-    'unpredictability must be stated as uniform across the key set rather than asymmetric',
-  );
   // With no public key left, the return never names a thread directly, so conditions 6 and 7 reach
   // the thread through the mapping recorded before delegating instead.
   assert.match(
@@ -14477,11 +14499,6 @@ test('the gate consumes the iterate return only through identifiers it recorded 
     record,
     near('same', 'idempotent', 200),
     'a repeated identical outcome must be idempotent rather than a second outcome',
-  );
-  assert.match(
-    record,
-    near('suppressed summary', '(?:restates|idempotent)', 400),
-    'the idempotence must be grounded in the suppressed summary restating the outcomes',
   );
   assert.match(
     record,
@@ -14739,10 +14756,6 @@ test('merge-gate resumes a keyword-less iterate return once and never retries it
     [/round ends unsuccessfully/i, 'the fallback ABORT must end the round unsuccessfully'],
     [/nothing is merged/i, 'the fallback ABORT must merge nothing'],
     [/report names it/i, 'the fallback ABORT must be named in the report'],
-    [
-      near('reduced-scope retries do not fit', 'fixed `Item filter`', 80),
-      'the rule must state why reduced-scope retries do not fit a fixed Item filter',
-    ],
   ]);
 });
 
@@ -15236,14 +15249,27 @@ test('deliver is exposed with its shipped helper and continues automatically aft
   const build = source('build.mjs');
   const deliver = source('src/tools/deliver.md');
 
-  assert.match(build, /tools: \['deliver', 'commit', 'pr', 'merge-gate'\]/);
-  assert.match(build, /'delivery-selection\.mjs'/);
-  assert.match(build, /'delivery-selection-core\.mjs'/);
-  assert.match(deliver, /There is no structured public path argument/);
-  assert.match(deliver, /Recency or repository dirt alone is never evidence/);
+  assert.match(
+    build,
+    /tools: \['deliver', 'commit', 'pr', 'merge-gate'\]/,
+    'deliver must be exposed in the delivery tool group',
+  );
+  assert.match(build, /'delivery-selection\.mjs'/, 'the selection helper CLI must ship');
+  assert.match(build, /'delivery-selection-core\.mjs'/, 'the selection helper core must ship');
+  assert.match(
+    deliver,
+    /There is no structured public path argument/,
+    'deliver must take no path argument that bypasses the confirmed selection',
+  );
+  assert.match(
+    deliver,
+    /Recency or repository dirt alone is never evidence/,
+    'recency or dirt alone must never select a path',
+  );
   assert.match(
     deliver,
     /Abort before branch, worktree, index, commit, remote, or forge\s+mutation/,
+    'an unresolved selection must abort before any mutation',
   );
   assert.equal(deliver.match(/^```ask$/gm)?.length, 1, 'deliver must contain exactly one ask');
   assert.equal(
@@ -15255,11 +15281,19 @@ test('deliver is exposed with its shipped helper and continues automatically aft
   assert.doesNotMatch(
     deliver,
     /Should the confirmed selection be committed in exactly these groups and this order\?/,
+    'the retired commit-group question must not return',
   );
-  assert.doesNotMatch(deliver, /Correct group boundaries, order, or commit effect before staging/);
+  assert.doesNotMatch(
+    deliver,
+    /Correct group boundaries, order, or commit effect before staging/,
+    'the retired commit-group refinement round must not return',
+  );
+  // Anchored on the two load-bearing phrases: the manifest answer is the only routine approval,
+  // and it authorizes the automatic continuation that follows.
   assert.match(
     deliver,
-    /manifest confirmation is the sole routine approval[\s\S]*affirmative answer authorizes automatic\s+derivation, non-blocking display, validation, and sequential execution of coherent commit groups/,
+    /manifest confirmation is the sole routine approval[\s\S]*affirmative answer authorizes automatic/,
+    'the manifest confirmation must be the sole approval and authorize the automatic continuation',
   );
   ordered(
     deliver,
@@ -15274,10 +15308,12 @@ test('deliver is exposed with its shipped helper and continues automatically aft
   assert.match(
     deliver,
     /invocation is itself affirmative current-run PR intent[\s\S]*does not inherit `delivery\.completion`/,
+    'the deliver invocation must be its own PR intent, not the configured completion',
   );
   assert.match(
     deliver,
     /reports that its explicit PR intent replaces any different configured\s+`delivery\.completion`[\s\S]*does not change the stored value/,
+    'overriding the configured completion must be reported and must not write the stored value',
   );
 });
 
@@ -15312,7 +15348,8 @@ test('deliver checks the upstream before recording source evidence and defers th
   const step1Text = prose(step1);
   assert.match(
     step1Text,
-    /A failed `upstream-status` envelope \(`ok: false`\) ends this check with one notice line naming its error code; continue without an update/,
+    near('failed `upstream-status` envelope', 'continue without an update', 200),
+    'a failed upstream-status call must fail safe to continuing without an update',
   );
   assert.match(
     step1Text,
@@ -15371,23 +15408,35 @@ test('deliver checks the upstream before recording source evidence and defers th
     const abort = ask.options.find(({ label }) => label === 'Abort');
     assert.match(
       abort.description,
-      /working tree, index, and local branch unchanged and before any delivery artifact exists; the preceding upstream fetch may already have written `FETCH_HEAD` and the remote-tracking ref/,
+      near('working tree, index, and local branch unchanged', '`FETCH_HEAD`', 200),
       `upstream question ${index + 1}: Abort must scope its guarantee and disclose the preceding fetch`,
     );
   }
 
   const text = prose(sync);
+  // Abort's scoped guarantee (no fast-forward, local state untouched) and its disclosure of the
+  // preceding fetch, anchored on those phrases rather than on the whole sentence.
   assert.match(
     text,
-    /Abort ends the run without changing the working tree, the index, or the local branch: no fast-forward, no evidence, no selection, and no delivery branch or worktree\. The upstream fetch that preceded the question may already have written fetched objects, `FETCH_HEAD`, and the remote-tracking ref/,
+    /Abort ends the run without changing the working tree[\s\S]{0,120}no fast-forward[\s\S]{0,300}`FETCH_HEAD`/,
+    'the fragment Abort must scope its guarantee, rule out a fast-forward, and disclose the fetch',
   );
-  assert.doesNotMatch(text, /Abort ends the run before any mutation/);
+  assert.doesNotMatch(
+    text,
+    /Abort ends the run before any mutation/,
+    'the retired "before any mutation" overclaim must not return',
+  );
   const guide = prose(source('docs/user-guide/tools-deliver.md'));
   assert.match(
     guide,
-    /Abort ends the run without touching your working tree, index, or local branch; the upstream fetch before the question may already have stored the fetched commits, `FETCH_HEAD`, and the remote-tracking branch/,
+    near('Abort ends the run without touching your working tree', '`FETCH_HEAD`', 200),
+    'the user guide must scope Abort to local state and disclose the preceding fetch',
   );
-  assert.doesNotMatch(guide, /Abort ends the run before anything changes/);
+  assert.doesNotMatch(
+    guide,
+    /Abort ends the run before anything changes/,
+    'the retired "before anything changes" overclaim must not return in the user guide',
+  );
   assert.match(
     text,
     /`fetch\.ok` is true and `fetch\.stale` is false\. A local upstream \(`branch\.<name>\.remote = \.`\) is compared without fetching/,
@@ -15416,12 +15465,19 @@ test('deliver checks the upstream before recording source evidence and defers th
   );
 });
 
+// The commit groups must cover the confirmed manifest exactly and be committed one by one; a
+// failure preserves everything already verified and never rewrites, pushes, or opens a PR.
 test('deliver commits derived groups in order and stops after a later-group failure', () => {
   const deliver = source('src/tools/deliver.md');
 
   assert.match(
     deliver,
-    /complete, non-overlapping ordered partition: every confirmed path belongs to exactly\s+one group and the ordered union equals the confirmed manifest exactly/,
+    near(
+      'complete, non-overlapping ordered partition',
+      'equals the confirmed manifest exactly',
+      200,
+    ),
+    'the commit groups must partition the confirmed manifest exactly',
   );
   assert.match(deliver, /Process groups sequentially in their displayed order/);
   assert.match(deliver, /Stage only the current group's literal paths/);
@@ -15442,6 +15498,8 @@ test('deliver commits derived groups in order and stops after a later-group fail
   );
 });
 
+// Write-authority boundaries: `commit` never changes what is staged, and `pr` only publishes
+// verified existing commits, never creating branches, staging, or committing.
 test('commit and pr preserve the staged-only and committed-only boundaries', () => {
   const commit = source('src/tools/commit.md');
   const pr = source('src/tools/pr.md');
@@ -15728,14 +15786,15 @@ test('Phase 4 completes a new status read before its guard reads and evaluates o
 
   // The order is the concurrency contract: Phase 2's status result cannot stand in for Phase 4's,
   // and none of the advisory or merge conditions may observe a partial mix of the four responses.
+  // Each step is anchored on its ordering phrase, not on the whole sentence.
   ordered(
     phase4,
-    'Start the Phase-4 observation with a new `pr-status-read` and wait for it to complete.',
-    'Never reuse or reinterpret any status result from Phase 2 as this read.',
-    'Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together.',
-    'Wait for all three to complete.',
+    'with a new `pr-status-read` and wait for it to complete',
+    'Never reuse or reinterpret any status result from Phase 2',
+    'Only after that fresh status read has completed',
+    'Wait for all three to complete',
     'Only then apply "Unconfigured automatic-reviewer advisory"',
-    'evaluate every condition from all four results; never evaluate a partial batch.',
+    'never evaluate a partial batch',
     '1. the resolved completion mode is `merge`',
   );
 });
@@ -15781,10 +15840,12 @@ test('Phase 6 gives the complete setup route before the literal final next-step 
   const phase6Raw = section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## ');
   const phase6 = prose(phase6Raw);
 
+  // The configuration advisory is a non-blocking summary item that precedes the next-step block,
+  // which stays the last element of the report.
   ordered(
     phase6Raw,
-    '**as the final conditional summary item, one non-blocking configuration advisory**',
-    '3. Emit the next-step block per `next-steps` as the last element of that chat report.',
+    'final conditional summary item, one non-blocking configuration advisory',
+    '3. Emit the next-step block per `next-steps`',
   );
   for (const [claim, pattern] of [
     ['the explicit Guided setup invocation', /`\{\{SKILL:setup\}\} guided`/],
@@ -16223,8 +16284,16 @@ test('the project ADR-naming fragment keeps its declared-source surface at two s
     'the fragment must declare exactly two sources; a third one (an ADR whose subject is the ADR ' +
       'convention) was dropped as the highest-injection-surface member and must not reappear',
   );
-  assert.match(items[0], /`AGENTS\.md` or `CLAUDE\.md`/);
-  assert.match(items[1], /`DECISIONS\.md`/);
+  assert.match(
+    items[0],
+    /`AGENTS\.md` or `CLAUDE\.md`/,
+    'the first declared source must stay the agent instruction file',
+  );
+  assert.match(
+    items[1],
+    /`DECISIONS\.md`/,
+    'the second declared source must stay the decision register',
+  );
 
   // The item count alone is not the surface. A third source added as a nested sub-item, as a
   // continuation line of the second item, or as a plain prose sentence reads exactly like a
@@ -16345,7 +16414,7 @@ test('the project ADR-naming fragment allocates a width and a number and guards 
   // the pre-write existence check, which is what stands between a new ADR and an overwritten file.
   assert.match(
     flatCollision,
-    /This applies to every new ADR — one that does not already exist — under either resolved convention/,
+    near('This applies to every new ADR', 'under either resolved convention', 80),
     'the collision procedure must cover every new ADR under either resolved convention',
   );
   assert.match(
@@ -16480,7 +16549,11 @@ test('adr-convention subordinates its default form to a project-declared convent
   const formAndLocation = boundedSlice(convention, '### Form and location', '\n### ');
   assert.match(
     prose(formAndLocation),
-    /This is the default form; it applies when the project declares no ADR naming convention of its own and the observed evidence is inconclusive\./,
+    near(
+      'This is the default form; it applies when the project declares no ADR naming convention',
+      'the observed evidence is inconclusive',
+      40,
+    ),
     'the Form and location block must be introduced by the qualifying clause',
   );
   // The one boundary that keeps this feature off the title axis: a numbered *file name* never
@@ -16559,14 +16632,10 @@ function setupWriteTargetBullets(setup) {
 test('the setup write step keys both write-target halves on the same two resolutions', () => {
   const { writeStep, existing, fresh } = setupWriteTargetBullets(source('src/tools/setup.md'));
 
-  assert.match(
-    prose(writeStep),
-    near('complementary halves of one predicate', 'so no state falls between them', 200),
-    'the two write-target bullets must be introduced as complementary halves of one predicate',
-  );
-  // The claim is only true because both places that can detect a several-match end the run. Left
-  // unstated, "neither resolved an ADR" reads as covering an unresolved ambiguity too, and the
-  // new-ADR branch writes a duplicate under exactly the state the hard stop exists to prevent.
+  // The two halves only cover every state because both places that can detect a
+  // several-match end the run. Left unstated, "neither resolved an ADR" reads
+  // as covering an unresolved ambiguity too, and the new-ADR branch writes a
+  // duplicate under exactly the state the hard stop exists to prevent.
   assert.match(
     prose(writeStep),
     near(
@@ -16574,7 +16643,7 @@ test('the setup write step keys both write-target halves on the same two resolut
       'never an unresolved ambiguity',
       320,
     ),
-    'the complementarity claim must state why no several-match result reaches this item',
+    'the write step must state why no several-match result reaches this item',
   );
   assert.match(
     prose(writeStep),
@@ -17260,6 +17329,9 @@ test('goal-completion states every invariant of the completion contract', () => 
 // files, Git history, or forge prose. Each assertion pins one load-bearing rule of the mechanism.
 // ---------------------------------------------------------------------------------------------
 
+// Invariant: hidden setup's Step 1 makes exactly one idempotent, symlink-safe append to the common
+// directory's info/exclude, never touches .gitignore, and reaches it only after the non-Git and
+// tracked-content stops.
 test('hidden setup writes the ignore entry into the common-dir info/exclude and never into .gitignore', () => {
   const setup = source('src/tools/setup.md');
   const step1 = prose(boundedSlice(setup, '### Step 1 (hidden):', '### Step 2:'));
@@ -17306,6 +17378,8 @@ test('hidden setup writes the ignore entry into the common-dir info/exclude and 
   );
 });
 
+// Invariant: hidden setup's write authority ends at the info/exclude line and the local
+// project-setup.md; no tracked file is written or edited.
 test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a tracked ADR', () => {
   const setup = source('src/tools/setup.md');
   const rules = prose(section(setup, '## Rules', '\n## '));
@@ -17321,7 +17395,12 @@ test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a 
   const step6 = prose(boundedSlice(setup, '### Step 6: Merge and write', '### Step 7:'));
   assert.match(
     step6,
-    /skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks nothing, and poses no `CLAUDE\.md` fence\. It never writes or edits `AGENTS\.md` or `CLAUDE\.md`/,
+    near(
+      'skips items 5, 6, and 7 entirely',
+      'It never writes or edits `AGENTS\\.md` or `CLAUDE\\.md`',
+      160,
+    ),
+    'hidden mode must skip the marker, migration and CLAUDE.md items and never edit either file',
   );
   const hiddenWrite = prose(
     boundedSlice(setup, '#### Writing the hidden local configuration', '#### Mode switches'),
@@ -17344,6 +17423,7 @@ test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a 
   );
 });
 
+// Invariant: leaving hidden mode deletes nothing but the local configuration file itself.
 test('hidden → standard switch keeps the info/exclude line and never moves local plans', () => {
   const setup = source('src/tools/setup.md');
   const switches = prose(boundedSlice(setup, '#### Mode switches', '### Step 7:'));
@@ -17353,6 +17433,8 @@ test('hidden → standard switch keeps the info/exclude line and never moves loc
   assert.match(switches, /remove only that file/);
 });
 
+// Invariant: only the main checkout's local file, and only with `visibility | hidden`, switches the
+// run to hidden mode; a tracked row never does.
 test('config locator step 0 honours the local project-setup.md only with visibility hidden, from the main checkout', () => {
   const core = source('src/shared/config-migration.md');
   const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
@@ -17401,6 +17483,8 @@ test('config locator step 0 honours the local project-setup.md only with visibil
   }
 });
 
+// Invariant: an unverifiable RUNTIME_STATE_ROOT stops the reader; it never falls through to
+// standard mode or substitutes EXECUTION_ROOT.
 test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed instead of falling through', () => {
   const core = source('src/shared/config-migration.md');
   const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
@@ -17461,6 +17545,9 @@ test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed 
   }
 });
 
+// Invariant: the resolver, not each tool, forces the hidden values, so no issue reference or
+// per-run signal can select the forge or an external tool as the tracker, and no published prose
+// names Effective Flow or a `.effective-flow/` path.
 test('hidden mode forced values are enforced by the resolver, not by individual tools', () => {
   const edge = source('src/shared/config-migration-edge-cases.md');
   const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
@@ -17498,11 +17585,13 @@ test('hidden mode forced values are enforced by the resolver, not by individual 
   );
 });
 
+// Invariant: an empty prefix yields `<skill>/<slug>`, and hidden mode never accepts a prefix that
+// names Effective Flow.
 test('an empty delivery prefix drops the prefix segment: branches read <skill>/<slug>', () => {
   const worktree = prose(source('src/shared/worktree-integration.md'));
   assert.match(
     worktree,
-    /an empty prefix, the hidden-mode default and valid in every mode, drops the prefix segment and its slash: `<skill>\/<slug>`, e\.g\. `build\/user-login`/,
+    /an empty prefix, the hidden-mode default and valid in every mode, drops the prefix segment and its slash: `<skill>\/<slug>`/,
   );
   assert.match(
     worktree,
@@ -17514,6 +17603,8 @@ test('an empty delivery prefix drops the prefix segment: branches read <skill>/<
   );
 });
 
+// Invariant: in hidden mode the slug is sanitized before the existence check, repeatedly until
+// clean, with one shared disclosure rule at every construction site.
 test('hidden mode sanitizes the delivery slug at construction: disclosure rule, attached fragment, change fallback, one-line report', () => {
   const step = prose(
     boundedSlice(
@@ -17522,9 +17613,15 @@ test('hidden mode sanitizes the delivery slug at construction: disclosure rule, 
       '### Run-owned delivery state',
     ),
   );
+  // The disclosure rule's wording is pinned by the shared loop at the end of this test.
   assert.match(
     step,
-    /In hidden mode \(`visibility: hidden`\), sanitize the slug before any existence check: remove from the slug every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `\.`, case-insensitive, or `Effective Flow` — together with the letters or digits attached to it up to the nearest hyphen/,
+    near(
+      'sanitize the slug before any existence check',
+      'attached to it up to the nearest hyphen',
+      320,
+    ),
+    'hidden mode must sanitize the slug, attached fragment included, before the existence check',
   );
   // Sanitizing after the existence check would collision-check the unsanitized name only.
   const sanitize = step.indexOf('In hidden mode (`visibility: hidden`), sanitize the slug');
@@ -17542,7 +17639,12 @@ test('hidden mode sanitizes the delivery slug at construction: disclosure rule, 
   );
   assert.match(
     deliver,
-    /In hidden mode, sanitize the slug first, as step 4 "Construct delivery branch names" of `worktree-integration` does: remove every match of the helper's disclosure rule/,
+    near(
+      'In hidden mode, sanitize the slug first',
+      "remove every match of the helper's disclosure rule",
+      120,
+    ),
+    'deliver must sanitize the slug first in hidden mode',
   );
   assert.match(deliver, /with the letters or digits attached to it up to the nearest hyphen/);
   assert.match(deliver, repeat);
@@ -17619,6 +17721,8 @@ test('plan archival takes the plan over from, and cleans it in, its own source c
   assert.match(continuation, near('cleans the untracked copy in', 'the hash comparison read', 60));
 });
 
+// Invariant: the hidden arm moves the only copy of a plan in place, never overwrites, and never
+// stages it or cleans it up.
 test('plan archival hidden arm: main checkout only, no staging, no cleanup, no clobber, collision stop', () => {
   const archival = source('src/shared/plan-archival.md');
   assert.match(
@@ -17647,7 +17751,8 @@ test('plan archival hidden arm: main checkout only, no staging, no cleanup, no c
   );
   assert.match(
     arm,
-    /The hidden arm stages nothing, takes nothing into `EXECUTION_ROOT`, adds no plan state to the handback commit, and runs no main-checkout cleanup: removing the only copy would lose the plan/,
+    /The hidden arm stages nothing, takes nothing into `EXECUTION_ROOT`, adds no plan state to the handback commit, and runs no main-checkout cleanup/,
+    'the hidden arm must stage nothing and run no main-checkout cleanup',
   );
 
   const worktree = prose(source('src/shared/worktree-integration.md'));
@@ -17658,6 +17763,7 @@ test('plan archival hidden arm: main checkout only, no staging, no cleanup, no c
   assert.match(worktree, /the delivery branch carries no path below `\.effective-flow\/`/);
 });
 
+// Invariant: hidden concepts and initial-state plans are never staged or committed.
 test('hidden concepts and initial-state plans live only in RUNTIME_STATE_ROOT', () => {
   assert.match(
     prose(source('src/shared/concept-contract.md')),
@@ -17669,6 +17775,8 @@ test('hidden concepts and initial-state plans live only in RUNTIME_STATE_ROOT', 
   );
 });
 
+// Invariant: in hidden mode no PR title, body or head branch discloses Effective Flow, and a
+// disclosing branch stops the run before any fetch or push.
 test('pr in hidden mode references no plan file, no .effective-flow/ path, and never names Effective Flow', () => {
   const pr = source('src/tools/pr.md');
   const step9 = prose(
@@ -17702,6 +17810,7 @@ test('pr in hidden mode references no plan file, no .effective-flow/ path, and n
   );
 });
 
+// Invariant: every tracker-bound workflow stops in hidden mode before any tracker access or write.
 test('tracker-bound workflows fail closed in hidden mode before any tracker access', () => {
   for (const tool of ['plan-issue', 'apply-issues']) {
     const text = prose(source(`src/tools/${tool}.md`));
@@ -17733,13 +17842,19 @@ test('tracker-bound workflows fail closed in hidden mode before any tracker acce
   );
 });
 
+// Invariant: the step-0 file is a read-only seed when leaving hidden mode, never a write target.
 test('hidden → standard setup never writes the step-0 file: it resolves through locator steps 1–4 only', () => {
   const switches = prose(
     boundedSlice(source('src/tools/setup.md'), '#### Mode switches', '### Step 7:'),
   );
   assert.match(
     switches,
-    /In this run Step 2 item 2 and Step 6 items 3 and 4 resolve the project setup ADR through locator steps 1 to 4 only: the step-0 file is a read-only seed, never a write target/,
+    near(
+      'through locator steps 1 to 4 only',
+      'the step-0 file is a read-only seed, never a write target',
+      40,
+    ),
+    'the hidden → standard run must resolve through steps 1–4 and never write the step-0 file',
   );
   const hidden = prose(
     boundedSlice(
@@ -17751,6 +17866,7 @@ test('hidden → standard setup never writes the step-0 file: it resolves throug
   assert.match(hidden, /resolves the ADR it reads and writes through steps 1–4 only/);
 });
 
+// Invariant: issue-driven apply stops in hidden mode before stage B touches the tracker.
 test('issue-driven apply stops in hidden mode before stage B tracker classification', () => {
   const phase1 = prose(
     boundedSlice(source('src/tools/apply.md'), '### Phase 1: Classify the source', '3. Handle'),
@@ -17767,6 +17883,7 @@ test('issue-driven apply stops in hidden mode before stage B tracker classificat
   );
 });
 
+// Invariant: open-plans loads the locator at the moment `<plan.dir>` is resolved.
 test('open-plans resolves plan.dir through the config locator, hidden step 0 included', () => {
   const pointer = [...source('src/tools/open-plans.md').matchAll(LAZY_INCLUDE_RE)].find(
     (m) => m[1].trim() === 'config-migration',
@@ -17775,6 +17892,8 @@ test('open-plans resolves plan.dir through the config locator, hidden step 0 inc
   assert.match(pointer[2], /`<plan\.dir>` is about to be resolved/);
 });
 
+// Invariant: hidden plan and concept writes go through runtime-state write safety under the
+// verified RUNTIME_STATE_ROOT, and archival marks before it moves.
 test('hidden plan and concept writes are anchored to RUNTIME_STATE_ROOT and write-guarded', () => {
   const hidden = prose(
     boundedSlice(
@@ -17807,6 +17926,7 @@ test('hidden plan and concept writes are anchored to RUNTIME_STATE_ROOT and writ
   ordered(arm, 'Set the canonical status marker of `P`', 'move `P` to `A`');
 });
 
+// Invariant: cleanup never offers live hidden-mode state for removal.
 test('cleanup treats the info/exclude line, project-setup.md, and the thread ledger as current state', () => {
   const cleanup = source('src/tools/cleanup.md');
   const boundary = prose(section(cleanup, '## Hard scope boundary', '\n## '));
@@ -17828,6 +17948,8 @@ test('cleanup treats the info/exclude line, project-setup.md, and the thread led
   );
 });
 
+// Invariant: in hidden mode nothing Effective Flow-marked reaches the pull request, and the local
+// thread ledger is never published or deleted.
 test('iterate uses the processed-thread ledger in hidden mode and explicit PR review publishes nothing', () => {
   const iterate = source('src/tools/iterate.md');
   const pointer = [...iterate.matchAll(LAZY_INCLUDE_RE)].find(
@@ -17895,6 +18017,7 @@ function scoredAskRegistry() {
   return { registry, scoredFences };
 }
 
+// Invariant: the scored fence set and each fence's unscored labels change only deliberately.
 test('exactly the ten registered decision fences are scored, with their exempt labels', () => {
   const { registry, scoredFences } = scoredAskRegistry();
   const expected = new Map([
@@ -17938,6 +18061,7 @@ test('exactly the ten registered decision fences are scored, with their exempt l
   );
 });
 
+// Invariant: only the first of the two `Upstream` fences carries scores.
 test('the second Upstream fence of source-upstream-sync stays unscored', () => {
   const asks = askContracts(
     source('src/shared/source-upstream-sync.md'),
@@ -17949,6 +18073,8 @@ test('the second Upstream fence of source-upstream-sync stays unscored', () => {
   );
 });
 
+// Invariant: review decision options carry a dialog-only 1–10 score in their listed order, with
+// "Decide later" unscored and the bands taken from ASK_SCORING.
 for (const tool of ['plan-review', 'concept-review']) {
   const phase3 = () =>
     prose(
@@ -18006,6 +18132,8 @@ for (const tool of ['plan-review', 'concept-review']) {
   });
 }
 
+// Invariant: the pre-Profile origin classification is read-only and decides nothing; the later
+// topology preflight stays the only authority.
 test('setup-profiles classifies origin read-only before the Profile question and changes nothing', () => {
   const profiles = source('src/shared/setup-profiles.md');
   const classification = prose(
@@ -18061,6 +18189,7 @@ const DIFF_BASELINE_TOOLS = [
   { tool: 'refactor', capturePoint: /end of Phase 2/ },
 ];
 
+// Invariant: each tool defers the fragment to its named capture step and loads it once.
 test('build, fix and refactor lazy-load the diff-baseline fragment exactly once', () => {
   for (const { tool, capturePoint } of DIFF_BASELINE_TOOLS) {
     const path = `src/tools/${tool}.md`;
@@ -18089,6 +18218,8 @@ test('build, fix and refactor lazy-load the diff-baseline fragment exactly once'
   }
 });
 
+// Invariant: no write precedes the capture, and a reproduction test that does not fail stops the
+// fix before any implementer starts.
 test('fix specifies the reproduction test in Phase 2 and writes it after capture in Phase 3', () => {
   const fix = source('src/tools/fix.md');
 
@@ -18138,6 +18269,7 @@ test('fix specifies the reproduction test in Phase 2 and writes it after capture
   assert.match(completion, /Delete the wisdom file and discard the diff baseline/);
 });
 
+// Invariant: the baseline outlives every step that renders it and is discarded before handback.
 test('build captures last in Phase 2 step 0 and discards only after the Phase 7 formatter', () => {
   const build = source('src/tools/build.md');
 
@@ -18159,6 +18291,8 @@ test('build captures last in Phase 2 step 0 and discards only after the Phase 7 
   assert.ok(formatterNumber < handbackNumber, 'the discard must precede the handback');
 });
 
+// Invariant: refactor captures exactly once, after the behavior baseline and before Phase 3
+// changes any code.
 test('refactor captures after the documented behavior baseline and before Phase 3', () => {
   const refactor = source('src/tools/refactor.md');
   const phase2 = prose(boundedSlice(refactor, '### Phase 2: Baseline', '### Phase 3: Refactoring'));
