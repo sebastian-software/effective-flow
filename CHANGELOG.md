@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.66.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.65.0...effective-flow-v1.66.0) (2026-10-02)
+
+
+### Features
+
+* adopt the Fast field pilot in build and expose it in setup ([#513](https://github.com/sebastian-software/effective-flow/issues/513)) ([a7cd218](https://github.com/sebastian-software/effective-flow/commit/a7cd21805da310c1b0f394b96564392482a054dd))
+* lint plan files with a deterministic plan-lint helper ([#502](https://github.com/sebastian-software/effective-flow/issues/502)) ([6cc65fe](https://github.com/sebastian-software/effective-flow/commit/6cc65fef39cf4037b4efd6941a5796fecebab5d2))
+* make the pilot measurement helper ready for workflow adoption ([#512](https://github.com/sebastian-software/effective-flow/issues/512)) ([93881e5](https://github.com/sebastian-software/effective-flow/commit/93881e51a6d135d4af5e0fa85e0d6639a29553a0))
+* pin the merge-gate eval profile to gpt-6-sol at medium effort ([#465](https://github.com/sebastian-software/effective-flow/issues/465)) ([fc84de8](https://github.com/sebastian-software/effective-flow/commit/fc84de8447f9cf5f565f4ecd9bc320214b070f84))
+* publish finished plans as draft pull requests and implement on them ([#511](https://github.com/sebastian-software/effective-flow/issues/511)) ([e002492](https://github.com/sebastian-software/effective-flow/commit/e002492686c0155b55e9f7615b167c9caab6c72c))
+* record a diff baseline and hand the run's diff to validators and reviewers ([#503](https://github.com/sebastian-software/effective-flow/issues/503)) ([42b3992](https://github.com/sebastian-software/effective-flow/commit/42b3992ebe4dc03d816507c75c65e179a3417de6))
+* score decision options from 1 to 10 instead of a binary recommendation ([#499](https://github.com/sebastian-software/effective-flow/issues/499)) ([2653f50](https://github.com/sebastian-software/effective-flow/commit/2653f506be99eb8261c46134b00947b70a25ba07))
+
+
+### Bug Fixes
+
+* correct stale wording in open-plans, concept and the runtime-script docs ([#498](https://github.com/sebastian-software/effective-flow/issues/498)) ([e846936](https://github.com/sebastian-software/effective-flow/commit/e8469365ee5cdb4d0a2d35b63367660dbe4d4ca9))
+* count skipped and neutral checks as passing in merge-gate ([#514](https://github.com/sebastian-software/effective-flow/issues/514)) ([469ac3b](https://github.com/sebastian-software/effective-flow/commit/469ac3b746c5794996c577caf36a30bc9337c339))
+* end every iterate abort on its full reason line and re-record both eval suites ([#515](https://github.com/sebastian-software/effective-flow/issues/515)) ([5d53777](https://github.com/sebastian-software/effective-flow/commit/5d53777010d038673d1a572e165c419a1d4f87cb))
+* let merge-gate clear a ready pull request whose head never moves ([#468](https://github.com/sebastian-software/effective-flow/issues/468)) ([9294620](https://github.com/sebastian-software/effective-flow/commit/92946204eed57e8f534ae8f1124e155e3a4ade73))
+* remove repository-only doc references from shipped prompts and guard against them ([#500](https://github.com/sebastian-software/effective-flow/issues/500)) ([1bfe4df](https://github.com/sebastian-software/effective-flow/commit/1bfe4df89a88a99a6b522829862ba01a6d99286c))
+
 ## [1.65.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.64.0...effective-flow-v1.65.0) (2026-09-25)
 
 
