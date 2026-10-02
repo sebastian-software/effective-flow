@@ -324,7 +324,7 @@ jobs:
         run: |
           gh label create delivery-failed \
             --description "A release was created but its delivery to main did not land" \
-            --color B60205 || true
+            --color B60205 --force || true
           # `origin/main` may be unfetched if the run failed before the delivery step;
           # an unknown value is fine here, an aborted alarm is not.
           delivered="unknown"

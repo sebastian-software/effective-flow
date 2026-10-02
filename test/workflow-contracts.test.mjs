@@ -4817,6 +4817,13 @@ test('a failed delivery is surfaced as an assigned issue that closes itself', ()
     assert.doesNotMatch(close, secret);
   }
 
+  // The label's description reaches an existing label: without --force, gh fails on it.
+  assert.match(
+    alarm,
+    /gh label create delivery-failed(?:[^\n|]*\\\n)*[^\n|]*--force \|\| true/,
+    'the delivery-failed label create must update an existing label',
+  );
+
   // One open alarm at a time, so consecutive failures do not accumulate duplicates.
   assert.match(alarm, /gh issue list --label delivery-failed --state open/);
   assert.match(alarm, /gh issue comment "\$existing"/);
