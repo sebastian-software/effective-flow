@@ -1823,6 +1823,116 @@ test(
   },
 );
 
+// The invariant: an iterate attempt that left no call and no report is still judged on its git state
+// before any retry, on the plain stop receipt as on a host abort. A commit, a push to the sandbox
+// `origin` or an edit writes neither observable, so retrying such an attempt unjudged would discard a
+// deviation; a moved or unreadable git state keeps the attempt, and a retried one carries the record.
+test(
+  'a stopped iterate attempt that left no call or report is judged on its git state before a retry',
+  { timeout: 180_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-empty-abort-'));
+    const base = resolve(temporary, 'rounds');
+    const scenario = 'unparseable-item-filter-aborts';
+    const roundId = 'iterate-empty-abort';
+    const stopped = { schemaVersion: 1, stopped: true, reason: 'host stopped the task' };
+    try {
+      const prepared = createRound(suite, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId,
+      });
+      const fixture = fixtureFor(scenario);
+      const { headRef, headSha } = fixture.checkout;
+      const slot = (n) => sandboxPaths(prepared.roundRoot, scenario, n, 1);
+      const retry = (n, assertion = stopped) =>
+        retryAborted(suite, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: n,
+          assertion,
+          base,
+        });
+      const commit = (paths) => {
+        writeFileSync(resolve(paths.projectRoot, HEAD_CHANGE_PATH), '# Add the change\n');
+        git(paths.projectRoot, ...NO_HOOKS, 'commit', '--quiet', '--all', '--message', 'fix: x');
+        return git(paths.projectRoot, 'rev-parse', 'HEAD');
+      };
+
+      // Slot 1: nothing happened, in git either. The plain receipt retries it, and the retained
+      // attempt carries the untouched state it was judged on.
+      const first = slot(1);
+      assert.equal(retry(1).attempt, 2);
+      const retained = resolve(first.quarantineRoot, 'attempt-1');
+      assert.deepEqual(
+        JSON.parse(readFileSync(resolve(retained, 'trace', GIT_STATE_FILE), 'utf8')),
+        untouchedGitState(fixture),
+      );
+      assert.equal(
+        Object.hasOwn(
+          JSON.parse(readFileSync(resolve(retained, 'retry.json'), 'utf8')),
+          'hostAbort',
+        ),
+        false,
+      );
+
+      // Slot 2: a push to the sandbox `origin`, with the checkout reset to the seeded head after it,
+      // so the moved ref is the only trace the run left anywhere.
+      const second = slot(2);
+      const pushed = commit(second);
+      git(second.projectRoot, 'push', '--quiet', 'origin', headRef);
+      git(second.projectRoot, 'reset', '--quiet', '--hard', headSha);
+      assert.throws(
+        () => retry(2),
+        new RegExp(
+          `already holds a behavioural finding \\(the run changed the sandbox origin: refs/heads/${headRef} moved from ${headSha} to ${pushed}`,
+        ),
+      );
+      assert.equal(existsSync(resolve(second.traceDir, GIT_STATE_FILE)), false);
+
+      // Slot 3: an edit left uncommitted in the checkout.
+      const third = slot(3);
+      appendFileSync(resolve(third.projectRoot, HEAD_CHANGE_PATH), 'More.\n');
+      assert.throws(
+        () => retry(3),
+        /already holds a behavioural finding \(the checkout has 1 uncommitted change\(s\)/,
+      );
+
+      // Slot 4: an `origin` the run removed, which the seal's probe cannot read.
+      const fourth = slot(4);
+      rmSync(resolve(fourth.attemptRoot, 'remote.git'), { recursive: true, force: true });
+      assert.throws(
+        () => retry(4),
+        /already holds a behavioural finding \(the sealing step could not read the sandbox repository \(remoteRefs:/,
+      );
+
+      // Slot 5: a host-abort receipt does not lift the judgement from an attempt that left nothing
+      // else; the commit it left still keeps it.
+      const fifth = slot(5);
+      const committed = commit(fifth);
+      assert.throws(
+        () =>
+          retry(5, {
+            ...stopped,
+            cause: 'provider-capacity',
+            hostError: 'ERROR: Selected model is at capacity',
+          }),
+        new RegExp(`already holds a behavioural finding \\(the checkout's HEAD is ${committed}`),
+      );
+
+      assert.deepEqual(
+        roundStatus(suite, prepared.manifestPath, { base }).map((row) => row.attempt),
+        [2, 1, 1, 1, 1],
+      );
+    } finally {
+      const manifest = resolve(base, roundId, 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 // Publication carries the sealed git state into the archive beside each run, checks the copy
 // against its seal, and re-judges it from there — the path a carried-forward run is evaluated on.
 // The suite is narrowed to one scenario in a copy of the corpus so a generation can be completed
