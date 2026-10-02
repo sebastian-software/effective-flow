@@ -2769,8 +2769,36 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     decisive('linked-issue-open-points', [{ operation: 'issue-comment', apply: true }]),
     ['the observer-only run performed an applied mutation'],
   );
-  // The configured-reviewer handoff: no echo record yet is an omission; a recorded handoff that is
-  // wrong cannot be taken back.
+  // The configured-reviewer handoff blocks a retry only when the recorded handoff is wrong: no echo
+  // record yet is an omission, a wrong recorded handoff cannot be taken back, and a correct one is a
+  // pass, which discarding cannot hide.
+  const [review] = fixtureOf(CONFIGURED).operations['pr-reviews-read'].envelope.data.result;
+  const items = [
+    { identifier: 'A'.repeat(32), kind: 'thread', threadId: 'PRRT_kwDOconfiguredReviewer' },
+    {
+      identifier: 'B'.repeat(32),
+      kind: 'review-body',
+      reviewId: String(review.id),
+      author: review.author.login,
+      url: review.url,
+    },
+  ];
+  const correct = `${JSON.stringify({
+    schema: 'effective-flow/merge-gate-iterate-echo/v1',
+    seq: 1,
+    cwd: projectRoot,
+    pullRequest: 42,
+    itemFilter: 'threads=PRRT_kwDOconfiguredReviewer',
+    controls: { summaryComment: 'suppressed', nextSteps: 'suppressed', reviewGuard: 'established' },
+    body: {
+      spans: 1,
+      bytes: Buffer.byteLength(review.body, 'utf8'),
+      digest: `sha256:${createHash('sha256').update(review.body, 'utf8').digest('hex')}`,
+    },
+    items,
+    outcomes: items.map(({ identifier }) => ({ identifier, outcome: 'deferred' })),
+  })}\n`;
+  assert.deepEqual(decisive(CONFIGURED, ['pr-status-read'], correct), []);
   const trace = `${JSON.stringify({
     schema: 'effective-flow/merge-gate-iterate-echo/v1',
     seq: 1,

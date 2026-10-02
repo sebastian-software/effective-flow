@@ -319,10 +319,11 @@ export function findings({ scenario, records, fixture, auxiliaryRecords, require
 // The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
 // discards an attempt that left a call (see `assessAbortedEvidence` in the shared evaluator). Only
 // what no continuation could undo counts: a merge the scenario refuses, a second applied merge where
-// one is expected, an applied mutation by the observer, and the configured-reviewer handoff once the
-// echo recorded it. Missing guard reads, an absent merge or an absent delegation are not decisive —
-// a stopped run is expected to be missing things — so a run whose deviation is an omission is
-// distinguished from a capacity abort only by the host's error line on the stop receipt.
+// one is expected, an applied mutation by the observer, and a configured-reviewer handoff the echo
+// recorded wrong. A correct recorded handoff is a pass, and discarding a pass hides no deviation.
+// Missing guard reads, an absent merge or an absent delegation are not decisive — a stopped run is
+// expected to be missing things — so a run whose deviation is an omission is distinguished from a
+// capacity abort only by the host's error line on the stop receipt.
 export function decisiveFindings({
   scenario,
   records,

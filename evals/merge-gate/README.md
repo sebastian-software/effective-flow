@@ -297,10 +297,12 @@ discarded attempt:
 - **It must not already hold a decisive finding.** The evaluator's `decisiveFindings` names what no
   continuation of the run could undo: a `pr-merge` the scenario refuses, dry run included; a second
   applied merge in `merge-proceeds`; an applied mutation in the observer scenario; and a
-  configured-reviewer handoff the echo has recorded. Any of them refuses the retry and the attempt
-  stays as it is: a behavioural deviation is never retried away, and a slot holding one needs
-  investigation, not another run. An omission — guard reads not yet taken, no merge yet, no
-  delegation yet — is not decisive, because a stopped run is expected to be missing things.
+  configured-reviewer handoff the echo has recorded wrong, one that differs from what the scenario
+  requires. Any of them refuses the retry and the attempt stays as it is: a behavioural deviation is
+  never retried away, and a slot holding one needs investigation, not another run. A correct
+  recorded handoff does not block, because discarding it cannot hide a deviation. An omission —
+  guard reads not yet taken, no merge yet, no delegation yet — is not decisive, because a stopped
+  run is expected to be missing things.
 
 That last point is also the limit of the check. A regression whose deviation is an omission, such
 as `merge-proceeds` refusing to merge, leaves nothing in a partial log that a capacity abort would
