@@ -5751,6 +5751,70 @@ test('the check-wait question states its cadence at every site that poses it', (
   );
 });
 
+// Invariant: the merge gate's check criterion treats a check that completed as `SUCCESS`,
+// `SKIPPED`, or `NEUTRAL` as satisfied, in both `requireAllChecks` modes; any other completed
+// conclusion, or none, fails it; and step 3 never hands a `SKIPPED` or `NEUTRAL` check to iterate
+// as a failing one. The criterion exists only in the Phase 2 prose of merge-gate.md, so this test
+// is its only guard.
+test('the check criterion counts SKIPPED and NEUTRAL as satisfied, as GitHub does', () => {
+  const phase2 = section(source('src/tools/merge-gate.md'), '### Phase 2: Check gate (bounded)');
+  const step3 = prose(boundedSlice(phase2, '3. **Failed checks.**', '4. **Re-read the status**'));
+  const step4 = prose(
+    boundedSlice(phase2, '4. **Re-read the status**', '\nLeave the loop when the check criterion'),
+  );
+  const requiredOnly = prose(
+    boundedSlice(
+      phase2,
+      '- `mergeGate.requireAllChecks: false`',
+      '- That last rule has a known limit',
+    ),
+  );
+
+  // The three satisfying conclusions must sit together in one clause that follows "satisfied".
+  const satisfiedClauses = [...step4.matchAll(/\bsatisfied\b[^.;]{0,80}/g)].map((m) => m[0]);
+  assert.ok(
+    satisfiedClauses.some((clause) =>
+      ['`SUCCESS`', '`SKIPPED`', '`NEUTRAL`'].every((token) => clause.includes(token)),
+    ),
+    'step 4 must name SUCCESS, SKIPPED and NEUTRAL together as the satisfying conclusions',
+  );
+  assert.doesNotMatch(
+    step4,
+    /completed successfully/,
+    'step 4 must not fall back to a success-only criterion',
+  );
+
+  // The fail-closed side. The parenthesis is the smallest boundary that marks one list as the
+  // failing conclusions: it ties them to the "fails" that follows it, so a satisfying conclusion
+  // that drifts into the list is caught without pinning the surrounding sentence.
+  const failing = step4.match(/\(([^()]*`ACTION_REQUIRED`[^()]*)\)[^.;]{0,30}\bfails\b/);
+  assert.ok(failing, 'step 4 must name the non-satisfying completed conclusions as failing');
+  assert.ok(
+    failing[1].includes('`WARNING`'),
+    'step 4 must name WARNING among the failing conclusions',
+  );
+  for (const conclusion of ['SUCCESS', 'SKIPPED', 'NEUTRAL']) {
+    assert.ok(
+      !failing[1].includes(conclusion),
+      `the satisfying ${conclusion} must not appear among the failing conclusions`,
+    );
+  }
+
+  assert.match(
+    requiredOnly,
+    /same satisfied set/,
+    'the requireAllChecks: false variant must judge its required subset by the same satisfied set',
+  );
+
+  for (const conclusion of ['`SKIPPED`', '`NEUTRAL`']) {
+    assert.match(
+      step3,
+      near('(?:failing|step 4)', `never[^.;]{0,30}${conclusion}`, 60),
+      `step 3 must never hand a ${conclusion} check to iterate as failing`,
+    );
+  }
+});
+
 test('only the bot threads this run implemented can block the merge', () => {
   const preconditions = flat(section(source('src/tools/merge-gate.md'), '### Phase 4'));
 

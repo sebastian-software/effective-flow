@@ -91,7 +91,8 @@ The first such event can still test a stale merge commit, so before trusting the
 check that the merge ref the run checked out already contains the re-record, and close and reopen
 once more if it does not. Closing without a merge leaves no blocking check behind: the
 `Close referenced issues` workflow guards each of its steps rather than its job, so an unmerged
-close concludes `SUCCESS` instead of leaving a `SKIPPED` run that `merge-gate` would block on.
+close concludes `SUCCESS` instead of leaving a `SKIPPED` run. `merge-gate` would pass a `SKIPPED`
+run, but a `SUCCESS` keeps the check list clean without depending on that handling.
 That holds once a release has delivered the workflow to `main`, because `pull_request_target` runs
 the default branch's copy (see "Trusted default-branch automation" below). Start the round when
 `verify` first reports stale rather than when the release pull request turns red; see

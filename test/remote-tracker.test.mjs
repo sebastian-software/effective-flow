@@ -6770,10 +6770,14 @@ function checksAsInstants(checks) {
   }));
 }
 
-// The `requireAllChecks: true` criterion as the merge gate applies it to every reported check.
+// The `requireAllChecks: true` criterion as the merge gate applies it to every reported check: a
+// check is satisfied when it completed as `SUCCESS`, `SKIPPED`, or `NEUTRAL`, the conclusions
+// GitHub counts as passing, and blocks otherwise (Phase 2 step 4 of `src/tools/merge-gate.md`).
+const SATISFIED_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
+
 function blockingChecks(checks) {
   return checks.filter(
-    (check) => !(check.status === 'COMPLETED' && check.conclusion === 'SUCCESS'),
+    (check) => !(check.status === 'COMPLETED' && SATISFIED_CONCLUSIONS.has(check.conclusion)),
   );
 }
 
@@ -7132,7 +7136,9 @@ const PR_440_ROLLUP = Object.freeze([
 
 // The latest run of `Close referenced issues` on #440. It concluded SUCCESS when the rollup was
 // read; while the gate was blocked, the latest run of that identity was a SKIPPED one left by an
-// unmerged close, so the historical variant replays that conclusion on this same run.
+// unmerged close, so the historical variant replays that conclusion on this same run. Under the
+// check criterion as it stood then, that SKIPPED run blocked the gate; the criterion now counts a
+// SKIPPED conclusion as satisfied, as GitHub does, so the same run no longer blocks.
 const PR_440_LATEST_CLOSE_RUN = 108072587078;
 
 function pr440Rollup(latestCloseConclusion) {
@@ -7223,7 +7229,9 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
   ];
 
   // Historical: the latest `Close referenced issues` run was SKIPPED. After the dedup the two failed
-  // `Format, test and build` runs are gone, and that SKIPPED run is the one check still blocking.
+  // `Format, test and build` runs are gone, and the SKIPPED run is what that identity collapses to.
+  // It blocked the gate at the time (#466); the criterion now counts SKIPPED as satisfied, as GitHub
+  // does, so nothing blocks.
   const historical = await readRollup(pr440Rollup('SKIPPED'));
   assert.equal(historical.checkCount, 6);
   assert.equal(historical.supersededCheckCount, 10);
@@ -7231,10 +7239,26 @@ test('pr-status-read collapses the real #440 rollup to the latest run per check 
   // Each of the five check-run identities kept its latest of three runs; the status context is
   // never collapsed. The kept entries account for every dropped run.
   assert.deepEqual(supersededRunsOf(historical), [2, 2, 2, 2, 2, 0]);
+  // The collapsed record itself: the latest run, SKIPPED, stands for its identity rather than one
+  // of the two superseded runs, so the empty blocking list below is not vacuous.
+  const closeRuns = historical.checks.filter(({ name }) => name === 'Close referenced issues');
   assert.deepEqual(
-    blockingChecks(historical.checks).map(({ name, conclusion }) => ({ name, conclusion })),
-    [{ name: 'Close referenced issues', conclusion: 'SKIPPED' }],
+    closeRuns.map(({ name, status, conclusion, supersededRuns }) => ({
+      name,
+      status,
+      conclusion,
+      supersededRuns,
+    })),
+    [
+      {
+        name: 'Close referenced issues',
+        status: 'COMPLETED',
+        conclusion: 'SKIPPED',
+        supersededRuns: 2,
+      },
+    ],
   );
+  assert.deepEqual(blockingChecks(historical.checks), []);
 
   // As observed: that run concluded SUCCESS, so every remaining check satisfies the criterion.
   const observed = await readRollup(pr440Rollup('SUCCESS'));
@@ -8777,8 +8801,8 @@ test('every Gitea commit-status state maps to one check record', async () => {
     ['success', 'COMPLETED', 'SUCCESS'],
     ['failure', 'COMPLETED', 'FAILURE'],
     ['error', 'COMPLETED', 'ERROR'],
-    // `warning` and `skipped` are non-success completed checks and therefore block under
-    // `requireAllChecks: true` — deliberately, matching GitHub's own `SKIPPED` conclusion.
+    // `warning` is a non-success completed check and blocks. `skipped` maps to a `SKIPPED`
+    // conclusion, which satisfies the merge gate's check criterion exactly as GitHub's own does.
     ['warning', 'COMPLETED', 'WARNING'],
     ['skipped', 'COMPLETED', 'SKIPPED'],
     // An unrecognized future state blocks rather than reading as a green result.
