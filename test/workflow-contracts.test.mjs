@@ -1500,16 +1500,27 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   );
   assert.match(afterStart, /Never re-send `begin-baseline` in the same run/);
 
-  // activate is no setup action: the confirmed baseline is the only consent, and `build` activates
-  // the generation automatically once the preregistered conditions pass.
+  // activate is no setup action: the confirmed baseline is the only consent, and either adopting
+  // workflow (`build` or `refactor`) activates the generation automatically once the
+  // preregistered conditions pass, so the disclosure must name both.
   assert.doesNotMatch(text, /`activate`|header: Activate/, 'setup never offers activation');
   assert.match(
     fragment,
-    /Setup never activates: a `baseline` generation is activated automatically by the next measured native `\{\{SKILL:build\}\}` run once the preregistered window and sample are met/,
+    /Setup never activates: a `baseline` generation is activated automatically by the next measured native `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run once the preregistered window and sample are met/,
   );
   assert.match(
     fragment,
-    /no second confirmation follows, because a later native `\{\{SKILL:build\}\}` run activates the generation automatically/,
+    /no second confirmation follows, because a later native `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run activates the generation automatically/,
+  );
+  // The data disclosure and the opt-in name every workflow that stores pilot records.
+  assert.match(text, /later native `build` and `refactor` runs store minimal local records/);
+  assert.match(
+    fragment,
+    /Quality\/Fast field pilot of `\{\{SKILL:build\}\}` and `\{\{SKILL:refactor\}\}`/,
+  );
+  assert.match(
+    setupPilotAsk('Baseline').options.find(({ label }) => label === 'Start').description,
+    /build and refactor keep running Quality/,
   );
 
   // resume: digest-bound, no cause summary, no caller-selected target.

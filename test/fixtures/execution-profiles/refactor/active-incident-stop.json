@@ -1,0 +1,87 @@
+{
+  "name": "A critical scope incident in the Fast attempt is recorded by category and the stopped refactor finalizes as failed",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "initialOutcome": "scope-incident",
+      "incident": "scope"
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "stop": "incident"
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "record-incident",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "scope-incident",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": ["scope"],
+    "finalize": {
+      "completionStatus": "failed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "scope-incident",
+          "escalated": true
+        }
+      ]
+    },
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [],
+      "validation": {
+        "status": "unavailable",
+        "requiredCount": 0,
+        "totalCount": 0,
+        "satisfiedCount": 0
+      },
+      "review": {
+        "status": "unavailable",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "not-finalized",
+      "completionStatus": "failed"
+    }
+  }
+}

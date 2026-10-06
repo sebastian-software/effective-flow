@@ -278,13 +278,12 @@ Set the row with `/effective-flow setup guided` → **Advanced settings** → **
 exactly as recorded. After the configuration write, the same block offers at most one confirmed
 generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
 a suspended generation with healthy evidence. Activation needs no action: the next measured native
-`build` run activates a baseline generation automatically once its preregistered window and sample
+`build` or `refactor` run activates a baseline generation automatically once its preregistered window and sample
 are met. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
 
-Once a generation is active, `build` may use the native **Fast** implementer for the first
-implementation attempt of an eligible packet. During the baseline every packet runs Quality and is
-only measured. `refactor` has not adopted Fast, and portable installations remain Quality-only and
-unmeasured. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
+Once a generation is active, `build` and `refactor` may use the native **Fast** implementer for
+the first implementation attempt of an eligible packet. During the baseline every packet runs
+Quality and is only measured. Portable installations remain Quality-only and unmeasured. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
 or delete evidence.
 
 Project admission is also separate from detailed-trace consent. The configuration row cannot grant
@@ -810,7 +809,7 @@ therefore gets that one behavior change without configuring anything; see
 There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
 with `review.profile: fast`, `review.validation: quick`, and
 `applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
-**Fast** implementation profile of the `build` field pilot and do not activate it.
+**Fast** implementation profile of the `build` and `refactor` field pilot and do not activate it.
 
 ## Runtime-state safety
 

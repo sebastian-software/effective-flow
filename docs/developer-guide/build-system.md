@@ -256,7 +256,7 @@ The build aborts with an error message if any of these guards is violated:
   prefix (see "No legacy aliases" above) is deliberately rejected with a migration message. The
   same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
   non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
-  lines; `refactor` keeps its authorization but carries no token yet.
+  lines and `refactor` on its five Phase 3 implementer selector lines.
 - **Native profile-mapping guard:** Every registered base worker must supply nonempty native model
   and effort metadata. The centralized Fast mapping is complete for Claude and Codex, Claude effort
   uses the supported vocabulary, and each Codex model/reasoning combination is validated. The
@@ -436,9 +436,8 @@ The build aborts with an error message if any of these guards is violated:
   `dist/` swap. Focused positive and mutation/error coverage lives in
   `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
   separate from the rendered native capability: the build emits the sanctioned Claude sidecars
-  and native inventories, `build` Phase 2 is the only workflow that lazy-loads the policy fragment
-  and requests Fast, `refactor` stays unadopted, and portable output contains no native profile
-  artifact.
+  and native inventories, `build` Phase 2 and `refactor` Phase 3 are the only phases that lazy-load
+  the policy fragment and request Fast, and portable output contains no native profile artifact.
 - **Pilot-measurement projection guards:** The execution-profile contract is projected into
   `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
   drift in that closed policy subset. The same module exports a measurement-only documentation
@@ -662,13 +661,12 @@ core or protocol modules:
   operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation
   operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
   `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
-  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Two
-  callers use it besides the `merge-gate` observation: `build` records its measured runs, calls
-  `activate` automatically in an enabled baseline generation's preflight, and records incidents
-  through `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup
-  block 10 runs the confirmed `begin-baseline` and `resume` actions through
-  `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`, and
-  `refactor` does not call the helper. The
+  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Besides the
+  `merge-gate` observation, `build` and `refactor` record their measured runs, call `activate`
+  automatically in an enabled baseline generation's preflight, and record incidents through
+  `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup block 10
+  runs the confirmed `begin-baseline` and `resume` actions through
+  `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
@@ -942,8 +940,8 @@ fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as u
 host runs it. Build guards reject native metadata,
 mapped aliases, Fast sidecar identifiers, inventories, and unresolved profile tokens in portable
 output. The token is authorized only in the initial implementation phase of `build` and
-`refactor`. `build` Phase 2 uses it for its five Fast-capable implementers; `refactor` does not use
-it yet.
+`refactor`. `build` Phase 2 and `refactor` Phase 3 each use it for their five Fast-capable
+implementers.
 
 Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
 identical across harnesses; Claude's `fastWorkers` lists the five generated sidecars and Codex's is

@@ -360,8 +360,8 @@ evidence; a merge-mode failure records `failed`. The helper's explicit `pilotCon
 `controlStatePersisted`, and value-free `alert` metadata is the only authority for claiming an
 `evidence-gap` or durable suspension. The gate never infers either from an exit code, missing
 receipt, or failed write; if persistence cannot be proven, it says so without changing the gate
-result. The observation never influences profile selection: only `build` selects Fast, and only
-for an eligible packet in an active generation. See
+result. The observation never influences profile selection: only `build` and `refactor` select
+Fast, and only for an eligible packet in an active generation. See
 [Model-tiering pilot data and privacy](model-tiering-pilot.md) for the local evidence and retention
 boundary.
 

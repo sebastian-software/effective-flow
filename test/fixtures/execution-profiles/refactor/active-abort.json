@@ -1,0 +1,104 @@
+{
+  "name": "A user abort after the initial Phase 3 finalizes as aborted with a never-spawned packet not started",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    },
+    {
+      "bucket": "rust",
+      "paths": ["crates/cli/src/main.rs"],
+      "initialOutcome": "never-spawned"
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "stop": "abort"
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": [],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "not-started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "aborted",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [],
+      "validation": {
+        "status": "unavailable",
+        "requiredCount": 0,
+        "totalCount": 0,
+        "satisfiedCount": 0
+      },
+      "review": {
+        "status": "unavailable",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "not-finalized",
+      "completionStatus": "aborted"
+    }
+  }
+}

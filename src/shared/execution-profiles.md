@@ -6,10 +6,11 @@ native lower-cost, lower-latency implementation capability only for a bounded pa
 every gate below. Neither name identifies a provider model, and an enabled project key is never
 proof that the current host can enforce Fast.
 
-`build` adopts this policy for its Phase 2 initial implementation packets and loads it on demand;
-`refactor` and every other workflow have not adopted it. The fragment itself defines no worker and
-writes no runtime state: the adopting workflow requests the profile, and the workflow-record
-fragment and the shipped helper own measurement.
+`build` adopts this policy for its Phase 2 initial implementation packets and `refactor` for its
+Phase 3 initial packets after the Phase 2 baseline; both load it on demand, and no other workflow
+has adopted it. The fragment itself defines no worker and writes no runtime state: the adopting
+workflow requests the profile, and the workflow-record fragment and the shipped helper own
+measurement.
 
 <!-- execution-profile-profile:start -->
 
@@ -24,8 +25,8 @@ fragment and the shipped helper own measurement.
 
 `executionProfiles.fast.enabled` is Boolean. Configuration and persisted generation state are
 independent: changing or removing the key never rewrites `generationState`, clears suspension, or
-starts a baseline. Setup remains the sole configuration writer; `build`, the adopting workflow,
-only reads the key.
+starts a baseline. Setup remains the sole configuration writer; the adopting workflows only read
+the key.
 
 <!-- execution-profile-config:start -->
 
@@ -278,3 +279,43 @@ statements about requirements and checks remain claims until the orchestrator ve
 
 The transfer never enters minimal telemetry. Paths and handoff detail may persist only through the
 explicit detailed-trace consent and redaction contract owned by work package 3.
+
+## Initial implementation phase
+
+The adopting workflow names its initial implementation phase, its selector lines, and its own
+handoff additions; this section is everything else that phase does for its initial packets.
+
+**Per-packet state.** Keep in transient orchestrator state a packet-to-path ownership map, the
+native profile-capability result, each coupling group, and per packet the four-field decision
+envelope, its decision-map `fallback`, `fastAttemptConsumed`, and any helper-returned
+`pilotControlOutcome`. A packet is the canonical routing bucket, or a narrower plan packet with
+independent ownership, requirements, and validation; never select a profile per file. Run the
+workflow-record preflight before the first implementation spawn; a reserved selection never
+changes. Only when the preflight proves a `baseline` or `active` generation, capture a freshly
+rooted **packet snapshot** (packet-scoped status and diff) immediately before every implementation
+spawn, for attribution and retained-state transfer only. Once a record is reserved, every exit
+applies the `pilot-measurement-workflow` fragment's finalization.
+
+**Delegation.** One keyword-less resume is the same delegation; every retry is a new Quality spawn.
+
+**Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a
+mismatch is its single `requirements-mismatch` transition below, before `finish-packet`. Every
+other mismatch, including one after a fallback's Quality continuation, is a Quality correction
+round through the routed Quality implementer after `finish-packet`; each packet has at most one
+Fast→Quality transition.
+
+**Fast→Quality transition.** Each of the eight post-attempt fallbacks consumes Fast and causes
+exactly one transition: revalidate the receipt, then continue once with the routed Quality
+implementer in the same checkout from the retained dirty state. The worktree stays `active`;
+packet identity, scope, receipt, and Fast-consumed state never reset, every later spawn stays
+Quality within the existing bounds, and a Quality failure never returns to Fast. After
+`missing-context`, `scope-growth`, or `new-decision` the continuation first only inspects; a write
+outside the original packet waits for orchestrator or user approval, and authorized growth stays
+in that packet. Never append genuinely independent new work: stop and ask whether to capture it as
+a future-work issue, or as a new plan without an issue tracker. The handoff is the escalation
+transfer above plus the approved source, write exclusions, initial profile and tagged eligibility,
+packet snapshot summary, sibling dirty paths, skipped checks, the adopting workflow's own
+additions, and `Fast consumed; no second Fast attempt`; it carries no pilot capability and ends
+with `DONE`/`ABORT`. An unowned edit, terminal scope incident, or unrecoverable failure moves an
+owned `active` worktree to `failed` only while receipt and runtime guards pass; otherwise preserve
+its state and report that no safe transition was possible.

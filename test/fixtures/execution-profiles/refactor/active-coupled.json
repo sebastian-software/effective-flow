@@ -1,0 +1,124 @@
+{
+  "name": "Coupled refactor packets share Quality as one group",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "frontend-js-ts",
+      "paths": ["web/src/api-client.ts"],
+      "couplingGroup": "api"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/api/routes.mjs"],
+      "couplingGroup": "api"
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "rounds": [
+      {
+        "incorporation": false,
+        "phase5": "unchanged"
+      }
+    ]
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "excluded(cross-domain-dependency)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "cross-domain-dependency"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "excluded(cross-domain-dependency)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "cross-domain-dependency"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [
+        {
+          "phase3": "initial",
+          "incorporation": "none",
+          "comparison": "no-regression"
+        }
+      ],
+      "validation": {
+        "status": "passed",
+        "requiredCount": 2,
+        "totalCount": 3,
+        "satisfiedCount": 2
+      },
+      "review": {
+        "status": "completed",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "finalized",
+      "completionStatus": "completed"
+    }
+  }
+}

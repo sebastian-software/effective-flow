@@ -166,10 +166,21 @@ function collectFiles(directory) {
   });
 }
 
-// `build` Phase 2 is the only adopted Fast surface. The slice ends at the next phase heading, so
-// Phases 3–7, the rules, and every shared include rendered outside it stay under the full guard.
-const BUILD_PHASE_2_START = '### Phase 2: Implementation';
-const BUILD_PHASE_2_END = '### Phase 3: Documentation';
+// `build` Phase 2 and `refactor` Phase 3 are the only adopted Fast surfaces. Each slice ends at
+// its next phase heading, so every later phase, the rules, and every shared include rendered
+// outside it stay under the full guard.
+const ADOPTED_PHASES = {
+  'tools/build.md': {
+    name: 'build Phase 2',
+    start: '### Phase 2: Implementation',
+    end: '### Phase 3: Documentation',
+  },
+  'tools/refactor.md': {
+    name: 'refactor Phase 3',
+    start: '### Phase 3: Refactoring',
+    end: '### Phase 3.5: Documentation sync',
+  },
+};
 const PROFILE_POLICY_SOURCES = [
   'src/shared/execution-profiles.md',
   'src/shared/pilot-measurement-workflow.md',
@@ -181,22 +192,25 @@ const PROFILE_POLICY_OUTPUTS = [
   'scripts/pilot-measurement-protocol.mjs',
 ];
 
-function buildPhase2Bounds(source) {
-  const start = source.indexOf(`\n${BUILD_PHASE_2_START}\n`);
-  const end = source.indexOf(`\n${BUILD_PHASE_2_END}\n`, start + 1);
-  assert.ok(start >= 0, 'build must keep exactly one Phase 2 heading');
-  assert.ok(end > start, 'build Phase 2 must end at the Phase 3 heading');
-  assert.equal(source.indexOf(`\n${BUILD_PHASE_2_START}\n`, start + 1), -1);
+function adoptedPhaseBounds(tool, source) {
+  const { name, start: heading, end: nextHeading } = ADOPTED_PHASES[tool];
+  const start = source.indexOf(`\n${heading}\n`);
+  const end = source.indexOf(`\n${nextHeading}\n`, start + 1);
+  assert.ok(start >= 0, `${name} must keep its heading`);
+  assert.ok(end > start, `${name} must end at its next phase heading`);
+  assert.equal(source.indexOf(`\n${heading}\n`, start + 1), -1, `${name} heading is unique`);
   return { start, end };
 }
 
-function buildPhase2(source) {
-  const { start, end } = buildPhase2Bounds(source);
+function adoptedPhase(tool, source) {
+  const { start, end } = adoptedPhaseBounds(tool, source);
   return source.slice(start, end);
 }
 
-function withoutBuildPhase2(source) {
-  const { start, end } = buildPhase2Bounds(source);
+// `relativePath` is relative to `src/` or to a built skill root; any other file stays whole.
+function withoutAdoptedPhase(relativePath, source) {
+  if (!Object.hasOwn(ADOPTED_PHASES, relativePath)) return source;
+  const { start, end } = adoptedPhaseBounds(relativePath, source);
   return `${source.slice(0, start)}${source.slice(end)}`;
 }
 
@@ -838,10 +852,10 @@ test('the no-activation detector distinguishes direct Fast requests from unrelat
   }
 });
 
-// Invariant: Fast is adopted only in `build` Phase 2 – its five selector tokens and the two lazy
-// policy pointers – while `refactor` and every other source stay free of Fast requests, profile
-// tokens, and the opt-in key (which only setup may name).
-test('the build assertion precedes the actual atomic swap and only build Phase 2 adopts Fast', () => {
+// Invariant: Fast is adopted only in `build` Phase 2 and `refactor` Phase 3 – each with its five
+// selector tokens and the two lazy policy pointers – while every other source stays free of Fast
+// requests, profile tokens, and the opt-in key (which only setup may name).
+test('the build assertion precedes the actual atomic swap and only the adopted phases request Fast', () => {
   const buildSource = readFileSync(new URL('build.mjs', ROOT), 'utf8');
   const guardStart = buildSource.indexOf('// --- Shared execution-profile contract guard ---');
   const guardEnd = buildSource.indexOf('// --- Shared next-steps contract guard ---', guardStart);
@@ -888,55 +902,60 @@ test('the build assertion precedes the actual atomic swap and only build Phase 2
   const adoptedFragments = ['execution-profiles', 'pilot-measurement-workflow'];
   for (const path of sourceFiles) {
     const source = readFileSync(path, 'utf8');
-    const guarded = path.endsWith('/src/tools/build.md') ? withoutBuildPhase2(source) : source;
+    const guarded = withoutAdoptedPhase(path.slice(sourceRoot.length + 1), source);
     assert.deepEqual(
       findProhibitedFastActivations(guarded),
       [],
-      `${path} must not directly request a Fast spawn, model, profile, or worker outside build Phase 2`,
+      `${path} must not directly request a Fast spawn, model, profile, or worker outside an adopted phase`,
     );
     for (const fragment of adoptedFragments) {
       assert.doesNotMatch(
         guarded,
         new RegExp(`\`\`\`(?:include|lazy-include)\\s+${fragment}\\s`),
-        `${path} must not consume ${fragment} outside build Phase 2`,
+        `${path} must not consume ${fragment} outside an adopted phase`,
       );
     }
   }
 
-  const build = readFileSync(new URL('src/tools/build.md', ROOT), 'utf8');
-  const phase2 = buildPhase2(build);
-  for (const fragment of adoptedFragments) {
-    assert.equal(
-      phase2.split(`\`\`\`lazy-include\n${fragment}\n`).length - 1,
-      1,
-      `build Phase 2 must lazy-load ${fragment} exactly once`,
+  for (const [tool, { name }] of Object.entries(ADOPTED_PHASES)) {
+    const text = readFileSync(new URL(`src/${tool}`, ROOT), 'utf8');
+    const phase = adoptedPhase(tool, text);
+    for (const fragment of adoptedFragments) {
+      assert.equal(
+        phase.split(`\`\`\`lazy-include\n${fragment}\n`).length - 1,
+        1,
+        `${name} must lazy-load ${fragment} exactly once`,
+      );
+      assert.doesNotMatch(
+        text,
+        new RegExp(`\`\`\`include\\s+${fragment}\\s`),
+        `${tool} must not eagerly include ${fragment}`,
+      );
+    }
+    const step1 = phase.split(/\n(?=\d+\. )/).find((item) => item.startsWith('1. '));
+    assert.ok(step1, `${name} must keep its numbered step 1`);
+    const tokens = [...text.matchAll(/\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g)];
+    assert.deepEqual(
+      tokens.map(([, agent]) => agent).sort(),
+      EXPECTED_FAST_WORKERS,
+      `${tool} must carry exactly one Fast token per Fast-capable implementer`,
     );
-    assert.doesNotMatch(
-      build,
-      new RegExp(`\`\`\`include\\s+${fragment}\\s`),
-      `build must not eagerly include ${fragment}`,
-    );
-  }
-  const phase2Items = phase2.split(/\n(?=\d+\. )/);
-  const step1 = phase2Items.find((item) => item.startsWith('1. '));
-  assert.ok(step1, 'build Phase 2 must keep its numbered step 1');
-  const buildTokens = [...build.matchAll(/\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g)];
-  assert.deepEqual(
-    buildTokens.map(([, agent]) => agent).sort(),
-    EXPECTED_FAST_WORKERS,
-    'build must carry exactly one Fast token per Fast-capable implementer',
-  );
-  assert.ok(buildTokens.every(([, , profile]) => profile === 'fast'));
-  for (const agent of EXPECTED_FAST_WORKERS) {
-    const selector = step1
-      .split('\n')
-      .filter((line) => line.includes(`{{AGENT_PROFILE:${agent}:fast}}`));
-    assert.equal(selector.length, 1, `${agent}: the Fast token must sit on one step 1 line`);
-    assert.match(
-      selector[0],
-      new RegExp(`^\\s+- .*\`Use the \\{\\{AGENT:${agent}\\}\\} skill for this phase\\.\``),
-      `${agent}: the Fast token must extend that implementer's Quality selector line`,
-    );
+    assert.ok(tokens.every(([, , profile]) => profile === 'fast'));
+    for (const agent of EXPECTED_FAST_WORKERS) {
+      const selector = step1
+        .split('\n')
+        .filter((line) => line.includes(`{{AGENT_PROFILE:${agent}:fast}}`));
+      assert.equal(
+        selector.length,
+        1,
+        `${name} ${agent}: the Fast token must sit on one step 1 line`,
+      );
+      assert.match(
+        selector[0],
+        new RegExp(`^\\s+- .*\`Use the \\{\\{AGENT:${agent}\\}\\} skill for this phase\\.\``),
+        `${name} ${agent}: the Fast token must extend that implementer's Quality selector line`,
+      );
+    }
   }
 
   assert.deepEqual(
@@ -956,22 +975,17 @@ test('the build assertion precedes the actual atomic swap and only build Phase 2
         `${path} must not expose or write the opt-in key; setup is its sole writer`,
       );
     }
-    if (!path.endsWith('/src/tools/build.md')) {
+    if (!Object.hasOwn(ADOPTED_PHASES, path.slice(sourceRoot.length + 1))) {
       assert.doesNotMatch(
         source,
         /\{\{AGENT_PROFILE:/,
-        `${path} must remain profile-token-free; only build Phase 2 adopts Fast`,
+        `${path} must remain profile-token-free; only build Phase 2 and refactor Phase 3 adopt Fast`,
       );
     }
   }
-  assert.doesNotMatch(
-    readFileSync(new URL('src/tools/refactor.md', ROOT), 'utf8'),
-    /\{\{AGENT_PROFILE:|execution-profiles|pilot-measurement-workflow/,
-    'refactor must remain unadopted until its own work package',
-  );
 });
 
-test('an isolated build ships Fast only through the build Phase 2 adoption', (t) => {
+test('an isolated build ships Fast only through the adopted build and refactor phases', (t) => {
   const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-execution-profile-build-'));
   t.after(() => rmSync(outputRoot, { recursive: true, force: true }));
   const build = spawnSync(process.execPath, ['build.mjs'], {
@@ -1018,23 +1032,25 @@ test('an isolated build ships Fast only through the build Phase 2 adoption', (t)
     for (const fragment of ['execution-profiles.md', 'pilot-measurement-workflow.md']) {
       assert.ok(
         readdirSync(join(root, 'shared')).includes(fragment),
-        `${target} must ship shared/${fragment} for the build Phase 2 load pointer`,
+        `${target} must ship shared/${fragment} for the adopted load pointers`,
       );
     }
-    const phase2 = buildPhase2(readFileSync(join(root, 'tools', 'build.md'), 'utf8'));
-    for (const fragment of ['execution-profiles', 'pilot-measurement-workflow']) {
-      assert.equal(
-        phase2.split(`**Load on demand:** Read \`shared/${fragment}.md\``).length - 1,
-        1,
-        `${target} build Phase 2 must render one ${fragment} load pointer`,
-      );
-    }
-    for (const worker of EXPECTED_FAST_WORKERS) {
-      assert.equal(
-        phase2.split(`\`effective-flow-${worker}-fast\``).length - 1,
-        target === 'claude' ? 1 : 0,
-        `${target} build Phase 2 must reference effective-flow-${worker}-fast only on Claude`,
-      );
+    for (const [tool, { name }] of Object.entries(ADOPTED_PHASES)) {
+      const phase = adoptedPhase(tool, readFileSync(join(root, tool), 'utf8'));
+      for (const fragment of ['execution-profiles', 'pilot-measurement-workflow']) {
+        assert.equal(
+          phase.split(`**Load on demand:** Read \`shared/${fragment}.md\``).length - 1,
+          1,
+          `${target} ${name} must render one ${fragment} load pointer`,
+        );
+      }
+      for (const worker of EXPECTED_FAST_WORKERS) {
+        assert.equal(
+          phase.split(`\`effective-flow-${worker}-fast\``).length - 1,
+          target === 'claude' ? 1 : 0,
+          `${target} ${name} must reference effective-flow-${worker}-fast only on Claude`,
+        );
+      }
     }
   }
 
@@ -1078,11 +1094,10 @@ test('an isolated build ships Fast only through the build Phase 2 adoption', (t)
         );
       }
       if (!PROFILE_POLICY_OUTPUTS.includes(relativePath)) {
-        const guarded = relativePath === 'tools/build.md' ? withoutBuildPhase2(output) : output;
         assert.deepEqual(
-          findProhibitedFastActivations(guarded),
+          findProhibitedFastActivations(withoutAdoptedPhase(relativePath, output)),
           [],
-          `${path} requests a Fast spawn, model, profile, or worker outside build Phase 2`,
+          `${path} requests a Fast spawn, model, profile, or worker outside an adopted phase`,
         );
       }
       assert.doesNotMatch(output, /\{\{AGENT_PROFILE:/, `${path} retained a profile token`);

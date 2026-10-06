@@ -290,7 +290,7 @@ worktree-record-obligation
 
 ```lazy-include
 execution-profiles
-when: Phase 2 classifies a packet, selects its implementation profile, or handles a Fast fallback
+when: step 0 is complete and the initial packets are about to be classified, or a Fast fallback is handled
 ```
 
 ```lazy-include
@@ -298,16 +298,9 @@ pilot-measurement-workflow
 when: step 0 is complete and packets are about to be classified, and at every exit once a pilot record is reserved
 ```
 
-**Per-packet state.** After step 0, keep in transient orchestrator state a packet-to-path ownership
-map, the native profile-capability result, each coupling group, and per packet the four-field
-decision envelope, its decision-map `fallback`, `fastAttemptConsumed`, and any helper-returned
-`pilotControlOutcome`. A packet is the canonical routing bucket, or a narrower plan packet with
-independent ownership, requirements, and validation; never select a profile per file. Run the
-workflow-record preflight before the first implementation spawn; a reserved selection never
-changes. Only when the preflight proves a `baseline` or `active` generation, capture a freshly
-rooted **packet snapshot** (packet-scoped status and diff) immediately before every implementation
-spawn, for attribution and retained-state transfer only. Once a record is reserved, every exit
-applies the fragment's finalization.
+**Profile seam.** After step 0, every initial packet follows "Initial implementation phase" of the
+loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements
+check, and Fast→Quality transition, with `build` as the record's `workflow`.
 
 1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the
    default; the Fast reference serves only the first attempted spawn of a packet whose envelope
@@ -319,28 +312,8 @@ applies the fragment's finalization.
    - Tooling/CI/configuration/repository metadata: `Use the {{AGENT:generic-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:generic-implementer:fast}}.
    - Fullstack: both in parallel or in clearly separated subphases
 
-2. Check for the done protocol when delegating internally. One keyword-less resume is the same
-   delegation; every retry is a new Quality spawn.
-3. Check the result against the requirements. For a packet whose Fast attempt returned without a
-   fallback, repairing a mismatch is its single `requirements-mismatch` transition of step 4,
-   before `finish-packet`. Every other mismatch, including one after a fallback's Quality
-   continuation, is a Quality correction round through the routed Quality implementer after
-   `finish-packet`; each packet has at most one Fast→Quality transition.
-4. **Fast→Quality transition.** Each of the eight post-attempt fallbacks consumes Fast and causes
-   exactly one transition: revalidate the receipt, then continue once with the routed Quality
-   implementer in the same checkout from the retained dirty state. The worktree stays `active`;
-   packet identity, scope, receipt, and Fast-consumed state never reset, every later spawn stays
-   Quality within the existing bounds, and a Quality failure never returns to Fast. After
-   `missing-context`, `scope-growth`, or `new-decision` the continuation first only inspects; a
-   write outside the original packet waits for orchestrator or user approval, and authorized growth
-   stays in that packet. Never append genuinely independent new work: stop and ask whether to
-   capture it as a future-work issue, or as a new plan without an issue tracker. The handoff is the
-   `execution-profiles` escalation transfer plus the approved source, write exclusions, initial
-   profile and tagged eligibility, packet snapshot summary, sibling dirty paths, skipped checks, and
-   `Fast consumed; no second Fast attempt`; it carries no pilot capability and ends with
-   `DONE`/`ABORT`. An unowned edit, terminal scope incident, or unrecoverable failure moves an owned
-   `active` worktree to `failed` only while receipt and runtime guards pass; otherwise preserve its
-   state and report that no safe transition was possible.
+2. Check for the done protocol when delegating internally, and check the result against the
+   requirements.
 
 ### Phase 3: Documentation
 

@@ -134,17 +134,17 @@ packet entry per classified initial packet in a fixed order:
   "repositoryIdentity": "<verified repository identity>",
   "generationId": "<inventory generationId>",
   "configState": "enabled",
-  "workflow": "build",
+  "workflow": "<build|refactor>",
   "harnessFamily": "<claude|codex>",
   "packets": ["<one wire-shape entry per packet>"]
 }
 ```
 
-A success returns `runId`, `workflowCapability`, and one `packetId`/`packetCapability` pair per
-packet in the same order. Never re-send `start` other than after `LOCKED`. Any failure creates no
-usable record: the run becomes an unmeasured run, the classification is discarded, and the
-value-free reason is reported. The inventory-proven persisted state stays known and remains the
-incident target. An in-flight reservation, including an unfinished merge-gate observation or timing
+`workflow` names the adopting workflow. A success returns `runId`, `workflowCapability`, and one
+`packetId`/`packetCapability` pair per packet in the same order. Never re-send `start` other than
+after `LOCKED`. Any failure creates no usable record: the run becomes an unmeasured run, the
+classification is discarded, and the value-free reason is reported. The inventory-proven
+persisted state stays known and remains the incident target. An in-flight reservation, including an unfinished merge-gate observation or timing
 receipt, makes `start` fail with `INCOMPLETE_EVIDENCE`, so admission is serialized.
 
 ### Packet timing
@@ -258,7 +258,7 @@ Fast:
 
 ```ask
 header: Incident
-question: A critical incident could not be persisted as a pilot suspension, so a later measured build run could still select Fast. Retry recording it now?
+question: A critical incident could not be persisted as a pilot suspension, so a later measured run could still select Fast. Retry recording it now?
 options:
   - label: Retry
     description: Re-send the identical incident under the LOCKED retry policy; a success persists the suspension

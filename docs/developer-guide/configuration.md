@@ -253,16 +253,15 @@ confirmation. Profile and Express never ask the block; they carry an existing ro
 invalid, over byte-for-byte. After a completed Step 6, the same fragment offers at most one
 confirmed generation action for the inventory-proven state: `begin-baseline` for `none` and
 `resume` for a `suspended` generation with healthy evidence. Neither writes the row, and setup never
-activates: `build` calls `activate` automatically in a measured run's preflight.
+activates: `build` or `refactor` calls `activate` automatically in a measured run's preflight.
 
-`build` is the only consumer that reads the key for profile selection. Its reader is split: the
+`build` and `refactor` are the only consumers that read the key for profile selection. Their reader is split: the
 configuration contract classifies `configState`, and only `enabled` on a native harness triggers the
 read-only helper `inventory` that yields the generation state. `none`, `suspended`, and `review`
 select Quality without a record; only `baseline` and `active` classify and measure packets, and a
 `baseline` is first offered to the helper's automatic `activate`. The
 build emits the native capability this needs—five generated Claude Fast sidecars, Codex per-spawn
-rendering, strict native inventories, and the local measurement helper—but `refactor` still
-contains no Fast-profile reference and does not consume the key. Portable output remains
+rendering, strict native inventories, and the local measurement helper. Portable output remains
 Quality-only and unmeasured. The existence of native artifacts or a valid inventory neither
 activates Fast nor proves that the running host can discover or accept the representation.
 

@@ -1,0 +1,93 @@
+{
+  "name": "A required behavior change found by the Fast attempt stops for replanning, finalizes as aborted, and is captured as an issue",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "initialOutcome": "new-decision"
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "stop": "behavior-change",
+    "captureAnswer": "issue"
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "new-decision",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "aborted",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "new-decision",
+          "escalated": true
+        }
+      ]
+    },
+    "events": [
+      {
+        "kind": "stop",
+        "topic": "replan-behavior-change"
+      },
+      {
+        "kind": "ask",
+        "topic": "capture-behavior-change"
+      },
+      {
+        "kind": "capture",
+        "artifact": "issue"
+      }
+    ],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [],
+      "validation": {
+        "status": "unavailable",
+        "requiredCount": 0,
+        "totalCount": 0,
+        "satisfiedCount": 0
+      },
+      "review": {
+        "status": "unavailable",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "not-finalized",
+      "completionStatus": "aborted"
+    }
+  }
+}

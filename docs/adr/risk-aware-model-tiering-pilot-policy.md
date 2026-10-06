@@ -82,11 +82,18 @@ from project configuration. While a baseline or active generation exists, `merge
 anonymous period-level correction observations, but those observations carry no workflow-record or
 forge/repository identity and cannot be linked to a `build` or `refactor` run.
 
-Lifecycle capability still does not activate the pilot by itself. `build` is the one adopting
-workflow: it reads the key and the generation, records its measured runs, lets the helper activate
-an enabled baseline generation automatically during a measured run's preflight once the
-preregistered conditions pass, and requests Fast only for an eligible native packet in an active
-generation. `refactor` has not adopted Fast. Guided setup exposes the opt-in and the confirmed
+Lifecycle capability still does not activate the pilot by itself. `build` and `refactor` are the
+two adopting workflows: each reads the key and the generation, records its measured runs, lets the
+helper activate an enabled baseline generation automatically during a measured run's preflight once
+the preregistered conditions pass, and requests Fast only for an eligible native packet in an active
+generation. Both share one initial-implementation packet contract in the policy source. A
+refactoring's correctness evidence is behavior invariance against its own pre-change checks, so
+`refactor` admits Fast only after that baseline is complete, binds each packet to it, and keeps a
+packet Quality when a pre-existing failure or missing optional evidence means its eligibility is
+not positively established, even though the comparison itself stays measurable; a
+required behavior change stops for replanning instead of being authorized by escalation. Every
+pass after a packet's initial attempt, including review incorporation and each regression
+correction, stays Quality. Guided setup exposes the opt-in and the confirmed
 `begin-baseline` and `resume` actions; no workflow run calls those two, and portable output remains
 Quality-only.
 Configuration, generation state, trace consent, native capability, and publication approval remain
@@ -124,7 +131,7 @@ generation identifier in the private review binding rather than either metric vi
 ## Consequences
 
 - Existing projects retain Quality behavior until they opt in, explicitly confirm a baseline, and
-  that baseline activates automatically; `refactor` and every other non-adopting workflow stay
+  that baseline activates automatically; every workflow other than `build` and `refactor` stays
   Quality-only.
 - The pilot can fail closed when configuration, evidence, lifecycle state, or native enforcement is
   uncertain.
@@ -142,7 +149,8 @@ generation identifier in the private review binding rather than either metric vi
 
 ## Review triggers
 
-Review this living decision when an adopting workflow needs a different safety boundary; native or
+Review this living decision when a further workflow is to adopt Fast or an adopting workflow needs
+a different safety boundary; native or
 portable hosts can enforce materially different guarantees; pilot evidence shows clustered
 fallbacks or correction cost; a critical safety, authorization, data-integrity, or scope incident is
 attributable to profile selection; or lifecycle persistence and rollback semantics change. Exact

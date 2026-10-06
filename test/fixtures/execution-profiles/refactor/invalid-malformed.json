@@ -1,0 +1,73 @@
+{
+  "name": "Malformed opt-in fails closed to Quality-only refactoring",
+  "harness": "codex",
+  "config": "malformed",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "rounds": [
+      {
+        "incorporation": false,
+        "phase5": "unchanged"
+      }
+    ]
+  },
+  "expected": {
+    "configState": "invalid",
+    "generationState": null,
+    "persistedGenerationState": null,
+    "activation": null,
+    "operations": [],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [
+        {
+          "phase3": "initial",
+          "incorporation": "none",
+          "comparison": "no-regression"
+        }
+      ],
+      "validation": {
+        "status": "passed",
+        "requiredCount": 2,
+        "totalCount": 3,
+        "satisfiedCount": 2
+      },
+      "review": {
+        "status": "completed",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "finalized",
+      "completionStatus": "completed"
+    }
+  }
+}
