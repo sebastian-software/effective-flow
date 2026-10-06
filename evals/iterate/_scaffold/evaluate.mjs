@@ -8,10 +8,11 @@
 //
 // **A verdict is always a conjunction, in one of two shapes, and neither half is evidence alone.**
 //
-//   * **Phase-0 refusal.** The exit-channel report carries the scenario's exact `ABORT:` string and
-//     no other `ABORT:` string, **and** the tracker call log holds no forge call. The first says the
-//     run reached the right conclusion; the second that it reached it before Phase 1, where the tool
-//     text puts it ("immediately, before Phase 1"). An empty log alone is equally consistent with a
+//   * **Phase-0 refusal.** The exit-channel report carries the scenario's exact `ABORT:` string as
+//     its last line and no other `ABORT:` string, **and** the tracker call log holds no forge call.
+//     The first says the run reached the right conclusion and returned it where the tool text puts
+//     it ("Its final line is the full `ABORT: <reason>`"); the second that it reached it before
+//     Phase 1 ("immediately, before Phase 1"). An empty log alone is equally consistent with a
 //     crashed session, and a correct `ABORT:` alone with a run that read the forge first.
 //
 //     "No forge call" is deliberately narrower than the plan's "zero records", and it is a
@@ -24,9 +25,10 @@
 //     names (`RUNTIME_STATE_TRACKER_OPERATIONS` — the thread ledger's lookup and record, which read
 //     and write `.effective-flow/merge-gate/`). Those still fail the scenario, as do `probe`, every
 //     remote read, every write, and any name the helper does not know.
-//   * **Forge-reading.** The report carries the expected conclusion, **and** the call log holds the
-//     reads Phase 1 prescribes, **and** it holds no write operation at all — a dry run of a mutation
-//     included, because a dry run is the first half of a write.
+//   * **Forge-reading.** The report carries the expected conclusion — a refusal under the same
+//     last-line rule, or a closing `DONE` — **and** the call log holds the reads Phase 1 prescribes,
+//     **and** it holds no write operation at all — a dry run of a mutation included, because a dry
+//     run is the first half of a write.
 //
 // **Both shapes add a third conjunct: the sandbox's git state is the one provisioning left.** The
 // call log sees the forge and nothing else, so a commit, a push to the sandbox's local `origin` or an
@@ -127,15 +129,24 @@ export function isRefusal(reason, refusal) {
   return next === '' || !/[\p{L}\p{N}_-]/u.test(next);
 }
 
-// The completion keyword a report ends with: its last non-empty line, with the emphasis and code
-// markers a chat report commonly wraps a keyword in stripped. Nothing else is stripped, so a line
-// such as `Status: DONE` or `Result — DONE` is **not** `DONE`. That is deliberate and matches the
-// merge-gate suite's keyword-less-return rule: the contract is a bare closing keyword, and a caller
-// that has to find the keyword inside prose is reading prose, not a keyword.
+// The line a report closes with, which carries both its completion keyword and its refusal: the last
+// non-empty line, trimmed, with the emphasis and code markers a chat report commonly wraps a keyword
+// in stripped from both ends and a trailing full stop dropped. Nothing else is stripped, so
+// `Status: DONE`, `> ABORT: …` and `- ABORT: …` keep their prefix and match neither `DONE` nor a
+// refusal. That is deliberate and matches the merge-gate suite's keyword-less-return rule: the
+// contract is a bare closing line, and a caller that has to find it inside prose is reading prose.
 export function closingKeyword(text) {
   const lines = text.split('\n').map((line) => line.trim());
   const last = [...lines].reverse().find((line) => line !== '') ?? '';
   return last.replace(/^[`*_\s]+|[`*_\s.]+$/g, '');
+}
+
+// Whether the closing line begins with the expected refusal: it starts with `ABORT:`, and the reason
+// after it passes `isRefusal`. Trailing detail passes (`ABORT: review still in flight — recensor`);
+// a bare `ABORT`, a different or merely similar refusal, and a prefixed line do not.
+export function closesWithRefusal(text, refusal) {
+  const line = closingKeyword(text);
+  return line.startsWith('ABORT:') && isRefusal(abortReasons(line)[0], refusal);
 }
 
 function refusalFindings(text, refusal) {
@@ -143,6 +154,10 @@ function refusalFindings(text, refusal) {
   const reasons = abortReasons(text);
   if (!reasons.some((reason) => isRefusal(reason, refusal))) {
     findings.push(`the report does not carry \`${refusal}\``);
+  } else if (!closesWithRefusal(text, refusal)) {
+    findings.push(
+      `the report's last line is ${JSON.stringify(closingKeyword(text).slice(0, 80))}; it has to begin with the expected \`${refusal}\``,
+    );
   }
   for (const reason of reasons.filter((candidate) => !isRefusal(candidate, refusal))) {
     findings.push(

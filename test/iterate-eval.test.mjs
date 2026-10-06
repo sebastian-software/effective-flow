@@ -378,7 +378,9 @@ test('a report that is not valid UTF-8 is recorded as malformed and judged, not 
 test('a malformed record whose text is not bound to its digest is invalid evidence', () => {
   const scenario = 'manifest-span-mismatch-aborts';
   const done = Buffer.from('DONE', 'utf8');
-  const text = '� ABORT: manifest and body mismatch';
+  // The invalid byte sits on its own line above the refusal, so the genuine record below closes
+  // with the expected `ABORT:` line and is matched, not failed by the last-line rule.
+  const text = '�\nABORT: manifest and body mismatch';
   const base = {
     schema: REPORT_SCHEMA,
     seq: 1,
@@ -391,8 +393,13 @@ test('a malformed record whose text is not bound to its digest is invalid eviden
   };
   const forgedRaw = Buffer.concat([
     Buffer.from([0xff]),
-    Buffer.from(' ABORT: manifest and body mismatch'),
+    Buffer.from('\nABORT: manifest and body mismatch'),
   ]);
+  assert.equal(
+    forgedRaw.toString('utf8'),
+    text,
+    'the forged raw bytes no longer decode to the text',
+  );
   const cases = {
     'no raw bytes': { ...base, raw: null },
     'raw bytes of another input': { ...base, raw: done.toString('base64') },
@@ -524,8 +531,11 @@ test('a Phase-0 verdict refuses a wrong, a second, or a merely similar refusal',
   const second = evaluate(scenario, {
     reportText: reportLine('ABORT: unparseable item filter\nABORT: manifest and body mismatch'),
   });
-  assert.equal(second.findings.length, 1);
-  assert.match(second.findings[0], /second refusal `ABORT: manifest and body mismatch`/);
+  // The second refusal is judged on its own, and it is also the line the report closes with.
+  assert.deepEqual(second.findings, [
+    'the report\'s last line is "ABORT: manifest and body mismatch"; it has to begin with the expected `ABORT: unparseable item filter`',
+    'the report carries a second refusal `ABORT: manifest and body mismatch` beside the expected `ABORT: unparseable item filter`',
+  ]);
   const similar = evaluate(scenario, { reportText: reportLine('ABORT: unparseable item filters') });
   assert.match(similar.findings[0], /does not carry/);
   // The same refusal quoted twice is still one refusal, and punctuation after it is not a new word.
@@ -551,13 +561,62 @@ test('a second refusal on the same line as the expected one is still judged', ()
   assert.deepEqual(sameLine.findings, [
     'the report carries a second refusal `ABORT: unparseable item filter` beside the expected `ABORT: manifest and body mismatch`',
   ]);
-  // The expected refusal in second place on the line is found as well.
+  // The expected refusal in second place on the line is found as well, so the second refusal is
+  // judged, and the line does not begin with the expected refusal, so the closing line fails too.
   const second = evaluate(scenario, {
     reportText: reportLine('ABORT: unparseable item filter, ABORT: manifest and body mismatch'),
   });
   assert.deepEqual(second.findings, [
+    'the report\'s last line is "ABORT: unparseable item filter, ABORT: manifest and body mismatch"; it has to begin with the expected `ABORT: manifest and body mismatch`',
     'the report carries a second refusal `ABORT: unparseable item filter, ` beside the expected `ABORT: manifest and body mismatch`',
   ]);
+});
+
+// Invariant: a refusal is judged on the line a delegating caller reads — the report's last
+// non-empty line — so the expected `ABORT: <reason>` stated anywhere earlier does not pass a report
+// that closes on a bare `ABORT`. Trailing detail after the reason and emphasis markers around the
+// line pass; a blockquote or list prefix keeps the line from beginning with the refusal and fails.
+test('a refusal is judged on the report last line, not anywhere in the report', () => {
+  const lastLine = (line, refusal) =>
+    `the report's last line is ${JSON.stringify(line)}; it has to begin with the expected \`${refusal}\``;
+  for (const [scenario, refusal] of Object.entries(PHASE_ZERO_REFUSALS)) {
+    const bare = evaluate(scenario, {
+      reportText: reportLine(`${refusal}\n\nThe input could not be read; stopping.\n\nABORT`),
+    });
+    assert.deepEqual(bare.validityProblems, [], scenario);
+    assert.deepEqual(bare.findings, [lastLine('ABORT', refusal)], scenario);
+  }
+  const inFlight = 'review-in-flight-aborts';
+  const { refusal: inFlightRefusal } = FORGE_READING[inFlight];
+  const reads = callLog(['probe', 'pr-read', ...PHASE_ONE_READS]);
+  const closingBare = evaluate(inFlight, {
+    logText: reads,
+    reportText: reportLine(`${inFlightRefusal}: recensor is running\n\nABORT`),
+  });
+  assert.deepEqual(closingBare.validityProblems, []);
+  assert.deepEqual(closingBare.findings, [lastLine('ABORT', inFlightRefusal)]);
+
+  // Trailing detail after the reason passes.
+  assert.deepEqual(
+    evaluate(inFlight, {
+      logText: reads,
+      reportText: reportLine(`Reviewer pending.\n\n${inFlightRefusal} — recensor`),
+    }).findings,
+    [],
+  );
+  const scenario = 'unparseable-item-filter-aborts';
+  const refusal = PHASE_ZERO_REFUSALS[scenario];
+  // Emphasis markers around the closing line pass.
+  assert.deepEqual(
+    evaluate(scenario, { reportText: reportLine(`Stopped.\n\n**${refusal}**`) }).findings,
+    [],
+  );
+  // A blockquote or list prefix keeps the closing line from beginning with the refusal.
+  for (const prefixed of [`> ${refusal}`, `- ${refusal}`]) {
+    const result = evaluate(scenario, { reportText: reportLine(`Stopped.\n\n${prefixed}`) });
+    assert.deepEqual(result.validityProblems, [], prefixed);
+    assert.deepEqual(result.findings, [lastLine(prefixed, refusal)], prefixed);
+  }
 });
 
 // "No forge call before Phase 1", not "no helper call": the built tool may parse the pull-request
