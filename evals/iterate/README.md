@@ -34,11 +34,11 @@ the sandbox's git state" below).
 
 | Scenario                         | Input defect or state                                                                | Verdict                                                                                                   |
 | -------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `unparseable-item-filter-aborts` | `Item filter: threads=` — the thread list is gone                                    | report carries `ABORT: unparseable item filter` and no other `ABORT:`; no forge call                      |
-| `duplicated-control-line-aborts` | `Summary comment: suppressed` twice above the delimiter                              | report carries `ABORT: duplicated control line` and no other `ABORT:`; no forge call                      |
-| `manifest-span-mismatch-aborts`  | two `Item:` entries, one span below the delimiter                                    | report carries `ABORT: manifest and body mismatch` and no other `ABORT:`; no forge call                   |
-| `unparseable-run-state-aborts`   | `Run state: unattended`                                                              | report carries `ABORT: unparseable run-state switch` and no other `ABORT:`; no forge call                 |
-| `review-in-flight-aborts`        | non-interactive, no `Review guard:` line, configured reviewer `recensor` pending     | report carries `ABORT: review still in flight` naming `recensor`; the three Phase-1 reads, each exactly once; no write at all |
+| `unparseable-item-filter-aborts` | `Item filter: threads=` — the thread list is gone                                    | report carries `ABORT: unparseable item filter` as its last line and no other `ABORT:`; no forge call                      |
+| `duplicated-control-line-aborts` | `Summary comment: suppressed` twice above the delimiter                              | report carries `ABORT: duplicated control line` as its last line and no other `ABORT:`; no forge call                      |
+| `manifest-span-mismatch-aborts`  | two `Item:` entries, one span below the delimiter                                    | report carries `ABORT: manifest and body mismatch` as its last line and no other `ABORT:`; no forge call                   |
+| `unparseable-run-state-aborts`   | `Run state: unattended`                                                              | report carries `ABORT: unparseable run-state switch` as its last line and no other `ABORT:`; no forge call                 |
+| `review-in-flight-aborts`        | non-interactive, no `Review guard:` line, configured reviewer `recensor` pending     | report carries `ABORT: review still in flight` as its last line and names `recensor`; the three Phase-1 reads, each exactly once; no write at all |
 | `empty-selection-clean-done`     | `threads=` names only a thread resolved since the caller read it; a second, open thread — an exact fix request — is unnamed | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
 
 Every scenario additionally requires the sealed git state untouched: the sandbox's `origin` at the
@@ -276,13 +276,17 @@ four records, and the evaluator requires exactly one.
 The evaluator reads the report from that record only, never from the fixture: an item text may
 contain any string, a refusal line included. It never matches a truncated record, because a cut can
 fall inside an `ABORT:` line and leave a prefix that reads as the expected refusal. Two refusals on
-one line are two refusals: each `ABORT:` occurrence is read up to the next one.
+one line are two refusals: each `ABORT:` occurrence is read up to the next one. So
+`ABORT: <expected>; also ABORT: <other>` closes with the expected refusal and still fails for the
+second one, while `ABORT: <other>, ABORT: <expected>` fails both rules.
 
-The completion keyword is the report's last non-empty line with only emphasis and code markers
-stripped, so it must be `DONE` on its own. `Status: DONE` or `Result — DONE` is **not** `DONE`, and
-a clean empty selection that closes that way fails. This is deliberate and matches the merge-gate
-suite's keyword-less-return rule: the contract is a bare closing keyword, and a caller that has to
-find it inside prose is reading prose.
+The closing line is the report's last non-empty line, trimmed, with only emphasis and code markers
+stripped. A clean run's closing line must be `DONE` on its own: `Status: DONE` or `Result — DONE` is
+**not** `DONE`. A refusal's closing line must begin with the expected `ABORT: <reason>`, as
+`iterate` requires of its final line, so a refusal stated in prose above a bare `ABORT`, or a
+`> ABORT: …` or `- ABORT: …` line, fails; trailing detail after the reason passes. This matches the
+merge-gate suite's keyword-less-return rule: the contract is a bare closing line, and a caller that
+has to find it inside prose is reading prose. The `recensor` name may appear anywhere in the report.
 
 ## What this deliberately does not cover
 
