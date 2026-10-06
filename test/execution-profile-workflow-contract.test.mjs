@@ -1,10 +1,11 @@
-// `build` adopts the execution-profile policy in Phase 2 and records it through the pilot
-// workflow-record fragment. Neither is executable code, so this suite pins the adoption three
-// times: a small reference model, derived from the parsed policy tables, replays the fixture
-// scenarios under test/fixtures/execution-profiles/build/; every replayable scenario's operations
-// then run against the shipped helper in a temporary runtime root, with payloads built from the
-// keys the fragment documents; and prose assertions pin the workflow text that tells an
-// orchestrator to behave like that model.
+// `build` adopts the execution-profile policy in Phase 2, and `refactor` reuses that adoption for
+// its Phase 3 after the Phase 2 baseline; both record it through the pilot workflow-record
+// fragment. Neither is executable code, so this suite pins the adoption three times: a small
+// reference model, derived from the parsed policy tables, replays the fixture scenarios under
+// test/fixtures/execution-profiles/<workflow>/; every replayable scenario's operations then run
+// against the shipped helper in a temporary runtime root, with payloads built from the keys the
+// fragment documents; and prose assertions pin the workflow text that tells an orchestrator to
+// behave like that model.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
@@ -45,6 +46,7 @@ const contract = parseExecutionProfileContract(source('src/shared/execution-prof
   context: 'src/shared/execution-profiles.md',
 });
 const build = source('src/tools/build.md');
+const refactor = source('src/tools/refactor.md');
 const fragment = source('src/shared/pilot-measurement-workflow.md');
 
 function section(text, start, end) {
@@ -65,6 +67,10 @@ function ordered(text, ...needles) {
 }
 
 const phase2 = section(build, '### Phase 2: Implementation', '### Phase 3: Documentation');
+const policySource = source('src/shared/execution-profiles.md');
+// The initial-implementation contract both adopting workflows load; it is the fragment's last
+// section, so it runs to the end of the file.
+const initialPhase = section(policySource, '## Initial implementation phase');
 
 // --- Documented payload keys ----------------------------------------------------------------
 
@@ -230,7 +236,7 @@ function controlEvent(operation, control) {
 // `generationState` is the run's effective envelope; `persistedGenerationState` is the state an
 // inventory proved (`null` when none was read), which an incident targets even when the run itself
 // is unmeasured. Every `LOCKED` send is its own step, so the retry policy shows in `operations`.
-function runScenario(fixture) {
+function runRecordScenario(fixture) {
   const configState = configStateOf(fixture.config);
   const steps = [];
   const events = [];
@@ -492,6 +498,190 @@ function runScenario(fixture) {
     for (const packet of packets) packet.attempt = reconciled ? 'unknown' : null;
   }
   return { steps, result: shape(generationState, packets, unfinalizable ? null : finalize) };
+}
+
+// --- Refactor lifecycle ---------------------------------------------------------------------
+
+// `refactor` runs the same record model; only its own phases decide the gate input, the correction
+// rounds, the finalize fields, and the completion status. Phase 2 owns comparator availability,
+// Phase 5 alone owns the validation fields, and Phase 6 owns the comparison and the completion.
+// Each fixture round is one pass of Phases 3–6; the first is the initial attempt.
+const REFACTOR_REQUIRED_CHECKS = 2;
+const REFACTOR_TOTAL_CHECKS = 3;
+// A stop right after the initial Phase 3 reaches no later phase. Only the replanning stop and a
+// user abort are deliberate; an incident that ends the run or a missing outcome is a failure. An
+// incident the run survives is no stop: the comparison decides the status, as in `build`.
+const REFACTOR_STOPS = {
+  'behavior-change': 'aborted',
+  abort: 'aborted',
+  incident: 'failed',
+  'missing-outcome': 'failed',
+};
+// How the "Pilot record" paragraph names each stop; the prose test parses the mapping from it.
+const REFACTOR_STOP_PHRASES = {
+  'behavior-change': 'the replanning stop',
+  abort: 'a user abort',
+  incident: 'an incident that ends the run',
+  'missing-outcome': 'a missing outcome',
+};
+const REFACTOR_COMPARISONS = {
+  unchanged: 'no-regression',
+  worsened: 'regression',
+  missing: 'blocked',
+};
+const REFACTOR_CAPTURES = { issue: 'issue', 'new-plan': 'plan', decline: null };
+const NO_FINDINGS = { critical: 0, important: 0, note: 0 };
+const UNAVAILABLE_VALIDATION = {
+  status: 'unavailable',
+  requiredCount: 0,
+  totalCount: 0,
+  satisfiedCount: 0,
+};
+const UNAVAILABLE_REVIEW = { status: 'unavailable', severityCounts: NO_FINDINGS };
+
+function refactorLifecycle(fixture) {
+  const { baseline, stop, rounds = [], captureAnswer } = fixture.refactor;
+  const events = [];
+  const capture = () => {
+    if (captureAnswer === undefined) return;
+    assert.ok(Object.hasOwn(REFACTOR_CAPTURES, captureAnswer), `unknown capture: ${captureAnswer}`);
+    const artifact = REFACTOR_CAPTURES[captureAnswer];
+    if (artifact !== null) events.push({ kind: 'capture', artifact });
+  };
+  const summary = (fields) => ({
+    comparator: 'available',
+    rounds: [],
+    validation: UNAVAILABLE_VALIDATION,
+    review: UNAVAILABLE_REVIEW,
+    externalReview: 'not-finalized',
+    ...fields,
+  });
+  // A required comparator Phase 2 cannot establish blocks before Phase 3: no preflight, no packet.
+  if (baseline.requiredComparator === 'missing') {
+    assert.equal(stop, undefined);
+    assert.deepEqual(rounds, []);
+    events.push({ kind: 'stop', topic: 'missing-required-comparator' });
+    return {
+      blocked: true,
+      events,
+      // No record exists, so there is no completion status to report.
+      summary: summary({ comparator: 'missing', completionStatus: null }),
+    };
+  }
+  assert.equal(baseline.requiredComparator, 'available');
+  assert.ok(['available', 'unavailable'].includes(baseline.optionalEvidence));
+  assert.equal(typeof baseline.preExistingFailure, 'boolean');
+  // Unavailable optional evidence or a reproducible pre-existing failure never proves eligibility.
+  const unknownEvidence =
+    baseline.optionalEvidence === 'unavailable' || baseline.preExistingFailure;
+  if (stop !== undefined) {
+    assert.ok(Object.hasOwn(REFACTOR_STOPS, stop), `unknown stop: ${stop}`);
+    assert.deepEqual(rounds, [], 'a stop after the initial Phase 3 reaches no later phase');
+    if (stop === 'behavior-change') {
+      // Quality does not authorize a behavior change; the run stops for replanning and asks.
+      events.push({ kind: 'stop', topic: 'replan-behavior-change' });
+      events.push({ kind: 'ask', topic: 'capture-behavior-change' });
+      capture();
+    }
+    return {
+      unknownEvidence,
+      corrections: [],
+      events,
+      summary: summary({ completionStatus: REFACTOR_STOPS[stop] }),
+    };
+  }
+  assert.ok(rounds.length > 0, 'a refactor that is not stopped runs at least one round');
+  const baselineSatisfied = REFACTOR_REQUIRED_CHECKS - (baseline.preExistingFailure ? 1 : 0);
+  const corrections = [];
+  const passes = [];
+  let validation = UNAVAILABLE_VALIDATION;
+  let review = UNAVAILABLE_REVIEW;
+  let completionStatus = null;
+  for (const [index, round] of rounds.entries()) {
+    assert.equal(completionStatus, null, 'no round follows a terminal comparison');
+    // Every Phase 3 pass after the first is a new Quality correction; so is each incorporation.
+    if (index > 0) corrections.push('regression-correction');
+    if (round.incorporation) corrections.push('review-incorporation');
+    // The newest Phase 4 run replaces every earlier provisional finding set.
+    review = { status: 'completed', severityCounts: { ...NO_FINDINGS, ...round.findings } };
+    const comparison = REFACTOR_COMPARISONS[round.phase5];
+    assert.ok(comparison, `unknown Phase 5 result: ${round.phase5}`);
+    // Phase 5 alone supplies the counts: an unchanged pre-existing failure stays unsatisfied, and a
+    // required check Phase 5 could not repeat counts as unsatisfied.
+    const satisfiedCount = baselineSatisfied - (comparison === 'no-regression' ? 0 : 1);
+    validation = {
+      status: satisfiedCount >= REFACTOR_REQUIRED_CHECKS ? 'passed' : 'failed',
+      requiredCount: REFACTOR_REQUIRED_CHECKS,
+      totalCount: REFACTOR_TOTAL_CHECKS,
+      satisfiedCount,
+    };
+    passes.push({
+      phase3: index === 0 ? 'initial' : 'quality-correction',
+      incorporation: round.incorporation ? 'quality' : 'none',
+      comparison,
+    });
+    const last = index === rounds.length - 1;
+    if (comparison === 'no-regression') completionStatus = 'completed';
+    else if (comparison === 'blocked') {
+      events.push({ kind: 'stop', topic: 'missing-required-evidence' });
+      completionStatus = 'failed';
+    } else if (last) {
+      // The bounded loop is exhausted: escalate instead of repeating, and never complete.
+      events.push({ kind: 'escalate', topic: 'regression-budget-exhausted' });
+      completionStatus = 'failed';
+    }
+  }
+  capture();
+  return {
+    unknownEvidence,
+    corrections,
+    events,
+    summary: summary({
+      rounds: passes,
+      validation,
+      review,
+      completionStatus,
+      // External review state is finalized only after a comparison proved no regression.
+      externalReview: completionStatus === 'completed' ? 'finalized' : 'not-finalized',
+    }),
+  };
+}
+
+function runScenario(fixture) {
+  if (fixture.workflow !== 'refactor') return runRecordScenario(fixture);
+  const lifecycle = refactorLifecycle(fixture);
+  if (lifecycle.blocked) {
+    return {
+      steps: [],
+      result: {
+        configState: configStateOf(fixture.config),
+        generationState: null,
+        persistedGenerationState: null,
+        activation: null,
+        operations: [],
+        packets: [],
+        incidents: [],
+        finalize: null,
+        events: lifecycle.events,
+        refactor: lifecycle.summary,
+      },
+    };
+  }
+  assert.equal(fixture.completion, undefined, 'refactor derives completion from its phases');
+  assert.equal(fixture.corrections, undefined, 'refactor derives corrections from its rounds');
+  const scenario = runRecordScenario({
+    ...fixture,
+    completion: lifecycle.summary.completionStatus,
+    corrections: lifecycle.corrections,
+    packets: fixture.packets.map((packet) =>
+      lifecycle.unknownEvidence
+        ? { ...packet, failedEvidence: [...(packet.failedEvidence ?? []), 'unknown-evidence'] }
+        : packet,
+    ),
+  });
+  scenario.result.events.push(...lifecycle.events);
+  scenario.result.refactor = lifecycle.summary;
+  return scenario;
 }
 
 // --- Helper replay --------------------------------------------------------------------------
@@ -766,7 +956,7 @@ async function replay(fixture, scenario) {
     ...rt.common,
     generationId: rt.generationId,
     configState: 'enabled',
-    workflow: 'build',
+    workflow: fixture.workflow,
     harnessFamily: fixture.harness,
     confirmation: true,
   };
@@ -873,6 +1063,8 @@ async function replay(fixture, scenario) {
       case 'finalize': {
         const outcome = scenario.result.finalize;
         const completed = outcome.completionStatus === 'completed';
+        // `refactor` sends the fields its phases own; `build` sends a representative shape.
+        const owned = scenario.result.refactor;
         const input = payload('finalize', {
           ...values,
           runId: reservation.runId,
@@ -883,12 +1075,16 @@ async function replay(fixture, scenario) {
             ...outcome.packets[index],
             costProxy: null,
           })),
-          validation: completed
-            ? { status: 'passed', requiredCount: 2, totalCount: 3, satisfiedCount: 2 }
-            : { status: 'unavailable', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
-          review: completed
-            ? { status: 'completed', severityCounts: { critical: 0, important: 1, note: 2 } }
-            : { status: 'unavailable', severityCounts: { critical: 0, important: 0, note: 0 } },
+          validation:
+            owned?.validation ??
+            (completed
+              ? { status: 'passed', requiredCount: 2, totalCount: 3, satisfiedCount: 2 }
+              : UNAVAILABLE_VALIDATION),
+          review:
+            owned?.review ??
+            (completed
+              ? { status: 'completed', severityCounts: { critical: 0, important: 1, note: 2 } }
+              : UNAVAILABLE_REVIEW),
           completionStatus: outcome.completionStatus,
           qualityCorrectionRounds: outcome.qualityCorrectionRounds,
           detailOptIn: false,
@@ -917,6 +1113,9 @@ async function replay(fixture, scenario) {
           assert.ok(['finalized', 'response-lost'].includes(step.result));
           assert.equal((await rt.call('finalize', input)).result.status, 'finalized');
           const record = storedRecord(rt, rt.generationId, reservation.runId);
+          assert.equal(record.workflow, fixture.workflow, 'the record names its workflow');
+          assert.deepEqual(record.validation, input.validation, 'the helper keeps the validation');
+          assert.equal(record.completionStatus, outcome.completionStatus);
           assert.deepEqual(
             record.packets.map(({ attempt }) => attempt),
             expectedAttempts(),
@@ -951,21 +1150,31 @@ async function replay(fixture, scenario) {
 
 // --- Fixture replay -------------------------------------------------------------------------
 
-const FIXTURE_DIRECTORY = new URL('fixtures/execution-profiles/build/', import.meta.url);
-const fixtures = readdirSync(FIXTURE_DIRECTORY)
-  .filter((name) => name.endsWith('.json'))
-  .sort()
-  .map((file) => ({ file, ...JSON.parse(readFileSync(new URL(file, FIXTURE_DIRECTORY), 'utf8')) }));
+const FIXTURE_ROOT = new URL('fixtures/execution-profiles/', import.meta.url);
+const ADOPTING_WORKFLOWS = ['build', 'refactor'];
+const fixtures = ADOPTING_WORKFLOWS.flatMap((workflow) => {
+  const directory = new URL(`${workflow}/`, FIXTURE_ROOT);
+  return readdirSync(directory)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => ({
+      file: `${workflow}/${name}`,
+      workflow,
+      ...JSON.parse(readFileSync(new URL(name, directory), 'utf8')),
+    }));
+});
+const buildFixtures = fixtures.filter(({ workflow }) => workflow === 'build');
+const refactorFixtures = fixtures.filter(({ workflow }) => workflow === 'refactor');
 
 for (const fixture of fixtures) {
-  test(`build execution-profile fixture: ${fixture.name}`, () => {
+  test(`${fixture.workflow} execution-profile fixture: ${fixture.name}`, () => {
     const { result } = runScenario(fixture);
     assert.deepEqual(result, fixture.expected, fixture.file);
 
     const operations = result.operations;
     const count = (name) => operations.filter((operation) => operation === name).length;
     for (const forbidden of ['begin-baseline', 'resume', 'begin-review', 'suspend']) {
-      assert.ok(!operations.includes(forbidden), `build never calls ${forbidden}`);
+      assert.ok(!operations.includes(forbidden), `${fixture.workflow} never calls ${forbidden}`);
     }
     // Activation is automatic, once per run, and only for an inventory-proven baseline.
     if (operations.includes('activate')) {
@@ -1073,7 +1282,64 @@ for (const fixture of fixtures) {
         );
       }
     }
+    if (fixture.workflow === 'refactor') assertRefactorInvariants(fixture, result);
   });
+}
+
+// Invariant: every refactor scenario keeps the phase ownership of the record fields, finalizes a
+// started record once on every terminal exit, finalizes external review state only after a
+// comparison proved no regression, and never re-evaluates eligibility or reaches Fast after the
+// initial Phase 3 attempt.
+function assertRefactorInvariants(fixture, result) {
+  const { refactor: summary } = result;
+  assert.ok(summary, 'a refactor scenario reports its phases');
+  assert.equal(
+    summary.externalReview === 'finalized',
+    summary.completionStatus === 'completed',
+    'external review state is finalized exactly when the comparison proved no regression',
+  );
+  if (summary.comparator === 'missing') {
+    assert.deepEqual(result.operations, [], 'a missing required comparator blocks the preflight');
+    assert.deepEqual(result.packets, [], 'a missing required comparator spawns nothing');
+  }
+  if (summary.rounds.length > 0) {
+    assert.equal(summary.rounds[0].phase3, 'initial');
+    assert.ok(summary.rounds.slice(1).every(({ phase3 }) => phase3 === 'quality-correction'));
+    assert.ok(
+      summary.rounds.every(({ incorporation }) => ['quality', 'none'].includes(incorporation)),
+    );
+    assert.ok(
+      summary.rounds.slice(0, -1).every(({ comparison }) => comparison === 'regression'),
+      'only a regression loops back to Phase 3',
+    );
+  } else {
+    assert.equal(summary.validation.status, 'unavailable', 'no Phase 5 run, no validation');
+  }
+  // Phase 2 never supplies validation success: an unsuccessful validation may coexist with a
+  // completed run only as an exactly unchanged pre-existing failure.
+  if (summary.completionStatus === 'completed') {
+    assert.equal(summary.rounds.at(-1).comparison, 'no-regression');
+    if (summary.validation.status === 'failed') {
+      assert.equal(fixture.refactor.baseline.preExistingFailure, true);
+    }
+  }
+  if (result.finalize !== null) {
+    assert.equal(result.finalize.completionStatus, summary.completionStatus);
+    assert.equal(
+      result.finalize.qualityCorrectionRounds,
+      summary.rounds.filter(({ phase3 }) => phase3 === 'quality-correction').length +
+        summary.rounds.filter(({ incorporation }) => incorporation === 'quality').length,
+      'every Quality correction pass after the initial attempt is counted once',
+    );
+    // No late packet identity: the record holds exactly the packets reserved at start.
+    assert.equal(result.finalize.packets.length, fixture.packets.length);
+  }
+  if (result.operations.includes('start') && !result.operations.includes('reconcile-record')) {
+    assert.ok(
+      result.operations.includes('finalize') || result.finalize === null,
+      'a started record reaches its single finalization or the same-run reconciliation ask',
+    );
+  }
 }
 
 // Invariant: every scenario that reaches the helper runs its operations, in order, against the
@@ -1116,7 +1382,7 @@ test('the fragment documents exactly the helper keys of every build operation', 
 // reason, fallback, incident category, activation result, packet attempt, and helper-envelope
 // path, so a shrunk fixture set cannot hide a vocabulary.
 test('the fixture set covers the configuration, generation, gate, and fallback matrix', () => {
-  const seen = (select) => new Set(fixtures.flatMap(select));
+  const seen = (select) => new Set(buildFixtures.flatMap(select));
   assert.deepEqual([...seen((fixture) => [configStateOf(fixture.config)])].sort(), [
     'disabled',
     'enabled',
@@ -1162,7 +1428,7 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   ]);
   for (const harness of ['claude', 'codex', 'portable']) {
     assert.ok(
-      fixtures.some((fixture) => fixture.harness === harness),
+      buildFixtures.some((fixture) => fixture.harness === harness),
       `no ${harness} fixture`,
     );
   }
@@ -1193,20 +1459,22 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
   }
   for (const result of ['lost-response', 'locked-once', 'locked', 'rejected', 'fault']) {
     assert.ok(
-      fixtures.some((fixture) => fixture.finalizeResult === result),
+      buildFixtures.some((fixture) => fixture.finalizeResult === result),
       `no fixture finalizes with ${result}`,
     );
   }
   // `LOCKED` is retried and then given up, for an incident as for every locked operation.
-  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked === 1)));
+  assert.ok(buildFixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked === 1)));
   assert.ok(
-    fixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked >= LOCKED_SENDS)),
+    buildFixtures.some((fixture) => fixture.packets.some((p) => p.incidentLocked >= LOCKED_SENDS)),
   );
   // An unpersisted incident is retried only on an explicit Retry answer.
-  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.incidentRetry === 'Retry')));
+  assert.ok(
+    buildFixtures.some((fixture) => fixture.packets.some((p) => p.incidentRetry === 'Retry')),
+  );
   // A later Fast reservation after an incident runs Quality and is charged as `scope-incident`.
   assert.ok(
-    fixtures.some((fixture) =>
+    buildFixtures.some((fixture) =>
       fixture.expected.packets.some(
         (p) =>
           p.selectedProfile === 'fast' &&
@@ -1217,12 +1485,16 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
     'no fixture forfeits a Fast reservation after an incident',
   );
   // A packet timing operation recovers from one `LOCKED` and fails the record once exhausted.
-  assert.ok(fixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)));
   assert.ok(
-    fixtures.some((fixture) => fixture.packets.some((p) => p.finishPacketLocked >= LOCKED_SENDS)),
+    buildFixtures.some((fixture) => fixture.packets.some((p) => p.startPacketLocked === 1)),
   );
   assert.ok(
-    fixtures.some(
+    buildFixtures.some((fixture) =>
+      fixture.packets.some((p) => p.finishPacketLocked >= LOCKED_SENDS),
+    ),
+  );
+  assert.ok(
+    buildFixtures.some(
       (fixture) =>
         fixture.expected.generationState === 'none' &&
         MEASURED_STATES.has(fixture.expected.persistedGenerationState) &&
@@ -1232,36 +1504,173 @@ test('the fixture set covers the configuration, generation, gate, and fallback m
     'no fixture records an incident against the inventory-proven generation after a failed start',
   );
   assert.ok(
-    fixtures.some((fixture) => fixture.packets.some((p) => p.scopeGrowth === 'authorized')),
+    buildFixtures.some((fixture) => fixture.packets.some((p) => p.scopeGrowth === 'authorized')),
   );
   for (const operation of ['start', 'begin-review']) {
     assert.ok(
-      fixtures.some((fixture) => (fixture.external ?? []).some((a) => a.operation === operation)),
+      buildFixtures.some((fixture) =>
+        (fixture.external ?? []).some((a) => a.operation === operation),
+      ),
       `no fixture replays a concurrent ${operation}`,
     );
   }
 });
 
+// Invariant: the refactor fixtures exercise every refactor-specific branch the plan names — the
+// Phase 2 evidence classes, every terminal exit, the regression loop, Quality incorporation,
+// provisional replacement, each capture answer, and the shared record paths reached from Phase 3 —
+// so a shrunk refactor fixture set cannot hide one.
+test('the refactor fixture set covers its baseline, exit, loop, and capture matrix', () => {
+  const summaries = refactorFixtures.map((fixture) => fixture.expected.refactor);
+  const some = (predicate) => refactorFixtures.some(predicate);
+  assert.ok(summaries.every(Boolean), 'every refactor fixture states its phase summary');
+  // Phase 2: a missing required comparator, unavailable optional evidence, and a reproducible
+  // pre-existing failure that is unchanged or worsened in Phase 5.
+  assert.ok(summaries.some(({ comparator }) => comparator === 'missing'));
+  assert.ok(some(({ refactor: r }) => r.baseline.optionalEvidence === 'unavailable'));
+  for (const phase5 of ['unchanged', 'worsened']) {
+    assert.ok(
+      some(
+        ({ refactor: r }) =>
+          r.baseline.preExistingFailure && (r.rounds ?? []).some((x) => x.phase5 === phase5),
+      ),
+      `no pre-existing failure ${phase5} in Phase 5`,
+    );
+  }
+  // The valid combination: an unsuccessful validation with a completed no-regression run.
+  assert.ok(
+    summaries.some(
+      ({ validation, completionStatus }) =>
+        validation.status === 'failed' && completionStatus === 'completed',
+    ),
+  );
+  assert.ok(some(({ refactor: r }) => (r.rounds ?? []).some((x) => x.phase5 === 'missing')));
+  // Every terminal exit, each finalized once when a record was reserved.
+  // An incident the run survives finalizes by the comparison, as `build` does.
+  assert.ok(
+    some(
+      ({ refactor: r, expected }) =>
+        r.stop === undefined &&
+        expected.incidents.length > 0 &&
+        expected.finalize?.completionStatus === 'completed',
+    ),
+    'no refactor run survives an incident and completes',
+  );
+  assert.ok(
+    some(({ expected }) =>
+      expected.events.some(({ topic }) => topic === 'capture-behavior-change'),
+    ),
+  );
+  for (const stop of Object.keys(REFACTOR_STOPS)) {
+    assert.ok(
+      some(({ refactor: r, expected }) => r.stop === stop && expected.finalize !== null),
+      `no reserved record finalized after the ${stop} stop`,
+    );
+  }
+  assert.ok(
+    some(({ expected }) =>
+      expected.events.some(({ topic }) => topic === 'regression-budget-exhausted'),
+    ),
+  );
+  for (const status of ['completed', 'aborted', 'failed']) {
+    assert.ok(
+      some(({ expected }) => expected.finalize?.completionStatus === status),
+      `no refactor record finalized as ${status}`,
+    );
+  }
+  // The regression loop returns to a Quality Phase 3, incorporation is Quality, and the newest
+  // review replaces an earlier provisional set.
+  assert.ok(
+    summaries.some(({ rounds }) => rounds.some(({ phase3 }) => phase3 === 'quality-correction')),
+  );
+  assert.ok(
+    summaries.some(({ rounds }) => rounds.some(({ incorporation }) => incorporation === 'quality')),
+  );
+  assert.ok(
+    some(({ refactor: r }) => {
+      const findings = (r.rounds ?? []).map((round) => JSON.stringify(round.findings ?? {}));
+      return new Set(findings).size > 1;
+    }),
+    'no fixture replaces a provisional finding set',
+  );
+  assert.ok(
+    some(
+      ({ expected }) =>
+        expected.packets.some(({ selectedProfile }) => selectedProfile === 'fast') &&
+        expected.refactor.rounds.length > 1,
+    ),
+    'no Fast packet carries its consumed state through a regression loop',
+  );
+  // Structural growth, independent work, a required behavior change, and every capture answer.
+  assert.ok(some(({ packets }) => packets.some((p) => p.scopeGrowth === 'authorized')));
+  assert.ok(some(({ packets }) => packets.some((p) => p.scopeGrowth === 'independent')));
+  assert.ok(some(({ refactor: r }) => r.stop === 'behavior-change' && r.captureAnswer === 'issue'));
+  for (const answer of Object.keys(REFACTOR_CAPTURES)) {
+    assert.ok(
+      some(({ refactor: r }) => r.captureAnswer === answer),
+      `no ${answer} capture`,
+    );
+  }
+  // Shared record paths reached from Phase 3: disabled, invalid, portable, review, suspended,
+  // pilot baseline, automatic activation and its ambiguous recovery, active Fast, pre-spawn and
+  // post-spawn helper failures, concurrent start and begin-review, and incidents.
+  const seen = (select) => new Set(refactorFixtures.flatMap(select));
+  assert.deepEqual([...seen((f) => [configStateOf(f.config)])].sort(), [
+    'disabled',
+    'enabled',
+    'invalid',
+  ]);
+  for (const state of ['active', 'baseline', 'none', 'review', 'suspended']) {
+    assert.ok(seen((f) => [f.expected.generationState]).has(state), `no ${state} generation`);
+  }
+  for (const activation of ['activated', 'ambiguous:active', 'ambiguous:unprovable', 'locked']) {
+    assert.ok(seen((f) => [f.expected.activation]).has(activation), `no ${activation} activation`);
+  }
+  assert.ok(some(({ harness }) => harness === 'portable'));
+  assert.ok(
+    some(({ inventory }) => inventory === 'failed'),
+    'no pre-spawn inventory failure',
+  );
+  for (const operation of ['start', 'begin-review']) {
+    assert.ok(
+      some(({ external }) => (external ?? []).some((a) => a.operation === operation)),
+      `no concurrent ${operation}`,
+    );
+  }
+  assert.ok(some(({ packets }) => packets.some((p) => p.finishFailure !== undefined)));
+  assert.ok(some(({ finalizeResult }) => finalizeResult === 'fault'));
+  assert.ok(some(({ expected }) => expected.incidents.length > 0));
+  assert.ok(
+    seen((f) => f.expected.packets.map(({ eligibility }) => eligibility)).has(
+      'excluded(profile-unavailable)',
+    ),
+  );
+  assert.ok(seen((f) => f.expected.packets.map(({ fallback }) => fallback)).has('spawn-rejected'));
+});
+
 // --- Workflow text --------------------------------------------------------------------------
 
-// Invariant: the run-level diff baseline stays the last act of step 0, and everything the pilot
-// adds (pointers, per-packet state, packet snapshot) follows it. The packet snapshot is a
-// separate artifact, so no Phase 2 text after step 0 may call anything a diff baseline.
-test('build keeps step 0 intact and places the per-packet state and pointers after it', () => {
+// Invariant: the run-level diff baseline stays the last act of build's step 0, and everything the
+// pilot adds (pointers, profile seam) follows it. The per-packet state lives once, in the
+// `execution-profiles` section both adopting workflows load, and its packet snapshot is a separate
+// artifact that is never called a diff baseline.
+test('build keeps step 0 intact and the per-packet state lives in the shared policy', () => {
   const step0 = section(phase2, '0. Read the deferred `worktree-integration`', '\n```lazy-include');
   assert.match(flat(step0), /Last, capture the diff baseline per "Diff baseline"\.\s*$/);
   ordered(
-    phase2,
+    flat(phase2),
     'Last, capture the',
-    '```lazy-include\nexecution-profiles\n',
-    '```lazy-include\npilot-measurement-workflow\n',
-    '**Per-packet state.**',
+    '```lazy-include execution-profiles ',
+    '```lazy-include pilot-measurement-workflow ',
+    '**Profile seam.**',
     '1. Start the appropriate implementer skill',
-    '2. Check for the done protocol',
-    '3. Check the result against the requirements',
-    '4. **Fast→Quality transition.**',
+    '2. Check for the done protocol when delegating internally, and check the result against the requirements',
   );
-  const state = flat(section(phase2, '**Per-packet state.**', '\n1. Start'));
+  assert.match(
+    flat(section(phase2, '**Profile seam.**', '\n1. Start')),
+    /After step 0, every initial packet follows "Initial implementation phase" of the loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements check, and Fast→Quality transition, with `build` as the record's `workflow`/,
+  );
+  const state = flat(section(initialPhase, '**Per-packet state.**', '**Delegation.**'));
   for (const clause of [
     'packet-to-path ownership map',
     'native profile-capability result',
@@ -1274,12 +1683,12 @@ test('build keeps step 0 intact and places the per-packet state and pointers aft
     'Run the workflow-record preflight before the first implementation spawn; a reserved selection never changes',
     'Only when the preflight proves a `baseline` or `active` generation, capture a freshly rooted **packet snapshot**',
     'for attribution and retained-state transfer only',
-    "every exit applies the fragment's finalization",
+    "every exit applies the `pilot-measurement-workflow` fragment's finalization",
   ]) {
     assert.ok(state.includes(clause), `per-packet state is missing: ${clause}`);
   }
-  // The classification order and its gates are fragment policy; the always-loaded body keeps only
-  // the state it must hold and the pointers, so it restates neither.
+  // The classification order and its gates are workflow-record policy; the state section keeps
+  // only the state it must hold, so it restates neither.
   for (const moved of [
     'Coupled packets share Quality',
     '`unclear-ownership`',
@@ -1296,10 +1705,11 @@ test('build keeps step 0 intact and places the per-packet state and pointers aft
     assert.ok(reservation.includes(clause), `the fragment reservation is missing: ${clause}`);
   }
   assert.doesNotMatch(
-    section(phase2, '**Per-packet state.**'),
+    initialPhase,
     /diff baseline/i,
-    'the packet snapshot is never called a diff baseline',
+    'the packet snapshot is never a diff baseline',
   );
+  assert.doesNotMatch(phase2.slice(phase2.indexOf('**Profile seam.**')), /diff baseline/i);
 });
 
 // Invariant: Fast is requested only for a packet's first attempted spawn, pre-spawn
@@ -1330,15 +1740,15 @@ test('build selects Fast only for the first attempt and transitions to Quality e
   );
 
   assert.match(
-    flat(section(phase2, '2. Check for the done protocol', '\n3. ')),
+    flat(section(initialPhase, '**Delegation.**', '**Requirements check.**')),
     /One keyword-less resume is the same delegation; every retry is a new Quality spawn/,
   );
   assert.match(
-    flat(section(phase2, '3. Check the result', '\n4. ')),
-    /For a packet whose Fast attempt returned without a fallback, repairing a mismatch is its single `requirements-mismatch` transition of step 4, before `finish-packet`\. Every other mismatch, including one after a fallback's Quality continuation, is a Quality correction round through the routed Quality implementer after `finish-packet`; each packet has at most one Fast→Quality transition/,
+    flat(section(initialPhase, '**Requirements check.**', '**Fast→Quality transition.**')),
+    /For a packet whose Fast attempt returned without a fallback, repairing a mismatch is its single `requirements-mismatch` transition below, before `finish-packet`\. Every other mismatch, including one after a fallback's Quality continuation, is a Quality correction round through the routed Quality implementer after `finish-packet`; each packet has at most one Fast→Quality transition/,
   );
 
-  const transition = flat(section(phase2, '4. **Fast→Quality transition.**'));
+  const transition = flat(section(initialPhase, '**Fast→Quality transition.**'));
   for (const clause of [
     'Each of the eight post-attempt fallbacks consumes Fast and causes exactly one transition',
     'revalidate the receipt',
@@ -1351,6 +1761,8 @@ test('build selects Fast only for the first attempt and transitions to Quality e
     'authorized growth stays in that packet',
     'Never append genuinely independent new work',
     'future-work issue, or as a new plan without an issue tracker',
+    'The handoff is the escalation transfer above',
+    "the adopting workflow's own additions",
     '`Fast consumed; no second Fast attempt`',
     'it carries no pilot capability',
     'moves an owned `active` worktree to `failed` only while receipt and runtime guards pass',
@@ -1358,6 +1770,8 @@ test('build selects Fast only for the first attempt and transitions to Quality e
   ]) {
     assert.ok(transition.includes(clause), `the transition is missing: ${clause}`);
   }
+  // The escalation transfer precedes the section that names it "above".
+  ordered(policySource, '## Escalation transfer', '## Initial implementation phase');
 });
 
 // Invariant: no correction seam after Phase 2 (validator, review, final validator, conflict,
@@ -1518,7 +1932,10 @@ test('the workflow-record fragment pins the helper contract, wire mapping, and p
     'workflow',
   ]);
   assert.equal(blocks[1].configState, 'enabled');
-  assert.equal(blocks[1].workflow, 'build');
+  // The placeholder names exactly the adopting workflows, which are the helper's closed vocabulary.
+  assert.equal(blocks[1].workflow, `<${ADOPTING_WORKFLOWS.join('|')}>`);
+  assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.workflows, ADOPTING_WORKFLOWS);
+  assert.match(flat(reservation), /`workflow` names the adopting workflow/);
   assert.match(flat(reservation), /`firstReason` is `null` exactly for `eligible`/);
   assert.match(flat(reservation), /`not-evaluated` is never sent/);
   assert.match(flat(reservation), /Classify every initial packet completely before `start`/);
@@ -1735,6 +2152,217 @@ test('incidents are recorded by category and a failed finalize offers one same-r
   assert.match(
     failureText,
     /An incident that could not be persisted leaves no durable state, so nothing keeps a later measured run off Fast; the only confirmed recovery is `\{\{SKILL:setup\}\}` Guided block 10 `Disable`, and Fast returns only through a confirmed `Enable` there\./,
+  );
+});
+
+// --- Refactor workflow text -----------------------------------------------------------------
+
+const refactorPhase2 = section(refactor, '### Phase 2: Baseline', '### Phase 3: Refactoring');
+const refactorPhase3 = section(refactor, '### Phase 3: Refactoring', '### Phase 3.5');
+const refactorPhase6 = section(refactor, '### Phase 6: Before/after comparison', '```include');
+
+// Invariant: refactor selects profiles only after the complete Phase 2 baseline, reuses build's
+// per-packet state and Fast→Quality transition by pointer instead of a second copy, and maps
+// unknown baseline evidence to the existing `unknown-evidence` gate row.
+test('refactor reuses the build Phase 2 integration after its Phase 2 baseline', () => {
+  const phase2 = flat(refactorPhase2);
+  ordered(
+    phase2,
+    'Document the baseline for the later comparison.',
+    'A required check that cannot be established is a controlled stop before Phase 3: report it, reserve no pilot record, and move an owned worktree to `aborted`',
+    'A reproducible pre-existing failure of one blocks nothing while its exact result stays comparable',
+    'unavailable optional evidence is recorded as unavailable',
+    'capture the diff baseline',
+  );
+  ordered(
+    refactorPhase3,
+    '```lazy-include\nexecution-profiles\n',
+    '```lazy-include\npilot-measurement-workflow\n',
+    '**Profile seam.**',
+    '\n1. Start the appropriate implementer skill',
+    '\n2. Assignment',
+    '\n3. A required behavior',
+  );
+  const seam = flat(section(refactorPhase3, '**Profile seam.**', '\n1. Start'));
+  for (const clause of [
+    'Once Phase 2 is complete, every initial packet follows "Initial implementation phase" of the loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements check, and Fast→Quality transition, with `refactor` as the record\'s `workflow`',
+    'the exact invariance expectation, approved paths, dependencies, and comparison commands',
+    'Unavailable optional evidence or a reproducible pre-existing failure fails the `unknown-evidence` row',
+    'A Fast→Quality handoff adds the baseline evidence',
+    '`fastAttemptConsumed` survives every later Phase 3 entry, and eligibility is never evaluated again',
+  ]) {
+    assert.ok(seam.includes(clause), `the refactor profile seam is missing: ${clause}`);
+  }
+  assert.ok(contract.gate.some(({ decision }) => decision === 'unknown-evidence'));
+  // Both seams name the one section that owns the contract, and it exists exactly once there.
+  assert.equal(policySource.split('\n## Initial implementation phase\n').length - 1, 1);
+  // The moved contract has exactly one owner: neither tool keeps a copy of it.
+  for (const owned of [
+    '**Per-packet state.**',
+    'Each of the eight post-attempt fallbacks',
+    'packet-to-path ownership map',
+    '`Fast consumed; no second Fast attempt`',
+    'One keyword-less resume is the same delegation',
+    'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
+  ]) {
+    assert.ok(!refactor.includes(owned), `refactor must not copy: ${owned}`);
+    assert.ok(!build.includes(owned), `build must not copy: ${owned}`);
+  }
+  const step1 = flat(section(refactorPhase3, '\n1. Start', '\n2. Assignment'));
+  assert.match(
+    step1,
+    /The Quality selector is the default; the Fast reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed` is set immediately before that call/,
+  );
+  assert.match(
+    flat(section(refactorPhase3, '\n2. Assignment', '\n3. ')),
+    /repeated with the Phase 2 baseline evidence in every implementer handoff of Phases 3, 4 and 6, incorporation and regression correction included: - change only structure - no new behavior - no new features - no unplanned bug fixes/,
+  );
+});
+
+// Invariant: a workflow loads shared fragments only; it never reads another tool's file at run
+// time, so the reuse between build and refactor goes through the shared policy.
+test('neither adopting workflow reads another tool file', () => {
+  for (const [name, text] of [
+    ['build', build],
+    ['refactor', refactor],
+  ]) {
+    assert.doesNotMatch(text, /tools\/[a-z-]+\.md/, `${name} must not name a tool file`);
+  }
+});
+
+// Invariant: a required behavior change is never authorized by Quality; it stops for replanning,
+// finalizes a reserved record per the pilot-record mapping, and is captured only on the user's
+// answer.
+test('refactor stops for replanning on a required behavior change', () => {
+  const stop = flat(section(refactorPhase3, '\n3. A required behavior'));
+  for (const clause of [
+    'lies outside the refactoring, and Quality does not authorize it',
+    'stop for replanning as a controlled stop',
+    'finalize a reserved pilot record per "Pilot record"',
+    'ask whether to capture it as a future-work issue, or as a new plan without an issue tracker',
+    'declining creates no artifact',
+  ]) {
+    assert.ok(stop.includes(clause), `the replanning stop is missing: ${clause}`);
+  }
+});
+
+// Invariant: no refactor seam after the initial Phase 3 attempt can reach a Fast worker; Phase 4
+// incorporation and every Phase 6 regression pass name the routed Quality implementer.
+test('every refactor pass after the initial Phase 3 attempt is Quality-only', () => {
+  assert.match(
+    flat(section(refactor, '### Phase 4: Review', '### Phase 5')),
+    /exactly one automatic incorporation pass for new current-scope items through the routed Quality implementer/,
+  );
+  const regression = flat(section(refactorPhase6, '3. If regressions are found:', '4. If no'));
+  assert.match(
+    regression,
+    /each Phase 3 pass of this loop is a new correction through the routed Quality implementer from the retained diff and the observed regression delta, inside the approved scope/,
+  );
+  assert.match(
+    flat(section(refactor, '\n## Rules')),
+    /every implementation pass after a packet's initial Phase 3 attempt – Phase 4 incorporation, Phase 6 regression correction, retry – is Quality-only through the routed Quality implementer/,
+  );
+  // Only Phase 3 carries profile tokens or asks for a Fast spawn, worker, or model.
+  const outsidePhase3 = refactor.replace(refactorPhase3, '');
+  assert.doesNotMatch(outsidePhase3, /\{\{AGENT_PROFILE:/, 'profile tokens stay in Phase 3');
+  assert.doesNotMatch(
+    outsidePhase3,
+    /\b(?:spawn|request|route|delegate)\b[^\n]{0,120}\bfast\b|\bfast\s+(?:profile|worker|model)\b/i,
+    'no later seam requests Fast',
+  );
+  for (const operation of ['begin-baseline', 'activate', 'resume']) {
+    assert.doesNotMatch(
+      refactor,
+      new RegExp(`\`${operation}\``),
+      `refactor must not name ${operation}`,
+    );
+  }
+});
+
+// Invariant: Phase 5 alone supplies the record's validation counts, which Phase 6 compares with the
+// Phase 2 baseline, so Phase 5 must repeat exactly the checks Phase 2 ran: the same delegated
+// workers, no implementer or profile that could write code, and no new tests in either phase.
+test('refactor Phase 5 repeats the Phase 2 checks without writing code or tests', () => {
+  const refactorPhase5 = section(refactor, '### Phase 5: Post-validation', '### Phase 6');
+  const workers = (text) => [...text.matchAll(/\{\{AGENT:([a-z-]+)\}\}/g)].map(([, w]) => w).sort();
+  assert.deepEqual(workers(refactorPhase5), workers(refactorPhase2), 'Phase 5 repeats Phase 2');
+  for (const [name, text] of [
+    ['Phase 2', refactorPhase2],
+    ['Phase 5', refactorPhase5],
+  ]) {
+    assert.ok(workers(text).includes('test-writer'), `${name} runs the existing tests`);
+    assert.ok(
+      workers(text).every((worker) => !worker.endsWith('-implementer')),
+      `${name} must not start an implementer`,
+    );
+    assert.doesNotMatch(text, /AGENT_PROFILE/, `${name} must not select a profile`);
+    const testWriter = flat(section(text, '`{{AGENT:test-writer}}`', '\n\n'));
+    assert.match(testWriter, /\b(?:no|not)\b[^.]*\bnew tests\b/, `${name} writes no new tests`);
+  }
+});
+
+// Invariant: Phase 6 finalizes a reserved record once on every terminal exit, with the phase
+// ownership of the record fields, and independently of the external review state.
+test('refactor finalizes its pilot record on every exit with phase-owned fields', () => {
+  const record = flat(section(refactorPhase6, '**Pilot record.**', '\n1. Compare'));
+  for (const clause of [
+    'A pilot record reserved in Phase 3 is finalized exactly once on every terminal exit – success, the replanning stop, an abort, an exhausted regression loop, an unrepeatable required check, an incident that ends the run, or a missing outcome – per the loaded `pilot-measurement-workflow` fragment',
+    'independently of the external review state below',
+    'Its `validation` comes from the last Phase 5 run alone',
+    'Phase 2 only proves the comparator available',
+    'an unchanged pre-existing failure stays `failed`',
+    'a required check Phase 5 could not repeat counts as unsatisfied',
+    '`review` comes from the latest Phase 4 run',
+    "`completionStatus` is `completed` only after this phase's comparison proves no regression",
+    'An incident the run survives leaves the status to the comparison',
+  ]) {
+    assert.ok(record.includes(clause), `the pilot record paragraph is missing: ${clause}`);
+  }
+  // The stop-to-status mapping the reference model applies is the one the paragraph states: each
+  // stop phrase sits in the clause of its status, parsed from the prose rather than restated.
+  const clauseOf = (status) => {
+    const start = record.indexOf(`\`${status}\` after `);
+    assert.notEqual(start, -1, `the paragraph maps no stop to ${status}`);
+    const end = record.slice(start + 1).search(/`(?:completed|aborted|failed)` after |\. /);
+    return record.slice(start, end === -1 ? undefined : start + 1 + end);
+  };
+  for (const [stop, phrase] of Object.entries(REFACTOR_STOP_PHRASES)) {
+    assert.ok(
+      clauseOf(REFACTOR_STOPS[stop]).includes(phrase),
+      `${stop} must map to ${REFACTOR_STOPS[stop]}`,
+    );
+  }
+  assert.deepEqual(Object.keys(REFACTOR_STOP_PHRASES).sort(), Object.keys(REFACTOR_STOPS).sort());
+  assert.ok(clauseOf('failed').includes('a required check Phase 5 could not repeat'));
+  assert.ok(clauseOf('failed').includes('an exhausted regression loop'));
+  // The mapping lives in the paragraph alone; no other refactor text maps the record status.
+  assert.doesNotMatch(
+    refactor.replace(section(refactorPhase6, '**Pilot record.**', '\n1. Compare'), ''),
+    /`completionStatus`/,
+  );
+  assert.match(
+    flat(section(refactorPhase6, '1. Compare', '2. If a required check')),
+    /an exactly unchanged pre-existing failure is no regression but is reported as unsuccessful, never as success/,
+  );
+  // An unrepeatable required check is its own blocking branch, never a regression loop.
+  const unrepeatable = flat(section(refactorPhase6, '2. If a required check', '3. If regressions'));
+  for (const clause of [
+    'If a required check Phase 5 could not repeat, completion is blocked',
+    'report it',
+    'finalize no external review state',
+    'finalize a reserved pilot record per "Pilot record"',
+    'move an owned worktree to `failed` as a validation error, and stop',
+  ]) {
+    assert.ok(unrepeatable.includes(clause), `the unrepeatable-check branch is missing: ${clause}`);
+  }
+  ordered(
+    section(refactorPhase6, '4. If no regressions:'),
+    'finalize external review state',
+    'delete the wisdom file',
+    'perform the handback',
+    'Run the worktree-record exit self-check.',
+    'finalize a reserved pilot record per "Pilot record" above',
+    'summarize what was refactored',
   );
 });
 

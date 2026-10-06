@@ -13,10 +13,10 @@ const phase6 = refactorTool.slice(
   refactorTool.indexOf('```include\npre-commit-gate'),
 );
 const regressionBranch = phase6.slice(
-  phase6.indexOf('2. If regressions are found:'),
-  phase6.indexOf('3. If no regressions:'),
+  phase6.indexOf('3. If regressions are found:'),
+  phase6.indexOf('4. If no regressions:'),
 );
-const successBranch = phase6.slice(phase6.indexOf('3. If no regressions:'));
+const successBranch = phase6.slice(phase6.indexOf('4. If no regressions:'));
 
 // Invariant: Phase 4 writes no report or backlink; its findings stay provisional and are replaced per run.
 test('refactor review results remain provisional until regression validation succeeds', () => {
@@ -83,4 +83,32 @@ test('refactor report finalization precedes wisdom deletion and delivery handbac
   assert.ok(backlinkFinalization > reportFinalization);
   assert.ok(wisdomDeletion > backlinkFinalization);
   assert.ok(handback > wisdomDeletion);
+});
+
+// Invariant: the profile integration keeps the provisional/final review lifecycle. Phase 4
+// incorporation is Quality-only, the pilot record is finalized independently of the external
+// review state on every exit, and only the no-regression branch finalizes reports and backlinks,
+// with the pilot record finalized after that state and before the completion report.
+test('refactor profile integration preserves provisional-then-final review ordering', () => {
+  assert.match(
+    phase4,
+    /incorporation pass for new current-scope\s+items through the routed Quality implementer/,
+  );
+  const pilotRecord = phase6.slice(
+    phase6.indexOf('**Pilot record.**'),
+    phase6.indexOf('1. Compare the results'),
+  );
+  assert.match(pilotRecord, /every terminal\s+exit/);
+  assert.match(pilotRecord, /independently of the\s+external review state below/);
+  assert.doesNotMatch(pilotRecord, /\.effective-flow\/review\/|implementation note/);
+  assert.match(regressionBranch, /routed Quality implementer/);
+  assert.doesNotMatch(regressionBranch, /finalize a reserved pilot record/);
+
+  const reviewFinalization = successBranch.indexOf('finalize external review state');
+  const handback = successBranch.indexOf('perform the handback');
+  const pilotFinalization = successBranch.indexOf('finalize a reserved pilot record');
+  const summary = successBranch.indexOf('summarize what was refactored');
+  assert.ok(reviewFinalization >= 0 && handback > reviewFinalization);
+  assert.ok(pilotFinalization > handback, 'the pilot record follows the external review state');
+  assert.ok(summary > pilotFinalization, 'the pilot record is finalized before the report');
 });

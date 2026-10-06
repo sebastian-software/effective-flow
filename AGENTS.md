@@ -47,7 +47,7 @@ The build emits three consumer targets:
 
 The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
 
-### Execution profiles (build field pilot)
+### Execution profiles (Fast field pilot)
 
 `src/shared/execution-profiles.md` is the provider-neutral policy source for the **Quality** and
 **Fast** implementation intents. Quality is the safe default; Fast is limited to a bounded first
@@ -65,17 +65,17 @@ configuration writer and exposes the key only in Guided advanced block 10
 `begin-baseline` and `resume`, each offered only for the inventory-proven state that allows it.
 Profile and Express never ask the block and preserve an existing value.
 
-`build` is the one adopting workflow. Its Phase 2 carries the five inline
-`{{AGENT_PROFILE:X:fast}}` tokens and lazy-loads the policy plus
+`build` (Phase 2) and `refactor` (Phase 3, after its Phase 2 baseline) are the two adopting
+workflows. Each carries the five inline `{{AGENT_PROFILE:X:fast}}` tokens and lazy-loads the policy,
+whose "Initial implementation phase" section owns the shared packet contract, plus
 `src/shared/pilot-measurement-workflow.md`, which owns the measured-run record order
 (`inventory` → automatic `activate` in a baseline generation → `start` →
 `start-packet`/`finish-packet` → `finalize`), incident recording through `record-incident`, and the
 same-run reconciliation after a failed finalization; the helper itself persists any
 `finalization-failed` suspension. A failed Fast attempt makes exactly one retained-state transition
 to Quality in the same checkout, and every later correction is Quality-only. No workflow run calls
-`begin-baseline` or `resume`. `refactor` keeps its build-guard
-authorization but carries no token and has not adopted Fast; portable output remains Quality-only
-and contains no native profile metadata. The build renders five Claude Fast implementer sidecars,
+`begin-baseline` or `resume`. Portable output remains Quality-only and contains no native profile
+metadata. The build renders five Claude Fast implementer sidecars,
 Codex per-spawn `model` and `reasoning_effort` overrides, strict native-agent inventories, and
 copies the three pilot helper modules to every target.
 
@@ -89,7 +89,7 @@ workflow-record link. Review freezes reservations, aggregation keeps a private d
 suppressed publication candidate, and deletion follows confirmed digest-bound purge or the narrower
 disabled/review `discard-generation` recovery path. Only a confirmed Guided `begin-baseline`
 starts a baseline; `active` is reached only through the helper's automatic `activate` in a measured
-`build` preflight or a confirmed Guided `resume` of a stored prior state. No configuration value or
+`build` or `refactor` preflight or a confirmed Guided `resume` of a stored prior state. No configuration value or
 native artifact moves a generation.
 
 The guard mechanics are documented in

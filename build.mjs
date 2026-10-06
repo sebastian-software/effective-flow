@@ -880,8 +880,8 @@ try {
   refConfig.fastProfileAgents = fastProfileAgents;
 
   // Fast-profile tokens are legal only inside each workflow's initial implementation phase.
-  // `build` Phase 2 adopts them on its five Fast-capable implementer selector lines; `refactor`
-  // Phase 3 keeps its authorization for a later adoption and carries no token yet.
+  // `build` Phase 2 and `refactor` Phase 3 adopt them on their five Fast-capable implementer
+  // selector lines.
   const profilePhaseAuthorizations = new Map([
     [
       'tools/build.md',
@@ -961,7 +961,7 @@ try {
 
   // --- Shared execution-profile contract guard ---
   // This Markdown policy remains canonical. `build` Phase 2 adopts it through a load
-  // pointer and inline profile tokens; `refactor` stays authorized but unadopted.
+  // pointer and inline profile tokens, and `refactor` Phase 3 does the same.
   // Validate its closed tables and the shipped pilot runtime projection before
   // rendering so neither consumer can inherit a malformed or drifted contract.
   const executionProfileContext = 'shared/execution-profiles.md';
@@ -1975,7 +1975,7 @@ try {
     'apply-review': 1407,
     'apply-issues': 1205,
     cleanup: 1070,
-    refactor: 924,
+    refactor: 975,
     deliver: 795,
     'plan-issue': 754,
     review: 768,
@@ -1983,7 +1983,7 @@ try {
     'apply-review-commit-mechanics': 656,
     maintain: 728,
     docs: 637,
-    build: 662,
+    build: 640,
     apply: 586,
     'apply-plan': 581,
     investigate: 553,

@@ -42,10 +42,10 @@ The build now renders this native capability and publishes strict native-agent i
 build/install consistency manifests. It generates the sanctioned Claude Fast implementer sidecars
 and can render the Codex per-spawn override form. Portable output still contains no native profile
 artifact. Capability remains separate from activation: a valid inventory does not prove runtime
-discovery or host acceptance. `build` is the one adopting workflow; its Phase 2 renders the five
-Fast references inline and executes the policy's runtime capability gate immediately before
-selection, and only an eligible packet in an active pilot generation requests Fast. `refactor`
-keeps its authorization for a later adoption and requests no Fast profile yet.
+discovery or host acceptance. `build` Phase 2 and `refactor` Phase 3 are the two adopting
+phases; each renders the five Fast references inline and executes the policy's runtime capability
+gate immediately before selection, and only an eligible packet in an active pilot generation
+requests Fast.
 
 ## Alternatives and tradeoffs
 

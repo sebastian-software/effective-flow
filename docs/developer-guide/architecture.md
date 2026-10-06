@@ -456,10 +456,11 @@ Portable builds do not receive inventories, Fast sidecars, aliases, or native pr
 remain Quality-only.
 
 `src/tools/build.md` and `src/tools/refactor.md` are the only sources authorized to use a Fast
-profile reference, each only inside its initial implementation phase. `build` adopts it: its
-Phase 2 carries the five Fast references inline on the implementer selector lines and lazy-loads
-the policy and the workflow-record fragment. `refactor` remains reference-free. A native artifact or
-valid inventory therefore does not make a run select Fast by itself: `build` executes the runtime
+profile reference, each only inside its initial implementation phase. Both adopt it: `build`
+Phase 2 and `refactor` Phase 3, after its Phase 2 baseline, carry the five Fast references inline
+on the implementer selector lines and lazy-load the policy, whose "Initial implementation phase"
+section owns their shared packet contract, and the workflow-record fragment. A native artifact or
+valid inventory therefore does not make a run select Fast by itself: the adopting workflow executes the runtime
 eligibility and capability gate for every initial packet immediately before selection, uses Fast
 only for the first attempted spawn of an eligible packet in an active generation, and continues a
 failed attempt exactly once with the routed Quality implementer from the retained state in the same

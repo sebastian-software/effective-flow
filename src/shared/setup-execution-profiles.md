@@ -10,7 +10,7 @@ invocation: Profile, Express, and `{{SKILL:setup}} hidden` never load it.
 ### The opt-in
 
 Explain first. `executionProfiles.fast.enabled` admits this project to the Quality/Fast field pilot
-of `{{SKILL:build}}`. Literal `true` permits the pilot lifecycle, but starts no baseline, activates
+of `{{SKILL:build}}` and `{{SKILL:refactor}}`. Literal `true` permits the pilot lifecycle, but starts no baseline, activates
 no generation, proves no native capability, and never selects Fast by itself; while a baseline or
 active generation exists, it also lets `{{SKILL:merge-gate}}` add anonymous period observations.
 Missing or `false` is disabled; a malformed, ambiguous, or unreadable value is invalid; both run
@@ -82,7 +82,7 @@ longer holds; nothing is claimed that the helper did not return.
 
    Evidence is healthy only when every `incompleteCounts` value is zero and no orphan temporary is
    listed. Setup never activates: a `baseline` generation is activated automatically by the next
-   measured native `{{SKILL:build}}` run once the preregistered window and sample are met, so
+   measured native `{{SKILL:build}}` or `{{SKILL:refactor}}` run once the preregistered window and sample are met, so
    report it as collecting its baseline. `review` is terminal under every configuration state,
    including disabled or invalid: report that the generation is under review and can never resume.
    An unhealthy `suspended` generation is reported as not resumable until its incomplete evidence
@@ -96,12 +96,13 @@ longer holds; nothing is claimed that the helper did not return.
 **`begin-baseline`.** Call `protocol` with `{}` and take `protocolVersion` from `result.version`
 and `protocolDigest` from the envelope, which must equal `result.digest`; on a mismatch send
 nothing. Before asking, display the exact digest and version and disclose: a Quality-only baseline
-starts; later native `build` runs store minimal local records below
+starts; later native `build` and `refactor` runs store minimal local records below
 `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, holding bounded structured
 measurements and no prompts, diffs, source, paths, commands or output, environment values, model
 aliases, URLs, or personal, repository, branch, task, PR, or session identifiers; nothing leaves
 this machine; a detailed trace needs separate current-run consent; no second confirmation follows,
-because a later native `{{SKILL:build}}` run activates the generation automatically once the
+because a later native `{{SKILL:build}}` or `{{SKILL:refactor}}` run activates the generation
+automatically once the
 protocol's `aggregation.baselineWindowMinimumDays` and `aggregation.baselineEligiblePacketMinimum`,
 shown with their values, are met.
 
@@ -111,7 +112,7 @@ header: Baseline
 question: Start the Quality-only pilot baseline under the protocol digest shown?
 options:
   - label: Start
-    description: Start the baseline; build keeps running Quality and records the local minimal data disclosed above
+    description: Start the baseline; build and refactor keep running Quality and record the local minimal data disclosed above
   - label: Not now
     description: Start nothing; the opt-in stays as written
 ```

@@ -236,54 +236,62 @@ test('portable output contains only base workers and no native profile represent
   }
 });
 
-// `build` Phase 2 is the adopted Fast surface. Each of its five implementer selector lines keeps the
-// Quality reference and appends exactly one target-native Fast rendering; portable output keeps
-// the base worker and states that it runs Quality only, without naming a native profile or a gate
-// reason to record.
-test('the adopted build selector lines render the exact per-target Fast representation', () => {
-  const selectors = {
-    'ui-implementer': 'Frontend:',
-    'nodejs-implementer': 'Backend/CLI:',
-    'rust-implementer': 'Rust:',
-    'generic-product-implementer': 'Other clearly identified product code:',
-    'generic-implementer': 'Tooling/CI/configuration/repository metadata:',
-  };
+// `build` Phase 2 and `refactor` Phase 3 are the adopted Fast surfaces. Each of their five
+// implementer selector lines keeps the Quality reference and appends exactly one target-native Fast
+// rendering; portable output keeps the base worker and states that it runs Quality only, without
+// naming a native profile or a gate reason to record. A selector line is found by its Quality
+// reference, so the invariant does not depend on each tool's bucket labels.
+const ADOPTED_RENDERED_PHASES = {
+  build: { start: '\n### Phase 2: Implementation\n', end: '\n### Phase 3: Documentation\n' },
+  refactor: { start: '\n### Phase 3: Refactoring\n', end: '\n### Phase 3.5: Documentation sync\n' },
+};
+
+test('the adopted selector lines render the exact per-target Fast representation', () => {
+  const agents = [
+    'ui-implementer',
+    'nodejs-implementer',
+    'rust-implementer',
+    'generic-product-implementer',
+    'generic-implementer',
+  ];
   const expected = {
     claude: (worker) => `Fast: \`${worker}-fast\`.`,
     codex: (worker) =>
       `Fast: \`${worker}\` with \`model: "${CODEX_FAST.model}"\` and \`reasoning_effort: "${CODEX_FAST.reasoning_effort}"\`.`,
     portable: (worker) => `Fast: \`${worker}\` (portable build: Fast unavailable, Quality only).`,
   };
-  for (const [target, render] of Object.entries(expected)) {
-    const build = readFileSync(join(distRoot, target, 'effective-flow/tools/build.md'), 'utf8');
-    const phase2 = build.slice(
-      build.indexOf('\n### Phase 2: Implementation\n'),
-      build.indexOf('\n### Phase 3: Documentation\n'),
-    );
-    for (const [agent, label] of Object.entries(selectors)) {
-      const worker = `effective-flow-${agent}`;
-      const lines = phase2.split('\n').filter((line) => line.startsWith(`   - ${label}`));
-      assert.equal(lines.length, 1, `${target} ${agent}: one selector line`);
-      assert.ok(
-        lines[0].includes(`\`Use the \`${worker}\` skill for this phase.\``),
-        `${target} ${agent}: the Quality selector stays the default`,
+  for (const [tool, bounds] of Object.entries(ADOPTED_RENDERED_PHASES)) {
+    for (const [target, render] of Object.entries(expected)) {
+      const where = `${target} ${tool}`;
+      const text = readFileSync(join(distRoot, target, `effective-flow/tools/${tool}.md`), 'utf8');
+      const from = text.indexOf(bounds.start);
+      const to = text.indexOf(bounds.end, from + 1);
+      assert.ok(from >= 0 && to > from, `${where}: the adopted phase must render`);
+      const phase = text.slice(from, to);
+      for (const agent of agents) {
+        const worker = `effective-flow-${agent}`;
+        const quality = `\`Use the \`${worker}\` skill for this phase.\``;
+        const lines = phase.split('\n').filter((line) => line.includes(quality));
+        assert.equal(lines.length, 1, `${where} ${agent}: one selector line`);
+        assert.match(lines[0], /^ {3}- /, `${where} ${agent}: the selector is a step 1 item`);
+        assert.ok(lines[0].endsWith(render(worker)), `${where} ${agent}: ${lines[0]}`);
+      }
+      // Whole-file counts: no Fast rendering exists outside the five selector lines.
+      const fastReferences = text.match(/effective-flow-[a-z-]+-fast\b/g) ?? [];
+      assert.equal(fastReferences.length, target === 'claude' ? 5 : 0, `${where} Fast sidecars`);
+      const overrides = text.match(/reasoning_effort: "[a-z]+"/g) ?? [];
+      assert.equal(overrides.length, target === 'codex' ? 5 : 0, `${where} per-spawn overrides`);
+      assert.equal(
+        (text.match(/\(portable build: Fast unavailable, Quality only\)/g) ?? []).length,
+        target === 'portable' ? 5 : 0,
+        `${where} portable Quality-only notices`,
       );
-      assert.ok(lines[0].endsWith(render(worker)), `${target} ${agent}: ${lines[0]}`);
+      assert.doesNotMatch(
+        text,
+        /select Quality with `profile-unavailable`/,
+        `${where}: no selector line may read like an instruction to record a gate reason`,
+      );
     }
-    const fastReferences = build.match(/effective-flow-[a-z-]+-fast\b/g) ?? [];
-    assert.equal(fastReferences.length, target === 'claude' ? 5 : 0, `${target} Fast sidecars`);
-    const overrides = build.match(/reasoning_effort: "[a-z]+"/g) ?? [];
-    assert.equal(overrides.length, target === 'codex' ? 5 : 0, `${target} per-spawn overrides`);
-    assert.equal(
-      (build.match(/\(portable build: Fast unavailable, Quality only\)/g) ?? []).length,
-      target === 'portable' ? 5 : 0,
-      `${target} portable Quality-only notices`,
-    );
-    assert.doesNotMatch(
-      build,
-      /select Quality with `profile-unavailable`/,
-      `${target}: no selector line may read like an instruction to record a gate reason`,
-    );
   }
 });
 

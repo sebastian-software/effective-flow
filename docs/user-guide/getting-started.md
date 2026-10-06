@@ -107,14 +107,14 @@ installer reject missing, extra, malformed, or cross-target-inconsistent sidecar
 an installation. Those artifacts establish build and installation consistency, not runtime
 discovery or activation.
 
-`build` is the one workflow that requests that representation, and only inside its opt-in field
-pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and starts a Quality-only
-baseline through a confirmed setup action; a later `build` run activates the generation
-automatically once the preregistered baseline conditions are met. In an active
+`build` and `refactor` are the two workflows that request that representation, and only inside
+their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and
+starts a Quality-only baseline through a confirmed setup action; a later `build` or `refactor` run
+activates the generation automatically once the preregistered baseline conditions are met. In an active
 generation, Fast may be requested only for the first implementation attempt of an eligible native
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
-scope-growth continuation uses Quality; coupled packets also share Quality. `refactor` has not
-adopted Fast, and a project without the opt-in stays Quality-only. Portable installations remain
+scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
+stays Quality-only. Portable installations remain
 Quality-only in V1 and contain no native sidecar inventory or model metadata. See the
 [configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
@@ -139,8 +139,8 @@ profile-aware workflow reaches selection, Effective Flow checks presence only—
 displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
 without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
 attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
-with Quality. Only a native `build` run with the opt-in enabled and a baseline or active pilot
-generation reaches this selection path; `refactor` does not.
+with Quality. Only a native `build` or `refactor` run with the opt-in enabled and a baseline or
+active pilot generation reaches this selection path.
 
 ## First invocation
 

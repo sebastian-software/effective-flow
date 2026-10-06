@@ -1,14 +1,14 @@
 # Model-tiering pilot protocol
 
 This guide documents the shipped, local measurement protocol for the Quality/Fast field pilot of
-`build`. It explains the executable contract owned by
+`build` and `refactor`. It explains the executable contract owned by
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
 [`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
 protocol itself activates nothing: Guided setup starts a baseline only through a confirmed action,
-`build` lets the helper activate that baseline automatically once its preregistered conditions
-pass, `build` is the only workflow that records runs and requests Fast, `refactor` has not adopted
-Fast, and portable execution remains Quality-only and unmeasured.
+a measured `build` or `refactor` run lets the helper activate that baseline automatically once its
+preregistered conditions pass, these two are the only workflows that record runs and request Fast,
+and portable execution remains Quality-only and unmeasured.
 
 ## Authority and drift control
 
@@ -141,7 +141,8 @@ classes.
 
 ### Callers
 
-Three sources call the helper, each through a lazy fragment that owns its exact payloads:
+Guided setup, the two adopting workflows, and `merge-gate` call the helper, each through a lazy
+fragment that owns its exact payloads:
 
 - **Guided setup block 10**
   ([`src/shared/setup-execution-profiles.md`](../../src/shared/setup-execution-profiles.md)) reads
@@ -151,9 +152,10 @@ Three sources call the helper, each through a lazy fragment that owns its exact 
   `resume` binds the current inventory and suspension digests and restores only the stored prior
   state. Setup never calls `activate`. `review` is terminal and never resumes. A portable build
   offers no action.
-- **`build`**
+- **`build` and `refactor`**
   ([`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md))
-  reads `inventory` only with an enabled configuration on a native Claude Code or Codex build, and
+  name themselves in `start`'s `workflow` field and follow the same order; `refactor` classifies
+  its packets only after its Phase 2 baseline. Each reads `inventory` only with an enabled configuration on a native Claude Code or Codex build, and
   records only for a `baseline` or `active` generation. A portable build never calls the helper,
   whatever host runs it. In a `baseline` generation every measured run first reads `protocol` and
   calls `activate` without a confirmation: `activated` makes the reservation an `active` one, a
@@ -182,8 +184,13 @@ Three sources call the helper, each through a lazy fragment that owns its exact 
   `reconcile-record` once in the same run. For a still-open reservation it writes the record
   `abandoned` with every packet `unknown`; for a record `finalize` already persisted before its
   fault, it only drains the timing receipts and returns the stored `completionStatus`, which the
-  run reports. A declined or failed reconciliation leaves the record for `discard-generation` or `purge`. `build` never calls
-  `begin-baseline`, `resume`, or `suspend`.
+  run reports. A declined or failed reconciliation leaves the record for `discard-generation` or `purge`.
+  `refactor` takes the record's `validation` from its last Phase 5 run alone, so an unchanged
+  pre-existing failure stays `failed`, and sets `completionStatus` to `completed` only after its
+  Phase 6 comparison proves no regression, to `aborted` after a replanning stop or a user abort,
+  and to `failed` after an incident that ends the run, a missing outcome, an exhausted regression
+  loop, or a required check Phase 5 could not repeat; an incident the run survives leaves the
+  status to the comparison. Neither workflow calls `begin-baseline`, `resume`, or `suspend`.
 - **`merge-gate`** records the anonymous period observation described under "Evidence and
   consent".
 
