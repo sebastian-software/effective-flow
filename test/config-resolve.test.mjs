@@ -375,6 +375,97 @@ test('step 0: a local file without any visibility row is reported and falls thro
   });
 });
 
+// Invariant: hidden mode fails closed on a visible hidden declaration the parser cannot prove. An
+// active line (outside fences and HTML comments) that names both `visibility` and `hidden` but is
+// not the one well-formed visibility row of the one canonical envelope stops resolution with
+// exit 3; it never falls through to the tracked configuration, which would leak hidden-mode work
+// into tracked or forge output.
+function hiddenUnparseableDocument(replace, by) {
+  const text = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+  assert.ok(text.includes(replace), `the fixture carries ${replace} to replace`);
+  const broken = text.replace(replace, by);
+  assert.equal(parseConfigurationDocument(broken).envelopeCount, 0, 'the fixture has no envelope');
+  assert.ok(broken.includes(HIDDEN_ROW), 'the fixture still visibly carries the hidden row');
+  return broken;
+}
+
+async function refusedUnparseableHidden(t, text) {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, text);
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const envelope = await refused({ cwd: root, tool: 'build' });
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, {
+    step: 0,
+    path: join(root, LOCAL_SETUP),
+    reason: 'unparseable-hidden-declaration',
+  });
+  assert.equal(exitCodeFor(envelope), 3);
+}
+
+test('step 0: a hidden local file with a malformed table header stops with exit 3', async (t) => {
+  await refusedUnparseableHidden(t, hiddenUnparseableDocument('| Key | Value |', '| Key | Val |'));
+});
+
+test('step 0: a hidden local file with a malformed table separator stops with exit 3', async (t) => {
+  await refusedUnparseableHidden(t, hiddenUnparseableDocument('| --- | --- |', '| -x- | --- |'));
+});
+
+test('step 0: a hidden row outside any configuration heading stops with exit 3', async (t) => {
+  const live = setupDocument({ 'review.profile': 'deep' });
+  const text = `${live}\n## Notes\n\n${HIDDEN_ROW}\n`;
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  assert.ok(
+    document.envelope.rows.every((row) => row.key !== 'visibility'),
+    'the envelope carries no visibility row',
+  );
+  await refusedUnparseableHidden(t, text);
+});
+
+// Invariant: the proven hidden row is matched by its line, not its text, so a well-formed hidden
+// file that repeats the identical row outside its envelope still stops with exit 3.
+test('step 0: a hidden file repeating its hidden row outside the envelope stops with exit 3', async (t) => {
+  const live = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+  const text = `${live}\n## Notes\n\n${HIDDEN_ROW}\n`;
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+  await refusedUnparseableHidden(t, text);
+});
+
+// Invariant: a prose line naming both `visibility` and `hidden` also stops with exit 3. This
+// over-trigger is intended: the step-0 file is setup-written and machine-only, so any such line is
+// a hidden declaration the parser cannot prove, never harmless prose.
+for (const prose of [
+  'visibility: hidden would be set by setup',
+  'Setup sets the Visibility to HIDDEN here.',
+]) {
+  test(`step 0: a prose line "${prose}" in a non-hidden local file stops with exit 3`, async (t) => {
+    const live = setupDocument({ 'review.profile': 'deep' });
+    const text = live.replace('## Configuration', `${prose}\n\n## Configuration`);
+    assert.ok(text.includes(prose), 'the fixture carries the prose line');
+    assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+    await refusedUnparseableHidden(t, text);
+  });
+}
+
+// Invariant: a visibility hidden row inside a fenced code block is inactive, so a local file whose
+// only hidden declaration is fenced is not hidden mode, is not refused, and falls through to the ADR.
+test('step 0: a local file whose hidden row is only inside a fenced code block is not hidden', async (t) => {
+  const { root } = repository(t);
+  const fenced = '## Configuration\n\n| Key | Value |\n| --- | --- |\n| visibility | hidden |';
+  const live = setupDocument({ 'review.profile': 'deep' });
+  write(root, LOCAL_SETUP, `${live}\n\`\`\`markdown\n${fenced}\n\`\`\`\n`);
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'tracked');
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
 test('step 0: a linked worktree honours the main checkout file and reports its own same-named files as ignored', async (t) => {
   const { base, root } = repository(t);
   const linked = join(base, 'linked');
@@ -2296,6 +2387,27 @@ test('cli: a hidden local file with a malformed visibility row exits 3', (t) => 
   assert.equal(status, 3);
   assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
   assert.equal(envelope.error.details.reason, 'malformed-visibility-row');
+  assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI maps a visible hidden declaration without a parseable envelope to exit 3,
+// never to a fall-through to the tracked configuration.
+test('cli: a hidden local file with a malformed table header exits 3', (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, hiddenUnparseableDocument('| Key | Value |', '| Key | Val |'));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 3);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, {
+    step: 0,
+    path: join(root, LOCAL_SETUP),
+    reason: 'unparseable-hidden-declaration',
+  });
   assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
 });
 

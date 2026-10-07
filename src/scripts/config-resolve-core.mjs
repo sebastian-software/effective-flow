@@ -85,6 +85,7 @@ export const UNSAFE_REASONS = Object.freeze([
   'hidden-file-multiple-envelopes',
   'ambiguous-visibility-row',
   'malformed-visibility-row',
+  'unparseable-hidden-declaration',
 ]);
 
 export const MAX_STDIN_BYTES = 1024 * 1024;
@@ -608,7 +609,8 @@ export function splitTableRow(text) {
 
 // Reads the table that follows a canonical heading at `start`: the first table before the next
 // level-1/2 heading. Returns its rows when its header matches the envelope, otherwise null. Each
-// row keeps its exact original `line`; an empty-key row is kept with `key: ''`.
+// row keeps its exact original `line` (and a non-enumerable line `index`); an empty-key row is kept
+// with `key: ''`.
 function readEnvelopeTable(lines, start, envelope) {
   let index = start + 1;
   while (index < lines.length && !isSectionBoundary(lines[index]) && !isTableLine(lines[index])) {
@@ -630,21 +632,37 @@ function readEnvelopeTable(lines, start, envelope) {
   for (index += 2; index < lines.length && isTableLine(lines[index]); index += 1) {
     const cells = splitTableRow(lines[index].text);
     const key = cells[0] ?? '';
-    rows.push({
+    const row = {
       key,
       raw: cells.length === 2 ? cells[1] : null,
       cellCount: cells.length,
       line: lines[index].text,
-    });
+    };
+    // Internal only: non-enumerable, so no serialized or compared row ever carries it.
+    Object.defineProperty(row, 'index', { value: index });
+    rows.push(row);
   }
   return rows;
 }
 
+// A hidden declaration candidate is any active line naming both tokens `visibility` and `hidden`
+// (case-insensitive, word-bounded); the line is not parsed. A prose mention such as
+// "visibility: hidden would be set by setup" is deliberately a candidate: the step-0 file is
+// setup-written and machine-only, so such a line is a declaration the parser cannot prove.
+const HIDDEN_CANDIDATE_TOKENS = Object.freeze([/\bvisibility\b/i, /\bhidden\b/i]);
+
 // Parses a configuration document: the first canonical envelope (and how many there are), every
-// parsed envelope in document order, and whether a `## Status` section marks the record as
-// superseded. Fenced code and HTML comments are ignored.
+// parsed envelope in document order, the line indices of every hidden declaration candidate, and
+// whether a `## Status` section marks the record as superseded. Fenced code and HTML comments are
+// ignored.
 export function parseConfigurationDocument(text) {
   const lines = scanLines(text);
+  const hiddenCandidates = [];
+  lines.forEach((line, index) => {
+    if (!line.inactive && HIDDEN_CANDIDATE_TOKENS.every((token) => token.test(line.text))) {
+      hiddenCandidates.push(index);
+    }
+  });
   const envelopes = [];
   let superseded = false;
   for (let index = 0; index < lines.length; index += 1) {
@@ -670,6 +688,7 @@ export function parseConfigurationDocument(text) {
     envelope: envelopes[0] ?? null,
     envelopeCount: envelopes.length,
     envelopes,
+    hiddenCandidates,
     superseded,
   };
 }
@@ -881,6 +900,20 @@ async function locateHidden(context, roots, diagnostics) {
       'RUNTIME_STATE_UNSAFE',
       `${file.path}: has a visibility row with ${visibilityRows[0].cellCount} cells instead of 2`,
       { step: 0, path: file.path, reason: 'malformed-visibility-row' },
+    );
+  }
+  // Hidden detection must not depend on successful parsing: any candidate line other than the one
+  // well-formed `visibility | hidden` row of the one envelope (matched by line index) stops.
+  const proven =
+    document.envelopeCount === 1 &&
+    visibilityRows.length === 1 &&
+    visibilityRows[0].raw === 'hidden' &&
+    document.hiddenCandidates.every((index) => index === visibilityRows[0].index);
+  if (document.hiddenCandidates.length > 0 && !proven) {
+    fail(
+      'RUNTIME_STATE_UNSAFE',
+      `${file.path}: visibly declares hidden mode in a form the parser cannot prove`,
+      { step: 0, path: file.path, reason: 'unparseable-hidden-declaration' },
     );
   }
   if (!hidden) {
