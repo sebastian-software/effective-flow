@@ -1995,7 +1995,7 @@ try {
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2336,
     iterate: 1820,
-    setup: 1894,
+    setup: 1898,
     'apply-review': 1371,
     'apply-issues': 1169,
     cleanup: 1034,

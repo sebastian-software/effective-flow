@@ -16907,9 +16907,51 @@ test('setup treats a duplicate envelope as an invalid source, also at the pre-wr
   );
   assert.doesNotMatch(
     precheck,
-    /`duplicate-envelope`|`ambiguous-key`|reason: cell-count/,
+    /`duplicate-envelope`|`ambiguous-key`|reason: cell-count|`unrepresentable-row`/,
     'the pre-write check must reference Step 2 item 5 rather than keep a second diagnostic list',
   );
+});
+
+// Setup rewrites the whole configuration table, so an unknown or unasked row must reach the new
+// table as its lossless original line from `data.source.rows`: `data.values[*].raw` is trimmed and
+// has `\|` unescaped, and re-encoding it would silently change the row. A row the resolver cannot
+// represent at all (an empty key, reported as `unrepresentable-row`) has no value to carry, so it
+// must stop the write through the invalid-source question instead of vanishing from the rewrite.
+test('setup carries unknown rows as their original line and stops on an unrepresentable row', () => {
+  const setup = source('src/tools/setup.md');
+  const step6Item1 = prose(
+    boundedSlice(
+      setup,
+      '1. Build the target configuration non-destructively.',
+      '\n2. This also applies to the safe defaults',
+    ),
+  );
+  assert.match(
+    step6Item1,
+    near('byte-for-byte', 'original `line` in `data.source.rows`', 120),
+    'an unknown or unasked row must be carried over as its original line from data.source.rows',
+  );
+  assert.ok(
+    step6Item1.includes('never re-encoded from `raw`'),
+    'the carryover must not rebuild a row from the trimmed and unescaped raw value',
+  );
+
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
+  );
+  assert.match(
+    item4,
+    near('`data.source.rows`', 'original `line`', 80),
+    "Step 2 must retain each row's original line for the later rewrite",
+  );
+
+  const item5 = prose(boundedSlice(setup, '5. **Invalid source.**', '\n### Step 3'));
+  assert.match(
+    item5,
+    /`unrepresentable-row` diagnostic/,
+    'an empty-key row the resolver cannot represent must count as an invalid source',
+  );
+  assert.ok(DIAGNOSTIC_CODES.includes('unrepresentable-row'));
 });
 
 test('setup ends the run on a several-match locator result at both detection points', () => {

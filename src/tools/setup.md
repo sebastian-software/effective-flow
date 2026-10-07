@@ -338,16 +338,18 @@ options:
    Step 8.
 4. **Form the current values.** Take the "current values" overview (key → currently recorded
    `raw` value) from `data.values`, which keeps every known and unknown key, and retain
-   `data.source.language` as the envelope language for a later update; in the migration case these
-   are the values of `<source-handle>`. Show the respective value at every following question
+   `data.source.language` as the envelope language and `data.source.rows` (each table row's exact
+   original `line`) for a later update; in the migration case these are the values of
+   `<source-handle>`. Show the respective value at every following question
    ("currently recorded: …") and use it as the pre-selection. If a key is missing or unset, label the pre-selection as the default
    ("currently not set – default: …"). On a scored question, name that value in the question or
    its explanation only; never mark it in a label and never move its option. Record every retired
    row from `data.retired`: its key, successor, `successorPresent`, and raw value (returned to
    setup only). Step 6 migrates the recorded rows in place.
 5. **Invalid source.** If the ADR table is invalid or ambiguous (an `ambiguous-key` diagnostic,
-   an `invalid-value` diagnostic with `reason: cell-count`, or a `duplicate-envelope` diagnostic,
-   since a rewrite would drop every row outside the first envelope) or the selected
+   an `invalid-value` diagnostic with `reason: cell-count`, an `unrepresentable-row` diagnostic,
+   or a `duplicate-envelope` diagnostic, since a rewrite would drop every row outside the first
+   envelope) or the selected
    `<source-handle>` is not valid JSON (an `invalid-source` diagnostic names that handle), do not overwrite silently and
    do not take the building block's safe default, which every other `invalid-value` keeps. Inform
    the user with the exact ADR path or JSON handle and the error, and ask whether the configuration
@@ -746,10 +748,12 @@ and skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks n
    order. For Profile, use `safe defaults → freshly read existing known and unknown values →
 selected profile overlay → explicit chat-language choice`; the last two overlays intentionally
    win only for the keys the profile contract owns. Carry over every unasked known value and every
-   unknown row byte-for-byte, and never write the selected profile name or any equivalent key. A
-   retired `prReview.*` or `worktree.*` row recorded in Step 2 is not an unknown key: rewrite it as
-   described below before the before/after list is built. Two recorded `mergeGate.bots` entries
-   that denote one reviewer are collapsed just as early, as described for block 9.
+   unknown row byte-for-byte — from a table source as that row's original `line` in
+   `data.source.rows`, never re-encoded from `raw` — and never write the selected profile name or
+   any equivalent key. A retired `prReview.*` or `worktree.*` row recorded in Step 2 is not an
+   unknown key: rewrite it as described below before the before/after list is built. Two recorded
+   `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for
+   block 9.
 2. This also applies to the safe defaults: a default value that would replace an already-present,
    differing config value is set only after explicit confirmation. Before writing, show a
    before/after list of **all** keys to be changed, whether from Profile-owned topology and chat

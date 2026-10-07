@@ -546,7 +546,10 @@ test('encoding: fenced rows are ignored, CRLF and a BOM are tolerated, and \\| i
     '﻿# Setup\r\n\r\n```markdown\r\n## Configuration\r\n\r\n| Key | Value |\r\n| --- | --- |\r\n| fenced | yes |\r\n```\r\n\r\n## Configuration\r\n\r\n| Key | Value |\r\n| --- | --- |\r\n| a.b | x \\| y |\r\n';
   const { envelope, envelopeCount } = parseConfigurationDocument(text);
   assert.equal(envelopeCount, 1);
-  assert.deepEqual(envelope.rows, [{ key: 'a.b', raw: 'x | y', cellCount: 2 }]);
+  // `line` is the row's original text after the CRLF split: escaped, untrimmed, without the `\r`.
+  assert.deepEqual(envelope.rows, [
+    { key: 'a.b', raw: 'x | y', cellCount: 2, line: '| a.b | x \\| y |' },
+  ]);
   assert.deepEqual(
     parseSetupMarkers('```\n**Effective Flow project setup:** fenced.md\n```\n'),
     [],
@@ -560,7 +563,9 @@ test('encoding: a BOM directly before a first-line ## Configuration heading stil
   const { envelope, envelopeCount } = parseConfigurationDocument(text);
   assert.equal(envelopeCount, 1);
   assert.equal(envelope.language, 'en');
-  assert.deepEqual(envelope.rows, [{ key: 'plan.dir', raw: 'bom', cellCount: 2 }]);
+  assert.deepEqual(envelope.rows, [
+    { key: 'plan.dir', raw: 'bom', cellCount: 2, line: '| plan.dir | bom |' },
+  ]);
 });
 
 test('encoding: a second envelope is reported and only the first is read', async (t) => {
@@ -656,6 +661,141 @@ test('encoding: unknown and legacy keys stay in values so the setup rewrite lose
   const data = await resolved({ cwd: root, tool: 'setup' });
   assert.equal(data.values['plan.markerLanguage'].value, 'de');
   assert.equal(data.values['custom.key'].value, 'x');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Lossless row carryover
+//
+// Invariant: setup rewrites the whole configuration table and promises to carry every unknown or
+// unasked row over byte-for-byte. `data.values[*].raw` is trimmed and has `\|` unescaped, so it
+// cannot reproduce the original row; the resolver therefore reports every body row of the resolved
+// (first) envelope as its exact original `line` in `data.source.rows`, in document order. A row the
+// resolver cannot represent as a value (an empty key) is kept there and reported as
+// `unrepresentable-row` instead of being dropped silently, and `visibility` passes the same
+// structural validation as every other key. Reader-facing `data.values` stays unchanged.
+
+// A project setup ADR whose configuration table body is given as literal lines.
+function rawSetupDocument(bodyLines) {
+  return `# Effective Flow project setup\n\n## Status\n\nActive\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n${bodyLines.join('\n')}\n`;
+}
+
+test('rows: data.source.rows carries every row as its exact original line, escapes and spacing included', async (t) => {
+  const { root } = plainDirectory(t);
+  const escaped = '| plan.dir | a\\|b |';
+  const spaced = '|  review.profile   |  deep  |  ';
+  write(root, SETUP_ADR, rawSetupDocument([escaped, spaced]));
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 2);
+  // Reader-facing values are unchanged: trimmed, with the escaped pipe decoded.
+  assert.deepEqual(data.values['plan.dir'], {
+    state: 'set',
+    value: 'a|b',
+    raw: 'a|b',
+    items: ['a|b'],
+    source: 'adr',
+  });
+  assert.deepEqual(data.values['review.profile'], {
+    state: 'set',
+    value: 'deep',
+    raw: 'deep',
+    items: ['deep'],
+    source: 'adr',
+  });
+  // The carryover source is the untouched line, never a re-encoding of `raw`.
+  assert.deepEqual(data.source.rows, [
+    { key: 'plan.dir', line: escaped },
+    { key: 'review.profile', line: spaced },
+  ]);
+});
+
+test('rows: an empty-key row is reported as unrepresentable-row, kept in data.source.rows, and never a value', async (t) => {
+  const { root } = plainDirectory(t);
+  const orphan = '|  | orphan |';
+  const text = rawSetupDocument(['| plan.dir | x |', orphan, '| review.profile | deep |']);
+  write(root, SETUP_ADR, text);
+
+  const [, parsedOrphan] = parseConfigurationDocument(text).envelope.rows;
+  assert.equal(parsedOrphan?.key, '', 'the parser keeps the empty-key row instead of dropping it');
+  assert.equal(parsedOrphan?.line, orphan);
+
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.ok(DIAGNOSTIC_CODES.includes('unrepresentable-row'));
+  assert.deepEqual(
+    data.diagnostics.filter((entry) => entry.code === 'unrepresentable-row'),
+    [{ code: 'unrepresentable-row', reason: 'empty-key', line: orphan }],
+  );
+  assert.deepEqual(data.source.rows, [
+    { key: 'plan.dir', line: '| plan.dir | x |' },
+    { key: '', line: orphan },
+    { key: 'review.profile', line: '| review.profile | deep |' },
+  ]);
+  assert.equal(Object.hasOwn(data.values, ''), false, 'an empty-key row never becomes a value');
+  assert.equal(data.values['plan.dir'].value, 'x');
+  assert.equal(data.values['review.profile'].value, 'deep');
+});
+
+test('rows: visibility passes the same structural validation as every other key', async (t) => {
+  const { root } = plainDirectory(t);
+  const visibilityDiagnostics = (data, code) =>
+    data.diagnostics.filter((entry) => entry.code === code && entry.key === 'visibility');
+
+  // Two rows: exactly one ambiguous-key, never a second one from the owned-key check.
+  write(root, SETUP_ADR, setupDocument({ visibility: rowsOf('standard', 'standard') }));
+  const duplicated = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(visibilityDiagnostics(duplicated, 'ambiguous-key'), [
+    { code: 'ambiguous-key', key: 'visibility', count: 2 },
+  ]);
+  assert.equal(duplicated.values.visibility, undefined);
+
+  // A single well-formed row with an unknown value keeps its value diagnostic.
+  write(root, SETUP_ADR, setupDocument({ visibility: 'bogus' }));
+  const unknown = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(visibilityDiagnostics(unknown, 'invalid-value'), [
+    { code: 'invalid-value', key: 'visibility', raw: 'bogus' },
+  ]);
+  assert.equal(unknown.values.visibility, undefined);
+
+  // A wrong cell count is the structural cell-count diagnostic, and the only one for visibility.
+  write(root, SETUP_ADR, rawSetupDocument(['| visibility | standard | extra |']));
+  const malformed = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(visibilityDiagnostics(malformed, 'invalid-value'), [
+    { code: 'invalid-value', key: 'visibility', raw: null, reason: 'cell-count' },
+  ]);
+  assert.equal(malformed.values.visibility, undefined);
+});
+
+test('rows: data.source.rows lists the first envelope for a table source and is null for JSON or no source', async (t) => {
+  const { root } = repository(t);
+  // Step 4: no source.
+  const none = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(none.source.step, 4);
+  assert.equal(none.source.rows, null);
+
+  // Step 3: transitional JSON has no original table lines.
+  const json = write(root, join('.effective-flow', 'config.json'), '{"plan":{"dir":"json"}}');
+  const transitional = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(transitional.source.step, 3);
+  assert.equal(transitional.source.rows, null);
+  rmSync(json);
+
+  // Step 2: only the rows of the first envelope, which is the one the values come from.
+  write(
+    root,
+    SETUP_ADR,
+    `${setupDocument({ 'plan.dir': 'first' })}\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | second |\n`,
+  );
+  const table = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(table.source.step, 2);
+  assert.deepEqual(table.source.rows, [{ key: 'plan.dir', line: '| plan.dir | first |' }]);
+
+  // Step 0: the hidden local file is a table source too.
+  write(root, LOCAL_SETUP, setupDocument({ visibility: 'hidden', 'review.profile': 'deep' }));
+  const hidden = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(hidden.source.step, 0);
+  assert.deepEqual(hidden.source.rows, [
+    { key: 'visibility', line: '| visibility | hidden |' },
+    { key: 'review.profile', line: '| review.profile | deep |' },
+  ]);
 });
 
 // Invariant: every configuration key, including one named like an Object.prototype member
@@ -1287,6 +1427,7 @@ test('roots: step 4 reports no source and only the always-present owned keys', a
     legacyMarker: false,
     legacySlug: false,
     prefixed: false,
+    rows: null,
   });
   assert.deepEqual(Object.keys(data.values).sort(), [
     'delivery.prReview',
@@ -1695,9 +1836,14 @@ test('input: unknown fields, a relative cwd and a missing cwd are invalid input'
 test('diagnostics: every emitted code belongs to the closed set', async (t) => {
   const { root } = repository(t);
   write(root, 'AGENTS.md', '**Firmo project setup:** missing.md\n');
-  write(root, join('docs', 'adr', 'firmo-project-setup.md'), setupDocument({ 'x.y': '(leer)' }));
+  write(
+    root,
+    join('docs', 'adr', 'firmo-project-setup.md'),
+    setupDocument({ 'x.y': '(leer)', '': 'orphan' }),
+  );
   const data = await resolved({ cwd: root, tool: 'no-such-tool' });
-  assert.ok(data.diagnostics.length >= 4);
+  assert.ok(data.diagnostics.length >= 5);
+  assert.ok(codes(data).includes('unrepresentable-row'), 'the fixture emits the empty-key code');
   for (const code of codes(data)) assert.ok(DIAGNOSTIC_CODES.includes(code), code);
 });
 

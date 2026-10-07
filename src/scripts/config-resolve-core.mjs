@@ -62,6 +62,7 @@ export const DIAGNOSTIC_CODES = Object.freeze([
   'legacy-empty-token',
   'ambiguous-key',
   'invalid-value',
+  'unrepresentable-row',
   'unknown-tool',
 ]);
 
@@ -591,7 +592,8 @@ export function splitTableRow(text) {
 }
 
 // Reads the table that follows a canonical heading at `start`: the first table before the next
-// level-1/2 heading. Returns its rows when its header matches the envelope, otherwise null.
+// level-1/2 heading. Returns its rows when its header matches the envelope, otherwise null. Each
+// row keeps its exact original `line`; an empty-key row is kept with `key: ''`.
 function readEnvelopeTable(lines, start, envelope) {
   let index = start + 1;
   while (index < lines.length && !isSectionBoundary(lines[index]) && !isTableLine(lines[index])) {
@@ -613,8 +615,12 @@ function readEnvelopeTable(lines, start, envelope) {
   for (index += 2; index < lines.length && isTableLine(lines[index]); index += 1) {
     const cells = splitTableRow(lines[index].text);
     const key = cells[0] ?? '';
-    if (key === '') continue;
-    rows.push({ key, raw: cells.length === 2 ? cells[1] : null, cellCount: cells.length });
+    rows.push({
+      key,
+      raw: cells.length === 2 ? cells[1] : null,
+      cellCount: cells.length,
+      line: lines[index].text,
+    });
   }
   return rows;
 }
@@ -1039,14 +1045,14 @@ function setOwn(target, key, value) {
   });
 }
 
-// Validates every key except `visibility` structurally, retired keys included: two or more rows of
+// Validates every key structurally, `visibility` and retired keys included: two or more rows of
 // one key are ambiguous and no row is chosen, a single row with the wrong cell count is invalid.
-// Returns `values` for every non-retired key and `retired`, which maps each retired key in
-// first-occurrence order to its single well-formed row, or to null when the key is invalid.
+// Returns `values` for every non-retired key except `visibility` and `retired`, which maps each
+// retired key in first-occurrence order to its single well-formed row, or to null when the key is
+// invalid. Empty-key rows must already be removed by the caller.
 function buildValues(rows, source, diagnostics) {
   const grouped = new Map();
   for (const row of rows) {
-    if (row.key === VISIBILITY_KEY) continue;
     if (!grouped.has(row.key)) grouped.set(row.key, []);
     grouped.get(row.key).push(row);
   }
@@ -1063,6 +1069,7 @@ function buildValues(rows, source, diagnostics) {
     } else {
       invalid = false;
     }
+    if (key === VISIBILITY_KEY) continue;
     if (isRetired) {
       retired.set(key, invalid ? null : row);
       continue;
@@ -1112,11 +1119,9 @@ function validateOwnedKeys(values, rows, diagnostics) {
     Object.assign(prReview, { state: 'invalid', value: null, items: [] });
   }
 
-  const visibility = rows.filter((row) => row.key === VISIBILITY_KEY);
-  if (visibility.length > 1) {
-    diagnostics.push({ code: 'ambiguous-key', key: VISIBILITY_KEY, count: visibility.length });
-  }
-  for (const row of visibility) {
+  // The structural `visibility` diagnostics come from `buildValues`; only the domain check is here.
+  for (const row of rows) {
+    if (row.key !== VISIBILITY_KEY || row.raw === null) continue;
     if (!VISIBILITY_VALUES.includes(row.raw)) {
       diagnostics.push({ code: 'invalid-value', key: VISIBILITY_KEY, raw: row.raw });
     }
@@ -1268,8 +1273,16 @@ export async function resolveConfiguration(input, deps = {}) {
     }
   }
 
-  const rows = located ? (located.rows ?? located.document.envelope.rows) : [];
+  const allRows = located ? (located.rows ?? located.document.envelope.rows) : [];
   if (located) documentDiagnostics(located, diagnostics);
+  // An empty-key row cannot become a value or a retired entry; it is reported and kept only in
+  // `source.rows`, and every other check sees the representable rows alone.
+  for (const row of allRows) {
+    if (row.key === '') {
+      diagnostics.push({ code: 'unrepresentable-row', reason: 'empty-key', line: row.line });
+    }
+  }
+  const rows = allRows.filter((row) => row.key !== '');
   if (!hidden && rows.some((row) => row.key === VISIBILITY_KEY && row.raw === 'hidden')) {
     diagnostics.push({ code: 'tracked-hidden-ignored', path: located.path });
   }
@@ -1289,6 +1302,8 @@ export async function resolveConfiguration(input, deps = {}) {
       legacyMarker: located?.legacyMarker ?? false,
       legacySlug: located?.legacySlug ?? false,
       prefixed: located?.prefixed ?? false,
+      // Lossless original table lines of the first envelope, for setup's byte-for-byte carryover.
+      rows: located?.document ? allRows.map((row) => ({ key: row.key, line: row.line })) : null,
     },
     values,
     retired,
