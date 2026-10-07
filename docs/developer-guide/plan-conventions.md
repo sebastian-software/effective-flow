@@ -5,7 +5,8 @@ Plan files are created via `/effective-flow plan` (purely planning, no code) and
 ADR, default `docs/plan`; forced to `.effective-flow/plan` in hidden mode). This
 document describes the naming scheme, the status markers, and the lifecycle of the plan files.
 The source is [`src/tools/plan.md`](../../src/tools/plan.md); agent behavior rules for plan files
-are canonical in [`AGENTS.md`](../../AGENTS.md), section "Plan files (`docs/plan/`)".
+are canonical in the shipped `src/shared/plan-*.md` fragments (archival:
+[`plan-archival.md`](../../src/shared/plan-archival.md)).
 
 ## Naming scheme: ISO-date slug
 

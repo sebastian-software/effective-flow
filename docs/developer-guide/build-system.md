@@ -576,7 +576,7 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    list must omit `Agent` and `Task` regardless of read/write authority. The parenthesised form
    cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
    the smallest supported history, plus the compact, self-contained handoff defined in
-   [`AGENTS.md`](../../AGENTS.md), section "Delegation".
+   [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md).
 7. If the tool writes into the repository or onto the forge, decide how it behaves in hidden mode
    (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)). Its artifacts
    must stay under the forced local directories and out of every staged path. Its commit messages,
