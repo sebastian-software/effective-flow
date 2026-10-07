@@ -383,8 +383,9 @@ action is `stop` does the consumer downgrade it to a single report if the run re
 matching the login, because that depends on run state; the conditional never changes `report` or
 `none`.
 Setup is exempt as the repair path and is the only reader of a retired row's value, which its
-`retired` entries carry as `raw`: it carries the value over, removes the old row, and reports a
-shadowed value rather than merging it.
+`retired` entries carry as `raw` next to the row's original `line` (`null` for an invalid key or a
+JSON source): it carries the value over by rewriting that line with only the key replaced, removes
+the old row, and reports a shadowed value rather than merging it.
 
 `mergeGate.conflictResolution` has **no** legacy counterpart that any earlier generation wrote: no
 such generation produced a `prReview.conflictResolution` row. A row that exists anyway is retired like

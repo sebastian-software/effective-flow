@@ -16954,6 +16954,47 @@ test('setup carries unknown rows as their original line and stops on an unrepres
   assert.ok(DIAGNOSTIC_CODES.includes('unrepresentable-row'));
 });
 
+// Invariant: an escaped-pipe value of a retired row must survive setup's in-place migration
+// unchanged. `raw` is trimmed and pipe-unescaped, so rebuilding the successor row from it can
+// corrupt the table; Step 2 therefore records each retired row's original `line` from
+// `data.retired`, and the in-place migration rewrites that line with only the key cell replaced by
+// the successor key, the value cell kept byte for byte.
+test('setup migrates a retired row by rewriting its original line, never re-encoding raw', () => {
+  const setup = source('src/tools/setup.md');
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
+  );
+  const retiredRecord = item4.search(/Record (?:every|each) retired row/);
+  assert.notEqual(retiredRecord, -1, 'Step 2 item 4 must record the retired rows');
+  assert.match(
+    item4.slice(retiredRecord),
+    /`line`/,
+    "Step 2 must record each retired row's original line next to its raw value",
+  );
+
+  const migration = prose(
+    boundedSlice(
+      setup,
+      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+      '\n#### Writing the hidden local configuration',
+    ),
+  );
+  assert.match(
+    migration,
+    near('original `line`', '(?:key cell|only the key)', 200),
+    "the migration must rewrite the row's original line, replacing only the key cell",
+  );
+  assert.match(
+    migration,
+    near('value cell', 'byte[- ]for[- ]byte', 120),
+    'the migration must keep the value cell byte for byte',
+  );
+  assert.ok(
+    migration.includes('never re-encoded from `raw`'),
+    'the migrated successor row must not be rebuilt from the trimmed and unescaped raw value',
+  );
+});
+
 test('setup ends the run on a several-match locator result at both detection points', () => {
   const setup = source('src/tools/setup.md');
   const item2 = prose(

@@ -344,8 +344,8 @@ options:
    ("currently recorded: …") and use it as the pre-selection. If a key is missing or unset, label the pre-selection as the default
    ("currently not set – default: …"). On a scored question, name that value in the question or
    its explanation only; never mark it in a label and never move its option. Record every retired
-   row from `data.retired`: its key, successor, `successorPresent`, and raw value (returned to
-   setup only). Step 6 migrates the recorded rows in place.
+   row from `data.retired`: its key, successor, `successorPresent`, raw value (returned to
+   setup only), and original `line` (`null` for a JSON source or an invalid key). Step 6 migrates the recorded rows in place.
 5. **Invalid source.** If the ADR table is invalid or ambiguous (an `ambiguous-key` diagnostic,
    an `invalid-value` diagnostic with `reason: cell-count`, an `unrepresentable-row` diagnostic,
    or a `duplicate-envelope` diagnostic, since a rewrite would drop every row outside the first
@@ -1128,15 +1128,17 @@ blocks, and adds nothing to the ADR written in item 4.
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
 The merge-gate keys were formerly `prReview.*`, and three `delivery` keys were `worktree.*`. If Step 2
-recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write:
+recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write.
+From a table source, every carried-over retired row is written as its recorded original `line` with only the key cell replaced
+by the successor key; the value cell, its escapes and its spacing stay byte for byte, never re-encoded from `raw` (a JSON source, `line: null`, takes the value from `raw`).
 
 - **Carry ordinary non-login rows mechanically:** `prReview.completion` → `mergeGate.completion`;
-  keep the identical trailing key and preserve the recorded value verbatim.
+  keep the identical trailing key and preserve the recorded value verbatim in its value cell, as stated above.
 - **Apply `setup-retired-login-migration`.** Follow it for every retired login `.trigger` or
   `.check` row and all destination, removal, retention, deduplication, conflict, and shadow outcomes.
 - **Carry the three retired `worktree.*` rows over the same way:** `worktree.baseBranch` →
   `delivery.baseBranch`, `worktree.branchPrefix` → `delivery.branchPrefix`, `worktree.completion` →
-  `delivery.completion`, value verbatim, under the same removal and shadowed-key rules below.
+  `delivery.completion`, value cell as stated above, under the same removal and shadowed-key rules below.
   `worktree.enabled`, `worktree.setup` and `worktree.baseDir` are current keys and stay.
 - **Remove only retired rows with a reachable destination established or shadowed.** Unmatched login rows are a retained explicit exception.
   A conflicting retired login row becomes removable only after the `Bot conflict` choice selects its destination value and the normal confirmation produces the confirmed write.

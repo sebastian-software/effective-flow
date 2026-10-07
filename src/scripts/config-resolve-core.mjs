@@ -181,7 +181,7 @@ export const SUCCESSOR_SETS = deepFreeze([
   { tool: 'merge-gate', mode: null, successors: ['mergeGate.*'] },
 ]);
 
-// The repair path: it reads every retired row's raw value in order to carry it over.
+// The repair path: it reads every retired row's raw value and original line to carry it over.
 export const RETIRED_EXEMPT_TOOLS = Object.freeze(['setup']);
 
 // Tools whose successor set depends on a mode, with the modes each accepts.
@@ -1213,7 +1213,8 @@ function successorPresent(rows, successor, login) {
 // the action depends only on the successor, never on the row's value, so invalidity can never
 // downgrade a stop to none. The structural diagnostic is reported to every tool; setup receives
 // `state: 'invalid'` with no raw value, so it takes its invalid-source path instead of migrating
-// the row.
+// the row. Setup also receives the row's original `line` (null for an invalid key or a JSON source)
+// so its migration rewrites only the key cell.
 function classifyRetiredRows(rows, retiredKeys, tool, mode, diagnostics) {
   const set = successorSetFor(tool, mode);
   if (!set) diagnostics.push({ code: 'unknown-tool', tool });
@@ -1229,7 +1230,10 @@ function classifyRetiredRows(rows, retiredKeys, tool, mode, diagnostics) {
     else if (set && inSuccessorSet(set.successors, successor)) action = present ? 'report' : 'stop';
     const entry = { key, successor, successorPresent: present, action };
     if (row === null) entry.state = 'invalid';
-    if (set?.exempt) entry.raw = row === null ? null : row.raw;
+    if (set?.exempt) {
+      entry.raw = row === null ? null : row.raw;
+      entry.line = row === null ? null : (row.line ?? null);
+    }
     if (login !== null) {
       entry.conditional = 'reviewer-resolved';
       entry.login = login;

@@ -1085,6 +1085,7 @@ for (const { tool, mode, stops, reports = [], unknown = false } of RETIRED_CASES
         assert.equal(entry.successor, RETIRED_SAMPLE[entry.key]);
         assert.equal(entry.successorPresent, present);
         assert.equal(Object.hasOwn(entry, 'raw'), false, 'only setup receives a retired raw value');
+        assert.equal(Object.hasOwn(entry, 'line'), false, 'only setup receives a retired line');
         assert.equal(
           Object.hasOwn(data.values, entry.key),
           false,
@@ -1110,7 +1111,7 @@ test('retired rows: deliver reports worktree.completion and never stops on it', 
   ]);
 });
 
-test('retired rows: setup is exempt and receives each raw value to carry over', async (t) => {
+test('retired rows: setup is exempt and receives each raw value and original line to carry over', async (t) => {
   const { root } = plainDirectory(t);
   write(
     root,
@@ -1125,6 +1126,7 @@ test('retired rows: setup is exempt and receives each raw value to carry over', 
       successorPresent: false,
       action: 'none',
       raw: 'origin/main',
+      line: '| worktree.baseBranch | origin/main |',
     },
     {
       key: 'prReview.maxRounds',
@@ -1132,6 +1134,7 @@ test('retired rows: setup is exempt and receives each raw value to carry over', 
       successorPresent: false,
       action: 'none',
       raw: '3',
+      line: '| prReview.maxRounds | 3 |',
     },
   ]);
   assert.ok(!codes(data).includes('unknown-tool'));
@@ -1198,7 +1201,7 @@ test('retired rows: a login-keyed prReview.bots subkey matches its successor acr
 // setup receives state 'invalid' with no raw value, so it asks its invalid-source question instead
 // of migrating the row.
 
-test('retired rows: setup gets a malformed retired row as invalid with no raw value, beside a well-formed one that keeps its raw', async (t) => {
+test('retired rows: setup gets a malformed retired row as invalid with no raw value or line, beside a well-formed one that keeps its raw and line', async (t) => {
   const { root } = plainDirectory(t);
   write(
     root,
@@ -1220,6 +1223,7 @@ test('retired rows: setup gets a malformed retired row as invalid with no raw va
       action: 'none',
       state: 'invalid',
       raw: null,
+      line: null,
     },
     {
       key: 'prReview.maxRounds',
@@ -1227,6 +1231,7 @@ test('retired rows: setup gets a malformed retired row as invalid with no raw va
       successorPresent: false,
       action: 'none',
       raw: '3',
+      line: '| prReview.maxRounds | 3 |',
     },
   ]);
   assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
@@ -1255,7 +1260,7 @@ test('retired rows: a malformed retired row for a non-setup tool keeps the succe
   assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
 });
 
-test('retired rows: setup collapses duplicate rows of one retired key into one invalid entry with no raw value', async (t) => {
+test('retired rows: setup collapses duplicate rows of one retired key into one invalid entry with no raw value or line', async (t) => {
   const { root } = plainDirectory(t);
   write(root, SETUP_ADR, setupDocument({ 'worktree.baseBranch': rowsOf('main', 'develop') }));
   const data = await resolved({ cwd: root, tool: 'setup' });
@@ -1272,6 +1277,7 @@ test('retired rows: setup collapses duplicate rows of one retired key into one i
       action: 'none',
       state: 'invalid',
       raw: null,
+      line: null,
     },
   ]);
   assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
@@ -1333,7 +1339,9 @@ test('retired rows: duplicate prReview.maxRounds rows are one invalid entry for 
 
   const setup = await resolved({ cwd: root, tool: 'setup' });
   assert.deepEqual(diagnostic(setup, 'ambiguous-key'), expectedDiagnostic);
-  assert.deepEqual(setup.retired, [{ ...base, action: 'none', state: 'invalid', raw: null }]);
+  assert.deepEqual(setup.retired, [
+    { ...base, action: 'none', state: 'invalid', raw: null, line: null },
+  ]);
 
   const mergeGate = await resolved({ cwd: root, tool: 'merge-gate' });
   assert.deepEqual(diagnostic(mergeGate, 'ambiguous-key'), expectedDiagnostic);
@@ -1346,6 +1354,135 @@ test('retired rows: duplicate prReview.maxRounds rows are one invalid entry for 
   for (const data of [setup, mergeGate, build]) {
     assert.equal(Object.hasOwn(data.values, 'prReview.maxRounds'), false);
   }
+});
+
+// Invariant: an escaped-pipe value of a retired row survives setup's in-place migration unchanged.
+// `raw` is trimmed and has `\|` unescaped, so a successor row rebuilt from it can corrupt the
+// table; setup therefore receives each well-formed retired row's exact original `line` (the same
+// line `data.source.rows` reports for that key) next to `raw`. Only the exempt setup path receives
+// either field.
+
+test('retired rows: setup receives a retired worktree row with an escaped pipe as its exact original line; build and deliver receive neither line nor raw', async (t) => {
+  const { root } = plainDirectory(t);
+  const escaped = '|  worktree.baseBranch  | a\\|b  |';
+  write(root, SETUP_ADR, rawSetupDocument([escaped]));
+
+  const setup = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(setup.source.rows, [{ key: 'worktree.baseBranch', line: escaped }]);
+  assert.deepEqual(setup.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'none',
+      raw: 'a|b',
+      line: escaped,
+    },
+  ]);
+  assert.equal(
+    setup.retired[0].line,
+    setup.source.rows.find((row) => row.key === 'worktree.baseBranch').line,
+    'the retired line is the source row line, byte for byte',
+  );
+
+  for (const tool of ['build', 'deliver']) {
+    const data = await resolved({ cwd: root, tool });
+    assert.equal(data.retired.length, 1, tool);
+    assert.equal(Object.hasOwn(data.retired[0], 'line'), false, `${tool} receives no line`);
+    assert.equal(Object.hasOwn(data.retired[0], 'raw'), false, `${tool} receives no raw`);
+  }
+});
+
+test('retired rows: setup receives a retired prReview row with an escaped pipe as its exact original line; merge-gate receives neither line nor raw', async (t) => {
+  const { root } = plainDirectory(t);
+  const trigger = '| prReview.bots.reviewer[bot].trigger | /review a\\|b |';
+  const completion = '| prReview.completion |  x\\|y\\|z |';
+  write(root, SETUP_ADR, rawSetupDocument([trigger, completion]));
+
+  const setup = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(setup.retired, [
+    {
+      key: 'prReview.bots.reviewer[bot].trigger',
+      successor: 'mergeGate.bots.reviewer[bot].trigger',
+      successorPresent: false,
+      action: 'none',
+      raw: '/review a|b',
+      line: trigger,
+      conditional: 'reviewer-resolved',
+      login: 'reviewer[bot]',
+      normalizedLogin: 'reviewer',
+    },
+    {
+      key: 'prReview.completion',
+      successor: 'mergeGate.completion',
+      successorPresent: false,
+      action: 'none',
+      raw: 'x|y|z',
+      line: completion,
+    },
+  ]);
+  for (const entry of setup.retired) {
+    assert.equal(
+      entry.line,
+      setup.source.rows.find((row) => row.key === entry.key).line,
+      `${entry.key}: the retired line is the source row line, byte for byte`,
+    );
+  }
+
+  const mergeGate = await resolved({ cwd: root, tool: 'merge-gate' });
+  assert.equal(mergeGate.retired.length, 2);
+  for (const entry of mergeGate.retired) {
+    assert.equal(Object.hasOwn(entry, 'line'), false, `${entry.key}: merge-gate receives no line`);
+    assert.equal(Object.hasOwn(entry, 'raw'), false, `${entry.key}: merge-gate receives no raw`);
+  }
+});
+
+// Invariant: an invalid or ambiguous retired key has no single original row to migrate, so setup
+// receives `state: 'invalid'` with `raw: null` and `line: null`, escaped pipes or not, and takes its
+// invalid-source path instead of migrating the row.
+test('retired rows: setup gets an invalid or ambiguous retired row with an escaped pipe as invalid with no raw value and no line', async (t) => {
+  const { root } = plainDirectory(t);
+  write(
+    root,
+    SETUP_ADR,
+    rawSetupDocument([
+      '| worktree.baseBranch | a\\|b | extra |',
+      '| prReview.completion | x\\|y |',
+      '| prReview.completion | z\\|w |',
+    ]),
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(diagnostic(data, 'invalid-value'), {
+    code: 'invalid-value',
+    key: 'worktree.baseBranch',
+    raw: null,
+    reason: 'cell-count',
+  });
+  assert.deepEqual(diagnostic(data, 'ambiguous-key'), {
+    code: 'ambiguous-key',
+    key: 'prReview.completion',
+    count: 2,
+  });
+  assert.deepEqual(data.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'none',
+      state: 'invalid',
+      raw: null,
+      line: null,
+    },
+    {
+      key: 'prReview.completion',
+      successor: 'mergeGate.completion',
+      successorPresent: false,
+      action: 'none',
+      state: 'invalid',
+      raw: null,
+      line: null,
+    },
+  ]);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1434,6 +1571,53 @@ test('step 3: a transitional JSON __proto__ key stays an own values entry', asyn
   assert.equal(entry?.raw, 'x');
   assert.equal(entry?.source, 'transitional-json');
   assert.equal(data.values['plan.dir'].value, 'json');
+});
+
+// Invariant: a transitional JSON source has no original table line, so setup receives each of its
+// retired rows with `line: null` beside the flattened `raw`, never a fabricated table line.
+test('step 3: setup receives transitional JSON retired rows with their raw value and a null line', async (t) => {
+  const { root } = repository(t);
+  const json = write(
+    root,
+    join('.effective-flow', 'config.json'),
+    JSON.stringify({ worktree: { baseBranch: 'a|b' }, prReview: { maxRounds: 3 } }),
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.equal(data.source.rows, null);
+  assert.deepEqual(data.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'none',
+      raw: 'a|b',
+      line: null,
+    },
+    {
+      key: 'prReview.maxRounds',
+      successor: 'mergeGate.maxRounds',
+      successorPresent: false,
+      action: 'none',
+      raw: '3',
+      line: null,
+    },
+  ]);
+  rmSync(json);
+
+  write(root, join('.firmo', 'config.json'), '{"prReview":{"botWaitMinutes":5}}');
+  const firmo = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(firmo.source.step, 3);
+  assert.deepEqual(firmo.retired, [
+    {
+      key: 'prReview.botWaitMinutes',
+      successor: 'mergeGate.botWaitMinutes',
+      successorPresent: false,
+      action: 'none',
+      raw: '5',
+      line: null,
+    },
+  ]);
 });
 
 test('step 3: unparseable JSON is reported as an invalid source and resolution falls to step 4', async (t) => {
