@@ -1,272 +1,103 @@
 # AGENTS.md
 
-This file provides guidance to any coding agent working with code in this repository.
+Guidance for coding agents in this repository.
 
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
 
-**Source branch:** `origin/develop` — all source work happens on `develop`. `main` is the published delivery artifact, carries no source tree, and is written mechanically by the release workflow; the repository default branch points there, so never branch or open a pull request against it. See the branch model in the project-setup ADR.
+**Use the Effective Flow skill** (`/effective-flow <tool>`; Codex: `$effective-flow <tool>`) for all work in this repository. Its contracts — delegation, skill discovery, language, plans and concepts, configuration, commit and PR rules — apply as shipped and are not repeated here; their source is `src/shared/`. The installed skill is the last release; `./local-link.sh` runs the current checkout instead.
+
+**Source branch:** `origin/develop` — all source work happens on `develop`. `main` is the release-written delivery artifact without a source tree and the repository default branch: never branch from it or open a pull request against it (branch model: project-setup ADR).
+
+**Sister project:** [skills](https://github.com/sebastian-software/skills.sebastian-software.com) develops the central `effective-*` domain skills (`effective-writing`, `effective-product`, `effective-engineering`, …). Effective Flow is the glue code around them: it owns orchestration (routing, plan and review state, tracker, agent selection, worktrees, delivery); domain craft stays in those skills. A playbook from there belongs there, not in `src/` (see "Skill discovery").
 
 ## What this repo is
 
-Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. `build.mjs` transforms Markdown sources under `src/` plus a small dependency-free Node.js runtime into two harness-native direct-install targets and one harness-neutral portable manager target under `dist/`.
-
-**Sister project:** [skills](https://github.com/sebastian-software/skills.sebastian-software.com) develops the central domain skills (`effective-writing`, `effective-product`, `effective-engineering`, and the rest of the `effective-*` family). Effective Flow is the glue code built around them: it owns the orchestration — routing, plan and review state, tracker, agent selection, worktrees, and delivery — while the domain craft stays in those skills. A change that would copy a playbook from that repository into `src/` belongs there instead; the layered ownership contract under "Skill discovery" decides where the line runs.
-
-**You edit `src/`, never `dist/`.** `dist/` is generated and gitignored.
+A source-to-dist build: `build.mjs` turns Markdown under `src/` plus a dependency-free Node.js runtime into one skill set (`/effective-flow <tool>`) for Claude Code and Codex — two harness-native targets and one harness-neutral portable target under `dist/`. **Edit `src/`, never `dist/`** (generated, gitignored).
 
 ## Commands
 
 ```sh
-node build.mjs           # build native + portable targets into dist/ (also: pnpm build)
+node build.mjs           # build all targets into dist/ (also: pnpm build)
 pnpm format              # format with oxfmt (Markdown + JS)
-pnpm agent:check         # oxfmt --check (CI-style, no writes)
-pnpm test                # run the unit test suite (node:test)
+pnpm agent:check         # oxfmt --check, no writes
+pnpm test                # node:test unit suite
 pnpm test:distribution   # isolated build/archive/delivery smoke suite
-./install-skill.sh       # maintainer install/update of the portable build through DALO
-./install-skill.sh local # maintainer build + copy of the current checkout
-./local-link.sh          # developer build + symlink of the current checkout
+./install-skill.sh       # maintainer: install/update the portable build through DALO
+./install-skill.sh local # maintainer: build + copy this checkout
+./local-link.sh          # developer: build + symlink this checkout
 ```
 
-Package manager is **pnpm**; the root `package.json` `packageManager` field is the source of truth for the pinned version. Node.js 22 or newer is required for the build and the shipped runtime scripts. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
+pnpm, pinned by the root `package.json` `packageManager` field; Node.js 22 or newer for build and shipped scripts. Correctness layers: unit tests (pure transforms, installers), build-time guards in `node build.mjs`, and the distribution suite (isolated archive/delivery layouts). After editing distribution sources run CI's order: `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`.
 
-Behavioural eval suites are a fourth layer and a deliberately manual one. Each suite lives in `evals/<tool>/` and is driven by `pnpm eval <tool> <command>`; the shared instrument they all run on is `evals/_scaffold/`, and each suite declares its own seeds, evaluator, tracker stub, overlay policy and sandbox namespace in its `evals/<tool>/suite.config.mjs`, which is hashed into that suite's instrument because each of those bindings decides what a run sees. Its scenario registry is the one declaration no run reads, so it lives in `evals/<tool>/scenario-registry.mjs` and stays out of the instrument: adding a scenario costs its own evidence and no other scenario's. Two suites exist: `merge-gate` and `iterate`, whose first tranche covers `iterate`'s fail-closed input parsing. Evidence under `evals/<tool>/results/` is recorded by hand in fresh agent sessions, and neither `pnpm test` nor CI ever runs a model for it. `pnpm test` asserts only that an archive is structurally sound; whether it still describes the working tree is answered per suite by `pnpm eval <tool> verify`, a read-only command that writes nothing and takes no lock. CI's `Behavioural eval evidence` step reports that verdict for every suite on every pull request and enforces it with `--mode strict` on the release pull request, so editing a source a suite loads owes a re-recorded round of that suite — six scenarios times five runs each, roughly three hours per suite — before the next release, not before the next merge. See [`evals/merge-gate/README.md`](evals/merge-gate/README.md) for the shared round lifecycle and [`evals/iterate/README.md`](evals/iterate/README.md) for what the `iterate` suite does differently.
+**Behavioural evals** are a fourth, deliberately manual layer: suites `merge-gate` and `iterate` (first tranche: `iterate`'s fail-closed input parsing) live in `evals/<tool>/`, run via `pnpm eval <tool> <command>` on the shared instrument `evals/_scaffold/`. Each `evals/<tool>/suite.config.mjs` declares seeds, evaluator, tracker stub, overlay policy and sandbox namespace and is hashed into that suite's instrument, since each binding decides what a run sees; `evals/<tool>/scenario-registry.mjs` is read by no run and stays outside it, so a new scenario costs only its own evidence. Evidence in `evals/<tool>/results/` is recorded by hand in fresh agent sessions; neither `pnpm test` (archive structure only) nor CI runs a model. `pnpm eval <tool> verify` (read-only, no lock) answers whether evidence still matches the tree; CI's `Behavioural eval evidence` step reports it per suite on every PR and enforces `--mode strict` on the release PR. Editing a source a suite loads therefore owes a re-recorded round of that suite (six scenarios × five runs, roughly three hours) before the next release, not the next merge. Round lifecycle: [`evals/merge-gate/README.md`](evals/merge-gate/README.md); `iterate` differences: [`evals/iterate/README.md`](evals/iterate/README.md).
 
 ## Build architecture
 
-The source layout **mirrors the output**, and the directory decides the category:
+The source layout mirrors the output; the directory decides the category:
 
-- `src/SKILL.md` — the thin **router** (tool catalog + dispatch rule). Deliberately minimal: it only lists tools and lazy-loads the one `tools/<tool>.md` that was invoked. Never pre-load all tools.
-- `src/tools/<name>.md` → `effective-flow/tools/<name>.md`. A tool is exposed via `/effective-flow <name>` only if its name is in the `EXPOSED_TOOLS` array in `build.mjs`. Tools not in that array (e.g. `apply-plan`, `apply-review`, `apply-issues`) are **internal** — built but not listed in the router; `apply` loads the right one on demand.
-- `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys. Every Claude agent requires both `model` and `effort`; Codex agents carry `model` and `model_reasoning_effort` alongside their harness-specific tools and sandbox settings.
+- `src/SKILL.md` — the thin router (catalog + dispatch rule); lazy-loads only the invoked `tools/<tool>.md`, never all tools.
+- `src/tools/<name>.md` → `effective-flow/tools/<name>.md`; exposed via `/effective-flow <name>` only if listed in `EXPOSED_TOOLS` (`build.mjs`). Unlisted tools (`apply-plan`, `apply-review`, `apply-issues`, …) are internal, built but not routed; `apply` loads them on demand.
+- `src/agents/<name>.md` → subagents, not tools; workflows call them. Frontmatter per harness: `claude:` requires `model` and `effort`; `codex:` carries `model`, `model_reasoning_effort`, tools and sandbox settings.
 - `src/shared/<name>.md` — include fragments, embedded via an `include` fence.
-- `src/scripts/*.mjs` — dependency-free Node.js runtime resources copied byte-for-byte into `effective-flow/scripts/` for every target, but only if listed in `RUNTIME_SCRIPT_FILES` in `build.mjs`; an unregistered script is silently never shipped. Each one follows the same split: `<name>.mjs` is a thin JSON CLI entry point over `<name>-core.mjs`, which keeps the deterministic logic importable and testable. Most are exactly that pair: `config-resolve`, `delegation-envelope`, `delivery-selection`, and `diff-baseline`. The remote tracker adds five further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`, `-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — layered so that no module imports its core back. Pilot measurement is a three-file family: `pilot-measurement.mjs` is the JSON CLI, `pilot-measurement-core.mjs` owns the guarded local lifecycle and evidence operations, and `pilot-measurement-protocol.mjs` owns the immutable protocol, projections, and digest.
+- `src/scripts/*.mjs` — runtime copied byte-for-byte to `effective-flow/scripts/` in every target, **only if listed in `RUNTIME_SCRIPT_FILES`** (`build.mjs`); an unlisted script is silently never shipped. Pattern: thin JSON CLI `<name>.mjs` over importable, testable `<name>-core.mjs` (`config-resolve`, `delegation-envelope`, `delivery-selection`, `diff-baseline`). The remote tracker adds `remote-tracker-{shared,decomposition,github,forgejo,ledger}-core.mjs`, layered so none imports its core back. Pilot measurement: CLI `pilot-measurement.mjs`, `-core.mjs` (guarded local lifecycle and evidence), `-protocol.mjs` (immutable protocol, projections, digest).
 
-The build emits three consumer targets:
+Targets:
 
-- **Native Claude** (`dist/claude/`): skill plus registered agent sidecars in `dist/claude/agents/effective-flow-<name>.md`. The build also generates five sanctioned `-fast` implementer sidecars and a native-agent inventory.
-- **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`. Fast intent is rendered as an explicit model and reasoning-effort override on the base worker reference rather than as another TOML sidecar; the target also carries a native-agent inventory.
-- **Portable managers** (`dist/portable/effective-flow/`): one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts. It delegates through built-in/general subagents and does not rely on managers installing native agent sidecars.
+- **Native Claude** `dist/claude/`: skill, agent sidecars `agents/effective-flow-<name>.md`, five generated `-fast` implementer sidecars, native-agent inventory.
+- **Native Codex** `dist/codex/`: skill, agent sidecars `agents/effective-flow-<name>.toml`, native-agent inventory; Fast is an explicit model and reasoning-effort override on the base worker reference, not another sidecar.
+- **Portable** `dist/portable/effective-flow/`: one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts, delegating through built-in subagents without native sidecars.
 
-The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
+The release archive holds all three for verification and maintenance only; it is no end-user install interface. The delivery branch publishes only `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate. `install-skill.sh local` and `local-link.sh` use only the native targets; `install-skill.sh` without arguments mirrors the DALO/Skills CLI consumer path.
 
 ### Execution profiles (Fast field pilot)
 
-`src/shared/execution-profiles.md` is the provider-neutral policy source for the **Quality** and
-**Fast** implementation intents. Quality is the safe default; Fast is limited to a bounded first
-implementation attempt that passes the ordered fail-closed gate. Unknown evidence, coupled scope,
-every newly spawned retry or correction, missing native capability, and portable execution select
-Quality. On Claude Code, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is detected by presence only; its value
-is never read, relayed, or persisted, and its presence records `profile-unavailable`.
-
-The strict Boolean `executionProfiles.fast.enabled` is default-off. It never contains a provider
-model name: missing or `false` is disabled, malformed/ambiguous/unreadable is invalid, and both fail
-closed to Quality. Literal `true` only admits the project to the pilot lifecycle; it does not start
-measurement, activate a generation, or prove native capability. Setup remains the sole
-configuration writer and exposes the key only in Guided advanced block 10
-(`src/shared/setup-execution-profiles.md`), together with the confirmed generation actions
-`begin-baseline` and `resume`, each offered only for the inventory-proven state that allows it.
-Profile and Express never ask the block and preserve an existing value.
-
-`build` (Phase 2) and `refactor` (Phase 3, after its Phase 2 baseline) are the two adopting
-workflows. Each carries the five inline `{{AGENT_PROFILE:X:fast}}` tokens and lazy-loads the policy,
-whose "Initial implementation phase" section owns the shared packet contract, plus
-`src/shared/pilot-measurement-workflow.md`, which owns the measured-run record order
-(`inventory` → automatic `activate` in a baseline generation → `start` →
-`start-packet`/`finish-packet` → `finalize`), incident recording through `record-incident`, and the
-same-run reconciliation after a failed finalization; the helper itself persists any
-`finalization-failed` suspension. A failed Fast attempt makes exactly one retained-state transition
-to Quality in the same checkout, and every later correction is Quality-only. No workflow run calls
-`begin-baseline` or `resume`. Portable output remains Quality-only and contains no native profile
-metadata. The build renders five Claude Fast implementer sidecars,
-Codex per-spawn `model` and `reasoning_effort` overrides, strict native-agent inventories, and
-copies the three pilot helper modules to every target.
-
-Pilot state is local/private runtime data below
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never tracked configuration or eval
-evidence. Project admission, generation lifecycle, native capability, explicit current-run detailed
-trace consent, and publication approval are separate boundaries. Minimal records exclude content
-and identity; detailed traces do not feed metrics. While a baseline or active generation exists,
-non-observer `merge-gate` runs may add anonymous period-level correction observations with no
-workflow-record link. Review freezes reservations, aggregation keeps a private decision view and a
-suppressed publication candidate, and deletion follows confirmed digest-bound purge or the narrower
-disabled/review `discard-generation` recovery path. Only a confirmed Guided `begin-baseline`
-starts a baseline; `active` is reached only through the helper's automatic `activate` in a measured
-`build` or `refactor` preflight or a confirmed Guided `resume` of a stored prior state. No configuration value or
-native artifact moves a generation.
-
-The guard mechanics are documented in
-[`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), configuration
-ownership in [`docs/developer-guide/configuration.md`](docs/developer-guide/configuration.md), and
-the durable rationale in
-[`risk-aware-model-tiering-pilot-policy.md`](docs/adr/risk-aware-model-tiering-pilot-policy.md) and
-[`native-execution-profile-representation.md`](docs/adr/native-execution-profile-representation.md).
-The shipped measurement contract and its exact build-validated projection are documented in
-[`docs/developer-guide/model-tiering-pilot-protocol.md`](docs/developer-guide/model-tiering-pilot-protocol.md).
+Policy: `src/shared/execution-profiles.md` (Quality is the default; Fast only for a bounded first implementation attempt). Configuration: `src/shared/setup-execution-profiles.md` (strict, default-off `executionProfiles.fast.enabled`, written only by Guided setup block 10). Measured-run records: `src/shared/pilot-measurement-workflow.md`. Adopting workflows are `build` (Phase 2) and `refactor` (Phase 3), each carrying the five inline `{{AGENT_PROFILE:X:fast}}` tokens; portable output stays Quality-only without native profile metadata. The build renders the five Claude Fast sidecars, Codex per-spawn `model`/`reasoning_effort` overrides and strict native-agent inventories, and copies the three pilot helper modules to every target. Pilot state is private runtime data under `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, never tracked configuration or eval evidence. Guard mechanics: [`build-system.md`](docs/developer-guide/build-system.md); configuration ownership: [`configuration.md`](docs/developer-guide/configuration.md); measurement contract: [`model-tiering-pilot-protocol.md`](docs/developer-guide/model-tiering-pilot-protocol.md); rationale: [`risk-aware-model-tiering-pilot-policy.md`](docs/adr/risk-aware-model-tiering-pilot-policy.md), [`native-execution-profile-representation.md`](docs/adr/native-execution-profile-representation.md).
 
 ### Placeholder / directive syntax in sources
 
-The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`, `{{BUILD_TARGET}}`, `{{VERSION}}` and `{{TOOL_LIST}}`, plus the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. The rows, their replacements, the fence semantics, and the verbatim-fence rule are canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Placeholder and directive syntax"; this file deliberately keeps no second copy. Source frontmatter carries **no** `name` or `type` field — name and category come from the file's path, and descriptions must be strictly quoted (a build guard enforces this).
+The build resolves `{{FLOW}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`, `{{BUILD_TARGET}}`, `{{VERSION}}`, `{{TOOL_LIST}}` and the ` ```include `, ` ```ask ` and ` ```lazy-include ` fences — never hand-write their expansions. Rows, replacements, fence semantics and the verbatim-fence rule are canonical in [`build-system.md`](docs/developer-guide/build-system.md), "Placeholder and directive syntax"; no copy here. Source frontmatter has **no** `name` or `type` field (the path decides), and descriptions are strictly quoted (guarded).
 
 ### Adding a tool or agent
 
-The step-by-step procedure — creating the source, the agent role profiles, the `TOOL_GROUPS`/`catalogHint` entry, the next-steps contract, and which guard catches which mistake — is canonical in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Adding a tool or agent". Two rules stay here, because neither is derivable from reading the code:
+Procedure (sources, agent role profiles, `TOOL_GROUPS`/`catalogHint`, next-steps contract, which guard catches what): [`build-system.md`](docs/developer-guide/build-system.md), "Adding a tool or agent". Two rules are canonical here:
 
-- **Renaming an exposed tool ships a deprecated forwarding alias for the old name, not a breaking rename.** Add an entry to `DEPRECATED_TOOL_ALIASES` in `build.mjs` (old name → new name) and a matching `src/tools/<old-name>.md` that emits one deprecation notice naming the new invocation and then reads and follows the new tool's source verbatim, with the arguments unchanged. The alias stays out of `TOOL_GROUPS`, so it is reachable by name only and never appears in the router catalog, its frontmatter description, or `argument-hint`. Remove the alias only in the next deliberate major release, which is the change that legitimately carries the breaking marker this convention otherwise avoids.
-- **Every `src/tools/*.md` — internal ones included — needs an entry in `CONTEXT_BUDGET_LINES` in `build.mjs`**, its built line count plus **up to** ten lines of headroom. Take that line count from the `Always-loaded core (lines/budget)` report `node build.mjs` prints, not from `wc -l`: the guard counts `split('\n').length`, which is one more than `wc -l` on a newline-terminated file. Ten is a ceiling and most entries carry less. The number is a measured backlog, not a target: deferring an eager include to a ` ```lazy-include ` pointer lowers the entries it touches, and the entry is lowered with it.
+- **Renaming an exposed tool ships a deprecated forwarding alias, not a breaking rename:** a `DEPRECATED_TOOL_ALIASES` entry (old → new) in `build.mjs` plus `src/tools/<old-name>.md`, which emits one deprecation notice naming the new invocation, then reads and follows the new tool's source verbatim with unchanged arguments. It stays out of `TOOL_GROUPS`: reachable by name only, absent from the router catalog, its description and `argument-hint`. Remove it only in the next deliberate major release.
+- **Every `src/tools/*.md`, internal ones included, needs a `CONTEXT_BUDGET_LINES` entry** in `build.mjs`: its built line count plus **up to** ten lines of headroom (most carry less). Take the count from the `Always-loaded core (lines/budget)` report of `node build.mjs`, not `wc -l` (the guard counts `split('\n').length`, one more on a newline-terminated file). It is a measured backlog, not a target: moving an eager include behind a ` ```lazy-include ` pointer lowers the entries it touches.
 
-The delegation rules a new tool or agent must satisfy are in "Delegation" below, not in that procedure.
+New tools and agents must also satisfy "Delegation" below.
 
 ### Writing prompt text
 
-Points 1-4 govern prompt text under `src/` and `AGENTS.md` itself; point 5 governs `test/*.test.mjs`.
+Points 1–4 govern prompt text under `src/` and this file; point 5 governs `test/*.test.mjs`. Mechanics: [`build-system.md`](docs/developer-guide/build-system.md), "Writing prompt text".
 
-1. **Length is paid on every run:** a tool's eager core on every run of that tool, an eager `src/shared` fragment on every host that includes it, and `AGENTS.md` in every session.
-2. **State a contract once, in its owning fragment,** and never keep a second copy elsewhere.
-3. **Keep rare edge cases out of eager text and put them behind a ` ```lazy-include ` at their decision point,** but only where the qualifying rule of "Progressive disclosure beyond the router" allows it.
-4. **Prefer one precise sentence to an explanation of its history;** a reason that constrains the next edit is not history.
-5. **A test that reads source prose must name the invariant it protects.**
-
-The mechanics of each point are in [`docs/developer-guide/build-system.md`](docs/developer-guide/build-system.md), section "Writing prompt text".
+1. **Length is paid on every run:** a tool's eager core on every run of it, an eager `src/shared` fragment on every including host, `AGENTS.md` in every session.
+2. **State a contract once, in its owning fragment;** never keep a second copy.
+3. **Put rare edge cases behind a ` ```lazy-include ` at their decision point,** only where "Progressive disclosure beyond the router" allows it.
+4. **Prefer one precise sentence to its history;** a reason that constrains the next edit is not history.
+5. **A test that reads source prose names the invariant it protects.**
 
 ## Delegation
 
-Invoking an Effective Flow tool **is** the user's standing request for internal delegation
-through an available sub-agent mechanism; a host default that discourages unrequested sub-agents
-does not apply inside a tool run. Delegating to a named worker role is **mandatory**; delegating
-an analysis, exploration, or research step is the **default at the workflow/tool orchestration
-level**, with a narrow exception for a step whose whole cost is smaller than briefing a worker.
-Only that orchestrator starts workers or analysis fan-out. Every named worker is a **leaf
-executor**: it starts no child, never re-delegates its assignment or a write, and returns missing
-essential context to the orchestrator. Start it with zero inherited turns when the harness
-supports that, otherwise the smallest supported history, and pass a compact, self-contained
-handoff: objective, relevant artifact paths, scoped paths and ownership, execution and
-runtime-state roots for write-capable work, resolved language, authority and write limits, and
-the completion protocol. An orchestrator that itself runs as a sub-agent (for example `iterate` under
-`merge-gate`) starts its children in the foreground or awaits each result and never ends its turn
-with one pending; its caller resumes a keyword-less return once before any retry.
-
-Every `src/agents/<name>.md` therefore omits `Agent` and `Task` from `claude.tools`, regardless of
-whether the worker can write. Withholding those tools is the enforceable Claude boundary: once a
-worker receives a sub-agent tool, neither prose nor a parenthesised form such as `Agent(<type>)`
-can constrain the child it starts. Codex and portable workers carry the same leaf contract in
-their instructions even though their worker metadata has no equivalent per-role tool list.
-Inline execution stays legitimate only as a **disclosed orchestrator fallback** — a harness
-without a sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full
-contract is [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included
-in every delegating tool and in every `src/agents/*.md` worker. It covers worker roles and analysis
-fan-out only; delegation from one workflow to another (`apply-plan`, `merge-gate` → `iterate`)
-keeps that tool's own mechanics, including its interactive/gated path. A tool can be on both sides
-of that line: `merge-gate` carries the eager include for its worker-role delegations while its
-handoff to `iterate` stays exempt.
+The contract is [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eager in every delegating tool and every `src/agents/*.md` worker. Every `src/agents/<name>.md` omits `Agent` and `Task` from `claude.tools`, writing or not: withholding them is the only enforceable Claude leaf boundary, since neither prose nor a parenthesised `Agent(<type>)` constrains a child once the tool is granted. Codex and portable workers carry the same leaf contract in their instructions instead. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics; `merge-gate` carries the eager include for its worker roles while its `iterate` handoff stays exempt.
 
 ## Skill discovery
 
-Implementer and analysis/planning tools plus all agents embed the shared `skill-discovery`
-include (via a ` ```include ` fence): before implementing, planning, or reviewing they scan
-the host's available skills and apply the useful ones. The mechanism is fully
-harness-neutral — on Claude via the `Skill` tool (added to every agent's `claude.tools`),
-on Codex via its own skill discovery.
+Implementer, analysis and planning tools plus all agents embed `src/shared/skill-discovery.md` via ` ```include `; every agent's `claude.tools` includes `Skill` (Codex uses its own discovery). There is no static `skills:` frontmatter: recommendations are a short `## Recommended skills` prose section per agent or tool (`A › B` = prefer A, else B). Projects tune discovery through the `skills` configuration block (`src/shared/config-migration.md`, `/effective-flow setup`).
 
-There is **no** static `skills:` frontmatter preload anymore. Per-agent and per-tool
-skill recommendations live as a short `## Recommended skills` prose section in the agent or
-tool source (honoured by the include as "prefer if available"; a fallback group is written
-`A › B`, meaning "prefer A, else B"). A project tunes this at runtime through the optional `skills`
-block in the Effective Flow configuration / project-setup ADR (`enabled`, `include`, `exclude`, plus per-agent
-`agents.<name>` and per-tool `tools.<name>`); `exclude` and `enabled: false` are hard
-off-switches. See `src/shared/skill-discovery.md`, `src/shared/config-migration.md` (defaults)
-and `/effective-flow setup` (wizard).
-
-**Layered ownership contract.** Recommended central skills are not mere advice: where a central skill is the _declared domain owner_ for the task at hand and fully covers it, its guidance is **authoritative** and the Effective Flow source carries **no second copy** of that playbook — only scope/output/lifecycle constraints plus a minimal generic fallback for when the skill is absent. Effective Flow keeps ownership of orchestration (routing, plan/report state, finding IDs, tracker, agent selection, worktrees, commits, delivery, harness transform, config). **When adding or expanding a tool, agent, or shared include, run the ownership check:** does it carry a second copy of a centrally owned playbook? If so, delegate to the skill, keep only a minimal fallback, and update the concrete consumer relationship in the manifest and the guide. The per-skill classification (delegate / route-when-relevant / no-overlap), the two build-enforced halves of that check, and the optional upstream audit are canonical in [`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md), whose machine-readable source of truth is [`docs/developer-guide/skill-ownership.json`](docs/developer-guide/skill-ownership.json).
+**Layered ownership contract.** A central skill that is the declared domain owner and fully covers the task is authoritative; the source keeps no second copy of its playbook, only scope/output/lifecycle constraints plus a minimal fallback for when the skill is absent. Effective Flow owns orchestration (routing, plan/report state, finding IDs, tracker, agent selection, worktrees, commits, delivery, harness transform, config). **When adding or expanding a tool, agent, or shared include, run the ownership check:** if it carries a second copy of a centrally owned playbook, delegate to the skill, keep only a minimal fallback, and update the consumer relationship in the manifest and the guide. Classification (delegate / route-when-relevant / no-overlap), the two build-enforced halves and the optional upstream audit: [`skill-ownership.md`](docs/developer-guide/skill-ownership.md), source of truth [`skill-ownership.json`](docs/developer-guide/skill-ownership.json).
 
 ## Versioning
 
-Release versioning is managed by release-please, and `.release-please-manifest.json` is the source of truth for the current released version. **Never bump a version by hand** in a feature or fix commit: Conventional Commit messages drive the next release PR, changelog entries, tags, GitHub releases, and the release asset upload. The wiring behind that — the release workflow, its App tokens, the version stamp and the version-drift guard — is canonical in [`docs/developer-guide/release-and-installation.md`](docs/developer-guide/release-and-installation.md), sections "Versioning with release-please" and "Version stamp and drift guard".
-
-A tool rename shipped as a deprecated alias (see "Adding a tool or agent") carries no `!` and no `BREAKING CHANGE:` footer — it is additive, not a break. If an earlier, already-published commit on the release branch was mistakenly marked breaking for a change that is not actually one, pin the version forward instead of rewriting that commit: add a `Release-As: <version>` footer to the commit body of the correcting change, never `release-as` in the release-please configuration. How release-please resolves that footer, and why the configuration key is the wrong instrument, is documented in the release guide's "A mistakenly breaking commit is pinned forward".
+release-please manages releases; `.release-please-manifest.json` holds the current version. **Never bump a version by hand:** Conventional Commits drive the release PR, changelog, tags, GitHub releases and asset upload. A rename shipped as a deprecated alias carries no `!` and no `BREAKING CHANGE:` footer. A published commit mistakenly marked breaking is pinned forward with a `Release-As: <version>` footer in the correcting commit's body — never rewritten, never `release-as` in the release-please configuration. Mechanics: [`release-and-installation.md`](docs/developer-guide/release-and-installation.md), "Versioning with release-please", "Version stamp and drift guard", "A mistakenly breaking commit is pinned forward".
 
 ## Workflow actions are pinned to commits
 
-Every `uses:` in `.github/workflows/` references a 40-character commit SHA with a trailing
-`# <version>` comment — `actions/checkout@3d3c42e… # v7`, never `actions/checkout@v7`. A tag is
-movable, so an unpinned action lets upstream change what runs. That matters for every step here,
-not only the ones that take a credential: the release job holds the delivery and release App
-private keys, and any action in that job can reach them.
+Every `uses:` in `.github/workflows/` pins a 40-character commit SHA with a trailing `# <version>` comment (`actions/checkout@3d3c42e… # v7`, never `@v7`): a tag is movable, and any action in the release job can reach the delivery and release App private keys. Resolve the SHA from the tag ref and dereference annotated tags to their commit (`pnpm/action-setup`, `googleapis/release-please-action`); a tag-object SHA does not resolve at run time. Renovate rewrites digest and comment together at the upstream tag's precision (`# v9`, not `# v9.0.0`), so tighten nothing that reads the comment. `test/workflow-contracts.test.mjs` enforces this for every workflow and is the **only** assertion matching an action's ref; all others match without it, so a digest bump touches no test and is never an occasion to weaken a neighbouring guard.
 
-Resolve the SHA from the tag ref rather than copying it, and dereference annotated tags to their
-commit — `pnpm/action-setup` and `googleapis/release-please-action` publish annotated tags, and
-pinning the tag object yields a reference that does not resolve at run time. Renovate maintains
-the pins and rewrites digest and comment together; it writes the upstream tag's own precision
-(`# v9`, not `# v9.0.0`), so do not tighten anything that reads the comment.
+## No AI attribution
 
-A test in `test/workflow-contracts.test.mjs` scans the workflow directory and enforces this, so a
-newly added workflow cannot slip past. It is the **only** assertion that matches an action's ref:
-every other one matches the action without it, which is what keeps a Renovate digest bump from
-touching any test — and from becoming an occasion to weaken a neighbouring guard while making CI
-green.
-
-## Language rules
-
-Target projects configure language in the project-setup ADR (see
-`src/shared/language-rules.md`). `language.project` defaults to `en`; optional `de`/`en`
-overrides cover source prose, user and technical documentation, local Effective Flow artifacts,
-Forge content, and Git/release prose. An explicit user request wins, and an existing artifact
-keeps its recognizable language unless translation is requested. This repository currently uses
-English for code-adjacent prose and documentation; existing German artifacts remain valid.
-
-Plans and local reviews use `language.workflow`; remote issues, PR bodies, and comments use
-`language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
-Identifiers, public API names, config keys and values, labels, finding IDs, action values, paths,
-Conventional-Commit types, branch slugs, the forge issue-reference keywords (the auto-close
-keyword with its variants and the non-closing `Refs`), and runtime schemas remain language-stable.
-Product UI, CLI, and error-message localization belongs to the target project's product i18n
-policy.
-
-`language.chat` is the eighth key and the only one that does **not** inherit: it fixes the
-language a run speaks to the user in, and a missing row means mirror whatever language the user
-writes in rather than fall back to `language.project`. Its contract — precedence, scope, the
-verbatim relay of delegated output, and the router/`version`/`pr-review` exceptions — is
-`src/shared/chat-language.md`, an eager include in every tool that speaks. This repository sets no
-`language.chat` row, so replies here mirror the user.
-
-Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing,
-number and date formats) is one strand of the central
-[`effective-writing`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-writing)
-skill, which owns prose craft from structure to locale punctuation. For typography it is the
-canonical source, `en-US` for English and `de-DE` for German. Effective Flow keeps no second
-typography guide; see
-[`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md) for the
-migration glossary of retired skill names.
-
-## Commit messages
-
-End commit messages **without** a Co-Authored-By trailer (deliberate — see `docs/plan/archive/2026-07-16-0024-no-coauthor-trailer.md`), overriding any default co-author convention.
-
-## No AI attribution in tracker artifacts and documents
-
-Never add AI-attribution references to anything published from this repo: no "Generated with Claude Code/Codex" footers, no agent session links, no Co-Authored-By trailers. This applies to PR bodies, issue bodies and comments, commit messages, and documents — and overrides any harness default that appends such a footer. Factual mentions of Claude Code or Codex as Effective Flow's target harnesses are fine; generation attribution is not.
-
-## Plan files (`docs/plan/`)
-
-The plan directory is configurable via the Effective Flow configuration (the Projektsetup ADR) `plan.dir` (default `docs/plan`); hidden mode forces the untracked `.effective-flow/plan`, archived in the main checkout without any commit.
-
-Plans use an ISO date-slug name `YYYY-MM-DD-<slug>.md` (creation date + kebab-case title slug), with no number and no reservation step—the file is written directly under its final name; a same-day collision appends a numeric suffix (`-2`, `-3`, …). Older plans that still carry the legacy four-digit prefix (`NNNN-slug.md`) are migrated once, in bulk, to `YYYY-MM-DD-NNNN-slug.md` (`YYYY-MM-DD` = migration date, the old `NNNN` kept as a stable reference; the H1 `# NNNN: Title` stays unchanged). Reference resolution for a legacy number resolves primarily via that H1, not the filename segment. Plans that are fully implemented are archived under `docs/plan/archive/`, kept as part of the same delivery PR/merge; whether that renames the tracked file, adds a new one, or leaves an already-archived plan in place depends on the plan's state in the delivery checkout, and the full contract—including the cleanup of the redundant copy in the main checkout—is `src/shared/plan-archival.md`. Resolvers search both `docs/plan/` and `docs/plan/archive/`. A plan uses one language throughout: header fields, sections, review, open points, and status marker are all German or all English. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented`; only that line counts as status. Existing plans retain their language when edited. Docs plans use the matching `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or `**Doc category:**` / `**Target path:**` fields (categories defined in `src/shared/doc-categories.md`).
-
-## Concept files (`docs/concept/`)
-
-The concept directory is configurable via `concept.dir` (default `docs/concept`) and must differ from `plan.dir`. Concepts describe a **new application** one step before planning and are written by `/effective-flow concept`; the internal `concept-review` (entered through `/effective-flow review <concept file>`) elaborates them. They use the same ISO date-slug name `YYYY-MM-DD-<slug>.md` and the same one-language rule as plans, but their own status line `**Konzeptstatus:** Entwurf` / `**Concept status:** Draft` (elaborated: `Ausgearbeitet` / `Elaborated`). Concepts are never archived and never marked implemented: their roadmap hands work packages to `/effective-flow plan` through self-contained handoff text, and neither concept workflow writes a plan file, an ADR, or a backlink list. The full contract is `src/shared/concept-contract.md`.
-
-## Configuration and ADRs (target-project behavior)
-
-Effective Flow configuration lives in a **living "Projektsetup" ADR** (default `docs/adr/effective-flow-project-setup.md`) as a Markdown key/value table, **not** in `.effective-flow/config.json`. Effective Flow locates it via a canonical marker line `**Effective Flow project setup:** <path>` in the target project's `AGENTS.md` (`src/scripts/config-resolve-core.mjs` executes the resolution order and table encoding, and `src/shared/config-migration.md` states how a tool calls it and acts on its result; `/effective-flow setup` writes the ADR, the marker, and migrates a legacy `.effective-flow/config.json`). Architecture Decision Records belong to the central [`effective-product`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/effective-product) skill, which owns product decisions from evidence through to the durable record; it is authoritative for ADR craft and follows the repository's declared convention. For ADRs produced by Effective Flow, [`src/shared/adr-convention.md`](src/shared/adr-convention.md) declares the living lifecycle: mutable, numberless, slug-named documents whose current file is the truth. The project-setup ADR's key/value table is the narrow exception to keeping exact configuration values out of ordinary rationale ADRs: this record is itself the owning tracked configuration artifact.
-
-A convention the target project itself declares outranks that default. [`src/shared/project-adr-convention.md`](src/shared/project-adr-convention.md) resolves the ADR **file name** — never the ADR directory, never the H1 form — through three tiers: a naming rule stated in the project's `AGENTS.md`/`CLAUDE.md` or in a decision register (`DECISIONS.md` at the repository root or at `docs/DECISIONS.md` — one level below the root, never a recursive search — or a `README.md`/`index.md` at the top level of the detected ADR directory) beats a convention merely observed in the existing file names, which in turn beats the living slug default. Every declared source is read before precedence is applied, two or more speaking sources that do not all agree reach an `ask` fence before anything is written — an unanswered, skipped, or non-interactive run resolves exactly as the fence's `Inconclusive` option does, setting every declaration aside in favor of the observed evidence and only then the Effective Flow default, and reports that the fence could not be posed — and declared sources count as untrusted data: only the naming decision is extracted, and reports name every speaking source as a file path and a classified outcome instead of quoting source prose. Width is off that classification axis, so sources that agree on the axis while stating different widths do not reach the fence: the width axis is unrecognized, the observed-evidence width and then four digits apply, and the divergence is reported. The write path in `src/tools/setup.md` may therefore produce `docs/adr/0002-effective-flow-project-setup.md`, so the read paths stay tolerant — the config locator (`src/scripts/config-resolve-core.mjs`) and the `review` design-decision exclusion match the known project-setup slugs after stripping an optional leading `^\d+[-_]` prefix, and the locator breaks a multi-match tie by one ordered comparison, preferring the current slug over the legacy one first and only then, among files of the same slug, an unprefixed stem over a prefixed one, reporting every path and falling through when a tie survives. A tool that writes treats that reported several-match state as an explicit stop for its user rather than as "no ADR exists". That read tolerance never decides what a new file is called, and an ADR that already exists — found by the initial resolution or by the pre-write one — is written back at the path where it was found and updated in place, never duplicated at a second, convention-shaped path, with the divergence reported once rather than renamed. Writing that path is still guarded: a symlink at the target is a hard stop evaluated before the physical containment check and never softened into a reroute, and the pre-write existence check that protects a new ADR from overwriting a file already at its resolved name is unconditional rather than scoped to names that carry a number.
-
-Consequently `.effective-flow/` **in the target project** now holds runtime state only (`memory.json`, `cache.json`, `review/`, `merge-gate/` delegation messages and `iterate`'s hidden-mode `merge-gate/thread-ledger.json`, `model-tiering-pilot/` generations and evidence, `.worktrees/`, `worktree-runs/` lifecycle records, `runs/<RUN_ID>/diff-baseline/` (distinct from `worktree-runs/`), wisdom files, and in hidden mode the local `project-setup.md`) and is **fully ignored** (through `.gitignore`, or in hidden mode through the Git common directory's `info/exclude`). **Hidden mode** (`visibility: hidden`, written only by `/effective-flow setup hidden`) is the exception to the tracked ADR: the configuration lives in the untracked `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` (config locator step 0), plans and concepts stay under `.effective-flow/`, the ignore entry goes to the Git common directory's `info/exclude` instead of `.gitignore`, no `AGENTS.md`/`CLAUDE.md` is written, and no commit, branch, PR, or forge comment names Effective Flow; every tool that writes into the repository or onto the forge must honour it (`src/shared/config-migration-edge-cases.md`). Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/effective-flow-dir-migration.md`); `/effective-flow cleanup` inventories whatever remains in a given checkout and deletes it only after a dry run and explicit confirmation. Issue-tracker labels use the `effective-flow-` prefix; the predecessor `firmo-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (one generation of read backward-compatibility), while the older `sf-` prefix is migrated once (on first remote access) to `effective-flow-` and not recognised on an ongoing basis. New labels are created with `effective-flow-` only. The tracker target itself is configurable: besides `local` and `remote`, `tracker.mode: external` points issue work at a project-management tool named by `tracker.externalTool` (with the free-text `tracker.externalToolHint` for connection discovery), for which Effective Flow ships no product-specific adapter and fails closed rather than falling back. The label vocabulary above keeps its exact strings in every target, pull requests stay on the Git forge behind `origin`, and plan files stay committed under `plan.dir` (in hidden mode they stay untracked under `.effective-flow/plan`); the full contract is `src/shared/tracker-target.md`.
+Nothing published from this repo — commits, PR and issue bodies, comments, documents — carries AI attribution: no Co-Authored-By trailer (deliberate, see `docs/plan/archive/2026-07-16-0024-no-coauthor-trailer.md`), no "Generated with Claude Code/Codex" footer, no agent session link. This also binds work outside an Effective Flow run and overrides any harness default. Factual mentions of Claude Code or Codex as target harnesses are fine.
 
 ## README ownership
 
-Edit `README.md.src` on `develop` and run `mise run readme:write` after installing
-the project pin with `mise install --locked`. Commit the generated `README.md`
-and verify it with `mise run readme:check`. The release stages that output, then
-rewrites developer-guide links and adds the delivery notice. README tooling stays
-on `develop`; never open README source changes against `main`.
+Edit `README.md.src` on `develop`, run `mise install --locked` and `mise run readme:write`, commit the generated `README.md`, and verify with `mise run readme:check`. The release stages that output, rewrites developer-guide links and adds the delivery notice. README sources and tooling stay on `develop`, never `main`.

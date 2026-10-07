@@ -80,8 +80,8 @@ on trust:
    earlier states. That is the tradeoff a living lifecycle accepts by design, and this item
    declares current practice rather than changing it.
 5. **Which narrow records may own configuration values** — exactly one, the project-setup ADR,
-   whose key/value table is itself the owning tracked configuration artifact. Declared in
-   `AGENTS.md`, "Configuration and ADRs", and not restated here.
+   whose key/value table is itself the owning tracked configuration artifact. Every other ADR
+   keeps exact configuration values out of its rationale.
 
 **Coexistence.** Where a project prefers to run a different ADR model, it declares that
 convention in the target repo (the skill follows it) or toggles `effective-product` deliberately

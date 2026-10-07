@@ -2,9 +2,10 @@
 
 This document describes how Effective Flow is built as a repository: the source-to-dist model,
 the router with lazy loading, and the split across the two harnesses Claude Code and Codex.
-Behavior rules for agents (language rules, commit conventions, no-AI-attribution, plan-file
-conventions) live canonically in [`AGENTS.md`](../../AGENTS.md) – this document references them
-instead of duplicating them.
+Behavior rules for agents (language rules, commit conventions, plan-file conventions) live
+canonically in the shipped fragments under [`src/shared/`](../../src/shared/), and the
+repository rules (including no-AI-attribution) in [`AGENTS.md`](../../AGENTS.md) – this document
+references them instead of duplicating them.
 
 ## Central language resolution
 
@@ -586,8 +587,10 @@ effective-flow/                        (Repo)
 - [`build-system.md`](build-system.md) – build flow, placeholder syntax, guards.
 - [`plan-conventions.md`](plan-conventions.md) – naming scheme and lifecycle of the plan files.
 - [`release-and-installation.md`](release-and-installation.md) – versioning and installation.
-- [`AGENTS.md`](../../AGENTS.md) – canonical agent behavior **rules**: language, delegation,
-  commit and no-AI-attribution rules, plan and concept files. Its skill-discovery, build,
+- [`AGENTS.md`](../../AGENTS.md) – canonical repository **rules**: use of the Effective Flow
+  skill, no-AI-attribution, and the Claude leaf boundary of agent tool lists; language,
+  delegation, commit, plan and concept contracts are the shipped fragments under
+  [`src/shared/`](../../src/shared/). Its skill-discovery, build,
   versioning and ownership sections are short forms; the **mechanics** are canonical in
   [`skill-ownership.md`](skill-ownership.md), [`build-system.md`](build-system.md) and
   [`release-and-installation.md`](release-and-installation.md).
