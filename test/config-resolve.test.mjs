@@ -308,6 +308,73 @@ test('step 0: a local file whose hidden row is only inside an HTML comment is no
   });
 });
 
+// Invariant: hidden mode fails closed on its own declaration. A visibility row in the step-0 file
+// that does not parse to exactly one key and one value cell, or a second visibility row, stops
+// resolution with exit 3; it never falls through to the tracked configuration and never picks
+// one of several rows as the declaration.
+const HIDDEN_ROW = '| visibility | hidden |';
+
+function withVisibilityRow(row) {
+  const text = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+  assert.ok(text.includes(HIDDEN_ROW), 'the fixture carries a canonical hidden row to replace');
+  return text.replace(HIDDEN_ROW, row);
+}
+
+async function refusedVisibilityRow(t, text, reason) {
+  const { root } = repository(t);
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+  write(root, LOCAL_SETUP, text);
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const envelope = await refused({ cwd: root, tool: 'build' });
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, { step: 0, path: join(root, LOCAL_SETUP), reason });
+  assert.equal(exitCodeFor(envelope), 3);
+}
+
+test('step 0: a visibility hidden row with an extra cell stops with exit 3', async (t) => {
+  await refusedVisibilityRow(
+    t,
+    withVisibilityRow('| visibility | hidden | extra |'),
+    'malformed-visibility-row',
+  );
+});
+
+test('step 0: a visibility row without a value cell stops with exit 3', async (t) => {
+  await refusedVisibilityRow(t, withVisibilityRow('| visibility |'), 'malformed-visibility-row');
+});
+
+test('step 0: a local file with two visibility hidden rows stops with exit 3', async (t) => {
+  await refusedVisibilityRow(
+    t,
+    setupDocument({ visibility: rowsOf('hidden', 'hidden'), 'review.profile': 'deep' }),
+    'ambiguous-visibility-row',
+  );
+});
+
+test('step 0: a local file with a hidden and a standard visibility row stops with exit 3', async (t) => {
+  await refusedVisibilityRow(
+    t,
+    setupDocument({ visibility: rowsOf('hidden', 'standard'), 'review.profile': 'deep' }),
+    'ambiguous-visibility-row',
+  );
+});
+
+// Invariant: a local file that declares no visibility at all is not hidden mode; it is reported
+// and resolution falls through to the tracked configuration.
+test('step 0: a local file without any visibility row is reported and falls through', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, setupDocument({ 'review.profile': 'deep' }));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'tracked');
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
 test('step 0: a linked worktree honours the main checkout file and reports its own same-named files as ignored', async (t) => {
   const { base, root } = repository(t);
   const linked = join(base, 'linked');
@@ -2207,6 +2274,28 @@ test('cli: a hidden local file with several envelopes exits 3', (t) => {
   assert.equal(status, 3);
   assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
   assert.equal(envelope.error.details.reason, 'hidden-file-multiple-envelopes');
+  assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI maps a malformed step-0 visibility row to exit 3, never to a fall-through.
+test('cli: a hidden local file with a malformed visibility row exits 3', (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    setupDocument({ visibility: 'hidden' }).replace(
+      '| visibility | hidden |',
+      '| visibility | hidden | extra |',
+    ),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 3);
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.equal(envelope.error.details.reason, 'malformed-visibility-row');
   assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
 });
 

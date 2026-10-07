@@ -83,6 +83,8 @@ export const UNSAFE_REASONS = Object.freeze([
   'escapes-root',
   'unreadable',
   'hidden-file-multiple-envelopes',
+  'ambiguous-visibility-row',
+  'malformed-visibility-row',
 ]);
 
 export const MAX_STDIN_BYTES = 1024 * 1024;
@@ -851,16 +853,39 @@ async function locateHidden(context, roots, diagnostics) {
   const file = await readRuntimeStateFile(context, roots.runtimeStateRoot, LOCAL_SETUP_FILE, 0);
   if (!file) return null;
   const document = parseConfigurationDocument(file.text);
-  if (!document.envelopes.some((envelope) => hasHiddenRow(envelope.rows))) {
-    diagnostics.push({ code: 'local-file-not-hidden', path: file.path });
-    return null;
-  }
-  if (document.envelopeCount > 1) {
+  const hidden = document.envelopes.some((envelope) => hasHiddenRow(envelope.rows));
+  if (hidden && document.envelopeCount > 1) {
     fail(
       'RUNTIME_STATE_UNSAFE',
       `${file.path}: declares hidden mode but carries ${document.envelopeCount} configuration envelopes`,
       { step: 0, path: file.path, reason: 'hidden-file-multiple-envelopes' },
     );
+  }
+  // An ambiguous or malformed visibility row leaves the file's intent unprovable: stop, never fall through.
+  const visibilityRows = document.envelopes.flatMap((envelope) =>
+    envelope.rows.filter((row) => row.key === VISIBILITY_KEY),
+  );
+  if (visibilityRows.length > 1) {
+    fail(
+      'RUNTIME_STATE_UNSAFE',
+      `${file.path}: declares ${visibilityRows.length} visibility rows`,
+      {
+        step: 0,
+        path: file.path,
+        reason: 'ambiguous-visibility-row',
+      },
+    );
+  }
+  if (visibilityRows.length === 1 && visibilityRows[0].raw === null) {
+    fail(
+      'RUNTIME_STATE_UNSAFE',
+      `${file.path}: has a visibility row with ${visibilityRows[0].cellCount} cells instead of 2`,
+      { step: 0, path: file.path, reason: 'malformed-visibility-row' },
+    );
+  }
+  if (!hidden) {
+    diagnostics.push({ code: 'local-file-not-hidden', path: file.path });
+    return null;
   }
   return { step: 0, path: file.path, document, source: 'local-hidden' };
 }
