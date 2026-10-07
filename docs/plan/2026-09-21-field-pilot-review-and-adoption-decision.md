@@ -344,19 +344,19 @@ every exact threshold boundary, missing metric, zero denominator, cohort/half/st
 mismatch, separate merge/report mode, incomplete reconciliation, member/state/parameter/view-digest
 drift before evaluate, publication suppression, purge response loss, tombstone retry, discard
 refusal/confirmation/crash recovery, and every
-Keep/Change/Stop consequence. Then run work-package-3 helper tests,
-work-package-4/5 scenario verification, focused tests for the selected branch, and:
+Keep/Change/Stop consequence. Then run work-package-3 helper tests, the fixture-driven
+execution-profile contract tests, focused tests for the selected branch, and:
 
 ```sh
 pnpm agent:check
 pnpm test
 node build.mjs
 pnpm test:distribution
-pnpm execution-profile-eval:verify
-pnpm merge-gate-eval verify
+node --test test/execution-profile-contract.test.mjs test/execution-profile-rendering.test.mjs test/execution-profile-workflow-contract.test.mjs
+pnpm eval merge-gate verify
 ```
 
-Use strict merge-gate eval verification only at release after any owed evidence re-record.
+Run `pnpm eval merge-gate verify --mode strict` only at release, after any owed evidence re-record.
 
 ## Assumptions and open points
 
