@@ -125,9 +125,10 @@ behavior-preserving restructuring, so it is not a refactor.
 
 ## Architecture decisions
 
-- **Envelope parsed before the gateway.** `plan.md` recognizes the envelope when the first non-empty
-  line of the argument begins with `Run state:`. In that case it loads `unattended-planning` and
-  never loads the gateway, so Stage A never sees issue text.
+- **Envelope parsed before the gateway.** `plan.md` treats the argument as an unattended envelope
+  when its first non-empty line begins with `Run state:` **or** any of its lines equals the
+  delimiter `--- end of control lines ---`. In that case it loads `unattended-planning` and never
+  loads the gateway, so Stage A never sees issue text.
   - **Rejected:** having WP5 follow the planning phases directly, because that leaves `plan.md`'s
     "ask" instructions in force and gives the test no subject.
   - **Rejected:** a separate `plan-unattended` tool, because it would duplicate the planning phases.
@@ -144,10 +145,13 @@ behavior-preserving restructuring, so it is not a refactor.
   untrusted text is never part of the argument at all, which is stronger than treating it as data.
 
 - **Control lines** (each exactly once, above the delimiter). `Run state: non-interactive` must be
-  the **first non-empty line**; the other four follow in any order. Recognition is anchored on that
-  first line only, so a misordered envelope can never fall through to the gateway: the gateway
+  the **first non-empty line**; the other four follow in any order. An envelope recognized by its
+  delimiter whose first non-empty line does not begin with `Run state:` returns
+  `ABORT: misordered unattended envelope`; a first line that begins with `Run state:` but is not
+  exactly `Run state: non-interactive` returns `ABORT: unparseable run-state switch`. The gateway
   pointer's `when:` clause is amended to "a non-empty argument whose first non-empty line does not
-  begin with `Run state:`", so the two pointers are mutually exclusive.
+  begin with `Run state:` and that carries no `--- end of control lines ---` line", so the two
+  pointers are mutually exclusive and a misordered envelope never reaches the gateway.
   - `Run state: non-interactive`;
   - `Next steps: suppressed`;
   - `Language context: …`, with the same six-key grammar as `iterate`;
@@ -160,6 +164,7 @@ behavior-preserving restructuring, so it is not a refactor.
 - **Abort strings (complete list).** Unlike `iterate`, a malformed `Next steps:` line aborts here.
   - `ABORT: duplicated control line`
   - `ABORT: incomplete unattended envelope`
+  - `ABORT: misordered unattended envelope`
   - `ABORT: unparseable run-state switch`
   - `ABORT: unparseable next-steps switch`
   - `ABORT: unparseable language-context switch`
@@ -194,18 +199,18 @@ behavior-preserving restructuring, so it is not a refactor.
 
 ## Affected files
 
-| File                                         | Description                                                                                                                                                                                              |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/shared/unattended-planning.md`          | New lazy fragment: envelope grammar, abort strings, general rule, file-name rule, site-mapping table for `plan` and `plan-review`, structured result                                                     |
-| `src/shared/planning-readiness.md`           | New lazy fragment: criteria R1–R4, the doubt rule, the label ordering rule, the verdict shape, ready and not-ready examples                                                                              |
-| `src/tools/plan.md`                          | One ordering sentence and the lazy pointer **before** the gateway pointer; the conditional `**Issue:**` template line; Phase 6b hands `Run state: non-interactive` to `plan-review` in an unattended run |
-| `src/tools/plan-review.md`                   | One lazy pointer that fires when the delegation payload carries `Run state: non-interactive`                                                                                                             |
-| `src/shared/plan-contract.md`                | New row `Issue` → `**Issue:**` in both columns, marked as a machine-stable label                                                                                                                         |
-| `build.mjs`                                  | Only if the build reports a budget overrun: raise `plan` / `plan-review` in `CONTEXT_BUDGET_LINES` to the reported built size plus at most ten lines                                                     |
-| `test/unattended-planning-contract.test.mjs` | New `node:test` suite (helpers copied per the suite convention)                                                                                                                                          |
-| `docs/adr/unattended-run-state.md`           | New living ADR (name resolved through `project-adr-convention`; the repository's observed form is a numberless slug)                                                                                     |
-| `docs/developer-guide/plan-conventions.md`   | Document the `**Issue:**` field and the unattended file name                                                                                                                                             |
-| `docs/developer-guide/terminology.md`        | Add the terms "unattended run" and "planning readiness"                                                                                                                                                  |
+| File                                         | Description                                                                                                                                                                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/unattended-planning.md`          | New lazy fragment: envelope grammar, abort strings, general rule, file-name rule, site-mapping table for `plan` and `plan-review`, structured result                                                                                                                    |
+| `src/shared/planning-readiness.md`           | New lazy fragment: criteria R1–R4, the doubt rule, the label ordering rule, the verdict shape, ready and not-ready examples                                                                                                                                             |
+| `src/tools/plan.md`                          | One ordering sentence and the lazy pointer **before** the gateway pointer; the gateway pointer's `when:` amended to exclude the envelope; the conditional `**Issue:**` template line; Phase 6b hands `Run state: non-interactive` to `plan-review` in an unattended run |
+| `src/tools/plan-review.md`                   | One lazy pointer that fires when the delegation payload carries `Run state: non-interactive`                                                                                                                                                                            |
+| `src/shared/plan-contract.md`                | New row `Issue` → `**Issue:**` in both columns, marked as a machine-stable label                                                                                                                                                                                        |
+| `build.mjs`                                  | Only if the build reports a budget overrun: raise `plan` / `plan-review` in `CONTEXT_BUDGET_LINES` to the reported built size plus at most ten lines                                                                                                                    |
+| `test/unattended-planning-contract.test.mjs` | New `node:test` suite (helpers copied per the suite convention)                                                                                                                                                                                                         |
+| `docs/adr/unattended-run-state.md`           | New living ADR (name resolved through `project-adr-convention`; the repository's observed form is a numberless slug)                                                                                                                                                    |
+| `docs/developer-guide/plan-conventions.md`   | Document the `**Issue:**` field and the unattended file name                                                                                                                                                                                                            |
+| `docs/developer-guide/terminology.md`        | Add the terms "unattended run" and "planning readiness"                                                                                                                                                                                                                 |
 
 ## Implementation details
 
@@ -247,10 +252,11 @@ behavior-preserving restructuring, so it is not a refactor.
    caller.
 
 2. **Edit `plan.md`.**
-   - Place the pointer, with `when: the first non-empty line of the argument begins with Run state:`,
-     and a one-line precedence sentence directly before the `plan-input-gateway` pointer. Amend the
-     gateway pointer's `when:` to "the user supplied a non-empty argument whose first non-empty line
-     does not begin with `Run state:`".
+   - Place the pointer, with `when: the first non-empty line of the argument begins with Run state:,
+or a line of the argument equals --- end of control lines ---`, and a one-line precedence
+     sentence directly before the `plan-input-gateway` pointer. Amend the gateway pointer's `when:`
+     to "the user supplied a non-empty argument whose first non-empty line does not begin with
+     `Run state:` and that carries no `--- end of control lines ---` line".
    - Add the conditional template line `**Issue:** #<N>` with the comment "only for plans written
      from one issue", placed below the workflow fields.
    - Add one Phase 6b sentence forwarding the run state.
@@ -304,8 +310,13 @@ behavior-preserving restructuring, so it is not a refactor.
    - **Ordering.** For the Claude, Codex and portable renderings of `plan.md` (in order:
      `resolveEagerIncludes`, then `resolveLazyIncludes`, then `renderBody`), the
      `unattended-planning` pointer precedes the `plan-input-gateway` pointer, its `when` clause names
-     `Run state:`, and the gateway pointer's `when` carries the amended "does not begin with
-     `Run state:`" text.
+     both `Run state:` and the delimiter `--- end of control lines ---`, and the gateway pointer's
+     `when` carries the amended text excluding both: "does not begin with `Run state:`" and "carries
+     no `--- end of control lines ---` line".
+   - **Misordered envelope.** The fragment states that an argument carrying the delimiter whose
+     first non-empty line is `Next steps:` (or any other line not beginning with `Run state:`)
+     aborts with `ABORT: misordered unattended envelope` and loads neither the gateway nor
+     `plan-issue`.
    - **Default unchanged.** Rendered output carries no `ask` fences (they become prose such as
      "Use the `AskUserQuestion` tool…"), so run `askContracts` on the eager-resolved **source**
      before `renderBody`: without the envelope, the fence headers of `plan.md` are exactly
@@ -336,9 +347,11 @@ behavior-preserving restructuring, so it is not a refactor.
   implemented status) aborts. It never falls back to asking.
 - **Bad issue-text path.** A path that is a symlink, differs from the issue's own trusted-text path,
   or whose JSON `issue` field differs from `Issue:` aborts before the text is used.
-- **Misordered envelope.** An envelope whose first non-empty line is not `Run state:` is not
-  recognized; because the gateway's `when:` excludes only that first line, it falls to the
-  interactive path, which the caller (WP5) never produces. WP5's envelope always leads with it.
+- **Misordered envelope.** A misordered envelope still carries the delimiter, so it is recognized
+  and aborts with `ABORT: misordered unattended envelope`; it never reaches the gateway.
+- **Prose that contains the delimiter.** A human argument with a line equal to
+  `--- end of control lines ---` is likewise treated as an envelope and aborts rather than being
+  routed by Stage A. This is documented as intended.
 - **Exhausted sub-agent retries** abort with `ABORT: unattended sub-agent failed` instead of asking.
 - **Hidden mode** aborts.
 
@@ -349,8 +362,10 @@ behavior-preserving restructuring, so it is not a refactor.
       file and exact line text, to exactly one site row or a reasoned non-site entry. Adding an
       unmapped question line to `src/tools/plan.md` makes the test fail.
 - [ ] In all three rendered targets the `unattended-planning` pointer precedes the
-      `plan-input-gateway` pointer, the gateway's `when:` excludes a first line beginning with
-      `Run state:`, and the eager-resolved `plan.md` source without the envelope still carries
+      `plan-input-gateway` pointer, the gateway's `when:` excludes both a first line beginning with
+      `Run state:` and an argument carrying a `--- end of control lines ---` line, an argument
+      carrying the delimiter with a non-`Run state:` first line aborts with
+      `ABORT: misordered unattended envelope`, and the eager-resolved `plan.md` source without the envelope still carries
       exactly the fences `Revision` and `Plan review`.
 - [ ] `src/shared/unattended-planning.md` states the five control lines with `Run state:` first, the
       delimiter, the complete abort-string list of this plan, the general rule, the file-name rule,
@@ -443,6 +458,10 @@ decision was needed.
   forge-writing `plan-issue` — fail-open. `Run state: non-interactive` is now required as the first
   non-empty line, and the gateway pointer's `when:` excludes it, so the two pointers are mutually
   exclusive; the ordering test asserts both clauses.
+  - **Correction (2026-10-07).** That fix only moved the fail-open: a misordered envelope was then
+    not recognized at all and still reached the gateway. Recognition now also matches the delimiter
+    line `--- end of control lines ---`, the gateway's `when:` excludes it, and a misordered
+    envelope aborts with `ABORT: misordered unattended envelope`.
 - **Important (Error cases), incorporated.** `completion-protocol` asks the user after exhausted
   sub-agent retries, an unmapped site. New row `P-ESC` aborts instead; the count is now 18 rows, and
   the general rule covers central-skill and `language-rules` questions.

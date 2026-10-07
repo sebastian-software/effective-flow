@@ -19,7 +19,7 @@ Verified repository context:
 - The forge tracker scripts (`src/scripts/remote-tracker*.mjs`) support GitHub and Forgejo for listing and reading issues, reading comments, listing pull requests, and creating pull requests. Every write is a dry run unless `--apply` is passed. The only content guard they apply before a write is an attribution check (`remote-tracker-shared-core.mjs`); no secret scan exists yet.
 - First remote access migrates `sf-` labels on the forge (`src/shared/issue-tracker-forge.md`), which counts as a forge write.
 - Runtime state must stay below `<root>/.effective-flow/`, and a symlink pointing elsewhere is refused (`src/shared/runtime-state-safety.md`).
-- The open plan `docs/plan/2026-08-20-plan-publication-before-implementation.md` describes how to publish a finished plan before implementation. Its archive-handshake prerequisite has since landed. It conflicts with an unattended pass in four places: it commits directly to the base branch when no delivery mode applies, it asks once before publishing, a non-interactive run publishes nothing, and it names the branch after the dated plan-file stem and keeps a local receipt.
+- The plan `docs/plan/archive/2026-08-20-plan-publication-before-implementation.md`, implemented by #511, describes how to publish a finished plan before implementation. Its archive-handshake prerequisite has since landed. Its planned mechanics conflict with an unattended pass in four places: it commits directly to the base branch when no delivery mode applies, it asks once before publishing, a non-interactive run publishes nothing, and it names the branch after the dated plan-file stem and keeps a local receipt.
 - Effective Flow has no daemon, schedule, or watcher. "Autonomous" in the repository today means only the harness goal loop (`src/shared/goal-completion.md`).
 
 Verified context in the sibling repository `llm-automatisator`:
@@ -200,16 +200,16 @@ ADR candidates:
    - Handoff: `effective-flow plan "Work package 3 (Issue Buddy runtime script) of docs/concept/2026-09-29-issue-buddy.md: build the dependency-free candidate, trust-filter, fingerprint, idempotency, verdict-cache and pass-report script"`
 
 4. **Shared publication core (Effective Flow).**
-   - Goal: one deterministic publication path serves both Issue Buddy and the plan-publication plan.
+   - Goal: one deterministic publication path serves both Issue Buddy and the shipped interactive plan publication.
    - Rough scope:
      - scan classes covering the file, title, and body;
      - the single-file assertion and commit;
      - a deterministic branch and a non-force push;
      - pull-request creation with `Refs`;
-     - revising `docs/plan/2026-08-20-plan-publication-before-implementation.md` to use the core and record the unattended exception.
-   - Done when: unit tests cover the assertion, the scan, and the branch lock, and the revised plan passes its own review.
+     - re-deriving WP4's plan against the shipped publication (`src/shared/plan-publication.md`, from `docs/plan/archive/2026-08-20-plan-publication-before-implementation.md`, implemented by #511); see WP4's open point "Stale against the merge base".
+   - Done when: unit tests cover the assertion, the scan, and the branch lock, and the re-derived WP4 plan passes its own review.
    - Dependencies: none; it can run alongside 2 and 3.
-   - Handoff: `effective-flow plan "Work package 4 (shared publication core) of docs/concept/2026-09-29-issue-buddy.md: extract the deterministic plan publication core and revise docs/plan/2026-08-20-plan-publication-before-implementation.md to use it"`
+   - Handoff: `effective-flow plan "Work package 4 (shared publication core) of docs/concept/2026-09-29-issue-buddy.md: extract the deterministic plan publication core, re-derived against the shipped publication in src/shared/plan-publication.md (see the open point in docs/plan/2026-10-01-shared-plan-publication-core.md)"`
 
 5. **`issue-buddy` tool, stage 1 (Effective Flow).**
    - Goal: a manual dry-run or publishing pass works end to end on one checkout.

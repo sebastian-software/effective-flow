@@ -22,12 +22,10 @@ deterministic script rather than by model judgment. It runs these steps in this 
 4. push without force, so the branch acts as a lock;
 5. open a pull request that references its issue with the non-closing `Refs #<N>`.
 
-The core has two users, and neither exists yet. The `issue-buddy` tool (work package 5) publishes
-unattended. The open plan `docs/plan/2026-08-20-plan-publication-before-implementation.md`
-publishes interactively. Its full revision onto the core is **a separate follow-up plan** (deep
-review decision, 2026-10-01), kept off the critical path to WP3 and WP5. This package only adds a
-short "superseded mechanics" note to that plan (Approach step 8), so nobody implements its old
-mechanics in the meantime.
+The core has two intended users. The `issue-buddy` tool (work package 5) publishes unattended and
+does not exist yet. Interactive publication shipped with #511 (`src/shared/plan-publication.md`;
+the plan is archived at `docs/plan/archive/2026-08-20-plan-publication-before-implementation.md`).
+How this core relates to it is an open point (see Open points).
 
 Sibling plans of the same concept:
 
@@ -494,7 +492,7 @@ identifiers such as `gitea_base_url`, and kebab-case slugs.
 - **Assumption:** the living ADR "Plan-only unattended publication"
   (`docs/adr/plan-only-unattended-publication.md`, concept ADR candidate) is written by WP5, the
   first change that gives an unattended run a publishing entry point. WP4 ships the mechanism, adds no entry point and writes no ADR; the follow-up revision of the
-  2026-08-20 plan restates the exception there.
+  2026-08-20 plan restates the exception there (see Open points).
 - **Assumption:** callers resolve `language.git` and `language.forge`, the base branch (through
   `src/shared/base-branch-resolution.md`), the branch prefix, and the attended or unattended state.
   The core validates the results but resolves none of them.
@@ -503,7 +501,7 @@ identifiers such as `gitea_base_url`, and kebab-case slugs.
 - **Out of scope:** consolidating the three existing credential detectors; any change to
   `src/tools/pr.md`, `src/tools/plan.md`, `src/shared/worktree-integration.md`, or the next-step
   rows; revising and implementing the 2026-08-20 plan (a separate follow-up plan, to be created
-  with `effective-flow plan` before that plan is implemented).
+  with `effective-flow plan` before that plan is implemented; see Open points).
 
 ## Plan review
 
@@ -598,4 +596,18 @@ incorporated directly; three decisions made by the user.
 
 ## Open points
 
-- No open points.
+- **Stale against the merge base.** This plan was derived at `e846936`, before #511 (`e002492`)
+  implemented and archived the 2026-08-20 plan
+  (`docs/plan/archive/2026-08-20-plan-publication-before-implementation.md`). Interactive
+  publication now ships as `src/shared/plan-publication.md` and
+  `src/shared/plan-pr-continuation.md`: a draft pull request carrying a helper-parsed
+  `planPrMarker`, committed from a temporary worktree on `<delivery.branchPrefix>/<skill>/<slug>`,
+  offered only with `delivery.completion: pr`, and continued by `build`, `fix`, `refactor` and
+  `docs`. The conflicts table, Approach step 8, the local-receipt decision, the `direct-commit`
+  target and every "follow-up revision" reference describe a plan that is no longer open. A pull
+  request from this core would be non-draft, carry no plan marker and sit on
+  `<prefix>/plan/issue-<N>`, so the shipped continuation would not find it. Before implementation,
+  re-derive this plan against current `develop` and decide whether the core publishes the shipped
+  draft-plus-marker shape, so the implementing workflows continue on an Issue Buddy pull request,
+  or a separate shape with a stated reason. The re-derivation drops the "superseded mechanics"
+  note (Approach step 8) and its acceptance criterion.
