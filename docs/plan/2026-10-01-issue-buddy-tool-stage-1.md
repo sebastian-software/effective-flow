@@ -27,7 +27,7 @@ Deviations from the concept that are binding user decisions:
 
 - **Dry run (D1).** The concept says a dry run "writes nothing". A dry run now writes the local runtime cache only: verdicts and the pass report under `.effective-flow/issue-buddy/`, every record marked `mode: dry-run`. A dry-run `ready` verdict is recorded as `would-publish`, and a later publishing pass judges that issue again. A dry run neither plans nor creates a worktree.
 - **GitHub only (D3).** Forgejo is deferred. A non-GitHub `origin` stops the pass. Trust means the GitHub collaborator permission `write` or `admin`.
-- **Private repositories (D2).** On the GitHub Free organisation, rulesets work only on public repositories. A private repository may be run without a forge-side boundary; then the in-run single-file assertion and scan are the only boundary, although the agent runs without a Codex sandbox. This plan documents that accepted risk in its ADR. The enforced gate for enabling a private repository is WP6b's configuration field `issueBuddy.privateRepositoryAcknowledgement`; WP7's approval table records the acknowledgment with date and person.
+- **Private repositories (D2).** On the GitHub Free organisation, rulesets work only on public repositories, so a private repository has no forge-side boundary. WP4's single-file assertion and scan cover only the core's own path and hold only while the forge credential is unavailable to model steps (WP4, Assumptions). In stage 1 the operator's credential is within reach of the agent, which runs without a Codex sandbox, and isolating it is WP6b's job. Stage 1 therefore runs a private repository as a dry run only: `--publish` on a private repository stops in Phase 0. Lifting that stop is a follow-up that depends on WP6b's credential isolation; after it, WP6b's configuration field `issueBuddy.privateRepositoryAcknowledgement` and WP7's approval table, which records the acknowledgment with date and person, gate enabling. The ADR records this posture.
 
 The classification is Feature: a new user-invocable tool with new behaviour, its tests and documentation. Planned against `develop` at `e846936` on 2026-10-01; the working tree carried only untracked concept and plan files, none of them in scope.
 
@@ -45,7 +45,7 @@ The classification is Feature: a new user-invocable tool with new behaviour, its
 - **Next steps.** Two rows in the edge table of `src/shared/next-steps.md`, mirrored in `docs/user-guide/tool-flow.md` (guard at `build.mjs:993-1010`). Stage 1 is run by a person, who benefits from the continuation.
 - **Session title.** `issue-buddy` joins the silent list of `src/shared/session-title.md`: a pass spans several issues and has no single work subject. The partition test (`test/session-contracts.test.mjs:416`) forces this choice.
 - **Chat language and delegation.** Eager `chat-language` include (enforced by `test/workflow-contracts.test.mjs:2171`) and eager `delegation-mandate` include (build-system procedure step 6). No `## Recommended skills` section: the tool only orchestrates, and the planning skills are applied inside `plan`. The skill-ownership manifest therefore needs no entry.
-- **ADR.** This package writes the living ADR `docs/adr/plan-only-unattended-publication.md` for the concept's ADR candidate "Plan-only unattended publication". It records that a flag-gated unattended pass may publish without confirmation, limited to one pull request containing exactly one plan file. It also records the accepted D2 posture for private repositories. The run-state ADR (`docs/adr/unattended-run-state.md`) belongs to WP2, the "Input trust boundary" ADR (`docs/adr/input-trust-boundary.md`) to WP3, and the forge-token ADR ("Forge-Token im Agentenlauf", llm-automatisator) to WP6b.
+- **ADR.** This package writes the living ADR `docs/adr/plan-only-unattended-publication.md` for the concept's ADR candidate "Plan-only unattended publication". It records that a flag-gated unattended pass may publish without confirmation, limited to one pull request containing exactly one plan file. It also records the D2 posture: private repositories stay dry-run-only in stage 1 until the forge credential is isolated from model steps. The run-state ADR (`docs/adr/unattended-run-state.md`) belongs to WP2, the "Input trust boundary" ADR (`docs/adr/input-trust-boundary.md`) to WP3, and the forge-token ADR ("Forge-Token im Agentenlauf", llm-automatisator) to WP6b.
 
 ## Affected files
 
@@ -53,14 +53,17 @@ The classification is Feature: a new user-invocable tool with new behaviour, its
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/tools/issue-buddy.md`                     | New exposed tool: frontmatter `description` and `catalogHint`, argument grammar, phases 0–6, preflight stop table, envelope, report, lazy `next-steps` fence, eager `chat-language` and `delegation-mandate` includes                                                                       |
 | `build.mjs`                                    | Add `issue-buddy` to `TOOL_GROUPS` "Understand what to do" after `plan-issue`; add its `CONTEXT_BUDGET_LINES` entry                                                                                                                                                                         |
+| `src/scripts/remote-tracker-core.mjs`          | Register the additive read-only operation `repository-visibility-read` (output `visibility`) with a `repositoryVisibilityRead` probe capability; Forgejo gets only the `false` capability (D3)                                                                                              |
+| `src/scripts/remote-tracker-github-core.mjs`   | GET-only command plan for `repository-visibility-read` on `repos/{owner}/{repo}`, returning its `visibility` field                                                                                                                                                                          |
+| `test/remote-tracker.test.mjs`                 | Tests for `repository-visibility-read` on GitHub and `UNSUPPORTED_CAPABILITY` on Forgejo                                                                                                                                                                                                    |
 | `src/shared/next-steps.md`                     | Two edge-table rows for `issue-buddy`                                                                                                                                                                                                                                                       |
 | `docs/user-guide/tool-flow.md`                 | Mirror of the two rows in rendered invocation form                                                                                                                                                                                                                                          |
 | `src/shared/session-title.md`                  | Add `issue-buddy` to the silent list                                                                                                                                                                                                                                                        |
 | `test/issue-buddy-contract.test.mjs`           | New contract test: no `ask` fence in the tool or its eager includes; no pointer to the completion phase of `worktree-integration` or to the tracker-mode question; preflight stops present; envelope lines in their literal forms; flag grammar; phase order matches the integration driver |
 | `test/issue-buddy-pass.test.mjs`               | New integration test of the four done criteria against a local bare repository and a fake forge runner, with stubbed model steps                                                                                                                                                            |
-| `test/fixtures/issue-buddy/`                   | Fixture issues, collaborator permissions and the stub planner's plan file                                                                                                                                                                                                                   |
+| `test/fixtures/issue-buddy/`                   | Fixture issues, collaborator permissions, a public and a private repository visibility, and the stub planner's plan file                                                                                                                                                                    |
 | `docs/adr/plan-only-unattended-publication.md` | New living ADR (see Architecture decisions)                                                                                                                                                                                                                                                 |
-| `docs/user-guide/tools-understand.md`          | New section `/effective-flow issue-buddy` after `plan-issue`: purpose, flags, dry run versus publishing, what a pass never does, report, recovery, prerequisites, the D2 private-repository risk                                                                                            |
+| `docs/user-guide/tools-understand.md`          | New section `/effective-flow issue-buddy` after `plan-issue`: purpose, flags, dry run versus publishing, what a pass never does, report, recovery, prerequisites, the D2 private-repository restriction                                                                                     |
 | `docs/user-guide/README.md`                    | Add the tool to the reading-order line of the "Understand" tools                                                                                                                                                                                                                            |
 | `docs/user-guide/remote-tracker.md`            | "Interplay with issue-driven tools" and "Hidden mode": Issue Buddy's forge reads, the `Refs` trace as the only visible trace on an issue, the hidden-mode stop                                                                                                                              |
 | `docs/developer-guide/architecture.md`         | Short section on the unattended pass: orchestrator over WP3 script and WP4 core, envelope, worktree, the advisory in-run checks versus the forge-side boundary                                                                                                                              |
@@ -71,20 +74,21 @@ The classification is Feature: a new user-invocable tool with new behaviour, its
 ### Approach
 
 1. **Check prerequisites.** Confirm on `develop` that WP2, WP3 and WP4 have landed. Their artifacts are `src/shared/unattended-planning.md`, `src/shared/planning-readiness.md`, the WP3 script registered in `RUNTIME_SCRIPT_FILES` (`build.mjs:87`) with its dry-run mode flag, and the WP4 core. Re-read their final interfaces (subcommand names, envelope grammar, result shapes) and use those names in the tool. Stop if one is missing or differs from what this plan relies on.
-2. **Write `src/tools/issue-buddy.md`** with the phases under "Component structure".
-3. **Register the tool** in `TOOL_GROUPS`. Add a provisional budget entry.
-4. **Add the next-steps rows** and their mirror, and add the session-title entry.
-5. **Write both tests** and the fixtures.
-6. **Write the ADR and the documentation**, then regenerate `README.md`.
-7. **Run `node build.mjs`**. Set the budget entry to the line count reported under "Always-loaded core (lines/budget)" plus at most ten lines of headroom.
-8. **Run the full check sequence**, then the manual live smoke run (validation plan).
-9. **Run `pnpm eval merge-gate verify`** and record the expected drift (router, `next-steps`, `session-title`) as an owed re-recorded round in the pull-request description.
+2. **Add `repository-visibility-read`** to the tracker helper, modelled on WP3's additive `collaborator-permission-read`, with its tests.
+3. **Write `src/tools/issue-buddy.md`** with the phases under "Component structure".
+4. **Register the tool** in `TOOL_GROUPS`. Add a provisional budget entry.
+5. **Add the next-steps rows** and their mirror, and add the session-title entry.
+6. **Write both tests** and the fixtures.
+7. **Write the ADR and the documentation**, then regenerate `README.md`.
+8. **Run `node build.mjs`**. Set the budget entry to the line count reported under "Always-loaded core (lines/budget)" plus at most ten lines of headroom.
+9. **Run the full check sequence**, then the manual live smoke run (validation plan).
+10. **Run `pnpm eval merge-gate verify`** and record the expected drift (router, `next-steps`, `session-title`) as an owed re-recorded round in the pull-request description.
 
 ### Component structure
 
 **Arguments.** The grammar is `issue-buddy [--publish] [--max-judgments <n>] [--max-plans <n>]`, where `<n>` is a positive integer. `--max-judgments` defaults to WP3's default of 3; `--max-plans` defaults to 1. They reach WP3 as `limits.judgments` and `limits.plans`. Any other argument stops the pass with the usage line and writes nothing.
 
-**Phase 0: Preflight.** The rows are evaluated in this order, and every row stops the pass before the first tracker access. No cache record is written. A stop before the pass lock is taken writes nothing at all. A stop after it writes one pass report with `outcome: failed` and a single `preflight` failure through WP3's `pass-report`, then releases the lock:
+**Phase 0: Preflight.** The rows are evaluated in this order, and every row stops the pass before the first issue or pull-request read. The one forge call in Phase 0 is the `repository-visibility-read` of the private-repository row. It runs in both modes, only after the hidden-mode, tracker-mode and GitHub rows have passed, and reads repository metadata only; any visibility other than `public`, or a failed read, counts as private. A dry run never stops on it and carries the result to the report. No cache record is written. A stop before the pass lock is taken writes nothing at all. A stop after it writes one pass report with `outcome: failed` and a single `preflight` failure through WP3's `pass-report`, then releases the lock:
 
 | Condition                                                                | Outcome                                                                                                               |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
@@ -94,6 +98,7 @@ The classification is Feature: a new user-invocable tool with new behaviour, its
 | `visibility: hidden`                                                     | Stop; hidden mode cannot produce a plan pull request                                                                  |
 | `tracker.mode` unset, `local` or `external`                              | Stop; Issue Buddy needs `tracker.mode: remote`                                                                        |
 | `origin` is not GitHub                                                   | Stop; version 1 supports GitHub only, Forgejo is deferred                                                             |
+| `--publish` and the repository is private                                | Stop; private repositories are dry-run-only until WP6b isolates the forge credential from model steps (D2)            |
 | No sub-agent mechanism                                                   | Continue with the disclosed inline fallback of the delegation mandate, named in the report                            |
 
 Then resolve `plan.dir`, `delivery.baseBranch` (`src/shared/base-branch-resolution.md`), `delivery.branchPrefix` and the language keys once. The main checkout's tracked files are never written, so their state is not a precondition. No `sf-` label migration runs; WP3 switches it off.
@@ -123,7 +128,7 @@ Then resolve `plan.dir`, `delivery.baseBranch` (`src/shared/base-branch-resoluti
 - verdicts with their reasons;
 - pull requests opened (URLs);
 - failures;
-- whether the repository is private, which marks the D2 posture;
+- the repository visibility from Phase 0; a private repository marks the D2 posture (dry run only);
 - the stored report path;
 - a final line `Pass result: completed` or `Pass result: failed`, which mirrors the report's `outcome` for a human reader; WP6a reads the stored report file, not this line;
 - the next-steps block.
@@ -136,7 +141,7 @@ All state stays where its owners put it. WP3 owns `.effective-flow/issue-buddy/`
 
 ### API integration
 
-GitHub only, through the WP3 additive reads of `src/scripts/remote-tracker*.mjs` and the WP4 core. The tool never calls `gh` directly and never writes to an issue.
+GitHub only, through the WP3 additive reads of `src/scripts/remote-tracker*.mjs`, this package's `repository-visibility-read`, and the WP4 core. The tool never calls `gh` directly and never writes to an issue.
 
 ### Styling approach
 
@@ -157,20 +162,21 @@ Not relevant: no user interface.
 - **Pull-request creation fails after the push:** the next pass recovers it as `orphan-branch`.
 - **Issue closed while its plan pull request is open:** reported only (WP3).
 - **Dry-run `would-publish` record:** a later publishing pass judges the issue again before planning it.
-- **Private repository:** the pass runs and the report marks the D2 posture. Enabling it for scheduled publishing is gated in WP6b and WP7.
+- **Private repository:** a dry run runs and the report marks the D2 posture; `--publish` stops in Phase 0. Lifting that stop depends on WP6b's credential isolation and is then gated in WP6b and WP7.
 
 ## Acceptance criteria
 
 - [ ] `node build.mjs` succeeds. The catalog, the router description and the `argument-hint` of every target list `issue-buddy` in "Understand what to do" after `plan-issue`, and its budget entry is at most ten lines above the reported size.
 - [ ] `test/issue-buddy-contract.test.mjs` passes. It fails if a ` ```ask ` fence is added to `src/tools/issue-buddy.md` or one of its eager includes, or if a pointer to the `worktree-integration` completion phase or the tracker-mode question is added. It asserts the literal envelope lines `Run state: non-interactive`, `Next steps: suppressed`, `Issue: #<N>`, `Issue text:` and the delimiter `--- end of control lines ---`, the three readiness verdict line forms, every Phase 0 stop row in its order, and the phase order.
-- [ ] `test/issue-buddy-pass.test.mjs` passes and proves all four done criteria:
+- [ ] `test/issue-buddy-pass.test.mjs` passes and proves all four done criteria and the D2 stop:
   - **(a) Dry run.** No forge write call, unchanged refs in the bare `origin`, an unchanged tracked tree, changes only below `.effective-flow/issue-buddy/`, and records marked `mode: dry-run`.
   - **(b) Publishing pass.** Exactly one pull-request create call, whose branch `<branchPrefix>/plan/issue-<N>` adds exactly one file under `plan.dir` and whose body contains `Refs #<N>` and no closing keyword.
   - **(c) Second pass.** Zero forge write calls and zero ref changes.
   - **(d) Kills.** A kill after worktree creation and a kill after the push but before pull-request creation each leave a stale pass lock that the next pass reports and does not break. After the operator's `pass-lock-release` with the reported pass id, the next pass recovers each case, with exactly one pull request in total and no force push.
   - **(e) Report contract.** Every pass, including a preflight stop after the lock, leaves `last-pass.json` matching WP3's schema; a dry run lists no pull request.
+  - **(f) Private repository.** `--publish` against a private fixture repository stops in Phase 0 with zero forge write calls and zero ref changes, and a dry run against it completes with the report marking the D2 posture.
 - [ ] The existing session-title partition test, the chat-language distribution test and the next-steps guard and mirror guard pass with `issue-buddy` included.
-- [ ] `docs/adr/plan-only-unattended-publication.md` exists with `## Status` `Active` and states the D2 accepted risk.
+- [ ] `docs/adr/plan-only-unattended-publication.md` exists with `## Status` `Active` and states the D2 posture: private repositories stay dry-run-only in stage 1 until the forge credential is isolated from model steps.
 - [ ] The user guide, the developer guide and the README describe the tool, and `mise run readme:check` passes.
 - [ ] One manual live smoke run on a GitHub test repository shows (a) to (d) with real pull-request URLs and pass reports, recorded in the pull-request description.
 
@@ -205,7 +211,7 @@ Not relevant: no user interface.
   - a behavioural eval suite under `evals/issue-buddy/` (left to calibration in WP7);
   - asking questions in issues;
   - any reaction after publication;
-  - the recorded operator acknowledgment for private repositories (WP6b, WP7).
+  - publishing on private repositories: lifting the stage-1 dry-run-only stop depends on WP6b's credential isolation, after which the recorded operator acknowledgment gates enabling (WP6b, WP7).
 - The pass's time cap is enforced by the runner (WP6a). A pass cut off by it is a kill, and Phase 1 covers it.
 - A GitHub test repository for the live smoke run is available to the implementer.
 
@@ -229,13 +235,14 @@ Not relevant: no user interface.
 
 - **Architecture, Important (incorporated):** the mandatory read of `worktree-integration` before `git worktree add` could reach its `delivery.completion` question. The tool now reads only the execution and outcome sections, and the contract test forbids a pointer to the completion phase.
 - **Architecture, Important (incorporated):** a missing tracker mode would reach the tracker-mode question in `issue-tracker.md`. Preflight now stops unless `tracker.mode` is `remote`.
-- **Security, Important (incorporated):** the planning sub-agent's returned text was implicitly trusted. The pass now verifies the artifact deterministically before any push, and the scan blocks on every class when unattended. Without a sandbox and, under D2, without forge rules on private repositories, these checks are advisory; the ADR records this as the accepted risk.
+- **Security, Important (incorporated):** the planning sub-agent's returned text was implicitly trusted. The pass now verifies the artifact deterministically before any push, and the scan blocks on every class when unattended. Without a sandbox and, under D2, without forge rules on private repositories, these checks are advisory; the ADR records this as the accepted risk. (For private repositories superseded by the D2 correction below.)
 - **Error cases, Important (incorporated):** a kill between the push and pull-request creation, and a stale worktree, now have defined recovery in Phase 1, counted against limits and retries.
 - **Testability, Important (incorporated):** the Markdown tool cannot run in `node:test`. The integration test drives the deterministic sequence with stubbed model steps, and a contract test binds the driver's step order to the tool's phase list. Model behaviour is covered by the manual live smoke run.
 - **Testability, Note:** the readiness stub and planner stub prove the composition, not readiness quality; calibration of readiness belongs to WP7.
 - **Scope, Note:** configuration keys and an eval suite were considered and deferred; flags suffice for stage 1 and WP6a passes flags.
 - **Maintainability, Note:** adding the tool invalidates the standing merge-gate eval round; the re-record is owed before the next release and is named in the validation plan.
 - **Cross-plan alignment (2026-10-01):** binding orchestrator resolutions applied. Preflight now acquires WP3's whole-pass lock (never broken automatically), so done criterion (d) includes the operator's stale-lock release for a manual pass. The readiness answer uses WP2's three verdict lines; the planning argument is exactly WP2's five-line envelope, with the handoff roots in the brief. Stale-worktree classification moved here from WP3; orphan branches go through WP4's `complete-branch`, and unrecorded plan pull requests come from WP3's `recovery` section. A preflight stop after the lock writes a failed report, so WP6a always finds `outcome`. The body no longer carries `Refs`, because the WP4 core appends it. The worktree check uses `git status`, because WP4's `assert-changeset` works on commits.
+- **D2 correction (2026-10-07, user decision):** WP4's single-file assertion and scan hold only while the forge credential is unavailable to model steps, and that isolation is WP6b's job. Private repositories are therefore dry-run-only in stage 1: Phase 0 reads the repository visibility through the new `repository-visibility-read` and stops `--publish` on a private repository. The accepted-risk posture for private repositories is withdrawn.
 
 ## Open points
 

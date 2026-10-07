@@ -154,9 +154,11 @@ tests and its registration) and revises one plan document. It restructures no ex
   contradicts the prohibition list and the concept's "without force".
 - **Scan classes have two confidence levels.** A high-confidence finding always blocks. A
   lower-confidence finding blocks unless an interactive caller passes its exact finding id as
-  acknowledged. The core refuses an acknowledgement on an unattended run. Under binding decision D2,
-  a private GitHub repository may run without forge-side rules, so the scan and the single-file
-  assertion are then the only boundary. Both therefore fail closed rather than advise.
+  acknowledged. The core refuses an acknowledgement on an unattended run. A private GitHub
+  repository has no forge-side rules; under WP5's binding decision D2 it stays dry-run-only in
+  stage 1 until WP6b isolates the forge credential from model steps. Once publishing is enabled
+  there, the scan and the single-file assertion are the only boundary. Both therefore fail closed
+  rather than advise.
 - **The core reports findings by class, field and line, never by value.** A finding id has the form
   `<class>:<field>:<line>`, which keeps the envelope and the pass report free of secret material.
 - **The core owns the issue reference.** GitHub closes issues from the PR title and body and from
@@ -481,9 +483,11 @@ identifiers such as `gitea_base_url`, and kebab-case slugs.
 - **Assumption:** binding decision D3 limits the unattended path to GitHub. Forgejo stays usable for
   interactive callers through the existing tracker operations; the core does not add or remove
   Forgejo support there. Forgejo for unattended publication is deferred, not planned here.
-- **Assumption:** under binding decision D2, private repositories may run without forge-side
-  branch rules. This plan does not decide that posture. It makes the in-run checks fail closed
-  because, there, they are the only boundary. **Precondition:** these checks bound only the core's
+- **Assumption:** private repositories have no forge-side branch rules. WP5's binding decision D2
+  keeps them dry-run-only in stage 1 until WP6b isolates the forge credential from model steps;
+  after that, WP6b's `issueBuddy.privateRepositoryAcknowledgement` and WP7's approval table gate
+  enabling. This plan does not decide that posture. It makes the in-run checks fail closed
+  because, once publishing is enabled there, they are the only boundary. **Precondition:** these checks bound only the core's
   own path. They hold only if the write token is exposed to the core's push and PR calls and never
   to the model step; otherwise an agent's own `git push` bypasses both. Enforcing that is WP6b's
   job (`llm-automatisator`, `2026-10-01-issue-buddy-schreib-token-und-veroeffentlichung.md`).
