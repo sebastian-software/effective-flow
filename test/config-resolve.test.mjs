@@ -290,22 +290,21 @@ test('step 0: a multi-envelope local file without a hidden row is reported and f
   });
 });
 
-// Invariant: a visibility hidden row inside an HTML comment is inactive, so a hidden local file
-// whose only hidden declaration is commented out is not hidden mode and falls through to the ADR.
-test('step 0: a local file whose hidden row is only inside an HTML comment is not hidden', async (t) => {
-  const { root } = repository(t);
+// Invariant: the hidden-candidate scan ignores comment and fence state, so no comment or fence
+// boundary can hide a declaration. A step-0 file whose only hidden row lies inside an HTML comment
+// stops with exit 3 instead of falling through to the ADR; envelope parsing still ignores the
+// commented envelope.
+test('step 0: a local file whose hidden row is only inside an HTML comment stops with exit 3', async (t) => {
   const commented = '## Configuration\n\n| Key | Value |\n| --- | --- |\n| visibility | hidden |';
   const live = setupDocument({ 'review.profile': 'deep' });
-  write(root, LOCAL_SETUP, `<!--\n${commented}\n-->\n\n${live}`);
-  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
-  const data = await resolved({ cwd: root, tool: 'build' });
-  assert.equal(data.visibility, 'standard');
-  assert.equal(data.source.step, 2);
-  assert.equal(data.values['plan.dir'].value, 'tracked');
-  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
-    code: 'local-file-not-hidden',
-    path: join(root, LOCAL_SETUP),
-  });
+  const text = `<!--\n${commented}\n-->\n\n${live}`;
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the commented envelope is no envelope');
+  assert.ok(
+    document.envelope.rows.every((row) => row.key !== 'visibility'),
+    'the live envelope carries no visibility row',
+  );
+  await refusedUnparseableHidden(t, text);
 });
 
 // Invariant: hidden mode fails closed on its own declaration. A visibility row in the step-0 file
@@ -620,13 +619,109 @@ test('step 0: a visibility row whose value names hidden but is not hidden stops 
   await refusedUnparseableHidden(t, text);
 });
 
-// Invariant: a visibility hidden row inside a fenced code block is inactive, so a local file whose
-// only hidden declaration is fenced is not hidden mode, is not refused, and falls through to the ADR.
-test('step 0: a local file whose hidden row is only inside a fenced code block is not hidden', async (t) => {
-  const { root } = repository(t);
+// Invariant: the hidden-candidate scan ignores comment and fence state, so no comment or fence
+// boundary can hide a declaration. A step-0 file whose only hidden row lies inside a fenced code
+// block stops with exit 3 instead of falling through to the ADR; envelope parsing still ignores
+// the fenced envelope.
+test('step 0: a local file whose hidden row is only inside a fenced code block stops with exit 3', async (t) => {
   const fenced = '## Configuration\n\n| Key | Value |\n| --- | --- |\n| visibility | hidden |';
   const live = setupDocument({ 'review.profile': 'deep' });
-  write(root, LOCAL_SETUP, `${live}\n\`\`\`markdown\n${fenced}\n\`\`\`\n`);
+  const text = `${live}\n\`\`\`markdown\n${fenced}\n\`\`\`\n`;
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fenced envelope is no envelope');
+  assert.ok(
+    document.envelope.rows.every((row) => row.key !== 'visibility'),
+    'the live envelope carries no visibility row',
+  );
+  await refusedUnparseableHidden(t, text);
+});
+
+// Invariant: the hidden-candidate scan reads raw lines, so a declaration on the remainder of a line
+// after an HTML comment closes is a candidate. A one-line `<!-- old --> | visibility | hidden |`
+// and a multi-line comment whose closing line is `--> visibility: hidden` both stop a non-hidden
+// step-0 file with exit 3; neither falls through to the tracked configuration.
+const INLINE_COMMENT_HIDDEN_ROW = '<!-- old --> | visibility | hidden |';
+const COMMENT_CLOSING_HIDDEN_LINE = '--> visibility: hidden';
+
+function nonHiddenWithLineBeforeEnvelope(block) {
+  const live = setupDocument({ 'review.profile': 'deep' });
+  const text = live.replace('## Configuration', `${block}\n\n## Configuration`);
+  assert.notEqual(text, live, 'the fixture carries the inserted block');
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  assert.ok(
+    document.envelope.rows.every((row) => row.key !== 'visibility'),
+    'the envelope carries no visibility row',
+  );
+  return text;
+}
+
+test('step 0: a hidden row after a one-line HTML comment in a non-hidden local file stops with exit 3', async (t) => {
+  await refusedUnparseableHidden(t, nonHiddenWithLineBeforeEnvelope(INLINE_COMMENT_HIDDEN_ROW));
+});
+
+test('step 0: a multi-line HTML comment closing on a visibility hidden line stops with exit 3', async (t) => {
+  await refusedUnparseableHidden(
+    t,
+    nonHiddenWithLineBeforeEnvelope(`<!--\nold draft\n${COMMENT_CLOSING_HIDDEN_LINE}`),
+  );
+});
+
+// Invariant: a commented candidate is never absorbed by the proven hidden row. A canonical hidden
+// file that also carries an HTML comment naming `visibility hidden` has a second candidate, so the
+// file is not proven hidden and stops with exit 3.
+test('step 0: a hidden local file with an HTML comment naming visibility hidden stops with exit 3', async (t) => {
+  const live = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+  const text = live.replace('## Configuration', '<!-- visibility hidden -->\n\n## Configuration');
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  assert.ok(
+    document.envelope.rows.some((row) => row.line === HIDDEN_ROW),
+    'the envelope carries the canonical hidden row',
+  );
+  await refusedUnparseableHidden(t, text);
+});
+
+// Invariant: the ordinary-row exemption reaches only an active row of a parsed envelope. The same
+// text as the exempt `worktree.setup` row (whose active side is covered by "a hidden local file
+// with an ordinary row naming visibility and hidden resolves as hidden" and its CLI counterpart)
+// stays a candidate inside an HTML comment or a fenced block and stops a hidden file with exit 3.
+for (const [label, wrap] of [
+  ['an HTML comment', (row) => `<!--\n${row}\n-->`],
+  ['a fenced code block', (row) => `\`\`\`markdown\n${row}\n\`\`\``],
+]) {
+  test(`step 0: an ordinary row naming visibility and hidden inside ${label} stops a hidden file with exit 3`, async (t) => {
+    const live = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+    const text = `${live}\n${wrap(ORDINARY_HIDDEN_ROW)}\n`;
+    const document = parseConfigurationDocument(text);
+    assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+    assert.ok(
+      document.envelope.rows.every((row) => row.line !== ORDINARY_HIDDEN_ROW),
+      'the wrapped row is no envelope row',
+    );
+    await refusedUnparseableHidden(t, text);
+  });
+}
+
+// Invariant: the raw-line scan adds candidates only where both tokens share one line. A non-hidden
+// file with an HTML comment naming only `hidden` and a fenced block naming only `visibility` has no
+// candidate and keeps falling through to step 2 with `local-file-not-hidden`.
+test('step 0: comments and fences naming only one hidden token leave a non-hidden file falling through', async (t) => {
+  const { root } = repository(t);
+  const live = setupDocument({ 'review.profile': 'deep' });
+  const text = live.replace(
+    '## Configuration',
+    '<!-- this checkout keeps hidden notes -->\n\n```text\nvisibility is set by setup\n```\n\n## Configuration',
+  );
+  assert.ok(
+    /\bhidden\b/.test(text) && /\bvisibility\b/.test(text),
+    'the fixture names both tokens',
+  );
+  assert.ok(
+    text.split('\n').every((line) => !(/\bvisibility\b/i.test(line) && /\bhidden\b/i.test(line))),
+    'no line names both tokens',
+  );
+  write(root, LOCAL_SETUP, text);
   write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
   const data = await resolved({ cwd: root, tool: 'build' });
   assert.equal(data.visibility, 'standard');
@@ -636,6 +731,30 @@ test('step 0: a local file whose hidden row is only inside a fenced code block i
     code: 'local-file-not-hidden',
     path: join(root, LOCAL_SETUP),
   });
+});
+
+// Invariant: setup's context sentence names `hidden` but not `visibility`, so it is no candidate
+// and a canonical hidden file carrying it under `## Context` still resolves as hidden at step 0.
+const HIDDEN_CONTEXT_SENTENCE =
+  "This file holds this checkout's hidden Effective Flow configuration, is ignored through the Git common directory's `info/exclude`, and is never tracked.";
+
+test('step 0: a hidden local file with setup context prose naming hidden resolves as hidden', async (t) => {
+  assert.match(HIDDEN_CONTEXT_SENTENCE, /\bhidden\b/i);
+  assert.doesNotMatch(HIDDEN_CONTEXT_SENTENCE, /\bvisibility\b/i);
+  const { root } = repository(t);
+  const live = setupDocument({ visibility: 'hidden', 'review.profile': 'deep' });
+  const text = live.replace(
+    '## Configuration',
+    `## Context\n\n${HIDDEN_CONTEXT_SENTENCE}\n\n## Configuration`,
+  );
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+  write(root, LOCAL_SETUP, text);
+  write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.source.step, 0);
+  assert.equal(data.source.path, join(root, LOCAL_SETUP));
+  assert.equal(data.values['review.profile'].value, 'deep');
 });
 
 test('step 0: a linked worktree honours the main checkout file and reports its own same-named files as ignored', async (t) => {
@@ -2588,6 +2707,27 @@ test('cli: a local file whose only hidden declaration is an empty-key row exits 
 test('cli: a hidden local file with a malformed table header exits 3', (t) => {
   const { root } = repository(t);
   write(root, LOCAL_SETUP, hiddenUnparseableDocument('| Key | Value |', '| Key | Val |'));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 3);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, {
+    step: 0,
+    path: join(root, LOCAL_SETUP),
+    reason: 'unparseable-hidden-declaration',
+  });
+  assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI maps a hidden row after a one-line HTML comment to exit 3; the raw-line
+// candidate scan leaves no comment boundary through which a step-0 file falls through.
+test('cli: a hidden row after a one-line HTML comment in a non-hidden local file exits 3', (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, nonHiddenWithLineBeforeEnvelope(INLINE_COMMENT_HIDDEN_ROW));
   write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
   const { status, envelope, stderr } = runCli(
     ['resolve'],
