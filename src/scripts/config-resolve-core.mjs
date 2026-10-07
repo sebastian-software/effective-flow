@@ -81,6 +81,7 @@ export const UNSAFE_REASONS = Object.freeze([
   'not-regular-file',
   'escapes-root',
   'unreadable',
+  'hidden-file-multiple-envelopes',
 ]);
 
 export const MAX_STDIN_BYTES = 1024 * 1024;
@@ -612,8 +613,9 @@ function readEnvelopeTable(lines, start, envelope) {
   return rows;
 }
 
-// Parses a configuration document: the first canonical envelope (and how many there are), and
-// whether a `## Status` section marks the record as superseded. Fenced code is ignored.
+// Parses a configuration document: the first canonical envelope (and how many there are), every
+// parsed envelope in document order, and whether a `## Status` section marks the record as
+// superseded. Fenced code is ignored.
 export function parseConfigurationDocument(text) {
   const lines = scanLines(text);
   const envelopes = [];
@@ -639,6 +641,7 @@ export function parseConfigurationDocument(text) {
   return {
     envelope: envelopes[0] ?? null,
     envelopeCount: envelopes.length,
+    envelopes,
     superseded,
   };
 }
@@ -821,9 +824,16 @@ async function locateHidden(context, roots, diagnostics) {
   const file = await readRuntimeStateFile(context, roots.runtimeStateRoot, LOCAL_SETUP_FILE, 0);
   if (!file) return null;
   const document = parseConfigurationDocument(file.text);
-  if (!document.envelope || !hasHiddenRow(document.envelope.rows)) {
+  if (!document.envelopes.some((envelope) => hasHiddenRow(envelope.rows))) {
     diagnostics.push({ code: 'local-file-not-hidden', path: file.path });
     return null;
+  }
+  if (document.envelopeCount > 1) {
+    fail(
+      'RUNTIME_STATE_UNSAFE',
+      `${file.path}: declares hidden mode but carries ${document.envelopeCount} configuration envelopes`,
+      { step: 0, path: file.path, reason: 'hidden-file-multiple-envelopes' },
+    );
   }
   return { step: 0, path: file.path, document, source: 'local-hidden' };
 }

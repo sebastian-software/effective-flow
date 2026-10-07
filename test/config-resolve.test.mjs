@@ -228,6 +228,68 @@ test('step 0: a local file without visibility hidden is reported and resolution 
   });
 });
 
+// Invariant: a hidden declaration in any envelope of a multi-envelope step-0 file stops
+// resolution with exit 3; it never falls through to a tracked standard-mode configuration and
+// never picks one envelope as the hidden configuration.
+function twoEnvelopeDocument(first, second) {
+  const text = setupDocument(first) + '\n' + setupDocument(second, { language: 'de' });
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 2, 'the fixture has two envelopes');
+  return text;
+}
+
+async function refusedMultipleEnvelopes(t, first, second) {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, twoEnvelopeDocument(first, second));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const envelope = await refused({ cwd: root, tool: 'build' });
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, {
+    step: 0,
+    path: join(root, LOCAL_SETUP),
+    reason: 'hidden-file-multiple-envelopes',
+  });
+  assert.equal(exitCodeFor(envelope), 3);
+}
+
+test('step 0: a local file whose second envelope declares hidden stops with exit 3', async (t) => {
+  await refusedMultipleEnvelopes(t, { 'review.profile': 'deep' }, { visibility: 'hidden' });
+});
+
+test('step 0: a local file whose first of two envelopes declares hidden stops with exit 3', async (t) => {
+  await refusedMultipleEnvelopes(t, { visibility: 'hidden' }, { 'review.profile': 'deep' });
+});
+
+// Invariant: the multi-envelope stop leaves a single-envelope hidden file resolving at step 0.
+test('step 0: a single-envelope hidden local file still resolves hidden mode', async (t) => {
+  const { root } = repository(t);
+  const text = setupDocument({ visibility: 'hidden' });
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1);
+  write(root, LOCAL_SETUP, text);
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.source.step, 0);
+});
+
+// Invariant: a multi-envelope local file with no hidden row in any envelope is not hidden mode;
+// it is reported and resolution falls through to the tracked configuration.
+test('step 0: a multi-envelope local file without a hidden row is reported and falls through', async (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    twoEnvelopeDocument({ visibility: 'standard' }, { 'review.profile': 'deep' }),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
 test('step 0: a linked worktree honours the main checkout file and reports its own same-named files as ignored', async (t) => {
   const { base, root } = repository(t);
   const linked = join(base, 'linked');
@@ -1696,6 +1758,27 @@ test('cli: an unsafe runtime-state file exits 3', (t) => {
   );
   assert.equal(status, 3);
   assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI maps a hidden declaration in a multi-envelope step-0 file to exit 3.
+test('cli: a hidden local file with several envelopes exits 3', (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    setupDocument({ 'review.profile': 'deep' }) +
+      '\n' +
+      setupDocument({ visibility: 'hidden' }, { language: 'de' }),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 3);
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.equal(envelope.error.details.reason, 'hidden-file-multiple-envelopes');
   assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
 });
 
