@@ -16868,6 +16868,50 @@ test('setup asks its invalid-source question on the resolver diagnostics for a b
   );
 });
 
+// The resolver reads only the first configuration envelope of a project setup ADR and reports the
+// rest as `duplicate-envelope`. Setup rewrites the whole ADR from the resolved values, so a source
+// with a second envelope must count as invalid too: otherwise the rewrite silently drops every row
+// outside the first envelope. The same invalid-source set must also hold at the fresh pre-write
+// re-resolution, so a source that became invalid between Step 2 and the write is not overwritten —
+// by reference to Step 2 item 5, not through a second copy of its diagnostic list.
+test('setup treats a duplicate envelope as an invalid source, also at the pre-write re-resolution', () => {
+  const setup = source('src/tools/setup.md');
+  const item5 = prose(boundedSlice(setup, '5. **Invalid source.**', '\n### Step 3'));
+  assert.match(
+    item5,
+    /`duplicate-envelope` diagnostic/,
+    'a second configuration envelope must count as an invalid source',
+  );
+  assert.match(
+    item5,
+    near('`duplicate-envelope`', 'first envelope', 120),
+    'the invalid-source rule must say that rows outside the first envelope would be lost',
+  );
+
+  const precheck = prose(
+    boundedSlice(
+      setup,
+      '3. Resolve the project setup ADR freshly once more directly before writing',
+      '\n4. **Write the project setup ADR.**',
+    ),
+  );
+  assert.match(
+    precheck,
+    near('Step 2 item 5', 'invalid source', 80),
+    "the pre-write re-resolution must apply Step 2 item 5's invalid-source set to the fresh result",
+  );
+  assert.match(
+    precheck,
+    near('write nothing without', 'explicit invalid-source decision', 120),
+    'a source that became invalid before the write must not be overwritten without a decision',
+  );
+  assert.doesNotMatch(
+    precheck,
+    /`duplicate-envelope`|`ambiguous-key`|reason: cell-count/,
+    'the pre-write check must reference Step 2 item 5 rather than keep a second diagnostic list',
+  );
+});
+
 test('setup ends the run on a several-match locator result at both detection points', () => {
   const setup = source('src/tools/setup.md');
   const item2 = prose(

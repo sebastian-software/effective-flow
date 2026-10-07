@@ -346,8 +346,9 @@ options:
    row from `data.retired`: its key, successor, `successorPresent`, and raw value (returned to
    setup only). Step 6 migrates the recorded rows in place.
 5. **Invalid source.** If the ADR table is invalid or ambiguous (an `ambiguous-key` diagnostic,
-   or an `invalid-value` diagnostic with `reason: cell-count`) or the selected `<source-handle>` is
-   not valid JSON (an `invalid-source` diagnostic names that handle), do not overwrite silently and
+   an `invalid-value` diagnostic with `reason: cell-count`, or a `duplicate-envelope` diagnostic,
+   since a rewrite would drop every row outside the first envelope) or the selected
+   `<source-handle>` is not valid JSON (an `invalid-source` diagnostic names that handle), do not overwrite silently and
    do not take the building block's safe default, which every other `invalid-value` keeps. Inform
    the user with the exact ADR path or JSON handle and the error, and ask whether the configuration
    should be newly created (old backup/overwrite) or the run aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
@@ -770,6 +771,9 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      below, because a fall-through on ambiguity resolves no ADR and would otherwise be mistaken
      for one of their "no ADR now resolves" conditions and write a further ADR beside the ones
      just reported.
+   - If the fresh result carries a diagnostic that Step 2 item 5 treats as an invalid source,
+     write nothing without that item's explicit invalid-source decision for this source; pose it
+     now if Step 2 did not.
    - If an ADR now resolves, it is authoritative: take its values from the fresh result and do not
      migrate or touch either JSON fallback.
    - If Step 2 selected a transitional JSON source and no ADR now resolves, require the freshly
