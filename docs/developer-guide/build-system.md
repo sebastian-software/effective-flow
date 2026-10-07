@@ -997,6 +997,8 @@ actually occurs.
 - [`architecture.md`](architecture.md) – source-to-dist model and repo structure.
 - [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
 - [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
-- [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (language, delegation,
-  commits, the tool-rename alias, the context-budget entry, writing prompt text); the build
-  **mechanics** those rules refer to are canonical here.
+- [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (the tool-rename alias,
+  the context-budget entry, writing prompt text, the Claude leaf boundary of agent tool lists, no
+  AI attribution); the build **mechanics** those rules refer to are canonical here. Language,
+  delegation, commit, and plan contracts are the shipped fragments under
+  [`src/shared/`](../../src/shared/).

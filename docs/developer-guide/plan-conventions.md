@@ -142,4 +142,5 @@ preserved legacy number stays exclusive to the plan directory.
 
 - [`architecture.md`](architecture.md) – repo structure into which `<plan.dir>/` is placed.
 - [`release-and-installation.md`](release-and-installation.md) – versioning and release.
-- [`AGENTS.md`](../../AGENTS.md) – canonical plan-file rules.
+- [`src/shared/plan-archival.md`](../../src/shared/plan-archival.md) and the other
+  `src/shared/plan-*.md` fragments – canonical plan-file rules.
