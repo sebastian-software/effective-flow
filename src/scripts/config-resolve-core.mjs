@@ -648,13 +648,16 @@ function readEnvelopeTable(lines, start, envelope) {
 // A hidden declaration candidate is any active line naming both tokens `visibility` and `hidden`
 // (case-insensitive, word-bounded); the line is not parsed. A prose mention such as
 // "visibility: hidden would be set by setup" is deliberately a candidate: the step-0 file is
-// setup-written and machine-only, so such a line is a declaration the parser cannot prove.
+// setup-written and machine-only, so such a line is a declaration the parser cannot prove. The one
+// exemption, applied by `locateHidden`: a well-formed two-cell row of a parsed envelope whose key
+// does not name `visibility` (matched by line index) is ordinary configuration, not a candidate.
+// Everything else stays a candidate, including every visibility row of any shape.
 const HIDDEN_CANDIDATE_TOKENS = Object.freeze([/\bvisibility\b/i, /\bhidden\b/i]);
 
 // Parses a configuration document: the first canonical envelope (and how many there are), every
-// parsed envelope in document order, the line indices of every hidden declaration candidate, and
-// whether a `## Status` section marks the record as superseded. Fenced code and HTML comments are
-// ignored.
+// parsed envelope in document order, the line indices of every line naming both hidden tokens
+// (before the ordinary-row exemption), and whether a `## Status` section marks the record as
+// superseded. Fenced code and HTML comments are ignored.
 export function parseConfigurationDocument(text) {
   const lines = scanLines(text);
   const hiddenCandidates = [];
@@ -903,13 +906,21 @@ async function locateHidden(context, roots, diagnostics) {
     );
   }
   // Hidden detection must not depend on successful parsing: any candidate line other than the one
-  // well-formed `visibility | hidden` row of the one envelope (matched by line index) stops.
+  // well-formed `visibility | hidden` row of the one envelope (matched by line index) stops. A
+  // well-formed ordinary envelope row whose key does not name `visibility` is no candidate.
+  const ordinary = new Set(
+    document.envelopes
+      .flatMap((envelope) => envelope.rows)
+      .filter((row) => row.raw !== null && !HIDDEN_CANDIDATE_TOKENS[0].test(row.key))
+      .map((row) => row.index),
+  );
+  const candidates = document.hiddenCandidates.filter((index) => !ordinary.has(index));
   const proven =
     document.envelopeCount === 1 &&
     visibilityRows.length === 1 &&
     visibilityRows[0].raw === 'hidden' &&
-    document.hiddenCandidates.every((index) => index === visibilityRows[0].index);
-  if (document.hiddenCandidates.length > 0 && !proven) {
+    candidates.every((index) => index === visibilityRows[0].index);
+  if (candidates.length > 0 && !proven) {
     fail(
       'RUNTIME_STATE_UNSAFE',
       `${file.path}: visibly declares hidden mode in a form the parser cannot prove`,

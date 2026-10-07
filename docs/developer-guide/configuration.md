@@ -202,7 +202,8 @@ duties, the no-trace rule and the tracker-bound stops, stay in the prose of
   1–4, and a tracked marker or ADR that also resolves is reported once as `shadowed-tracked-config`
   and never read; the other step-1 and step-2 diagnostics are suppressed in hidden mode. A local
   file without that row is reported as `local-file-not-hidden` and skipped, and any other active line
-  naming both `visibility` and `hidden` stops with exit 3 as `unparseable-hidden-declaration`.
+  naming both `visibility` and `hidden` stops with exit 3 as `unparseable-hidden-declaration`, except a
+  well-formed envelope row whose key does not name `visibility`.
   A `visibility` row in a tracked ADR is invalid by construction: it is reported as
   `tracked-hidden-ignored`, ignored, and never activates hidden mode. The envelope's `visibility`
   field carries the result, never a `values` entry.

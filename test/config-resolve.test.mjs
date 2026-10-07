@@ -448,6 +448,115 @@ for (const prose of [
   });
 }
 
+// Invariant: the hidden-candidate exemption covers only a well-formed (two-cell) row of a parsed
+// canonical envelope whose key does not name `visibility`. Such an ordinary row is an ordinary
+// value even when it names both tokens: a valid hidden file still resolves as hidden, and a valid
+// non-hidden file still falls through to the tracked configuration.
+const ORDINARY_HIDDEN_ROW = '| worktree.setup | echo hidden visibility |';
+
+function withOrdinaryHiddenRow(rows) {
+  const text = setupDocument({ ...rows, 'worktree.setup': 'echo hidden visibility' });
+  assert.ok(text.includes(ORDINARY_HIDDEN_ROW), 'the fixture carries the ordinary row verbatim');
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  assert.ok(document.hiddenCandidates.length > 0, 'the ordinary row names both tokens');
+  return text;
+}
+
+test('step 0: a hidden local file with an ordinary row naming visibility and hidden resolves as hidden', async (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    withOrdinaryHiddenRow({ visibility: 'hidden', 'review.profile': 'deep' }),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.source.step, 0);
+  assert.equal(data.source.path, join(root, LOCAL_SETUP));
+  assert.equal(data.values['review.profile'].value, 'deep');
+  assert.equal(data.values['worktree.setup'].value, 'echo hidden visibility');
+});
+
+test('step 0: a non-hidden local file with an ordinary row naming visibility and hidden falls through', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, withOrdinaryHiddenRow({ 'review.profile': 'deep' }));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'tracked');
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
+// Invariant: the exemption does not reach a malformed envelope row. The same text with a wrong
+// cell count stays a hidden candidate and stops with exit 3, in a non-hidden and a hidden file.
+for (const [label, rows] of [
+  ['non-hidden', { 'review.profile': 'deep' }],
+  ['hidden', { visibility: 'hidden', 'review.profile': 'deep' }],
+]) {
+  test(`step 0: a ${label} local file with a malformed row naming visibility and hidden stops with exit 3`, async (t) => {
+    const text = withOrdinaryHiddenRow(rows).replace(
+      ORDINARY_HIDDEN_ROW,
+      '| worktree.setup | echo hidden visibility | extra |',
+    );
+    assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+    await refusedUnparseableHidden(t, text);
+  });
+}
+
+// Invariant: the exemption does not reach a line outside the envelope table. The same text as
+// prose before the configuration heading or under another section stops with exit 3.
+for (const [label, place] of [
+  [
+    'before the configuration heading',
+    (live) =>
+      live.replace(
+        '## Configuration',
+        'worktree.setup: echo hidden visibility\n\n## Configuration',
+      ),
+  ],
+  ['under a notes section', (live) => `${live}\n## Notes\n\necho hidden visibility\n`],
+]) {
+  test(`step 0: an ordinary line naming visibility and hidden ${label} stops with exit 3`, async (t) => {
+    const live = setupDocument({ 'review.profile': 'deep' });
+    const text = place(live);
+    assert.notEqual(text, live, 'the fixture carries the prose line');
+    assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+    await refusedUnparseableHidden(t, text);
+  });
+}
+
+// Invariant: cells are trimmed before the key comparison, so a padded `visibility` key is the
+// canonical hidden row; every other row whose key names visibility stays a hidden candidate and
+// stops with exit 3: a capitalised `Visibility` key, and a `visibility` row whose value names
+// hidden without being `hidden`.
+test('step 0: a hidden local file with a padded visibility key resolves as hidden', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, withVisibilityRow('|  visibility  | hidden |'));
+  write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.source.step, 0);
+  assert.equal(data.values['review.profile'].value, 'deep');
+});
+
+test('step 0: a local file with a capitalised Visibility hidden row stops with exit 3', async (t) => {
+  const text = withVisibilityRow('| Visibility | hidden |');
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+  await refusedUnparseableHidden(t, text);
+});
+
+test('step 0: a visibility row whose value names hidden but is not hidden stops with exit 3', async (t) => {
+  const text = withVisibilityRow('| visibility | echo hidden visibility |');
+  assert.equal(parseConfigurationDocument(text).envelopeCount, 1, 'the fixture has one envelope');
+  await refusedUnparseableHidden(t, text);
+});
+
 // Invariant: a visibility hidden row inside a fenced code block is inactive, so a local file whose
 // only hidden declaration is fenced is not hidden mode, is not refused, and falls through to the ADR.
 test('step 0: a local file whose hidden row is only inside a fenced code block is not hidden', async (t) => {
@@ -2409,6 +2518,28 @@ test('cli: a hidden local file with a malformed table header exits 3', (t) => {
     reason: 'unparseable-hidden-declaration',
   });
   assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI resolves a valid hidden file whose ordinary row names both `visibility` and
+// `hidden` as hidden mode with exit 0; the hidden-candidate scan never stops a well-formed
+// non-visibility envelope row.
+test('cli: a hidden local file with an ordinary row naming visibility and hidden exits 0', (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    withOrdinaryHiddenRow({ visibility: 'hidden', 'review.profile': 'deep' }),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 0, stderr);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.visibility, 'hidden');
+  assert.equal(envelope.data.source.step, 0);
+  assert.equal(envelope.data.values['worktree.setup'].value, 'echo hidden visibility');
 });
 
 test('cli: git that cannot be found exits 1', (t) => {
