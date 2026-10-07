@@ -290,6 +290,24 @@ test('step 0: a multi-envelope local file without a hidden row is reported and f
   });
 });
 
+// Invariant: a visibility hidden row inside an HTML comment is inactive, so a hidden local file
+// whose only hidden declaration is commented out is not hidden mode and falls through to the ADR.
+test('step 0: a local file whose hidden row is only inside an HTML comment is not hidden', async (t) => {
+  const { root } = repository(t);
+  const commented = '## Configuration\n\n| Key | Value |\n| --- | --- |\n| visibility | hidden |';
+  const live = setupDocument({ 'review.profile': 'deep' });
+  write(root, LOCAL_SETUP, `<!--\n${commented}\n-->\n\n${live}`);
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'tracked');
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
 test('step 0: a linked worktree honours the main checkout file and reports its own same-named files as ignored', async (t) => {
   const { base, root } = repository(t);
   const linked = join(base, 'linked');
@@ -413,6 +431,25 @@ test('step 1: a dead marker is reported and resolution falls through to the scan
   write(root, join('docs', 'adr', 'gone.md'), '# Not a setup ADR\n');
   const noEnvelope = await resolved({ cwd: root, tool: 'build' });
   assert.equal(diagnostic(noEnvelope, 'dead-marker').reason, 'no-envelope');
+});
+
+// Invariant: a setup marker inside an HTML comment is inactive, so a commented-out marker never
+// selects its target (even a valid one) and the step-2 scan decides the source.
+test('step 1: a marker inside an HTML comment is ignored and the scan decides', async (t) => {
+  const { root } = plainDirectory(t);
+  const marker = '**Effective Flow project setup:** docs/adr/other.md';
+  write(root, 'AGENTS.md', `# Agents\n\n<!--\n${marker}\n-->\n`);
+  write(root, join('docs', 'adr', 'other.md'), setupDocument({ 'plan.dir': 'commented' }));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'scanned' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.source.step, 2);
+  assert.equal(data.source.path, join(root, SETUP_ADR));
+  assert.equal(data.values['plan.dir'].value, 'scanned');
+  for (const code of ['dead-marker', 'legacy-marker', 'marker-divergence']) {
+    assert.ok(!codes(data).includes(code), `${code} is not reported for a commented marker`);
+  }
+  assert.deepEqual(parseSetupMarkers(`<!-- ${marker} -->\n`), []);
+  assert.deepEqual(parseSetupMarkers(`<!--\n${marker}\n-->\n`), []);
 });
 
 test('step 1: the legacy Firmo marker spelling is recognized and reported', async (t) => {
@@ -565,6 +602,55 @@ test('encoding: a BOM directly before a first-line ## Configuration heading stil
   assert.equal(envelope.language, 'en');
   assert.deepEqual(envelope.rows, [
     { key: 'plan.dir', raw: 'bom', cellCount: 2, line: '| plan.dir | bom |' },
+  ]);
+});
+
+// Invariant: an HTML comment that opens on a line before the heading and closes on the last row
+// line hides that whole envelope: the live envelope after it is the first one, and it is no
+// duplicate.
+test('encoding: an envelope inside an HTML comment closing on its last row is no envelope', async (t) => {
+  const { root } = plainDirectory(t);
+  const commented =
+    '<!-- Draft kept for reference:\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | commented |\n| review.profile | deep | -->';
+  write(
+    root,
+    SETUP_ADR,
+    `# Effective Flow project setup\n\n## Status\n\nActive\n\n${commented}\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | live |\n`,
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'live');
+  assert.equal(diagnostic(data, 'duplicate-envelope'), undefined);
+  assert.deepEqual(data.source.rows, [{ key: 'plan.dir', line: '| plan.dir | live |' }]);
+});
+
+// Invariant: a multi-line HTML comment (opener and closer on their own lines) hides an envelope
+// inside it, and a fence opener inside an open comment opens no fence that could swallow the
+// live envelope after the comment.
+test('encoding: a multi-line HTML comment hides a whole envelope and opens no fence', () => {
+  const header = '## Configuration\n\n| Key | Value |\n| --- | --- |\n';
+  const live = `${header}| plan.dir | live |\n`;
+  const liveRows = [{ key: 'plan.dir', raw: 'live', cellCount: 2, line: '| plan.dir | live |' }];
+  const commented = parseConfigurationDocument(
+    `# Setup\n\n<!--\n${header}| plan.dir | commented |\n-->\n\n${live}`,
+  );
+  assert.equal(commented.envelopeCount, 1);
+  assert.deepEqual(commented.envelope.rows, liveRows);
+
+  const fenceInComment = parseConfigurationDocument(`# Setup\n\n<!--\n\`\`\`text\n-->\n\n${live}`);
+  assert.equal(fenceInComment.envelopeCount, 1);
+  assert.deepEqual(fenceInComment.envelope.rows, liveRows);
+});
+
+// Invariant: fence handling takes precedence over comments, so a `<!--` inside a fenced code
+// block opens no comment and never hides the live envelope after the fence.
+test('encoding: an HTML comment opener inside a fenced code block hides nothing', () => {
+  const text =
+    '# Setup\n\n```html\n<!-- an unterminated comment in an example\n```\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | live |\n';
+  const { envelope, envelopeCount } = parseConfigurationDocument(text);
+  assert.equal(envelopeCount, 1);
+  assert.deepEqual(envelope.rows, [
+    { key: 'plan.dir', raw: 'live', cellCount: 2, line: '| plan.dir | live |' },
   ]);
 });
 

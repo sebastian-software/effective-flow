@@ -534,14 +534,16 @@ async function exists(context, target) {
 
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*$/;
+const COMMENT_OPEN = /^[ \t]*<!--/;
 const TABLE_SEPARATOR = /^\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?$/;
 
-// Splits text into lines and marks each one that lies inside (or opens/closes) a fenced code
-// block. Tolerates a UTF-8 BOM and CRLF line endings.
+// Splits text into lines and marks each one inactive that lies inside (or opens/closes) a fenced
+// code block or an HTML comment that starts a line. Tolerates a UTF-8 BOM and CRLF line endings.
 function scanLines(text) {
   const lines = String(text).replace(/^﻿/, '').split(/\r?\n/);
   const result = [];
   let fence = null;
+  let comment = false;
   for (const line of lines) {
     if (fence) {
       const close = line.match(FENCE_OPEN);
@@ -553,22 +555,33 @@ function scanLines(text) {
       ) {
         fence = null;
       }
-      result.push({ text: line, fenced: true });
+      result.push({ text: line, inactive: true });
+      continue;
+    }
+    if (comment) {
+      if (line.includes('-->')) comment = false;
+      result.push({ text: line, inactive: true });
       continue;
     }
     const open = line.match(FENCE_OPEN);
     if (open) {
       fence = open[1];
-      result.push({ text: line, fenced: true });
+      result.push({ text: line, inactive: true });
       continue;
     }
-    result.push({ text: line, fenced: false });
+    const commentOpen = line.match(COMMENT_OPEN);
+    if (commentOpen) {
+      comment = !line.includes('-->', commentOpen[0].length - 2);
+      result.push({ text: line, inactive: true });
+      continue;
+    }
+    result.push({ text: line, inactive: false });
   }
   return result;
 }
 
 function headingOf(line) {
-  if (line.fenced) return null;
+  if (line.inactive) return null;
   const match = line.text.match(HEADING);
   return match ? { level: match[1].length, title: match[2] } : null;
 }
@@ -580,7 +593,7 @@ function isSectionBoundary(line) {
 }
 
 function isTableLine(line) {
-  return !line.fenced && line.text.trim().startsWith('|');
+  return !line.inactive && line.text.trim().startsWith('|');
 }
 
 // Splits one table row into trimmed cells; `\|` is a literal pipe.
@@ -627,7 +640,7 @@ function readEnvelopeTable(lines, start, envelope) {
 
 // Parses a configuration document: the first canonical envelope (and how many there are), every
 // parsed envelope in document order, and whether a `## Status` section marks the record as
-// superseded. Fenced code is ignored.
+// superseded. Fenced code and HTML comments are ignored.
 export function parseConfigurationDocument(text) {
   const lines = scanLines(text);
   const envelopes = [];
@@ -641,7 +654,8 @@ export function parseConfigurationDocument(text) {
         next < lines.length && !isSectionBoundary(lines[next]);
         next += 1
       ) {
-        if (!lines[next].fenced && /Superseded|Abgelöst/.test(lines[next].text)) superseded = true;
+        if (!lines[next].inactive && /Superseded|Abgelöst/.test(lines[next].text))
+          superseded = true;
       }
       continue;
     }
@@ -658,11 +672,12 @@ export function parseConfigurationDocument(text) {
   };
 }
 
-// Reads every setup marker outside fenced code: `{ path, legacy }` in document order.
+// Reads every setup marker outside fenced code and HTML comments: `{ path, legacy }` in document
+// order.
 export function parseSetupMarkers(text) {
   const markers = [];
   for (const line of scanLines(text)) {
-    if (line.fenced) continue;
+    if (line.inactive) continue;
     const trimmed = line.text.trim();
     const legacy = trimmed.startsWith(LEGACY_MARKER_PREFIX);
     if (!legacy && !trimmed.startsWith(MARKER_PREFIX)) continue;
