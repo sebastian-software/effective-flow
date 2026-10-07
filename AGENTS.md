@@ -10,6 +10,8 @@ This file provides guidance to any coding agent working with code in this reposi
 
 Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. `build.mjs` transforms Markdown sources under `src/` plus a small dependency-free Node.js runtime into two harness-native direct-install targets and one harness-neutral portable manager target under `dist/`.
 
+**Sister project:** [skills](https://github.com/sebastian-software/skills.sebastian-software.com) develops the central domain skills (`effective-writing`, `effective-product`, `effective-engineering`, and the rest of the `effective-*` family). Effective Flow is the glue code built around them: it owns the orchestration — routing, plan and review state, tracker, agent selection, worktrees, and delivery — while the domain craft stays in those skills. A change that would copy a playbook from that repository into `src/` belongs there instead; the layered ownership contract under "Skill discovery" decides where the line runs.
+
 **You edit `src/`, never `dist/`.** `dist/` is generated and gitignored.
 
 ## Commands
