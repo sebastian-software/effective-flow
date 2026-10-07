@@ -355,6 +355,12 @@ async function runGit(context, cwd, args) {
   };
 }
 
+// A path printed by git: only the one line terminator git appends is removed, so leading and
+// trailing whitespace that belongs to the path survives.
+function gitPathOutput(stdout) {
+  return stdout.replace(/\r?\n$/, '');
+}
+
 function gitFailure(args, result) {
   const detail = result.error?.message ?? errorDetail(result.stderr);
   return new ConfigResolveError(
@@ -736,7 +742,7 @@ async function resolveRoots(context, cwd) {
     }
     throw gitFailure(toplevelArgs, toplevel);
   }
-  const checkoutRoot = await realDirectory(context, toplevel.stdout.trim());
+  const checkoutRoot = await realDirectory(context, gitPathOutput(toplevel.stdout));
   if (!checkoutRoot) {
     fail(
       'GIT_FAILED',
@@ -746,7 +752,7 @@ async function resolveRoots(context, cwd) {
   const commonArgs = ['rev-parse', '--path-format=absolute', '--git-common-dir'];
   const common = await runGit(context, cwd, commonArgs);
   if (common.error || common.status !== 0) throw gitFailure(commonArgs, common);
-  const commonDir = await realDirectory(context, common.stdout.trim());
+  const commonDir = await realDirectory(context, gitPathOutput(common.stdout));
   if (!commonDir) {
     fail(
       'GIT_FAILED',
@@ -794,7 +800,7 @@ async function resolveRoots(context, cwd) {
   const mainToplevelPath =
     mainToplevel.error || mainToplevel.status !== 0
       ? null
-      : await realDirectory(context, mainToplevel.stdout.trim());
+      : await realDirectory(context, gitPathOutput(mainToplevel.stdout));
   if (mainToplevelPath !== runtimeStateRoot) {
     unverified('toplevel-mismatch', `${runtimeStateRoot} is not its own checkout toplevel`, {
       path: runtimeStateRoot,
@@ -804,7 +810,7 @@ async function resolveRoots(context, cwd) {
   const mainCommonDir =
     mainCommon.error || mainCommon.status !== 0
       ? null
-      : await realDirectory(context, mainCommon.stdout.trim());
+      : await realDirectory(context, gitPathOutput(mainCommon.stdout));
   if (mainCommonDir !== commonDir) {
     unverified('common-dir-mismatch', `${runtimeStateRoot} belongs to another repository`, {
       path: runtimeStateRoot,

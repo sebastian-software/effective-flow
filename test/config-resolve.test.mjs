@@ -1378,9 +1378,9 @@ test('roots: git that cannot run is GIT_FAILED with exit 1', async (t) => {
   assert.equal(exitCodeFor(envelope), 1);
 });
 
-// Resolves from a linked worktree of a real repository whose main checkout directory is named
-// `mainName`, and asserts that the main checkout is the verified runtime-state root that carries
-// the step-0 hidden configuration.
+// Resolves from the main checkout and from a linked worktree of a real repository whose main
+// checkout directory is named `mainName`, and asserts that the main checkout is the verified
+// runtime-state root that carries the step-0 hidden configuration in both runs.
 async function assertMainCheckoutRoot(t, mainName) {
   const { directory } = tempDir(t);
   try {
@@ -1393,12 +1393,17 @@ async function assertMainCheckoutRoot(t, mainName) {
   const linked = join(directory, 'über linked');
   git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linked);
   write(root, LOCAL_SETUP, setupDocument({ visibility: 'hidden' }));
-  const data = await resolved({ cwd: linked, tool: 'build' });
-  assert.equal(data.runtimeStateRoot, root);
-  assert.equal(data.checkoutRoot, realpathSync(linked));
-  assert.equal(data.visibility, 'hidden');
-  assert.equal(data.source.step, 0);
-  assert.equal(data.source.path, join(root, LOCAL_SETUP));
+  for (const [cwd, checkoutRoot] of [
+    [root, root],
+    [linked, realpathSync(linked)],
+  ]) {
+    const data = await resolved({ cwd, tool: 'build' });
+    assert.equal(data.runtimeStateRoot, root);
+    assert.equal(data.checkoutRoot, checkoutRoot);
+    assert.equal(data.visibility, 'hidden');
+    assert.equal(data.source.step, 0);
+    assert.equal(data.source.path, join(root, LOCAL_SETUP));
+  }
 }
 
 // Guard: git leaves non-ASCII and spaces unquoted in porcelain output, so this already resolves.
@@ -1408,6 +1413,13 @@ test('roots: a main checkout path with non-ASCII and a space is the runtime-stat
 
 test('roots: a main checkout path containing a newline is the runtime-state root', async (t) => {
   await assertMainCheckoutRoot(t, 'über main\ncheckout');
+});
+
+// Invariant: Git path output is taken literally except for its one line terminator, so trailing
+// whitespace that belongs to the checkout path survives.
+test('roots: a main checkout path ending in whitespace is the runtime-state root', async (t) => {
+  await t.test('trailing space', (t) => assertMainCheckoutRoot(t, 'über main checkout '));
+  await t.test('trailing tab', (t) => assertMainCheckoutRoot(t, 'über main checkout\t'));
 });
 
 test('roots: a NUL-delimited worktree listing yields the first record as the runtime-state root', async (t) => {
