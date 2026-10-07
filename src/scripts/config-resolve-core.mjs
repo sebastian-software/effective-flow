@@ -1023,33 +1023,43 @@ function setOwn(target, key, value) {
   });
 }
 
-// Builds `values` from the resolved rows: every non-retired key except `visibility`, with two or
-// more rows of one key ambiguous and no row chosen.
+// Validates every key except `visibility` structurally, retired keys included: two or more rows of
+// one key are ambiguous and no row is chosen, a single row with the wrong cell count is invalid.
+// Returns `values` for every non-retired key and `retired`, which maps each retired key in
+// first-occurrence order to its single well-formed row, or to null when the key is invalid.
 function buildValues(rows, source, diagnostics) {
   const grouped = new Map();
   for (const row of rows) {
-    if (row.key === VISIBILITY_KEY || isRetiredKey(row.key)) continue;
+    if (row.key === VISIBILITY_KEY) continue;
     if (!grouped.has(row.key)) grouped.set(row.key, []);
     grouped.get(row.key).push(row);
   }
   const values = {};
+  const retired = new Map();
   for (const [key, keyRows] of grouped) {
+    const isRetired = isRetiredKey(key);
+    const [row] = keyRows;
+    let invalid = true;
     if (keyRows.length > 1) {
-      setOwn(values, key, { state: 'invalid', value: null, raw: null, items: [], source });
       diagnostics.push({ code: 'ambiguous-key', key, count: keyRows.length });
+    } else if (row.raw === null) {
+      diagnostics.push({ code: 'invalid-value', key, raw: null, reason: 'cell-count' });
+    } else {
+      invalid = false;
+    }
+    if (isRetired) {
+      retired.set(key, invalid ? null : row);
       continue;
     }
-    const [row] = keyRows;
-    if (row.raw === null) {
+    if (invalid) {
       setOwn(values, key, { state: 'invalid', value: null, raw: null, items: [], source });
-      diagnostics.push({ code: 'invalid-value', key, raw: null, reason: 'cell-count' });
       continue;
     }
     if (row.raw === '(leer)' && !row.decoded) diagnostics.push({ code: 'legacy-empty-token', key });
     const { value, items } = rowDecoding(row);
     setOwn(values, key, { state: 'set', value, raw: row.raw, items, source });
   }
-  return values;
+  return { values, retired };
 }
 
 // The strict Boolean of a set fast-flag entry: `true`, `false`, or null when it is neither. A table
@@ -1161,23 +1171,29 @@ function successorPresent(rows, successor, login) {
   });
 }
 
-// One entry per retired row of the resolved source, with the calling tool's action.
-function classifyRetiredRows(rows, tool, mode, diagnostics) {
+// One entry per retired key of the resolved source, in first-occurrence order, with the calling
+// tool's action. `retiredKeys` maps each retired key to its single well-formed row, or to null when
+// `buildValues` found it invalid. An invalid retired key keeps the action a well-formed one gets:
+// the action depends only on the successor, never on the row's value, so invalidity can never
+// downgrade a stop to none. The structural diagnostic is reported to every tool; setup receives
+// `state: 'invalid'` with no raw value, so it takes its invalid-source path instead of migrating
+// the row.
+function classifyRetiredRows(rows, retiredKeys, tool, mode, diagnostics) {
   const set = successorSetFor(tool, mode);
   if (!set) diagnostics.push({ code: 'unknown-tool', tool });
   const retired = [];
-  for (const row of rows) {
-    if (!isRetiredKey(row.key)) continue;
-    const successor = successorOf(row.key);
-    const loginMatch = row.key.match(LOGIN_KEYED);
+  for (const [key, row] of retiredKeys) {
+    const successor = successorOf(key);
+    const loginMatch = key.match(LOGIN_KEYED);
     const login = loginMatch ? loginMatch[1] : null;
     const present = successorPresent(rows, successor, login);
     let action = 'none';
     if (set?.exempt) action = 'none';
-    else if (tool === 'deliver' && row.key === 'worktree.completion') action = 'report';
+    else if (tool === 'deliver' && key === 'worktree.completion') action = 'report';
     else if (set && inSuccessorSet(set.successors, successor)) action = present ? 'report' : 'stop';
-    const entry = { key: row.key, successor, successorPresent: present, action };
-    if (set?.exempt) entry.raw = row.raw;
+    const entry = { key, successor, successorPresent: present, action };
+    if (row === null) entry.state = 'invalid';
+    if (set?.exempt) entry.raw = row === null ? null : row.raw;
     if (login !== null) {
       entry.conditional = 'reviewer-resolved';
       entry.login = login;
@@ -1241,10 +1257,10 @@ export async function resolveConfiguration(input, deps = {}) {
   if (!hidden && rows.some((row) => row.key === VISIBILITY_KEY && row.raw === 'hidden')) {
     diagnostics.push({ code: 'tracked-hidden-ignored', path: located.path });
   }
-  const values = buildValues(rows, located?.source ?? null, diagnostics);
+  const { values, retired: retiredKeys } = buildValues(rows, located?.source ?? null, diagnostics);
   validateOwnedKeys(values, rows, diagnostics);
   if (hidden) applyForcedValues(values, diagnostics);
-  const retired = classifyRetiredRows(rows, tool, mode, diagnostics);
+  const retired = classifyRetiredRows(rows, retiredKeys, tool, mode, diagnostics);
 
   return {
     runtimeStateRoot: roots.runtimeStateRoot,

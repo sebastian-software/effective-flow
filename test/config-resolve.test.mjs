@@ -903,6 +903,163 @@ test('retired rows: a login-keyed prReview.bots subkey matches its successor acr
   assert.equal(otherSub.retired[0].action, 'stop');
 });
 
+// Invariant: a retired row passes the same structural validation as every other row except
+// `visibility` (a wrong cell count is `invalid-value`/`cell-count`, two or more rows of one key
+// are `ambiguous-key`), and `retired` holds exactly one entry per retired key. An invalid retired
+// row keeps the action a well-formed one gets, so invalidity never downgrades a stop to none, and
+// setup receives state 'invalid' with no raw value, so it asks its invalid-source question instead
+// of migrating the row.
+
+test('retired rows: setup gets a malformed retired row as invalid with no raw value, beside a well-formed one that keeps its raw', async (t) => {
+  const { root } = plainDirectory(t);
+  write(
+    root,
+    SETUP_ADR,
+    setupDocument({ 'worktree.baseBranch': 'main | extra', 'prReview.maxRounds': '3' }),
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(diagnostic(data, 'invalid-value'), {
+    code: 'invalid-value',
+    key: 'worktree.baseBranch',
+    raw: null,
+    reason: 'cell-count',
+  });
+  assert.deepEqual(data.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'none',
+      state: 'invalid',
+      raw: null,
+    },
+    {
+      key: 'prReview.maxRounds',
+      successor: 'mergeGate.maxRounds',
+      successorPresent: false,
+      action: 'none',
+      raw: '3',
+    },
+  ]);
+  assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
+  assert.equal(Object.hasOwn(data.values, 'prReview.maxRounds'), false);
+});
+
+test('retired rows: a malformed retired row for a non-setup tool keeps the successor-based action (fail closed: stop when the successor is absent)', async (t) => {
+  const { root } = plainDirectory(t);
+  write(root, SETUP_ADR, setupDocument({ 'worktree.baseBranch': 'main | extra' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(diagnostic(data, 'invalid-value'), {
+    code: 'invalid-value',
+    key: 'worktree.baseBranch',
+    raw: null,
+    reason: 'cell-count',
+  });
+  assert.deepEqual(data.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'stop',
+      state: 'invalid',
+    },
+  ]);
+  assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
+});
+
+test('retired rows: setup collapses duplicate rows of one retired key into one invalid entry with no raw value', async (t) => {
+  const { root } = plainDirectory(t);
+  write(root, SETUP_ADR, setupDocument({ 'worktree.baseBranch': rowsOf('main', 'develop') }));
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(diagnostic(data, 'ambiguous-key'), {
+    code: 'ambiguous-key',
+    key: 'worktree.baseBranch',
+    count: 2,
+  });
+  assert.deepEqual(data.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'none',
+      state: 'invalid',
+      raw: null,
+    },
+  ]);
+  assert.equal(Object.hasOwn(data.values, 'worktree.baseBranch'), false);
+});
+
+test('retired rows: duplicate rows of one retired key for a non-setup tool keep the successor-based action (fail closed: stop when the successor is absent, report when present)', async (t) => {
+  const { root } = plainDirectory(t);
+  write(root, SETUP_ADR, setupDocument({ 'worktree.baseBranch': rowsOf('main', 'develop') }));
+  const absent = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(diagnostic(absent, 'ambiguous-key'), {
+    code: 'ambiguous-key',
+    key: 'worktree.baseBranch',
+    count: 2,
+  });
+  assert.deepEqual(absent.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: false,
+      action: 'stop',
+      state: 'invalid',
+    },
+  ]);
+  assert.equal(Object.hasOwn(absent.values, 'worktree.baseBranch'), false);
+  write(
+    root,
+    SETUP_ADR,
+    setupDocument({
+      'worktree.baseBranch': rowsOf('main', 'develop'),
+      'delivery.baseBranch': 'main',
+    }),
+  );
+  const present = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(diagnostic(present, 'ambiguous-key'), {
+    code: 'ambiguous-key',
+    key: 'worktree.baseBranch',
+    count: 2,
+  });
+  assert.deepEqual(present.retired, [
+    {
+      key: 'worktree.baseBranch',
+      successor: 'delivery.baseBranch',
+      successorPresent: true,
+      action: 'report',
+      state: 'invalid',
+    },
+  ]);
+});
+
+test('retired rows: duplicate prReview.maxRounds rows are one invalid entry for setup, merge-gate, and build, which keeps action none', async (t) => {
+  const { root } = plainDirectory(t);
+  write(root, SETUP_ADR, setupDocument({ 'prReview.maxRounds': rowsOf('3', '5') }));
+  const expectedDiagnostic = { code: 'ambiguous-key', key: 'prReview.maxRounds', count: 2 };
+  const base = {
+    key: 'prReview.maxRounds',
+    successor: 'mergeGate.maxRounds',
+    successorPresent: false,
+  };
+
+  const setup = await resolved({ cwd: root, tool: 'setup' });
+  assert.deepEqual(diagnostic(setup, 'ambiguous-key'), expectedDiagnostic);
+  assert.deepEqual(setup.retired, [{ ...base, action: 'none', state: 'invalid', raw: null }]);
+
+  const mergeGate = await resolved({ cwd: root, tool: 'merge-gate' });
+  assert.deepEqual(diagnostic(mergeGate, 'ambiguous-key'), expectedDiagnostic);
+  assert.deepEqual(mergeGate.retired, [{ ...base, action: 'stop', state: 'invalid' }]);
+
+  // build does not resolve mergeGate.maxRounds: the diagnostic is still reported, the action is none.
+  const build = await resolved({ cwd: root, tool: 'build' });
+  assert.deepEqual(diagnostic(build, 'ambiguous-key'), expectedDiagnostic);
+  assert.deepEqual(build.retired, [{ ...base, action: 'none', state: 'invalid' }]);
+  for (const data of [setup, mergeGate, build]) {
+    assert.equal(Object.hasOwn(data.values, 'prReview.maxRounds'), false);
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // Step 3: transitional JSON
 
