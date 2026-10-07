@@ -16995,6 +16995,86 @@ test('setup migrates a retired row by rewriting its original line, never re-enco
   );
 });
 
+// Invariant: a value setup encodes into a table cell must never split the row. The resolver hands
+// setup `raw` with `\|` decoded to a literal `|`, so every writer re-escapes it; the rule is stated
+// once, in config-migration's table encoding, and setup's JSON-source retired-row branch and its
+// general write step point to it ("pipe escape") rather than restating it. Only a row carried over
+// as its original `line` is exempt, because that line still holds its escapes byte for byte.
+test('every table writer re-escapes a literal pipe, stated once in the table encoding', () => {
+  const encoding = prose(
+    section(source('src/shared/config-migration.md'), '### Table encoding (binding for writers)'),
+  );
+  assert.match(
+    encoding,
+    /escapes every literal `\|`[^.]*?`\\\|`/,
+    'the table encoding must bind every writer to escape a literal `|` in an encoded value as `\\|`',
+  );
+  assert.match(
+    encoding,
+    /escapes every literal `\|`[^.]*?`\\\|`[^.]*?original `line`[^.]*?byte[- ]for[- ]byte/,
+    'the escape rule must name, in the same sentence, the only exemption: a row carried over as its original line',
+  );
+
+  // A restatement of the rule pairs an escape verb or a literal `|` with the escaped `\|` form; the
+  // setup pointers say only "pipe escape" and therefore do not count.
+  const restatement = /escap\w*[\s\S]{0,200}?`\\\|`|literal `\|`[\s\S]{0,200}?`\\\|`/gi;
+  const markdownFiles = (dir) =>
+    readdirSync(new URL(dir, repositoryRoot), { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? markdownFiles(`${dir}/${entry.name}`)
+        : entry.name.endsWith('.md')
+          ? [`${dir}/${entry.name}`]
+          : [],
+    );
+  const copies = markdownFiles('src').flatMap((path) =>
+    [...prose(source(path)).matchAll(restatement)].map(() => path),
+  );
+  assert.deepEqual(
+    copies,
+    ['src/shared/config-migration.md'],
+    'the pipe-escape rule must be stated exactly once, in config-migration.md; other sources point to it',
+  );
+
+  const setup = source('src/tools/setup.md');
+  const migration = prose(
+    boundedSlice(
+      setup,
+      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+      '\n#### Writing the hidden local configuration',
+    ),
+  );
+  assert.match(
+    migration,
+    near('`line: null`', 'table-encoding form', 120),
+    'the JSON-source branch (`line: null`) must encode the value from raw in the table-encoding form',
+  );
+  assert.match(
+    migration,
+    near('`line: null`', 'pipe escape', 160),
+    'the JSON-source branch (`line: null`) must point to the pipe escape of the table encoding',
+  );
+  assert.ok(
+    !migration.includes('takes the value from `raw`'),
+    'the JSON-source branch must not write the unescaped raw value as is',
+  );
+
+  const writeRows = prose(
+    boundedSlice(
+      section(setup, '### Step 6: Merge and write'),
+      'Use one row per key in the table-encoding form',
+      ').',
+    ),
+  );
+  assert.ok(
+    !writeRows.includes(' - '),
+    'the Step 6 row-encoding parenthetical must end inside its own bullet',
+  );
+  assert.ok(
+    writeRows.includes('pipe escape'),
+    "Step 6's row-encoding parenthetical must name the pipe escape of the table encoding",
+  );
+});
+
 test('setup ends the run on a several-match locator result at both detection points', () => {
   const setup = source('src/tools/setup.md');
   const item2 = prose(

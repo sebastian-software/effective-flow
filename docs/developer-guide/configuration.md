@@ -237,6 +237,7 @@ Keys and encoded values remain identical and English in both forms. Values use t
 
 - Boolean → `true` / `false`.
 - String → literal and unquoted, for example `focused` or `origin/main`.
+- Literal `|` in any encoded value → `\|`, so it cannot split the row; the resolver decodes it back. Only a row setup carries over as its original line is written byte for byte.
 - Explicit run-time choice → literal `null`.
 - Empty list → `(empty)`.
 - Filled list → comma-separated values, for example `humanizer, distill`.

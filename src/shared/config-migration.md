@@ -64,7 +64,7 @@ under English `## Configuration` with `| Key | Value |` or German `## Konfigurat
 preserves the existing envelope language; changing `language.documentation.technical` does not
 translate an existing ADR.
 
-- **Boolean** → `true` / `false`; **String** → literal and unquoted (e.g. `origin/main`).
+- **Boolean** → `true` / `false`; **String** → literal and unquoted (e.g. `origin/main`); a writer escapes every literal `|` in an encoded value as `\|`, and only a row carried over as its original `line` stays byte for byte.
 - **`null`** → the literal token `null`; a missing row means the key is not set.
 - **Empty list** → `(empty)`; **filled list** → comma-separated (e.g. `humanizer, distill`).
 - **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`); an empty object has no rows.

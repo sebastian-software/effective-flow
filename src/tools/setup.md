@@ -879,7 +879,7 @@ selected profile overlay → explicit chat-language choice`; the last two overla
    - Add a short context sentence in that envelope's language explaining that the ADR holds the
      tracked Effective Flow configuration and `.effective-flow/` is a pure runtime directory.
    - Use one row per key in the table-encoding form (boolean, unquoted string, literal `null`,
-     `(empty)`, comma-separated list, dotted keys). Config keys and values remain identical and
+     `(empty)`, comma-separated list, dotted keys, pipe escape). Config keys and values remain identical and
      English in both envelopes: never write the legacy German token `(leer)`. Preserve unknown
      foreign keys from an existing source.
 
@@ -1130,7 +1130,7 @@ blocks, and adds nothing to the ADR written in item 4.
 The merge-gate keys were formerly `prReview.*`, and three `delivery` keys were `worktree.*`. If Step 2
 recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write.
 From a table source, every carried-over retired row is written as its recorded original `line` with only the key cell replaced
-by the successor key; the value cell, its escapes and its spacing stay byte for byte, never re-encoded from `raw` (a JSON source, `line: null`, takes the value from `raw`).
+by the successor key; the value cell, its escapes and its spacing stay byte for byte, never re-encoded from `raw` (a JSON source, `line: null`, encodes the value from `raw` in the table-encoding form, pipe escape included).
 
 - **Carry ordinary non-login rows mechanically:** `prReview.completion` → `mergeGate.completion`;
   keep the identical trailing key and preserve the recorded value verbatim in its value cell, as stated above.
