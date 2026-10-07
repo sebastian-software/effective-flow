@@ -531,6 +531,69 @@ for (const [label, place] of [
   });
 }
 
+// Invariant: the exemption does not reach an empty-key envelope row. `| | visibility: hidden |`
+// splits into two cells, but its empty key is no ordinary configuration key, so the row stays a
+// hidden candidate and stops with exit 3: as the only hidden declaration of a local file, and next
+// to a well-formed visibility row. The ordinary-row side of this boundary (`worktree.setup`) is
+// covered by the ordinary-row exemption tests above.
+const EMPTY_KEY_HIDDEN_ROW = '| | visibility: hidden |';
+
+function withEmptyKeyHiddenRow(bodyLines) {
+  const text = rawSetupDocument([...bodyLines, EMPTY_KEY_HIDDEN_ROW]);
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  const row = document.envelope.rows.find((entry) => entry.line === EMPTY_KEY_HIDDEN_ROW);
+  assert.equal(row?.key, '', 'the parser keeps the row with an empty key');
+  assert.equal(row?.cellCount, 2, 'the row has two cells');
+  assert.ok(document.hiddenCandidates.includes(row.index), 'the row is a hidden candidate');
+  return text;
+}
+
+test('step 0: a local file whose only hidden declaration is an empty-key row stops with exit 3', async (t) => {
+  const text = withEmptyKeyHiddenRow(['| review.profile | deep |']);
+  const { envelope } = parseConfigurationDocument(text);
+  assert.ok(
+    envelope.rows.every((row) => row.key !== 'visibility'),
+    'the envelope carries no visibility row',
+  );
+  await refusedUnparseableHidden(t, text);
+});
+
+test('step 0: a hidden local file that also carries an empty-key hidden row stops with exit 3', async (t) => {
+  const text = withEmptyKeyHiddenRow([HIDDEN_ROW, '| review.profile | deep |']);
+  assert.ok(
+    parseConfigurationDocument(text).envelope.rows.some((row) => row.line === HIDDEN_ROW),
+    'the envelope carries a well-formed visibility row',
+  );
+  await refusedUnparseableHidden(t, text);
+});
+
+// Invariant: an empty-key row that does not name both `visibility` and `hidden` is no hidden
+// candidate, so a well-formed hidden local file carrying it still resolves as hidden at step 0 and
+// reports the row as `unrepresentable-row` (reason `empty-key`).
+for (const orphan of ['| | hidden |', '| | visibility |', '| | orphan |']) {
+  test(`step 0: a hidden local file with the empty-key row "${orphan}" resolves as hidden`, async (t) => {
+    const { root } = repository(t);
+    const text = rawSetupDocument([HIDDEN_ROW, '| review.profile | deep |', orphan]);
+    const document = parseConfigurationDocument(text);
+    assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+    const row = document.envelope.rows.find((entry) => entry.line === orphan);
+    assert.equal(row?.key, '', 'the parser keeps the row with an empty key');
+    assert.equal(document.hiddenCandidates.includes(row.index), false, 'no hidden candidate');
+    write(root, LOCAL_SETUP, text);
+    write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+    const data = await resolved({ cwd: root, tool: 'build' });
+    assert.equal(data.visibility, 'hidden');
+    assert.equal(data.source.step, 0);
+    assert.equal(data.source.path, join(root, LOCAL_SETUP));
+    assert.equal(data.values['review.profile'].value, 'deep');
+    assert.deepEqual(
+      data.diagnostics.filter((entry) => entry.code === 'unrepresentable-row'),
+      [{ code: 'unrepresentable-row', reason: 'empty-key', line: orphan }],
+    );
+  });
+}
+
 // Invariant: cells are trimmed before the key comparison, so a padded `visibility` key is the
 // canonical hidden row; every other row whose key names visibility stays a hidden candidate and
 // stops with exit 3: a capitalised `Visibility` key, and a `visibility` row whose value names
@@ -2496,6 +2559,27 @@ test('cli: a hidden local file with a malformed visibility row exits 3', (t) => 
   assert.equal(status, 3);
   assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
   assert.equal(envelope.error.details.reason, 'malformed-visibility-row');
+  assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// Invariant: the CLI maps a local file whose only hidden declaration is an empty-key row to exit 3,
+// never to a fall-through to the tracked configuration.
+test('cli: a local file whose only hidden declaration is an empty-key row exits 3', (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, withEmptyKeyHiddenRow(['| review.profile | deep |']));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 3);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(envelope.error.details, {
+    step: 0,
+    path: join(root, LOCAL_SETUP),
+    reason: 'unparseable-hidden-declaration',
+  });
   assert.match(stderr, /^RUNTIME_STATE_UNSAFE: /);
 });
 

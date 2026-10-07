@@ -649,8 +649,9 @@ function readEnvelopeTable(lines, start, envelope) {
 // (case-insensitive, word-bounded); the line is not parsed. A prose mention such as
 // "visibility: hidden would be set by setup" is deliberately a candidate: the step-0 file is
 // setup-written and machine-only, so such a line is a declaration the parser cannot prove. The one
-// exemption, applied by `locateHidden`: a well-formed two-cell row of a parsed envelope whose key
-// does not name `visibility` (matched by line index) is ordinary configuration, not a candidate.
+// exemption, applied by `locateHidden`: a well-formed two-cell row of a parsed envelope whose
+// non-empty key does not name `visibility` (matched by line index) is ordinary configuration, not a
+// candidate.
 // Everything else stays a candidate, including every visibility row of any shape.
 const HIDDEN_CANDIDATE_TOKENS = Object.freeze([/\bvisibility\b/i, /\bhidden\b/i]);
 
@@ -907,11 +908,14 @@ async function locateHidden(context, roots, diagnostics) {
   }
   // Hidden detection must not depend on successful parsing: any candidate line other than the one
   // well-formed `visibility | hidden` row of the one envelope (matched by line index) stops. A
-  // well-formed ordinary envelope row whose key does not name `visibility` is no candidate.
+  // well-formed ordinary envelope row whose non-empty key does not name `visibility` is no
+  // candidate.
   const ordinary = new Set(
     document.envelopes
       .flatMap((envelope) => envelope.rows)
-      .filter((row) => row.raw !== null && !HIDDEN_CANDIDATE_TOKENS[0].test(row.key))
+      .filter(
+        (row) => row.raw !== null && row.key !== '' && !HIDDEN_CANDIDATE_TOKENS[0].test(row.key),
+      )
       .map((row) => row.index),
   );
   const candidates = document.hiddenCandidates.filter((index) => !ordinary.has(index));
