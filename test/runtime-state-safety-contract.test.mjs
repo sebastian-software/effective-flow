@@ -256,7 +256,7 @@ test('configuration resolver is read-only: filesystem reads only and git limited
   const PINNED_GIT_ARGS = {
     toplevelArgs: ['rev-parse', '--show-toplevel'],
     commonArgs: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-    listArgs: ['worktree', 'list', '--porcelain'],
+    listArgs: ['worktree', 'list', '--porcelain', '-z'],
   };
   assert.equal([...resolver.matchAll(/\bspawn\(/g)].length, 1, 'one process spawn site');
   assert.equal([...resolver.matchAll(/\.runner\(/g)].length, 1, 'one runner call site');

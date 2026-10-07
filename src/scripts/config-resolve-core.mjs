@@ -721,7 +721,7 @@ export function flattenJsonConfiguration(root) {
 const NOT_A_REPOSITORY = /fatal: not a git repository \(or any /;
 
 // Resolves the checkout root of `cwd` and, inside Git, the verified runtime-state root: the first
-// record of `git worktree list --porcelain`, checked against its own toplevel and common dir.
+// record of `git worktree list --porcelain -z`, checked against its own toplevel and common dir.
 // Any failed check stops the run; nothing falls back to `cwd` or the checkout root.
 async function resolveRoots(context, cwd) {
   const toplevelArgs = ['rev-parse', '--show-toplevel'];
@@ -756,21 +756,25 @@ async function resolveRoots(context, cwd) {
       check,
       ...details,
     });
-  const listArgs = ['worktree', 'list', '--porcelain'];
+  const listArgs = ['worktree', 'list', '--porcelain', '-z'];
   const list = await runGit(context, cwd, listArgs);
   if (list.error || list.status !== 0) {
     unverified('porcelain-failed', errorDetail(list.stderr) || list.error?.message || 'failed');
   }
+  // NUL-delimited fields keep a path literal, newlines and trailing whitespace included; an empty
+  // field ends the record.
   const record = [];
-  for (const line of list.stdout.split('\n')) {
-    if (line.trim() === '') {
+  for (const field of list.stdout.split('\0')) {
+    if (field === '') {
       if (record.length > 0) break;
       continue;
     }
-    record.push(line);
+    record.push(field);
   }
-  const pathLines = record.filter((line) => line === 'worktree' || line.startsWith('worktree '));
-  const recordPath = pathLines.length === 1 ? pathLines[0].slice('worktree'.length).trim() : '';
+  const pathFields = record.filter(
+    (field) => field === 'worktree' || field.startsWith('worktree '),
+  );
+  const recordPath = pathFields.length === 1 ? pathFields[0].slice('worktree '.length) : '';
   if (record.length === 0 || recordPath === '' || !record[0].startsWith('worktree ')) {
     unverified('missing-path', 'the first worktree record has no single non-empty path');
   }

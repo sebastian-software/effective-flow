@@ -1032,12 +1032,12 @@ test('roots: a bare main record stops with exit 3 and never falls through', asyn
 });
 
 for (const [check, porcelain] of [
-  ['missing-path', 'HEAD 0000000000000000000000000000000000000000\nbranch refs/heads/main\n\n'],
-  ['missing-path', 'worktree \nHEAD 0000000000000000000000000000000000000000\n\n'],
-  ['missing-path', 'worktree /a\nworktree /b\n\n'],
-  ['moved', 'worktree /nonexistent/effective-flow-moved-checkout\nHEAD 00\n\n'],
+  ['missing-path', 'HEAD 0000000000000000000000000000000000000000\0branch refs/heads/main\0\0'],
+  ['missing-path', 'worktree \0HEAD 0000000000000000000000000000000000000000\0\0'],
+  ['missing-path', 'worktree /a\0worktree /b\0\0'],
+  ['moved', 'worktree /nonexistent/effective-flow-moved-checkout\0HEAD 00\0\0'],
 ]) {
-  test(`roots: a ${check} main record (${JSON.stringify(porcelain.split('\n')[0])}) stops with exit 3`, async (t) => {
+  test(`roots: a ${check} main record (${JSON.stringify(porcelain.split('\0')[0])}) stops with exit 3`, async (t) => {
     const { root } = repository(t);
     write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'x' }));
     const runner = fakeRunner((call) =>
@@ -1098,6 +1098,52 @@ test('roots: git that cannot run is GIT_FAILED with exit 1', async (t) => {
   const envelope = await refused({ cwd: root, tool: 'build' }, { runner });
   assert.equal(envelope.error.code, 'GIT_FAILED');
   assert.equal(exitCodeFor(envelope), 1);
+});
+
+// Resolves from a linked worktree of a real repository whose main checkout directory is named
+// `mainName`, and asserts that the main checkout is the verified runtime-state root that carries
+// the step-0 hidden configuration.
+async function assertMainCheckoutRoot(t, mainName) {
+  const { directory } = tempDir(t);
+  try {
+    mkdirSync(join(directory, mainName));
+  } catch (error) {
+    t.skip(`this filesystem cannot create ${JSON.stringify(mainName)}: ${error.code}`);
+    return;
+  }
+  const root = realpathSync(initRepository(join(directory, mainName)));
+  const linked = join(directory, 'über linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linked);
+  write(root, LOCAL_SETUP, setupDocument({ visibility: 'hidden' }));
+  const data = await resolved({ cwd: linked, tool: 'build' });
+  assert.equal(data.runtimeStateRoot, root);
+  assert.equal(data.checkoutRoot, realpathSync(linked));
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.source.step, 0);
+  assert.equal(data.source.path, join(root, LOCAL_SETUP));
+}
+
+// Guard: git leaves non-ASCII and spaces unquoted in porcelain output, so this already resolves.
+test('roots: a main checkout path with non-ASCII and a space is the runtime-state root', async (t) => {
+  await assertMainCheckoutRoot(t, 'über main checkout');
+});
+
+test('roots: a main checkout path containing a newline is the runtime-state root', async (t) => {
+  await assertMainCheckoutRoot(t, 'über main\ncheckout');
+});
+
+test('roots: a NUL-delimited worktree listing yields the first record as the runtime-state root', async (t) => {
+  const { root } = repository(t);
+  const sha = git(root, 'rev-parse', 'HEAD');
+  const porcelain =
+    `worktree ${root}\0HEAD ${sha}\0branch refs/heads/main\0\0` +
+    `worktree ${join(root, '..', 'other')}\0HEAD ${sha}\0detached\0\0`;
+  const runner = fakeRunner((call) =>
+    isCall(call, 'worktree', 'list') ? gitResult(porcelain) : undefined,
+  );
+  const data = await resolved({ cwd: root, tool: 'build' }, { runner });
+  assert.equal(data.runtimeStateRoot, root);
+  assert.equal(data.checkoutRoot, root);
 });
 
 // ---------------------------------------------------------------------------------------------
