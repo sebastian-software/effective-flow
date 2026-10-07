@@ -1012,6 +1012,17 @@ function rowDecoding(row) {
   return decodeCell(row.raw);
 }
 
+// Defines an own enumerable entry, so a configuration key such as `__proto__` never reaches a
+// prototype setter.
+function setOwn(target, key, value) {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 // Builds `values` from the resolved rows: every non-retired key except `visibility`, with two or
 // more rows of one key ambiguous and no row chosen.
 function buildValues(rows, source, diagnostics) {
@@ -1024,19 +1035,19 @@ function buildValues(rows, source, diagnostics) {
   const values = {};
   for (const [key, keyRows] of grouped) {
     if (keyRows.length > 1) {
-      values[key] = { state: 'invalid', value: null, raw: null, items: [], source };
+      setOwn(values, key, { state: 'invalid', value: null, raw: null, items: [], source });
       diagnostics.push({ code: 'ambiguous-key', key, count: keyRows.length });
       continue;
     }
     const [row] = keyRows;
     if (row.raw === null) {
-      values[key] = { state: 'invalid', value: null, raw: null, items: [], source };
+      setOwn(values, key, { state: 'invalid', value: null, raw: null, items: [], source });
       diagnostics.push({ code: 'invalid-value', key, raw: null, reason: 'cell-count' });
       continue;
     }
     if (row.raw === '(leer)' && !row.decoded) diagnostics.push({ code: 'legacy-empty-token', key });
     const { value, items } = rowDecoding(row);
-    values[key] = { state: 'set', value, raw: row.raw, items, source };
+    setOwn(values, key, { state: 'set', value, raw: row.raw, items, source });
   }
   return values;
 }

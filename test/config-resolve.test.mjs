@@ -596,6 +596,48 @@ test('encoding: unknown and legacy keys stay in values so the setup rewrite lose
   assert.equal(data.values['custom.key'].value, 'x');
 });
 
+// Invariant: every configuration key, including one named like an Object.prototype member
+// (`__proto__`, `constructor`, `prototype`), is an own enumerable entry of `values`, so the setup
+// rewrite loses no row; such a key never replaces the prototype of `values` or touches
+// Object.prototype.
+test('encoding: a __proto__, constructor or prototype key is an own values entry and replaces no prototype', async (t) => {
+  const { root } = plainDirectory(t);
+  // Computed keys: a literal `__proto__: 'x'` would set the literal's prototype and write no row.
+  write(
+    root,
+    SETUP_ADR,
+    setupDocument({ ['__proto__']: 'x', ['constructor']: 'c', ['prototype']: 'p' }),
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(Object.getPrototypeOf(data.values), Object.prototype);
+  assert.equal(Object.getPrototypeOf({}), Object.prototype);
+  assert.equal(Object.hasOwn(Object.prototype, 'state'), false);
+  assert.equal(Object.hasOwn(Object.prototype, 'value'), false);
+  assert.equal({}.state, undefined);
+  assert.ok(Object.hasOwn(data.values, '__proto__'), 'the __proto__ row is an own entry');
+  assert.ok(Object.keys(data.values).includes('__proto__'), 'the __proto__ row is enumerable');
+  assert.deepEqual(Object.getOwnPropertyDescriptor(data.values, '__proto__')?.value, {
+    state: 'set',
+    value: 'x',
+    raw: 'x',
+    items: ['x'],
+    source: 'adr',
+  });
+  for (const [key, cell] of [
+    ['constructor', 'c'],
+    ['prototype', 'p'],
+  ]) {
+    assert.ok(Object.hasOwn(data.values, key), `the ${key} row is an own entry`);
+    assert.deepEqual(data.values[key], {
+      state: 'set',
+      value: cell,
+      raw: cell,
+      items: [cell],
+      source: 'adr',
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // Owned keys
 
@@ -930,6 +972,23 @@ test('step 3: the .firmo/config.json fallback is read when .effective-flow/confi
       action: 'report',
     },
   ]);
+});
+
+// Invariant: a transitional JSON key `__proto__` (an own property after JSON.parse) flattens to a
+// row that stays an own entry of `values` beside the ordinary keys, and replaces no prototype.
+test('step 3: a transitional JSON __proto__ key stays an own values entry', async (t) => {
+  const { root } = repository(t);
+  // Raw text on purpose: JSON.stringify of an object literal would drop the __proto__ key.
+  write(root, join('.effective-flow', 'config.json'), '{"__proto__":"x","plan":{"dir":"json"}}');
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.equal(Object.getPrototypeOf(data.values), Object.prototype);
+  assert.ok(Object.hasOwn(data.values, '__proto__'), 'the __proto__ row is an own entry');
+  const entry = Object.getOwnPropertyDescriptor(data.values, '__proto__')?.value;
+  assert.equal(entry?.value, 'x');
+  assert.equal(entry?.raw, 'x');
+  assert.equal(entry?.source, 'transitional-json');
+  assert.equal(data.values['plan.dir'].value, 'json');
 });
 
 test('step 3: unparseable JSON is reported as an invalid source and resolution falls to step 4', async (t) => {
@@ -1435,6 +1494,21 @@ test('cli: a successful resolve prints one envelope line and exits 0', (t) => {
   assert.equal(status, 0);
   assert.equal(stderr, '');
   assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.values['plan.dir'].value, 'docs/plan');
+});
+
+// Invariant: the CLI envelope carries a `__proto__` configuration row as a serialized key, so the
+// setup rewrite that consumes the envelope does not lose it.
+test('cli: a __proto__ configuration row survives into the printed envelope', (t) => {
+  const { root } = repository(t);
+  write(root, SETUP_ADR, setupDocument({ ['__proto__']: 'x', 'plan.dir': 'docs/plan' }));
+  const input = JSON.stringify({ cwd: root, tool: 'setup' });
+  const raw = spawnSync(process.execPath, [CLI, 'resolve'], { encoding: 'utf8', input });
+  assert.ok(raw.stdout.includes('"__proto__":'), 'stdout serializes the __proto__ key');
+  const { status, envelope } = runCli(['resolve'], input);
+  assert.equal(status, 0);
+  assert.ok(Object.hasOwn(envelope.data.values, '__proto__'), 'the __proto__ row is an own entry');
+  assert.equal(envelope.data.values['__proto__'].raw, 'x');
   assert.equal(envelope.data.values['plan.dir'].value, 'docs/plan');
 });
 
