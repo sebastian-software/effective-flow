@@ -41,11 +41,18 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // over-invalidation per-suite seeds exist to remove. **The first scenario that proceeds past Phase 2
 // must add them** — the deferred `control-line-in-body-is-data` tranche is the known one.
 //
-// No runtime script is seeded either. `iterate` executes the forge helper only, and
-// `scripts/remote-tracker.mjs` is replaced by the stub below and hashed as `instrument`; it runs no
-// delegation-envelope helper, because it receives envelopes rather than building them. The exit
-// channel is a seed of its own, contributed by the overlay at the path the run executes it from.
-const LOAD_SET_SEEDS = Object.freeze(['SKILL.md', 'tools/iterate.md']);
+// One runtime script pair is seeded: the configuration resolver, which `iterate` executes at its
+// first configuration read in Phase 0 and which no load pointer names and nothing stubs. Its forge
+// helper `scripts/remote-tracker.mjs` is replaced by the stub below and hashed as `instrument`, and
+// it runs no delegation-envelope helper, because it receives envelopes rather than building them.
+// The exit channel is a seed of its own, contributed by the overlay at the path the run executes it
+// from.
+const LOAD_SET_SEEDS = Object.freeze([
+  'SKILL.md',
+  'tools/iterate.md',
+  'scripts/config-resolve.mjs',
+  'scripts/config-resolve-core.mjs',
+]);
 
 // Shared with `merge-gate`: the stub is fixture-driven and names no tool (see its own header).
 const TRACKER_STUB_SOURCE = resolve(SHARED_SCAFFOLD, 'remote-tracker.mjs');

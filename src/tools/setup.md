@@ -91,7 +91,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
-- **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; hidden mode forces `plan.dir`, `concept.dir`, `tracker.mode`, `delivery.prReview`, and an empty default `delivery.branchPrefix` (a prefix containing `effective-flow` in any letter case is rejected) as that building block's deferred part lists them.
+- **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; in hidden mode the configuration resolver forces its fixed values (the hidden file's rows are listed under "Safe defaults").
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 - **`executionProfiles`** (source: the configuration building block): `fast.enabled` (strict Boolean, unset by default — missing or `false` is disabled, a malformed, ambiguous, or unreadable value invalid, and both run Quality; `true` only admits the project to the `{{SKILL:build}}` field pilot; never a provider model name). Set only in Guided block 10; Profile and Express preserve an existing value.
 
@@ -179,11 +179,12 @@ when: the normalized invocation has no argument or its single argument is `profi
 **Visibility.** Every mode then resolves the visibility before Step 1, because Step 1 already
 differs between the two values: Profile after its `Chat` and `Profile` asks, Express and Guided as
 their first question, `{{SKILL:setup}} hidden` not at all. Pre-select `Hidden` when the locator's
-step 0 finds a local file declaring `visibility | hidden`, otherwise `Standard`. Step 0 reads that
+step 0 finds a local file declaring `visibility | hidden` — the building block's resolution call
+with `tool: "setup"` returns `data.visibility: hidden` — otherwise `Standard`. Step 0 reads that
 file only below the `RUNTIME_STATE_ROOT` it resolves and verifies itself, so a run from a linked
 worktree detects the main checkout's hidden configuration and never writes tracked configuration
-over it; when step 0 stops because that root cannot be verified, this run stops too, before any
-question or write. Explain first: hidden
+over it; when step 0 stops because that root cannot be verified (exit 3), this run stops too,
+before any question or write. Explain first: hidden
 mode is for a repository whose team has not adopted Effective Flow — the configuration, plans, and
 concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, no review findings
 are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names
@@ -294,12 +295,13 @@ options:
 ```
 
 2. **Resolve the project setup ADR.** Resolve an already-existing project setup ADR via the
-   config locator (AGENTS.md marker `**Effective Flow project setup:** <path>` → default path/scan
-   → transitional `.effective-flow/config.json`, otherwise `.firmo/config.json`; see the building block above). If a marker points to a dead
-   path, continue down the order and note the outdated marker for correction. If an ADR resolves,
-   it is authoritative and neither transitional JSON file is a migration source or may be
-   untracked. If the locator instead reports **several** matching project setup ADRs and falls
-   through on that ambiguity, that is **not** a "no ADR" result and it is **not** recoverable
+   config locator: the building block's resolution call with `tool: "setup"`, plus
+   `mode: "standard"` in a hidden → standard switch, which resolves through steps 1 to 4 only.
+   `data.source.step` 1 or 2 is an ADR, 3 a transitional JSON source, 4 none; note a `dead-marker`
+   or `legacy-marker` diagnostic for correction. If an ADR resolves, it is authoritative and
+   neither transitional JSON file is a migration source or may be untracked. If the locator
+   instead reports **several** matching project setup ADRs (`several-match`, `writerStop`) and
+   falls through on that ambiguity, that is **not** a "no ADR" result and it is **not** recoverable
    inside this run: the run ends here. Report every matching path the locator returned and state
    that the duplicate project setup ADRs have to be resolved by hand before setup can continue.
    Nothing is written and nothing is asked — no ADR among them is picked as the authoritative one,
@@ -307,8 +309,8 @@ options:
    Continuing under an unresolved several-match result would create a further project setup ADR
    beside the ones the locator just reported, which is exactly the duplication this resolution
    exists to prevent. Otherwise, capture the locator's exact verified absolute transitional JSON handle
-   under `RUNTIME_STATE_ROOT` as `<source-handle>`; never replace it with or inspect a same-named
-   fallback under `EXECUTION_ROOT`. For Git commands only, derive `<source-path>` as the verified
+   (`data.source.path` at step 3) under `RUNTIME_STATE_ROOT` as `<source-handle>`;
+   never replace it with or inspect a same-named fallback under `EXECUTION_ROOT`. For Git commands only, derive `<source-path>` as the verified
    repository-relative pathspec that identifies the same file after the locator's root/common-
    directory and containment checks. When both JSON files exist,
    `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` wins; leave the unselected
@@ -334,24 +336,21 @@ options:
    observed evidence deciding next, and the Effective Flow default only where that is inconclusive
    too — sets the not-posed flag, and carries every speaking source and its outcome forward for
    Step 8.
-4. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
-   `| Key | Value |` or `## Konfiguration` / `| Schlüssel | Wert |` table per the encoding into
-   an internal "current values" overview (key → currently recorded value), and retain the
-   envelope language for a later update. In the
-   migration case, read `<source-handle>` as the current values and preserve all known and unknown
-   keys. Show the respective value at every following question ("currently recorded: …") and use
-   it as the pre-selection. If a key is missing, label the pre-selection as the default
+4. **Form the current values.** Take the "current values" overview (key → currently recorded
+   `raw` value) from `data.values`, which keeps every known and unknown key, and retain
+   `data.source.language` as the envelope language for a later update; in the migration case these
+   are the values of `<source-handle>`. Show the respective value at every following question
+   ("currently recorded: …") and use it as the pre-selection. If a key is missing or unset, label the pre-selection as the default
    ("currently not set – default: …"). On a scored question, name that value in the question or
-   its explanation only; never mark it in a label and never move its option. While parsing, record every retired row: every row
-   whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
-   a `worktree.baseBranch`, `worktree.branchPrefix` or `worktree.completion` row is the former
-   spelling of the same `delivery.*` key. For each such row note whether its successor row already
-   exists. `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the
-   recorded rows in place.
-5. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
-   not valid JSON, do not overwrite silently. Inform the user with that exact handle and the error,
-   and ask whether the configuration should be newly created (old backup/overwrite) or the run
-   aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
+   its explanation only; never mark it in a label and never move its option. Record every retired
+   row from `data.retired`: its key, successor, `successorPresent`, and raw value (returned to
+   setup only). Step 6 migrates the recorded rows in place.
+5. **Invalid source.** If the ADR table is invalid or ambiguous (an `ambiguous-key` diagnostic,
+   or an `invalid-value` diagnostic with `reason: cell-count`) or the selected `<source-handle>` is
+   not valid JSON (an `invalid-source` diagnostic names that handle), do not overwrite silently and
+   do not take the building block's safe default, which every other `invalid-value` keeps. Inform
+   the user with the exact ADR path or JSON handle and the error, and ask whether the configuration
+   should be newly created (old backup/overwrite) or the run aborted. Without the workflow's explicit invalid-source decision, do not write a replacement
    ADR, create a new one, untrack either JSON file, or mark the migration complete.
 
 ### Step 3: Enter the selected mode
@@ -761,8 +760,8 @@ selected profile overlay → explicit chat-language choice`; the last two overla
    provider and base where applicable, and the non-secret external connection/context/state
    evidence retained by `setup-profiles`; these are evidence for the pending write, not additional
    persisted profile metadata.
-3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
-   its result with the source state recorded in Step 2:
+3. Resolve the project setup ADR freshly once more directly before writing (the resolution call
+   of Step 2 item 2) and compare its `data.source` with the source state recorded in Step 2:
    - If the fresh locator reports **several** matching project setup ADRs and falls through on
      that ambiguity, that is again **not** a "no ADR" result, whatever Step 2 recorded: the run
      ends here exactly as it does at the first detection point. Report every path the fresh
@@ -771,8 +770,8 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      below, because a fall-through on ambiguity resolves no ADR and would otherwise be mistaken
      for one of their "no ADR now resolves" conditions and write a further ADR beside the ones
      just reported.
-   - If an ADR now resolves, it is authoritative: re-read its table and do not migrate or touch
-     either JSON fallback.
+   - If an ADR now resolves, it is authoritative: take its values from the fresh result and do not
+     migrate or touch either JSON fallback.
    - If Step 2 selected a transitional JSON source and no ADR now resolves, require the freshly
      resolved transitional handle to equal the retained `<source-handle>`. If they match,
      revalidate and re-read that exact absolute handle immediately before writing; do not resolve a

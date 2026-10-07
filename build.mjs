@@ -84,6 +84,7 @@ import {
   assertPlanContractProjection,
   assertPlanPlaceholderProjection,
 } from './build-lib.mjs';
+import { SUCCESSOR_SET_TOOLS, toolAliasDivergence } from './src/scripts/config-resolve-core.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -114,6 +115,8 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement-protocol.mjs',
   'plan-lint.mjs',
   'plan-lint-core.mjs',
+  'config-resolve.mjs',
+  'config-resolve-core.mjs',
 ];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
@@ -670,6 +673,27 @@ try {
   // tool source and every {{AGENT:X}} an agent source.
   const knownTools = new Set(toolFiles.map((f) => basename(f, '.md')));
   const knownAgents = new Set(agentFiles.map((f) => basename(f, '.md')));
+
+  // Guard: every tool the configuration resolver's retired-row successor sets (or its exemption)
+  // name is a real tool source, internal ones included. A renamed tool would otherwise silently
+  // lose its retired-row stop, because the resolver treats an unnamed tool as resolving no successor.
+  for (const name of SUCCESSOR_SET_TOOLS) {
+    if (!knownTools.has(name)) {
+      throw new Error(
+        `stale config-resolve successor set: scripts/config-resolve-core.mjs names "${name}", but src/tools/${name}.md does not exist`,
+      );
+    }
+  }
+
+  // Guard: the resolver's alias map equals DEPRECATED_TOOL_ALIASES in both directions. A forwarding
+  // alias that the resolver did not know would resolve no successor set and lose its target's
+  // retired-row stops; a resolver alias the build no longer declares would outlive its removal.
+  const aliasDivergence = toolAliasDivergence(DEPRECATED_TOOL_ALIASES);
+  if (aliasDivergence.length > 0) {
+    throw new Error(
+      `config-resolve alias map diverges from DEPRECATED_TOOL_ALIASES: ${aliasDivergence.join('; ')}`,
+    );
+  }
 
   // Guard: no dead next-steps exemption. The emitting set is derived as
   // `tool sources - exemptions`, so an entry for a renamed or deleted tool would
@@ -1969,23 +1993,23 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    'merge-gate': 2372,
-    iterate: 1856,
-    setup: 1927,
-    'apply-review': 1407,
-    'apply-issues': 1205,
-    cleanup: 1070,
-    refactor: 975,
+    'merge-gate': 2336,
+    iterate: 1820,
+    setup: 1890,
+    'apply-review': 1371,
+    'apply-issues': 1169,
+    cleanup: 1034,
+    refactor: 939,
     deliver: 795,
-    'plan-issue': 754,
+    'plan-issue': 718,
     review: 768,
     plan: 693,
     'apply-review-commit-mechanics': 656,
-    maintain: 728,
+    maintain: 692,
     docs: 637,
     build: 640,
-    apply: 586,
-    'apply-plan': 581,
+    apply: 550,
+    'apply-plan': 545,
     investigate: 553,
     fix: 513,
     'plan-review': 445,
@@ -1993,7 +2017,7 @@ try {
     'concept-review': 343,
     'apply-review-remote': 382,
     concept: 331,
-    commit: 260,
+    commit: 224,
     'open-plans': 137,
     'pr-review': 38,
     version: 38,

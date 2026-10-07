@@ -163,29 +163,134 @@ test('review requires ignored untracked runtime state and keeps read-only lookup
   assert.doesNotMatch(review, /Create `\.effective-flow\/` if needed/);
 });
 
-// Invariant: the config fallback lookup never writes and never reads below a linked EXECUTION_ROOT.
-test('configuration fallback lookup remains read-only and is not a runtime writer', () => {
+// Invariant: the configuration resolver never writes. Every filesystem binding it imports, and every
+// member it uses on one (or on the injected `context.fs` and an opened handle), is a read; the only
+// open flags are read-only no-follow; and git runs only through `runGit` with the three pinned
+// read-only argument vectors, so a mutating call or git subcommand fails here. That it never reads
+// below a linked EXECUTION_ROOT is behaviour, covered by the "step 0: a linked worktree …" and
+// "containment: …" cases in `test/config-resolve.test.mjs`.
+test('configuration resolver is read-only: filesystem reads only and git limited to the pinned read-only argument vectors', () => {
+  const resolver = readFileSync(join(SOURCE_DIR, 'scripts', 'config-resolve-core.mjs'), 'utf8');
+  const READ_ONLY_FS = ['lstat', 'open', 'readFile', 'readdir', 'realpath', 'stat'];
+  const HANDLE_READS = ['close', 'readFile', 'stat'];
+  const FS_CONSTANTS = ['O_NOFOLLOW', 'O_NONBLOCK', 'O_RDONLY'];
+  const FS_MODULES = new Set(['fs', 'fs/promises', 'node:fs', 'node:fs/promises']);
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const membersOf = (binding) =>
+    new Set(
+      [...resolver.matchAll(new RegExp(`\\b${escape(binding)}\\.([A-Za-z_$][\\w$]*)`, 'g'))].map(
+        (match) => match[1],
+      ),
+    );
+  const subset = (actual, allowed, label) => {
+    const extra = [...actual].filter((name) => !allowed.includes(name)).sort();
+    assert.deepEqual(extra, [], `${label} may use read-only members only`);
+  };
+
+  // Static imports only, from a pinned module set.
+  const statements = resolver.match(/^import\b.*$/gm) ?? [];
+  const imports = [...resolver.matchAll(/^import\s+([\s\S]*?)\s+from\s+'([^']+)';/gm)].map(
+    (match) => ({ clause: match[1], specifier: match[2] }),
+  );
+  assert.equal(imports.length, statements.length, 'every import names its bindings');
+  assert.deepEqual(imports.map((entry) => entry.specifier).sort(), [
+    'node:child_process',
+    'node:fs/promises',
+    'node:path',
+    'node:process',
+  ]);
+  assert.doesNotMatch(resolver, /\bimport\s*\(|\brequire\s*\(/, 'no dynamic module loading');
+  // Git runs only through the spawn-based runner: no other child_process entry point is imported.
+  assert.deepEqual(
+    imports
+      .filter((entry) => entry.specifier === 'node:child_process')
+      .map((entry) => entry.clause),
+    ['{ spawn }'],
+  );
+
+  // Every filesystem binding: named imports are read-only functions; a default or namespace binding
+  // is used only through read-only members and is otherwise only the injectable default.
+  const fsBindings = [];
+  for (const { clause, specifier } of imports) {
+    if (!FS_MODULES.has(specifier)) continue;
+    const named = clause.match(/\{([^}]*)\}/);
+    for (const part of named ? named[1].split(',') : []) {
+      const [imported] = part.trim().split(/\s+as\s+/);
+      if (imported) subset([imported], READ_ONLY_FS, `the named ${specifier} import`);
+    }
+    const rest = clause
+      .replace(/\{[^}]*\}/, '')
+      .replace(/,/g, ' ')
+      .trim();
+    const local = rest.match(/^(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)$/)?.[1];
+    if (local) fsBindings.push(local);
+  }
+  assert.ok(fsBindings.length > 0, 'the filesystem binding is recognised');
+  for (const binding of fsBindings) {
+    subset(membersOf(binding), [...READ_ONLY_FS, 'constants'], `the ${binding} binding`);
+    subset(membersOf(`${binding}.constants`), FS_CONSTANTS, `${binding}.constants`);
+    const bare = [...resolver.matchAll(new RegExp(`\\b${escape(binding)}\\b(?!\\s*\\.)`, 'g'))];
+    assert.equal(
+      bare.length,
+      2,
+      `${binding} is referenced bare only by its import and the default`,
+    );
+    assert.match(resolver, new RegExp(`fs: deps\\.fs \\?\\? ${escape(binding)}\\b`));
+  }
+  subset(membersOf('fs'), READ_ONLY_FS, 'the injected context.fs');
+  assert.doesNotMatch(resolver, /\bO_(?:WRONLY|RDWR|CREAT|TRUNC|APPEND|EXCL)\b/);
+  const opens = [...resolver.matchAll(/(\w+)\s*=\s*await\s+[\w.]*\.open\(([^)]*)\)/g)];
+  assert.ok(opens.length > 0, 'the no-follow open is recognised');
+  for (const [, handle, args] of opens) {
+    assert.match(args, /,\s*READ_NO_FOLLOW$/, 'every open uses the read-only no-follow flags');
+    subset(membersOf(handle), HANDLE_READS, `the opened ${handle}`);
+  }
+  assert.equal(
+    [...resolver.matchAll(/\.open\(/g)].length,
+    opens.length,
+    'every open assigns its handle',
+  );
+
+  // Git: one spawn, one runner call (inside runGit, for git), and every runGit call passes one of
+  // the pinned read-only argument vectors.
+  const PINNED_GIT_ARGS = {
+    toplevelArgs: ['rev-parse', '--show-toplevel'],
+    commonArgs: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    listArgs: ['worktree', 'list', '--porcelain'],
+  };
+  assert.equal([...resolver.matchAll(/\bspawn\(/g)].length, 1, 'one process spawn site');
+  assert.equal([...resolver.matchAll(/\.runner\(/g)].length, 1, 'one runner call site');
+  assert.match(
+    resolver,
+    /async function runGit\(context, cwd, args\) \{\n\s*const result = await context\.runner\(\{\n\s*executable: 'git',\n\s*args: \['-C', cwd, \.\.\.args\],/,
+  );
+  const vectors = Object.fromEntries(
+    [...resolver.matchAll(/const (\w+Args) = (\[[^\]]*\]);/g)].map(([, name, literal]) => [
+      name,
+      JSON.parse(literal.replace(/'/g, '"')),
+    ]),
+  );
+  assert.deepEqual(vectors, PINNED_GIT_ARGS, 'the git argument vectors are pinned');
+  const calls = [...resolver.matchAll(/(?<!function )\brunGit\(([^)]*)\)/g)].map((match) =>
+    match[1].split(',').at(-1).trim(),
+  );
+  assert.ok(calls.length > 0, 'the runGit calls are recognised');
+  for (const argument of calls) {
+    assert.ok(Object.hasOwn(PINNED_GIT_ARGS, argument), `runGit called with ${argument}`);
+  }
+  assert.deepEqual([...new Set(calls)].sort(), Object.keys(PINNED_GIT_ARGS).sort());
+});
+
+// Invariant: the shared fragment that sends every tool to the resolver states that reading creates
+// nothing and does not make the lookup a runtime writer.
+test('configuration fallback lookup is documented as read-only and is not a runtime writer', () => {
   const configMigration = readShared('config-migration');
   const configEdgeCases = readShared('config-migration-edge-cases');
   const { eager, lazy } = collectIncludeNames(configMigration);
   const edgeIncludes = collectIncludeNames(configEdgeCases);
 
-  assert.match(
-    configEdgeCases,
-    /Transitional compatibility[\s\S]*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json`/,
-  );
-  assert.match(
-    configEdgeCases,
-    /Never inspect a\s+same-named fallback below a linked `EXECUTION_ROOT`/,
-  );
-  assert.match(
-    configEdgeCases,
-    /This read path creates \*\*nothing\*\*\s+and touches \*\*no\*\* Git/,
-  );
-  assert.match(
-    configMigration,
-    /The deterministic read path[\s\S]*itself creates no file and mutates no Git/,
-  );
+  assert.match(configMigration, /Reading creates no file and mutates no Git/);
+  assert.match(configMigration, /`data\.runtimeStateRoot` is the verified `RUNTIME_STATE_ROOT`/);
   assert.equal(eager.has('runtime-state-safety'), false);
   assert.equal(lazy.has('runtime-state-safety'), false);
   assert.equal(edgeIncludes.eager.has('runtime-state-safety'), false);

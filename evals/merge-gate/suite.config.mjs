@@ -58,6 +58,10 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // `scaffold.mjs` replaces that path in the copied tree with the stub below, which is hashed as the
 // `instrument` part instead, so a run loads neither the shipped helper nor the module it imports.
 // Nothing replaces the envelope helper, so a run loads exactly what the build shipped.
+//
+// The configuration resolver pair is seeded for the same reason: the gate and the `iterate` round it
+// delegates run the shipped `scripts/config-resolve.mjs` at their first configuration read, no load
+// pointer names it, and nothing stubs it.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',
@@ -66,6 +70,8 @@ const LOAD_SET_SEEDS = Object.freeze([
   'workers/effective-flow-code-validator.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
+  'scripts/config-resolve.mjs',
+  'scripts/config-resolve-core.mjs',
 ]);
 
 // The stub that answers the run and the scaffold that configures it: what turns the built tree into

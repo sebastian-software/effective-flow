@@ -352,8 +352,8 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Six subsystems carry this today: the pairs `delegation-envelope.mjs`/
-  `delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
+  misread as one. Seven subsystems carry this today: the pairs `config-resolve.mjs`/
+  `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs` and `plan-lint.mjs`/`plan-lint-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
@@ -591,11 +591,41 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Six dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains eighteen files: four two-file subsystems, the remote tracker's seven-file family,
+Seven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains twenty files: five two-file subsystems, the remote tracker's seven-file family,
 and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
 core or protocol modules:
 
+- **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
+  JSON object on standard input: `cwd` (an absolute path in the checkout the calling tool runs
+  in), the required `tool` (the calling tool's own name), and `mode`, required only where a
+  tool's successor set depends on it (`local` or `pr` for `iterate`, `local` or `remote` for
+  `apply-review`); setup may pass `mode: "standard"` to skip locator step 0 when it
+  resolves the tracked source of a hidden-to-standard switch. Every tool's first configuration read runs it through the shared
+  `config-migration` fragment, and so do `pr` and setup's read path. It executes the config
+  locator (steps 0–4, with steps 1 and 2 contained below the checkout root of `cwd` and steps 0
+  and 3 below the verified `RUNTIME_STATE_ROOT`), decodes the table encoding, applies the
+  hidden-mode forced values, and classifies every retired row as `stop`, `report` or `none` for
+  the calling tool; [configuration](configuration.md#resolution-order-and-ownership) describes
+  that behavior. It emits one `{ ok, operation, data }` envelope whose `data` carries
+  `runtimeStateRoot`, `checkoutRoot`, `visibility`, `source`, `values`, `retired` and
+  `diagnostics`, or `{ ok: false, operation, error: { code, message, details, retryable } }`
+  with a `CODE: message` line on standard error. Exit 2 is invalid input (`INVALID_INPUT`), exit 3
+  an unverifiable runtime-state root or an unsafe step-0 or step-3 file
+  (`RUNTIME_ROOT_UNVERIFIED`, `RUNTIME_STATE_UNSAFE`), and exit 1 everything else, a failing Git
+  query or a broken gitfile included (`GIT_FAILED`). It runs only read-only Git queries through an
+  injected runner without a shell, writes nothing, and makes no network call. A `tool` that no
+  successor set names resolves no successor and is reported as `unknown-tool`, while the deprecated
+  alias `pr-review` resolves as `merge-gate`, so a forwarded run gets its target's successor set.
+  Consumers fail
+  closed: a nonzero exit, an unparseable envelope or an unknown envelope shape stops the tool
+  before its first configuration-dependent step, and no consumer falls back to reading the
+  configuration through prose. The core is the single source of the root verification, the stem
+  ranking, `HIDDEN_FORCED_VALUES`, `RETIRED_KEYS`, `SUCCESSOR_SETS` and `DIAGNOSTIC_CODES`; a
+  build guard fails when a tool named in `SUCCESSOR_SETS` or the setup exemption has no
+  `src/tools/<name>.md`, so a renamed tool cannot silently lose its retired-row stop. Both the
+  `merge-gate` and `iterate` eval suites list the pair in their `LOAD_SET_SEEDS`, because their
+  runs execute it at the first configuration read and no load pointer names it.
 - **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
 <build|validate>` with one JSON object on standard input whose `cwd` is the verified
   `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
@@ -696,9 +726,11 @@ diagnostics, but body writes are reported as non-atomic because GitHub does not 
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
 pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all eighteen identical, usable scripts,
-that the pilot helper reports its protocol from an isolated distribution, and that
-`plan-lint lint` runs against a fixture plan directory in every target.
+checks prove that all three installed payloads contain all twenty identical, usable scripts,
+that the pilot helper reports its protocol from an isolated distribution, that
+`plan-lint lint` runs against a fixture plan directory in every target, and that
+`config-resolve resolve` resolves a fixture project-setup ADR in every target
+(`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`).
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
 current-task capability directly, and Claude Code renames its own session through the host's
