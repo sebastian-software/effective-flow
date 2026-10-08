@@ -204,7 +204,7 @@ duties, the no-trace rule and the tracker-bound stops, stay in the prose of
   file without that row is reported as `local-file-not-hidden` and skipped, and any other raw line
   naming both `visibility` and `hidden`, comments and fences included, stops with exit 3 as
   `unparseable-hidden-declaration`, except an active, well-formed envelope row whose non-empty key
-  does not name `visibility`.
+  is not `visibility` (any case).
   A `visibility` row in a tracked ADR is invalid by construction: it is reported as
   `tracked-hidden-ignored`, ignored, and never activates hidden mode. The envelope's `visibility`
   field carries the result, never a `values` entry.

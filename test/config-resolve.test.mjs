@@ -448,7 +448,7 @@ for (const prose of [
 }
 
 // Invariant: the hidden-candidate exemption covers only a well-formed (two-cell) row of a parsed
-// canonical envelope whose key does not name `visibility`. Such an ordinary row is an ordinary
+// canonical envelope whose key is not `visibility` (any case). Such an ordinary row is an ordinary
 // value even when it names both tokens: a valid hidden file still resolves as hidden, and a valid
 // non-hidden file still falls through to the tracked configuration.
 const ORDINARY_HIDDEN_ROW = '| worktree.setup | echo hidden visibility |';
@@ -491,6 +491,64 @@ test('step 0: a non-hidden local file with an ordinary row naming visibility and
     path: join(root, LOCAL_SETUP),
   });
 });
+
+// Invariant: only the standalone key `visibility` (trimmed, any case) is reserved from the
+// exemption; a dotted key that merely contains the word, such as `ui.visibility` or
+// `visibility.mode`, is an ordinary row, so a valid hidden file still resolves as hidden and a valid
+// non-hidden file still falls through to the tracked configuration.
+function withVisibilityLikeRow(rows, key) {
+  const text = setupDocument({ ...rows, [key]: 'hidden' });
+  const line = `| ${key} | hidden |`;
+  assert.ok(text.includes(line), `the fixture carries ${line} verbatim`);
+  const document = parseConfigurationDocument(text);
+  assert.equal(document.envelopeCount, 1, 'the fixture has one envelope');
+  const row = document.envelope.rows.find((entry) => entry.key === key);
+  assert.ok(document.hiddenCandidates.includes(row.index), 'the row names both tokens');
+  return text;
+}
+
+for (const key of ['ui.visibility', 'visibility.mode']) {
+  test(`step 0: a hidden local file with an ordinary ${key} row resolves as hidden`, async (t) => {
+    const { root } = repository(t);
+    write(
+      root,
+      LOCAL_SETUP,
+      withVisibilityLikeRow({ visibility: 'hidden', 'review.profile': 'deep' }, key),
+    );
+    write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+    const data = await resolved({ cwd: root, tool: 'build' });
+    assert.equal(data.visibility, 'hidden');
+    assert.equal(data.source.step, 0);
+    assert.equal(data.source.path, join(root, LOCAL_SETUP));
+    assert.equal(data.values['review.profile'].value, 'deep');
+  });
+}
+
+test('step 0: a non-hidden local file with an ordinary ui.visibility row falls through', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, withVisibilityLikeRow({ 'review.profile': 'deep' }, 'ui.visibility'));
+  write(root, SETUP_ADR, setupDocument({ 'plan.dir': 'tracked' }));
+  const data = await resolved({ cwd: root, tool: 'build' });
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.step, 2);
+  assert.equal(data.values['plan.dir'].value, 'tracked');
+  assert.deepEqual(diagnostic(data, 'local-file-not-hidden'), {
+    code: 'local-file-not-hidden',
+    path: join(root, LOCAL_SETUP),
+  });
+});
+
+// Invariant: a differently cased `visibility` key stays reserved but is never the proven
+// `visibility` row, so it stops with exit 3: as the only visibility-like declaration of a local
+// file, and next to a well-formed `visibility | hidden` row.
+for (const [label, rows, key] of [
+  ['non-hidden', { 'review.profile': 'deep' }, 'Visibility'],
+  ['hidden', { visibility: 'hidden', 'review.profile': 'deep' }, 'VISIBILITY'],
+]) {
+  test(`step 0: a ${label} local file with a ${key} row stops with exit 3`, async (t) => {
+    await refusedUnparseableHidden(t, withVisibilityLikeRow(rows, key));
+  });
+}
 
 // Invariant: the exemption does not reach a malformed envelope row. The same text with a wrong
 // cell count stays a hidden candidate and stops with exit 3, in a non-hidden and a hidden file.
@@ -2877,6 +2935,26 @@ test('cli: a hidden local file with an ordinary row naming visibility and hidden
   assert.equal(envelope.data.visibility, 'hidden');
   assert.equal(envelope.data.source.step, 0);
   assert.equal(envelope.data.values['worktree.setup'].value, 'echo hidden visibility');
+});
+
+// Invariant: the CLI resolves a valid hidden file with an ordinary `ui.visibility | hidden` row as
+// hidden mode with exit 0; only the standalone `visibility` key is reserved from the exemption.
+test('cli: a hidden local file with an ordinary ui.visibility row exits 0', (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    withVisibilityLikeRow({ visibility: 'hidden', 'review.profile': 'deep' }, 'ui.visibility'),
+  );
+  write(root, SETUP_ADR, setupDocument({ 'review.profile': 'focused' }));
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'build' }),
+  );
+  assert.equal(status, 0, stderr);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.visibility, 'hidden');
+  assert.equal(envelope.data.source.step, 0);
 });
 
 test('cli: git that cannot be found exits 1', (t) => {

@@ -652,7 +652,7 @@ function readEnvelopeTable(lines, start, envelope) {
 // "visibility: hidden would be set by setup" is deliberately a candidate: the step-0 file is
 // setup-written and machine-only, so such a line is a declaration the parser cannot prove. The one
 // exemption, applied by `locateHidden`: an active (not commented or fenced) well-formed two-cell row
-// of a parsed envelope whose non-empty key does not name `visibility` (matched by line index) is
+// of a parsed envelope whose non-empty key is not `visibility` (any case; matched by line index) is
 // ordinary configuration, not a candidate.
 // Everything else stays a candidate, including every visibility row of any shape.
 const HIDDEN_CANDIDATE_TOKENS = Object.freeze([/\bvisibility\b/i, /\bhidden\b/i]);
@@ -918,7 +918,7 @@ async function locateHidden(context, roots, diagnostics) {
   // Hidden detection must not depend on successful parsing: any candidate line other than the one
   // well-formed `visibility | hidden` row of the one envelope (matched by line index) stops. The
   // candidate scan covers every line, comments and fences included; only an active, well-formed
-  // envelope row whose non-empty key does not name `visibility` is exempt.
+  // envelope row whose non-empty key is not `visibility` (any case) is exempt.
   const ordinary = new Set(
     document.envelopes
       .flatMap((envelope) => envelope.rows)
@@ -927,7 +927,7 @@ async function locateHidden(context, roots, diagnostics) {
           row.active &&
           row.raw !== null &&
           row.key !== '' &&
-          !HIDDEN_CANDIDATE_TOKENS[0].test(row.key),
+          row.key.toLowerCase() !== VISIBILITY_KEY,
       )
       .map((row) => row.index),
   );
