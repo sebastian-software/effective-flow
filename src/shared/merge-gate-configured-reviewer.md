@@ -7,10 +7,17 @@ fragment before parsing, so empty and unreadable present values retain their saf
 reporting behavior.
 
 The always-loaded gate retains the configuration table and row-presence resolution, the empty-list
-Phase-3 skip, Phase-4 numbering and conditions 1–4, 6, 8, and 9, every run-wide receiver failure,
-the human-comment guard, the unconfigured-reviewer advisory, and the non-reviewer summary duties.
-The eager `review-bot-state` include remains the source of automatic-reviewer state and configured
-login matching.
+Phase-3 skip, Phase-4 numbering and conditions 1–4, 6, 8, and 9, the pointer that loads the
+delegation contract with every run-wide receiver failure (`merge-gate-delegation-contract`), the
+human-comment guard, the unconfigured-reviewer advisory, and the non-reviewer summary duties.
+The eager `review-bot-state` include remains the source of configured login matching, the three
+states and the verdict rules. This route resolves each configured reviewer's state against a fresh
+read and decides what that state permits, so it loads the deferred remainder of that contract itself:
+
+```lazy-include
+review-bot-state-observation
+when: Phase 3 step 1 or Phase 4 condition 5 must resolve a configured reviewer's state against a fresh read, or what that state permits must be decided
+```
 
 ## Configured reviewer configuration
 
@@ -42,7 +49,7 @@ login matching.
 ## Returned outcome record
 
 This section is the whole of how `{{SKILL:iterate}}`'s return is consumed. It is deliberately **not**
-a seventh control line: the six control lines above frame the message on the way **in**, and nothing here
+a seventh control line: the six control lines of the "Delegation contract" frame the message on the way **in**, and nothing here
 changes what that message carries. The way back carries no delimiter and no token of its own, for the
 reason "The key set is pre-committed" gives below.
 
@@ -336,7 +343,7 @@ entries that denote the same reviewer – two spellings of one account are one r
    - **Exclude every provider-settled thread**, and on a forge where both thread writes are
      unsupported every thread this run recorded `implemented`, per the loaded provider-settled rule.
    - **Build, validate and dispatch that one delegation** per "Building and dispatching a
-     delegation": the threads as `threadItems`, the body findings below as `bodyItems`. `build`
+     delegation" in the loaded `merge-gate-delegation-contract`: the threads as `threadItems`, the body findings below as `bodyItems`. `build`
      mints one per-message identifier per thread and carries it on that thread's `Thread item:`
      manifest line; record the map it returns before dispatch, as the "Delegation contract"
      requires. The thread IDs travel in the item filter because the delegated run addresses the

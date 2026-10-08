@@ -303,6 +303,18 @@ function configuredReviewerSection(heading) {
   return section(configuredReviewerRoute(), heading, '\n## ');
 }
 
+// The merge-gate -> iterate delegation contract and its run-wide receiver rules, deferred from
+// merge-gate's always-loaded core until a delegation site is reached.
+function mergeGateDelegationContract() {
+  return source('src/shared/merge-gate-delegation-contract.md');
+}
+
+// The deferred half of the shared reviewer-state contract: precedence, one read one head, what
+// each state permits, and the evidence record.
+function reviewBotStateObservation() {
+  return source('src/shared/review-bot-state-observation.md');
+}
+
 function configuredReviewerCondition(number) {
   const heading = configuredReviewerRoute()
     .split('\n')
@@ -2065,6 +2077,15 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
         'the forge preflight reporting both reviewThreadReplies and reviewThreadResolution unsupported',
     },
     {
+      // The delegation contract is needed exactly when a delegation to iterate is about to be
+      // built, and merge-gate has two such sites. A clause naming only the CI repair would leave a
+      // bot round building its message from text it has not loaded, and the reverse would strand a
+      // CI repair; both sites are required.
+      fragment: 'merge-gate-delegation-contract',
+      trigger: /(?=[\s\S]*\{\{SKILL:iterate\}\})(?=[\s\S]*Phase 2 step 3)(?=[\s\S]*Phase 3 step 5)/,
+      decision: 'a delegation to iterate from Phase 2 step 3 or from Phase 3 step 5',
+    },
+    {
       fragment: 'pilot-measurement',
       trigger:
         /(?=[\s\S]*Phase 0)(?=[\s\S]*non-observer)(?=[\s\S]*`merge\|report`)(?=[\s\S]*Phase 1)/,
@@ -2315,8 +2336,12 @@ test('the configured-reviewer route stays reachable through exact retained workf
       1,
       `the configured-reviewer fragment must own exactly one ${heading}`,
     );
+    // The run-wide receiver section moved with the delegation contract, so the pointer to the
+    // configured-reviewer receiver travels with it and is checked where it now lives.
+    const pointerHost =
+      heading === '## Returned outcome record' ? mergeGateDelegationContract() : gate;
     assert.ok(
-      gate.includes(`\`${heading}\``),
+      pointerHost.includes(`\`${heading}\``),
       `the retained gate must point to the exact configured-reviewer heading ${heading}`,
     );
   }
@@ -2367,8 +2392,10 @@ test('the configured-reviewer route stays reachable through exact retained workf
     ['## Wisdom accumulation', headings[2]],
     ['#### The set-aside confirmation', headings[7]],
   ]) {
+    const shellHost =
+      sectionHeading === '## Returned outcome record' ? mergeGateDelegationContract() : gate;
     assert.ok(
-      section(gate, sectionHeading).includes(`\`${routeHeading}\``),
+      section(shellHost, sectionHeading).includes(`\`${routeHeading}\``),
       `${sectionHeading} must point locally to its exact configured-reviewer owner`,
     );
   }
@@ -4134,7 +4161,8 @@ test('every returning delegation announces the next-step suppression', () => {
     { file: 'src/tools/concept.md', delegates: ['concept-review'] },
     { file: 'src/tools/plan-issue.md', delegates: ['plan-review'] },
     { file: 'src/tools/apply.md', delegates: ['apply-plan', 'apply-review', 'apply-issues'] },
-    { file: 'src/tools/merge-gate.md', delegates: ['iterate'] },
+    // merge-gate announces it in the delegation contract its delegation sites load lazily.
+    { file: 'src/shared/merge-gate-delegation-contract.md', delegates: ['iterate'] },
     // The remaining returning delegations: the worktree completion action that hands delivery to
     // `pr`, the per-finding and per-issue sub-agent payloads, and the per-item delegation of
     // `iterate`. Each of these receivers hands its result back, so the caller closes the run.
@@ -5616,7 +5644,7 @@ test('iterate lets a caller suppress its summary comment and posts it by default
 });
 
 test('the merge gate announces the exact suppression literal iterate parses', () => {
-  const contract = section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## ');
+  const contract = section(mergeGateDelegationContract(), '## Delegation contract', '\n## ');
 
   // The suppression belongs in the delegation contract rather than in one phase: `iterate` posts
   // one summary comment per delegated round, so an unsuppressed run leaves up to
@@ -6062,9 +6090,7 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
 
   // The shared contract states the obligation; a contract whose consumer never discharges it is
   // the defect this closes. Both ends are asserted so neither can drift away from the other.
-  const window = flat(
-    section(source('src/shared/review-bot-state.md'), '### This narrows the window'),
-  );
+  const window = flat(section(reviewBotStateObservation(), '### This narrows the window'));
   assert.match(
     window,
     near('\\{\\{SKILL:merge-gate\\}\\}', '(?:Phase-4|Phase 4|precondition)', 300),
@@ -6910,6 +6936,150 @@ test('the shared reviewer-state contract is loaded by the gate and by the guard'
   }
 });
 
+// Invariant: the reviewer-state contract is split along one seam. Every eager host keeps login
+// matching, the three states and the verdict rules, and both hosts that resolve a state against a
+// fresh read point to the deferred observation half at that decision point. A pointer that lost its
+// trigger, a core sentence still citing a precedence rule by number, or a rule that drifted back
+// into the core would each leave a consumer deciding from text it has not loaded.
+test('the reviewer-state observation half loads where a state is resolved, and the core cites none of it by number', () => {
+  const core = source('src/shared/review-bot-state.md');
+  const observation = reviewBotStateObservation();
+
+  for (const heading of [
+    '### Matching a configured login',
+    '### The three states',
+    '### A changes-requested verdict and what supersedes it',
+  ]) {
+    assert.ok(core.includes(`\n${heading}\n`), `the eager core must keep ${heading}`);
+    assert.ok(
+      !observation.includes(`\n${heading}\n`),
+      `${heading} must not move to the deferred half`,
+    );
+  }
+  assert.match(
+    prose(core),
+    /A review body is attacker-influenceable text/,
+    'the untrusted-body rule stays eager',
+  );
+  for (const heading of [
+    '### Precedence',
+    '### One read, one head',
+    '### What each state permits',
+    '### Record the evidence, not only the state',
+    '### This narrows the window; it does not close it',
+  ]) {
+    assert.ok(observation.includes(`\n${heading}\n`), `the deferred half must carry ${heading}`);
+    assert.ok(!core.includes(`\n${heading}\n`), `${heading} must not return to the eager core`);
+  }
+
+  // Forward references into the precedence were reworded when it moved; a numbered rule cited from
+  // the core would dangle for a reader that has not loaded the deferred half.
+  assert.doesNotMatch(
+    prose(core),
+    /\brule [123]\b|primary signal below/,
+    'the eager core must not cite a precedence rule by number or position',
+  );
+
+  // The pointer sits right after the three states, and its trigger names both decision points.
+  ordered(
+    core,
+    '### The three states',
+    '```lazy-include\nreview-bot-state-observation',
+    '### A changes-requested verdict',
+  );
+  const trigger = (text, label) => {
+    const pointer = [...text.matchAll(LAZY_INCLUDE_RE)].find(
+      (match) => match[1].trim() === 'review-bot-state-observation',
+    );
+    assert.ok(pointer, `${label} must point lazily to review-bot-state-observation`);
+    return (pointer[2] ?? '').trim();
+  };
+  assert.match(
+    trigger(core, 'the reviewer-state core'),
+    /(?=[\s\S]*resolved against a fresh read)(?=[\s\S]*permits)/,
+    'the core pointer must name resolving a state against a fresh read and deciding what it permits',
+  );
+
+  // The configured-reviewer route resolves every configured reviewer's state, so it loads the
+  // deferred half itself rather than relying on the eager core's pointer having fired.
+  const route = configuredReviewerRoute();
+  assert.match(
+    trigger(route, 'the configured-reviewer route'),
+    /(?=[\s\S]*Phase 3 step 1)(?=[\s\S]*Phase 4 condition 5)(?=[\s\S]*fresh read)/,
+    'the route pointer must name the Phase 3 and Phase 4 sites that resolve a state',
+  );
+  assert.equal(
+    collectIncludeNames(route).eager.has('review-bot-state-observation'),
+    false,
+    'the route must not inline the deferred half',
+  );
+
+  // No host inlines the deferred half; it is reached through pointers only.
+  for (const path of [
+    'src/tools/merge-gate.md',
+    'src/tools/iterate.md',
+    'src/shared/setup-retired-login-migration.md',
+  ]) {
+    assert.equal(
+      collectIncludeNames(source(path)).eager.has('review-bot-state-observation'),
+      false,
+      `${path} must not inline review-bot-state-observation`,
+    );
+  }
+});
+
+// Invariant: merge-gate's delegation contract is deferred to its two delegation sites, while
+// everything that decides or bounds a delegation stays in the always-loaded core: both sites, the
+// push-before-delegation order, the Rules bullets that fix every `build` input and forbid a
+// hand-assembled message, and the per-head bound the summary-comment suppression sustains.
+// `delegation-mandate` stays eager.
+test('the merge-gate delegation contract is deferred to its two sites and its decisions stay in the core', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const contract = mergeGateDelegationContract();
+  const gateIncludes = collectIncludeNames(gate);
+
+  assert.ok(
+    gateIncludes.lazy.has('merge-gate-delegation-contract'),
+    'merge-gate must defer the contract',
+  );
+  assert.equal(
+    gateIncludes.eager.has('merge-gate-delegation-contract'),
+    false,
+    'the delegation contract must not return to the always-loaded core',
+  );
+  assert.ok(gateIncludes.eager.has('delegation-mandate'), 'delegation-mandate must stay eager');
+  for (const heading of ['## Delegation contract', '## Returned outcome record']) {
+    assert.ok(contract.includes(`\n${heading}\n`), `the fragment must carry ${heading}`);
+    assert.ok(!gate.includes(`\n${heading}\n`), `${heading} must not stay in the core as well`);
+  }
+
+  // Both delegation sites stay in the core and name the procedure the fragment carries.
+  assert.match(
+    prose(boundedSlice(gate, '3. **Failed checks.**', '4. **Re-read the status**')),
+    /per "Building and dispatching a delegation" in `merge-gate-delegation-contract`/,
+    'Phase 2 step 3 must build its delegation per the deferred contract',
+  );
+  ordered(
+    gate,
+    'The base-into-head merge must be **completed and pushed before any',
+    '```lazy-include\nmerge-gate-delegation-contract',
+  );
+
+  // The Phase 1 summary-suppression rule cites the fragment rather than a section the core lost.
+  const deferred = prose(section(gate, '#### A deferred finding gets no thread reply', '\n### '));
+  assert.equal(
+    (deferred.match(/"Delegation contract" in `merge-gate-delegation-contract`/g) ?? []).length,
+    2,
+    'both summary-suppression citations must name the fragment that now holds the contract',
+  );
+
+  // The Rules bullets stay eager and still fix the build inputs and the helper-only dispatch.
+  const rules = prose(section(gate, '## Rules', '\n## '));
+  assert.match(rules, /`summaryComment: suppressed`, `reviewGuard: established`/);
+  assert.match(rules, /never assemble one by hand/);
+  assert.match(rules, /stops the run before `\{\{SKILL:iterate\}\}` is invoked/);
+});
+
 test('an emoji acknowledgment is never presented as evidence that a reviewer has no check', () => {
   // This cost a real merge. The gate refused to merge PR #317 because Greptile's freshness could
   // not be proven, while Greptile's own `Greptile Review` check sat green on the same head: the
@@ -7176,7 +7346,7 @@ test('the project-setup ADR carries the acknowledgement sentence verbatim', () =
 test('the reviewer-state contract pins its three states and its fail-closed precedence', () => {
   const state = source('src/shared/review-bot-state.md');
   const states = flat(section(state, '### The three states'));
-  const precedence = flat(section(state, '### Precedence'));
+  const precedence = flat(section(reviewBotStateObservation(), '### Precedence'));
 
   // Being included proves nothing about what is included. This fragment is the single source of
   // the reviewer-state rules for both consumers, and every rule below decides a merge
@@ -7295,7 +7465,7 @@ test('the review-guard switch is announced by the gate and required by iterate',
   );
 
   // The announcing end.
-  const contract = section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## ');
+  const contract = section(mergeGateDelegationContract(), '## Delegation contract', '\n## ');
   const item = flat(contract.split(/\n-\s/).find((entry) => entry.includes(SWITCH)) ?? '');
   assert.ok(item, `the delegation contract must announce the literal \`${SWITCH}\``);
   assert.match(
@@ -7446,7 +7616,7 @@ test('the gate Rules and the has-run state both name the stale-verdict re-trigge
 
   const hasRun = prose(
     boundedSlice(
-      section(source('src/shared/review-bot-state.md'), '### What each state permits'),
+      section(reviewBotStateObservation(), '### What each state permits'),
       '- **has run**',
       '\n- **running**',
     ),
@@ -7950,7 +8120,7 @@ test('the stale-verdict state is reported with its evidence and the gate allows 
 });
 
 test('reviewer state resolves several matching checks and pr-status-read keeps the latest run', () => {
-  const precedence = prose(section(source('src/shared/review-bot-state.md'), '### Precedence'));
+  const precedence = prose(section(reviewBotStateObservation(), '### Precedence'));
   assert.match(
     precedence,
     near('more than one matching entry', 'any match with `status: PENDING` means running', 60),
@@ -12066,9 +12236,7 @@ test('a review body reaches iterate as identified free text, never as direction'
 
   // And the gate's own side of the same contract: the exemption's grounds may no longer rest on
   // "before this run has observed any reviewer", which a Phase-3 body-only delegation falsifies.
-  const contract = prose(
-    section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## '),
-  );
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   assert.doesNotMatch(
     contract,
     /and the exemption is correct there precisely because/i,
@@ -12091,7 +12259,8 @@ test('a review body reaches iterate as identified free text, never as direction'
 test('the sentences reviews make false are corrected rather than left standing', () => {
   const gate = source('src/tools/merge-gate.md');
   const configuredReviewer = configuredReviewerRoute();
-  const shared = source('src/shared/review-bot-state.md');
+  // Both halves of the split contract: the eager core and its deferred observation remainder.
+  const shared = `${source('src/shared/review-bot-state.md')}\n${reviewBotStateObservation()}`;
   const prComments = source('src/shared/pr-review-comments.md');
 
   // Each of these was true only while no workflow read a review. Left standing they contradict the
@@ -12972,7 +13141,9 @@ test('the no-check-list waiver ends the run three ways and expires with the head
 // confirmation never promises the operator a link it cannot give.
 test('a thread item records its inspection URL where the gate still has it', () => {
   const gate = source('src/tools/merge-gate.md');
-  const delegation = prose(section(gate, '## Delegation contract', '\n## '));
+  const delegation = prose(
+    section(mergeGateDelegationContract(), '## Delegation contract', '\n## '),
+  );
   const phase3 = prose(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
   const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
   const confirmation = prose(configuredReviewerSection('## The set-aside confirmation'));
@@ -13542,7 +13713,7 @@ test('the user guide describes the confirmation and states no fixed count of way
 // manifest sit above it, and a body carrying the delimiter is refused rather than neutralised.
 test('the gate delimits caller-supplied item text from the control lines it announces', () => {
   const gate = source('src/tools/merge-gate.md');
-  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   const DELIMITER = '--- caller-supplied item text follows ---';
 
   assert.ok(contract.includes(DELIMITER), 'the contract must name one literal body delimiter');
@@ -13592,7 +13763,7 @@ test('the gate delimits caller-supplied item text from the control lines it anno
 
   // Both halves of the case list, so a later edit cannot quietly drop the second one and leave the
   // refusal reading as if it covered every control line too.
-  const cases = prose(gate);
+  const cases = prose(mergeGateDelegationContract());
   assert.match(
     cases,
     /review body containing the delegation delimiter:\s*refused/i,
@@ -13688,7 +13859,7 @@ test('iterate splits the delegation message at the delimiter before it parses a 
 test('the item framing below the delimiter is a minted token no item text can forge', () => {
   const gate = source('src/tools/merge-gate.md');
   const iterate = source('src/tools/iterate.md');
-  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   // The minting order, the absence-check scope and the token rationale live in the lazily loaded
   // fragment: the helper performs them, so the always-loaded contract keeps only what the receiver
   // relies on and points there.
@@ -13882,7 +14053,7 @@ test('the item framing below the delimiter is a minted token no item text can fo
     'an item containing a boundary-token line must still be delivered whole',
   );
   assert.match(
-    prose(gate),
+    prose(mergeGateDelegationContract()),
     /review body containing the item-framing syntax:\s*delegated unchanged and delivered whole/i,
     'the case list must name the framing-syntax body as delegated and delivered whole',
   );
@@ -13920,7 +14091,7 @@ const LANGUAGE_CONTEXT_LINE =
 
 test('the gate states the run state and language context above the delimiter in every delegation', () => {
   const gate = source('src/tools/merge-gate.md');
-  const raw = section(gate, '## Delegation contract', '\n## ');
+  const raw = section(mergeGateDelegationContract(), '## Delegation contract', '\n## ');
   const contract = prose(raw);
   const bullets = raw.split(/\n-\s/);
 
@@ -13980,9 +14151,13 @@ test('the gate states the run state and language context above the delimiter in 
 
 test('both gate delegation sites go through build, then validate, then an unchanged dispatch', () => {
   const gate = source('src/tools/merge-gate.md');
-  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   const building = prose(
-    section(gate, '**Building and dispatching a delegation.**', '**What `build` refuses'),
+    section(
+      mergeGateDelegationContract(),
+      '**Building and dispatching a delegation.**',
+      '**What `build` refuses',
+    ),
   );
 
   assert.match(
@@ -14076,7 +14251,11 @@ test('both gate delegation sites go through build, then validate, then an unchan
 test('a sender-side helper failure stops the gate before iterate and costs nothing else', () => {
   const gate = source('src/tools/merge-gate.md');
   const failure = prose(
-    section(gate, '**A sender-side failure stops the run', '\n## Returned outcome record'),
+    section(
+      mergeGateDelegationContract(),
+      '**A sender-side failure stops the run',
+      '\n## Returned outcome record',
+    ),
   );
 
   for (const [pattern, why] of [
@@ -14103,7 +14282,11 @@ test('a sender-side helper failure stops the gate before iterate and costs nothi
   // Refusal outcomes of a written build are recorded only once the delegation is dispatched, so a
   // sender stop records none; the nothing-to-delegate path has no validate step and records at once.
   const building = prose(
-    section(gate, '**Building and dispatching a delegation.**', '**What `build` refuses'),
+    section(
+      mergeGateDelegationContract(),
+      '**Building and dispatching a delegation.**',
+      '**What `build` refuses',
+    ),
   );
   assert.match(
     building,
@@ -14111,7 +14294,9 @@ test('a sender-side helper failure stops the gate before iterate and costs nothi
     'refusal outcomes must be recorded only after dispatch',
   );
   assert.match(
-    prose(section(gate, '**What `build` refuses', '**A sender-side failure')),
+    prose(
+      section(mergeGateDelegationContract(), '**What `build` refuses', '**A sender-side failure'),
+    ),
     near('`nothing-to-delegate`', 'no `validate` step', 300),
     'a nothing-to-delegate build must record its refusals at once',
   );
@@ -14122,7 +14307,9 @@ test('a sender-side helper failure stops the gate before iterate and costs nothi
   );
 
   // The refusals are outcomes, not failures, and each keeps its own consequence.
-  const refusals = prose(section(gate, '**What `build` refuses', '**A sender-side failure'));
+  const refusals = prose(
+    section(mergeGateDelegationContract(), '**What `build` refuses', '**A sender-side failure'),
+  );
   assert.match(refusals, near('carrying the delimiter', '`unassessed`', 200));
   assert.match(refusals, near('empty or whitespace-only body', 'gate-internal outcome', 200));
   assert.match(
@@ -14147,7 +14334,7 @@ test('a sender-side helper failure stops the gate before iterate and costs nothi
   assert.match(refusals, near('`missing-provenance`', 'recorded `unassessed`', 200));
   assert.match(refusals, near('`missing-provenance`', 'never synthesizes', 300));
   assert.match(
-    prose(section(gate, '## Delegation contract', '\n## ')),
+    prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## ')),
     near('never\\s+synthesize a link', '`missing-provenance`', 300),
     'the thread-URL absence rule must name the body-item provenance refusal beside it',
   );
@@ -14344,10 +14531,19 @@ test('iterate reads a whitespace-only body region as zero spans and nothing else
 });
 
 test('the canonical envelope examples load lazily and show all three kinds in order', () => {
+  // The examples pointer sits in the delegation contract, itself deferred from merge-gate's core,
+  // so neither the core nor the contract may carry the examples eagerly.
   const gate = source('src/tools/merge-gate.md');
+  const contractIncludes = collectIncludeNames(mergeGateDelegationContract());
   assert.ok(
-    collectIncludeNames(gate).lazy.has('delegation-envelope-examples'),
-    'merge-gate must point to the examples lazily',
+    contractIncludes.lazy.has('delegation-envelope-examples'),
+    'the merge-gate delegation contract must point to the examples lazily',
+  );
+  assert.equal(
+    contractIncludes.eager.has('delegation-envelope-examples') ||
+      collectIncludeNames(gate).eager.has('delegation-envelope-examples'),
+    false,
+    'the examples must never be inlined into merge-gate or its delegation contract',
   );
   const examples = source('src/shared/delegation-envelope-examples.md');
   assert.match(prose(examples), /illustrative/i, 'the example values must be marked illustrative');
@@ -14615,9 +14811,10 @@ test('the gate consumes the iterate return only through identifiers it recorded 
 });
 
 test('the Phase 3 assessment record is written from the validated return and two gate-internal writers', () => {
-  const gate = source('src/tools/merge-gate.md');
+  // The run-wide receiver rules moved with the delegation contract out of merge-gate's core.
+  const gate = mergeGateDelegationContract();
   const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
-  const runWideRecord = returnedRecord(gate, 'merge-gate core');
+  const runWideRecord = returnedRecord(gate, 'merge-gate delegation contract');
 
   assert.match(
     record,
@@ -14652,10 +14849,11 @@ test('the Phase 3 assessment record is written from the validated return and two
 });
 
 test('no side of the iterate channel still claims a per-item ABORT', () => {
-  const gate = source('src/tools/merge-gate.md');
+  // The run-wide receiver rules moved with the delegation contract out of merge-gate's core.
+  const gate = mergeGateDelegationContract();
   const iterate = source('src/tools/iterate.md');
 
-  for (const text of [gate, configuredReviewerRoute()]) {
+  for (const text of [source('src/tools/merge-gate.md'), gate, configuredReviewerRoute()]) {
     assert.doesNotMatch(
       prose(text),
       /On `ABORT` for an item/i,
@@ -14757,9 +14955,10 @@ test('the completion protocol resumes a keyword-less sub-agent once before retry
 // shrink the task, which a run bound to a fixed `Item filter` cannot do, so the gate allows one
 // plain resume of the same run and otherwise reads the return as a whole-run ABORT.
 test('merge-gate resumes a keyword-less iterate return once and never retries it', () => {
-  const gate = source('src/tools/merge-gate.md');
+  // The run-wide receiver rules moved with the delegation contract out of merge-gate's core.
+  const gate = mergeGateDelegationContract();
   returnedRecord(gate, 'merge-gate');
-  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+  const paragraph = section(mergeGateDelegationContract(), '## Returned outcome record', '\n## ')
     .split(/\n\s*\n/)
     .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
   assert.ok(
@@ -14818,7 +15017,7 @@ test('merge-gate resumes a keyword-less iterate return once and never retries it
 // only the resumed turn's final return and nothing in the interim text counts.
 test('merge-gate reads outcomes only from the resumed final return, never the interim text', () => {
   const gate = source('src/tools/merge-gate.md');
-  const paragraph = section(gate, '## Returned outcome record', '\n## ')
+  const paragraph = section(mergeGateDelegationContract(), '## Returned outcome record', '\n## ')
     .split(/\n\s*\n/)
     .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
   assert.ok(
@@ -15064,7 +15263,7 @@ test('both ends record the identifier a thread item travels under beside its thr
 
 test('the gate mints its item identifier per message, to the token concrete requirement', () => {
   const gate = source('src/tools/merge-gate.md');
-  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
 
   // The same concrete numbers the boundary token carries. "Comparable to" was unmeasurable, and an
   // unmeasurable requirement is one no reader and no test can check.
@@ -15189,7 +15388,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
 test('the return is declared in its own section and adds no seventh control line', () => {
   const gate = source('src/tools/merge-gate.md');
   const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
-  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
 
   // The six control lines are counted by the delimiter test above. A return announced as a seventh
   // one would move a boundary that test guards, so the return gets a section instead.
@@ -15199,7 +15398,7 @@ test('the return is declared in its own section and adds no seventh control line
     near('not', 'seventh control line', 200),
     'the return must state that it is not a seventh control line',
   );
-  ordered(gate, '## Delegation contract', '## Returned outcome record');
+  ordered(mergeGateDelegationContract(), '## Delegation contract', '## Returned outcome record');
 
   // The sibling contract in the shared fragment: one classification set behind the other, and the
   // "one item per supplied ID" requirement stated once on each channel rather than conflated.
@@ -15240,7 +15439,8 @@ test('the return is declared in its own section and adds no seventh control line
 });
 
 test('no contract still carries the four retired claims about reviews and surfaces', () => {
-  const state = source('src/shared/review-bot-state.md');
+  // Both halves of the split contract: the eager core and its deferred observation remainder.
+  const state = `${source('src/shared/review-bot-state.md')}\n${reviewBotStateObservation()}`;
   const integration = source('src/shared/pr-review-integration.md');
   const deliver = source('docs/user-guide/tools-deliver.md');
 
@@ -15282,7 +15482,7 @@ test('every site stating the pending discriminator is true on both providers', (
   // to say that the helper normalizes the zero instant, and each names the portable `PENDING`
   // cross-check both providers emit.
   const sites = [
-    ['src/shared/review-bot-state.md', /A review with no `submittedAt` is a pending/],
+    ['src/shared/review-bot-state-observation.md', /A review with no `submittedAt` is a pending/],
     ['src/shared/pr-review-comments.md', /A review with no submission time is a pending/],
     ['src/shared/merge-gate-configured-reviewer.md', /A pending review the caller owns/],
     ['docs/user-guide/remote-tracker.md', /A review with no submission time is a pending draft/],
