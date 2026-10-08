@@ -1122,6 +1122,105 @@ test('setup routes only the empty, profile, express, guided, and hidden invocati
   );
 });
 
+// Invariant: each setup lazy pointer fires at the decision point that owns its text, and that
+// decision is made from the always-loaded core. A pointer whose `when:` names no decision point, or
+// one that sits in a step the run skips, stops loading its block instead of failing loudly, and the
+// build does not check the wording. Everything Express or every mode needs stays in the core: the
+// hidden-mode forced values, the base-branch rule, the `Advanced` question with its No branch, the
+// `mergeGate.bots` collapse with its `Bot conflict` question, and Step 6 item 7.
+test('every setup lazy pointer names the decision point that loads it', () => {
+  const setup = source('src/tools/setup.md');
+  const pointerIn = (slice, fragment) =>
+    [...slice.matchAll(LAZY_INCLUDE_RE)].find((match) => match[1].trim() === fragment)?.[2]?.trim();
+
+  const pinned = [
+    {
+      fragment: 'setup-hidden-mode',
+      step: boundedSlice(setup, '### Step 1: .gitignore entry', '### Step 2:'),
+      trigger: /(?=[\s\S]*`hidden`)(?=[\s\S]*Step 1)/,
+      decision: 'the visibility resolved to hidden, reaching Step 1',
+    },
+    {
+      fragment: 'setup-guided-core-switches',
+      step: boundedSlice(setup, '### Step 4: Core switches', '### Step 5:'),
+      trigger: /(?=[\s\S]*Guided)(?=[\s\S]*Step 4)/,
+      decision: 'Step 3 entering Guided mode, reaching Step 4',
+    },
+    {
+      fragment: 'setup-advanced-settings',
+      step: boundedSlice(setup, '### Step 5: Advanced settings', '### Step 6:'),
+      trigger: /`Advanced`[\s\S]*`Yes`/,
+      decision: 'the Step 5 Advanced question answered Yes',
+    },
+    {
+      fragment: 'setup-rename-probe',
+      step: boundedSlice(setup, '### Step 7: Session rename capability', '### Step 8:'),
+      trigger: /`Rename path`[\s\S]*`Yes`/,
+      decision: 'the Step 7 Rename path question answered Yes',
+    },
+  ];
+  for (const { fragment, step, trigger, decision } of pinned) {
+    const when = pointerIn(step, fragment);
+    assert.ok(when, `setup must keep its lazy-include pointer for ${fragment} in its step`);
+    assert.match(when, trigger, `the ${fragment} pointer must name ${decision}; got: ${when}`);
+    // Only setup loads these, and never eagerly: an eager copy would put the text back in a core.
+    for (const path of readdirSync(new URL('src/', repositoryRoot), { recursive: true })) {
+      if (!path.endsWith('.md') || path === 'tools/setup.md') continue;
+      assert.doesNotMatch(source(`src/${path}`), new RegExp(`\\n${fragment}\\n`), path);
+    }
+    assert.doesNotMatch(setup, new RegExp(`\`\`\`include\\n${fragment}\\n`));
+  }
+
+  // The answer-gated pointers follow the question they wait for.
+  ordered(setup, 'header: Advanced', 'For "No": all advanced keys keep', 'setup-advanced-settings');
+  ordered(setup, 'header: Rename path', 'For "No", note that setup skips', 'setup-rename-probe');
+
+  // Express and every mode still read these from the core.
+  const step4 = boundedSlice(setup, '### Step 4: Core switches', '```lazy-include');
+  assert.match(step4, /forced \(`delivery\.prReview = off`, `tracker\.mode = local`\)/);
+  assert.match(step4, /Derive the proposal from `git remote` before asking/);
+  // The rule stays in the core, but the question keeps its place after Completion.
+  assert.match(prose(step4), /after the Completion question/);
+  ordered(
+    source('src/shared/setup-guided-core-switches.md'),
+    'header: Completion',
+    '**Base branch.** Ask it here',
+    '**PR review.**',
+  );
+  const collapse = boundedSlice(
+    setup,
+    '#### Collapsing two `mergeGate.bots` spellings of one reviewer',
+    '### Step 6:',
+  );
+  assert.match(collapse, /on the Express path as well as the guided one/);
+  assert.ok(
+    askContracts(collapse, 'setup').some((ask) => ask.header === 'Bot conflict'),
+    'the Bot conflict question must stay in the setup core',
+  );
+  assert.match(setup, /7\. \*\*Offer a `CLAUDE\.md` that imports `AGENTS\.md`\.\*\*/);
+  // Step 6 item 1 cites the collapse section that stays, never the deferred block 9.
+  const item1 = prose(boundedSlice(setup, '### Step 6: Merge and write', '\n2. '));
+  assert.match(
+    item1,
+    /as described under "Collapsing two `mergeGate\.bots` spellings of one reviewer"/,
+  );
+  assert.doesNotMatch(item1, /block 9/);
+  for (const fragment of [
+    'setup-guided-core-switches',
+    'setup-advanced-settings',
+    'setup-rename-probe',
+    'setup-hidden-mode',
+  ]) {
+    const text = source(`src/shared/${fragment}.md`);
+    assert.doesNotMatch(
+      text,
+      /header: Bot conflict|^#{2,4} Collapsing two `mergeGate\.bots` spellings/m,
+      fragment,
+    );
+    assert.doesNotMatch(text, /Offer a `CLAUDE\.md` that imports/, fragment);
+  }
+});
+
 // Invariant: Profile asks its two questions before any other setup handling and never guesses an
 // answer in a non-interactive run.
 test('Profile setup asks Chat then exactly three topology choices before later setup handling', () => {
@@ -1332,10 +1431,12 @@ function sentPayloadKeys(text, label) {
 test('setup exposes the field-pilot opt-in only through Guided block 10 and its schema row', () => {
   const setup = source('src/tools/setup.md');
   const schema = boundedSlice(setup, '## Config schema', '### Safe defaults');
+  // The block list sits behind the `Advanced` answer in `setup-advanced-settings`.
+  const advancedSettings = source('src/shared/setup-advanced-settings.md');
   const advanced = boundedSlice(
-    setup,
-    '### Step 5: Advanced settings',
-    '#### Block 9: the merge gate',
+    advancedSettings,
+    '## Guided advanced settings',
+    '### Block 9: the merge gate',
   );
 
   const row = bullets(schema).filter((line) => line.includes('**`executionProfiles`**'));
@@ -1357,9 +1458,24 @@ test('setup exposes the field-pilot opt-in only through Guided block 10 and its 
   assert.deepEqual([...pointers.keys()], ['setup-execution-profiles']);
   assert.match(pointers.get('setup-execution-profiles'), /advanced settings and block 10/);
 
-  // Outside the schema row and block 10 the setup core names neither the key nor the fragment.
-  const rest = setup.replace(schema, '').replace(advanced, '');
-  assert.doesNotMatch(rest, /executionProfiles|setup-execution-profiles/);
+  // Outside the schema row and block 10 neither the setup core nor the rest of its advanced
+  // settings names the key or the fragment.
+  assert.doesNotMatch(setup.replace(schema, ''), /executionProfiles|setup-execution-profiles/);
+  assert.doesNotMatch(
+    advancedSettings.replace(advanced, ''),
+    /executionProfiles|setup-execution-profiles/,
+  );
+  for (const fragment of [
+    'setup-guided-core-switches',
+    'setup-hidden-mode',
+    'setup-rename-probe',
+  ]) {
+    assert.doesNotMatch(
+      source(`src/shared/${fragment}.md`),
+      /executionProfiles|setup-execution-profiles/,
+      `${fragment} must not expose the Guided pilot block`,
+    );
+  }
   for (const file of readdirSync(new URL('src/tools/', repositoryRoot))) {
     if (file === 'setup.md') continue;
     assert.doesNotMatch(
@@ -3139,7 +3255,8 @@ test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () 
 
 test('the tracker config keys document three modes in source, setup, and user guide', () => {
   const tracker = source('src/shared/issue-tracker.md');
-  const setup = source('src/tools/setup.md');
+  // The Guided tracker interview lives in setup's `setup-guided-core-switches` fragment.
+  const setup = source('src/shared/setup-guided-core-switches.md');
   const docs = source('docs/user-guide/configuration.md');
 
   // Schema and defaults of the two new keys live in the tracker fragment. The JSON
@@ -4918,25 +5035,79 @@ test('a failed delivery is surfaced as an assigned issue that closes itself', ()
   );
 });
 
-test('apply-issues carries the worktree lifecycle contract instead of referring to it', () => {
+// Invariant: apply-issues carries the worktree lifecycle contract itself, as a direct lazy pointer,
+// never as a reference by analogy. The defect this pins: Phase 4 once pointed at apply-review's
+// copy, so an agent following apply-issues alone never learned to write a record — and cleanup,
+// whose only ownership proof is that record, could then never remove the worktree it had created.
+// The fragment is deferred, so the pointer has to fire *before* any worktree is created: a pointer
+// that fires later, or names only one of the two worktree kinds Phase 4 creates, leaves a worktree
+// without its record. The sentences stating *when* a record is written or transitioned stay in the
+// always-loaded core, so they are pinned against the source itself.
+test('apply-issues loads the worktree lifecycle contract directly instead of referring to it', () => {
   const applyIssues = source('src/tools/apply-issues.md');
 
-  // The defect this pins: Phase 4 pointed at apply-review's copy by analogy, so an agent
-  // following apply-issues alone never learned to write a record — and cleanup, whose only
-  // ownership proof is that record, could then never remove the worktree it had created. The
-  // eager include fence is what makes the contract embedded rather than referenced.
-  assert.match(applyIssues, /```include\nworktree-lifecycle\n```/);
+  const { eager, lazy } = collectIncludeNames(applyIssues);
+  assert.ok(
+    lazy.has('worktree-lifecycle'),
+    'apply-issues must carry a direct lazy pointer to worktree-lifecycle',
+  );
+  assert.equal(
+    eager.has('worktree-lifecycle'),
+    false,
+    'apply-issues must defer worktree-lifecycle, not inline it',
+  );
+
+  const pointers = [...applyIssues.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'worktree-lifecycle',
+  );
+  assert.equal(pointers.length, 1, 'apply-issues must point at worktree-lifecycle exactly once');
+  const [pointer] = pointers;
+  const when = (pointer[2] ?? '').trim();
+  // Pinned by trigger tokens, not the whole clause: the phase, the creation of an Effective
+  // Flow-owned worktree, and both worktree kinds Phase 4 creates. Dropping either kind would leave
+  // that worktree's creation with no documented moment to load the record contract.
+  assert.match(
+    when,
+    /(?=[\s\S]*Phase 4)(?=[\s\S]*\bcreat[\s\S]*Effective Flow-owned worktree)(?=[\s\S]*delivery branch)(?=[\s\S]*target-PR checkout)/,
+    `the worktree-lifecycle pointer must name its decision point (Phase 4 creating an Effective ` +
+      `Flow-owned worktree, for a delivery branch or a target-PR checkout); got: ${when}`,
+  );
+
+  // The pointer must sit inside Phase 4 and fire before either path that creates a worktree.
+  const phase4Heading = '### Phase 4: Routing & delegation';
+  const phase4Start = applyIssues.indexOf(phase4Heading);
+  assert.notEqual(phase4Start, -1, `missing section heading: ${phase4Heading}`);
+  const phase4End = applyIssues.indexOf('\n### ', phase4Start + phase4Heading.length);
+  assert.notEqual(phase4End, -1, 'Phase 4 must be followed by another section');
+  assert.ok(
+    pointer.index > phase4Start && pointer.index < phase4End,
+    'the worktree-lifecycle pointer must sit inside Phase 4',
+  );
+  for (const creation of ['Fetch the head branch of the target PR', '**Sufficient issues']) {
+    const at = applyIssues.indexOf(creation, phase4Start);
+    assert.notEqual(at, -1, `missing Phase 4 marker: ${creation}`);
+    assert.ok(
+      pointer.index < at,
+      `the worktree-lifecycle pointer must fire before "${creation}" creates a worktree`,
+    );
+  }
+
+  const flatIssues = flat(applyIssues);
+  // Reading the deferred fragment is mandatory, stated in the core where no skipped pointer hides it.
+  assert.match(
+    flatIssues,
+    /Before any such worktree is created, reading that fragment is mandatory, not a judgement call/,
+  );
 
   // Both ends of the lifecycle have to be instructed, not just the format.
   assert.match(
-    flat(applyIssues),
+    flatIssues,
     /Write the record immediately after the `effective-flow-created` receipt is verified/,
   );
   assert.match(applyIssues, /transition its lifecycle record from `active` to `cleanup-ready`/);
   // Every exit from the phase ends in a status, so no record is stranded at `active`.
   // Post-delegation failures count: a rejected push or a failed PR creation must also land.
   // Matched on flattened prose so a reflow by the formatter cannot break these.
-  const flatIssues = flat(applyIssues);
   assert.match(
     flatIssues,
     /a failed delegation, a rejected push and a failed pull-request creation all set `failed`/,
@@ -4946,13 +5117,17 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
   // by the status-set assertion above.
   assert.match(flatIssues, /transition its lifecycle record to `failed` with the exact reason/);
 
-  // The fragment must actually resolve, so the rendered tool carries the record path.
-  const rendered = resolveEagerIncludes(applyIssues, {
-    context: 'tools/apply-issues.md',
-    readFragment: (name) => source(`src/shared/${name}.md`),
-  });
-  assert.match(rendered, /\.effective-flow\/worktree-runs\/<RECORD_ID>\.json/);
-  assertNoUnresolvedEagerIncludes(rendered, 'tools/apply-issues.md');
+  // The fence renders as a load pointer that names the fragment file and keeps its trigger, and
+  // the fragment it loads exists and carries the record path.
+  const { body: rendered } = resolveLazyIncludes(applyIssues, { context: 'tools/apply-issues.md' });
+  assert.match(
+    rendered,
+    /\*\*Load on demand:\*\* Read `shared\/worktree-lifecycle\.md`, when Phase 4 is about to create/,
+  );
+  assert.match(
+    source('src/shared/worktree-lifecycle.md'),
+    /\.effective-flow\/worktree-runs\/<RECORD_ID>\.json/,
+  );
 });
 
 // The two pull-request markers `iterate` and the outbound publication write.
@@ -6647,12 +6822,13 @@ test("the merge gate's own Configuration table carries every key with its defaul
 });
 
 test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys with their defaults', () => {
-  const setup = source('src/tools/setup.md');
+  // Block 9 and block 5 live in setup's `setup-advanced-settings` fragment.
+  const setup = source('src/shared/setup-advanced-settings.md');
 
   // The block-9 wizard table pairs each dotted key with its default. Sliced from its own header
   // row inclusively, so the Default column can be located by name rather than by position.
   const tableStart = setup.indexOf('| Key                              | Values');
-  assert.notEqual(tableStart, -1, 'missing the block-9 configuration table in setup.md');
+  assert.notEqual(tableStart, -1, 'missing the block-9 configuration table in setup');
   const table = setup.slice(tableStart, setup.indexOf('\n\n', tableStart));
   for (const [key, value] of [
     ['mergeGate.completion', '`ask`'],
@@ -7002,7 +7178,10 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
   // The wizard half, bound to the `.check` bullet it belongs to. Its substance is the warning, not
   // the removed example: delete the warning and an asserted deletion still passes.
   const checkKey = flat(
-    section(source('src/tools/setup.md'), '#### Block 9: the merge gate (`mergeGate.*`)')
+    section(
+      source('src/shared/setup-advanced-settings.md'),
+      '### Block 9: the merge gate (`mergeGate.*`)',
+    )
       .split(/\n-\s+/)
       .find((entry) => entry.includes('`mergeGate.bots.<login>.check`:')) ?? '',
   );
@@ -9195,7 +9374,7 @@ test('merge-gate supports already-merged observer re-entry with terminal-only re
 test('external started-state configuration is tracker-verified and only setup persists suggestions', () => {
   const migration = prose(source('src/shared/config-migration-edge-cases.md'));
   const tracker = prose(source('src/shared/tracker-target.md'));
-  const setup = prose(source('src/tools/setup.md'));
+  const setup = prose(source('src/shared/setup-guided-core-switches.md'));
 
   // Mutation testing found the fail-closed clauses below deletable with the whole suite staying
   // green. They are what stops a run from writing a guessed workflow-state transition into a live
@@ -10100,7 +10279,17 @@ test('the in-run reasoning enumeration names the completion assessment as its fi
 test('external done-state configuration mirrors the started state and never aborts a merged run', () => {
   const migration = prose(source('src/shared/config-migration-edge-cases.md'));
   const tracker = prose(source('src/shared/tracker-target.md'));
-  const setup = prose(source('src/tools/setup.md'));
+  // The schema row stays in setup's core; the Guided interview and advanced block 7 live in its
+  // two Guided fragments.
+  const setup = prose(
+    [
+      'src/tools/setup.md',
+      'src/shared/setup-guided-core-switches.md',
+      'src/shared/setup-advanced-settings.md',
+    ]
+      .map(source)
+      .join('\n'),
+  );
   const guide = source('docs/user-guide/configuration.md');
 
   assert.match(
@@ -10280,11 +10469,11 @@ test('the completion offer adds no mergeGate.* key: all four key tables still ca
     prefixed,
   );
 
-  const setup = source('src/tools/setup.md');
+  const setup = source('src/shared/setup-advanced-settings.md');
   assert.deepEqual(
     keyRows(
       setup.slice(setup.indexOf('| Key                              | Values')),
-      'src/tools/setup.md',
+      'src/shared/setup-advanced-settings.md',
     ),
     prefixed,
   );
@@ -11590,7 +11779,10 @@ test('pr consumes the recorded base results and derives a diff base on both arms
 // detection changes only the proposal - the confirmed Step 6 write stays the only writer.
 test('setup proposes a base branch that can actually resolve in a remoteless repository', () => {
   const setup = source('src/tools/setup.md');
-  const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
+  // The base-branch rule stays in setup's Step 4 core, ahead of the Guided fragment's pointer.
+  const question = prose(
+    boundedSlice(setup, '**Base branch.**', '```lazy-include\nsetup-guided-core-switches'),
+  );
 
   assert.match(question, /Derive the proposal from `git remote` before asking/);
   assert.match(
@@ -11621,7 +11813,10 @@ test('setup proposes a base branch that can actually resolve in a remoteless rep
 // setup never guesses a ref from any other remote.
 test('setup keys the `origin/main` proposal on a remote actually named origin', () => {
   const setup = source('src/tools/setup.md');
-  const question = prose(boundedSlice(setup, '**Base branch.**', '**PR review.**'));
+  // The base-branch rule stays in setup's Step 4 core, ahead of the Guided fragment's pointer.
+  const question = prose(
+    boundedSlice(setup, '**Base branch.**', '```lazy-include\nsetup-guided-core-switches'),
+  );
 
   // "At least one configured remote" is not what makes `origin/main` resolvable. A repository
   // whose only remote is `upstream` was proposed a ref that can never resolve there, and
@@ -16976,7 +17171,7 @@ test('setup migrates a retired row by rewriting its original line, never re-enco
     boundedSlice(
       setup,
       '#### Rewriting a legacy `prReview.*` merge-gate block in place',
-      '\n#### Writing the hidden local configuration',
+      '\n#### Mode switches',
     ),
   );
   assert.match(
@@ -17040,7 +17235,7 @@ test('every table writer re-escapes a literal pipe, stated once in the table enc
     boundedSlice(
       setup,
       '#### Rewriting a legacy `prReview.*` merge-gate block in place',
-      '\n#### Writing the hidden local configuration',
+      '\n#### Mode switches',
     ),
   );
   assert.match(
@@ -17590,7 +17785,10 @@ test('goal-completion states every invariant of the completion contract', () => 
 // tracked-content stops.
 test('hidden setup writes the ignore entry into the common-dir info/exclude and never into .gitignore', () => {
   const setup = source('src/tools/setup.md');
-  const step1 = prose(boundedSlice(setup, '### Step 1 (hidden):', '### Step 2:'));
+  const hidden = source('src/shared/setup-hidden-mode.md');
+  const step1 = prose(
+    boundedSlice(hidden, '### Step 1 (hidden):', '### Writing the hidden local configuration'),
+  );
 
   assert.match(step1, /`\.gitignore` is never read for a decision and never written/);
   assert.match(
@@ -17630,7 +17828,7 @@ test('hidden setup writes the ignore entry into the common-dir info/exclude and 
   );
   assert.match(
     prose(section(setup, '### Step 1: .gitignore entry')),
-    /In hidden mode, skip this step: "Step 1 \(hidden\)" below replaces it/,
+    /In hidden mode, skip this step: "Step 1 \(hidden\)" of the fragment below replaces it/,
   );
 });
 
@@ -17659,7 +17857,10 @@ test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a 
     'hidden mode must skip the marker, migration and CLAUDE.md items and never edit either file',
   );
   const hiddenWrite = prose(
-    boundedSlice(setup, '#### Writing the hidden local configuration', '#### Mode switches'),
+    section(
+      source('src/shared/setup-hidden-mode.md'),
+      '### Writing the hidden local configuration',
+    ),
   );
   assert.match(hiddenWrite, /Write no tracked file\./);
   assert.match(hiddenWrite, /reported as shadowed or untouched, never edited or deleted/);
@@ -18303,13 +18504,16 @@ test('exactly the ten registered decision fences are scored, with their exempt l
       'src/tools/plan.md :: Revise the resolved plan file in place, start a new plan, or stop?',
       ['Abort'],
     ],
-    ['src/tools/setup.md :: Should the implementation run in a separate Git worktree?', []],
     [
-      'src/tools/setup.md :: Which completion action should Effective Flow use by default?',
+      'src/shared/setup-guided-core-switches.md :: Should the implementation run in a separate Git worktree?',
+      [],
+    ],
+    [
+      'src/shared/setup-guided-core-switches.md :: Which completion action should Effective Flow use by default?',
       ['Ask at run time'],
     ],
     [
-      'src/tools/setup.md :: Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?',
+      'src/shared/setup-guided-core-switches.md :: Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?',
       [],
     ],
   ]);

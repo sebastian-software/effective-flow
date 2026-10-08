@@ -793,12 +793,12 @@ test('the Claude Code section renames the calling session by sentinel and never 
 
 // Invariant: setup's Desktop probe is one id-free, non-retrying call and installs no hook path.
 test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
-  const setup = source('src/tools/setup.md');
-  const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
+  // The probe sits behind the Step 7 `Rename path` Yes answer in `setup-rename-probe`.
+  const probe = source('src/shared/setup-rename-probe.md');
   const desktop = section(
-    step,
-    '#### ChatGPT Desktop, Codex tab: the native capability needs no installation',
-    '\n#### ',
+    probe,
+    '### ChatGPT Desktop, Codex tab: the native capability needs no installation',
+    '\n### ',
   );
   const contract = prose(desktop);
 
@@ -820,18 +820,21 @@ test('setup No and a failed probe never persistently disable later rename attemp
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
   const contract = prose(step);
+  const probe = source('src/shared/setup-rename-probe.md');
   const desktopStep = prose(
     section(
-      step,
-      '#### ChatGPT Desktop, Codex tab: the native capability needs no installation',
-      '\n#### ',
+      probe,
+      '### ChatGPT Desktop, Codex tab: the native capability needs no installation',
+      '\n### ',
     ),
   );
   const claudeStep = prose(
-    section(step, '#### Claude Code: the native capability needs no installation', '\n#### '),
+    section(probe, '### Claude Code: the native capability needs no installation', '\n### '),
   );
   const askBlock = step.match(/```ask\n([\s\S]*?)\n```/);
   assert.ok(askBlock, 'missing the Step 7 capability-check question');
+  // The No branch and its call-local guarantee stay in the core; only the Yes branch is deferred.
+  assert.doesNotMatch(step, /\*\*detect the harness\*\* from the running environment/i);
 
   assert.match(
     prose(askBlock[1]),
@@ -924,14 +927,16 @@ test('active title surfaces contain no retired transport signatures outside prec
     'src/shared/session-title.md',
     'src/shared/session-rename.md',
     'src/tools/setup.md',
+    'src/shared/setup-rename-probe.md',
     'docs/user-guide/getting-started.md',
     'docs/user-guide/tools-setup.md',
     'docs/developer-guide/build-system.md',
     'docs/developer-guide/release-and-installation.md',
     'docs/adr/session-rename-butler.md',
   ];
+  // setup's removal guidance sits in its deferred Desktop probe; the core must name no command.
   const removalGuides = new Set([
-    'src/tools/setup.md',
+    'src/shared/setup-rename-probe.md',
     'docs/user-guide/getting-started.md',
     'docs/user-guide/tools-setup.md',
   ]);
@@ -989,7 +994,10 @@ test('active title surfaces contain no retired transport signatures outside prec
 // whole retired mechanism, because an instruction to set up a second session is exactly the
 // kind of paragraph a deletion this size leaves behind.
 test('setup probes the same native call the rename fragment defines', () => {
-  const setup = prose(source('src/tools/setup.md'));
+  // setup's probe is its deferred `setup-rename-probe` fragment, read together with the core.
+  const setup = prose(
+    `${source('src/tools/setup.md')}\n${source('src/shared/setup-rename-probe.md')}`,
+  );
   const fragment = prose(source('src/shared/session-rename.md'));
 
   assert.match(setup, /`set_session_title`/);
