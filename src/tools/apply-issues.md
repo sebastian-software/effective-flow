@@ -280,17 +280,19 @@ options:
 
 The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `{{SKILL:apply-review}}` (Phase 4 remote): branch off the base branch from the `delivery` config block, one PR via `{{SKILL:pr}}`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
 
-Every worktree this workflow creates carries the lifecycle contract below. It is embedded here
-rather than referenced through `{{SKILL:apply-review}}`: a reference by analogy is not a contract,
-and a worktree created without its record can never be removed by `{{SKILL:cleanup}}`, which
-requires that record as its only proof of ownership. Write the record immediately after the
-`effective-flow-created` receipt is verified, and transition it to `cleanup-ready` once the issue's
-work is durably secured on the pushed branch — for the default strategy that is after its pull
-request exists. A worktree reused from the harness or created by the user keeps its own ownership
-and never receives a record.
+Every worktree this workflow creates carries the `worktree-lifecycle` contract. It is loaded
+directly through the pointer below rather than referenced through `{{SKILL:apply-review}}`: a
+reference by analogy is not a contract, and a worktree created without its record can never be
+removed by `{{SKILL:cleanup}}`, which requires that record as its only proof of ownership. Before
+any such worktree is created, reading that fragment is mandatory, not a judgement call. Write the
+record immediately after the `effective-flow-created` receipt is verified, and transition it to
+`cleanup-ready` once the issue's work is durably secured on the pushed branch — for the default
+strategy that is after its pull request exists. A worktree reused from the harness or created by
+the user keeps its own ownership and never receives a record.
 
-```include
+```lazy-include
 worktree-lifecycle
+when: Phase 4 is about to create an Effective Flow-owned worktree, for an issue's delivery branch or for a target-PR checkout
 ```
 
 If an issue body or non-Effective Flow comment names a target PR (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), **"new commit on existing PR"** applies instead:
@@ -354,9 +356,9 @@ Issues with the same target PR run sequentially so that new commits are created 
    on the forge behind `origin`.
 5. **Release the worktree for cleanup:** if this issue ran in a worktree this workflow created,
    transition its lifecycle record from `active` to `cleanup-ready` under the record lock, per the
-   embedded contract. The work is durably secured at this point — the branch is pushed and its pull
-   request exists — so the worktree itself is no longer needed. Skipping this leaves a record stuck
-   at `active`, which `{{SKILL:cleanup}}` must then retain forever. Every path out of this phase
+   loaded `worktree-lifecycle` contract. The work is durably secured at this point — the branch is
+   pushed and its pull request exists — so the worktree itself is no longer needed. Skipping this
+   leaves a record stuck at `active`, which `{{SKILL:cleanup}}` must then retain forever. Every path out of this phase
    ends in a status: a failed delegation, a rejected push and a failed pull-request creation all set
    `failed`, a controlled stop sets `aborted`, and only a completed pull request sets
    `cleanup-ready`. A record must never be left at `active` once the issue is done with.
