@@ -321,7 +321,7 @@ Issues with the same target PR run sequentially so that new commits are created 
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
    - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
      The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FLOW}} apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
-     Pass the absolute root and execution-location receipt established by that delegated workflow;
+     Pass verified issue/target/repository identity, complete planning basis, absolute root and execution receipt;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one. Pass the literal line `Next steps: suppressed` on its own line as well:
      the delegated skill is user-invocable, but it returns its result here and this run is an
@@ -398,7 +398,7 @@ Report to the user:
 - container entries retained for post-merge reconciliation, if containers were processed
 
 Then delete the wisdom file and **return** that report plus the run's end state — the created pull
-requests and the skipped issue references — to `{{SKILL:apply}}`, which closes the run with its own
+requests/skipped issues, verified source association, complete basis and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own
 next-step block. Name no follow-up invocation of your own here.
 
 ## Rules

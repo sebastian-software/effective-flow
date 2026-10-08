@@ -1,0 +1,44 @@
+{
+  "name": "unreadable-associated-plan-fallback",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "apply",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "local-plan",
+      "path": "docs/plan/2026-10-08-removed.md"
+    },
+    "outcome": {
+      "completedWork": ["A implemented"],
+      "delivery": "pr-opened",
+      "pullRequest": 42
+    },
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": [
+      "The source worktree was removed. The retained path has no surviving artifact; no archive move is known."
+    ],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {}
+}

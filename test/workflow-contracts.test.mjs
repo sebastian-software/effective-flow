@@ -10344,7 +10344,7 @@ test('the merge-gate operation table gains issue-close and issue-comments-read, 
   );
 });
 
-test('linked-issue re-entry is mirrored by next steps and user documentation', () => {
+test('generic fallback retains observer re-entry only for actual unfinished reconciliation', () => {
   const nextSteps = source('src/shared/next-steps.md');
   const row = nextSteps
     .split('\n')
@@ -10359,7 +10359,15 @@ test('linked-issue re-entry is mirrored by next steps and user documentation', (
     source('docs/user-guide/tool-flow.md'),
     /merged but at least one linked issue is open or unobservable/,
   );
-  assert.match(source('docs/user-guide/tools-deliver.md'), /observer-only re-entry/);
+  assert.match(
+    prose(source('docs/user-guide/tools-deliver.md')),
+    /observer-only (?:post-merge )?re-entry/,
+  );
+  assert.match(flat(nextSteps), /observer-only[^.]*actual unfinished reconciliation/);
+  assert.match(
+    flat(source('src/tools/merge-gate.md')),
+    /Only for generic fallback[^.]*linked-issues-open row/,
+  );
   assert.match(
     source('docs/user-guide/troubleshooting.md'),
     /A linked issue remains open after merge/,
@@ -15818,7 +15826,7 @@ test('Phase 6 gives the complete setup route before the literal final next-step 
   ordered(
     phase6Raw,
     'final conditional summary item, one non-blocking configuration advisory',
-    '3. Emit the next-step block per `next-steps`',
+    '3. Emit the next-step block per the shared selection in `next-steps`',
   );
   for (const [claim, pattern] of [
     ['the explicit Guided setup invocation', /`\{\{SKILL:setup\}\} guided`/],
@@ -19728,4 +19736,59 @@ test('the user guide explains publication, continuation, unavailable discovery, 
     }
   }
   assert.deepEqual(gaps, []);
+});
+
+test('plan-first recommendation selection owns completed merge, apply, PR review and automatic delivery emission', () => {
+  const fragment = flat(source('src/shared/next-steps.md'));
+  ordered(
+    fragment,
+    'Check emission eligibility first',
+    'Read only that basis',
+    'Reconcile with the observed outcome, then choose',
+    'Fall back safely',
+    'Generic fallback edge table',
+  );
+  for (const [path, start, end] of [
+    ['src/tools/merge-gate.md', '### Phase 6', '\n## '],
+    ['src/tools/apply.md', '## Execution', '\n## Recommended'],
+    ['src/tools/review.md', '### Pull-request mode', '\n## '],
+  ]) {
+    const raw = source(path);
+    // Scope each assertion to its completion site rather than accepting a policy mention elsewhere.
+    const body = flat(
+      path.endsWith('merge-gate.md')
+        ? section(raw, start, end)
+        : path.endsWith('apply.md')
+          ? raw.slice(raw.indexOf('6. When control returns here'), raw.indexOf('\n## Rules'))
+          : raw.slice(raw.indexOf('6. Emit per the shared selection')),
+    );
+    assert.match(
+      body,
+      /shared selection in `next-steps`|per `next-steps`[^.]*shared selection/,
+      `${path} completion must invoke the shared selector`,
+    );
+    assert.match(
+      body,
+      /generic fallback/,
+      `${path} row selection must be explicitly fallback-only`,
+    );
+    assert.match(
+      body,
+      /source association/,
+      `${path} completion must retain the verified source handle`,
+    );
+    assert.match(body, /outcome/, `${path} completion must retain the observed result`);
+  }
+  const integrationRaw = source('src/shared/worktree-integration.md');
+  const integration = flat(
+    integrationRaw.slice(
+      integrationRaw.indexOf('Retain the verified source plan/issue association'),
+      integrationRaw.indexOf('6. **Restore checkout'),
+    ),
+  );
+  assert.match(integration, /source (?:association|handle|plan\/issue association)/);
+  assert.match(integration, /(?:observed|actual completion) outcome/);
+  assert.match(integration, /final (?:emitter|emitting workflow)/);
+  assert.match(integration, /shared `next-steps` selection even after automatic merge/);
+  assert.match(integration, /Suppressed delegations still emit no block/);
 });

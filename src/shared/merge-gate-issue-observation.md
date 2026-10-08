@@ -145,7 +145,12 @@ recorded outcome and reported guidance, never in a stop.
    target's operations are ever invoked against the other. Select the newest comment beginning with
    `<!-- effective-flow-plan-issues -->` or its one-generation legacy spelling
    `<!-- firmo-plan-issues -->`, exactly as `{{SKILL:plan-issue}}` selects it; every other comment
-   is ignored, so arbitrary maintainer prose never becomes an observation. The open points are the
+   is ignored, so arbitrary maintainer prose never becomes an observation. Retain the complete fresh
+   issue/comment results and canonical comment identity as ordinary source context for Phase 6's
+   read-only `next-steps` selection, including other comments for newer maintainer clarification;
+   reuse this read without changing the one-comment-read bound. That selection does not consume
+   the quoted open-points observation and changes no verdict, offer or write of this phase.
+   The open points are the
    top-level list items of that comment's section under the closed heading set the loaded
    "Post-merge observation" defines — `Open points` and `Offene Punkte`, matched case-insensitively
    at any heading level — and the section's stated empty state (`- No open points.` /

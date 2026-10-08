@@ -493,6 +493,12 @@ pr-review-integration
 when: the completion action created or reused a pull request and the automatic PR review may run
 ```
 
+Retain the verified source plan/issue association, any established archive move, complete planning
+basis already read and actual completion outcome (branch retained, PR opened, or merged) across
+cleanup and returning delegations as ordinary context, without a new envelope field. The final
+emitter uses these in the shared `next-steps` selection even after automatic merge; never rebuild a
+source path from a removed execution worktree. Suppressed delegations still emit no block.
+
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the recorded resolved local base branch, provided the working tree is clean.

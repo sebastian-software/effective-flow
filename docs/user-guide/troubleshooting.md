@@ -137,6 +137,14 @@ branch writes, or merge. That makes it the way to pose an offer a non-interactiv
 recommend. An issue that is already terminal by then is skipped entirely, so the re-entry retries
 only the reconciliation the previous run left open.
 
+A parent issue may intentionally remain open for later packages. That alone does not call for
+observer-only re-entry. The final recommendation compares the associated canonical planning record
+with the completed work: a stale record may lead to `/effective-flow plan-issue <known-issue>` to
+record completion and prepare the next package. Remaining approvals and dependencies still apply;
+the recommendation neither updates the issue nor authorizes the next package. If the associated
+context cannot be read or resolved, the report names the limitation and offers only a valid generic
+fallback, or no option. See [Tool flow](tool-flow.md).
+
 If the report says the issue is unobservable, fix the named external connection or read capability
 and use the same re-entry command. If it says the lifecycle receipt is missing, duplicated,
 malformed, or mismatched, the pull request still remains merged, but Effective Flow will not infer

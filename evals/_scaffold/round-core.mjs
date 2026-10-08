@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   buildPortableSkill,
   digestFile,
@@ -1359,10 +1359,37 @@ function recoverPublicationLocked({ resultsDir, publicationRoot }) {
   return { recovered: true };
 }
 
-export function publicationLockPath(suite, publicationRoot = suite.root) {
+// An explicit root is the caller-verified conventional main checkout of this same repository.
+// The owning workflow still guards runtime writes immediately before invoking publication/recovery.
+export function publicationLockPath(suite, publicationRoot = suite.root, publicationRuntimeRoot) {
+  let lockRoot = REPOSITORY_ROOT;
+  if (publicationRuntimeRoot !== undefined) {
+    if (
+      typeof publicationRuntimeRoot !== 'string' ||
+      !isAbsolute(publicationRuntimeRoot) ||
+      resolve(publicationRuntimeRoot) !== publicationRuntimeRoot ||
+      !existsSync(publicationRuntimeRoot) ||
+      realpathSync(publicationRuntimeRoot) !== publicationRuntimeRoot
+    )
+      throw new Error('publicationRuntimeRoot must be an absolute normalized physical main root');
+    const gitDirectory = resolve(publicationRuntimeRoot, '.git');
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: REPOSITORY_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    if (
+      !existsSync(gitDirectory) ||
+      !lstatSync(gitDirectory).isDirectory() ||
+      lstatSync(gitDirectory).isSymbolicLink() ||
+      gitDirectory !== realpathSync(resolve(REPOSITORY_ROOT, common))
+    )
+      throw new Error('publicationRuntimeRoot must own this repository common Git directory');
+    lockRoot = publicationRuntimeRoot;
+  }
   const key = digestOf(resolve(publicationRoot)).slice('sha256:'.length);
   return resolve(
-    REPOSITORY_ROOT,
+    lockRoot,
     '.effective-flow',
     suite.runtimeStateDir,
     'publication-locks',
@@ -1372,9 +1399,9 @@ export function publicationLockPath(suite, publicationRoot = suite.root) {
 
 export function recoverPublication(
   suite,
-  { resultsDir = resultsDirOf(suite), publicationRoot = suite.root } = {},
+  { resultsDir = resultsDirOf(suite), publicationRoot = suite.root, publicationRuntimeRoot } = {},
 ) {
-  const lockPath = publicationLockPath(suite, publicationRoot);
+  const lockPath = publicationLockPath(suite, publicationRoot, publicationRuntimeRoot);
   mkdirSync(publicationRoot, { recursive: true });
   return withLock(
     lockPath,
@@ -1447,8 +1474,10 @@ export function publishRound(
     base = suite.sandboxBase,
     resultsDir = resultsDirOf(suite),
     publicationRoot = suite.root,
+    publicationRuntimeRoot,
   },
 ) {
+  const publicationLock = publicationLockPath(suite, publicationRoot, publicationRuntimeRoot);
   const { manifest, roundRoot } = loadRound(suite, handle, { base });
   validateAllSealed(suite, manifest, roundRoot);
 
@@ -1473,7 +1502,6 @@ export function publishRound(
     throw error;
   }
 
-  const publicationLock = publicationLockPath(suite, publicationRoot);
   const publicationJournal = resolve(publicationRoot, '.results-publication.json');
   const canonicalResults = resolve(resultsDir);
   mkdirSync(publicationRoot, { recursive: true });

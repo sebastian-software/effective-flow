@@ -56,7 +56,17 @@ export function writeProject(suite, projectRoot, scenario, fixture, projectSetup
     `https://${fixture.repository.host}/${fixture.repository.owner}/${fixture.repository.repository}.git`,
   );
   git('add', '--all');
-  git('commit', '--quiet', '--message', 'chore: seed the eval sandbox checkout');
+  // Prevent inherited automatic maintenance from racing the suite's baseline capture.
+  git(
+    '-c',
+    'maintenance.auto=false',
+    '-c',
+    'gc.auto=0',
+    'commit',
+    '--quiet',
+    '--message',
+    'chore: seed the eval sandbox checkout',
+  );
 
   // Whatever else a suite's runs need from the checkout's history, applied after the shared seed and
   // never instead of it. `merge-gate` declares `null`: a gate run reads the forge through the stub

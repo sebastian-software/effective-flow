@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -51,6 +52,7 @@ import {
 import { findings as iterateEvaluatorFindings } from '../evals/iterate/_scaffold/evaluate.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
+import nextStepsSuite from '../evals/next-steps/suite.config.mjs';
 
 // Every suite the shared scaffold runs, with the outcome chain its evaluator exposes. The contract
 // checks below are the loader's and the parity rule's, so each suite is held to them.
@@ -58,6 +60,110 @@ const SUITES = [
   { suite, findings: evaluatorFindings },
   { suite: iterateSuite, findings: iterateEvaluatorFindings },
 ];
+
+test('publication runtime roots retain the legacy default and accept only the same physical Git main checkout', async () => {
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-publication-root-')));
+  try {
+    const main = resolve(temporary, 'main');
+    const linked = resolve(temporary, 'linked');
+    const foreign = resolve(temporary, 'foreign');
+    for (const root of [main, foreign]) {
+      mkdirSync(root);
+      const result = spawnSync('git', ['init', '--quiet', '--initial-branch=develop'], {
+        cwd: root,
+      });
+      assert.equal(result.status, 0, String(result.stderr));
+    }
+    const commit = spawnSync(
+      'git',
+      [
+        '-c',
+        'user.name=Eval',
+        '-c',
+        'user.email=eval@example.invalid',
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'maintenance.auto=false',
+        '-c',
+        'gc.auto=0',
+        'commit',
+        '--quiet',
+        '--allow-empty',
+        '-m',
+        'seed',
+      ],
+      { cwd: main },
+    );
+    assert.equal(commit.status, 0, String(commit.stderr));
+    const worktree = spawnSync('git', ['worktree', 'add', '--quiet', '--detach', linked], {
+      cwd: main,
+    });
+    assert.equal(worktree.status, 0, String(worktree.stderr));
+    cpSync(resolve(import.meta.dirname, '../evals/_scaffold'), resolve(linked, 'evals/_scaffold'), {
+      recursive: true,
+    });
+    const coordinator = await import(
+      pathToFileURL(resolve(linked, 'evals/_scaffold/round-core.mjs')).href
+    );
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    const legacy = coordinator.publicationLockPath(suite, publicationRoot);
+    assert.ok(
+      legacy.startsWith(`${linked}/.effective-flow/${suite.runtimeStateDir}/publication-locks/`),
+    );
+    const explicit = coordinator.publicationLockPath(suite, publicationRoot, main);
+    assert.equal(explicit, legacy.replace(`${linked}/`, `${main}/`));
+    assert.deepEqual(
+      coordinator.recoverPublication(suite, {
+        resultsDir,
+        publicationRoot,
+        publicationRuntimeRoot: main,
+      }),
+      { recovered: false },
+    );
+    assert.ok(
+      existsSync(resolve(main, '.effective-flow', suite.runtimeStateDir, 'publication-locks')),
+    );
+    assert.equal(existsSync(resolve(linked, '.effective-flow')), false);
+    const alias = resolve(temporary, 'alias');
+    symlinkSync(main, alias);
+    for (const invalid of [foreign, linked, 'relative', `${main}/../main`, alias]) {
+      assert.throws(
+        () => coordinator.publicationLockPath(suite, publicationRoot, invalid),
+        /publicationRuntimeRoot/,
+      );
+      assert.throws(
+        () =>
+          coordinator.recoverPublication(suite, {
+            resultsDir,
+            publicationRoot,
+            publicationRuntimeRoot: invalid,
+          }),
+        /publicationRuntimeRoot/,
+      );
+      assert.throws(
+        () =>
+          coordinator.publishRound(suite, {
+            handle: 'never-read',
+            publicationRoot,
+            publicationRuntimeRoot: invalid,
+          }),
+        /publicationRuntimeRoot/,
+      );
+    }
+    assert.equal(existsSync(resultsDir), false);
+    assert.equal(existsSync(resolve(publicationRoot, '.results-publication.json')), false);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test('the publication coordinator stays outside all three model instrument memberships', () => {
+  const coordinator = resolve(import.meta.dirname, '../evals/_scaffold/round-core.mjs');
+  for (const candidate of [suite, iterateSuite, nextStepsSuite])
+    assert.equal(candidate.instrumentFiles.includes(coordinator), false, candidate.name);
+});
 
 // The attested receipt profile of every sealed test slot. The keys the suite pins come from the pin
 // itself, so the fixture drives the real suite with a profile `prepare` and `publish` accept; the

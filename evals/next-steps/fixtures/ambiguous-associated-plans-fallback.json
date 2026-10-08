@@ -1,0 +1,48 @@
+{
+  "name": "ambiguous-associated-plans-fallback",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "review",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "ambiguous",
+      "paths": ["docs/plan/2026-10-08-packages.md", "docs/plan/2026-10-08-other.md"],
+      "resolution": null
+    },
+    "outcome": {
+      "completedWork": ["PR review completed"],
+      "delivery": "pr-opened",
+      "pullRequest": 42
+    },
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": [
+      "Two verified plan links were retained, but neither was selected as this run’s source. Both share the PR title."
+    ],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-08-packages.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package A then B.\n\n## Implementation sequence\n\n- [ ] A: implement parser.\n- [ ] B: document the parser; workflow Documentation. B depends only on A. B is approved and ready.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n",
+    "docs/plan/2026-10-08-other.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package A then B.\n\n## Implementation sequence\n\n- [ ] A: implement parser.\n- [ ] B: document the parser; workflow Documentation. B depends only on A. B is approved and ready.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}
