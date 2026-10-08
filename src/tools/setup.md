@@ -142,9 +142,9 @@ forced rows `plan.dir | .effective-flow/plan`, `concept.dir | .effective-flow/co
 user chose a valid non-empty prefix.
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
-base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
-so Express writes no row for them and an unconfigured project gets the gate's own defaults:
-`completion: ask`, every check green, no automatic reviewer expected — and
+base: a missing line means the source skill's default (see the `mergeGate` and `delivery` rows of
+the config schema), so Express writes no row for them and an unconfigured project gets the gate's
+own defaults: `completion: ask`, every check green, no automatic reviewer expected — and
 `conflictResolution: auto`, which authorizes a gate run to resolve a conflict between the head
 branch and its base and to push the resulting merge commit. That last one is the only default here
 that writes, and it is what changes behavior for a project upgrading from an earlier generation.
@@ -202,13 +202,18 @@ options:
 ```
 
 A `Hidden` answer (or the `hidden` invocation) switches this run to the **hidden arm**: Step 1
-becomes "Step 1 (hidden)" below, and Steps 2 to 8 apply their hidden-mode exceptions. A `Standard`
-answer while a hidden local file exists is the switch back to standard mode described under "Mode
-switches".
+becomes "Step 1 (hidden)" of `setup-hidden-mode`, and Steps 2 to 8 apply their hidden-mode
+exceptions. A `Standard` answer while a hidden local file exists is the switch back to standard
+mode described under "Mode switches".
 
 ### Step 1: .gitignore entry
 
-In hidden mode, skip this step: "Step 1 (hidden)" below replaces it.
+In hidden mode, skip this step: "Step 1 (hidden)" of the fragment below replaces it.
+
+```lazy-include
+setup-hidden-mode
+when: the visibility resolved to `hidden` — the `Hidden` answer or the `hidden` invocation — and the run reaches Step 1
+```
 
 Target state: the entire runtime directory `.effective-flow/` (excluding the `config.json` migration — the config now lives in the ADR; runtime files like `memory.json`, `cache.json`, `review/`, `.worktrees/`) is ignored. The single line achieves this:
 
@@ -234,37 +239,6 @@ There is **no** `!.effective-flow/config.json` exception pattern anymore: the Ef
    - If every `.effective-flow/` entry is missing, append the line `.effective-flow/`. Ensure a trailing newline before appending. If `.gitignore` is missing, create it with this single line.
 3. If the target state is already established: change nothing and report that briefly.
 4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The ADR and convention-marker creation continue independently, but no `.effective-flow/` runtime marker may be written.
-
-### Step 1 (hidden): `info/exclude` entry
-
-In hidden mode this replaces Step 1 above; `.gitignore` is never read for a decision and never
-written. Evaluate in this order and stop without any write at the first failed precondition:
-
-1. **Git only.** Resolve the common directory with
-   `git rev-parse --path-format=absolute --git-common-dir`, never a literal `.git/info/exclude`, so a
-   linked worktree, a `--separate-git-dir` checkout, or a submodule reaches the one file every
-   worktree reads. A non-Git directory, or a failing command, cannot be hidden: stop and explain.
-2. **No tracked runtime content.** `git ls-files -- .effective-flow/` must list nothing. `info/exclude`
-   cannot hide a tracked file, so any listed path stops the run with every path named; untracking
-   them is the user's decision.
-3. **Add the entry idempotently.** First check without following links (`test -L` before `test -d`
-   or `test -f`): `<common-dir>/info` must be a real directory, not a symlink, and `info/exclude`,
-   when present, a regular file, not a symlink, FIFO, device, or directory; both must physically
-   canonicalize inside the canonical common directory. Any violation stops the run with the path
-   named and nothing written. If `<common-dir>/info/exclude` already has a line that is exactly
-   `.effective-flow/`, change nothing. Otherwise create a missing `info/` with a plain `mkdir` and a
-   missing file exclusively (`O_CREAT|O_EXCL`), and append the single line `.effective-flow/` in one
-   `O_APPEND|O_NOFOLLOW` write, preceded by a line break only where the file's last line lacks one;
-   without a no-follow open, repeat the link check immediately before and after that one append.
-   Never rewrite, reorder, or remove an existing line, and never add a second entry.
-4. **Verify.** Run the non-verbose predicates `git check-ignore --no-index -- .effective-flow/config.json`
-   and `git check-ignore --no-index -- .effective-flow/project-setup.md`; both must exit `0`, and any
-   other exit blocks with the `-v` diagnostics only after the block. A tracked `.gitignore` negation
-   outranks `info/exclude`: report its line and stop rather than editing it.
-5. **Report the tracked leftovers, touch none.** If `.gitignore` still names `.effective-flow/`, for
-   example after an earlier standard setup, report that this tracked line still mentions Effective
-   Flow and that removing it is the user's decision. A tracked `AGENTS.md`/`CLAUDE.md` marker or
-   project setup ADR stays untouched as well and is reported as shadowed by the local file.
 
 ### Step 2: Determine the ADR location and read the existing config
 
@@ -362,8 +336,9 @@ options:
   plus – if a valid config exists – its existing values. Derive
   `language.project = en` per the base, introduce no new `language.chat` row, and retain valid
   existing language overrides, `language.chat` among them. Apply the
-  confirmed compatibility migrations described below — the language keys and the retired
-  `prReview.*` and `worktree.*` rows — when needed. Jump directly to Step 6
+  confirmed compatibility migrations when needed — the language keys under "Language configuration
+  and compatibility migration" above, and the retired `prReview.*` and `worktree.*` rows under
+  "Rewriting a legacy `prReview.*` merge-gate block in place" (Step 6). Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
@@ -376,53 +351,12 @@ options:
 
 ### Step 4: Core switches (guided path only)
 
-In hidden mode the **PR review** and **Tracker** questions below are not asked: their values are
+In hidden mode the **PR review** and **Tracker** questions are not asked: their values are
 forced (`delivery.prReview = off`, `tracker.mode = local`). State the forced values once instead.
 
-These core switches determine the everyday behavior. **Before** each question, provide a short,
-understandable explanation (what is it, why is it relevant, what does the choice mean) –
-without assuming prior knowledge of Effective Flow – and state whether and with which value the
-switch is currently set in the config (see Step 2); pre-select this value or the safe
-default, which on a scored question means naming it in that explanation while the options keep
-their order and labels. Explain technical terms in one sentence at first mention.
-
-**Worktree.** Explain: Effective Flow implements changes by default in a separate workspace
-with its own branch (a "worktree"), so that your current state stays untouched and the
-work is cleanly bundled; "No" works directly in your current checkout.
-
-```ask
-header: Worktree
-question: Should the implementation run in a separate Git worktree?
-type: scored
-options:
-  - label: Yes
-    description: worktree.enabled = true (default) — the implementation runs in a separate worktree with its own delivery branch
-  - label: No
-    description: worktree.enabled = false — in-place without a worktree; delivery branches are created in the main repo when needed
-```
-
-**Completion action.** Explain: how finished changes are brought in. `merge` brings them
-directly into the target branch, `pr` opens a pull request (review before integration), `branch`
-just leaves the branch; "ask at run time" decides anew each time.
-
-```ask
-header: Completion
-question: Which completion action should Effective Flow use by default?
-type: scored
-unscored: Ask at run time
-options:
-  - label: Merge
-    description: delivery.completion = merge (default) — merge the branch locally into the base branch, without a PR
-  - label: Pull request
-    description: delivery.completion = pr
-  - label: Branch only
-    description: delivery.completion = branch
-  - label: Ask at run time
-    description: delivery.completion = null — the action is asked per run
-```
-
-**Base branch.** Briefly explain the base branch (the branch that is delivered into) and ask for
-it as free text (`delivery.baseBranch`). Derive the proposal from `git remote` before asking
+**Base branch.** At its place in the Guided sequence, after the Completion question, briefly
+explain the base branch (the branch that is delivered into) and ask for it as free text
+(`delivery.baseBranch`). Derive the proposal from `git remote` before asking
 instead of offering `origin/main` unconditionally: with a remote named `origin`, propose
 `origin/main` — or the branch `origin/HEAD` names, where that ref names another; without one, no
 `origin/…` ref can ever resolve in this repository, so propose its current local branch, which
@@ -432,123 +366,10 @@ free text carries `upstream/main` just as well. Either way it
 stays a proposal — free text overrides it, and only the confirmed Step 6 write persists it. Ask
 for the switch-back target (`delivery.returnBranch`, default `auto`) only optionally.
 
-**PR review.** Explain: when a run creates a pull request, Effective Flow can post that run's
-review findings on it as comments. "Ask each time" decides per run, "Always" posts without asking,
-"Never" switches the automatic step off; an explicit `{{SKILL:review}} <PR>` stays available in
-every case.
-
-```ask
-header: PR review
-question: Should Effective Flow post its review findings on a pull request it created?
-options:
-  - label: Ask each time
-    description: delivery.prReview = ask (default) — a gated run asks once per delivery
-  - label: Always
-    description: delivery.prReview = always — post the findings without asking
-  - label: Never
-    description: delivery.prReview = off — no automatic posting; an explicit review of a PR is unaffected
+```lazy-include
+setup-guided-core-switches
+when: Step 3 entered Guided mode and the run reaches Step 4's core switches
 ```
-
-**Project and surface languages.** Explain: the project language is the fallback for every new
-human-readable artifact, while optional surface overrides let source prose, documentation,
-workflow artifacts, Forge communication, and Git history differ. A plan is entirely in the
-workflow language, including its status marker. `language.chat` is the one non-artifact surface:
-it fixes the language Effective Flow speaks to the user in — replies, questions, and completion
-reports — and, left unset, mirrors whatever language the user writes in. Only `de` and `en` are
-supported; German maps to `de-DE` typography and English to `en-US`.
-
-```ask
-header: Language
-question: Which default language should Effective Flow use for this project?
-options:
-  - label: English
-    description: language.project = en (default)
-  - label: German
-    description: language.project = de
-```
-
-Then offer each override in turn: `language.source`, `language.documentation.user`,
-`language.documentation.technical`, `language.workflow`, `language.forge`, `language.git`, and
-`language.chat`. For every artifact-surface override, offer **Inherit project language** first,
-then English and German; `language.chat` offers **Mirror the user's language (default)** first,
-then English and German, because an absent chat row mirrors instead of inheriting. Inherit and
-mirror are alike represented by an absent row, not `null`; removing an existing override is a
-normal before/after change that requires confirmation. Explain the exact target surface from the
-shared language table. In particular, a Conventional Commit PR title uses `language.git`, while the
-PR body and comments use `language.forge`.
-
-Before asking, detect compatibility input. If `language.workflow` is absent and a valid
-`plan.markerLanguage` exists, show the old value and explain that migration changes it from a
-marker-only language to the language of the complete plan/review artifact. Propose adding
-`language.workflow = <legacy value>` and removing `plan.markerLanguage`; do neither before the
-confirmed Step 6 write. If no `language.*` and no legacy key exist, use the existing-plan fallback
-only when plan prose, canonical fields, and marker all consistently identify one language;
-propose that as `language.workflow` and point to setup. Do not infer from a marker alone, and do
-not guess for mixed, contradictory, empty, or unclear corpora.
-
-**Tracker.** Explain: where issue work ends up – `local` as a Markdown report in the project
-(`.effective-flow/review/`), `remote` as issues on GitHub/Forgejo (useful for teamwork), or
-`external` as issues in a separate project-management tool the team already uses. Mention that the
-external option needs a connection that already exists on this machine (an MCP connection or an
-authenticated CLI) and that Effective Flow ships no product-specific adapter, so a run aborts
-rather than guessing when it cannot find exactly one usable connection. Pull requests always stay
-on the Git forge, whichever option is chosen.
-
-```ask
-header: Tracker
-question: Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?
-type: scored
-options:
-  - label: Local
-    description: tracker.mode = local (default) — Markdown report under .effective-flow/review/
-  - label: Remote
-    description: tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
-  - label: External tool
-    description: tracker.mode = external — issues live in the project-management tool named by tracker.externalTool
-```
-
-For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` lets the shipped remote helper classify exact `github.com` origins and hosts that match a configured Forgejo `tea` login. Any other host returns `AMBIGUOUS_HOST` instead of guessing; then capture `github` or `forgejo` as free text. Otherwise leave `auto`.
-
-For "External tool", ask the connection follow-ups and explain each before asking:
-
-1. `tracker.externalTool` – the short, stable identifier of the tool that holds the issues. It is
-   required for this mode, there is no list of supported tools, and Effective Flow derives no
-   capability from the name. Without a value the mode stays unusable, so ask again instead of
-   writing an empty entry.
-2. `tracker.externalToolHint` – optional free text that lets a run find the right connection at
-   run time: MCP server name, workspace, team or project key, the tool's identifier convention, and
-   the names of its states. Explain that a precise hint is what prevents an ambiguous-connection
-   abort when several candidates exist.
-3. Discover exactly one configured connection from those values and list its writable native
-   workflow states **fresh in the selected workspace/team/project context** before proposing
-   `tracker.externalStartedState`. Show every candidate's display name and stable ID, or exact
-   accepted token only when no ID exists. Validate an existing value by stable value, context,
-   normalized `started` category, writability, and non-terminal state. If it is valid, keep it. If it
-   is absent and exactly one candidate is normalized as `started`, propose that candidate's display
-   name and stable value. With zero or multiple candidates, an unavailable/ambiguous connection, or a
-   stale/read-only/terminal/cross-context configured value, propose no favorite and leave the value
-   `null`; report that issue-backed implementation will fail closed until setup can verify one.
-   Persist the suggestion only in the confirmed Step 6 write. Never infer a state from the tool name
-   or a familiar display name.
-4. `tracker.externalDoneState` – the terminal counterpart, resolved from the same fresh state list in
-   the same context. Explain what it is for: the merge gate's offered post-merge transition reads it,
-   and so does that gate's post-merge observation of an issue it finds already terminal, which needs
-   the value to tell a completed issue from a withdrawn one. It never closes anything by itself. Validate an existing value by stable value,
-   context, normalized done category, terminal flag, and writability. If it is valid, keep it. If it
-   is absent and exactly one writable, terminal candidate is normalized as a done category, propose
-   that candidate's display name and stable value. Terminal alone is not that filter: a tracker that
-   spells cancellation as a terminal state offers a writable, terminal candidate that means the
-   opposite of done. With zero or multiple candidates, an unavailable/ambiguous connection, or a
-   stale/read-only/non-terminal/cross-context configured value or one whose category is not done,
-   propose no favorite and leave the value
-   `null`; report that the post-merge transition will be offered as unavailable until setup can
-   verify one, which leaves the issue open rather than failing a run. Persist the suggestion only in
-   the confirmed Step 6 write. Never infer a state from the tool name or a familiar display name.
-
-`tracker.remoteToolOverride` stays a forge setting and is not asked for in this mode. Keep an
-already recorded
-`externalTool`/`externalToolHint`/`externalStartedState`/`externalDoneState` when the mode is `local`
-or `remote`: they document intent, are preserved unchanged, and are simply ignored for routing.
 
 ### Step 5: Advanced settings (optional gate, guided path only)
 
@@ -566,145 +387,19 @@ options:
 ```
 
 For "No": all advanced keys keep the safe default or the existing
-config value; continue to Step 6. For "Yes": ask for each key block by block, each
-with a short explanation, the valid values from the config schema above, and the current
-config value or default as the pre-selection:
-
-1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
-2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `language`: the project language and seven overrides already asked in Step 4 — carry over
-4. `plan` (skipped in hidden mode, whose directories are forced): `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
-   `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
-   canonicalized before they are written; reject values that resolve to the same directory or nest
-   one inside the other instead of writing them.
-5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`, `delivery.mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when the merge gate in block 9 merges it; with `squash` the pull-request title becomes the commit subject and therefore the release signal)
-6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
-8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
-9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block: see below.
-10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `{{SKILL:build}}`. Profile and Express never ask this block and preserve an existing value.
+config value; continue to Step 6.
 
 ```lazy-include
-setup-execution-profiles
-when: the user chose the advanced settings and block 10 (`executionProfiles`) is being asked
+setup-advanced-settings
+when: the Step 5 `Advanced` question was answered `Yes`
 ```
-
-Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
-`review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
-
-Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but a retired `prReview.*` row may still stand in an ADR, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
-
-Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that. In hidden mode, `delivery.branchPrefix` defaults to empty (branches then read `<skill>/<slug>`), and a value containing `effective-flow` in any letter case is rejected: ask again, or keep the empty default and report that.
-
-#### Block 9: the merge gate (`mergeGate.*`)
-
-Ask this block **separately** from the `delivery.prReview` question of Step 4 and say so, because
-this block was itself named `prReview.*` in an earlier generation and the two mean entirely
-different things:
-
-- **`delivery.prReview`** (Step 4) decides whether a run posts **its own review findings** onto a
-  pull request it just created. It keeps its name and is untouched by the rename.
-- **`mergeGate.*`** (this block) configures the tool that takes an **existing** pull request from
-  open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
-  configured automatic reviewers, refuses to implement or merge while a comment from an account
-  that is neither a bot nor the one it runs as is open, and finally merges. If the project still
-  carries these keys as `prReview.*`, show the recorded `prReview.*` values as the current ones and say
-  that Step 6 migrates the block.
-
-Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
-perfectly good answer.
-
-```ask
-when: the user chose the advanced settings and the merge gate block is being asked
-header: Merge gate
-question: When the merge gate has verified a pull request, may it merge, or should it only report?
-options:
-  - label: Ask each time
-    description: mergeGate.completion = ask (default) — a gated run asks once per pull request
-  - label: Merge
-    description: mergeGate.completion = merge — merge as soon as every precondition holds
-  - label: No merge
-    description: mergeGate.completion = report — the gate still repairs failing checks, answers bot threads, and resolves a conflict with the base by pushing one merge commit; it only never merges the pull request. mergeGate.conflictResolution = off is the switch for a run that makes no commit and no push at all
-```
-
-Then ask for the remaining keys, each with a short explanation, the valid values, and the current
-value or default as the pre-selection:
-
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-
-- `mergeGate.conflictResolution`: what a gate run does when the head branch conflicts with its base.
-  `auto` (the default) has the conflict resolved by the gate's dedicated worker, the result verified
-  independently, and one ordinary merge commit pushed — the branch moves forward instead of the run
-  ending at the conflict. `off` reports the conflict and makes no commit and no push, which is
-  exactly the outcome the gate produced on the branch before this key existed — it still provisions
-  and cleans up a local checkout. `ask` asks once **per conflicted round** in a gated run — once per
-  conflict, not once per run as `mergeGate.completion` does, because each round's conflict is a new
-  one — and behaves as `off` in a non-interactive delegated one. Say when asking that the default
-  **changes** behavior for
-  a project upgrading from an earlier generation, and that `off` restores the previous behavior
-  exactly. No earlier generation wrote a `prReview.conflictResolution` row; one that exists anyway is
-  retired like any other `prReview.<key>` row and carried over to this key.
-- `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
-  back to the checks the forge itself marks as required — useful for a project with a permanently
-  red optional check.
-- `mergeGate.checkWaitMinutes`, `mergeGate.botWaitMinutes`: how long a single wait for the checks or
-  for an automatic reviewer may take before the run reports instead of waiting longer.
-- `mergeGate.maxRounds`: how many repair rounds one run may spend in total before it ends with a
-  report instead of a merge.
-- `mergeGate.bots`: the logins of the automatic reviewers this project expects (e.g.
-  `greptileai[bot]`), as a comma list. Empty (the default) means no automatic reviewer is expected
-  and the bot round is skipped rather than blocking the merge forever. Either spelling of a bot
-  login works — `greptileai[bot]` as GitHub's UI shows it, or the bare `greptileai` — because the
-  gate resolves a configured login through "Matching a configured login", which tolerates the
-  trailing `[bot]` on either side for an account the forge reports as a bot. Listing both spellings
-  is therefore redundant rather than a
-  workaround, and the gate reports the collapse when it sees one — collapse such entries as described
-  below **before** asking the two follow-up questions.
-- `mergeGate.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
-  (e.g. `@greptileai`). Ask for it once per **reviewer** left after that collapse, never once per
-  configured login. A login containing brackets is a valid middle segment, because the table encoding
-  splits on `.` only. Say when asking that this should be a **distinctive mention** such as
-  `@greptileai`, not generic prose such as `please review`, because the literal string does two jobs.
-  It has to actually summon that reviewer — generic prose mentions nobody and the round then waits
-  for output no one requested. And the gate suppresses a duplicate trigger by comparing this exact
-  text, trimmed, against the comments its own account already left on the current head; in manual
-  mode that account is the operator's own, so a phrase the operator might type by hand reads as a
-  trigger already posted and the reviewer is waited for instead of summoned.
-- `mergeGate.bots.<login>.check`: free text, the commit-status context or check-run name that this
-  reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per **reviewer**
-  as well, directly after that reviewer's trigger text, and offer "not set" as the answer —
-  it is optional and unset by default. Explain what it buys: with a check context the gate and
-  `{{SKILL:iterate}}` can tell a reviewer that is **still running** from one that has **not started**,
-  so a running reviewer is waited for instead of triggered a second time. Without it both fall back
-  to comparing the reviewer's newest comment against the head commit, which cannot see a reviewer
-  that edits one sticky comment in place. Leave it unset only for a reviewer that publishes no check
-  context at all, and do not infer that from an emoji acknowledgment: Greptile acknowledges a trigger
-  with a reaction **and** publishes a `Greptile Review` check, so it is a reviewer that wants a
-  configured `.check` rather than the fallback. Say how to observe it: open a recent pull request the
-  reviewer has already reviewed and read its **checks list** – the reviewer's entry stands there
-  under exactly the name to configure here. When in doubt, configure it. The two mistakes are not
-  symmetric: a wrongly set context is named in the gate's own block and is corrected the moment it
-  blocks, while an omitted one leaves the reviewer on the fallback and can never be reported at all.
-
-`delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
-because it is a property of this project's delivery, not of the gate.
 
 #### Collapsing two `mergeGate.bots` spellings of one reviewer
 
 A project that lists both spellings of one bot login — the workaround before the gate matched them —
 carries two recorded entries for one reviewer. Resolve them through the gate's "Matching a configured
-login" rule **before** the two follow-up questions above, on the Express path as well as the guided
-one:
+login" rule **before** block 9's `.trigger` and `.check` follow-up questions (Guided advanced
+settings), on the Express path as well as the guided one:
 
 - **Collapse first, then ask.** Group the recorded logins into reviewers under that rule and ask
   `.trigger` and `.check` once per reviewer, except for a destination key whose retired sources
@@ -740,7 +435,7 @@ options:
 ### Step 6: Merge and write
 
 **Hidden mode** runs items 1 and 2 unchanged, with `visibility | hidden` and the forced values shown
-in the before/after list, replaces items 3 and 4 with "Writing the hidden local configuration" below,
+in the before/after list, replaces items 3 and 4 with "Writing the hidden local configuration" of `setup-hidden-mode`,
 and skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks nothing, and poses no
 `CLAUDE.md` fence. It never writes or edits `AGENTS.md` or `CLAUDE.md`.
 
@@ -752,8 +447,8 @@ selected profile overlay → explicit chat-language choice`; the last two overla
    `data.source.rows`, never re-encoded from `raw` — and never write the selected profile name or
    any equivalent key. A retired `prReview.*` or `worktree.*` row recorded in Step 2 is not an
    unknown key: rewrite it as described below before the before/after list is built. Two recorded
-   `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for
-   block 9.
+   `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described under
+   "Collapsing two `mergeGate.bots` spellings of one reviewer" (Step 5).
 2. This also applies to the safe defaults: a default value that would replace an already-present,
    differing config value is set only after explicit confirmation. Before writing, show a
    before/after list of **all** keys to be changed, whether from Profile-owned topology and chat
@@ -1155,29 +850,9 @@ This skill is the **only** writer of the configuration. Every other run that mee
 stops or reports under the configuration building block's retired-key rule and points here; it
 never resolves a value through that row and never rewrites the ADR itself.
 
-#### Writing the hidden local configuration
-
-1. Immediately before writing, re-read the local file freshly from `RUNTIME_STATE_ROOT`. If it
-   appeared, disappeared, or changed since Step 2, rebuild the target from the fresh values and
-   obtain a new confirmation; never write over a change this run has not shown.
-2. Apply "Runtime-state write safety" to the exact target
-   `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, then write it through a same-directory
-   temporary file plus rename, as Step 6 item 5 describes that primitive, and remove the temporary file on
-   any failure.
-3. Use the envelope of Step 6 item 4 in the language `language.documentation.technical` resolves to
-   (`# Effective Flow project setup`, `## Status` + `Active`, `## Context`, `## Configuration`,
-   `| Key | Value |`, or the German envelope), the same row encoding, and this context sentence in
-   that language: the file holds this checkout's hidden Effective Flow configuration, is ignored
-   through the Git common directory's `info/exclude`, and is never tracked. Preserve unknown rows of
-   an existing local file, but carry no seeded row that contradicts a forced value and no
-   `delivery.branchPrefix` containing `effective-flow`; name every such dropped row in the
-   before/after list.
-4. Write no tracked file. A tracked ADR, marker, or `.gitignore` line found during the run is
-   reported as shadowed or untouched, never edited or deleted.
-
 #### Mode switches
 
-- **Standard → hidden.** The hidden arm above is the whole switch: the local file is written and
+- **Standard → hidden.** The hidden arm (`setup-hidden-mode`) is the whole switch: the local file is written and
   wins from the next read on. The tracked project setup ADR, its marker, and the `.gitignore` line
   are left exactly as they are and reported once as shadowed; removing them, and rewriting history
   an earlier standard setup already committed, is the user's decision.
@@ -1235,50 +910,12 @@ options:
 For "No", note that setup skips only this visible check and continue with Step 8. On either harness
 with an established path, later eligible runs still attempt the native operation themselves and fall
 back independently from each call's result, so skipping the probe withholds the proof rather than
-the capability. For "Yes", **detect the harness** from the running environment first. Two harnesses
-have an established rename path today: the **ChatGPT Desktop Codex tab** exposes a native
-current-task operation, while **Claude Code** renames the running session through its own
-session-title operation. Follow that harness's path below and no other. Codex CLI has no automatic
-path in this scope. On any other harness, say plainly that no path is established, that runs
-therefore keep suggesting a title, and end this step. Never invent a mechanism, and never probe a
-harness for one.
+the capability.
 
-#### ChatGPT Desktop, Codex tab: the native capability needs no installation
-
-1. **Explain the direct path.** The app already exposes its current-task title operation, currently
-   `codex_app__set_thread_title`; there is no hook, trust review, file or one-time configuration to
-   install. Ordinary Effective Flow runs use it directly when their subject is fixed.
-2. **Name the precise stale-hook cleanup without performing it.** A user who followed the former
-   setup may still have a `Stop` handler whose command invokes `session-title.mjs apply` in
-   `~/.codex/hooks.json`, `~/.codex/config.toml`, or a repository-local counterpart. Tell them to
-   remove only that matching handler themselves, preserving unrelated handlers and the containing
-   file. Never open, edit or delete their harness configuration here.
-3. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
-   current session once and that the user may rename it back or let the next run retitle it. Then
-   call the native operation once with only the literal title `Effective Flow setup check`; omit
-   `threadId`, never list or resolve tasks, and never retry. Report the concrete result. A successful
-   call proves the path for this run; an absent, denied or failed operation means only that this setup
-   probe failed. Later eligible runs still attempt the operation and fall back independently from
-   each call's result. Never report a probe that did not run or claim more than the host reported.
-
-#### Claude Code: the native capability needs no installation
-
-1. **Explain the direct path.** The host already exposes its session-title operation, currently
-   `set_session_title`, and that operation accepts the literal sentinel `"self"` for the session
-   calling it; there is no second session, hook, marker title, file or one-time configuration to
-   install. Ordinary Effective Flow runs use it directly when their subject is fixed, and no session
-   id is assembled, sent or received on that path.
-2. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
-   current session once and that the user may rename it back or let the next run retitle it. Then
-   call the operation once with the sentinel `"self"` and only the literal title
-   `Effective Flow setup check`; never resolve or supply a session id, never name another session,
-   and never retry. Where the host defers its session tools until they are loaded by name, load the
-   operation first — an unlisted tool is not an absent capability, and only a refusal or an error
-   from the call itself is a failed probe. Report the concrete result. A successful call proves the
-   path for this run; an absent or denied operation, a refused sentinel, or a failed call means only
-   that this setup probe failed. Later eligible runs still attempt the operation and fall back
-   independently from each call's result. Never report a probe that did not run or claim more than
-   the host reported.
+```lazy-include
+setup-rename-probe
+when: the Step 7 `Rename path` question was answered `Yes`
+```
 
 ### Step 8: Summary
 
