@@ -1998,7 +1998,7 @@ try {
     setup: 1545,
     'apply-review': 1021,
     'apply-issues': 933,
-    cleanup: 1034,
+    cleanup: 833,
     refactor: 939,
     deliver: 795,
     'plan-issue': 718,

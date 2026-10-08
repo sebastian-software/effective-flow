@@ -114,6 +114,76 @@ test('all checked-in runtime writers establish migration before their first muta
   assert.deepEqual(findRuntimeDirMigrationViolations(collectRuntimeSources()), []);
 });
 
+// Invariant: cleanup defers the migration prerequisite, and the `memory-state` contract it nests,
+// to the decision points that precede each of its runtime-state mutations: Phase 1 step 6, whose
+// pointer arm names both predicates that step decides from core text (a legacy runtime directory
+// exists, the marker is missing); the forge contract's one-time `labelMigration.sf` marker write,
+// which reaches `memory.json` during the Phase 1 label inventory before step 6 runs; and one
+// general arm for every confirmed Phase 3 or Phase 5 mutation below `.effective-flow/`, decided
+// from the confirmation asks in the core. That arm must hold when step 6 did not fire: Phase 3
+// copies into `.effective-flow/` after a valid marker, and Phase 5 removes a transitional
+// `.effective-flow/config.json` when no legacy runtime directory exists. Its parenthesised paths
+// are examples, not an exhaustive list. The pointer stays at the former include position, after
+// the lazy runtime-state guard and before any cleanup runtime mutation, so the ordered migration
+// guard above still sees it first; no eager copy may remain beside it.
+test('cleanup loads the migration prerequisite before the marker check, the first tracker write, and any confirmed Phase 3 or Phase 5 runtime-state mutation', () => {
+  const pointer = cleanupTool.match(
+    /```lazy-include\neffective-flow-dir-migration\nwhen: ([^\n]+)\n```/,
+  );
+  assert.ok(pointer, 'cleanup must carry a lazy pointer to effective-flow-dir-migration');
+  const when = pointer[1];
+  assert.match(when, /Phase 1 step 6/);
+  assert.match(when, /at least one legacy runtime directory/);
+  assert.match(when, /no valid `runtimeMigration\.directory\.version: 1` marker/);
+  assert.match(
+    when,
+    /a remote tracker access is about to perform its first runtime-state mutation/,
+  );
+  assert.match(when, /`labelMigration\.sf` marker/);
+  assert.match(
+    when,
+    /any confirmed Phase 3 or Phase 5 mutation below `\.effective-flow\/` is about to run/,
+  );
+  assert.match(when, /even when Phase 1 found no legacy runtime directory/);
+  assert.match(when, /carry-over copy or directory creation/);
+  assert.match(
+    when,
+    /worktree lifecycle lock, claim, removal, reconcile, record write or deletion/,
+  );
+  assert.match(when, /stale diff-baseline discard/);
+  assert.match(
+    when,
+    /confirmed removal of a legacy file such as a transitional `\.effective-flow\/config\.json`/,
+  );
+  assert.doesNotMatch(cleanupTool, /```include\neffective-flow-dir-migration\n```/);
+
+  const guardPointer = cleanupTool.search(/```lazy-include\nruntime-state-safety\n/);
+  assert.ok(guardPointer !== -1, 'cleanup must keep its lazy runtime-state guard pointer');
+  assert.ok(pointer.index > guardPointer, 'the migration pointer must follow the runtime guard');
+  assert.ok(
+    pointer.index < cleanupTool.indexOf('## Workflow'),
+    'the migration pointer must precede every workflow phase',
+  );
+
+  const stepSix = cleanupTool.indexOf('6. If at least one legacy runtime directory exists, read');
+  assert.ok(stepSix !== -1, 'Phase 1 step 6 must keep its legacy-directory predicate in core');
+  assert.ok(
+    cleanupTool.indexOf('runtimeMigration.directory.version', stepSix) > stepSix,
+    'Phase 1 step 6 must keep its marker predicate in core',
+  );
+
+  const phaseFive = cleanupTool.indexOf('### Phase 5:');
+  assert.ok(phaseFive !== -1, 'Phase 5 must stay in core');
+  assert.ok(
+    cleanupTool.indexOf('claim/remove/reconcile protocol', phaseFive) > phaseFive,
+    'Phase 5 must keep its worktree lifecycle mutation sequence in core',
+  );
+  assert.ok(
+    cleanupTool.indexOf('scripts/diff-baseline.mjs discard', phaseFive) > phaseFive,
+    'Phase 5 must keep its stale diff-baseline discard in core',
+  );
+});
+
 test('cleanup triggers the shared migration after inventory and refreshes evidence', () => {
   const initialInventory = cleanupTool.indexOf(
     'Capture the existing legacy remnants in the project root',

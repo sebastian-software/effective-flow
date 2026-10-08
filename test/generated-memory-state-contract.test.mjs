@@ -32,7 +32,7 @@ test('actual eager and lazy consumers ship the nested memory contract in every t
 
   for (const target of ['claude', 'codex', 'portable']) {
     const root = generatedRoot(target);
-    for (const eagerConsumer of ['cleanup', 'investigate']) {
+    for (const eagerConsumer of ['investigate']) {
       const generated = readFileSync(join(root, 'tools', `${eagerConsumer}.md`), 'utf8');
       assert.match(generated, /## Shared memory-state mutation/);
       assert.doesNotMatch(generated, /^```include\s*$/m);
@@ -42,8 +42,13 @@ test('actual eager and lazy consumers ship the nested memory contract in every t
     assert.match(lazyOwner, /## Shared memory-state mutation/);
     assert.doesNotMatch(lazyOwner, /^```include\s*$/m);
 
-    const lazyConsumer = readFileSync(join(root, 'tools', 'fix.md'), 'utf8');
-    assert.match(lazyConsumer, /shared\/effective-flow-dir-migration\.md/);
+    // cleanup reaches the memory contract through its deferred migration owner, at the Phase 1
+    // step 6 marker check and before the forge `labelMigration.sf` marker write, so the generated
+    // tool must still point at the shipped owner that carries it.
+    for (const lazyConsumerName of ['fix', 'cleanup']) {
+      const lazyConsumer = readFileSync(join(root, 'tools', `${lazyConsumerName}.md`), 'utf8');
+      assert.match(lazyConsumer, /shared\/effective-flow-dir-migration\.md/);
+    }
     for (const file of collectTextFiles(root)) {
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
