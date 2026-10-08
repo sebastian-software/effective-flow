@@ -207,7 +207,7 @@ resolves whether the project setup contains the `mergeGate.bots` row before it p
 present row therefore loads the fragment even when its value is empty or unreadable; only the
 absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
 `merge-gate` core for Claude from 2,892 to 2,263 lines, for Codex from 2,880 to 2,257, and for the
-portable target from 2,883 to 2,260. Its context budget is now 2,270 lines. The configured-reviewer
+portable target from 2,883 to 2,260. The configured-reviewer
 contract remains in one source fragment while the default, row-absent route no longer pays its
 context cost.
 
@@ -473,9 +473,8 @@ The build aborts with an error message if any of these guards is violated:
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
-  **up to** ten lines of headroom. No tools share an allowance. `merge-gate` currently measures
-  **2868** lines against its **2870** limit; `build`, `fix`, `docs`, and `plan` likewise carry their
-  own measured limits. The build prints each measured size next to its budget and aborts if a tool
+  **up to** ten lines of headroom. No tools share an allowance; current figures are in "Context
+  budget" below. The build prints each measured size next to its budget and aborts if a tool
   exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
   measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
   on a newline-terminated file. Every entry is a measured backlog rather than a target: it records
@@ -769,18 +768,23 @@ and directive syntax").
   the resolver keeps the rule — precisely so the locale rule travels with the writer rather than
   with the resolver. `worktree-record-obligation` is eager in every worktree-creating tool because
   its failure mode is silently not running: a skipped lazy pointer leaves a worktree without a
-  lifecycle record, which `cleanup` can never remove.
+  lifecycle record, which `cleanup` can never remove. `apply-issues` creates its worktrees without
+  `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
+  its core keeps every record write and transition and makes reading the fragment mandatory before
+  such a worktree is created.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
-  `config-migration-edge-cases`, `worktree-integration`, `issue-tracker`, `issue-tracker-forge`,
+  `config-migration-edge-cases`, `worktree-integration`, `worktree-lifecycle`, `issue-tracker`, `issue-tracker-forge`,
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-lint`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
+  `merge-gate-delegation-contract`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
-  `plan-publication`, `plan-pr-continuation`.
+  `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
+  `setup-rename-probe`, `adr-convention`, `plan-publication`, `plan-pr-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
@@ -796,12 +800,13 @@ and directive syntax").
   `worktree-integration`'s resolved base, because it supersedes that fragment's mode, branch-name,
   and `-b` steps before step 3 runs, or the selection of in-place mode without delivery, before any
   archival, where it runs discovery only and stops on a verified plan pull request. `plan-publication` is lazy from `plan`'s Phase 7 and nested in
-  `plan-pr-continuation` for a republication. Four of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  `plan-pr-continuation` for a republication. Five of these names are deferred **halves** of a split: `issue-post-merge-observation`
   was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`,
-  `issue-tracker-forge` from `issue-tracker`, and `config-migration-edge-cases` from
-  `config-migration`; the first three remaining halves stay eager because their
-  consumers read them on every run, and `config-migration`'s core is the exception the paragraph
-  below records rather than a fourth instance of that rule. Cutting a fragment
+  `issue-tracker-forge` from `issue-tracker`, `config-migration-edge-cases` from
+  `config-migration`, and `review-bot-state-observation` from `review-bot-state`; the first three
+  remaining halves stay eager because their consumers read them on every run, and the
+  `config-migration` and `review-bot-state` cores are exceptions the paragraph below records rather
+  than further instances of that rule. Cutting a fragment
   along the seam between an always-read part and a one-decision-point part is what lets the second
   half qualify for deferral at all. `merge-gate-checkout-boundary` is the third single-consumer
   `merge-gate` fragment beside `issue-post-merge-observation` and `pr-merge-completion`, and the
@@ -859,7 +864,9 @@ and directive syntax").
   the merge-gate eval identity.
   `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
   twelve tools that read configuration on every run inline its always-read core, while seven others
-  defer the whole fragment behind their own first configuration read.
+  defer the whole fragment behind their own first configuration read. `worktree-lifecycle`,
+  `adr-convention` and `review-bot-state` follow the same pattern with one lazy host each:
+  `apply-issues`, `apply-review` and `iterate`.
 
   `remote-helper-contract` is eager in both `issue-tracker-forge` and `pr-review-comments`. A lazy
   pointer beside the first PR helper invocation proved nondeterministic: a run could invoke the
@@ -999,10 +1006,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 2286/2290, `setup` 1723/1723, `iterate` 1772/1775,
-`apply-review` 1357/1360, `apply-issues` 1191/1191, and `cleanup` 1020/1022.
+`merge-gate` is 1936/1940, `iterate` 1547/1547, `setup` 1545/1545,
+`apply-review` 1021/1021, `apply-issues` 933/933, and `cleanup` 833/833.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 656/665, `docs` 608/617, `build` 592/595, and `fix` 484/488. Read every
+`plan` 692/693, `docs` 630/637, `build` 632/640, and `fix` 513/513. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
