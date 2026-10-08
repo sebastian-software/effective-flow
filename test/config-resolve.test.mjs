@@ -2022,6 +2022,100 @@ test('step 3: a transitional JSON __proto__ key stays an own values entry', asyn
   assert.equal(data.values['plan.dir'].value, 'json');
 });
 
+function emptyKeyDiagnostics(data) {
+  return data.diagnostics.filter((entry) => entry.code === 'unrepresentable-row');
+}
+
+// Invariant: a top-level empty-string JSON key is never dropped silently. It flattens to no row, and
+// emits exactly one `unrepresentable-row` (reason `empty-key`) with its JSON Pointer `/`, so setup
+// stops before a migration that would lose it; the ordinary keys beside it still resolve.
+test('step 3: a top-level empty JSON key is reported as unrepresentable-row and never a value', async (t) => {
+  const { root } = repository(t);
+  write(root, join('.effective-flow', 'config.json'), '{"":"x","plan":{"dir":"json"}}');
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.deepEqual(emptyKeyDiagnostics(data), [
+    { code: 'unrepresentable-row', reason: 'empty-key', source: 'json', pointer: '/' },
+  ]);
+  assert.equal(Object.hasOwn(data.values, ''), false, 'an empty JSON key never becomes a value');
+  assert.equal(data.values['plan.dir'].value, 'json');
+});
+
+// Invariant: an empty-string JSON key holding an object is not reparented to the root. Its subtree
+// yields no value rows (no `a`), and the key emits one `unrepresentable-row` with pointer `/`.
+test('step 3: an empty JSON key holding an object is reported and its subtree is not reparented', async (t) => {
+  const { root } = repository(t);
+  write(root, join('.effective-flow', 'config.json'), '{"":{"a":"x"},"plan":{"dir":"json"}}');
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.deepEqual(emptyKeyDiagnostics(data), [
+    { code: 'unrepresentable-row', reason: 'empty-key', source: 'json', pointer: '/' },
+  ]);
+  assert.equal(Object.hasOwn(data.values, 'a'), false, 'the subtree is not reparented to the root');
+  assert.equal(Object.hasOwn(data.values, ''), false);
+  assert.equal(data.values['plan.dir'].value, 'json');
+});
+
+// Invariant: a nested empty-string JSON key is not merged into its parent as a trailing-dot row
+// (`a.`). It yields no value row and emits one `unrepresentable-row` with pointer `/a/`.
+test('step 3: a nested empty JSON key is reported and never merged into its parent', async (t) => {
+  const { root } = repository(t);
+  write(root, join('.effective-flow', 'config.json'), '{"a":{"":"x"},"plan":{"dir":"json"}}');
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.deepEqual(emptyKeyDiagnostics(data), [
+    { code: 'unrepresentable-row', reason: 'empty-key', source: 'json', pointer: '/a/' },
+  ]);
+  assert.equal(Object.hasOwn(data.values, 'a.'), false, 'no trailing-dot row for the parent');
+  assert.equal(Object.hasOwn(data.values, 'a'), false);
+  assert.equal(data.values['plan.dir'].value, 'json');
+});
+
+// Invariant: ordinary nested JSON without an empty key flattens to dotted-key values exactly as
+// before the empty-key handling (deep objects, lists with mixed items, Booleans, null, numbers) and
+// emits no `unrepresentable-row`.
+test('step 3: ordinary nested JSON flattens unchanged and reports no unrepresentable row', async (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    join('.effective-flow', 'config.json'),
+    JSON.stringify({
+      plan: { dir: 'json', nested: { deep: { leaf: 'v' } } },
+      skills: { include: ['a', { k: 1 }, null, true], exclude: [] },
+      review: { autoConfirmScope: true, profile: null },
+      mergeGate: { maxRounds: 3 },
+    }),
+  );
+  const data = await resolved({ cwd: root, tool: 'setup' });
+  assert.equal(data.source.step, 3);
+  assert.deepEqual(emptyKeyDiagnostics(data), []);
+  const source = 'transitional-json';
+  const mixed = ['a', '{"k":1}', 'null', 'true'];
+  assert.deepEqual(data.values, {
+    'plan.dir': { state: 'set', value: 'json', raw: 'json', items: ['json'], source },
+    'plan.nested.deep.leaf': { state: 'set', value: 'v', raw: 'v', items: ['v'], source },
+    'skills.include': {
+      state: 'set',
+      value: mixed,
+      raw: 'a, {"k":1}, null, true',
+      items: mixed,
+      source,
+    },
+    'skills.exclude': { state: 'set', value: [], raw: '(empty)', items: [], source },
+    'review.autoConfirmScope': {
+      state: 'set',
+      value: true,
+      raw: 'true',
+      items: ['true'],
+      source,
+    },
+    'review.profile': { state: 'set', value: null, raw: 'null', items: [], source },
+    'mergeGate.maxRounds': { state: 'set', value: '3', raw: '3', items: ['3'], source },
+    'executionProfiles.fast.enabled': { state: 'unset', profile: 'disabled' },
+    'delivery.prReview': { state: 'unset' },
+  });
+});
+
 // Invariant: a transitional JSON source has no original table line, so setup receives each of its
 // retired rows with `line: null` beside the flattened `raw`, never a fabricated table line.
 test('step 3: setup receives transitional JSON retired rows with their raw value and a null line', async (t) => {
@@ -2606,6 +2700,25 @@ test('cli: a __proto__ configuration row survives into the printed envelope', (t
   assert.ok(Object.hasOwn(envelope.data.values, '__proto__'), 'the __proto__ row is an own entry');
   assert.equal(envelope.data.values['__proto__'].raw, 'x');
   assert.equal(envelope.data.values['plan.dir'].value, 'docs/plan');
+});
+
+// Invariant: the CLI envelope that setup consumes carries the empty-JSON-key diagnostic with its
+// pointer, so setup sees the `unrepresentable-row` it stops on before writing a migration.
+test('cli: an empty transitional JSON key reaches the printed envelope as unrepresentable-row', (t) => {
+  const { root } = repository(t);
+  write(root, join('.effective-flow', 'config.json'), '{"":"x"}');
+  const { status, envelope, stderr } = runCli(
+    ['resolve'],
+    JSON.stringify({ cwd: root, tool: 'setup' }),
+  );
+  assert.equal(status, 0);
+  assert.equal(stderr, '');
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.diagnostics.filter((entry) => entry.code === 'unrepresentable-row'),
+    [{ code: 'unrepresentable-row', reason: 'empty-key', source: 'json', pointer: '/' }],
+  );
+  assert.equal(Object.hasOwn(envelope.data.values, ''), false);
 });
 
 test('cli: invalid input exits 2 with CODE: message on stderr', () => {

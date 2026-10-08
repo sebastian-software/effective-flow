@@ -357,7 +357,9 @@ The resolver decodes every table cell once: `true`/`false` become Booleans, `nul
 `null`, `(empty)` and `(leer)` become an empty list, and any other cell stays the literal string,
 with `items` always carrying its comma-split list. Rows from the step-3 JSON are flattened to dotted
 keys: Booleans and `null` keep their JSON value, an array becomes a list, numbers and strings
-become literal strings, and a string such as `(empty)` is never token-decoded. Two rows of one key make
+become literal strings, and a string such as `(empty)` is never token-decoded. An empty JSON key at
+any depth becomes no row, and neither does anything beneath it; each one is reported as
+`unrepresentable-row` (reason `empty-key`) with its JSON Pointer. Two rows of one key make
 that key `invalid` with `ambiguous-key`, and no row is chosen. The resolver validates only the keys
 whose rules it owns (`executionProfiles.fast.enabled`, `delivery.prReview`, `visibility`, the
 retired rows and the hidden forced values); every other key's domain validation and its default

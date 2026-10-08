@@ -739,17 +739,24 @@ export function decodeCell(raw) {
   return { value: raw, items: itemsOf(raw) };
 }
 
-// Flattens a transitional JSON configuration into table-shaped rows with dotted keys.
+// Flattens a transitional JSON configuration into table-shaped rows with dotted keys; an empty key
+// at any depth yields no value row from its subtree, only `{ key: '', raw: null, pointer }` per
+// empty key in it (RFC 6901 JSON Pointer), which the resolver reports as unrepresentable.
 export function flattenJsonConfiguration(root) {
   const rows = [];
-  const visit = (value, prefix) => {
+  const pointerOf = (segments) =>
+    `/${segments.map((segment) => segment.replaceAll('~', '~0').replaceAll('/', '~1')).join('/')}`;
+  const visit = (value, segments, unrepresentable) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       for (const [key, child] of Object.entries(value)) {
-        visit(child, prefix === '' ? key : `${prefix}.${key}`);
+        const path = [...segments, key];
+        if (key === '') rows.push({ key: '', raw: null, pointer: pointerOf(path) });
+        visit(child, path, unrepresentable || key === '');
       }
       return;
     }
-    if (prefix === '') return;
+    if (segments.length === 0 || unrepresentable) return;
+    const prefix = segments.join('.');
     if (Array.isArray(value)) {
       const items = value.map((item) =>
         item !== null && typeof item === 'object' ? JSON.stringify(item) : String(item),
@@ -768,7 +775,7 @@ export function flattenJsonConfiguration(root) {
       rows.push({ key: prefix, raw, decoded: { value: raw, items: itemsOf(raw) } });
     }
   };
-  visit(root, '');
+  visit(root, [], false);
   return rows;
 }
 
@@ -1373,11 +1380,21 @@ export async function resolveConfiguration(input, deps = {}) {
 
   const allRows = located ? (located.rows ?? located.document.envelope.rows) : [];
   if (located) documentDiagnostics(located, diagnostics);
-  // An empty-key row cannot become a value or a retired entry; it is reported and kept only in
-  // `source.rows`, and every other check sees the representable rows alone.
+  // An empty-key row cannot become a value or a retired entry; it is reported (a table row by its
+  // line and kept only in `source.rows`, a JSON one by its pointer), and every other check sees
+  // the representable rows alone.
   for (const row of allRows) {
     if (row.key === '') {
-      diagnostics.push({ code: 'unrepresentable-row', reason: 'empty-key', line: row.line });
+      diagnostics.push(
+        row.pointer === undefined
+          ? { code: 'unrepresentable-row', reason: 'empty-key', line: row.line }
+          : {
+              code: 'unrepresentable-row',
+              reason: 'empty-key',
+              source: 'json',
+              pointer: row.pointer,
+            },
+      );
     }
   }
   const rows = allRows.filter((row) => row.key !== '');
