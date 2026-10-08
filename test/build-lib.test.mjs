@@ -5709,10 +5709,13 @@ test('checked-in language configuration remains complete and migration-only', ()
       .filter(({ source }) => source.includes('plan.markerLanguage'))
       .map(({ file, source }) => [file, source.match(/plan\.markerLanguage/g).length]),
   );
+  // setup's Guided language question, with its legacy-key migration, lives in the lazy
+  // `setup-guided-core-switches` fragment; the core keeps the schema and summary mentions.
   assert.deepEqual(markerReferences, [
-    ['tools/setup.md', 4],
+    ['tools/setup.md', 2],
     ['shared/config-setup-migration.md', 1],
     ['shared/language-rules.md', 2],
+    ['shared/setup-guided-core-switches.md', 2],
   ]);
 });
 
