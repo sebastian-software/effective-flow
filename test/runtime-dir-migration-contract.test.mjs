@@ -115,13 +115,16 @@ test('all checked-in runtime writers establish migration before their first muta
 });
 
 // Invariant: cleanup defers the migration prerequisite, and the `memory-state` contract it nests,
-// to the two decision points that need it: Phase 1 step 6, whose pointer arm names both predicates
-// that step decides from core text (a legacy runtime directory exists, the marker is missing), and
-// the forge contract's one-time `labelMigration.sf` marker write, which reaches `memory.json`
-// during the Phase 1 label inventory before step 6 runs. The pointer stays at the former include
-// position, after the lazy runtime-state guard and before any cleanup runtime mutation, so the
-// ordered migration guard above still sees it first; no eager copy may remain beside it.
-test('cleanup loads the migration prerequisite at the marker check and the first tracker write', () => {
+// to the decision points that precede each of its runtime-state mutations: Phase 1 step 6, whose
+// pointer arm names both predicates that step decides from core text (a legacy runtime directory
+// exists, the marker is missing); the forge contract's one-time `labelMigration.sf` marker write,
+// which reaches `memory.json` during the Phase 1 label inventory before step 6 runs; and Phase 5's
+// worktree lifecycle mutations (lock, claim, removal, reconcile, record write or deletion) and
+// confirmed stale diff-baseline discard, both decided from core Phase 5 text. The pointer stays at
+// the former include position, after the lazy runtime-state guard and before any cleanup runtime
+// mutation, so the ordered migration guard above still sees it first; no eager copy may remain
+// beside it.
+test('cleanup loads the migration prerequisite before the marker check, the first tracker write, every worktree lifecycle mutation, and a stale diff-baseline discard', () => {
   const pointer = cleanupTool.match(
     /```lazy-include\neffective-flow-dir-migration\nwhen: ([^\n]+)\n```/,
   );
@@ -135,6 +138,11 @@ test('cleanup loads the migration prerequisite at the marker check and the first
     /a remote tracker access is about to perform its first runtime-state mutation/,
   );
   assert.match(when, /`labelMigration\.sf` marker/);
+  assert.match(
+    when,
+    /Phase 5 is about to mutate worktree lifecycle state \(lock, claim, removal, reconcile, record write or deletion\)/,
+  );
+  assert.match(when, /discard a confirmed stale diff baseline/);
   assert.doesNotMatch(cleanupTool, /```include\neffective-flow-dir-migration\n```/);
 
   const guardPointer = cleanupTool.search(/```lazy-include\nruntime-state-safety\n/);
@@ -150,6 +158,17 @@ test('cleanup loads the migration prerequisite at the marker check and the first
   assert.ok(
     cleanupTool.indexOf('runtimeMigration.directory.version', stepSix) > stepSix,
     'Phase 1 step 6 must keep its marker predicate in core',
+  );
+
+  const phaseFive = cleanupTool.indexOf('### Phase 5:');
+  assert.ok(phaseFive !== -1, 'Phase 5 must stay in core');
+  assert.ok(
+    cleanupTool.indexOf('claim/remove/reconcile protocol', phaseFive) > phaseFive,
+    'Phase 5 must keep its worktree lifecycle mutation sequence in core',
+  );
+  assert.ok(
+    cleanupTool.indexOf('scripts/diff-baseline.mjs discard', phaseFive) > phaseFive,
+    'Phase 5 must keep its stale diff-baseline discard in core',
   );
 });
 

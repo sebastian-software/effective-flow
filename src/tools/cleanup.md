@@ -63,7 +63,7 @@ worktree-lifecycle
 
 ```lazy-include
 effective-flow-dir-migration
-when: Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, or a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker)
+when: Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or Phase 5 is about to mutate worktree lifecycle state (lock, claim, removal, reconcile, record write or deletion) or discard a confirmed stale diff baseline
 ```
 
 ```include
