@@ -114,6 +114,45 @@ test('all checked-in runtime writers establish migration before their first muta
   assert.deepEqual(findRuntimeDirMigrationViolations(collectRuntimeSources()), []);
 });
 
+// Invariant: cleanup defers the migration prerequisite, and the `memory-state` contract it nests,
+// to the two decision points that need it: Phase 1 step 6, whose pointer arm names both predicates
+// that step decides from core text (a legacy runtime directory exists, the marker is missing), and
+// the forge contract's one-time `labelMigration.sf` marker write, which reaches `memory.json`
+// during the Phase 1 label inventory before step 6 runs. The pointer stays at the former include
+// position, after the lazy runtime-state guard and before any cleanup runtime mutation, so the
+// ordered migration guard above still sees it first; no eager copy may remain beside it.
+test('cleanup loads the migration prerequisite at the marker check and the first tracker write', () => {
+  const pointer = cleanupTool.match(
+    /```lazy-include\neffective-flow-dir-migration\nwhen: ([^\n]+)\n```/,
+  );
+  assert.ok(pointer, 'cleanup must carry a lazy pointer to effective-flow-dir-migration');
+  const when = pointer[1];
+  assert.match(when, /Phase 1 step 6/);
+  assert.match(when, /at least one legacy runtime directory/);
+  assert.match(when, /no valid `runtimeMigration\.directory\.version: 1` marker/);
+  assert.match(
+    when,
+    /a remote tracker access is about to perform its first runtime-state mutation/,
+  );
+  assert.match(when, /`labelMigration\.sf` marker/);
+  assert.doesNotMatch(cleanupTool, /```include\neffective-flow-dir-migration\n```/);
+
+  const guardPointer = cleanupTool.search(/```lazy-include\nruntime-state-safety\n/);
+  assert.ok(guardPointer !== -1, 'cleanup must keep its lazy runtime-state guard pointer');
+  assert.ok(pointer.index > guardPointer, 'the migration pointer must follow the runtime guard');
+  assert.ok(
+    pointer.index < cleanupTool.indexOf('## Workflow'),
+    'the migration pointer must precede every workflow phase',
+  );
+
+  const stepSix = cleanupTool.indexOf('6. If at least one legacy runtime directory exists, read');
+  assert.ok(stepSix !== -1, 'Phase 1 step 6 must keep its legacy-directory predicate in core');
+  assert.ok(
+    cleanupTool.indexOf('runtimeMigration.directory.version', stepSix) > stepSix,
+    'Phase 1 step 6 must keep its marker predicate in core',
+  );
+});
+
 test('cleanup triggers the shared migration after inventory and refreshes evidence', () => {
   const initialInventory = cleanupTool.indexOf(
     'Capture the existing legacy remnants in the project root',
