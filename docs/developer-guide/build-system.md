@@ -1010,7 +1010,7 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 1936/1940, `iterate` 1547/1547, `setup` 1545/1545,
+`merge-gate` is 1937/1940, `iterate` 1548/1548, `setup` 1545/1545,
 `apply-review` 1021/1021, `apply-issues` 933/933, and `cleanup` 833/833.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
 `plan` 692/693, `docs` 630/637, `build` 632/640, and `fix` 513/513. Read every

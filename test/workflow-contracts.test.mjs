@@ -6102,7 +6102,7 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
   // so Phase 3 delegates only the thread IDs it could see and the thread that lands afterwards was
   // assessed by nobody. Condition 6 cannot catch it — that one asks about the findings this run
   // *implemented* — so without a condition of its own the gate merges a pull request carrying a
-  // reviewer finding no run ever read. `src/shared/review-bot-state.md` names this window and
+  // reviewer finding no run ever read. `src/shared/review-bot-state-observation.md` names this window and
   // assigns closing it to the consumer; these assertions are that consumer discharging it.
   //
   // Sliced per numbered condition, because condition 6 already carries the "deferred or rejected"
