@@ -1996,7 +1996,7 @@ try {
     'merge-gate': 2336,
     iterate: 1547,
     setup: 1545,
-    'apply-review': 1371,
+    'apply-review': 1021,
     'apply-issues': 933,
     cleanup: 1034,
     refactor: 939,
