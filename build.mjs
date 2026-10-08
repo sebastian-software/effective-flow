@@ -1994,7 +1994,7 @@ try {
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 2336,
-    iterate: 1820,
+    iterate: 1547,
     setup: 1900,
     'apply-review': 1371,
     'apply-issues': 1169,
