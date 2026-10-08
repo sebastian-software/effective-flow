@@ -825,7 +825,8 @@ and stop delivery for reconciliation.
    - table: one row per item with its processing outcome – implemented, skipped, deferred question,
      failed, or deselected – and, for every caller-supplied identifier, the value that outcome maps
      onto per "Returned outcome record"
-   - PR URL, pushed commits, resolved threads, final checkout state
+   - PR URL, pushed commits, resolved threads, final checkout state; return retained source context
+     and observed outcome for the final emitter's shared `next-steps` selection
    - in local mode: which commits were created on which branch
    - the worktree-record exit self-check result – in this summary, which is also the content
      handed back under `Summary comment: suppressed`, never in the returned outcome record

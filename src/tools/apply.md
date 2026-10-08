@@ -143,8 +143,8 @@ when: the run's subject is fixed and a session title is about to be applied or e
    - `review-report` / `review-epic` / `review-finding` → `{{SKILL:apply-review}} <arg>`
    - `container-issue` / `plain-issue` → `{{SKILL:apply-issues}} <arg>`
 3. Pass as context that `{{SKILL:apply}}` has already classified the source, including
-   the detected source type and the resolved tracker target. After that, the entire
-   responsibility lies with the target skill.
+   the detected source type, resolved source handle and tracker target; retain that verified
+   association with the returned outcome. After that, responsibility lies with the target skill.
 4. Every one of those three delegations carries the literal line `Next steps: suppressed` on its
    own line: the target skill emits no block of its own, and this run closes the report if control
    returns here.
@@ -152,8 +152,8 @@ when: the run's subject is fixed and a session title is about to be applied or e
    implements. `{{SKILL:apply}}` itself does not run this check and implements
    nothing.
 6. When control returns here, emit the next-step block per `next-steps` as the last element of the
-   report, taking the row for the end state the delegation reported — the failed plan clarity gate,
-   the applied findings, or the processed issues, each with or without a pull request.
+   report, using the retained source association and returned outcome in its shared selection; only
+   generic fallback uses the reported clarity-gate, findings or issues row, with or without a PR.
 
 ## Rules
 

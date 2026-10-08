@@ -82,7 +82,7 @@ jobs:
           # test/workflow-contracts.test.mjs pins this list to the suites under evals/, so a new
           # suite cannot be left out of the release gate unnoticed.
           status=0
-          for suite in merge-gate iterate; do
+          for suite in merge-gate iterate next-steps; do
             verdict="$RUNNER_TEMP/$suite-eval-verify.txt"
             # The exit status is captured rather than inherited: the verdict belongs in the step
             # summary whether the command passed or failed, and piping into `tee` would report

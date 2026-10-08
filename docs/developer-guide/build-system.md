@@ -219,13 +219,14 @@ PR-review integration load it at their admission decision. Keep admission before
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
 One consequence is worth knowing before you write the fence. Each behavioural eval suite under
-`evals/<tool>/` — today `merge-gate` and `iterate` — derives the content identity each archived
+`evals/<tool>/` — `merge-gate`, `iterate`, and `next-steps` — derives the content identity each archived
 round is stamped with by following exactly these rendered pointers through the built tree from its
 own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
 invalidates every archived round of that suite, and owes a re-record of the affected scenario
 evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
-fragment `iterate` reaches stales both suites. That debt comes due before the next release rather
-than before the next merge: `pnpm test` asserts only that the archived evidence is structurally
+fragment `iterate` reaches stales both suites; changing shared `next-steps` affects all three.
+That debt comes due before the next release rather than before the next merge: `pnpm test`
+asserts only that the archived evidence is structurally
 sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
 required check on the release one. A conditional pointer widens it whether or not any
 scenario takes its branch. The one build change that does **not** cost a re-record is the release
@@ -234,8 +235,11 @@ digest, so a release-please bump of `.release-please-manifest.json` leaves the s
 valid as long as the built router is the only moved file and nothing but the version token moved in
 it. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
-[`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ, and
-`evals/_scaffold/build-identity.mjs` for the derivation itself.
+[`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
+[`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
+and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all three suites on
+every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
+and recording requirements.
 
 ## Guards
 

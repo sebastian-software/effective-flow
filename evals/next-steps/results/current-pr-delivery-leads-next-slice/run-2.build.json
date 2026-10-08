@@ -1,0 +1,35 @@
+{
+  "scenario": "current-pr-delivery-leads-next-slice",
+  "digest": "sha256:496aa952d65bd7d56ba7c3ea2e8428a6b43b3271e9ba0015bd505959cd98c77a",
+  "skill": {
+    "digest": "sha256:49b20a25f04e13fc7e2126c707eb184e9ef40acf60cd336e2a4dbcedf3c26f26",
+    "versionNeutralDigest": "sha256:c61e9a8bfd8455d40343ffbd705c7012b2b8ddd8ded152b9922dd721c51d3609",
+    "files": {
+      "SKILL.md": "sha256:2ed7dd725351812ea30c247289214240fb50b7df0982e969924218753f622d3f",
+      "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
+      "shared/next-steps.md": "sha256:cc7d37c1e64ed68a342676c6ef27338d9753f5494bc30bd4fe8d6fd50d61a2ee",
+      "shared/plan-reference-routing.md": "sha256:db70e611e3a53a83e7861ddb6ef6f4503bcd366609f2c885571c494f6a57fee6"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:58c6cb31c68deeef64f1dba76f4dfcab5f5b32e26933499118dec92cf6b5171c",
+    "files": {
+      "evals/next-steps/suite.config.mjs": "sha256:1021ded43145da1a254d4c4ed6778c1d6bbdd5cf259bb00f133d55c153df2edd",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/next-steps/_scaffold/setup.mjs": "sha256:ac50f00a41dbfbd8c0460c31eb0b88fb9a26ceb3ec3255de687e5aec899e09e0",
+      "evals/next-steps/_scaffold/state.mjs": "sha256:78fc5c14dbcca844f594686162ff3fa94107866314c7f1322b14b51b0302368e",
+      "src/scripts/remote-tracker-shared-core.mjs": "sha256:1e0ecfc617d346fbbb087f856940964930c340a518cc5c5ca553011e6c89cf74"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:b2bb7dfd9ff74a7f890d358ee6e96b157af9a956e4a5d44c42026ee6d4cbe1a2",
+    "files": {
+      "evals/next-steps/fixtures/current-pr-delivery-leads-next-slice.json": "sha256:02c856e3f5c38134eeca6650837136d37f7201641ed2316c162a1d8d42070d68",
+      "evals/next-steps/scenarios/current-pr-delivery-leads-next-slice.md": "sha256:f688b20434b37ce71be1d8dfd5b68952da323443037d47fb65449c68dd0229bd"
+    }
+  }
+}

@@ -1095,13 +1095,14 @@ reservation exactly once.
      pull request reviewed by the tool; never invent a check name. State that setup is the sole ADR
      writer, `.check` stays unset only when the reviewer publishes none, and the advisory changed
      neither this gate result nor the pull request. With no retained candidate, emit nothing.
-3. Emit the next-step block per `next-steps` as the last element of that chat report. When at least
-   one linked issue is open, timed out, unobservable, or `terminal (cancelled)`, select the
-   merged-but-linked-issues-open row
-   before the general merged row. It stays chat
-   only: nothing of it is written onto the pull request. Omit it after a successful merge when
-   `<plan.dir>/` holds no open plan — the merged row's only edge is `{{SKILL:open-plans}}`, which
-   would then have nothing to list.
+3. Emit the next-step block per the shared selection in `next-steps` as the last element of that
+   chat report, with the verified source association, complete retained planning basis and observed
+   merge/issue outcomes. Only for generic fallback, prefer the merged-but-linked-issues-open row
+   when an open, timed out, unobservable, or `terminal (cancelled)` outcome leaves actual
+   reconciliation that observer-only re-entry can address. An intentionally open parent for later
+   packages does not qualify by itself. Omit the generic merged row when `<plan.dir>/` has no open
+   plan for `{{SKILL:open-plans}}` to list; that does not suppress an associated plan/issue candidate.
+   The block stays chat only: nothing of it is written onto the pull request.
 
 ## Rules
 

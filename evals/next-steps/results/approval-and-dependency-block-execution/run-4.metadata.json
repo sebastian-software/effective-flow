@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22",
+  "scenario": "approval-and-dependency-block-execution",
+  "slot": 4,
+  "attempt": 1,
+  "sourceRevision": "8072d65db288805e640af31f969f9b2b0077aa0e",
+  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/approval-and-dependency-block-execution/slot-4/attempt-1/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+  },
+  "promptDigest": "sha256:482ef5c303c6f4b9601b39cd85acce40b0583677da7b551c9b6a66c6a40e10c0",
+  "fixtureDigest": "sha256:89ced9ac211c13d454e48259707681312e6ee70132909326d4251b2bae4de8c2",
+  "buildDigest": "sha256:1ca4e376cd7c1f17c87a664a07c0bf4efb9fa3cb32323058551e6b78e04c576a",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/approval-and-dependency-block-execution/slot-4/attempt-1/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6.1-sol",
+      "reasoningEffort": "high",
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+    }
+  }
+}
