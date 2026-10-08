@@ -29,5 +29,5 @@ Then finish with that same report. The recommendation block, when applicable, is
 
 ## Expected outcome — not part of the prompt
 
-First option: `effective-flow docs docs/plan/2026-10-08-packages.md`. No recommendation-induced writes. The evaluator additionally
+First option: `effective-flow docs docs/plan/2026-10-08-parser-docs.md`. No recommendation-induced writes. The evaluator additionally
 checks the scenario-specific reason, compatible options and retained identities.
