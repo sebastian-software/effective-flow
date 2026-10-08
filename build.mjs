@@ -1950,7 +1950,7 @@ try {
   // map and the built tool set in exact correspondence, so a newly added tool
   // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
   // of one allowance: its measured always-loaded size plus at most ten lines of
-  // headroom. `merge-gate` currently measures 2356 lines against its 2358 limit.
+  // headroom.
   //
   // Every number here is a **measured backlog, not a target**. It records what a
   // tool's always-loaded core costs today; it is not a size anyone argued for.
