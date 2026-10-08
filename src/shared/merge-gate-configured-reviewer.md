@@ -412,7 +412,7 @@ entries that denote the same reviewer – two spellings of one account are one r
    condition matches against. A thread with no recorded outcome was excluded in Phase 3 as
    provider-settled, or arrived after the Phase-3 observation that fixed this run's item filter –
    the reviewer's check had gone terminal by then, which states that the reviewer finished and never
-   that every thread it wrote had already arrived (see "Automatic reviewer state") – so nobody
+   that every thread it wrote had already arrived (see "This narrows the window" in `review-bot-state-observation`) – so nobody
    reached any outcome about it, and it blocks. An **empty** `mergeGate.bots` list produces no such
    thread and satisfies this condition, as it satisfies condition 5.
 
@@ -680,7 +680,7 @@ return consuming one round, and they ask in one question for the same reason.
   condition 8's own comparison. Where either side is unprovable, discard rather than consume: an
   unprovable head is not the head the operator looked at. This is not a special rule for this
   question but the one this file already lives by – a new commit invalidates every reviewer's
-  observed state too (see "Automatic reviewer state"), because the reviewer runs again and its
+  observed state too (see "One read, one head" in `review-bot-state-observation`), because the reviewer runs again and its
   findings are re-derived against the new head. Carrying an answer across that would clear a finding
   on the strength of a look the operator took at a head that no longer exists – and, for a thread
   that survives a head movement under the same forge ID, one the reviewer may have written into

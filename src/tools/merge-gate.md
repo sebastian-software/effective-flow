@@ -44,7 +44,8 @@ approve; the rest of that skill was never reachable from a gate that implements 
 The judgment it owns still happens one delegation away: `{{SKILL:iterate}}` loads it and performs the
 caller-owned Mode C handoff, which is the one place that judgment belongs. This workflow adds no
 second judgment layer; it consumes one outcome per item identifier it recorded before delegating,
-under "Returned outcome record" in `merge-gate-delegation-contract` and nowhere else.
+under "Returned outcome record" – the run-wide rules in `merge-gate-delegation-contract`, the
+per-item receiver in `merge-gate-configured-reviewer` – and nowhere else.
 
 ```lazy-include
 language-rules
@@ -397,7 +398,7 @@ At the start, generate a session ID (e.g. via timestamp) and use
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back – for every delegation the identifier → durable-key map `build` returned, recorded before
   dispatch, with its message path until the file is deleted, every refused item with its reason, and
-  any sender-contract error code; and every returned outcome the receiver rule of "Returned outcome record" in `merge-gate-delegation-contract` counted, the
+  any sender-contract error code; and every returned outcome the receiver rule of `## Returned outcome record` in `merge-gate-configured-reviewer` counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
   `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - when the configured-reviewer route is loaded, the additional records under
@@ -1039,7 +1040,7 @@ reservation exactly once.
      and, where a delegation could not be built or validated, the sender-side stop with the helper's
      error code;
    - **every inert returned outcome** – one naming an identifier no round recorded – by its
-     identifier and a count, bounded and never reproduced verbatim per "Returned outcome record" in `merge-gate-delegation-contract`; it
+     identifier and a count, bounded and never reproduced verbatim per `## Returned outcome record` in `merge-gate-configured-reviewer`; it
      blocked nothing and nothing went back onto the pull request about it, so this summary is where
      such an attempt reaches the user;
    - when the configured-reviewer route is loaded, apply
