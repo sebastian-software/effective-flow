@@ -2,8 +2,11 @@
 
 The tracked Effective Flow configuration is a living project-setup ADR, not runtime state. The one
 exception is [hidden mode](#hidden-mode), whose configuration is a local, untracked file. This page
-summarizes the developer contract; the binding sources are
-[`src/shared/config-migration.md`](../../src/shared/config-migration.md) for lookup and encoding,
+summarizes the developer contract; the binding sources are the resolver core
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), which executes
+the lookup and the table decoding,
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md) for the call contract and
+the consumer actions,
 [`src/shared/config-setup-migration.md`](../../src/shared/config-setup-migration.md) for the
 language keys and the legacy-config migration,
 [`src/shared/config-merge-gate-keys.md`](../../src/shared/config-merge-gate-keys.md) for the
@@ -118,17 +121,36 @@ configuration values into the project-setup ADR.
 
 ## Resolution order and ownership
 
-Readers resolve configuration in this order:
+Readers resolve configuration through the runtime script
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), called as
+`config-resolve.mjs resolve` (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
+the single source of the locator steps, the root verification, the stem ranking, the table
+decoding, the hidden-mode forced values and the retired-row classification; the prose fragment
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md) keeps only the call
+contract and what a consumer does with each diagnostic. The first matching step wins:
 
 0. the local hidden configuration `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, only
    when it declares `visibility | hidden` (see [Hidden mode](#hidden-mode));
-1. the canonical marker in `AGENTS.md`, otherwise `CLAUDE.md` or a comparable convention file;
-2. the default path, followed by a scan of the detected ADR directory (`docs/adr/`,
-   `docs/decisions/`, or `adr/`);
-3. transitional read-only legacy input;
-4. each source tool's built-in defaults.
+1. the canonical marker in `AGENTS.md`, otherwise `CLAUDE.md`, naming the project-setup ADR;
+2. a scan of the first existing ADR directory among `docs/adr/`, `docs/decisions/`, and `adr/`,
+   which also covers the default path `docs/adr/effective-flow-project-setup.md`;
+3. the transitional read-only `<RUNTIME_STATE_ROOT>/.effective-flow/config.json`, otherwise
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json`;
+4. nothing: each tool applies its own built-in defaults. The resolver carries no default value.
 
-A dead marker is reported but falls through to the next step. The former
+Each step reads below one root only. Steps 1 and 2 resolve against the checkout root of the
+calling tool's `cwd` (`git rev-parse --show-toplevel`, or `cwd` itself outside Git). Steps 0 and 3
+resolve against the verified `RUNTIME_STATE_ROOT`, the first `git worktree list --porcelain`
+record checked against its own toplevel and common directory; outside Git there is no runtime-state
+root, so steps 0 and 3 do not run. A failed verification stops the run with exit 3 and never falls
+back to the checkout root or `cwd`. Every read path is canonicalized physically, symlinks included,
+and must stay under its root. A step-0 or step-3 file that is a symlink, is not a regular file,
+escapes its root or cannot be read also stops with exit 3 instead of falling through, so an
+unusable hidden configuration cannot drop a run into standard mode. A marker target or ADR
+candidate outside the checkout root counts as a dead marker or as no match, with a diagnostic.
+
+A dead marker is reported but falls through to the next step. When `AGENTS.md` and `CLAUDE.md`
+carry diverging markers, the `AGENTS.md` marker wins and the divergence is reported. The former
 `**Firmo project setup:**` marker and `firmo-project-setup` slug are recognized for one
 compatibility generation. Step 2 matches a candidate on its stem after stripping an optional
 leading `^\d+[-_]` prefix and additionally requires one of the canonical configuration envelopes,
@@ -140,17 +162,20 @@ the current slug `effective-flow-project-setup` is preferred over the legacy `fi
 first, and only among files carrying the same slug is an unprefixed stem preferred over a prefixed
 one. Read as two independent preferences,
 `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and neither
-would survive both. If more than one match still ties at the top of that ranking, every matching
-path is reported and resolution falls through to the next step instead of picking one.
+would survive both. If more than one match still ties at the top of that ranking, the resolver
+reports every matching path as `several-match` with `writerStop: true` and falls through to the
+next step instead of picking one.
 
 Falling through on that ambiguity is not the same result as finding nothing. A tool that **writes**
-configuration treats a reported several-match state as an explicit stop for its user to resolve,
-never as "no project-setup ADR exists"; `/effective-flow setup` routes it to its invalid-source
-question, which asks which of the reported ADRs is authoritative rather than offering to create
-another one.
+configuration treats a reported several-match state as an explicit stop, never as "no project-setup
+ADR exists". `/effective-flow setup` ends its run at both detection points, its initial resolution
+and its pre-write resolution: it reports every matching path, states that the duplicate
+project-setup ADRs have to be resolved by hand, writes nothing, and asks nothing.
 
-This deterministic read path creates nothing and touches no Git. `/effective-flow setup` is the
-only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, writes the
+The resolver is the deterministic read path: it creates nothing, writes nothing, and runs only
+read-only Git queries. A consumer fails closed when the script cannot run or returns no parseable
+envelope, and never falls back to reading the configuration through prose. `/effective-flow setup`
+is the only workflow that creates or updates the ADR and marker, normalizes `.gitignore`, writes the
 `info/exclude` line or the local hidden configuration, offers the one-line `CLAUDE.md` that imports
 `AGENTS.md`, or migrates a legacy config. Readers with no ADR
 may consume legacy values for the current run and direct the user to setup; they do not perform
@@ -159,26 +184,35 @@ migration themselves.
 ## Hidden mode
 
 Hidden mode (`visibility: hidden`) runs Effective Flow in a repository without leaving a trace in
-tracked files or on the forge. Its contract is split between the eager locator step 0 in
-[`src/shared/config-migration.md`](../../src/shared/config-migration.md) and the deferred
-"Hidden mode (locator step 0)" section of
-[`src/shared/config-migration-edge-cases.md`](../../src/shared/config-migration-edge-cases.md),
-which carries the situation table, the forced values, and the no-trace rule.
+tracked files or on the forge. Its mechanics, locator step 0 and the forced values, are executed
+by the resolver in
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs). The consumer
+duties, the no-trace rule and the tracker-bound stops, stay in the prose of
+[`src/shared/config-migration.md`](../../src/shared/config-migration.md) and its lazily loaded
+[`src/shared/config-migration-edge-cases.md`](../../src/shared/config-migration-edge-cases.md).
 
 - **Location.** `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md`, in the ADR envelope and
-  table encoding. It is read from the verified main checkout only; a same-named file below a linked
-  `EXECUTION_ROOT` is reported as ignored. A reader that has not yet verified that root resolves it
-  itself from the first `git worktree list --porcelain` record before step 0 and, in a Git checkout
-  where that fails, stops instead of falling through to standard mode. It deliberately does not reuse the retired JSON file name,
-  which stays the runtime-safety sentinel.
+  table encoding. The resolver reads it from the verified main checkout only and reports a
+  same-named file below a linked `EXECUTION_ROOT` as `ignored-linked-root-file`. It verifies that
+  root itself from the first `git worktree list --porcelain` record before step 0; in a Git
+  checkout where that fails, or where the file is unsafe or unreadable, it stops with exit 3 instead
+  of falling through to standard mode. The file deliberately does not reuse the retired JSON file
+  name, which stays the runtime-safety sentinel.
 - **Activation.** The file wins only when it declares `visibility | hidden`. It then wins over steps
-  1–4, and a tracked marker or ADR that also resolves is reported once as shadowed and never read.
-  A local file without that row is reported and skipped. A `visibility` row in a tracked ADR is
-  invalid by construction: it is reported, ignored, and never activates hidden mode.
-- **Forced values.** The resolver, not each tool, enforces `plan.dir = .effective-flow/plan`,
-  `concept.dir = .effective-flow/concept`, `tracker.mode = local`, `delivery.prReview = off`, and
-  an empty default `delivery.branchPrefix`. A prefix containing `effective-flow` in any letter case
-  is rejected. A contradicting row is reported once per run as overridden. The tracker target is
+  1–4, and a tracked marker or ADR that also resolves is reported once as `shadowed-tracked-config`
+  and never read; the other step-1 and step-2 diagnostics are suppressed in hidden mode. A local
+  file without that row is reported as `local-file-not-hidden` and skipped, and any other raw line
+  naming both `visibility` and `hidden`, comments and fences included, stops with exit 3 as
+  `unparseable-hidden-declaration`, except an active, well-formed envelope row whose non-empty key
+  is not `visibility` (any case).
+  A `visibility` row in a tracked ADR is invalid by construction: it is reported as
+  `tracked-hidden-ignored`, ignored, and never activates hidden mode. The envelope's `visibility`
+  field carries the result, never a `values` entry.
+- **Forced values.** The resolver, not each tool, applies `HIDDEN_FORCED_VALUES`: it pins
+  `plan.dir`, `concept.dir`, `tracker.mode` and `delivery.prReview` to their hidden values and
+  defaults `delivery.branchPrefix` to empty, rejecting a prefix that contains `effective-flow` in
+  any letter case. A forced value carries `source: "forced"`, a contradicting row is reported once
+  as `forced-value-override`, and a missing row takes the forced value silently. The tracker target is
   pinned as well: an issue reference or per-run signal cannot override it. The tracker-bound
   workflows (`plan-issue`, `apply-issues`, remote `apply-review`, and `review` with a forge or
   external target) stop before any tracker access. `apply-review` writes no tracked ADR for a
@@ -206,6 +240,7 @@ Keys and encoded values remain identical and English in both forms. Values use t
 
 - Boolean → `true` / `false`.
 - String → literal and unquoted, for example `focused` or `origin/main`.
+- Literal `|` in any encoded value → `\|`, so it cannot split the row; the resolver decodes it back. Only a row setup carries over as its original line is written byte for byte.
 - Explicit run-time choice → literal `null`.
 - Empty list → `(empty)`.
 - Filled list → comma-separated values, for example `humanizer, distill`.
@@ -235,11 +270,12 @@ defaults.
 
 ### Execution-profile key
 
-`executionProfiles.fast.enabled` is a strict Boolean owned by
-[`src/shared/config-migration.md`](../../src/shared/config-migration.md). Missing or literal `false`
-resolves to config state `disabled`; malformed, ambiguous, or unreadable input resolves to
-`invalid`; only literal `true` resolves to `enabled`. Disabled and invalid both stop new measurement
-and select Quality. Enabled admits the project to the pilot lifecycle but neither starts the
+`executionProfiles.fast.enabled` is a strict Boolean classified by the resolver core
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs); its consequences
+are stated in [`src/shared/config-migration.md`](../../src/shared/config-migration.md). Missing or
+literal `false` resolves to config state `disabled`; malformed, ambiguous, or unreadable input
+resolves to `invalid`; only literal `true` resolves to `enabled`. Disabled and invalid both stop
+new measurement and select Quality. Enabled admits the project to the pilot lifecycle but neither starts the
 baseline nor permits Fast by itself.
 
 The tagged state and selection policy is separately owned by
@@ -313,22 +349,49 @@ review-publication concept, not to the gate, and renaming it would recreate the 
 The complete German envelope—`# Effective-Flow-Projektsetup`, `Aktiv`/`Abgelöst`,
 `## Kontext`, `## Konfiguration`, and `| Schlüssel | Wert |`—is canonical alongside the English
 form. The former translated empty-list token `(leer)`, former marker spelling, and former slug
-remain readable compatibility inputs. On write, setup keeps the recognized envelope language,
-uses the stable `(empty)` value, and preserves known and unknown rows.
+remain readable compatibility inputs; the resolver decodes or matches each of them and reports it
+(`legacy-empty-token`, `legacy-marker`, `legacy-slug`). On write, setup keeps the recognized
+envelope language, uses the stable `(empty)` value, and preserves known and unknown rows.
+
+The resolver decodes every table cell once: `true`/`false` become Booleans, `null` becomes JSON
+`null`, `(empty)` and `(leer)` become an empty list, and any other cell stays the literal string,
+with `items` always carrying its comma-split list. Rows from the step-3 JSON are flattened to dotted
+keys: Booleans and `null` keep their JSON value, an array becomes a list, numbers and strings
+become literal strings, and a string such as `(empty)` is never token-decoded. An empty JSON key at
+any depth becomes no row, and neither does anything beneath it; each one is reported as
+`unrepresentable-row` (reason `empty-key`) with its JSON Pointer. Two rows of one key make
+that key `invalid` with `ambiguous-key`, and no row is chosen. The resolver validates only the keys
+whose rules it owns (`executionProfiles.fast.enabled`, `delivery.prReview`, `visibility`, the
+retired rows and the hidden forced values); every other key's domain validation and its default
+stay with the fragment or tool that owns it.
 
 Not every former name stays readable. The former gate namespace `prReview.*` and the former
 `delivery` spellings `worktree.baseBranch`, `worktree.branchPrefix`, and `worktree.completion` are
 **retired**: a retired row is never read as a value, and its successor (`mergeGate.<same trailing
-key>`, `delivery.<key>`) is the only key a run resolves. Each run checks the successors its own tool
-can resolve at its first configuration read, before any fetch, branch, worktree, commit, push,
-delegation, or merge. An absent successor stops the run, naming the retired row, its successor, and
-setup; this is the one exception to the safe-default rule. A present successor wins, and the inert
-row is reported once. `delivery.prReview` does not begin with `prReview.` and is never matched.
-Setup is exempt as the repair path and is the only reader of a retired row's value: it carries the
-value over, removes the old row, and reports a shadowed value rather than merging it. The binding
-contract, including which tool checks which successors and the login-keyed
-`prReview.bots.<login>.*` case, is the "Retired keys" section of
-`src/shared/config-migration-edge-cases.md`.
+key>`, `delivery.<key>`) is the only key a run resolves. A retired row never appears in the
+resolver's `values`; it appears in `retired` with its successor and an action for the calling
+tool. The resolver decides that action from `RETIRED_KEYS` and the per-tool `SUCCESSOR_SETS` in
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), which are their
+only source: `stop` when the row's successor is in the calling tool's set and absent, `report`
+when it is present, and `none` when the tool's set does not contain it; `deliver` reports a
+retired `worktree.completion` instead of stopping. `iterate` and
+`apply-review` pass their `mode`, because their set depends on it; setup alone may pass
+`mode: "standard"`, which skips step 0 so a hidden-to-standard switch resolves through steps 1–4; and a tool that no set names is
+reported as `unknown-tool` and resolves no successor; the deprecated alias `pr-review` resolves as
+`merge-gate`, so a run forwarded through it receives merge-gate's set. The consumer acts at its first configuration
+read, before any fetch, branch, worktree, commit, push, delegation, or merge: `stop` names the
+retired row, its successor, and setup, and is the one exception to the safe-default rule; `report`
+lets the successor win, reports the inert row once, and points to setup. A delegated non-interactive run returns the
+stop reason to its caller. `delivery.prReview` does not begin with `prReview.` and is never matched.
+A login-keyed `prReview.bots.<login>.trigger` or `.check` row carries
+`conditional: "reviewer-resolved"` and its normalized login whatever its action. Only when that
+action is `stop` does the consumer downgrade it to a single report if the run resolves no reviewer
+matching the login, because that depends on run state; the conditional never changes `report` or
+`none`.
+Setup is exempt as the repair path and is the only reader of a retired row's value, which its
+`retired` entries carry as `raw` next to the row's original `line` (`null` for an invalid key or a
+JSON source): it carries the value over by rewriting that line with only the key replaced, removes
+the old row, and reports a shadowed value rather than merging it.
 
 `mergeGate.conflictResolution` has **no** legacy counterpart that any earlier generation wrote: no
 such generation produced a `prReview.conflictResolution` row. A row that exists anyway is retired like
@@ -547,9 +610,12 @@ Read-side tolerance is deliberately wider than this write-side recognition. The 
 locator's scan and the `review` design-decision exclusion both match the known project-setup slugs
 after stripping an optional leading `^\d+[-_]` prefix, so an ADR written under a project's numeric
 convention stays findable as configuration and stays out of the architecture-rationale sources.
-That tolerance is read-only; it never decides what a new file is called. Because it widens the
-locator's scan to a family of names, several files can match within that one locator step; the
-tie-break is described under [Resolution order and ownership](#resolution-order-and-ownership).
+That tolerance is read-only; it never decides what a new file is called. For the locator it is
+executed by the resolver (`classifySetupStem` and `compareSetupCandidates` in
+[`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs)); the `review`
+exclusion applies the same stem rule in prose. Because it widens the locator's scan to a family of
+names, several files can match within that one locator step; the tie-break is described under
+[Resolution order and ownership](#resolution-order-and-ownership).
 
 ### Determinism boundary
 

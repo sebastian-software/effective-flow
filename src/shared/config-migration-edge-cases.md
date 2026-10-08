@@ -1,114 +1,31 @@
-## Configuration edge cases and read compatibility
+## Configuration edge cases and consumer duties
 
-These are the circumstance-gated parts of the Effective Flow configuration contract: the hidden
-mode of locator step 0, the legacy marker and slug tolerances of the config locator, the ranking
-that resolves a several-match scan, the transitional JSON fallback, the two `tracker.*` state keys
-only an `external` target resolves, and the stop contract for retired rows. The ordered resolution steps and the table
-encoding they extend live in the "Effective Flow configuration (project setup ADR)" building block
-(`config-migration.md`), which every source that loads this one carries.
+These are the duties a run owes for configuration results the resolver reports but cannot carry
+out itself: hidden mode, the two `tracker.*` state keys only an `external` target resolves, and the
+timing of a retired-row stop. The resolution call and the action per result field live in the
+"Effective Flow configuration (project setup ADR)" building block (`config-migration.md`), which
+every source that loads this one carries.
 
-### Hidden mode (locator step 0)
+### Hidden mode
 
-The local file `<RUNTIME_STATE_ROOT>/.effective-flow/project-setup.md` is a personal,
-per-checkout configuration that {{SKILL:setup}} alone writes. It is read with the same table
-encoding as the project setup ADR, from the verified `RUNTIME_STATE_ROOT` only; a same-named file
-below a linked `EXECUTION_ROOT` is never inspected as configuration, and when a run notices one
-there it reports it as ignored. Reading it creates nothing and touches no Git.
-
-**Resolving the root for step 0.** A reader that has not already established a verified
-`RUNTIME_STATE_ROOT` — through the execution-location contract or the apply-source detection —
-resolves it read-only before it looks for the local file, so no reader depends on having loaded
-that contract first. Run `git worktree list --porcelain` from the current checkout and take only
-the first record, which must begin with exactly one non-empty `worktree <path>` line; a missing,
-empty, or duplicate path field, or a `bare` line, rejects it. Canonicalize that path physically and
-require it to exist as a directory, then require `git rev-parse --show-toplevel` from it to resolve
-back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match
-the one from the current checkout. Only that verified path is `RUNTIME_STATE_ROOT`. A directory
-that is not a Git checkout has no step 0 and resolves through steps 1–4. In a Git checkout,
-any failed check stops the reader with a report naming the failed check and making no write: a
-fall-through to standard mode would let a linked worktree miss a hidden configuration, read tracked
-defaults, or let {{SKILL:setup}} write tracked configuration over a hidden main checkout. The
-reader never uses `EXECUTION_ROOT` or the current directory as a substitute.
-
-| Situation                                                | Result                                                                                                    |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| local file declares `visibility \| hidden`               | hidden mode; the local file is the whole configuration and wins over steps 1–4                            |
-| local file present without `visibility \| hidden`        | not honoured: report the file once and resolve through steps 1–4 as if it were absent                     |
-| hidden mode **and** a tracked marker or ADR resolves     | the local file wins; name the tracked marker/ADR once as shadowed and never read a value from it          |
-| a tracked ADR declares `visibility \| hidden`            | invalid by construction (hidden configuration is never tracked): report the row, ignore it, stay standard |
-| unreadable or ambiguous local file declaring hidden mode | the safe-default rule of the core applies per affected key; hidden mode itself stays active               |
+`data.visibility: hidden` means the main checkout's local hidden configuration file, which only
+{{SKILL:setup}} writes, is the whole configuration, and `data.values` already carries the forced
+hidden values. Hidden mode also fixes the tracker target: an issue reference or per-run signal
+that would otherwise select the forge or an external tool does not override it. A workflow that
+can only work against such a target stops before its first tracker access or write, naming hidden
+mode, and never falls back to writing labels or markers.
 
 A standard-mode {{SKILL:setup}} run resolves the ADR it reads and writes through steps 1–4 only; a
 step-0 file is then a read-only seed and never its write target. Hidden plan and concept writes
 use absolute handles under the verified `RUNTIME_STATE_ROOT`, never a path relative to a linked
 `EXECUTION_ROOT`, and apply "Runtime-state write safety" to the target and its parent directories.
 
-**Forced values.** In hidden mode the resolver, not the individual tool, enforces these values.
-A row in the local file that contradicts one is reported once per run as overridden and never
-honoured; a missing row takes the forced value silently.
-
-| Key                     | Value in hidden mode                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `plan.dir`              | `.effective-flow/plan`                                                                                            |
-| `concept.dir`           | `.effective-flow/concept`                                                                                         |
-| `tracker.mode`          | `local`                                                                                                           |
-| `delivery.prReview`     | `off`                                                                                                             |
-| `delivery.branchPrefix` | empty by default; a value containing `effective-flow` (any letter case) is rejected and the empty default applies |
-
-Every other key resolves from the local file exactly as it would from the ADR. Hidden mode also
-fixes the tracker target: an issue reference or per-run signal that would otherwise select the
-forge or an external tool does not override it. A workflow that can only work against such a
-target stops before its first tracker access or write, naming hidden mode, and never falls back to
-writing labels or markers.
-
 **No trace in Git or forge prose.** In hidden mode no commit message, branch name, pull-request
 title or body, or tracker-facing summary references a path under `.effective-flow/` — a plan or
 concept file included — or names Effective Flow (`effective-flow`, `Effective Flow`). A run that
 delegates a commit or a pull request hands this constraint on with the delegation.
 
-### Legacy setup marker (locator step 1)
-
-**Backcompat (one generation):** locator step 1 recognizes the legacy marker spelling as
-equivalent to the current one on read, and {{SKILL:setup}} converts it non-destructively to the
-new spelling on the next run.
-
-The spelling itself is **not** repeated here. It states the condition under which this fragment is
-loaded at all, so a reader that had to reach this fragment to learn it could never establish that
-the condition holds — the locator would fall through to step 2, match a lower-priority ADR, and
-read the wrong project configuration without saying so. Recognition therefore stays in the
-always-loaded step and only its consequence lives here.
-
-### Read tolerance and several-match ranking (locator step 2)
-
-A file matches the locator's scan when its stem equals `effective-flow-project-setup` or the
-legacy slug `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix,
-**and** its body carries a canonical configuration envelope (see step 2 of the core). Both the
-numeric prefix and the legacy slug are read-side tolerance; they do not decide
-what a new file is named. That tolerance widens the scan to a family of names, so **several**
-files can match inside this one step; "the first matching step wins" ranks the five steps, not
-the matches within a step. Rank the matches by one **ordered** comparison rather than by two
-independent preferences: prefer the current slug `effective-flow-project-setup` over the legacy
-`firmo-project-setup` first, and only among files carrying the same slug prefer an unprefixed
-stem over a prefixed one. Stated as two independent preferences,
-`0001-effective-flow-project-setup.md` and `firmo-project-setup.md` would each win one and
-neither would survive both. If more than one match still ties at the top of that ranking, report
-every matching path and fall through to the next step instead of picking one. Falling through
-here is not the same result as finding nothing: a tool that **writes** configuration ends its run
-on a reported several-match result, reporting every matching path so its user resolves the
-duplicates by hand, and never reads it as "no project setup ADR exists", because writing a new
-ADR into that state adds a further one beside the matches already reported.
-
-### Transitional compatibility (locator step 3)
-
-Only transitionally — establish or reuse the verified execution-location receipt and resolve the
-fallback from `RUNTIME_STATE_ROOT`: read a still-present absolute
-`<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
-`<RUNTIME_STATE_ROOT>/.firmo/config.json`) and point to {{SKILL:setup}}. Never inspect a
-same-named fallback below a linked `EXECUTION_ROOT`. A missing, bare, moved, unsafe, or
-repository-mismatched runtime root blocks the fallback. This read path creates **nothing**
-and touches **no** Git.
-
-### External tracker state keys (table encoding)
+### External tracker state keys
 
 - **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
   state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
@@ -129,64 +46,15 @@ and touches **no** Git.
   Only `{{SKILL:setup}}` writes a confirmed
   tracker-verified suggestion. The completion assessment behind the offer has no configuration key of its own.
 
-### Retired keys (table encoding)
+### Retired rows
 
-The core names these rows as retired. A retired row is **never read as a value**, not even to report
-what it would have held; its successor is the only key a run resolves.
-
-| Retired row                             | Successor                                |
-| --------------------------------------- | ---------------------------------------- |
-| `worktree.baseBranch`                   | `delivery.baseBranch`                    |
-| `worktree.branchPrefix`                 | `delivery.branchPrefix`                  |
-| `worktree.completion`                   | `delivery.completion`                    |
-| a row whose key begins with `prReview.` | the same trailing key under `mergeGate.` |
-
-`delivery.prReview` does not begin with `prReview.`: it is a live `delivery` key, never retired, and
-never matched. `worktree.enabled`, `worktree.setup`, `worktree.baseDir` and `applyReview.worktree.*`
-are current keys.
-
-**Which runs resolve which successors.** A run checks exactly the successors its own tool can resolve
-at any point of the run, not only the ones it is about to read:
-
-- `delivery.baseBranch`, `delivery.branchPrefix` and `delivery.completion`: {{SKILL:build}},
-  {{SKILL:fix}}, {{SKILL:docs}}, {{SKILL:refactor}} and {{SKILL:maintain}}, through "Delivery and
-  worktree integration".
-- `delivery.baseBranch` and `delivery.branchPrefix`: {{SKILL:deliver}}, {{SKILL:apply-issues}} and
-  {{SKILL:apply-review}} in remote mode.
-- `delivery.baseBranch` only: {{SKILL:pr}}, and {{SKILL:iterate}} in local mode, the only mode that
-  reads it.
-- every `mergeGate.*` key: {{SKILL:merge-gate}}.
-- `mergeGate.bots`, `mergeGate.bots.<login>.trigger`, `mergeGate.bots.<login>.check` and
-  `mergeGate.botWaitMinutes`: {{SKILL:iterate}} in PR mode, including a run {{SKILL:merge-gate}}
-  delegates, the `.check` key through "Automatic reviewer state". In PR mode these are its whole set.
-
-A tool not listed resolves no successor, so a retired row neither stops nor is reported there. A run
-that hands work to another workflow does not check that workflow's successors on its behalf; the
-receiving run checks its own at its own first configuration read. The checkout provisioning of
+A retired row is **never read as a value**, not even to report what it would have held. Act on
+`data.retired` at the run's **first configuration read**, before any fetch, branch, worktree,
+commit, push, delegation or merge: deciding only when a successor is about to be read would stop a
+run after it already delivered. A `stop` does nothing else; a non-interactive delegated run stops
+the same way and returns that reason to its caller like any other precondition failure. A run that
+hands work to another workflow does not act on that workflow's successors; the receiving run
+resolves its own at its own first configuration read. The checkout provisioning of
 {{SKILL:iterate}} in PR mode and of {{SKILL:merge-gate}} applies "Base-branch resolution" to
 `delivery.baseBranch` only as a checkout precondition; that is not a successor read, so a retired
 `worktree.baseBranch` neither stops nor is reported there.
-
-**When.** Detect at the run's **first configuration read**, before any fetch, branch, worktree,
-commit, push, delegation or merge, over that whole successor set. Detecting only when a successor is
-about to be resolved would stop a run after it already delivered: a project carrying only
-`worktree.completion` would implement and commit before stopping at handback.
-
-- **Successor absent → stop.** Name the retired row, its successor, and {{SKILL:setup}}, which
-  rewrites the row in place; do nothing else. This is the one exception to the safe-default rule of
-  the core: never take the successor's default instead. A non-interactive delegated run stops the same
-  way and returns that reason to its caller like any other precondition failure.
-- **Successor present → the successor wins.** Report the inert retired row **once** per run, point to
-  {{SKILL:setup}}, and continue; the two rows are never combined.
-- **Login-keyed subkeys.** A retired `prReview.bots.<login>.trigger` or `.check` has as its successor
-  the same subkey under the `mergeGate.bots` entry that denotes the same reviewer under "Matching a
-  configured login", including its one-trailing-`[bot]` equivalence and collapsed entries. A retired
-  subkey whose login matches no reviewer the run resolves has no resolvable successor: report it once
-  and do not stop.
-- **{{SKILL:deliver}} and `worktree.completion`.** `deliver` reads `delivery.completion` only to state
-  that its own pull-request intent overrides it, so a retired `worktree.completion` there is reported
-  and never stops the run.
-- **{{SKILL:setup}} is exempt.** It is the repair path: it records every retired row and rewrites it
-  in place, and is the only source that reads a retired row's value, in order to carry it over.
-
-The same rule applies to rows read from the transitional JSON configuration of locator step 3.

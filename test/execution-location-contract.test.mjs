@@ -176,9 +176,12 @@ test('every local report consumer retains and uses the absolute main-checkout ha
   );
   assert.match(review, /RUNTIME_STATE_ROOT/);
   assert.match(review, /collision checks/);
+  // The transitional JSON handles are the resolver's (the "step 3: …" cases in
+  // `test/config-resolve.test.mjs` read them below the main checkout only); the fragment hands every
+  // consumer that verified absolute root instead of a worktree-relative path.
   assert.match(
     configMigration,
-    /<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json[\s\S]*<RUNTIME_STATE_ROOT>\/\.firmo\/config\.json/,
+    /`data\.runtimeStateRoot` is the verified `RUNTIME_STATE_ROOT`\s+\(`null` outside Git\)/,
   );
 });
 

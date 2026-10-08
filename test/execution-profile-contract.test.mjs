@@ -126,6 +126,8 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'config-resolve-core.mjs',
+  'config-resolve.mjs',
   'delegation-envelope-core.mjs',
   'delegation-envelope.mjs',
   'delivery-selection-core.mjs',
@@ -888,11 +890,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 18);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 20);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 18 approved runtime scripts',
+    'build.mjs must register exactly the 20 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

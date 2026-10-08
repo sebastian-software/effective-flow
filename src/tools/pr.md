@@ -119,14 +119,14 @@ base-branch-resolution
    - Establish and verify the execution root per "Execution root" before any other step, and keep
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
-   - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
-     or the documented default where that line is absent. Record
-     that configured value and resolve nothing from it here: step 4 applies "Base-branch
-     resolution" to it, deliberately behind the step 2 preconditions, so a direct invocation
-     reaches the network only once its checkout has been accepted.
-   - A `worktree.baseBranch` row is retired and never read, on a direct invocation and a committed handoff
-     alike. With no `delivery.baseBranch` row beside it, stop here, before any fetch or push, naming both keys
-     and {{SKILL:setup}}; with both present, `delivery.baseBranch` wins and the retired row is reported once.
+   - Read the Effective Flow configuration through `node <skill-root>/scripts/config-resolve.mjs resolve` with
+     `{"cwd": "<execution root>", "tool": "pr"}` on standard input; a nonzero exit or no single parseable envelope
+     stops the run, reporting the cause. Use `delivery.baseBranch` from `data.values`, or the documented default
+     where it is unset. Record that configured value and resolve nothing from it here: step 4 applies "Base-branch
+     resolution" to it, behind the step 2 preconditions, so a direct invocation reaches the network only once its
+     checkout has been accepted. A retired `worktree.baseBranch` row is never read, on a direct invocation and a
+     committed handoff alike: its `data.retired` action `stop` ends the run here, before any fetch or push, naming both
+     keys and {{SKILL:setup}}; `report` reports the retired row once and points to {{SKILL:setup}} while `delivery.baseBranch` wins.
    - Classify the call as either a direct invocation from its current checkout or a returning
      committed handoff. There is no fresh-branch or local-change-transfer mode in this tool; use
      `{{SKILL:deliver}}` for that lifecycle.

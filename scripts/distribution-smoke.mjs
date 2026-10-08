@@ -49,6 +49,8 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement-protocol.mjs',
   'plan-lint.mjs',
   'plan-lint-core.mjs',
+  'config-resolve.mjs',
+  'config-resolve-core.mjs',
 ];
 const TRUSTED_AUTOMATION = [
   join('.github', 'workflows', 'close-develop-issues.yml'),
@@ -186,6 +188,41 @@ function assertPlanLintSmoke(target, helper) {
       file.duplicates.join() !== 'docs/plan/archive/smoke.md'
     ) {
       fail(`${target} plan-lint failed\n${result.stdout}${result.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+// Resolves a throwaway checkout's project-setup ADR through the shipped copy of the helper, which
+// proves the CLI resolves its core beside it inside the target and reads a canonical envelope.
+function assertConfigResolveSmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-config-resolve-smoke-')));
+  try {
+    const init = spawnSync('git', ['init', '--quiet', cwd], { encoding: 'utf8' });
+    if (init.status !== 0)
+      fail(`${target} config-resolve fixture: git init failed\n${init.stderr}`);
+    mkdirSync(join(cwd, 'docs', 'adr'), { recursive: true });
+    writeFileSync(
+      join(cwd, 'docs', 'adr', 'effective-flow-project-setup.md'),
+      '# Effective Flow project setup\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| plan.dir | docs/plan |\n',
+    );
+    const result = spawnSync(process.execPath, [helper, 'resolve'], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, CI: '1', NO_COLOR: '1' },
+      input: JSON.stringify({ cwd, tool: 'build' }),
+    });
+    const envelope = parseJson(result.stdout.trim(), `${target} config-resolve`);
+    if (
+      result.status !== 0 ||
+      envelope.ok !== true ||
+      envelope.operation !== 'resolve' ||
+      envelope.data.source?.step !== 2 ||
+      envelope.data.runtimeStateRoot !== cwd ||
+      envelope.data.values?.['plan.dir']?.value !== 'docs/plan'
+    ) {
+      fail(`${target} config-resolve failed\n${result.stdout}${result.stderr}`);
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -378,6 +415,7 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       fail(`${target} pilot protocol failed\n${protocolHelper.stdout}${protocolHelper.stderr}`);
     }
     assertPlanLintSmoke(target, join(scripts, 'plan-lint.mjs'));
+    assertConfigResolveSmoke(target, join(scripts, 'config-resolve.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>
