@@ -7080,10 +7080,73 @@ test('the shared reviewer-state contract is loaded by the gate and by the guard'
     // receives its rules.
     assert.match(
       source(path),
-      /```(?:lazy-)?include\n(?:[a-z0-9-]+\n)*review-bot-state\n(?:[a-z0-9-]+\n)*```/,
+      /```(?:lazy-)?include\n(?:[a-z0-9-]+\n)*review-bot-state\n(?:[a-z0-9-]+\n)*(?:when:[^\n]*\n)?```/,
       `${path} must load review-bot-state through an include fence`,
     );
   }
+});
+
+// Invariant: iterate reads the shared reviewer-state contract at both of its decision points,
+// and it can decide whether it needs that contract without having read it. The first is Phase 1.5
+// past its skip conditions — local mode, `Review guard: established` (which merge-gate sends on
+// every delegation), an empty `mergeGate.bots`, and an unreadable pull-request status. A `when:`
+// clause naming only the phase would load it on runs the guard skips; one that dropped a skip
+// condition would leave the guard deciding from text it has not loaded; and a skip list that moved
+// into the fragment would make the pointer need the text it loads. The second is the first
+// configuration read: a retired `stop` row conditional on a resolved reviewer is downgraded only
+// when no configured login matches under "Matching a configured login", and that matching rule
+// lives in the fragment. Without this arm the downgrade would compare logins literally and turn a
+// stop into a report — failing open.
+test("iterate's review-bot-state pointer names both decision points, decidable from the core", () => {
+  const iterate = source('src/tools/iterate.md');
+
+  assert.doesNotMatch(
+    iterate,
+    /```include\n(?:[a-z0-9-]+\n)*review-bot-state\n/,
+    'iterate must not load review-bot-state eagerly; its pointer names both decision points',
+  );
+
+  const when = [...iterate.matchAll(LAZY_INCLUDE_RE)]
+    .filter((match) => match[1].trim() === 'review-bot-state')
+    .map((match) => (match[2] ?? '').trim());
+  assert.equal(when.length, 1, 'iterate must carry exactly one lazy pointer to review-bot-state');
+  assert.match(
+    when[0],
+    /(?=[\s\S]*Phase 1\.5)(?=[\s\S]*PR mode)(?=[\s\S]*`Review guard: established`)(?=[\s\S]*`mergeGate\.bots`)(?=[\s\S]*pull-request status)/,
+    'the review-bot-state pointer must name Phase 1.5 and every skip condition it waits past ' +
+      `(PR mode, the review-guard switch, mergeGate.bots, the status read); got: ${when[0]}`,
+  );
+  assert.match(
+    when[0],
+    /(?=[\s\S]*first configuration read)(?=[\s\S]*`data\.retired`)(?=[\s\S]*`stop`)(?=[\s\S]*`conditional: reviewer-resolved`)/,
+    'the review-bot-state pointer must also fire when the first configuration read returns a ' +
+      `retired stop row conditional on a resolved reviewer; got: ${when[0]}`,
+  );
+
+  // The skip predicates stay in the core, so the pointer is decidable before it fires.
+  const skipItem =
+    section(iterate, '### Phase 1.5')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => /skip conditions/i.test(item)) ?? '';
+  for (const [predicate, label] of [
+    [/local mode/, 'local mode'],
+    [/`Review guard: established`/, 'the review-guard switch'],
+    [/`mergeGate\.bots` is empty/, 'an empty mergeGate.bots'],
+    [/no pull-request status/, 'the missing status read'],
+  ]) {
+    assert.match(skipItem, predicate, `Phase 1.5 step 1 must keep the ${label} skip in the core`);
+  }
+
+  // The observation step is the decision point, so it says to read the fragment there.
+  const observe =
+    section(iterate, '### Phase 1.5')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => /\*\*Observe\*\*/.test(item)) ?? '';
+  assert.match(
+    flat(observe),
+    /read the deferred `review-bot-state` fragment now/,
+    'Phase 1.5 step 2 must load the deferred reviewer-state contract before observing',
+  );
 });
 
 test('an emoji acknowledgment is never presented as evidence that a reviewer has no check', () => {

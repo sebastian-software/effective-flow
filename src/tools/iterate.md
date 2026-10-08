@@ -133,8 +133,9 @@ pr-thread-ledger
 when: hidden mode (`visibility: hidden`) is resolved and Phase 2 classification or a Phase 5 reply is imminent
 ```
 
-```include
+```lazy-include
 review-bot-state
+when: Phase 1.5 is reached in PR mode and none of its step 1 skip conditions applied – no `Review guard: established`, a non-empty `mergeGate.bots`, and a pull-request status Phase 1 read – or the first configuration read returns a `data.retired` entry with action `stop` and `conditional: reviewer-resolved`
 ```
 
 ## Classification delegation
@@ -555,12 +556,12 @@ because classification is the thing being protected.
      `pr-status-read` is supported on **both** providers, so this is a genuine failure or an
      out-of-date CLI rather than a provider's permanent state. On Forgejo it composes three
      `tea api` reads instead of one query, so any of the three failing lands here.
-2. **Observe** the state of every configured reviewer through the loaded "Automatic reviewer state",
-   against the head SHA and the status read Phase 1 carried in, and the threads **and submitted
-   reviews** read at that same
-   instant. Record each state with the evidence that established it, naming the surface it came
-   from — a reviewer resolved through its submitted review is resolved differently from one resolved
-   through a comment, and only the record says which.
+2. **Observe** the state of every configured reviewer through "Automatic reviewer state" – read the
+   deferred `review-bot-state` fragment now – against the head SHA and the status read Phase 1
+   carried in, and the threads **and submitted reviews** read at that same instant. Record each
+   state with the evidence that established it, naming the surface it came from — a reviewer
+   resolved through its submitted review is resolved differently from one resolved through a
+   comment, and only the record says which.
 3. **Only "running" holds this run.** A reviewer observed as **has run** or **not started** lets the
    run continue: this guard waits for output that is already coming, and it never summons output
    nobody asked for — posting a trigger belongs to {{SKILL:merge-gate}}, and this workflow writes no
