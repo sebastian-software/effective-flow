@@ -61,10 +61,6 @@ when: a local or legacy review finding is re-evaluated before task creation or d
 ```
 
 ```include
-adr-convention
-```
-
-```include
 commit-message-rules
 ```
 
@@ -358,6 +354,11 @@ First survey the available skills:
 
 ```include
 skill-discovery
+```
+
+```lazy-include
+adr-convention
+when: Phase 3 handles at least one rejected finding — a local "Do not implement" / "Nicht umsetzen" note or a remote `wontfix` finding (Phase 3 remote) — before its decision candidate is formed
 ```
 
 For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
