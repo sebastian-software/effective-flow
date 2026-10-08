@@ -237,8 +237,8 @@ mistaken for an external skill.
   `src/scripts/remote-tracker-core.mjs`; and two distinct camelCase configuration namespaces —
   `delivery.prReview`, which decides whether a delivery publishes its own findings onto the pull
   request it created, and the retired `prReview.*` merge-gate block, which is never read and which
-  setup rewrites in place under `mergeGate.<key>` (see `src/shared/config-merge-gate-keys.md` and
-  `src/shared/config-migration-edge-cases.md`). Those two namespaces mean entirely different things and are never read
+  setup rewrites in place under `mergeGate.<key>` (see `src/shared/config-merge-gate-keys.md`; the
+  retired namespace and its successor map live in `src/scripts/config-resolve-core.mjs`). Those two namespaces mean entirely different things and are never read
   for one another. Renaming any of these crosses a concept boundary. What is frozen is each name,
   not each file's contents: `pr-review-integration.md` names the central skill in its body and was
   retargeted with all other ownership prose.

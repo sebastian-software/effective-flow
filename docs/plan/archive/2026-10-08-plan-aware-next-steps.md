@@ -52,10 +52,10 @@ The generic table retains all 46 rows, its schema, tool-membership checks and us
 
 ## Test results
 
-Required final source checks passed in order, each with exit 0:
+Feature source checks before the advanced-base merge passed in order, each with exit 0:
 
 1. `pnpm agent:check`: 752 files, no format errors.
-2. `pnpm test`: 2,020 tests, 2,019 passed, one intentional archived-freshness skip, zero failures. A platform-specific filename subcase reported `EILSEQ`.
+2. `pnpm test`: 2,020 tests, 2,019 passed, one reported skip, zero failures. A platform-specific filename subcase reported `EILSEQ`.
 3. `node build.mjs`: three targets and all guards passed.
 4. `pnpm test:distribution`: offline smoke passed.
 
@@ -66,6 +66,14 @@ Fresh recording used Codex CLI 0.159.3, `gpt-6.1-sol`, high reasoning, separate 
 Evidence is archived under `evals/next-steps/results/`, generation `902a32bf-edfb-480a-8c09-64889ed0b0e5`. The instrument is `sha256:58c6cb31c68deeef64f1dba76f4dfcab5f5b32e26933499118dec92cf6b5171c`. The evaluator and publication coordinator are deliberately outside model-instrument membership; their bounded corrections preserved the current round's inputs and sealed evidence.
 
 The suite observes completed-run recommendation snapshots, not whole workflow execution. State snapshots prove retained differences, not transient writes that were fully rolled back. Existing `merge-gate` and `iterate` evidence remains stale (six scenarios × five runs each) and must be re-recorded before release; that currency debt is not a merge prerequisite.
+
+### Integration with the advanced source branch
+
+The delivery merge integrates develop commit `dde3cff89c9887159eee07273b6019fceb9fd341` (#539) into feature commit `e6c5b8ebf06b18c5c6deb485df151d8d55fb6b05` with a regular two-parent merge. The sole conflict was `build.mjs`: the complete upstream configuration resolver, runtime membership and guards are retained; `iterate` changes from the upstream budget 1820 to the measured minimum 1821 for this feature's additional handoff line. Independent review confirmed the three automatic overlapping files match the deterministic three-way result, with no findings.
+
+All required checks passed once on the integrated source in the prescribed order: `pnpm agent:check` (867 files), `pnpm test` (2,198 tests, 2,197 passed, one reported skip, zero failures), `node build.mjs` (all three targets; iterate 1821/1821), then `pnpm test:distribution` (offline passed). The host reported the filesystem's rejection of invalid UTF-8 filenames with `EILSEQ`.
+
+Strict Next-steps verification still reports all eleven scenarios current at 5/5. The model-input identities are unchanged; all 331 archived files remain byte-identical to the feature commit. No new model sessions or evidence rewrites were needed. Independent before/after source and evidence hashes remained equal throughout validation. Merge-gate and Iterate each remain 6×5 stale, with the existing re-recording requirement before release.
 
 ## Review findings
 

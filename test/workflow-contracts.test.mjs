@@ -17,6 +17,18 @@ import {
 } from '../build-lib.mjs';
 import { pilotOperationKeys } from './support/pilot-helper-contract.mjs';
 import { inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
+import {
+  classifySetupStem,
+  compareSetupCandidates,
+  DIAGNOSTIC_CODES,
+  HIDDEN_FORCED_VALUES,
+  MODE_TOOLS,
+  RETIRED_EXEMPT_TOOLS,
+  RETIRED_KEYS,
+  ROOT_CHECKS,
+  SUCCESSOR_SETS,
+  successorOf,
+} from '../src/scripts/config-resolve-core.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -1585,11 +1597,11 @@ test('every fragment reachable only through a shared-fragment pointer keeps that
     {
       host: 'src/shared/config-migration.md',
       fragment: 'config-migration-edge-cases',
-      // Both halves of the split's own seam: the locator's rare branches and the external tracker
-      // keys. A clause naming only one of them leaves the other half of the fragment with no
-      // documented moment to load it.
-      trigger: /(?=[\s\S]*locator)(?=[\s\S]*`tracker\.mode: external`)/i,
-      decision: 'the config locator and the `tracker.mode: external` run',
+      // All three sections of the fragment: hidden mode, the retired-row timing and the external
+      // tracker keys. A clause naming fewer leaves a section with no documented moment to load it.
+      trigger:
+        /(?=[\s\S]*`data\.visibility`)(?=[\s\S]*`data\.retired`)(?=[\s\S]*`tracker\.mode: external`)/i,
+      decision: 'hidden mode, an acted-on retired row, and the `tracker.mode: external` run',
     },
     {
       host: 'src/shared/documentation-sync.md',
@@ -1625,120 +1637,120 @@ test('every fragment reachable only through a shared-fragment pointer keeps that
   }
 });
 
-// A pointer's own condition must be decidable from the half that stays loaded. Deferring the
-// legacy marker's literal spelling broke that: step 1 was left saying only that "a legacy marker
-// spelling is recognized", while the spelling lived behind a pointer whose `when:` fires on that
-// same marker being present. A reader could not detect the marker without the fragment and could
-// not reach the fragment without detecting the marker, so the locator fell through to step 2,
-// matched a lower-priority ADR, and read the wrong project configuration in silence. Content
-// preservation cannot catch this - nothing was lost, it was moved out of reach of its own trigger.
-test('the config locator keeps every predicate its own lazy trigger depends on', () => {
+// A pointer's own condition must be decidable from the half that stays loaded. Deferring the legacy
+// marker's spelling once broke that: a reader could not detect the marker without the fragment and
+// could not reach the fragment without detecting the marker, so the locator read the wrong project
+// configuration in silence. The trigger now names result fields of the resolution call, so the
+// loaded core has to define each field outside every fence, where the pointer itself does not count.
+test('the configuration core defines every result field its own lazy trigger depends on', () => {
   const core = source('src/shared/config-migration.md');
-  const step1 = section(core, '1. **AGENTS.md marker.**', '\n2. **Default path/scan.**');
-
-  assert.match(
-    step1,
-    /\*\*Firmo project setup:\*\*/,
-    'locator step 1 must spell the legacy marker it recognizes: that spelling is the detection ' +
-      'predicate of the edge-cases pointer, so deferring it makes the trigger undecidable and the ' +
-      'locator silently selects a lower-priority ADR',
-  );
-
-  // The remaining trigger clauses stay decidable from the core, which is why only this one moved
-  // back: the exact-slug match (clause 1), both transitional handle paths (clause 4) and the
-  // tracker mode (clause 5) are all stated in the always-loaded half.
-  assert.match(core, /stem equals `effective-flow-project-setup`/);
-  assert.match(core, /\.effective-flow\/config\.json[\s\S]*\.firmo\/config\.json/);
-});
-
-// The retired-key stop lives behind the same pointer, and the same trap applies: a reader that had to
-// load the edge-cases fragment to learn which rows are retired could never decide that its trigger
-// fired, would classify a retired row as an unknown key, take the safe default and never stop. So
-// the key names, the anchored `prReview.` form and the safe-default exception stay in the loaded
-// core, outside every fence, and the pointer names the condition.
-test('the configuration core keeps the retired-key predicate its own lazy trigger depends on', () => {
-  const core = source('src/shared/config-migration.md');
-  const encoding = prose(section(core.replace(/```[\s\S]*?```/g, ''), '### Table encoding'));
-
-  for (const key of ['worktree.baseBranch', 'worktree.branchPrefix', 'worktree.completion']) {
-    assert.ok(
-      encoding.includes(`\`${key}\``),
-      `the table encoding must name the retired ${key} outside any fence`,
-    );
-  }
-  assert.match(
-    encoding,
-    /a row whose key begins with `prReview\.`/,
-    'the retired merge-gate namespace must be named in the anchored "begins with" form, which ' +
-      'keeps the live delivery.prReview out of it',
-  );
-  assert.match(
-    encoding,
-    near('Retired rows', 'exception to the safe-default rule', 300),
-    'the retired-row stop must be named as the exception to the safe-default rule',
-  );
-
+  const loaded = prose(core.replace(/```[\s\S]*?```/g, ''));
   const when = new Map(
     [...core.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
   ).get('config-migration-edge-cases');
+
+  for (const field of ['`data.visibility`', '`data.retired`', '`tracker.mode: external`']) {
+    assert.ok((when ?? '').includes(field), `the edge-cases trigger must name ${field}`);
+  }
   assert.match(
-    when ?? '',
-    /retired row/i,
-    'the edge-cases pointer must name a present retired row as one of its trigger conditions',
+    loaded,
+    /`data\.visibility` is `standard` or `hidden`/,
+    'the loaded core must define the data.visibility field the trigger keys on',
+  );
+  assert.match(
+    loaded,
+    /Each `data\.retired` entry names a retired row and its successor\. `stop` ends the run[\s\S]{0,200}`report` is reported once/,
+    'the loaded core must define the data.retired actions the trigger keys on',
   );
 });
 
-// Where the stop happens decides whether it protects anything. Stopping when a late successor is
-// about to be resolved would leave a delivery branch, a worktree or pushed repairs behind, so the
-// contract pins the detection moment, and the exemptions that keep it from stopping runs it must
-// not stop.
-test('the retired-key contract detects at the first configuration read and names its exemptions', () => {
-  const retired = prose(
-    section(
-      source('src/shared/config-migration-edge-cases.md'),
-      '### Retired keys (table encoding)',
-    ),
+// The retired-key predicate lives in the resolver: a reader that had to recognize retired rows
+// itself could classify one as an unknown key, take the safe default and never stop. Its fixed map
+// and the anchored `prReview.` prefix are therefore pinned on the export, and the loaded prose keeps
+// the one rule the resolver cannot apply for the reader: a stop is the exception to the safe-default
+// rule and never degrades into the successor's default.
+test('the resolver owns the retired-key predicate and the core keeps its safe-default exception', () => {
+  assert.deepEqual(RETIRED_KEYS, {
+    'worktree.baseBranch': 'delivery.baseBranch',
+    'worktree.branchPrefix': 'delivery.branchPrefix',
+    'worktree.completion': 'delivery.completion',
+  });
+  assert.equal(successorOf('prReview.botWaitMinutes'), 'mergeGate.botWaitMinutes');
+  assert.equal(
+    successorOf('delivery.prReview'),
+    null,
+    'the live delivery.prReview must stay outside the anchored prReview. namespace',
   );
-
-  for (const [from, to] of [
-    ['worktree\\.baseBranch', 'delivery\\.baseBranch'],
-    ['worktree\\.branchPrefix', 'delivery\\.branchPrefix'],
-    ['worktree\\.completion', 'delivery\\.completion'],
+  for (const key of [
+    'worktree.enabled',
+    'worktree.setup',
+    'worktree.baseDir',
+    'applyReview.worktree.baseDir',
   ]) {
-    assert.match(retired, near(`\`${from}\``, `\`${to}\``, 60), `${from} must map to ${to}`);
+    assert.equal(successorOf(key), null, `${key} is a current key, not a retired one`);
   }
-  assert.match(
-    retired,
-    near('a row whose key begins with `prReview\\.`', 'same trailing key under `mergeGate\\.`', 60),
-  );
-  assert.match(retired, /`delivery\.prReview` does not begin with `prReview\.`/);
 
+  const core = prose(source('src/shared/config-migration.md').replace(/```[\s\S]*?```/g, ''));
+  assert.match(
+    core,
+    near('`stop` ends the run', 'the one exception to the safe-default rule', 200),
+    'the retired-row stop must be named as the exception to the safe-default rule',
+  );
+  assert.match(
+    core,
+    near("never takes the successor's default", 'the one exception to the safe-default rule', 80),
+    'a stop must never degrade into the successor default the defect silently resolved to',
+  );
+});
+
+// Where the stop happens decides whether it protects anything: stopping when a late successor is
+// about to be resolved would leave a delivery branch, a worktree or pushed repairs behind. Which
+// tool a retired row stops is the resolver's successor table (its behavior is covered by the
+// "retired rows for …" cases in `test/config-resolve.test.mjs`); the table is pinned here because a
+// tool dropped from it never stops and silently resolves a default — the original defect. The prose
+// keeps the duties the resolver cannot carry out: the timing and the delegated-run handback.
+test('the retired-key contract detects at the first configuration read and names its exemptions', () => {
+  const delivery = ['delivery.baseBranch', 'delivery.branchPrefix', 'delivery.completion'];
+  const reviewerKeys = [
+    'mergeGate.bots',
+    'mergeGate.bots.<login>.trigger',
+    'mergeGate.bots.<login>.check',
+    'mergeGate.botWaitMinutes',
+  ];
+  assert.deepEqual(
+    SUCCESSOR_SETS.map(({ tool, mode, successors }) => [tool, mode, [...successors]]),
+    [
+      ['build', null, delivery],
+      ['fix', null, delivery],
+      ['docs', null, delivery],
+      ['refactor', null, delivery],
+      ['maintain', null, delivery],
+      ['deliver', null, delivery.slice(0, 2)],
+      ['apply-issues', null, delivery.slice(0, 2)],
+      ['apply-review', 'remote', delivery.slice(0, 2)],
+      ['apply-review', 'local', []],
+      ['pr', null, ['delivery.baseBranch']],
+      // Only iterate's local mode reads `delivery.baseBranch`; a PR-mode run — including one
+      // merge-gate delegates — would otherwise stop on a retired row it never reads.
+      ['iterate', 'local', ['delivery.baseBranch']],
+      ['iterate', 'pr', reviewerKeys],
+      ['merge-gate', null, ['mergeGate.*']],
+    ],
+  );
+  assert.deepEqual(
+    [...RETIRED_EXEMPT_TOOLS],
+    ['setup'],
+    'setup is the repair path and never stops',
+  );
+
+  const retired = prose(
+    section(source('src/shared/config-migration-edge-cases.md'), '### Retired rows'),
+  );
   assert.match(
     retired,
-    /first configuration read, before any fetch, branch, worktree, commit, push, delegation or merge/i,
+    /Act on `data\.retired` at the run's first configuration read, before any fetch, branch, worktree, commit, push, delegation or merge/i,
     'detection must happen at the first configuration read, before any write-capable step',
   );
-  assert.match(
-    retired,
-    near('Successor absent → stop', '\\{\\{SKILL:setup\\}\\}', 120),
-    'an absent successor must stop the run and name setup',
-  );
-  assert.match(
-    retired,
-    near('the successor wins', 'inert retired row once', 80),
-    'a present successor must win and the inert row be reported once',
-  );
-  assert.match(
-    retired,
-    near('Matching a configured login', 'report it once and do not stop', 400),
-    'login-keyed subkeys must resolve through the login rule, and an unresolvable one only reports',
-  );
-  assert.match(
-    retired,
-    near('\\{\\{SKILL:deliver\\}\\} and `worktree\\.completion`', 'never stops the run', 250),
-    'deliver must only report a retired worktree.completion',
-  );
-  assert.match(retired, near('\\{\\{SKILL:setup\\}\\} is exempt', 'repair path', 60));
   assert.match(
     retired,
     /never read as a value, not even to report what it would have held/,
@@ -1746,66 +1758,50 @@ test('the retired-key contract detects at the first configuration read and names
   );
   assert.match(
     retired,
-    near('`mergeGate\\.bots\\.<login>\\.check`', '\\{\\{SKILL:iterate\\}\\}', 120),
-    'iterate resolves the .check key through the reviewer-state block, so a retired .check row ' +
-      'must be in its detection set',
-  );
-  // Only iterate's local mode reads `delivery.baseBranch`. Without the qualifier a PR-mode run —
-  // including one merge-gate delegates after its own waits — would stop on a retired
-  // `worktree.baseBranch` it never reads.
-  assert.match(
-    retired,
-    /\{\{SKILL:iterate\}\} in local mode, the only mode that reads it/,
-    "iterate's delivery.baseBranch detection must be limited to its local mode",
-  );
-  assert.match(
-    retired,
-    near('\\{\\{SKILL:iterate\\}\\} in PR mode', 'In PR mode these are its whole set', 200),
-    "iterate's PR-mode detection set must be exactly the mergeGate.* successors it resolves",
-  );
-
-  // A tool missing from its successor bullet is a tool that never stops, and "A tool not listed
-  // resolves no successor" then licenses it to resolve a default silently — the original defect.
-  const bullets = section(
-    source('src/shared/config-migration-edge-cases.md'),
-    '### Retired keys (table encoding)',
-  )
-    .split(/\n- /)
-    .map(flat);
-  for (const [lead, tools] of [
-    [
-      '`delivery.baseBranch`, `delivery.branchPrefix` and `delivery.completion`:',
-      ['build', 'fix', 'docs', 'refactor', 'maintain'],
-    ],
-    [
-      '`delivery.baseBranch` and `delivery.branchPrefix`:',
-      ['deliver', 'apply-issues', 'apply-review'],
-    ],
-    ['`delivery.baseBranch` only:', ['pr']],
-    ['every `mergeGate.*` key:', ['merge-gate']],
-  ]) {
-    const bullet = bullets.find((part) => part.startsWith(lead));
-    assert.ok(bullet, `missing successor bullet: ${lead}`);
-    for (const tool of tools) {
-      assert.ok(bullet.includes(`{{SKILL:${tool}}}`), `${tool} must check the successors ${lead}`);
-    }
-  }
-  assert.match(retired, near('tool not listed', 'neither stops nor is reported', 80));
-  assert.match(
-    retired,
-    near('one exception to the safe-default rule', "never take the successor's default", 120),
-    'a stop must never degrade into the successor default the defect silently resolved to',
-  );
-  assert.match(
-    retired,
     near('non-interactive delegated run stops', 'returns that reason to its caller', 80),
   );
   assert.match(
     retired,
-    near('`worktree\\.enabled`, `worktree\\.setup`, `worktree\\.baseDir`', 'are current keys', 60),
-    'the live worktree.* keys must stay outside the retirement',
+    near(
+      'hands work to another workflow',
+      'resolves its own at its own first configuration read',
+      200,
+    ),
+    "a delegating run must not act on the receiving workflow's successors",
   );
-  assert.match(retired, near('same rule applies', 'transitional JSON configuration', 60));
+
+  const core = prose(source('src/shared/config-migration.md'));
+  assert.match(
+    core,
+    near('`stop` ends the run', 'naming both keys and \\{\\{SKILL:setup\\}\\}', 60),
+    'an absent successor must stop the run and name setup',
+  );
+  assert.match(
+    core,
+    near('`report` is reported once', 'the successor wins', 40),
+    'a present successor must win and the inert row be reported once',
+  );
+  assert.match(
+    core,
+    /`report` is reported once and points to \{\{SKILL:setup\}\}/,
+    'a reported inert row must still point the user to the repair path',
+  );
+  // The core attaches `conditional` to every login-keyed entry whatever its action, so a sentence
+  // that reads as applying to every such entry would let a reader turn a `report` into a stop.
+  assert.match(
+    core,
+    near(
+      'Only a `stop` entry with `conditional: reviewer-resolved` is downgraded to one report',
+      'resolves no reviewer matching its `normalizedLogin` under "Matching a configured login"',
+      40,
+    ),
+    'only a login-keyed stop may downgrade, and only when no matching reviewer is resolved',
+  );
+  assert.match(
+    core,
+    /the conditional never changes `report` or `none`/,
+    'the conditional must never turn a report or an inert entry into a stop',
+  );
 });
 
 // The shared retirement contract names build and fix, but that alone does not make either tool
@@ -1861,6 +1857,62 @@ test('build and fix retire delivery keys before their first delegation', () => {
   }
 });
 
+// Invariant: the resolver decides retired-row stops per calling tool, so a call site that omits
+// `tool` would lose its stop (the CLI refuses it with exit 2), and an iterate or apply-review site
+// that omits `mode` would resolve the wrong successor set. Every prose site that invokes the
+// resolver therefore names `tool`, and names `mode` with its values wherever it covers a tool whose
+// successor set depends on one.
+test('every prose call site of the configuration resolver names tool, and mode where it applies', () => {
+  const markdownFiles = (dir) =>
+    readdirSync(new URL(dir, repositoryRoot), { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? markdownFiles(`${dir}/${entry.name}`)
+        : entry.name.endsWith('.md')
+          ? [`${dir}/${entry.name}`]
+          : [],
+    );
+  const sites = new Set();
+  for (const path of markdownFiles('src')) {
+    for (const block of source(path).split(/\n\s*\n|\n(?=\s*- |\s*\d+\. )/)) {
+      if (!/config-resolve\.mjs|resolution call with/.test(block)) continue;
+      sites.add(path);
+      const text = flat(block);
+      assert.match(
+        text,
+        /`tool`|"tool": "[a-z-]+"|`tool: "[a-z-]+"`/,
+        `${path}: a resolver call site must name tool: ${text.slice(0, 160)}`,
+      );
+      const named = [...text.matchAll(/"tool": "([a-z-]+)"|`tool: "([a-z-]+)"`/g)].map(
+        (match) => match[1] ?? match[2],
+      );
+      if (named.length === 0) {
+        for (const [tool, modes] of Object.entries(MODE_TOOLS)) {
+          const listed = new RegExp(`\`${tool}\` \\(([^)]*)\\)`).exec(text);
+          assert.ok(
+            listed && text.includes('`mode`'),
+            `${path}: the generic call must name mode for ${tool}`,
+          );
+          assert.deepEqual(
+            [...listed[1].matchAll(/`([a-z-]+)`/g)].map((match) => match[1]).sort(),
+            [...modes].sort(),
+            `${path}: the generic call must list exactly the modes ${tool} accepts`,
+          );
+        }
+      }
+      for (const tool of named.filter((name) => Object.hasOwn(MODE_TOOLS, name))) {
+        assert.match(
+          text,
+          /"mode": "[a-z]+"|`mode: "[a-z]+"`/,
+          `${path}: ${tool} must name its mode`,
+        );
+      }
+    }
+  }
+  for (const path of ['src/shared/config-migration.md', 'src/tools/pr.md', 'src/tools/setup.md']) {
+    assert.ok(sites.has(path), `${path} must invoke the configuration resolver`);
+  }
+});
+
 // The retirement is only real while no restatement still describes the old read. Both namespaces
 // had several of them, and one survived in a tool that never loads the canonical fragment.
 // The defect this retirement repairs began as a claim that the configuration core migrates the
@@ -1883,10 +1935,7 @@ test('no source outside the retired-key contract pairs a retired key with fallba
 
   const offenders = [];
   for (const path of markdownFiles('src')) {
-    let text = source(path);
-    if (path === 'src/shared/config-migration-edge-cases.md') {
-      text = text.replace(section(text, '### Retired keys (table encoding)'), '');
-    }
+    const text = source(path);
     // List items often end without a period, so cut at item and paragraph boundaries first; a
     // report list would otherwise read as one sentence spanning a dozen unrelated keys.
     const blocks = text.split(/\n\s*\n|\n\s*(?=- |\d+\. )/).map(prose);
@@ -8335,11 +8384,19 @@ test('setup rewrites each retired worktree.* row to its delivery.* successor', (
       `setup's in-place rewrite must carry worktree.${key} over to delivery.${key}`,
     );
   }
-  assert.match(
-    prose(setup),
-    near('record every retired row', '`worktree\\.completion`', 300),
-    'Step 2 must record the retired worktree.* rows it later rewrites',
+  // Step 2 records what the resolver classifies as retired, raw value included (returned to setup
+  // only), so the rewrite has a value to carry; the resolver's map must name all three rows.
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
   );
+  assert.match(
+    item4,
+    near('Record every retired row from `data.retired`', 'raw value', 120),
+    'Step 2 must record the retired rows it later rewrites, with their raw values',
+  );
+  for (const key of ['baseBranch', 'branchPrefix', 'completion']) {
+    assert.equal(RETIRED_KEYS[`worktree.${key}`], `delivery.${key}`);
+  }
 });
 
 test('the shared configuration fragment documents every merge-gate key and the retired legacy namespace', () => {
@@ -11128,8 +11185,8 @@ test('base-branch resolution reaches both hosts eagerly, with exactly one fetch 
 // The shared rule is the wrong place for the retired `worktree.baseBranch` stop: it also runs while
 // PR-mode `iterate` and `merge-gate` provision a checkout, runs that never read the key and could
 // stop there after a base merge was already pushed. And a complete committed handoff to `pr` skips
-// the rule entirely. So `pr` carries the stop in step 1, which every call reaches, and the retired-key
-// contract states that checkout provisioning is no successor read.
+// the rule entirely. So `pr` acts on the resolver's retired-row action in step 1, which every call
+// reaches, and the retired-key contract states that checkout provisioning is no successor read.
 test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared base-branch rule', () => {
   const parts = baseBranchRuleParts();
   assert.equal(parts.length, 4, 'the opening paragraph must stay prose ahead of the three arms');
@@ -11147,7 +11204,16 @@ test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared
       '   - Classify the',
     ),
   );
-  assert.match(step1, near('`worktree\\.baseBranch` row is retired', 'never read', 30));
+  assert.match(
+    step1,
+    /config-resolve\.mjs resolve` with `\{"cwd": "<execution root>", "tool": "pr"\}`/,
+    'pr must resolve its configuration through the resolver as tool pr',
+  );
+  assert.match(
+    step1,
+    /a nonzero exit or no single parseable envelope stops the run/,
+    'a resolver failure must fail closed instead of reading the ADR by hand',
+  );
   assert.match(
     step1,
     near('direct invocation', 'committed handoff alike', 30),
@@ -11155,27 +11221,41 @@ test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared
   );
   assert.match(
     step1,
-    near('no `delivery\\.baseBranch` row', 'stop here, before any fetch or push', 60),
+    near('action `stop` ends the run here', 'before any fetch or push', 30),
     'a retired worktree.baseBranch without its successor must stop before the network is touched',
   );
   assert.match(step1, near('before any fetch or push', '\\{\\{SKILL:setup\\}\\}', 80));
   assert.match(
     step1,
-    near('both present', '`delivery\\.baseBranch` wins', 60),
+    near('`report` reports the retired row once', '`delivery\\.baseBranch` wins', 40),
     'with both rows present the successor must win',
   );
-  assert.match(step1, /retired row is reported once/);
+  assert.match(
+    step1,
+    /`report` reports the retired row once and points to \{\{SKILL:setup\}\}/,
+    'a reported inert row must still point the user to the repair path',
+  );
   assert.doesNotMatch(step1, /git fetch/);
   assert.ok(
     step1.indexOf('resolve nothing from it here') < step1.indexOf('`worktree.baseBranch`'),
     'the stop follows the recorded-value sentence, which must stay close to its step 4 pointer',
   );
 
+  const successors = (tool, mode = null) =>
+    SUCCESSOR_SETS.find((entry) => entry.tool === tool && entry.mode === mode).successors;
+  assert.deepEqual([...successors('pr')], ['delivery.baseBranch']);
+  for (const [tool, mode] of [
+    ['iterate', 'pr'],
+    ['merge-gate', null],
+  ]) {
+    assert.ok(
+      !successors(tool, mode).includes('delivery.baseBranch'),
+      `${tool} checkout provisioning must not make delivery.baseBranch a successor`,
+    );
+  }
+
   const retired = prose(
-    section(
-      source('src/shared/config-migration-edge-cases.md'),
-      '### Retired keys (table encoding)',
-    ),
+    section(source('src/shared/config-migration-edge-cases.md'), '### Retired rows'),
   );
   assert.match(
     retired,
@@ -16776,6 +16856,233 @@ test('the setup write step keeps the existing ADR path under the symlink and con
 // in-run recovery for that state produced a new defect each time, ending in a loop between the
 // pre-write re-resolution and the choice it returned to, so the state no longer has a recovery
 // path at all: both places that can detect it end the run.
+// Setup no longer parses the table itself, so "invalid or ambiguous" must name the resolver
+// diagnostics that mean it; otherwise setup would take a reader's safe default and overwrite a
+// table the user still has to decide about.
+test('setup asks its invalid-source question on the resolver diagnostics for a broken table', () => {
+  const item5 = prose(
+    boundedSlice(source('src/tools/setup.md'), '5. **Invalid source.**', '\n### Step 3'),
+  );
+  assert.match(
+    item5,
+    near('`ambiguous-key` diagnostic', '`invalid-value` diagnostic with `reason: cell-count`', 40),
+    'a duplicated key or a malformed row must count as an invalid or ambiguous ADR table',
+  );
+  assert.match(item5, /an `invalid-source` diagnostic names that handle/);
+  assert.match(
+    item5,
+    near("do not take the building block's safe default", 'ask whether', 200),
+    'setup must ask instead of resolving a broken source to the safe default',
+  );
+});
+
+// The resolver reads only the first configuration envelope of a project setup ADR and reports the
+// rest as `duplicate-envelope`. Setup rewrites the whole ADR from the resolved values, so a source
+// with a second envelope must count as invalid too: otherwise the rewrite silently drops every row
+// outside the first envelope. The same invalid-source set must also hold at the fresh pre-write
+// re-resolution, so a source that became invalid between Step 2 and the write is not overwritten —
+// by reference to Step 2 item 5, not through a second copy of its diagnostic list.
+test('setup treats a duplicate envelope as an invalid source, also at the pre-write re-resolution', () => {
+  const setup = source('src/tools/setup.md');
+  const item5 = prose(boundedSlice(setup, '5. **Invalid source.**', '\n### Step 3'));
+  assert.match(
+    item5,
+    /`duplicate-envelope` diagnostic/,
+    'a second configuration envelope must count as an invalid source',
+  );
+  assert.match(
+    item5,
+    near('`duplicate-envelope`', 'first envelope', 120),
+    'the invalid-source rule must say that rows outside the first envelope would be lost',
+  );
+
+  const precheck = prose(
+    boundedSlice(
+      setup,
+      '3. Resolve the project setup ADR freshly once more directly before writing',
+      '\n4. **Write the project setup ADR.**',
+    ),
+  );
+  assert.match(
+    precheck,
+    near('Step 2 item 5', 'invalid source', 80),
+    "the pre-write re-resolution must apply Step 2 item 5's invalid-source set to the fresh result",
+  );
+  assert.match(
+    precheck,
+    near('write nothing without', 'explicit invalid-source decision', 120),
+    'a source that became invalid before the write must not be overwritten without a decision',
+  );
+  assert.doesNotMatch(
+    precheck,
+    /`duplicate-envelope`|`ambiguous-key`|reason: cell-count|`unrepresentable-row`/,
+    'the pre-write check must reference Step 2 item 5 rather than keep a second diagnostic list',
+  );
+});
+
+// Setup rewrites the whole configuration table, so an unknown or unasked row must reach the new
+// table as its lossless original line from `data.source.rows`: `data.values[*].raw` is trimmed and
+// has `\|` unescaped, and re-encoding it would silently change the row. A row the resolver cannot
+// represent at all (an empty key, reported as `unrepresentable-row`) has no value to carry, so it
+// must stop the write through the invalid-source question instead of vanishing from the rewrite.
+test('setup carries unknown rows as their original line and stops on an unrepresentable row', () => {
+  const setup = source('src/tools/setup.md');
+  const step6Item1 = prose(
+    boundedSlice(
+      setup,
+      '1. Build the target configuration non-destructively.',
+      '\n2. This also applies to the safe defaults',
+    ),
+  );
+  assert.match(
+    step6Item1,
+    near('byte-for-byte', 'original `line` in `data.source.rows`', 120),
+    'an unknown or unasked row must be carried over as its original line from data.source.rows',
+  );
+  assert.ok(
+    step6Item1.includes('never re-encoded from `raw`'),
+    'the carryover must not rebuild a row from the trimmed and unescaped raw value',
+  );
+
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
+  );
+  assert.match(
+    item4,
+    near('`data.source.rows`', 'original `line`', 80),
+    "Step 2 must retain each row's original line for the later rewrite",
+  );
+
+  const item5 = prose(boundedSlice(setup, '5. **Invalid source.**', '\n### Step 3'));
+  assert.match(
+    item5,
+    /`unrepresentable-row` diagnostic/,
+    'an empty-key row the resolver cannot represent must count as an invalid source',
+  );
+  assert.ok(DIAGNOSTIC_CODES.includes('unrepresentable-row'));
+});
+
+// Invariant: an escaped-pipe value of a retired row must survive setup's in-place migration
+// unchanged. `raw` is trimmed and pipe-unescaped, so rebuilding the successor row from it can
+// corrupt the table; Step 2 therefore records each retired row's original `line` from
+// `data.retired`, and the in-place migration rewrites that line with only the key cell replaced by
+// the successor key, the value cell kept byte for byte.
+test('setup migrates a retired row by rewriting its original line, never re-encoding raw', () => {
+  const setup = source('src/tools/setup.md');
+  const item4 = prose(
+    boundedSlice(setup, '4. **Form the current values.**', '\n5. **Invalid source.**'),
+  );
+  const retiredRecord = item4.search(/Record (?:every|each) retired row/);
+  assert.notEqual(retiredRecord, -1, 'Step 2 item 4 must record the retired rows');
+  assert.match(
+    item4.slice(retiredRecord),
+    /`line`/,
+    "Step 2 must record each retired row's original line next to its raw value",
+  );
+
+  const migration = prose(
+    boundedSlice(
+      setup,
+      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+      '\n#### Writing the hidden local configuration',
+    ),
+  );
+  assert.match(
+    migration,
+    near('original `line`', '(?:key cell|only the key)', 200),
+    "the migration must rewrite the row's original line, replacing only the key cell",
+  );
+  assert.match(
+    migration,
+    near('value cell', 'byte[- ]for[- ]byte', 120),
+    'the migration must keep the value cell byte for byte',
+  );
+  assert.ok(
+    migration.includes('never re-encoded from `raw`'),
+    'the migrated successor row must not be rebuilt from the trimmed and unescaped raw value',
+  );
+});
+
+// Invariant: a value setup encodes into a table cell must never split the row. The resolver hands
+// setup `raw` with `\|` decoded to a literal `|`, so every writer re-escapes it; the rule is stated
+// once, in config-migration's table encoding, and setup's JSON-source retired-row branch and its
+// general write step point to it ("pipe escape") rather than restating it. Only a row carried over
+// as its original `line` is exempt, because that line still holds its escapes byte for byte.
+test('every table writer re-escapes a literal pipe, stated once in the table encoding', () => {
+  const encoding = prose(
+    section(source('src/shared/config-migration.md'), '### Table encoding (binding for writers)'),
+  );
+  assert.match(
+    encoding,
+    /escapes every literal `\|`[^.]*?`\\\|`/,
+    'the table encoding must bind every writer to escape a literal `|` in an encoded value as `\\|`',
+  );
+  assert.match(
+    encoding,
+    /escapes every literal `\|`[^.]*?`\\\|`[^.]*?original `line`[^.]*?byte[- ]for[- ]byte/,
+    'the escape rule must name, in the same sentence, the only exemption: a row carried over as its original line',
+  );
+
+  // A restatement of the rule pairs an escape verb or a literal `|` with the escaped `\|` form; the
+  // setup pointers say only "pipe escape" and therefore do not count.
+  const restatement = /escap\w*[\s\S]{0,200}?`\\\|`|literal `\|`[\s\S]{0,200}?`\\\|`/gi;
+  const markdownFiles = (dir) =>
+    readdirSync(new URL(dir, repositoryRoot), { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? markdownFiles(`${dir}/${entry.name}`)
+        : entry.name.endsWith('.md')
+          ? [`${dir}/${entry.name}`]
+          : [],
+    );
+  const copies = markdownFiles('src').flatMap((path) =>
+    [...prose(source(path)).matchAll(restatement)].map(() => path),
+  );
+  assert.deepEqual(
+    copies,
+    ['src/shared/config-migration.md'],
+    'the pipe-escape rule must be stated exactly once, in config-migration.md; other sources point to it',
+  );
+
+  const setup = source('src/tools/setup.md');
+  const migration = prose(
+    boundedSlice(
+      setup,
+      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+      '\n#### Writing the hidden local configuration',
+    ),
+  );
+  assert.match(
+    migration,
+    near('`line: null`', 'table-encoding form', 120),
+    'the JSON-source branch (`line: null`) must encode the value from raw in the table-encoding form',
+  );
+  assert.match(
+    migration,
+    near('`line: null`', 'pipe escape', 160),
+    'the JSON-source branch (`line: null`) must point to the pipe escape of the table encoding',
+  );
+  assert.ok(
+    !migration.includes('takes the value from `raw`'),
+    'the JSON-source branch must not write the unescaped raw value as is',
+  );
+
+  const writeRows = prose(
+    boundedSlice(
+      section(setup, '### Step 6: Merge and write'),
+      'Use one row per key in the table-encoding form',
+      ').',
+    ),
+  );
+  assert.ok(
+    !writeRows.includes(' - '),
+    'the Step 6 row-encoding parenthetical must end inside its own bullet',
+  );
+  assert.ok(
+    writeRows.includes('pipe escape'),
+    "Step 6's row-encoding parenthetical must name the pipe escape of the table encoding",
+  );
+});
+
 test('setup ends the run on a several-match locator result at both detection points', () => {
   const setup = source('src/tools/setup.md');
   const item2 = prose(
@@ -16992,74 +17299,50 @@ test('setup carries the resolved ADR convention forward and reports it from the 
 
 // A resolved numbered convention makes the project-setup ADR land at e.g.
 // `docs/adr/0002-effective-flow-project-setup.md`. Every read path that matches the slug exactly
-// would then stop finding the configuration it wrote itself.
+// would then stop finding the configuration it wrote itself. The stem tolerance and its one ordered
+// ranking are the resolver's (end to end in `test/config-resolve.test.mjs`, "step 2: …"); the
+// consumer duty left in prose is that a writing tool ends its run on a surviving tie.
 test('the config locator and the review exclusion tolerate a numeric ADR prefix', () => {
-  // The tolerance and its ranking are the deferred half of the configuration contract, reached
-  // from the locator step that carries them; the eager half keeps only the exact-slug match.
-  const edgeCases = source('src/shared/config-migration-edge-cases.md');
-  const step2 = boundedSlice(
-    edgeCases,
-    '### Read tolerance and several-match ranking (locator step 2)',
-    '\n### ',
-  );
-  const flatStep2 = prose(step2);
+  assert.deepEqual(classifySetupStem('0002-effective-flow-project-setup.md'), {
+    legacySlug: false,
+    prefixed: true,
+  });
+  assert.deepEqual(classifySetupStem('firmo-project-setup.md'), {
+    legacySlug: true,
+    prefixed: false,
+  });
+  assert.deepEqual(classifySetupStem('0001_firmo-project-setup.md'), {
+    legacySlug: true,
+    prefixed: true,
+  });
+  assert.equal(classifySetupStem('effective-flow-project-setup-notes.md'), null);
 
-  for (const slug of ['effective-flow-project-setup', 'firmo-project-setup']) {
-    assert.ok(flatStep2.includes(slug), `the locator scan must recognize the slug ${slug}`);
-  }
-  assert.ok(
-    flatStep2.includes('^\\d+[-_]'),
-    'the locator scan must strip an optional leading numeric prefix',
-  );
-  assert.match(
-    flatStep2,
-    near('stem equals', 'after stripping an optional leading', 240),
-    'the prefix tolerance must apply to the stem comparison, not to some unrelated clause',
-  );
-  // The widened scan can match several files inside this one step, so the tie-break is part of the
-  // predicate: without it "the first matching step wins" would be read as licence to pick any one
-  // of them, and a stale legacy file could shadow the current configuration.
-  assert.match(
-    flatStep2,
-    near('prefer the current slug', 'an unprefixed stem over a prefixed one', 200),
-    'the scan must rank the current slug over the legacy one and unprefixed over prefixed',
-  );
   // One *ordered* comparison, not two independent preferences. Stated independently,
   // `0001-effective-flow-project-setup.md` and `firmo-project-setup.md` each win one preference and
   // neither survives both, so the step would fall through on a pair it can in fact rank.
-  assert.match(
-    flatStep2,
-    near(
-      'Rank the matches by one ordered comparison rather than by two independent preferences',
-      'only among files carrying the same slug',
-      200,
-    ),
-    'the tie-break must be one ordered comparison, not two independent preferences',
+  const rank = (left, right) =>
+    compareSetupCandidates(classifySetupStem(left), classifySetupStem(right));
+  assert.ok(
+    rank('0001-effective-flow-project-setup.md', 'firmo-project-setup.md') < 0,
+    'the current slug must win over the legacy slug before the prefix is compared',
   );
-  assert.match(
-    flatStep2,
-    near(
-      'If more than one match still ties at the top of that ranking',
-      'report every matching path and fall through',
-      120,
-    ),
-    'a surviving ambiguity must report every path and fall through instead of picking one',
+  assert.ok(rank('effective-flow-project-setup.md', '0002-effective-flow-project-setup.md') < 0);
+  assert.equal(
+    rank('0001-effective-flow-project-setup.md', '0002-effective-flow-project-setup.md'),
+    0,
+    'a surviving tie must not be broken by picking one of the matches',
   );
-  // Falling through here is not "no ADR": a writing tool that reads it that way adds a further ADR
-  // beside the ones just reported, which is the duplication the whole ranking exists to prevent.
+
+  // Falling through on a tie is not "no ADR": a writing tool that reads it that way adds a further
+  // ADR beside the ones just reported, which is the duplication the whole ranking exists to prevent.
   assert.match(
-    flatStep2,
+    prose(source('src/shared/config-migration.md')),
     near(
-      'ends its run on a reported several-match result',
-      'never reads it as "no project setup ADR exists"',
-      240,
+      '`several-match` names every listed path',
+      'a run that writes configuration \\(`writerStop`\\) ends there',
+      80,
     ),
-    'a several-match fall-through must end a writing tool\'s run, not read as a "no ADR" result',
-  );
-  assert.match(
-    flatStep2,
-    near('reporting every matching path', 'resolves the duplicates by hand', 120),
-    'the writer contract must name the report and the by-hand resolution that follows the stop',
+    "a several-match fall-through must end a writing tool's run and report every path",
   );
 
   const review = source('src/tools/review.md');
@@ -17415,97 +17698,84 @@ test('hidden → standard switch keeps the info/exclude line and never moves loc
 });
 
 // Invariant: only the main checkout's local file, and only with `visibility | hidden`, switches the
-// run to hidden mode; a tracked row never does.
+// run to hidden mode; a tracked row never does. The resolver applies that rule (the "step 0: …" and
+// "step 1/2: a tracked visibility hidden row …" cases in `test/config-resolve.test.mjs`); the prose
+// must name where the file lives, expose the result, and report every file it ignored.
 test('config locator step 0 honours the local project-setup.md only with visibility hidden, from the main checkout', () => {
-  const core = source('src/shared/config-migration.md');
-  const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
-  ordered(locator, '0. Local hidden configuration.', '1. AGENTS.md marker.');
-  assert.match(
-    locator,
-    /`<RUNTIME_STATE_ROOT>\/\.effective-flow\/project-setup\.md` \(main checkout only, table encoding below\) wins only if it declares `visibility \| hidden`/,
-  );
-  assert.match(
-    locator,
-    /A tracked ADR's `visibility \| hidden` row is never honoured: report and ignore it/,
-  );
-  assert.match(
-    [...core.matchAll(LAZY_INCLUDE_RE)].find(
-      (m) => m[1].trim() === 'config-migration-edge-cases',
-    )[2],
-    /the local `\.effective-flow\/project-setup\.md` of step 0 exists or a `visibility` row is present/,
-  );
-
-  const edge = source('src/shared/config-migration-edge-cases.md');
-  const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
-  assert.match(
-    prose(hidden),
-    /from the verified `RUNTIME_STATE_ROOT` only; a same-named file below a linked `EXECUTION_ROOT` is never inspected as configuration/,
-  );
-  assert.match(prose(hidden), /Reading it creates nothing and touches no Git/);
-  const situations = [
-    [
-      'local file declares `visibility \\| hidden`',
-      /hidden mode; the local file is the whole configuration and wins over steps 1–4/,
-    ],
-    [
-      'local file present without `visibility \\| hidden`',
-      /not honoured: report the file once and resolve through steps 1–4 as if it were absent/,
-    ],
-    [
-      'hidden mode **and** a tracked marker or ADR resolves',
-      /the local file wins; name the tracked marker\/ADR once as shadowed and never read a value from it/,
-    ],
-    ['a tracked ADR declares `visibility \\| hidden`', /report the row, ignore it, stay standard/],
-  ];
-  for (const [situation, result] of situations) {
-    const row = hidden.split('\n').find((line) => line.startsWith(`| ${situation} `));
-    assert.ok(row, `missing hidden-mode situation row: ${situation}`);
-    assert.match(row, result, situation);
+  for (const code of [
+    'local-file-not-hidden',
+    'ignored-linked-root-file',
+    'shadowed-tracked-config',
+    'tracked-hidden-ignored',
+  ]) {
+    assert.ok(DIAGNOSTIC_CODES.includes(code), `the resolver must report ${code}`);
   }
-});
 
-// Invariant: an unverifiable RUNTIME_STATE_ROOT stops the reader; it never falls through to
-// standard mode or substitutes EXECUTION_ROOT.
-test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed instead of falling through', () => {
   const core = source('src/shared/config-migration.md');
-  const locator = prose(boundedSlice(core, '### Config locator', '### Table encoding'));
-  const step0 = boundedSlice(locator, '0. Local hidden configuration.', '1. AGENTS.md marker.');
+  const contract = prose(core);
   assert.match(
-    step0,
-    /A reader without a verified `RUNTIME_STATE_ROOT` resolves it here first, read-only, from the first `git worktree list --porcelain` record/,
+    contract,
+    /hidden mode keeps it in the untracked `<RUNTIME_STATE_ROOT>\/\.effective-flow\/project-setup\.md`/,
   );
+  assert.match(contract, /The script runs the whole config locator \(steps 0–4\)/);
   assert.match(
-    step0,
-    /in a Git checkout where that fails it stops with a report and never falls through to standard mode/,
+    contract,
+    /`unknown-tool` needs nothing; every other code is reported once per run/,
+    'every ignored or shadowed configuration file must be reported, none dropped in silence',
   );
   assert.match(
     [...core.matchAll(LAZY_INCLUDE_RE)].find(
       (m) => m[1].trim() === 'config-migration-edge-cases',
     )[2],
-    /step 0 must resolve `RUNTIME_STATE_ROOT` itself/,
+    /`data\.visibility` is `hidden`/,
   );
 
-  const edge = prose(
+  const hidden = prose(
     boundedSlice(
       source('src/shared/config-migration-edge-cases.md'),
-      '**Resolving the root for step 0.**',
-      '| Situation',
+      '### Hidden mode',
+      '### External tracker state keys',
     ),
   );
   assert.match(
-    edge,
-    /take only the first record, which must begin with exactly one non-empty `worktree <path>` line/,
+    hidden,
+    /`data\.visibility: hidden` means the main checkout's local hidden configuration file, which only \{\{SKILL:setup\}\} writes, is the whole configuration/,
   );
-  assert.match(edge, /a missing, empty, or duplicate path field, or a `bare` line, rejects it/);
+});
+
+// Invariant: an unverifiable RUNTIME_STATE_ROOT stops the reader; it never falls through to
+// standard mode or substitutes EXECUTION_ROOT. The resolver verifies the root and refuses with exit 3
+// (the "roots: …" and "containment: …" cases in `test/config-resolve.test.mjs`), so the consumer prose
+// must fail closed on that exit and on every other failure instead of reading the ADR by hand.
+test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed instead of falling through', () => {
+  assert.deepEqual(
+    [...ROOT_CHECKS],
+    [
+      'porcelain-failed',
+      'missing-path',
+      'bare',
+      'moved',
+      'toplevel-mismatch',
+      'common-dir-mismatch',
+    ],
+  );
+  const contract = prose(
+    boundedSlice(
+      source('src/shared/config-migration.md'),
+      '### Config locator',
+      '### Acting on the result',
+    ),
+  );
+  assert.match(contract, /never read the ADR by hand/);
   assert.match(
-    edge,
-    /`git rev-parse --show-toplevel` from it to resolve back to the same path and `git rev-parse --path-format=absolute --git-common-dir` from it to match the one from the current checkout/,
+    contract,
+    /Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line `\{ ok, operation, data \}` stops the run before that step, reporting the cause/,
   );
   assert.match(
-    edge,
-    /any failed check stops the reader with a report naming the failed check and making no write/,
+    contract,
+    /Exit 3 \(`RUNTIME_ROOT_UNVERIFIED`, `RUNTIME_STATE_UNSAFE`\) stops with the reported check and no write, never continuing in standard mode/,
   );
-  assert.match(edge, /never uses `EXECUTION_ROOT` or the current directory as a substitute/);
+  assert.match(contract, /`data\.runtimeStateRoot` is the verified `RUNTIME_STATE_ROOT`/);
 
   const visibility = prose(boundedSlice(source('src/tools/setup.md'), '**Visibility.**', '```ask'));
   assert.match(
@@ -17514,7 +17784,7 @@ test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed 
   );
   assert.match(
     visibility,
-    /when step 0 stops because that root cannot be verified, this run stops too, before any question or write/,
+    /when step 0 stops because that root cannot be verified \(exit 3\), this run stops too, before any question or write/,
   );
 
   for (const tool of ['open-plans', 'apply-plan']) {
@@ -17528,41 +17798,49 @@ test('config locator step 0 resolves RUNTIME_STATE_ROOT itself and fails closed 
 
 // Invariant: the resolver, not each tool, forces the hidden values, so no issue reference or
 // per-run signal can select the forge or an external tool as the tracker, and no published prose
-// names Effective Flow or a `.effective-flow/` path.
+// names Effective Flow or a `.effective-flow/` path. The forced table is the resolver's export (the
+// "step 0: hidden mode forces …" cases in `test/config-resolve.test.mjs` cover its application).
 test('hidden mode forced values are enforced by the resolver, not by individual tools', () => {
-  const edge = source('src/shared/config-migration-edge-cases.md');
-  const hidden = boundedSlice(edge, '### Hidden mode (locator step 0)', '### Legacy setup marker');
-  assert.match(
-    prose(hidden),
-    /In hidden mode the resolver, not the individual tool, enforces these values/,
+  assert.deepEqual(
+    { ...HIDDEN_FORCED_VALUES },
+    {
+      'plan.dir': '.effective-flow/plan',
+      'concept.dir': '.effective-flow/concept',
+      'tracker.mode': 'local',
+      'delivery.prReview': 'off',
+      'delivery.branchPrefix': '',
+    },
   );
-  assert.match(prose(hidden), /reported once per run as overridden and never honoured/);
+  assert.match(prose(source('src/shared/config-migration.md')), /forces the hidden-mode values/);
 
-  const forced = boundedSlice(hidden, '| Key ', '\n\n');
-  const value = (key) => rowCells(tableRow(forced, `\`${key}\``))[1];
-  assert.equal(value('plan.dir'), '`.effective-flow/plan`');
-  assert.equal(value('concept.dir'), '`.effective-flow/concept`');
-  assert.equal(value('tracker.mode'), '`local`');
-  assert.equal(value('delivery.prReview'), '`off`');
-  assert.match(
-    value('delivery.branchPrefix'),
-    /^empty by default; a value containing `effective-flow` \(any letter case\) is rejected and the empty default applies$/,
+  const hidden = prose(
+    boundedSlice(
+      source('src/shared/config-migration-edge-cases.md'),
+      '### Hidden mode',
+      '### External tracker state keys',
+    ),
   );
-  assert.deepEqual(firstColumnCells(forced).slice(2), [
-    '`plan.dir`',
-    '`concept.dir`',
-    '`tracker.mode`',
-    '`delivery.prReview`',
-    '`delivery.branchPrefix`',
-  ]);
-
+  assert.match(hidden, /`data\.values` already carries the forced hidden values/);
   assert.match(
-    prose(hidden),
+    hidden,
     /an issue reference or per-run signal that would otherwise select the forge or an external tool does not override it/,
   );
   assert.match(
-    prose(hidden),
+    hidden,
     /no commit message, branch name, pull-request title or body, or tracker-facing summary references a path under `\.effective-flow\/` — a plan or concept file included — or names Effective Flow/,
+  );
+
+  // The setup schema points to the resolver instead of keeping a second copy of the table.
+  const schema = boundedSlice(
+    source('src/tools/setup.md'),
+    '- **`visibility`**',
+    '\n- **`skills`**',
+  );
+  assert.match(prose(schema), /the configuration resolver forces its fixed values/);
+  assert.doesNotMatch(
+    schema,
+    /`concept\.dir`/,
+    'the setup schema must not restate the forced keys',
   );
 });
 
@@ -17840,11 +18118,23 @@ test('hidden → standard setup never writes the step-0 file: it resolves throug
   const hidden = prose(
     boundedSlice(
       source('src/shared/config-migration-edge-cases.md'),
-      '### Hidden mode (locator step 0)',
-      '### Legacy setup marker',
+      '### Hidden mode',
+      '### External tracker state keys',
     ),
   );
   assert.match(hidden, /resolves the ADR it reads and writes through steps 1–4 only/);
+  // The resolver skips step 0 only on setup's explicit request, so the switch has to make it.
+  assert.match(
+    prose(
+      boundedSlice(
+        source('src/tools/setup.md'),
+        '2. **Resolve the project setup ADR.**',
+        '\n3. **Detect the ADR naming convention.**',
+      ),
+    ),
+    near('`mode: "standard"`', 'resolves through steps 1 to 4 only', 80),
+    'the hidden → standard read must ask the resolver to skip step 0',
+  );
 });
 
 // Invariant: issue-driven apply stops in hidden mode before stage B touches the tracker.
@@ -17879,8 +18169,8 @@ test('hidden plan and concept writes are anchored to RUNTIME_STATE_ROOT and writ
   const hidden = prose(
     boundedSlice(
       source('src/shared/config-migration-edge-cases.md'),
-      '### Hidden mode (locator step 0)',
-      '### Legacy setup marker',
+      '### Hidden mode',
+      '### External tracker state keys',
     ),
   );
   assert.match(
