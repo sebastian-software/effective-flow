@@ -118,13 +118,15 @@ test('all checked-in runtime writers establish migration before their first muta
 // to the decision points that precede each of its runtime-state mutations: Phase 1 step 6, whose
 // pointer arm names both predicates that step decides from core text (a legacy runtime directory
 // exists, the marker is missing); the forge contract's one-time `labelMigration.sf` marker write,
-// which reaches `memory.json` during the Phase 1 label inventory before step 6 runs; and Phase 5's
-// worktree lifecycle mutations (lock, claim, removal, reconcile, record write or deletion) and
-// confirmed stale diff-baseline discard, both decided from core Phase 5 text. The pointer stays at
-// the former include position, after the lazy runtime-state guard and before any cleanup runtime
-// mutation, so the ordered migration guard above still sees it first; no eager copy may remain
-// beside it.
-test('cleanup loads the migration prerequisite before the marker check, the first tracker write, every worktree lifecycle mutation, and a stale diff-baseline discard', () => {
+// which reaches `memory.json` during the Phase 1 label inventory before step 6 runs; and one
+// general arm for every confirmed Phase 3 or Phase 5 mutation below `.effective-flow/`, decided
+// from the confirmation asks in the core. That arm must hold when step 6 did not fire: Phase 3
+// copies into `.effective-flow/` after a valid marker, and Phase 5 removes a transitional
+// `.effective-flow/config.json` when no legacy runtime directory exists. Its parenthesised paths
+// are examples, not an exhaustive list. The pointer stays at the former include position, after
+// the lazy runtime-state guard and before any cleanup runtime mutation, so the ordered migration
+// guard above still sees it first; no eager copy may remain beside it.
+test('cleanup loads the migration prerequisite before the marker check, the first tracker write, and any confirmed Phase 3 or Phase 5 runtime-state mutation', () => {
   const pointer = cleanupTool.match(
     /```lazy-include\neffective-flow-dir-migration\nwhen: ([^\n]+)\n```/,
   );
@@ -140,9 +142,19 @@ test('cleanup loads the migration prerequisite before the marker check, the firs
   assert.match(when, /`labelMigration\.sf` marker/);
   assert.match(
     when,
-    /Phase 5 is about to mutate worktree lifecycle state \(lock, claim, removal, reconcile, record write or deletion\)/,
+    /any confirmed Phase 3 or Phase 5 mutation below `\.effective-flow\/` is about to run/,
   );
-  assert.match(when, /discard a confirmed stale diff baseline/);
+  assert.match(when, /even when Phase 1 found no legacy runtime directory/);
+  assert.match(when, /carry-over copy or directory creation/);
+  assert.match(
+    when,
+    /worktree lifecycle lock, claim, removal, reconcile, record write or deletion/,
+  );
+  assert.match(when, /stale diff-baseline discard/);
+  assert.match(
+    when,
+    /confirmed removal of a legacy file such as a transitional `\.effective-flow\/config\.json`/,
+  );
   assert.doesNotMatch(cleanupTool, /```include\neffective-flow-dir-migration\n```/);
 
   const guardPointer = cleanupTool.search(/```lazy-include\nruntime-state-safety\n/);
