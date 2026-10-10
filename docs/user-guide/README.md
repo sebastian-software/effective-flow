@@ -21,8 +21,8 @@ New to Effective Flow? Read in this order:
    - [Set up & info](tools-setup.md) – profile-first `setup`, explicit Express/Guided modes,
      `cleanup`, and `version`.
 3. In-depth guides:
-   - [Tool flow](tool-flow.md) – how a completed run recommends its own next step, and every
-     tool's possible follow-ups in one table.
+   - [Tool flow](tool-flow.md) – how a completed run follows its associated plan and selects a
+     valid next step, with the generic fallback table.
    - [Configuration](configuration.md) – the complete project-setup ADR reference and profile
      overlay mappings.
    - [Model-tiering pilot data and privacy](model-tiering-pilot.md) – local evidence, detailed

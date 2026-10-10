@@ -452,7 +452,8 @@ On a resolved pull request:
 4. Phases 2 and 3 run unchanged.
 5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
    the local-mode report or the finding issues of a publishing target.
-6. It emits the pull-request row of `next-steps`, not the local or publishing one.
+6. Emit per the shared selection in `next-steps`, retaining any verified source association and
+   observed PR outcome; only its generic fallback uses the pull-request row.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
 interpretations and ask, never guess. A merged or closed pull request, or one belonging to another

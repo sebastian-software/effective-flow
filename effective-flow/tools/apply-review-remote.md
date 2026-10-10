@@ -309,8 +309,8 @@ For each explicit `wontfix` finding, the same ownership rule as in Phase 3 (loca
 pre-existing product-decision path is separate from admission closure. The candidate context names
 the issue and optional legacy epic. If an epic exists, reconcile its entry after the decision;
 direct findings require no container update. Never add `wontfix` merely because admission returned
-`closed`. The local phase's `project-adr-convention` resolution also owns the ADR file name; an
-unnumbered name is not a form this workflow assumes.
+`closed`. Phase 3 (local)'s lazy `adr-convention` pointer fires for `wontfix` too; its `project-adr-convention`
+resolution owns the ADR file name, and an unnumbered name is not a form this workflow assumes.
 
 ### Phase 4 remote: Implementation, PR and deferred epic completion
 

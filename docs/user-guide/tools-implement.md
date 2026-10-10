@@ -132,7 +132,8 @@ the active run or keep it blocked. Only an independent admitted residual may be 
 under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
 appropriate implementation workflow.
 
-**Fast field pilot:** `build` is the one workflow that takes part in the opt-in Quality/Fast pilot.
+**Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
+Quality/Fast pilot; `refactor`'s differences are listed in its section below.
 Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot
 generation is in `baseline` or `active`, every implementer runs Quality and nothing is recorded.
 With the opt-in on a native harness, `build` classifies every initial implementation packet (its
@@ -147,7 +148,7 @@ repair, review incorporation, final-validator repair, conflict resolution, and r
 Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
 each measured run first asks the helper to activate the generation, which happens automatically
 once the preregistered window and sample are met. Setup and baseline start are described under
-[Setup](tools-setup.md#fast-pilot-block); `refactor` has not adopted Fast.
+[Setup](tools-setup.md#fast-pilot-block).
 
 ## `/effective-flow fix`
 
@@ -194,6 +195,20 @@ documentation must describe the restructured code, never a behavior change, so a
 without a changed public surface typically ends in "no impact" verdicts. New features or unplanned
 bugfixes stay deliberately out of scope during the run – `/effective-flow build` or
 `/effective-flow fix` are responsible for those.
+
+**Baseline and behavior invariance:** The baseline marks each check the approved acceptance
+criteria require for the comparison. A required check that cannot be established stops the run
+before the refactoring starts; a check that already fails reproducibly blocks nothing, but its
+exact result stays the comparison target, and an unchanged failure is reported as unsuccessful,
+never as success. Every implementer handoff repeats the baseline evidence and the structure-only
+assignment. If the work turns out to need a behavior or public-contract change, a migration, a
+concurrency or unsafe-code change, or an open architecture decision, the run stops for replanning
+and offers to capture it as a future-work issue (or a new plan without an issue tracker).
+
+**Fast field pilot:** `refactor` follows the `build` pilot rules above, with these differences: it
+classifies its packets only after the baseline is complete, and a packet whose baseline has a
+pre-existing failure or missing optional evidence stays Quality. Review incorporation and every
+pass of the regression loop always use the routed Quality implementer.
 
 ## `/effective-flow docs`
 

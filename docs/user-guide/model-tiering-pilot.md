@@ -1,12 +1,12 @@
 # Model-tiering pilot data and privacy
 
 Effective Flow includes a local measurement subsystem for the opt-in Quality/Fast field pilot of
-`/effective-flow build`. The subsystem can create a preregistered Quality-only baseline, retain
+`/effective-flow build` and `/effective-flow refactor`. The subsystem can create a preregistered Quality-only baseline, retain
 pilot evidence, evaluate the protocol gates, and remove one reviewed generation safely. Nothing
 starts by itself: you opt in and start the baseline through a confirmed action in
-`/effective-flow setup guided`, and a later `build` run activates the generation automatically once
-the preregistered baseline conditions pass. `build` is the only workflow that records runs and may
-select Fast; `refactor` has not adopted Fast.
+`/effective-flow setup guided`, and a later `build` or `refactor` run activates the generation
+automatically once the preregistered baseline conditions pass. These two are the only workflows
+that record runs and may select Fast.
 
 ## Where evidence lives
 
@@ -53,19 +53,21 @@ state the stored generation proves:
 1. **Start the baseline.** Setup displays the exact shipped protocol digest and version, discloses
    the local minimal-data collection, names the preregistered minimum baseline window and eligible
    packet count, and starts a Quality-only baseline only after your confirmation. From then on,
-   native `build` runs record minimal measurements while every packet still runs Quality.
+   native `build` and `refactor` runs record minimal measurements while every packet still runs Quality.
 2. **Resume.** A suspended generation with healthy evidence can be resumed after setup shows the
    inventory and suspension digests the resume is bound to. The helper restores the state stored
    at suspension. A generation in `review` never resumes.
 
 The baseline confirmation is the only one for activation: activation follows automatically. Every
-measured native `build` run in a baseline generation asks the helper to activate it before
+measured native `build` or `refactor` run in a baseline generation asks the helper to activate it before
 reserving its record. The helper activates once the preregistered baseline window and sample
 conditions pass; until then the generation stays in its baseline and the run continues as a
 baseline run. While another measured run is still in flight, the generation also stays in its
 baseline, but this run's own reservation then fails, so it normally proceeds as an unmeasured
-Quality run. In an active generation, an eligible native `build` packet uses Fast for its first
-implementation attempt only.
+Quality run. In an active generation, an eligible native packet uses Fast for its first
+implementation attempt only. In `refactor`, that attempt comes only after the before-change
+baseline checks, and a packet whose baseline shows a pre-existing failure or lacks optional
+evidence stays Quality; missing required evidence stops the run before any change.
 
 Disabling the key or keeping an invalid value needs no migration, deletes nothing, and starts no
 action. A project that never opts in stays Quality-only and records nothing.
@@ -87,7 +89,7 @@ Fast stops until an explicit resume; an incident it cannot store suspends nothin
 below. Only a still-suspended generation can resume; a generation in `review` is terminal
 and cannot return to admission.
 
-A `build` run reports such an incident to the helper by its category, and the helper records the
+A `build` or `refactor` run reports such an incident to the helper by its category, and the helper records the
 suspension; your product changes are kept either way. From that point the same run starts no
 further Fast attempt: every packet it has not yet started runs Quality. If the helper cannot store
 the suspension, the run shows an alert and offers once to retry. Without a stored suspension
@@ -100,7 +102,7 @@ counts none of its packets as a success. Only that run can do so. If you decline
 ask, the incomplete record stays and keeps later runs unmeasured until `discard-generation` or
 purge removes the generation.
 
-A packet that a `build` run never started, because the run stopped earlier, is recorded as not
+A packet that a run never started, because the run stopped earlier, is recorded as not
 started and left out of every packet metric, so it cannot count as a Fast attempt.
 
 Review freezes new reservations but lets already captured work finish or reconcile. Aggregation

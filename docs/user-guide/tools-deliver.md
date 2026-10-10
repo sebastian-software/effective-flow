@@ -360,8 +360,8 @@ evidence; a merge-mode failure records `failed`. The helper's explicit `pilotCon
 `controlStatePersisted`, and value-free `alert` metadata is the only authority for claiming an
 `evidence-gap` or durable suspension. The gate never infers either from an exit code, missing
 receipt, or failed write; if persistence cannot be proven, it says so without changing the gate
-result. The observation never influences profile selection: only `build` selects Fast, and only
-for an eligible packet in an active generation. See
+result. The observation never influences profile selection: only `build` and `refactor` select
+Fast, and only for an eligible packet in an active generation. See
 [Model-tiering pilot data and privacy](model-tiering-pilot.md) for the local evidence and retention
 boundary.
 
@@ -842,8 +842,14 @@ item model resolves an in-progress merge.
 Issue observation is deliberately different from the configurable check wait: the lifecycle grace
 period is always 30 seconds and has no configuration key. Pull-request mechanics stay on the forge,
 while an external lifecycle receipt resolves only the currently configured external connection; the
-receipt never selects one. If observation remains incomplete, the final next-step block recommends
-`/effective-flow merge-gate <PR>` for observer-only re-entry before the general open-plans path.
+receipt never selects one. The final next-step block reconciles the verified associated plan or
+canonical issue-planning record with the observed merge outcome. Unfinished delivery, review, or
+actual post-merge reconciliation takes priority over a later package. Observer-only
+`/effective-flow merge-gate <PR>` re-entry is recommended only when it can address that unfinished
+reconciliation; a parent intentionally open for later packages is insufficient by itself. A stale
+planning record can instead lead to `plan` or `plan-issue` preparation through its known reference.
+The general `open-plans` fallback appears only when there is an open local plan to list. This
+selection is read-only, grants no approval, and starts no follow-up; see [Tool flow](tool-flow.md).
 
 #### Deprecated `pr-review` invocation
 

@@ -16,7 +16,7 @@ modes. **Hidden mode** instead keeps the whole configuration local and untracked
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
 planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
 (project and surface languages, worktree, completion action, tracker details, advanced
-review/apply-review values, skill discovery, or the `build` Fast pilot), and Express when you intentionally want the safe
+review/apply-review values, skill discovery, or the `build`/`refactor` Fast pilot), and Express when you intentionally want the safe
 base without an interview. Any mode may offer the optional session-rename capability check
 described below.
 
@@ -301,7 +301,7 @@ unchanged ADR/convention writes.
 ### Fast pilot block
 
 Guided's advanced settings end with **Block 10 (`executionProfiles`)**, the opt-in for the
-Quality/Fast field pilot of `/effective-flow build`. Profile and Express never ask it and keep an
+Quality/Fast field pilot of `/effective-flow build` and `/effective-flow refactor`. Profile and Express never ask it and keep an
 existing `executionProfiles.fast.enabled` row exactly as recorded, including an invalid one. The
 block first explains that `true` only admits the project to the pilot, shows the recorded value as
 `enabled`, `disabled`, or `invalid – runs as Quality`, and asks with **Keep** pre-selected:
@@ -329,7 +329,7 @@ most one confirmed action:
 Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
 row, and the final report names the opt-in value, the stored generation state, and each offered
 action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
-and the next measured native `build` run activates it automatically once the preregistered window
+and the next measured native `build` or `refactor` run activates it automatically once the preregistered window
 and sample are met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
 baseline records.
 
