@@ -1,18 +1,18 @@
-Read the unmodified built recommendation contract at /tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/shared/next-steps.md.
+Read the unmodified built recommendation contract at /tmp/effective-flow-next-steps-eval/rounds/muzxe7ro-9fe15210-9457-4c1c-9489-da8709f1425d/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/shared/next-steps.md.
 Read its status and reference rules in shared/plan-reference-routing.md when relevant. This is the
 final reporting phase of an already completed workflow. Apply that production contract to the
 completed-run snapshot at completed-run.json in the target project. Finish its report; do not
 repeat implementation or delivery phases. The snapshot contains observed facts and retained
 complete planning context from that run. Read only the associated real plan artifacts if needed.
 
-The target project, execution root and runtime-state root are all /tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/active-local-next-ready-slice/slot-2/attempt-1/project.
+The target project, execution root and runtime-state root are all /tmp/effective-flow-next-steps-eval/rounds/muzxe7ro-9fe15210-9457-4c1c-9489-da8709f1425d/slots/active-local-next-ready-slice/slot-2/attempt-1/project.
 Use only this sandbox and skill copy; no user skills, repository outside it, or network access.
-For established tracker helper calls use node /tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/scripts/remote-tracker.mjs <operation>
-and include "cwd":"/tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/active-local-next-ready-slice/slot-2/attempt-1/project" in every JSON request. The fixture is hermetic; no live
+For established tracker helper calls use node /tmp/effective-flow-next-steps-eval/rounds/muzxe7ro-9fe15210-9457-4c1c-9489-da8709f1425d/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/scripts/remote-tracker.mjs <operation>
+and include "cwd":"/tmp/effective-flow-next-steps-eval/rounds/muzxe7ro-9fe15210-9457-4c1c-9489-da8709f1425d/slots/active-local-next-ready-slice/slot-2/attempt-1/project" in every JSON request. The fixture is hermetic; no live
 forge or external connection is available. Ask no questions in this non-interactive final phase.
 Resolved chat language is de; artifact language is en. No tracker, Git or artifact mutation is
 needed to finish the report. Recommendations remain advice and start no follow-up work.
 
 When the complete final report exists, pipe every line unchanged on standard input into
-node /tmp/effective-flow-next-steps-eval/rounds/muzbr6ce-6e61d452-1794-4c46-92c3-9b7ae9b74d22/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/scripts/report-channel.mjs exactly once, without an intermediate file.
+node /tmp/effective-flow-next-steps-eval/rounds/muzxe7ro-9fe15210-9457-4c1c-9489-da8709f1425d/slots/active-local-next-ready-slice/slot-2/attempt-1/skill/scripts/report-channel.mjs exactly once, without an intermediate file.
 Then finish with that same report. The recommendation block, when applicable, is its last element.

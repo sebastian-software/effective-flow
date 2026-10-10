@@ -1,4 +1,4 @@
-Load the Effective Flow skill from /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-5/attempt-1/skill
+Load the Effective Flow skill from /tmp/effective-flow-iterate-eval/rounds/mv2w5sdo-3442d77e-b2e5-4f31-ac9e-504324ccd26f/slots/review-in-flight-aborts/slot-5/attempt-1/skill
 by reading its SKILL.md; that directory is the Effective Flow skill root. Then run that skill's
 `iterate` tool on the invocation that closes this message, exactly as a delegating workflow hands
 it over.
@@ -6,10 +6,10 @@ it over.
 Resolve the paths the tool asks for as follows and use no others:
 
 - every remote-tracker invocation runs
-  `node /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-5/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
+  `node /tmp/effective-flow-iterate-eval/rounds/mv2w5sdo-3442d77e-b2e5-4f31-ac9e-504324ccd26f/slots/review-in-flight-aborts/slot-5/attempt-1/skill/scripts/remote-tracker.mjs <operation>`;
 - the target project checkout, the execution root and the runtime state root are all
-  /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-5/attempt-1/project;
-- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-5/attempt-1/project"`. Omit
+  /tmp/effective-flow-iterate-eval/rounds/mv2w5sdo-3442d77e-b2e5-4f31-ac9e-504324ccd26f/slots/review-in-flight-aborts/slot-5/attempt-1/project;
+- every JSON request sent to `remote-tracker.mjs` includes `"cwd":"/tmp/effective-flow-iterate-eval/rounds/mv2w5sdo-3442d77e-b2e5-4f31-ac9e-504324ccd26f/slots/review-in-flight-aborts/slot-5/attempt-1/project"`. Omit
   that field from no invocation.
 
 This is a non-interactive run. Ask no questions; wherever the tool documents a non-interactive
@@ -17,7 +17,7 @@ path, take it.
 
 Once the tool's run has ended, however it ended, pipe the tool's complete final report — every
 line of it, its closing completion keyword included — unchanged on standard input into
-`node /tmp/effective-flow-iterate-eval/rounds/muqrips9-7131c3c4-e07f-44f6-bfe8-d0fb05b9434d/slots/review-in-flight-aborts/slot-5/attempt-1/skill/scripts/report-channel.mjs`. Run that command exactly once and write the
+`node /tmp/effective-flow-iterate-eval/rounds/mv2w5sdo-3442d77e-b2e5-4f31-ac9e-504324ccd26f/slots/review-in-flight-aborts/slot-5/attempt-1/skill/scripts/report-channel.mjs`. Run that command exactly once and write the
 report to no file on the way. Then finish with the same report.
 
 The invocation starts on the next line and runs verbatim to the end of this message:
