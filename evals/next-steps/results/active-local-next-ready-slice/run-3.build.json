@@ -1,6 +1,6 @@
 {
   "scenario": "active-local-next-ready-slice",
-  "digest": "sha256:9e16d13038dfcd0179daa02e0b20912eace8163b1df686aea93e619e3fbf7cf1",
+  "digest": "sha256:6c627f4de6f514ea458d1f9237609da45b02cb368aa6fdcb3ea2601b241d762a",
   "skill": {
     "digest": "sha256:49b20a25f04e13fc7e2126c707eb184e9ef40acf60cd336e2a4dbcedf3c26f26",
     "versionNeutralDigest": "sha256:c61e9a8bfd8455d40343ffbd705c7012b2b8ddd8ded152b9922dd721c51d3609",
@@ -26,10 +26,10 @@
     }
   },
   "scenario_inputs": {
-    "digest": "sha256:441a893b057223414315c4b6e923e4bc4edbe12c252fd2ff63adfb33fff7ae46",
+    "digest": "sha256:9250d9207b862e5e471a5b66a6c876867c584ce9f0101d3626ef7470b7f05414",
     "files": {
       "evals/next-steps/fixtures/active-local-next-ready-slice.json": "sha256:e3c65d31cf2116060ca8351f524840b0bc9037a9bec3e34c482232a0fd76bb97",
-      "evals/next-steps/scenarios/active-local-next-ready-slice.md": "sha256:66f3bc1237fd9f0dc157572889107ff14e714945261a771f3de2598cba5748e3"
+      "evals/next-steps/scenarios/active-local-next-ready-slice.md": "sha256:d55429e8e5fa094cf3053ee2ef32437add14b4d5f8578e7ba170546c94ea0957"
     }
   }
 }
