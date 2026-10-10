@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import {
@@ -22,6 +22,7 @@ import {
   reconcileNativeAgentInventories,
 } from '../build-lib.mjs';
 import { AGENT_PROFILE_MAPPINGS } from './support/native-profile-config.mjs';
+import { copyRepository } from './support/repository-copy.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CODEX_FAST = AGENT_PROFILE_MAPPINGS.fast.codex;
@@ -66,16 +67,6 @@ function sourceAgentNames() {
     .sort();
 }
 
-function copyRepository(destination) {
-  cpSync(ROOT_DIR, destination, {
-    recursive: true,
-    filter(source) {
-      const first = relative(ROOT_DIR, source).split('/')[0];
-      return !['.git', '.effective-flow', 'dist', 'node_modules'].includes(first);
-    },
-  });
-}
-
 function replaceOnce(path, beforeText, afterText) {
   const source = readFileSync(path, 'utf8');
   const occurrences = source.split(beforeText).length - 1;
@@ -87,7 +78,7 @@ function assertMutatedBuildFails(name, mutate, expected) {
   const caseRoot = join(sandbox, `invalid-${name}`);
   const checkout = join(caseRoot, 'checkout');
   const destination = join(caseRoot, 'output');
-  copyRepository(checkout);
+  copyRepository(ROOT_DIR, checkout);
   mutate(checkout);
   const result = runBuild(checkout, destination);
   assert.notEqual(result.status, 0, `${name}: build unexpectedly succeeded`);
@@ -99,7 +90,7 @@ function assertMutatedBuildSucceeds(name, mutate) {
   const caseRoot = join(sandbox, `valid-${name}`);
   const checkout = join(caseRoot, 'checkout');
   const destination = join(caseRoot, 'output');
-  copyRepository(checkout);
+  copyRepository(ROOT_DIR, checkout);
   mutate(checkout);
   const result = runBuild(checkout, destination);
   assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
