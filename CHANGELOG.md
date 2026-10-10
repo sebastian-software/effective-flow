@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.67.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.1...effective-flow-v1.67.0) (2026-10-10)
+
+
+### Features
+
+* adopt the Fast field pilot in refactor ([#534](https://github.com/sebastian-software/effective-flow/issues/534)) ([b5a993b](https://github.com/sebastian-software/effective-flow/commit/b5a993bceb72a30e8e3b055b35059b52de5cb801))
+* prefer associated plans for next-step recommendations ([#547](https://github.com/sebastian-software/effective-flow/issues/547)) ([bab4ed5](https://github.com/sebastian-software/effective-flow/commit/bab4ed5e8542bef401bb2f9897a32fcd3975d823))
+
 ## [1.66.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.0...effective-flow-v1.66.1) (2026-10-02)
 
 
