@@ -2557,9 +2557,10 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
   const teaApiTransport = commentUpdate && apiInclude;
   // Requested by `probe` and the two thread writes only, because the description is a large
   // download, and appended after every help probe so the call order stays positional for callers
-  // that script it. It needs only the `--include` transport, not the write flags.
+  // that script it. Gated on the full transport: the read itself needs `--include`, and the two
+  // writes it attests send `--method` and `--data`, so without them neither write is declared.
   const readsSwagger = requestedCapabilities?.reviewThreadWrites === true;
-  const swagger = readsSwagger ? await readTeaSwagger(runner, login, apiInclude) : undefined;
+  const swagger = readsSwagger ? await readTeaSwagger(runner, login, teaApiTransport) : undefined;
   const declaresPost = (route) => swagger !== undefined && swagger.paths[route]?.post !== undefined;
   return {
     executable,
@@ -4023,12 +4024,13 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
 
 // A tea-backed forge lists review comments, not threads, and states no reply-to field, so a reply
 // arrives as one more comment of its review. One reviewed location is one thread: comments in the
-// same review on the same `path` and `position` (or `line`) are grouped, in ascending id order,
-// under the first comment's id, location, instant, link and resolution — the forge sets `resolver`
-// on that first comment only. Keeping the first comment's id keeps every thread key recorded
-// before grouping valid. A comment without a review id or without a position is a thread of its
-// own, and two top-level comments of one review on the same line merge, which the API cannot tell
-// apart. GitHub threads, which the provider already groups, pass through unchanged.
+// same review on the same `path` and signed line (see `teaReviewCommentAnchor`) are grouped, in
+// ascending id order, under the first comment's id, location, instant, link and resolution — the
+// forge sets `resolver` on that first comment only. Keeping the first comment's id keeps every
+// thread key recorded before grouping valid. A comment without a review id or without a positive
+// line is a thread of its own, and two top-level comments of one review on the same line merge,
+// which the API cannot tell apart. GitHub threads, which the provider already groups, pass through
+// unchanged.
 function groupTeaReviewComments(rawComments, normalized) {
   const github = [];
   const groups = new Map();
@@ -4037,10 +4039,11 @@ function groupTeaReviewComments(rawComments, normalized) {
       github.push(thread);
       return;
     }
+    const anchor = teaReviewCommentAnchor(rawComments[index]);
     const key =
-      thread.reviewId === undefined || thread.line === undefined || thread.line === null
+      thread.reviewId === undefined || anchor === undefined
         ? Symbol('ungrouped')
-        : JSON.stringify([thread.reviewId, thread.path, thread.line]);
+        : JSON.stringify([thread.reviewId, thread.path, anchor]);
     const group = groups.get(key);
     if (group) group.push(thread);
     else groups.set(key, [thread]);
@@ -4051,6 +4054,20 @@ function groupTeaReviewComments(rawComments, normalized) {
     return { ...ordered[0], comments: ordered.map((member) => member.comments[0]) };
   });
   return [...github, ...grouped.sort(byId)];
+}
+
+// The grouping line of one raw comment, signed by diff side. `PullReviewComment` serializes
+// `LineNum json:"position"` (new side) and `OldLineNum json:"original_position"` (old side) as
+// uint64 without `omitempty`, so a comment on a removed line carries `position: 0`: keyed on
+// `position` alone, every old-side comment of one review and file would collapse into one thread
+// whose first comment alone decides the resolution. New-side lines are positive, old-side lines
+// negative, a bare `line` is the fallback, and no positive line at all leaves the comment ungrouped.
+function teaReviewCommentAnchor(raw) {
+  const positive = (value) => Number.isInteger(value) && value > 0;
+  if (positive(raw.position)) return raw.position;
+  if (positive(raw.original_position)) return -raw.original_position;
+  if (positive(raw.line)) return raw.line;
+  return undefined;
 }
 
 // `options` carries no default on purpose: the merge-gate eval scaffold derives the supported

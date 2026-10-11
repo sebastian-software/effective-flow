@@ -3867,6 +3867,64 @@ test('a tea-backed review-thread read groups a reply into the thread it answers'
   }
 });
 
+test('a tea-backed review-thread read keys old-side comments on their original line', async () => {
+  // Invariant: a comment on a removed line is grouped by its side and line, never by `position`
+  // alone. Gitea serializes `position` without `omitempty`, so an old-side comment carries
+  // `position: 0` and its line in `original_position`; keyed on `position`, every old-side finding
+  // of one review and file collapsed into one thread whose first comment's resolver decided all
+  // of them, and an open finding read as resolved.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const comment = (id, fields) => ({
+    id,
+    body: `Comment ${id}`,
+    user: { login: 'review-app[bot]', type: 'User' },
+    resolver: null,
+    path: 'src/a.mjs',
+    position: 0,
+    original_position: 0,
+    ...fields,
+  });
+  const runner = fakeRunner([
+    teaApi([{ id: 50 }], 'X-Total-Count: 1\r\n'),
+    teaApi([
+      // Two old-side findings on different removed lines: two threads, the first one resolved.
+      comment(810, { original_position: 4, resolver: { login: 'maintainer' } }),
+      comment(820, { original_position: 9 }),
+      // A reply on the same removed line joins its thread.
+      comment(811, { original_position: 4 }),
+      // New line 4 is not old line 4.
+      comment(830, { position: 4 }),
+      // Neither side states a line: nothing to group by, so each stays alone.
+      comment(840),
+      comment(841),
+    ]),
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => [
+      thread.id,
+      thread.isResolved,
+      thread.comments.map((entry) => entry.id),
+    ]),
+    [
+      ['810', true, ['810', '811']],
+      ['820', false, ['820']],
+      ['830', false, ['830']],
+      ['840', false, ['840']],
+      ['841', false, ['841']],
+    ],
+  );
+});
+
 test('a review thread carries the browser link its first comment sits at', async () => {
   // `merge-gate`'s set-aside confirmation promises the operator somewhere to read the finding, and
   // a thread record holding only the thread ID could supply none. Both providers publish the link
@@ -8753,18 +8811,65 @@ test('an unreadable API description reports both writes unsupported without fail
   assert.equal(unversioned.capabilities.reviewThreadReplies, true);
   assert.equal(unversioned.capabilities.reviewThreadResolution, true);
 
-  // Without the attested `tea api --include` transport the description is not requested at all,
-  // which counts as a failed fetch.
-  const withoutInclude = fakeRunner(
-    teaProbeResults({ apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } }),
-  );
-  const noTransport = await probeProvider(forgejoRepository, withoutInclude, {
-    reviewThreadWrites: true,
+  // Without the full attested `tea api` transport the description is not requested at all, which
+  // counts as a failed fetch: the read needs `--include`, and the two writes it would attest send
+  // `--method` and `--data`, so a tea lacking either half declares neither write.
+  for (const [label, override] of [
+    ['without --include', { apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } }],
+    [
+      'without --method --data',
+      { commentUpdate: { status: 1, stdout: '', stderr: 'unknown flag' } },
+    ],
+  ]) {
+    const runner = fakeRunner(teaProbeResults(override));
+    const noTransport = await probeProvider(forgejoRepository, runner, {
+      reviewThreadWrites: true,
+    });
+    assert.equal(swaggerCalls(runner).length, 0, label);
+    assert.equal(runner.calls.length, teaProbeResults().length, label);
+    assert.equal(noTransport.flavor, 'unknown', label);
+    assert.equal(noTransport.capabilities.reviewThreadReplies, false, label);
+    assert.equal(noTransport.capabilities.reviewThreadResolution, false, label);
+  }
+});
+
+test('the API-description URL never carries login secrets or a non-http(s) address', async () => {
+  // Invariant: `tea api` attaches the login's token, so the address is the login URL's origin and
+  // path only. A login with no URL, or a URL that is not http(s), yields no request at all, and the
+  // userinfo, query and fragment a record might carry never reach the argv.
+  for (const [label, logins] of [
+    ['login without url', [{ name: 'work', host: 'code.example.test' }]],
+    ['string login', ['code.example.test']],
+    ['non-http(s) url', [{ name: 'work', url: 'ftp://code.example.test/forge' }]],
+  ]) {
+    const runner = fakeRunner(teaProbeResults({ logins }));
+    const probe = await probeProvider(forgejoRepository, runner, { reviewThreadWrites: true });
+    assert.equal(swaggerCalls(runner).length, 0, label);
+    assert.equal(runner.calls.length, teaProbeResults().length, label);
+    assert.equal(probe.flavor, 'unknown', label);
+    assert.equal(probe.capabilities.reviewThreadReplies, false, label);
+    assert.equal(probe.capabilities.reviewThreadResolution, false, label);
+  }
+
+  const { runner } = await threadWriteProbe(giteaSwagger(), {
+    logins: [
+      {
+        name: 'work',
+        url: 'https://user:s3cret@code.example.test/forge/?token=t0ken#frag',
+      },
+    ],
   });
-  assert.equal(swaggerCalls(withoutInclude).length, 0);
-  assert.equal(noTransport.flavor, 'unknown');
-  assert.equal(noTransport.capabilities.reviewThreadReplies, false);
-  assert.equal(noTransport.capabilities.reviewThreadResolution, false);
+  const [call] = swaggerCalls(runner);
+  assert.deepEqual(call.args, [
+    'api',
+    'https://code.example.test/forge/swagger.v1.json',
+    '--include',
+    '--login',
+    'work',
+  ]);
+  for (const secret of ['user', 's3cret', 't0ken', 'frag', '@', '?', '#']) {
+    assert.equal(call.args[1].includes(secret), false, secret);
+  }
 });
 
 test('each thread write is gated by its own declared POST route', async () => {
