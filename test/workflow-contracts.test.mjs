@@ -13759,6 +13759,48 @@ test('the provider-settled rule names its read batch and skips this run’s impl
   );
 });
 
+test('Phase 3 step 5 never re-delegates a thread this run recorded `implemented`, on any forge', () => {
+  // Invariant: no second outcome for a thread this run already implemented (issue #555). After a
+  // failed resolve the thread stays unresolved; re-delegating it would record `unassessed` beside
+  // the earlier `implemented` with no rule for which one condition 7 reads, while condition 6
+  // already reports the unresolved thread. The exclusion therefore holds on every forge, not only
+  // where both thread writes are unsupported.
+  const route = configuredReviewerRoute();
+  const phase3 = configuredReviewerSection('## Phase 3: Automatic reviewer round');
+  const step5 = prose(boundedSlice(phase3, '5. **When the bot has run', '\n6. '));
+  assert.match(
+    step5,
+    /Exclude every provider-settled thread, and on every forge every thread this run recorded `implemented`/,
+    'Phase 3 step 5 must exclude every thread this run recorded `implemented` on every forge',
+  );
+  assert.match(
+    step5,
+    near('recorded `implemented`', 'second outcome', 200),
+    'the forge-independent exclusion must carry its reason: no second outcome for the thread',
+  );
+  assert.match(
+    step5,
+    near('second outcome', 'condition 6', 200),
+    'the exclusion must name condition 6 as the report for a thread that stayed unresolved',
+  );
+  assert.doesNotMatch(
+    prose(route),
+    /on a forge where both thread writes are unsupported every thread this run recorded/,
+    'the retired forge-restricted exclusion of `implemented` threads must be gone',
+  );
+
+  // The provider-settled fragment keeps its own exclusion but must not restate the general rule as
+  // a restriction of its own forge.
+  const inRun = prose(
+    section(providerSettledFragment(), '### In-run exclusion in Phase 3', '\n### '),
+  );
+  assert.match(
+    inRun,
+    near('`?implemented`?', 'every forge', 300),
+    'the provider-settled fragment must state the `implemented` exclusion as the every-forge rule',
+  );
+});
+
 test('the provider-settled report names each thread, its URL and the manual next step', () => {
   const fragment = providerSettledFragment();
 
@@ -14958,20 +15000,27 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
     'the two ends must carry the identical processing-to-outcome mapping',
   );
 
-  // The three rows that are not word-for-word, and are therefore the ones a drift reinterprets
+  // The rows that are not word-for-word, and are therefore the ones a drift reinterprets
   // silently: `skipped` is a processing outcome on one side and two different assessments on the
-  // other, while `failed` and a deselected item are no assessment at all.
+  // other, while `failed`, a deselected item and a caller-named thread excluded as already
+  // addressed are no assessment at all. The last one keeps "one outcome per supplied identifier"
+  // true for a named thread this run never classified (issue #555).
   const mapped = new Map(gateTable.slice(1).map(([from, to]) => [from, to]));
   assert.deepEqual(
     [...mapped.values()].filter((value) => value === '`unassessed`').length,
-    2,
-    'exactly the two non-assessments must map onto `unassessed`',
+    3,
+    'exactly the three non-assessments must map onto `unassessed`',
   );
   for (const [pattern, expected, label] of [
     [/^`skipped` as a false positive/, '`rejected`', 'a false positive'],
     [/^`skipped` as out of scope/, '`deferred`', 'an out-of-scope item'],
     [/^`failed`/, '`unassessed`', 'a failed implementation'],
     [/^deselected/, '`unassessed`', 'a deselected item'],
+    [
+      /^named in `threads=` but excluded as already addressed \(Phase 2 step 2\)$/,
+      '`unassessed`',
+      'a caller-named thread excluded as already addressed',
+    ],
   ]) {
     const row = [...mapped].find(([from]) => pattern.test(from));
     assert.ok(row, `the mapping must carry a row for ${label}`);
@@ -14983,6 +15032,66 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
       `the mapping must not produce a value outside the closed vocabulary: ${value}`,
     );
   }
+
+  // The sentence after the table counts the non-assessment rows by position, so the non-assessments
+  // must be exactly the trailing rows and the count must match them: a reader told "the last two
+  // rows" would read the third `unassessed` row as an assessment.
+  assert.deepEqual(
+    gateTable.slice(-3).map(([, to]) => to),
+    ['`unassessed`', '`unassessed`', '`unassessed`'],
+    'the three non-assessment rows must be the last three rows of the mapping',
+  );
+  for (const [text, label] of [
+    [gate, 'merge-gate'],
+    [iterate, 'iterate'],
+  ]) {
+    const record = returnedRecord(text, label);
+    assert.match(
+      record,
+      /The last three rows are the ones/,
+      `${label} must name the last three rows as the non-assessments`,
+    );
+    assert.doesNotMatch(
+      record,
+      /The last two rows/,
+      `${label} must not keep the retired two-row count`,
+    );
+  }
+});
+
+test('iterate returns an outcome for every named thread it excludes or never selects', () => {
+  // Invariant: one outcome per caller-supplied identifier, and exactly one (issue #555). A named
+  // thread that Phase 2 step 2 excludes as already addressed, or a filter that selects nothing,
+  // must still hand every supplied identifier back as `unassessed`; a missing outcome reads to the
+  // gate as a mismatch and fails the round, and `implemented` or `deferred` would claim a judgment
+  // this run never made.
+  const phase2 = section(source('src/tools/iterate.md'), '### Phase 2: Classification');
+
+  const named = prose(
+    boundedSlice(phase2, '**`threads=<id>,<id>`**', '**An empty selection is a valid result.**'),
+  );
+  assert.match(
+    named,
+    near('already addressed them', 'excluded thread still returns', 120),
+    'the threads= bullet must follow the already-addressed exclusion with its returned outcome',
+  );
+  assert.match(
+    named,
+    /Such an excluded thread still returns its caller-supplied identifier as `unassessed`\./,
+    'a named thread excluded as already addressed must return its identifier as `unassessed`',
+  );
+
+  const empty = prose(boundedSlice(phase2, '**An empty selection is a valid result.**', '\n3. '));
+  assert.match(
+    empty,
+    near('every caller-supplied identifier', '`unassessed`', 120),
+    'an empty selection must return every caller-supplied identifier as `unassessed`',
+  );
+  // The empty path stays a clean, filter-respecting end: the outcomes come back under `DONE`, never
+  // through a fallback to processing every item.
+  assert.match(empty, /end cleanly with `DONE`/, 'an empty selection must still end with `DONE`');
+  assert.match(empty, /matches no item/, 'the empty-selection bullet must name its trigger');
+  assert.match(empty, /Never fall back/, 'the empty selection must rule out the fallback');
 });
 
 test('the gate consumes the iterate return only through identifiers it recorded before delegating', () => {

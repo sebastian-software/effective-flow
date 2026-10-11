@@ -43,7 +43,7 @@ defeats both.
 
 On `UNSUPPORTED_CAPABILITY` – every `tea`-backed forge refuses review submission (`review-create`)
 and serves `review-thread-reply` and `review-thread-resolve` only where its API description
-declares their routes (Gitea declares both, Forgejo today neither) – fall
+declares both routes, never one alone (Gitea declares both, Forgejo today neither) – fall
 back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with

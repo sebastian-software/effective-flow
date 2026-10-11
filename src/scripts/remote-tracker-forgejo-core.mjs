@@ -512,10 +512,12 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // The two thread writes exist per instance, not per provider: Gitea's router serves
     // `POST …/pulls/{index}/comments/{id}/replies` and `POST …/pulls/comments/{id}/resolve`, while
     // Forgejo declares neither today. `tea pulls resolve` attests only the client subcommand, so the
-    // evidence is the forge's own API description, which the probe reads for these two operations
-    // and reports per route. The builder refuses unless the probe it is handed declares the route,
-    // so a caller without such a probe — `buildCommandPlan` alone, or a `skipProbe` run — builds no
-    // command for a write the forge may not serve.
+    // evidence is the forge's own API description, which the probe reads for these two operations.
+    // It serves the pair only when both routes are declared, because a forge that can reply but not
+    // resolve (or the reverse) can never finish a thread, so it is treated like one that serves
+    // neither. The builder refuses unless the probe it is handed serves the write, so a caller
+    // without such a probe — `buildCommandPlan` alone, or a `skipProbe` run — builds no command for
+    // a write the forge may not serve.
     //
     // Both ride `tea api --include` for the reason `issue-close` does: `tea api` exits 0 on every
     // status, and only the status line tells a refused write from an applied one. The reply body

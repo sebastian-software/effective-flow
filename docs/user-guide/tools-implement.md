@@ -298,7 +298,7 @@ thread, and a summary comment. Pure reviewer questions are deferred and listed i
 not automatically answered on the merits. When another workflow delegates to it and supplies an
 identifier per item, `iterate` additionally returns exactly one outcome for each of those
 identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
-that item – so the caller can match the result against what it handed over; see
+that item, including a named thread it left out as already addressed – so the caller can match the result against what it handed over; see
 [`/effective-flow merge-gate`](tools-deliver.md). Without a PR (**local mode**), `iterate` iterates
 based on the free-text instructions on the diff of the current branch against the base branch
 and commits locally, without pushing or commenting.
@@ -323,7 +323,8 @@ the threads left directly on the PR. The actual implementation is handled by the
 implementation tools; existing PRs are updated exclusively via new commits. GitHub
 (`gh`) and Forgejo/Gitea (`tea`) are supported – on GitHub, `iterate` replies to a thread and
 resolves it through the GraphQL mutation; on a `tea`-backed forge it does both through `tea api`
-where the instance's API description declares the routes, as Gitea does. Forgejo declares neither,
+where the instance's API description declares both routes, as Gitea does; one route alone enables
+neither write. Forgejo declares neither,
 so there `iterate` writes nothing into the thread and reports the reply and the resolution as
 manual steps.
 

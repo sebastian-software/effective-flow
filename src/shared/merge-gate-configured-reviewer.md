@@ -71,8 +71,9 @@ word, because a mapping only one end holds is a mapping that drifts:
 | deferred question (`question_or_information`, `needs_evidence`)                                   | `deferred`     |
 | `failed` – the item's own implementation delegation returned `ABORT`                              | `unassessed`   |
 | deselected at the approval gate (Phase 2.5)                                                       | `unassessed`   |
+| named in `threads=` but excluded as already addressed (Phase 2 step 2)                            | `unassessed`   |
 
-The last two rows are the ones this gate must not read as an assessment: nobody judged the finding,
+The last three rows are the ones this gate must not read as an assessment: nobody judged the finding,
 so the item is `unassessed` and condition 10 blocks on it.
 
 **The key set is pre-committed, and that is why the return needs no framing of its own.** Before the
@@ -340,8 +341,9 @@ entries that denote the same reviewer – two spellings of one account are one r
      carried before. Re-delegating one would write a new outcome under the same durable key the
      record is keyed by, and an item that came back `unassessed` that time would be cleared and
      unclearable at once.
-   - **Exclude every provider-settled thread**, and on a forge where both thread writes are
-     unsupported every thread this run recorded `implemented`, per the loaded provider-settled rule.
+   - **Exclude every provider-settled thread, and on every forge every thread this run recorded
+     `implemented`**: a second delegation would record a second outcome for it, and condition 6
+     already reports one that stayed unresolved.
    - **Build, validate and dispatch that one delegation** per "Building and dispatching a
      delegation" in the loaded `merge-gate-delegation-contract`: the threads as `threadItems`, the body findings below as `bodyItems`. `build`
      mints one per-message identifier per thread and carries it on that thread's `Thread item:`

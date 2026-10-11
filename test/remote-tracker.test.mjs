@@ -8872,24 +8872,65 @@ test('the API-description URL never carries login secrets or a non-http(s) addre
   }
 });
 
-test('each thread write is gated by its own declared POST route', async () => {
-  // Only `replies` is declared for POST; the resolve path exists with a GET alone, which serves no
-  // write.
-  const { probe } = await threadWriteProbe(
-    swaggerResult('1.25.0', [threadReplyRoute], { [threadResolveRoute]: { get: {} } }),
-  );
-  assert.equal(probe.capabilities.reviewThreadReplies, true);
-  assert.equal(probe.capabilities.reviewThreadResolution, false);
-  assert.equal(probe.flavor, 'gitea');
+test('the two thread writes are served only as a pair of declared POST routes', async () => {
+  // Invariant: a tea-backed forge either serves both thread writes or neither. A forge that can
+  // reply but not resolve (or the reverse) can never finish a thread, so one declared route alone
+  // enables neither write and the instance takes the provider-settled path a Forgejo forge takes.
+  for (const [label, swagger, expected] of [
+    [
+      'replies only',
+      swaggerResult('1.25.0', [threadReplyRoute], { [threadResolveRoute]: { get: {} } }),
+      false,
+    ],
+    [
+      'resolve only',
+      swaggerResult('1.25.0', [threadResolveRoute], { [threadReplyRoute]: { get: {} } }),
+      false,
+    ],
+    ['both', giteaSwagger(), true],
+    ['neither', swaggerResult('1.25.0'), false],
+  ]) {
+    const { probe } = await threadWriteProbe(swagger);
+    assert.equal(probe.capabilities.reviewThreadReplies, expected, label);
+    assert.equal(probe.capabilities.reviewThreadResolution, expected, label);
+    // The flavor stays the version's verdict, independent of the pairing rule.
+    assert.equal(probe.flavor, 'gitea', label);
+  }
 
-  // The builder reads the same per-route flag: the declared write builds, the other is refused.
+  // On a replies-only instance the reply is refused before any write command: through the full
+  // probe only the help probes and the description are read, and nothing is posted.
+  const repliesOnly = () =>
+    swaggerResult('1.25.0', [threadReplyRoute], { [threadResolveRoute]: { get: {} } });
+  const runner = fakeRunner(teaProbeResults({ swagger: repliesOnly() }));
+  const refused = await executeOperation(
+    'review-thread-reply',
+    {
+      repository: forgejoRepository,
+      number: 7,
+      commentId: 42,
+      payload: { body: 'Fixed.' },
+    },
+    { runner, apply: true },
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(refused.error.details.capability, 'reviewThreadReplies');
+  assert.equal(runner.calls.length, teaProbeResults().length + 1);
   assert.equal(
-    buildCommandPlan(
-      'review-thread-reply',
-      { number: 7, commentId: 42, payload: { body: 'Fixed.' }, probe },
-      forgejoRepository,
-    ).executable,
-    'tea',
+    runner.calls.some((call) => call.args.includes('POST')),
+    false,
+  );
+
+  // The builder reads the same paired flags: neither write builds on a single-route instance.
+  const { probe } = await threadWriteProbe(repliesOnly());
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'review-thread-reply',
+        { number: 7, commentId: 42, payload: { body: 'Fixed.' }, probe },
+        forgejoRepository,
+      ),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY',
   );
   assert.throws(
     () => buildCommandPlan('review-thread-resolve', { threadId: 613, probe }, forgejoRepository),

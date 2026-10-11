@@ -724,13 +724,13 @@ core or protocol modules:
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
 once per run from authenticated login JSON plus documented `tea ... --help` command/flag surfaces;
-the two review-thread writes additionally require their `POST` route in the instance's
-`/swagger.v1.json`, read through `tea api` from the selected login's URL. Absent commands or routes
-become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
-diagnostics, but body writes are reported as non-atomic because GitHub does not support conditional
-requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
-are normalized from the final URL that supported `tea` versions print after a successful issue or
-pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
+the two review-thread writes additionally require both of their `POST` routes in the instance's
+`/swagger.v1.json`, read through `tea api` from the selected login's URL, and one route alone enables
+neither. Absent commands or routes become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads
+retain ETags for diagnostics, but body writes are reported as non-atomic because GitHub does not
+support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
+page, and create results are normalized from the final URL that supported `tea` versions print
+after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
 checks prove that all three installed payloads contain all twenty identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` runs against a fixture plan directory in every target, and that
@@ -1012,7 +1012,7 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 1937/1940, `iterate` 1548/1548, `setup` 1545/1545,
+`merge-gate` is 1937/1940, `iterate` 1551/1551, `setup` 1545/1545,
 `apply-review` 1021/1021, `apply-issues` 933/933, and `cleanup` 833/833.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
 `plan` 692/693, `docs` 630/637, `build` 632/640, and `fix` 513/513. Read every

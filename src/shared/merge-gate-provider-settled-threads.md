@@ -52,13 +52,13 @@ settled.
 
 ### In-run exclusion in Phase 3
 
-On such a forge, Phase 3 step 5 hands neither a provider-settled thread nor a thread whose durable
-key already holds `implemented` from this run to `{{SKILL:iterate}}`. The second half closes the
-window between iterate's push and the bot's visible approval: condition 5 can report the bot as
-having run before its approval is readable, and the thread would otherwise be re-delegated. Where
-nothing remains, the delegation builder returns `nothing-to-delegate` and no round is used. The
-thread's `implemented` outcome still clears condition 7 in the same run; if the approval is still
-missing at Phase 4, condition 6 blocks.
+On such a forge, Phase 3 step 5 hands no provider-settled thread to `{{SKILL:iterate}}`, nor, as on
+every forge, a thread whose durable key already holds `implemented` from this run. Here the second
+half also closes the window between iterate's push and the bot's visible approval: condition 5 can
+report the bot as having run before its approval is readable, and the thread would otherwise be
+re-delegated. Where nothing remains, the delegation builder returns `nothing-to-delegate` and no
+round is used. The thread's `implemented` outcome still clears condition 7 in the same run; if the
+approval is still missing at Phase 4, condition 6 blocks.
 
 ### Report wording
 

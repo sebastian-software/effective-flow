@@ -183,10 +183,11 @@ left to be inferred:
 | deferred question (`question_or_information`, `needs_evidence`)                                   | `deferred`     |
 | `failed` – the item's own implementation delegation returned `ABORT`                              | `unassessed`   |
 | deselected at the approval gate (Phase 2.5)                                                       | `unassessed`   |
+| named in `threads=` but excluded as already addressed (Phase 2 step 2)                            | `unassessed`   |
 
-The last two rows are the ones a caller must not read as an assessment: nobody judged the finding, so
+The last three rows are the ones a caller must not read as an assessment: nobody judged the finding, so
 the item comes back explicitly **unassessed** and the caller's own gate decides what that costs.
-Returning `rejected` or `deferred` for either would claim a judgment this run never made.
+Returning `rejected` or `deferred` for any of them would claim a judgment this run never made.
 
 **Every `ABORT` this workflow returns is whole-run.** Its final line is the full `ABORT: <reason>` this file names for that stop, never a bare `ABORT`. A per-item failure is an outcome and never a
 per-item `ABORT`: `DONE`/`ABORT` is the completion protocol this run gives its **internal sub-agents**, and a
@@ -630,12 +631,14 @@ after its state turned terminal, so Phase 1's fresh read before every write keep
      when the delegation supplied free text as well. A caller-supplied ID names its thread
      explicitly, so the marker-based exclusions above do not remove it; a `resolved` thread and a
      thread already carrying an `<!-- effective-flow-iterate -->` reply (in hidden mode: one the
-     ledger reports `recorded`) stay excluded, because this workflow already addressed them.
+     ledger reports `recorded`) stay excluded, because this workflow already addressed them. Such an
+     excluded thread still returns its caller-supplied identifier as `unassessed`.
    - **An empty selection is a valid result.** If the filter matches no item — every named thread
      was resolved between the caller's read and this delegation — continue with **no** items:
      report the empty selection, implement nothing, push nothing, reply to nothing, resolve
-     nothing, post no summary comment, and end cleanly with `DONE`. Never fall back to processing
-     all items, and never read an empty selection as a missing filter.
+     nothing, post no summary comment, return every caller-supplied identifier as `unassessed`, and
+     end cleanly with `DONE`. Never fall back to processing all items, and never read an empty
+     selection as a missing filter.
 3. Send every remaining review thread and free-text instruction to `effective-delivery` Mode C
    with the caller constraints: Effective Flow owns authority, approval, implementation, commits,
    delivery, replies, and resolution; the analysis may only classify supplied context.
