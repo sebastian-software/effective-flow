@@ -1,11 +1,11 @@
 {
   "scenario": "manifest-span-mismatch-aborts",
-  "digest": "sha256:59c63802e249462f36d72553ab4ceafbbea9deee34126a9f82ccdff3520e237a",
+  "digest": "sha256:af06b45a12a11793772fec24248c8ecc9c96585f07a17fce168642d8ad088dc7",
   "skill": {
-    "digest": "sha256:fbedc850c3d155d4f5b23f08304d46048634ef79d9a7b0a35d72aaaa0f7c4b4b",
-    "versionNeutralDigest": "sha256:71db912842c5940a2ccfff2c45e31046cf916421e96b43bf1a58c141ea46a5b6",
+    "digest": "sha256:8db18d3b36d1f7d66df8574888b32d1cbd90138b9f2bfa8c3a8b6ff0ff4cfffb",
+    "versionNeutralDigest": "sha256:f97ae0ab2bce1b50d8544b966563270f4e187208031b0a8bd68fa028bdaa4528",
     "files": {
-      "SKILL.md": "sha256:2ed7dd725351812ea30c247289214240fb50b7df0982e969924218753f622d3f",
+      "SKILL.md": "sha256:8cb5953f7003ec39a66ef4823b224f0c6d629d87063cb33e85fb9f86ef42a48d",
       "scripts/config-resolve-core.mjs": "sha256:5e39a3d707106b2816780b4752b7cccd9955c5951df0fe83042a47b267deb66c",
       "scripts/config-resolve.mjs": "sha256:eff11b9757e08804946823946ade96d2eaf56935552d401f18f3a1e7dd5f068b",
       "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
@@ -16,7 +16,7 @@
       "shared/issue-tracker-forge.md": "sha256:a722523ecdec21d127d50193469526121c603e1ae3c049c4f457b8fbd1e44e27",
       "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
       "shared/next-steps.md": "sha256:cc7d37c1e64ed68a342676c6ef27338d9753f5494bc30bd4fe8d6fd50d61a2ee",
-      "shared/pr-review-integration.md": "sha256:9330bac4b54812193fd255cd03ce2748529e2743aa4f9705a0674f8441d30463",
+      "shared/pr-review-integration.md": "sha256:cee79632964126c499286e23791a2145414a20fad3289a780cd4d5c9b48c0943",
       "shared/pr-thread-ledger.md": "sha256:ab8a47112ea57fa532f219b2cfce3b6c38294a0fe8c2bfb0fd2493e7cc6bd04e",
       "shared/review-bot-state-observation.md": "sha256:b92237c8e6a767c15c8074e4d86cff1aaec69ff56c4f8aa365e8c0ba406b9a8d",
       "shared/review-bot-state.md": "sha256:a5e8ed5c38746f609b8061032f73d4b11e205c795da38ddfb38860392e098d49",
@@ -25,7 +25,7 @@
       "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
       "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
       "shared/worktree-integration.md": "sha256:86b249771ebaccc843381ba01b5d12d8e12be5ea7ec364c8eed8439c661aa623",
-      "tools/iterate.md": "sha256:71fbfe9a5b382db275ca93c69c82ea7a30acc7eecc34d68026f6a95b8073f790"
+      "tools/iterate.md": "sha256:4e99ddef6ecdb343e4eb8a64b2142de3d3cebb7f54ee999d8b2c12d23d6230df"
     }
   },
   "instrument": {

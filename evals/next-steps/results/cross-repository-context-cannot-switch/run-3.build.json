@@ -1,18 +1,18 @@
 {
   "scenario": "cross-repository-context-cannot-switch",
-  "digest": "sha256:7836d57d6551048d3f382ecb95bd5a082e3b5f7e0da4b482f3e89391c962838a",
+  "digest": "sha256:45c731debcefebfbf48209b3f94f9ff99ab3f6e507ec445bc652c320696ee833",
   "skill": {
-    "digest": "sha256:49b20a25f04e13fc7e2126c707eb184e9ef40acf60cd336e2a4dbcedf3c26f26",
+    "digest": "sha256:25de66bea9433c43ed251956eef04db2b9462da01817a78d4bc066837f3629aa",
     "versionNeutralDigest": "sha256:c61e9a8bfd8455d40343ffbd705c7012b2b8ddd8ded152b9922dd721c51d3609",
     "files": {
-      "SKILL.md": "sha256:2ed7dd725351812ea30c247289214240fb50b7df0982e969924218753f622d3f",
+      "SKILL.md": "sha256:8cb5953f7003ec39a66ef4823b224f0c6d629d87063cb33e85fb9f86ef42a48d",
       "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
       "shared/next-steps.md": "sha256:cc7d37c1e64ed68a342676c6ef27338d9753f5494bc30bd4fe8d6fd50d61a2ee",
       "shared/plan-reference-routing.md": "sha256:db70e611e3a53a83e7861ddb6ef6f4503bcd366609f2c885571c494f6a57fee6"
     }
   },
   "instrument": {
-    "digest": "sha256:58c6cb31c68deeef64f1dba76f4dfcab5f5b32e26933499118dec92cf6b5171c",
+    "digest": "sha256:398cff98e3a8b3e0bbde8a90f6e5fe1bb7194ae9db83db4380e8fb94d8e7ec17",
     "files": {
       "evals/next-steps/suite.config.mjs": "sha256:1021ded43145da1a254d4c4ed6778c1d6bbdd5cf259bb00f133d55c153df2edd",
       "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
@@ -22,7 +22,7 @@
       "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
       "evals/next-steps/_scaffold/setup.mjs": "sha256:ac50f00a41dbfbd8c0460c31eb0b88fb9a26ceb3ec3255de687e5aec899e09e0",
       "evals/next-steps/_scaffold/state.mjs": "sha256:78fc5c14dbcca844f594686162ff3fa94107866314c7f1322b14b51b0302368e",
-      "src/scripts/remote-tracker-shared-core.mjs": "sha256:1e0ecfc617d346fbbb087f856940964930c340a518cc5c5ca553011e6c89cf74"
+      "src/scripts/remote-tracker-shared-core.mjs": "sha256:1e21222e4c43f2b20aad7f5276addae9cb1f3e402b448f9a4f5a493bad6293ae"
     }
   },
   "scenario_inputs": {
