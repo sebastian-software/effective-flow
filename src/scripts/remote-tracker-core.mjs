@@ -2562,6 +2562,9 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
   const readsSwagger = requestedCapabilities?.reviewThreadWrites === true;
   const swagger = readsSwagger ? await readTeaSwagger(runner, login, teaApiTransport) : undefined;
   const declaresPost = (route) => swagger !== undefined && swagger.paths[route]?.post !== undefined;
+  // The two writes are one pair, folded like `labelCreate`: a forge that can reply but not resolve,
+  // or the reverse, can never finish a thread, so one declared route alone enables neither.
+  const threadWrites = declaresPost(THREAD_REPLY_ROUTE) && declaresPost(THREAD_RESOLVE_ROUTE);
   return {
     executable,
     version,
@@ -2641,14 +2644,15 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // is where it now goes: `tea pulls review-comments` states no login and no timestamp, so the
       // subcommand's presence never attested a usable read in the first place.
       reviewThreads: teaApiTransport,
-      // Read per instance from the forge's API description, one declared POST route per write, and
-      // no longer stated for every tea-backed forge at once. `tea pulls resolve --help` attests the
-      // client subcommand, never the route behind it: a live `15.0.3+gitea-1.22.0` Forgejo declares
-      // no `…/pulls/comments/…` path at all and rejects the resolve with a router 405, while Gitea
-      // declares both routes. Without the `reviewThreadWrites` request, or when the description
-      // cannot be read, neither write is declared and `merge-gate` takes its provider-settled path.
-      reviewThreadReplies: declaresPost(THREAD_REPLY_ROUTE),
-      reviewThreadResolution: declaresPost(THREAD_RESOLVE_ROUTE),
+      // Read per instance from the forge's API description, and served only when it declares both
+      // POST routes (`threadWrites` above states why one route alone enables neither).
+      // `tea pulls resolve --help` attests the client subcommand, never the route behind it: a live
+      // `15.0.3+gitea-1.22.0` Forgejo declares no `…/pulls/comments/…` path at all and rejects the
+      // resolve with a router 405, while Gitea declares both routes. Without the `reviewThreadWrites`
+      // request, when the description cannot be read, or with one route alone, neither write is
+      // served and `merge-gate` takes its provider-settled path.
+      reviewThreadReplies: threadWrites,
+      reviewThreadResolution: threadWrites,
       conditionalWrites: false,
     },
   };

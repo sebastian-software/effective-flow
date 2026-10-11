@@ -245,9 +245,9 @@ ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 — `review-create`, `review-thread-reply` and `review-thread-resolve` — belong to the sibling
-fragment `pr-review-thread-writes`, which states where a `tea`-backed forge serves them and how each
-degrades; the gate still fails closed on anything it cannot read, improvising no provider
-request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+fragment `pr-review-thread-writes`, which states where a `tea`-backed forge serves them (the two
+thread writes only as a pair) and how each degrades; the gate still fails closed on anything it
+cannot read, improvising no provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
 and its page count is reported, since a truncated review list would report a verdict that is missing

@@ -482,7 +482,7 @@ no-watch degradation there – report the pending checks by name and ask once �
 Forgejo run is therefore the whole gate minus the blocking wait. Of the other operations
 `merge-gate` and `iterate` use, `review-create` stays unsupported on every `tea`-backed forge, and
 `review-thread-reply` and `review-thread-resolve` are supported only where the instance declares
-their routes (see below). `pr-reviews-read` is **not** among the unsupported ones – it reads the same
+both of their routes (see below). `pr-reviews-read` is **not** among the unsupported ones – it reads the same
 raw route the review-thread walk already pages there, and it is paginated to exhaustion, because a
 truncated review list would report a missing verdict as a verdict that does not exist.
 
@@ -491,11 +491,13 @@ Gitea and Forgejo share the `forgejo` provider and `tea`, and `tea pulls resolve
 the client subcommand, never the route behind it. For `probe`, `review-thread-reply` and
 `review-thread-resolve`, the helper therefore fetches `<login URL>/swagger.v1.json` through `tea api`.
 The URL is built only from the selected `tea` login, keeping its sub-path, because `tea api` sends
-that login's token. Each write is supported only when the description declares its `POST` route:
-`/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies` for `reviewThreadReplies`, and
-`/repos/{owner}/{repo}/pulls/comments/{id}/resolve` for `reviewThreadResolution`. A failed fetch – the
-description disabled on the server, a `404`, a body that is not JSON, or a `tea` without
-`api --include` – leaves both unsupported and never fails the probe. Each write call re-reads the
+that login's token. The two writes are supported only as a pair, when the description declares both
+`POST` routes: `/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies` and
+`/repos/{owner}/{repo}/pulls/comments/{id}/resolve`. An instance that declares only one of them could
+never finish a thread, so it is treated like one that declares neither: `reviewThreadReplies` and
+`reviewThreadResolution` are both unsupported, and `iterate` and `merge-gate` take the no-write path
+described below. A failed fetch – the description disabled on the server, a `404`, a body that is
+not JSON, or a `tea` without `api --include` – leaves both unsupported and never fails the probe. Each write call re-reads the
 description, one extra request per call. The probe also reports a diagnostic `flavor`: `gitea`,
 `forgejo` (an `info.version` containing `+gitea-`), `unknown` when the description could not be
 read, or `null` when it was not requested; the capabilities come from the declared routes alone.
