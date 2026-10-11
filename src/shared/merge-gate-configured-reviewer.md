@@ -74,7 +74,7 @@ word, because a mapping only one end holds is a mapping that drifts:
 | named in `threads=` but excluded as already addressed (Phase 2 step 2)                            | `unassessed`   |
 
 The last three rows are the ones this gate must not read as an assessment: nobody judged the finding,
-so the item is `unassessed` and condition 10 blocks on it.
+so the item is `unassessed` and condition 7 (an unresolved thread) or 10 (a body finding) blocks on it.
 
 **The key set is pre-committed, and that is why the return needs no framing of its own.** Before the
 delegation goes out, this run has already recorded every item identifier it is about to supply, and
@@ -419,10 +419,10 @@ entries that denote the same reviewer – two spellings of one account are one r
    thread and satisfies this condition, as it satisfies condition 5.
 
    **An `unassessed` thread is as unassessed as an `unassessed` verdict, and blocks the same way.**
-   An item whose implementation delegation aborted and an item deselected at the delegated run's own
-   approval gate both come back `unassessed`, and nobody judged either. Delegation membership never
-   cleared this condition – the heading says assessed, and that is what it means – and reading it as
-   membership is the defect this paragraph closes.
+   An item whose implementation delegation aborted, one deselected at the delegated run's own approval
+   gate and a named thread excluded as already addressed all come back `unassessed`, and nobody judged
+   any of them. Delegation membership never cleared this condition – the heading says assessed, and
+   that is what it means – and reading it as membership is the defect this paragraph closes.
 
    **A `deferred` or `rejected` thread reaches "The set-aside confirmation" below, exactly as
    condition 10's findings do.**

@@ -44,11 +44,15 @@ const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
 // and found the operation's route declared (see `review-thread-reply` below).
 function requireThreadWriteRoute(input, operation, capability) {
   if (input.probe?.capabilities?.[capability] !== true) {
-    fail('UNSUPPORTED_CAPABILITY', `the forge does not declare a route for ${operation}`, {
-      operation,
-      capability,
-      provider: 'forgejo',
-    });
+    fail(
+      'UNSUPPORTED_CAPABILITY',
+      `the forge does not serve the review-thread write pair (both POST routes required) for ${operation}`,
+      {
+        operation,
+        capability,
+        provider: 'forgejo',
+      },
+    );
   }
 }
 

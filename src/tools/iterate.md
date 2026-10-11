@@ -826,8 +826,8 @@ and stop delivery for reconciliation.
 2. Run the worktree-record exit self-check.
 3. Give the user a summary:
    - table: one row per item with its processing outcome – implemented, skipped, deferred question,
-     failed, or deselected – and, for every caller-supplied identifier, the value that outcome maps
-     onto per "Returned outcome record"
+     failed, deselected, or excluded as already addressed – and, for every caller-supplied
+     identifier, the value that outcome maps onto per "Returned outcome record"
    - PR URL, pushed commits, resolved threads, final checkout state; return retained source context
      and observed outcome for the final emitter's shared `next-steps` selection
    - in local mode: which commits were created on which branch

@@ -2645,13 +2645,12 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // subcommand's presence never attested a usable read in the first place.
       reviewThreads: teaApiTransport,
       // Read per instance from the forge's API description, and served only when it declares both
-      // POST routes: a forge that serves one write without the other can never finish a thread, so
-      // it is treated like one that serves neither. `tea pulls resolve --help` attests the
-      // client subcommand, never the route behind it: a live `15.0.3+gitea-1.22.0` Forgejo declares
-      // no `…/pulls/comments/…` path at all and rejects the resolve with a router 405, while Gitea
-      // declares both routes. Without the `reviewThreadWrites` request, when the description cannot
-      // be read, or with one route alone, neither write is served and `merge-gate` takes its
-      // provider-settled path.
+      // POST routes (`threadWrites` above states why one route alone enables neither).
+      // `tea pulls resolve --help` attests the client subcommand, never the route behind it: a live
+      // `15.0.3+gitea-1.22.0` Forgejo declares no `…/pulls/comments/…` path at all and rejects the
+      // resolve with a router 405, while Gitea declares both routes. Without the `reviewThreadWrites`
+      // request, when the description cannot be read, or with one route alone, neither write is
+      // served and `merge-gate` takes its provider-settled path.
       reviewThreadReplies: threadWrites,
       reviewThreadResolution: threadWrites,
       conditionalWrites: false,
