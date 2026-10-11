@@ -321,9 +321,11 @@ running non-interactively. Local mode has no pull request and is unaffected.
 "PR review comments": `/effective-flow apply` reads Effective Flow's own reports or issues, `iterate` reads
 the threads left directly on the PR. The actual implementation is handled by the existing
 implementation tools; existing PRs are updated exclusively via new commits. GitHub
-(`gh`) and Forgejo (`tea`) are supported – on GitHub, `iterate` replies to a thread and resolves it
-through the GraphQL mutation. Forgejo supports neither, so `iterate` writes nothing into the thread
-and reports the reply and the resolution as manual steps.
+(`gh`) and Forgejo/Gitea (`tea`) are supported – on GitHub, `iterate` replies to a thread and
+resolves it through the GraphQL mutation; on a `tea`-backed forge it does both through `tea api`
+where the instance's API description declares the routes, as Gitea does. Forgejo declares neither,
+so there `iterate` writes nothing into the thread and reports the reply and the resolution as
+manual steps.
 
 ## Further reading
 

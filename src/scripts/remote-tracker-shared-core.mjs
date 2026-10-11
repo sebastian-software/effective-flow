@@ -377,6 +377,25 @@ export function publishableText(value, field) {
   return text;
 }
 
+// A thread reply is an `iterate` write, so it carries the same marker as that direction's summary
+// comment. It is stamped here rather than left to the caller because the marker contract states
+// that these markers are never written by hand: the merge gate's guard matches them as exact
+// strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
+// read as a human's, blocking the merge on this tool's own output. Both adapters build the reply
+// through this one function, so the body is the same on every forge that serves the write.
+//
+// Hidden mode (`visibility: hidden`) is the one exception: the reply is published without a marker,
+// and `iterate` records the answered thread in its local processed-thread ledger instead.
+export function buildThreadReplyBody(payload, visibility) {
+  const marker = commentMarker('pr');
+  return markBody(
+    marker,
+    publishableText(payload.body, 'payload.body'),
+    visibility,
+    'payload.body',
+  );
+}
+
 // Deliberately not `requireNumber`: that helper guards issue and PR references and therefore
 // reports a bad value as INVALID_REFERENCE, while a comment line, a wait bound, or a poll interval
 // is payload data whose rejection must stay INVALID_PAYLOAD like every other field of a builder.

@@ -83,7 +83,7 @@ comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
-On Forgejo only, a thread also carries an optional `reviewId`: the id of the review it was read under.
+On a `tea`-backed forge only, a thread also carries an optional `reviewId`, the id of the review it was read under, and holds that review's later comments at its location as replies.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read
@@ -244,9 +244,9 @@ blocking watch, so the gate takes its documented no-watch degradation (report th
 ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
-stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
-but they belong to the sibling fragment `pr-review-thread-writes`, which states its own
-degradation; the gate still fails closed on anything it cannot read, improvising no provider
+— `review-create`, `review-thread-reply` and `review-thread-resolve` — belong to the sibling
+fragment `pr-review-thread-writes`, which states where a `tea`-backed forge serves them and how each
+degrades; the gate still fails closed on anything it cannot read, improvising no provider
 request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion

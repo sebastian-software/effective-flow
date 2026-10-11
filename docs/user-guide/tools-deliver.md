@@ -243,7 +243,7 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    re-run green after it, replacing an earlier run of the same check – waits,
    and then delegates their findings to `/effective-flow iterate`, which fixes the valid ones,
    replies, and resolves the threads. On
-   Forgejo, which supports neither thread write, the reviewer's own later approval settles a thread
+   Forgejo, which declares neither thread write, the reviewer's own later approval settles a thread
    instead; see the Forgejo note under **Input/output**. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
@@ -808,9 +808,10 @@ Two further things worth knowing about what the gate writes:
   check wait is unsupported there,
   because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
-  gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
-  unsupported there; the last of the three because Forgejo serves no resolve route, not because
-  `tea` lacks the subcommand. The open-points observation adds one comment read per assessed issue
+  gate minus that wait. `review-create` also stays unsupported on every `tea`-backed forge.
+  `review-thread-reply` and `review-thread-resolve` are probed per instance from the forge's API
+  description: Gitea declares both routes and supports them, Forgejo serves neither, whatever
+  subcommands `tea` offers. The open-points observation adds one comment read per assessed issue
   through the same helper, and the absence of that capability costs exactly that observation – the
   report then says the open points are unobserved and every verdict, offer, and write is what it
   would have been anyway.

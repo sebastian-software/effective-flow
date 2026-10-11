@@ -71,6 +71,6 @@ that none was published) and the way out. Only for a thread this run implemented
 it in the forge's web UI and then re-run the gate, or to re-run after the bot's next verdict when it
 only waits for its approval. An unassessed thread is assessed by a re-run, and a deferred or
 rejected one clears only through "The set-aside confirmation"; the report never offers a manual
-resolution for either, because that would bypass the assessment. It tells the operator not to reply in the thread, because a human reply would appear as a
-human-authored thread and hold the human-comment guard, and it notes that Forgejo may show the
+resolution for either, because that would bypass the assessment. It tells the operator not to reply in the thread, because a human reply is read as a
+human-authored comment inside the bot's thread and holds the human-comment guard, and it notes that Forgejo may show the
 thread collapsed as outdated in the conversation tab.

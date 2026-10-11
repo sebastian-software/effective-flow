@@ -13,6 +13,7 @@ import {
   ISSUE_STATE_READ_TIMEOUT_MS,
   assertNoIssueCloseStateOverride,
   assertPublishable,
+  buildThreadReplyBody,
   expectedHeadSha,
   fail,
   forgejoIssueListEndpoint,
@@ -23,6 +24,7 @@ import {
   mergeMethod,
   mergeSubject,
   mutationPlan,
+  payloadInteger,
   prNumber,
   publishedRef,
   publishedText,
@@ -30,12 +32,34 @@ import {
   publishingVisibility,
   requireNumber,
   requireString,
+  resolveVisibility,
   teaApiReadPlan,
 } from './remote-tracker-shared-core.mjs';
 
 // Forgejo's default work-in-progress prefixes, which make a pull request a draft (see
 // `pr-mark-ready` below).
 const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
+
+// A thread write is built only on the evidence of a probe that read the forge's API description
+// and found the operation's route declared (see `review-thread-reply` below).
+function requireThreadWriteRoute(input, operation, capability) {
+  if (input.probe?.capabilities?.[capability] !== true) {
+    fail('UNSUPPORTED_CAPABILITY', `the forge does not declare a route for ${operation}`, {
+      operation,
+      capability,
+      provider: 'forgejo',
+    });
+  }
+}
+
+// A string or a number, and a positive integer either way; anything else is a malformed thread id
+// rather than a reference, so it fails as `INVALID_PAYLOAD`.
+function threadIdNumber(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    fail('INVALID_PAYLOAD', 'threadId must be a positive integer', { field: 'threadId', value });
+  }
+  return payloadInteger(value, 'threadId');
+}
 
 export function buildForgejoCommandPlan(operation, input, repository) {
   const { owner, repository: repo, slug, host } = repository;
@@ -485,18 +509,59 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         }),
       );
     }
-    // These three stay refused. `tea` has no `checks` subcommand and Forgejo offers no server-side
-    // blocking watch comparable to `gh pr checks --watch`, so `pr-checks-wait` would have to become
-    // the poll loop the gate explicitly rejects; the documented no-watch degradation carries it
-    // instead. The two review operations have no verified tea surface either.
-    // `review-thread-resolve` joins them: `tea pulls resolve` exists as a client subcommand, but
-    // the route behind it does not. Forgejo's `/pulls` router group declares no `resolve`,
-    // `unresolve` or `replies` path at any nesting level, where Gitea `main` declares all three, and
-    // a live instance confirms it — see the user guide. The former `--help` probe attested the
-    // subcommand and never the route, so it reported a write capability the forge does not serve.
-    case 'review-create':
+    // The two thread writes exist per instance, not per provider: Gitea's router serves
+    // `POST …/pulls/{index}/comments/{id}/replies` and `POST …/pulls/comments/{id}/resolve`, while
+    // Forgejo declares neither today. `tea pulls resolve` attests only the client subcommand, so the
+    // evidence is the forge's own API description, which the probe reads for these two operations
+    // and reports per route. The builder refuses unless the probe it is handed declares the route,
+    // so a caller without such a probe — `buildCommandPlan` alone, or a `skipProbe` run — builds no
+    // command for a write the forge may not serve.
+    //
+    // Both ride `tea api --include` for the reason `issue-close` does: `tea api` exits 0 on every
+    // status, and only the status line tells a refused write from an applied one. The reply body
+    // travels on stdin so the dry-run preview never carries it.
     case 'review-thread-reply':
+      requireThreadWriteRoute(input, operation, 'reviewThreadReplies');
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(
+            `pulls/${prNumber(input)}/comments/${requireNumber(input.commentId, 'commentId')}/replies`,
+          ),
+          '--method',
+          'POST',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({
+          body: buildThreadReplyBody(
+            payload,
+            resolveVisibility(input.visibility ?? payload.visibility),
+          ),
+        }),
+      );
+    // The thread id is the normalized id of the thread's first comment, which is the id the route
+    // takes. Only a positive integer may reach the path, so a GitHub node id or a path fragment
+    // fails here before any command exists. The route takes no request body.
     case 'review-thread-resolve':
+      requireThreadWriteRoute(input, operation, 'reviewThreadResolution');
+      return mutationPlan('tea', [
+        'api',
+        apiEndpoint(`pulls/comments/${threadIdNumber(input.threadId)}/resolve`),
+        '--method',
+        'POST',
+        '--include',
+        ...teaTarget,
+      ]);
+    // These two stay refused on every tea-backed forge. `tea` has no `checks` subcommand and
+    // Forgejo offers no server-side blocking watch comparable to `gh pr checks --watch`, so
+    // `pr-checks-wait` would have to become the poll loop the gate explicitly rejects; the
+    // documented no-watch degradation carries it instead. Review creation has no verified tea
+    // surface either.
+    case 'review-create':
     case 'pr-checks-wait':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
