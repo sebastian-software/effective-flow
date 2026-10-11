@@ -3,7 +3,8 @@
 // `buildCommandPlan` in `remote-tracker-core.mjs` dispatches here when the resolved provider is
 // `github`, so this file holds one `switch (operation)` plus the helpers whose only code consumer
 // is that switch: the `gh` host arguments, the pull-request status GraphQL query, and the review
-// and thread-reply payload builders.
+// payload builders. The thread-reply body is built in the shared core, because the Forgejo adapter
+// posts the same body.
 //
 // It imports from `remote-tracker-shared-core.mjs` and `remote-tracker-decomposition-core.mjs`;
 // the native sub-issue cases are the only plan sites that reach into the decomposition subsystem.
@@ -13,6 +14,7 @@ import {
   MERGE_METHOD_FLAGS,
   assertNoIssueCloseStateOverride,
   assertPublishable,
+  buildThreadReplyBody,
   checksWaitSettings,
   commentMarker,
   expectedHeadSha,
@@ -41,24 +43,6 @@ import {
   decompositionKey,
   parentIssueNumber,
 } from './remote-tracker-decomposition-core.mjs';
-
-// A thread reply is an `iterate` write, so it carries the same marker as that direction's summary
-// comment. It is stamped here rather than left to the caller because the marker contract states
-// that these markers are never written by hand: the merge gate's guard matches them as exact
-// strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
-// read as a human's, blocking the merge on this tool's own output.
-//
-// Hidden mode (`visibility: hidden`) is the one exception: the reply is published without a marker,
-// and `iterate` records the answered thread in its local processed-thread ledger instead.
-function buildThreadReplyBody(payload, visibility) {
-  const marker = commentMarker('pr');
-  return markBody(
-    marker,
-    publishableText(payload.body, 'payload.body'),
-    visibility,
-    'payload.body',
-  );
-}
 
 const REVIEW_EVENTS = Object.freeze(['COMMENT']);
 

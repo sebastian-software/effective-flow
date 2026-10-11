@@ -13778,6 +13778,47 @@ test('the provider-settled report names each thread, its URL and the manual next
     near("(?:do not|don't|never|not to) reply", 'thread', 200),
     'the report must warn against replying in the thread',
   );
+  // Invariant: tea review comments are grouped into threads, so a human reply joins the bot's
+  // thread instead of opening its own; the warning must name the shape the read actually returns.
+  assert.doesNotMatch(fragment, /would appear as a human-authored thread/i);
+  assert.match(
+    fragment,
+    near('human-authored comment', "inside the bot's thread", 60),
+    "a human reply must be described as a comment inside the bot's thread",
+  );
+});
+
+// Invariant (#552): on a tea-backed forge the two thread writes follow the routes the instance's
+// API description declares, so no fragment may claim that such a forge never replies or resolves,
+// while `review-create` stays unsupported on every one of them.
+test('thread-write support on a tea-backed forge is stated per instance, not per provider', () => {
+  const writes = prose(source('src/shared/pr-review-thread-writes.md'));
+  const comments = prose(source('src/shared/pr-review-comments.md'));
+  const gate = prose(source('src/tools/merge-gate.md'));
+
+  assert.doesNotMatch(writes, /Forgejo supports none of/i);
+  assert.doesNotMatch(comments, /stay unsupported on Forgejo — `review-create`/);
+  assert.doesNotMatch(gate, /`review-create`, `review-thread-reply`, and `review-thread-resolve`/);
+
+  assert.match(
+    writes,
+    near('refuses review submission \\(`review-create`\\)', 'API description declares', 200),
+    'review-create must stay refused while the thread writes follow the declared routes',
+  );
+  assert.match(
+    writes,
+    /Gitea declares both, Forgejo today neither/,
+    'the fragment must keep the Forgejo statement where it describes Forgejo',
+  );
+  assert.match(
+    gate,
+    near(
+      'unsupported there is `pr-checks-wait` and `review-create`',
+      'routes the instance declares',
+      120,
+    ),
+    "merge-gate's support list must make the thread writes instance-dependent",
+  );
 });
 
 // Phase 3 step 5, the body of condition 7, and the bot-thread Phase-6 items live in the lazily loaded

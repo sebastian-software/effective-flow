@@ -502,8 +502,8 @@ input object's top-level `cwd`; setting only the process or tool working directo
      `tea` has no `checks` subcommand and
      Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`,
-     `review-thread-reply`, and `review-thread-resolve`. `issueClose` is supported on **Forgejo**
+     wait, not report-only. What stays unsupported there is `pr-checks-wait` and `review-create`; the
+     two thread writes follow the routes the instance declares (Forgejo today none, Gitea both). `issueClose` is supported on **Forgejo**
      only where the probed `tea api` transport the operation rides is available: a `tea` built
      without `--include` reports `issue-close` unsupported, which makes the Phase-5.5 offer
      unavailable for forge issues and changes nothing else about the run. `issueCommentsRead` rides

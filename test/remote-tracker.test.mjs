@@ -134,11 +134,13 @@ function fakeRunner(results) {
 
 function teaProbeResults(overrides = {}) {
   const help = (name, content) => overrides[name] ?? { status: 0, stdout: content, stderr: '' };
-  return [
+  const results = [
     { status: 0, stdout: 'Version: 0.14.2\n', stderr: '' },
     {
       status: 0,
-      stdout: JSON.stringify([{ name: 'work', url: 'https://code.example.test' }]),
+      stdout: JSON.stringify(
+        overrides.logins ?? [{ name: 'work', url: 'https://code.example.test' }],
+      ),
       stderr: '',
     },
     help('issues', '--output'),
@@ -168,6 +170,9 @@ function teaProbeResults(overrides = {}) {
       '--draft  Create as a draft (prepends "WIP: " to the title; Gitea treats WIP-prefixed PRs as drafts)',
     ),
   ];
+  // The API-description read runs only when review-thread writes are requested, and after every
+  // help probe, so a fixture supplies it last and only for the operations that make it.
+  return overrides.swagger === undefined ? results : [...results, overrides.swagger];
 }
 
 test('parses HTTPS, ssh URL, and SCP-style remotes deterministically', () => {
@@ -783,10 +788,11 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
     'repos/team/flow/pulls/7/reviews?limit=100&page=1',
     '--include',
   ]);
-  // The resolve route does not exist on Forgejo, so no caller can obtain a command for it.
+  // The resolve route exists only where the forge's API description declares it, so a caller
+  // that holds no probe stating that route cannot obtain a command for it.
   assert.throws(
     () => buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository),
-    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY',
   );
 
   // The pulls endpoint states no head filter, so the head is still matched after the read.
@@ -3778,6 +3784,147 @@ test('a Forgejo review thread carries the id of the review it was read under', a
   }
 });
 
+test('a tea-backed review-thread read groups a reply into the thread it answers', async () => {
+  // Invariant: one reviewed location is one thread. The API exposes no reply-to field, so a reply
+  // is recognized as a comment in the same review on the same `path` and `position`. Read
+  // ungrouped, a reply posted to a bot thread surfaced as a viewer-authored thread of its own, and
+  // the thread count and resolution state were both wrong. The resolver sits on the first comment
+  // only, as Gitea reports it, and the replies are listed before the comment they answer so the
+  // ascending-id order is the reader's, not the fixture's.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const comment = (id, fields) => ({
+    id,
+    body: `Comment ${id}`,
+    user: { login: id === 640 ? 'maintainer' : 'review-app[bot]', type: 'User' },
+    resolver: null,
+    path: 'src/a.mjs',
+    position: 10,
+    html_url: `https://code.example.test/team/flow/pulls/2/files#issuecomment-${id}`,
+    created_at: `2026-10-0${id === 640 ? 2 : 1}T10:00:00Z`,
+    ...fields,
+  });
+  const runner = fakeRunner([
+    teaApi([{ id: 50 }, { id: 51 }], 'X-Total-Count: 2\r\n'),
+    teaApi([
+      comment(640),
+      comment(613, { resolver: { login: 'maintainer' } }),
+      // Same review and position, another file.
+      comment(650, { path: 'src/b.mjs' }),
+      // Same review and file, another position.
+      comment(660, { position: 11 }),
+      // No location at all: nothing to group by, so each stays alone.
+      comment(670, { position: undefined, line: undefined }),
+      comment(671, { position: undefined, line: undefined }),
+    ]),
+    // Same file and position, another review.
+    teaApi([comment(700)]),
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => [
+      thread.id,
+      thread.reviewId,
+      thread.comments.map((entry) => entry.id),
+    ]),
+    [
+      ['613', '50', ['613', '640']],
+      ['650', '50', ['650']],
+      ['660', '50', ['660']],
+      ['670', '50', ['670']],
+      ['671', '50', ['671']],
+      ['700', '51', ['700']],
+    ],
+  );
+  const [grouped] = envelope.data.result;
+  // The thread id stays the first comment's, so a thread key recorded before grouping still
+  // matches; the thread state and location come from that first comment too.
+  assert.equal(grouped.isResolved, true);
+  assert.equal(grouped.path, 'src/a.mjs');
+  assert.equal(grouped.line, 10);
+  assert.equal(grouped.createdAt, '2026-10-01T10:00:00.000Z');
+  assert.equal(grouped.url, 'https://code.example.test/team/flow/pulls/2/files#issuecomment-613');
+  // The reply keeps its own author and instant, normalized exactly as a first comment is.
+  assert.deepEqual(grouped.comments[1], {
+    id: '640',
+    body: 'Comment 640',
+    author: { login: 'maintainer', isBot: false, authorType: 'human' },
+    path: 'src/a.mjs',
+    line: 10,
+    createdAt: '2026-10-02T10:00:00.000Z',
+    url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-640',
+  });
+  for (const thread of envelope.data.result.slice(1)) {
+    assert.equal(thread.isResolved, false, thread.id);
+  }
+});
+
+test('a tea-backed review-thread read keys old-side comments on their original line', async () => {
+  // Invariant: a comment on a removed line is grouped by its side and line, never by `position`
+  // alone. Gitea serializes `position` without `omitempty`, so an old-side comment carries
+  // `position: 0` and its line in `original_position`; keyed on `position`, every old-side finding
+  // of one review and file collapsed into one thread whose first comment's resolver decided all
+  // of them, and an open finding read as resolved.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const comment = (id, fields) => ({
+    id,
+    body: `Comment ${id}`,
+    user: { login: 'review-app[bot]', type: 'User' },
+    resolver: null,
+    path: 'src/a.mjs',
+    position: 0,
+    original_position: 0,
+    ...fields,
+  });
+  const runner = fakeRunner([
+    teaApi([{ id: 50 }], 'X-Total-Count: 1\r\n'),
+    teaApi([
+      // Two old-side findings on different removed lines: two threads, the first one resolved.
+      comment(810, { original_position: 4, resolver: { login: 'maintainer' } }),
+      comment(820, { original_position: 9 }),
+      // A reply on the same removed line joins its thread.
+      comment(811, { original_position: 4 }),
+      // New line 4 is not old line 4.
+      comment(830, { position: 4 }),
+      // Neither side states a line: nothing to group by, so each stays alone.
+      comment(840),
+      comment(841),
+    ]),
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map((thread) => [
+      thread.id,
+      thread.isResolved,
+      thread.comments.map((entry) => entry.id),
+    ]),
+    [
+      ['810', true, ['810', '811']],
+      ['820', false, ['820']],
+      ['830', false, ['830']],
+      ['840', false, ['840']],
+      ['841', false, ['841']],
+    ],
+  );
+});
+
 test('a review thread carries the browser link its first comment sits at', async () => {
   // `merge-gate`'s set-aside confirmation promises the operator somewhere to read the finding, and
   // a thread record holding only the thread ID could supply none. Both providers publish the link
@@ -4284,7 +4431,8 @@ test('provider probes normalize missing CLI, auth failure, and Forgejo capabilit
   );
   assert.equal(forgejo.login, 'work');
   assert.equal(forgejo.capabilities.reviewThreads, true);
-  // Not a `tea pulls resolve --help` probe any more: the subcommand exists, the route does not.
+  // Not a `tea pulls resolve --help` probe: the subcommand attests no route. Without the
+  // `reviewThreadWrites` request no API description is read, so neither write is declared.
   assert.equal(forgejo.capabilities.reviewThreadResolution, false);
   assert.equal(forgejo.capabilities.reviewThreadReplies, false);
   assert.equal(forgejo.capabilities.reviewCreate, false);
@@ -8494,7 +8642,11 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(withoutInclude.capabilities.viewerRead, false);
 });
 
-test('the Forgejo adapter keeps the watch and the three review writes refused', async () => {
+test('the Forgejo adapter keeps the watch and review creation refused, and thread writes without a declaring probe', async () => {
+  // Invariant: no tea command exists for an operation the forge was not shown to serve. The watch
+  // and review creation have no tea surface on any flavor; the two thread writes are refused
+  // whenever the active probe does not declare their route — here a probe that read no API
+  // description at all.
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   for (const [operation, capability] of [
     ['pr-checks-wait', 'pullRequestChecksWait'],
@@ -8509,6 +8661,7 @@ test('the Forgejo adapter keeps the watch and the three review writes refused', 
         repository: forgejoRepository,
         number: 12,
         commentId: 5,
+        threadId: 44,
         probe,
         payload: { body: 'Body', findings: [] },
       },
@@ -8523,8 +8676,496 @@ test('the Forgejo adapter keeps the watch and the three review writes refused', 
     assert.throws(
       () =>
         buildCommandPlan(operation, { number: 12, commentId: 5, threadId: 44 }, forgejoRepository),
+      (error) => error.code === 'UNSUPPORTED_CAPABILITY',
+    );
+  }
+
+  // A probe declaring both thread writes leaves the watch and review creation exactly as refused.
+  const declaring = {
+    ...probe,
+    capabilities: {
+      ...probe.capabilities,
+      reviewThreadReplies: true,
+      reviewThreadResolution: true,
+    },
+  };
+  for (const operation of ['pr-checks-wait', 'review-create']) {
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          operation,
+          { number: 12, payload: { body: 'Body', findings: [] }, probe: declaring },
+          forgejoRepository,
+        ),
       (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
     );
+  }
+});
+
+// --- Review-thread writes on tea-backed forges: detected from the served API description ------
+
+const threadReplyRoute = '/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies';
+const threadResolveRoute = '/repos/{owner}/{repo}/pulls/comments/{id}/resolve';
+
+// A `/swagger.v1.json` answer. Every document declares one unrelated route, so a forge that
+// declares neither write still serves a well-formed description with a non-empty `paths`.
+function swaggerResult(version, postRoutes = [], extraPaths = {}) {
+  const paths = { '/repos/{owner}/{repo}/pulls/{index}/reviews': { get: {} }, ...extraPaths };
+  for (const route of postRoutes) paths[route] = { ...paths[route], post: {} };
+  return teaApiResult(200, {
+    swagger: '2.0',
+    info: version === undefined ? {} : { version },
+    paths,
+  });
+}
+
+const giteaSwagger = () => swaggerResult('1.25.0', [threadReplyRoute, threadResolveRoute]);
+const forgejoSwagger = () => swaggerResult('15.0.3+gitea-1.22.0');
+
+function swaggerCalls(runner) {
+  return runner.calls.filter((call) =>
+    call.args.some((arg) => typeof arg === 'string' && arg.endsWith('/swagger.v1.json')),
+  );
+}
+
+async function threadWriteProbe(swagger, overrides = {}) {
+  const runner = fakeRunner(teaProbeResults({ swagger, ...overrides }));
+  const probe = await probeProvider(forgejoRepository, runner, { reviewThreadWrites: true });
+  return { probe, runner };
+}
+
+test('a forge whose API description declares both thread routes reports both writes as Gitea', async () => {
+  const { probe, runner } = await threadWriteProbe(giteaSwagger());
+  assert.equal(probe.capabilities.reviewThreadReplies, true);
+  assert.equal(probe.capabilities.reviewThreadResolution, true);
+  assert.equal(probe.flavor, 'gitea');
+  // The flavor is diagnostic: the provider stays the one every tea branch is keyed on.
+  assert.equal(forgejoRepository.provider, 'forgejo');
+  // Exactly one extra call, after every help probe, addressed only by the resolved login: `tea api`
+  // sends that login's token with the request, so no other source may supply host or path.
+  assert.equal(runner.calls.length, teaProbeResults().length + 1);
+  assert.deepEqual(swaggerCalls(runner), [runner.calls.at(-1)]);
+  assert.deepEqual(
+    { executable: runner.calls.at(-1).executable, args: runner.calls.at(-1).args },
+    {
+      executable: 'tea',
+      args: ['api', 'https://code.example.test/swagger.v1.json', '--include', '--login', 'work'],
+    },
+  );
+});
+
+test('the API-description URL is the matching login URL, sub-path kept and trailing slash dropped', async () => {
+  // Invariant: the request URL comes from the login record of the repository host and nothing
+  // else. A login for another host listed first must not lend its URL or name.
+  const { probe, runner } = await threadWriteProbe(giteaSwagger(), {
+    logins: [
+      { name: 'elsewhere', url: 'https://other.example.test' },
+      { name: 'work', url: 'https://code.example.test/forge/' },
+    ],
+  });
+  assert.equal(probe.login, 'work');
+  assert.deepEqual(runner.calls.at(-1).args, [
+    'api',
+    'https://code.example.test/forge/swagger.v1.json',
+    '--include',
+    '--login',
+    'work',
+  ]);
+});
+
+test('a Forgejo-shaped API description declares neither thread write', async () => {
+  const { probe, runner } = await threadWriteProbe(forgejoSwagger());
+  assert.equal(probe.capabilities.reviewThreadReplies, false);
+  assert.equal(probe.capabilities.reviewThreadResolution, false);
+  assert.equal(probe.flavor, 'forgejo');
+  assert.equal(swaggerCalls(runner).length, 1);
+});
+
+test('an unreadable API description reports both writes unsupported without failing the probe', async () => {
+  // Invariant: the description is evidence for two optional writes, never a precondition of the
+  // probe. A forge with swagger disabled, behind a proxy error page, or simply unreachable keeps
+  // every other capability and falls back to the provider-settled path.
+  for (const [label, swagger] of [
+    ['404', teaApiResult(404, { message: 'not found' })],
+    [
+      'non-JSON body',
+      { status: 0, stdout: '<html>swagger</html>', stderr: 'HTTP/1.1 200 OK\r\n\r\n' },
+    ],
+    ['runner failure', { status: 1, stdout: '', stderr: 'connection refused' }],
+    ['no paths', teaApiResult(200, { swagger: '2.0', info: { version: '1.25.0' } })],
+  ]) {
+    const { probe, runner } = await threadWriteProbe(swagger);
+    assert.equal(probe.authenticated, true, label);
+    assert.equal(probe.capabilities.reviewThreads, true, label);
+    assert.equal(probe.capabilities.reviewThreadReplies, false, label);
+    assert.equal(probe.capabilities.reviewThreadResolution, false, label);
+    assert.equal(probe.flavor, 'unknown', label);
+    assert.equal(swaggerCalls(runner).length, 1, label);
+  }
+
+  // A description with no version string still decides the capabilities from its paths alone.
+  const { probe: unversioned } = await threadWriteProbe(
+    swaggerResult(undefined, [threadReplyRoute, threadResolveRoute]),
+  );
+  assert.equal(unversioned.flavor, 'unknown');
+  assert.equal(unversioned.capabilities.reviewThreadReplies, true);
+  assert.equal(unversioned.capabilities.reviewThreadResolution, true);
+
+  // Without the full attested `tea api` transport the description is not requested at all, which
+  // counts as a failed fetch: the read needs `--include`, and the two writes it would attest send
+  // `--method` and `--data`, so a tea lacking either half declares neither write.
+  for (const [label, override] of [
+    ['without --include', { apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } }],
+    [
+      'without --method --data',
+      { commentUpdate: { status: 1, stdout: '', stderr: 'unknown flag' } },
+    ],
+  ]) {
+    const runner = fakeRunner(teaProbeResults(override));
+    const noTransport = await probeProvider(forgejoRepository, runner, {
+      reviewThreadWrites: true,
+    });
+    assert.equal(swaggerCalls(runner).length, 0, label);
+    assert.equal(runner.calls.length, teaProbeResults().length, label);
+    assert.equal(noTransport.flavor, 'unknown', label);
+    assert.equal(noTransport.capabilities.reviewThreadReplies, false, label);
+    assert.equal(noTransport.capabilities.reviewThreadResolution, false, label);
+  }
+});
+
+test('the API-description URL never carries login secrets or a non-http(s) address', async () => {
+  // Invariant: `tea api` attaches the login's token, so the address is the login URL's origin and
+  // path only. A login with no URL, or a URL that is not http(s), yields no request at all, and the
+  // userinfo, query and fragment a record might carry never reach the argv.
+  for (const [label, logins] of [
+    ['login without url', [{ name: 'work', host: 'code.example.test' }]],
+    ['string login', ['code.example.test']],
+    ['non-http(s) url', [{ name: 'work', url: 'ftp://code.example.test/forge' }]],
+  ]) {
+    const runner = fakeRunner(teaProbeResults({ logins }));
+    const probe = await probeProvider(forgejoRepository, runner, { reviewThreadWrites: true });
+    assert.equal(swaggerCalls(runner).length, 0, label);
+    assert.equal(runner.calls.length, teaProbeResults().length, label);
+    assert.equal(probe.flavor, 'unknown', label);
+    assert.equal(probe.capabilities.reviewThreadReplies, false, label);
+    assert.equal(probe.capabilities.reviewThreadResolution, false, label);
+  }
+
+  const { runner } = await threadWriteProbe(giteaSwagger(), {
+    logins: [
+      {
+        name: 'work',
+        url: 'https://user:s3cret@code.example.test/forge/?token=t0ken#frag',
+      },
+    ],
+  });
+  const [call] = swaggerCalls(runner);
+  assert.deepEqual(call.args, [
+    'api',
+    'https://code.example.test/forge/swagger.v1.json',
+    '--include',
+    '--login',
+    'work',
+  ]);
+  for (const secret of ['user', 's3cret', 't0ken', 'frag', '@', '?', '#']) {
+    assert.equal(call.args[1].includes(secret), false, secret);
+  }
+});
+
+test('each thread write is gated by its own declared POST route', async () => {
+  // Only `replies` is declared for POST; the resolve path exists with a GET alone, which serves no
+  // write.
+  const { probe } = await threadWriteProbe(
+    swaggerResult('1.25.0', [threadReplyRoute], { [threadResolveRoute]: { get: {} } }),
+  );
+  assert.equal(probe.capabilities.reviewThreadReplies, true);
+  assert.equal(probe.capabilities.reviewThreadResolution, false);
+  assert.equal(probe.flavor, 'gitea');
+
+  // The builder reads the same per-route flag: the declared write builds, the other is refused.
+  assert.equal(
+    buildCommandPlan(
+      'review-thread-reply',
+      { number: 7, commentId: 42, payload: { body: 'Fixed.' }, probe },
+      forgejoRepository,
+    ).executable,
+    'tea',
+  );
+  assert.throws(
+    () => buildCommandPlan('review-thread-resolve', { threadId: 613, probe }, forgejoRepository),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY',
+  );
+});
+
+test('a probe that does not request thread writes reads no API description', async () => {
+  for (const requested of [
+    undefined,
+    { issueSubIssueCreate: true },
+    { reviewThreadWrites: false },
+  ]) {
+    const runner = fakeRunner(teaProbeResults({ swagger: giteaSwagger() }));
+    const probe = await probeProvider(forgejoRepository, runner, requested);
+    assert.equal(swaggerCalls(runner).length, 0, JSON.stringify(requested));
+    assert.equal(runner.calls.length, teaProbeResults().length);
+    assert.equal(probe.flavor, null);
+    assert.equal(probe.capabilities.reviewThreadReplies, false);
+    assert.equal(probe.capabilities.reviewThreadResolution, false);
+  }
+});
+
+test('only probe and the two thread writes request the API description', async () => {
+  // Invariant: the description is a large download, so it costs nothing on every other operation.
+  for (const operation of ['probe', 'review-thread-reply', 'review-thread-resolve']) {
+    const runner = fakeRunner([...teaProbeResults({ swagger: giteaSwagger() })]);
+    const envelope = await executeOperation(
+      operation,
+      {
+        repository: forgejoRepository,
+        number: 7,
+        commentId: 42,
+        threadId: 613,
+        payload: { body: 'Fixed.' },
+      },
+      { runner },
+    );
+    assert.equal(envelope.ok, true, operation);
+    assert.equal(swaggerCalls(runner).length, 1, operation);
+  }
+  const probed = await executeOperation(
+    'probe',
+    { repository: forgejoRepository },
+    { runner: fakeRunner(teaProbeResults({ swagger: giteaSwagger() })) },
+  );
+  assert.equal(probed.data.flavor, 'gitea');
+  assert.equal(probed.data.capabilities.reviewThreadResolution, true);
+
+  for (const [operation, input, result] of [
+    [
+      'issue-read',
+      { number: 7 },
+      teaApiResult(200, {
+        index: 7,
+        title: 'Read',
+        state: 'open',
+        url: 'https://code.example.test/team/flow/issues/7',
+      }),
+    ],
+    ['review-threads-read', { pullRequest: 2 }, teaApiResult(200, [], { 'X-Total-Count': '0' })],
+  ]) {
+    const runner = fakeRunner([...teaProbeResults(), result]);
+    const envelope = await executeOperation(
+      operation,
+      { repository: forgejoRepository, ...input },
+      { runner },
+    );
+    assert.equal(envelope.ok, true, operation);
+    assert.equal(swaggerCalls(runner).length, 0, operation);
+  }
+});
+
+test('on a forge declaring the reply route, review-thread-reply posts through tea api', async () => {
+  const { probe } = await threadWriteProbe(giteaSwagger());
+  const input = {
+    repository: forgejoRepository,
+    number: 7,
+    commentId: 42,
+    payload: { body: 'Fixed in the latest commit.' },
+    probe,
+  };
+  const plan = buildCommandPlan('review-thread-reply', input, forgejoRepository);
+  assert.equal(plan.executable, 'tea');
+  // `--include`, because `tea api` exits 0 on every HTTP status and the status line is the only
+  // thing that tells a refused reply from a posted one; the body travels on stdin so the dry-run
+  // preview never carries it in the argv.
+  assert.deepEqual(plan.args, [
+    'api',
+    'repos/team/flow/pulls/7/comments/42/replies',
+    '--method',
+    'POST',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+    '--data',
+    '@-',
+  ]);
+  // The same reply-body builder as GitHub: the iterate marker leads the body, so `iterate` reads
+  // the reply back as its own processed work on either forge.
+  assert.deepEqual(JSON.parse(plan.stdin), {
+    body: '<!-- effective-flow-iterate -->\nFixed in the latest commit.',
+  });
+  const github = buildCommandPlan(
+    'review-thread-reply',
+    { number: 7, commentId: 42, payload: { body: 'Fixed in the latest commit.' } },
+    githubRepository,
+  );
+  assert.equal(JSON.parse(plan.stdin).body, JSON.parse(github.stdin).body);
+  const hidden = buildCommandPlan(
+    'review-thread-reply',
+    { ...input, visibility: 'hidden' },
+    forgejoRepository,
+  );
+  assert.deepEqual(JSON.parse(hidden.stdin), { body: 'Fixed in the latest commit.' });
+
+  const previewRunner = fakeRunner([]);
+  const preview = await executeOperation('review-thread-reply', input, {
+    runner: previewRunner,
+    skipProbe: true,
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.dryRun, true);
+  assert.deepEqual(preview.data.command, redact(plan));
+  assert.equal(previewRunner.calls.length, 0);
+
+  // Applied through the full probe: the description is read, then the one write is sent.
+  const { probe: _probe, ...unprobed } = input;
+  const applyRunner = fakeRunner([
+    ...teaProbeResults({ swagger: giteaSwagger() }),
+    teaApiResult(201, { id: 641, body: JSON.parse(plan.stdin).body }),
+  ]);
+  const applied = await executeOperation('review-thread-reply', unprobed, {
+    runner: applyRunner,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.dryRun, false);
+  assert.equal(applyRunner.calls.length, teaProbeResults().length + 2);
+  assert.deepEqual(applyRunner.calls.at(-1).args, plan.args);
+  assert.deepEqual(JSON.parse(applyRunner.calls.at(-1).stdin), JSON.parse(plan.stdin));
+
+  const refusedRunner = fakeRunner([teaApiResult(403, { message: 'forbidden' })]);
+  const refused = await executeOperation('review-thread-reply', input, {
+    runner: refusedRunner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(refused.error.details.status, 403);
+  assert.equal(refusedRunner.calls.length, 1);
+});
+
+test('on a forge declaring the resolve route, review-thread-resolve posts the numeric thread id', async () => {
+  const { probe } = await threadWriteProbe(giteaSwagger());
+  const expectedArgs = [
+    'api',
+    'repos/team/flow/pulls/comments/613/resolve',
+    '--method',
+    'POST',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+  ];
+  // The normalized thread id is a string; the same id as a number addresses the same route.
+  for (const threadId of ['613', 613]) {
+    const plan = buildCommandPlan('review-thread-resolve', { threadId, probe }, forgejoRepository);
+    assert.equal(plan.executable, 'tea');
+    assert.deepEqual(plan.args, expectedArgs);
+    // The route takes no request body.
+    assert.equal(Object.hasOwn(plan, 'stdin'), false);
+  }
+
+  const input = { repository: forgejoRepository, pullRequest: 2, threadId: '613', probe };
+  const preview = await executeOperation('review-thread-resolve', input, {
+    runner: fakeRunner([]),
+    skipProbe: true,
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.dryRun, true);
+  assert.deepEqual(preview.data.command.args, expectedArgs);
+
+  const { probe: _probe, ...unprobed } = input;
+  const applyRunner = fakeRunner([
+    ...teaProbeResults({ swagger: giteaSwagger() }),
+    teaApiResult(204),
+  ]);
+  const applied = await executeOperation('review-thread-resolve', unprobed, {
+    runner: applyRunner,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.dryRun, false);
+  assert.deepEqual(applyRunner.calls.at(-1).args, expectedArgs);
+
+  const refused = await executeOperation('review-thread-resolve', input, {
+    runner: fakeRunner([teaApiResult(404, { message: 'not found' })]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  assert.equal(refused.error.details.status, 404);
+
+  // Invariant: only a positive integer reaches the route path. A GitHub node id, a word, zero, a
+  // negative or a fractional value fails before any command runs.
+  for (const threadId of [
+    'PRRT_kwDOabc',
+    'thread',
+    '0',
+    '-3',
+    '1.5',
+    '613/../1',
+    0,
+    -3,
+    1.5,
+    null,
+  ]) {
+    assert.throws(
+      () => buildCommandPlan('review-thread-resolve', { threadId, probe }, forgejoRepository),
+      (error) => error.code === 'INVALID_PAYLOAD',
+      `threadId ${JSON.stringify(threadId)} must be rejected`,
+    );
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'review-thread-resolve',
+      { ...input, threadId },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, false, JSON.stringify(threadId));
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD', JSON.stringify(threadId));
+    assert.equal(runner.calls.length, 0, JSON.stringify(threadId));
+  }
+});
+
+test('on a Forgejo-shaped forge both thread writes stay refused before any write command', async () => {
+  const { probe } = await threadWriteProbe(forgejoSwagger());
+  for (const [operation, capability] of [
+    ['review-thread-reply', 'reviewThreadReplies'],
+    ['review-thread-resolve', 'reviewThreadResolution'],
+  ]) {
+    const input = {
+      repository: forgejoRepository,
+      number: 7,
+      commentId: 42,
+      threadId: '613',
+      payload: { body: 'Fixed.' },
+    };
+    const gated = await executeOperation(
+      operation,
+      { ...input, probe },
+      { runner: fakeRunner([]), skipProbe: true, apply: true },
+    );
+    assert.equal(gated.ok, false);
+    assert.equal(gated.error.code, 'UNSUPPORTED_CAPABILITY');
+    assert.equal(gated.error.details.capability, capability);
+
+    // Through the full probe: the description is read, and nothing after it.
+    const runner = fakeRunner(teaProbeResults({ swagger: forgejoSwagger() }));
+    const probed = await executeOperation(operation, input, { runner, apply: true });
+    assert.equal(probed.ok, false);
+    assert.equal(probed.error.code, 'UNSUPPORTED_CAPABILITY');
+    assert.equal(runner.calls.length, teaProbeResults().length + 1);
+    assert.deepEqual(swaggerCalls(runner), [runner.calls.at(-1)]);
+
+    for (const builderInput of [{ ...input, probe }, input]) {
+      assert.throws(
+        () => buildCommandPlan(operation, builderInput, forgejoRepository),
+        (error) => error.code === 'UNSUPPORTED_CAPABILITY',
+      );
+    }
   }
 });
 

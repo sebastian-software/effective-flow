@@ -724,7 +724,9 @@ core or protocol modules:
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
 once per run from authenticated login JSON plus documented `tea ... --help` command/flag surfaces;
-absent commands become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
+the two review-thread writes additionally require their `POST` route in the instance's
+`/swagger.v1.json`, read through `tea api` from the selected login's URL. Absent commands or routes
+become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
 diagnostics, but body writes are reported as non-atomic because GitHub does not support conditional
 requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
 are normalized from the final URL that supported `tea` versions print after a successful issue or
