@@ -203,6 +203,10 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'review-thread-resolve': 'reviewThreadResolution',
 });
 
+// The operations whose capability a tea-backed forge states only after reading its API description
+// (see `readTeaSwagger`), and whose plan the builder makes only from that probe's evidence.
+const THREAD_WRITE_OPERATIONS = new Set(['review-thread-reply', 'review-thread-resolve']);
+
 const REVIEW_BODY_LANGUAGE = Object.freeze({
   en: Object.freeze({
     findingFields: Object.freeze({
@@ -514,7 +518,11 @@ function matchingTeaLogin(logins = [], host) {
   for (const login of logins) {
     if (teaLoginHost(login) !== normalizeHost(host)) continue;
     const name = typeof login === 'string' ? host : (login.name ?? login.login ?? host);
-    return { host: normalizeHost(host), name: requireString(name, 'tea login name') };
+    return {
+      host: normalizeHost(host),
+      name: requireString(name, 'tea login name'),
+      ...(typeof login?.url === 'string' ? { url: login.url } : {}),
+    };
   }
   return undefined;
 }
@@ -2306,6 +2314,62 @@ async function probeGhHelp(runner, args, required = []) {
   return required.every((token) => output.includes(token));
 }
 
+// The two review-thread write routes, exactly as a forge's `/swagger.v1.json` declares them. Gitea
+// serves both; Forgejo declares neither today, which is why the probe reads them per instance
+// instead of stating one answer for every tea-backed forge.
+const THREAD_REPLY_ROUTE = '/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies';
+const THREAD_RESOLVE_ROUTE = '/repos/{owner}/{repo}/pulls/comments/{id}/resolve';
+
+// The API description's address, built from the selected login record and nothing else: `tea api`
+// attaches that login's token to the request, so no other source — the remote URL, an input field —
+// may contribute host or path. Origin plus path keeps a sub-path installation and drops any
+// userinfo, query or fragment the record might carry. A login without a usable http(s) URL yields
+// no address, which the probe treats as a failed fetch.
+function teaSwaggerUrl(login) {
+  if (typeof login.url !== 'string') return undefined;
+  let parsed;
+  try {
+    parsed = new URL(login.url.trim());
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}/swagger.v1.json`;
+}
+
+// Reads the forge's API description once. An absolute `http(s)://` endpoint reaches the forge
+// unprefixed — tea's `buildURL` (`modules/api/client.go`, v0.14.2) adds `/api/v1` only to a
+// relative one and refuses an absolute URL whose host is not the login's. Every failure — no
+// transport, no address, a runner error, a non-2xx status, a body that is not JSON or carries no
+// `paths` — answers `undefined`: the description is evidence for two optional writes, never a
+// precondition of the probe.
+async function readTeaSwagger(runner, login, transport) {
+  const url = transport ? teaSwaggerUrl(login) : undefined;
+  if (url === undefined) return undefined;
+  const result = await runner({
+    executable: 'tea',
+    args: ['api', url, '--include', '--login', login.name],
+  });
+  if (!result || result.status !== 0) return undefined;
+  try {
+    const response = readTeaApiResponse(result, 'probe swagger');
+    if (response.status < 200 || response.status >= 300) return undefined;
+    const document = response.readBody();
+    const paths = document?.paths;
+    return paths && typeof paths === 'object' && !Array.isArray(paths) ? document : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Diagnostic only; the write capabilities come from the declared paths alone. Forgejo states its
+// version as `<forgejo>+gitea-<gitea>`, Gitea as a plain version.
+function teaForgeFlavor(document) {
+  const version = document?.info?.version;
+  if (typeof version !== 'string') return 'unknown';
+  return version.includes('+gitea-') ? 'forgejo' : 'gitea';
+}
+
 export async function probeProvider(repository, runner, requestedCapabilities) {
   if (typeof runner !== 'function') {
     fail('INVALID_PAYLOAD', 'probeProvider requires an injected process runner');
@@ -2491,10 +2555,22 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
   // `--include`, and the merge needs `--method` and `--data` on top of it. It attests transport
   // only — a request-body field such as `head_commit_id` cannot be probed at all.
   const teaApiTransport = commentUpdate && apiInclude;
+  // Requested by `probe` and the two thread writes only, because the description is a large
+  // download, and appended after every help probe so the call order stays positional for callers
+  // that script it. Gated on the full transport: the read itself needs `--include`, and the two
+  // writes it attests send `--method` and `--data`, so without them neither write is declared.
+  const readsSwagger = requestedCapabilities?.reviewThreadWrites === true;
+  const swagger = readsSwagger ? await readTeaSwagger(runner, login, teaApiTransport) : undefined;
+  const declaresPost = (route) => swagger !== undefined && swagger.paths[route]?.post !== undefined;
+  // The two writes are one pair, folded like `labelCreate`: a forge that can reply but not resolve,
+  // or the reverse, can never finish a thread, so one declared route alone enables neither.
+  const threadWrites = declaresPost(THREAD_REPLY_ROUTE) && declaresPost(THREAD_RESOLVE_ROUTE);
   return {
     executable,
     version,
     login: login.name,
+    // `null` when the description was not requested, `unknown` when it could not be read.
+    flavor: readsSwagger ? (swagger === undefined ? 'unknown' : teaForgeFlavor(swagger)) : null,
     authenticated: true,
     capabilities: {
       json: true,
@@ -2568,16 +2644,15 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // is where it now goes: `tea pulls review-comments` states no login and no timestamp, so the
       // subcommand's presence never attested a usable read in the first place.
       reviewThreads: teaApiTransport,
-      reviewThreadReplies: false,
-      // A stated provider fact, as `pullRequestStatus` and `pullRequestMerge` already are, and no
-      // longer a `--help` probe of `tea pulls resolve`. That probe attested the **client
-      // subcommand**; the route behind it does not exist on Forgejo. `/swagger.v1.json` on a live
-      // `15.0.3+gitea-1.22.0` instance declares 314 paths and not one `…/pulls/comments/…`, no
-      // `resolve`, no `unresolve`, no `replies`; an authenticated `POST …/pulls/comments/{id}/resolve`
-      // is rejected by the router with the same 405 a deliberately nonsense path draws, while the
-      // neighbouring `…/reviews/{id}/dismissals` reaches its handler. Reporting this as supported
-      // made `merge-gate` act on a write the forge never serves.
-      reviewThreadResolution: false,
+      // Read per instance from the forge's API description, and served only when it declares both
+      // POST routes (`threadWrites` above states why one route alone enables neither).
+      // `tea pulls resolve --help` attests the client subcommand, never the route behind it: a live
+      // `15.0.3+gitea-1.22.0` Forgejo declares no `…/pulls/comments/…` path at all and rejects the
+      // resolve with a router 405, while Gitea declares both routes. Without the `reviewThreadWrites`
+      // request, when the description cannot be read, or with one route alone, neither write is
+      // served and `merge-gate` takes its provider-settled path.
+      reviewThreadReplies: threadWrites,
+      reviewThreadResolution: threadWrites,
       conditionalWrites: false,
     },
   };
@@ -3853,7 +3928,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         flattened?.data?.repository?.pullRequest?.reviewThreads?.nodes ??
         flattened?.reviewThreads ??
         (Array.isArray(flattened) ? flattened : []);
-      return threads.map((thread) => {
+      const normalized = threads.map((thread) => {
         if (thread.comments?.nodes) {
           const comments = thread.comments.nodes.map((comment) => {
             const createdAt = normalizeTimestamp(
@@ -3944,10 +4019,59 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           ],
         };
       });
+      return groupTeaReviewComments(threads, normalized);
     }
     default:
       return flattened;
   }
+}
+
+// A tea-backed forge lists review comments, not threads, and states no reply-to field, so a reply
+// arrives as one more comment of its review. One reviewed location is one thread: comments in the
+// same review on the same `path` and signed line (see `teaReviewCommentAnchor`) are grouped, in
+// ascending id order, under the first comment's id, location, instant, link and resolution — the
+// forge sets `resolver` on that first comment only. Keeping the first comment's id keeps every
+// thread key recorded before grouping valid. A comment without a review id or without a positive
+// line is a thread of its own, and two top-level comments of one review on the same line merge,
+// which the API cannot tell apart. GitHub threads, which the provider already groups, pass through
+// unchanged.
+function groupTeaReviewComments(rawComments, normalized) {
+  const github = [];
+  const groups = new Map();
+  normalized.forEach((thread, index) => {
+    if (rawComments[index].comments?.nodes) {
+      github.push(thread);
+      return;
+    }
+    const anchor = teaReviewCommentAnchor(rawComments[index]);
+    const key =
+      thread.reviewId === undefined || anchor === undefined
+        ? Symbol('ungrouped')
+        : JSON.stringify([thread.reviewId, thread.path, anchor]);
+    const group = groups.get(key);
+    if (group) group.push(thread);
+    else groups.set(key, [thread]);
+  });
+  const byId = (a, b) => Number(a.id) - Number(b.id);
+  const grouped = [...groups.values()].map((members) => {
+    const ordered = [...members].sort(byId);
+    return { ...ordered[0], comments: ordered.map((member) => member.comments[0]) };
+  });
+  return [...github, ...grouped.sort(byId)];
+}
+
+// The grouping line of one raw comment, signed by diff side. `PullReviewComment` serializes
+// `LineNum json:"position"` (new side) and `OldLineNum json:"original_position"` (old side) as
+// uint64 without `omitempty`, so a comment on a removed line carries `position: 0`: keyed on
+// `position` alone, every old-side comment of one review and file would collapse into one thread
+// whose first comment alone decides the resolution. New-side lines are positive, old-side lines
+// negative, a bare `line` is the fallback, and no positive line at all leaves the comment ungrouped.
+function teaReviewCommentAnchor(raw) {
+  const positive = (value) => Number.isInteger(value) && value > 0;
+  if (positive(raw.position)) return raw.position;
+  if (positive(raw.original_position)) return -raw.original_position;
+  if (positive(raw.line)) return raw.line;
+  return undefined;
 }
 
 // `options` carries no default on purpose: the merge-gate eval scaffold derives the supported
@@ -4649,6 +4773,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
           })
         : await probeProvider(repository, runner, {
             issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
+            reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
           });
     if (operation === 'probe') {
       return {
@@ -4708,7 +4833,13 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
-    const plan = buildCommandPlan(operation, input, activeRepository);
+    // A tea-backed forge builds a thread write only on the evidence of the active probe, so the
+    // builder is handed that probe rather than whatever the input carried.
+    const plan = buildCommandPlan(
+      operation,
+      THREAD_WRITE_OPERATIONS.has(operation) ? { ...input, probe } : input,
+      activeRepository,
+    );
     const preview = redact(plan);
     if (dryRun) {
       return {

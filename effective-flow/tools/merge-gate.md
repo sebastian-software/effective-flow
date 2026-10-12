@@ -576,7 +576,7 @@ comments (for the inbound direction see the error cases in `effective-flow itera
 Read the review comments **directly before** classification fresh from the host – comments
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, the `resolved` status, and the thread's `url`.
-On Forgejo only, a thread also carries an optional `reviewId`: the id of the review it was read under.
+On a `tea`-backed forge only, a thread also carries an optional `reviewId`, the id of the review it was read under, and holds that review's later comments at its location as replies.
 
 Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
 normalized author record — a review-thread comment and a top-level pull-request comment are read
@@ -737,10 +737,10 @@ blocking watch, so the gate takes its documented no-watch degradation (report th
 ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
-stay unsupported on Forgejo — `review-create`, `review-thread-reply` and `review-thread-resolve` —
-but they belong to the sibling fragment `pr-review-thread-writes`, which states its own
-degradation; the gate still fails closed on anything it cannot read, improvising no provider
-request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+— `review-create`, `review-thread-reply` and `review-thread-resolve` — belong to the sibling
+fragment `pr-review-thread-writes`, which states where a `tea`-backed forge serves them (the two
+thread writes only as a pair) and how each degrades; the gate still fails closed on anything it
+cannot read, improvising no provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
 the raw route it reads is the same one the review-thread walk already pages there, and the listing it
 returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
 and its page count is reported, since a truncated review list would report a verdict that is missing
@@ -1278,8 +1278,8 @@ input object's top-level `cwd`; setting only the process or tool working directo
      `tea` has no `checks` subcommand and
      Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`,
-     `review-thread-reply`, and `review-thread-resolve`. `issueClose` is supported on **Forgejo**
+     wait, not report-only. What stays unsupported there is `pr-checks-wait` and `review-create`; the
+     two thread writes are served only together, when both are among the routes the instance declares (Forgejo today none, Gitea both). `issueClose` is supported on **Forgejo**
      only where the probed `tea api` transport the operation rides is available: a `tea` built
      without `--include` reports `issue-close` unsupported, which makes the Phase-5.5 offer
      unavailable for forge issues and changes nothing else about the run. `issueCommentsRead` rides

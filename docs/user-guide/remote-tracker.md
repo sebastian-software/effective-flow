@@ -479,23 +479,37 @@ of the issue resource, which every `gh` 2.x line serves, so it is always availab
 `issue-close`, and declares only `pr-checks-wait` unsupported among them: `tea` has no `checks` subcommand and Forgejo offers no
 server-side blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented
 no-watch degradation there – report the pending checks by name and ask once – instead of blocking. A
-Forgejo run is therefore the whole gate minus the blocking wait. Three other operations `merge-gate`
-and `iterate` use stay unsupported on Forgejo: `review-create`, `review-thread-reply`, and
-`review-thread-resolve`. `pr-reviews-read` is **not** among them – it reads the same raw route the
-review-thread walk already pages there, and it is paginated to exhaustion, because a truncated review
-list would report a missing verdict as a verdict that does not exist.
+Forgejo run is therefore the whole gate minus the blocking wait. Of the other operations
+`merge-gate` and `iterate` use, `review-create` stays unsupported on every `tea`-backed forge, and
+`review-thread-reply` and `review-thread-resolve` are supported only where the instance declares
+both of their routes (see below). `pr-reviews-read` is **not** among the unsupported ones – it reads the same
+raw route the review-thread walk already pages there, and it is paginated to exhaustion, because a
+truncated review list would report a missing verdict as a verdict that does not exist.
 
-**`review-thread-resolve` is unsupported because Forgejo serves no route for it**, not because
-`tea` lacks a subcommand – `tea pulls resolve` exists. Forgejo's `/pulls` router group declares no
-`resolve`, `unresolve` or `replies` path at any nesting level, where Gitea `main` declares all three,
-and a live `15.0.3+gitea-1.22.0` instance confirms it: its `/swagger.v1.json` lists 314 paths and not
-one of them matches `…/pulls/comments/…`; an authenticated `POST …/pulls/comments/{id}/resolve` is
-rejected by the router with the same status a deliberately nonsense path draws, while the
-neighbouring `…/reviews/{id}/dismissals` reaches its handler. The capability is therefore stated as a
-provider fact, exactly as `pullRequestStatus` and `pullRequestMerge` are, rather than derived from a
-`--help` probe that could only ever attest the client subcommand. `review-thread-reply` is
-unsupported as well, so `iterate` writes nothing into the thread: it neither replies nor resolves,
-and reports both as manual steps. `merge-gate` instead treats a configured bot's thread as settled
+**The two review-thread writes are probed per instance, from the forge's own API description.**
+Gitea and Forgejo share the `forgejo` provider and `tea`, and `tea pulls resolve --help` attests only
+the client subcommand, never the route behind it. For `probe`, `review-thread-reply` and
+`review-thread-resolve`, the helper therefore fetches `<login URL>/swagger.v1.json` through `tea api`.
+The URL is built only from the selected `tea` login, keeping its sub-path, because `tea api` sends
+that login's token. The two writes are supported only as a pair, when the description declares both
+`POST` routes: `/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies` and
+`/repos/{owner}/{repo}/pulls/comments/{id}/resolve`. An instance that declares only one of them could
+never finish a thread, so it is treated like one that declares neither: `reviewThreadReplies` and
+`reviewThreadResolution` are both unsupported, and `iterate` and `merge-gate` take the no-write path
+described below. A failed fetch – the description disabled on the server, a `404`, a body that is
+not JSON, or a `tea` without `api --include` – leaves both unsupported and never fails the probe. Each write call re-reads the
+description, one extra request per call. The probe also reports a diagnostic `flavor`: `gitea`,
+`forgejo` (an `info.version` containing `+gitea-`), `unknown` when the description could not be
+read, or `null` when it was not requested; the capabilities come from the declared routes alone.
+
+On **Gitea**, which declares both routes, `iterate` replies (`201`) and resolves (`204`) through
+`tea api`. On **Forgejo** neither route exists: its `/pulls` router group declares no `resolve`,
+`unresolve` or `replies` path at any nesting level, and a live `15.0.3+gitea-1.22.0` instance
+confirms it – its `/swagger.v1.json` lists 314 paths and not one of them matches
+`…/pulls/comments/…`, and an authenticated `POST …/pulls/comments/{id}/resolve` is rejected by the
+router with the same status a deliberately nonsense path draws. Where neither write is supported,
+`iterate` writes nothing into the thread: it neither replies nor resolves, and reports both as
+manual steps. `merge-gate` instead treats a configured bot's thread as settled
 once that same reviewer's latest submitted review for the verified head is an approval – a different
 review from the one that opened the thread, submitted after it. A dismissal alone settles nothing.
 The gate stops handing a settled thread to `iterate`, no longer lets it block the merge, and lists it
@@ -507,7 +521,11 @@ then asks each review for its comments – `ceil(N/50) + N` requests for `N` rev
 `tea pulls review-comments` performed internally and did not report. Every call appears in
 `data.commands`. What moved is not the cost but the wire format: the renderer states no login and no
 timestamp under any spelling, so the read now goes through the raw API, where `modules/structs`
-declares both.
+declares both. The forge lists comments rather than threads, so the read groups them: comments of
+one review on the same path and position (or line) form one thread, in ascending id order, and the
+thread takes its id, location and resolution state from the first comment. A reply therefore
+appears inside its thread, not as a separate unresolved one, and the thread id is the comment id the
+resolve route takes.
 
 Five of the merge-gate operations – `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read`,
 and `issue-close` – are gated on one `tea api` transport probe rather than on a version floor.

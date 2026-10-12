@@ -52,13 +52,13 @@ settled.
 
 ### In-run exclusion in Phase 3
 
-On such a forge, Phase 3 step 5 hands neither a provider-settled thread nor a thread whose durable
-key already holds `implemented` from this run to `effective-flow iterate`. The second half closes the
-window between iterate's push and the bot's visible approval: condition 5 can report the bot as
-having run before its approval is readable, and the thread would otherwise be re-delegated. Where
-nothing remains, the delegation builder returns `nothing-to-delegate` and no round is used. The
-thread's `implemented` outcome still clears condition 7 in the same run; if the approval is still
-missing at Phase 4, condition 6 blocks.
+On such a forge, Phase 3 step 5 hands no provider-settled thread to `effective-flow iterate`, nor, as on
+every forge, a thread whose durable key already holds `implemented` from this run. Here the second
+half also closes the window between iterate's push and the bot's visible approval: condition 5 can
+report the bot as having run before its approval is readable, and the thread would otherwise be
+re-delegated. Where nothing remains, the delegation builder returns `nothing-to-delegate` and no
+round is used. The thread's `implemented` outcome still clears condition 7 in the same run; if the
+approval is still missing at Phase 4, condition 6 blocks.
 
 ### Report wording
 
@@ -71,6 +71,6 @@ that none was published) and the way out. Only for a thread this run implemented
 it in the forge's web UI and then re-run the gate, or to re-run after the bot's next verdict when it
 only waits for its approval. An unassessed thread is assessed by a re-run, and a deferred or
 rejected one clears only through "The set-aside confirmation"; the report never offers a manual
-resolution for either, because that would bypass the assessment. It tells the operator not to reply in the thread, because a human reply would appear as a
-human-authored thread and hold the human-comment guard, and it notes that Forgejo may show the
+resolution for either, because that would bypass the assessment. It tells the operator not to reply in the thread, because a human reply is read as a
+human-authored comment inside the bot's thread and holds the human-comment guard, and it notes that Forgejo may show the
 thread collapsed as outdated in the conversation tab.

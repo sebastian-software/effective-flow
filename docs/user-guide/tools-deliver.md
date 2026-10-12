@@ -243,7 +243,7 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    re-run green after it, replacing an earlier run of the same check – waits,
    and then delegates their findings to `/effective-flow iterate`, which fixes the valid ones,
    replies, and resolves the threads. On
-   Forgejo, which supports neither thread write, the reviewer's own later approval settles a thread
+   Forgejo, which declares neither thread write, the reviewer's own later approval settles a thread
    instead; see the Forgejo note under **Input/output**. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread, **or any changes-requested
@@ -525,7 +525,9 @@ finding the run assessed and set aside gets no thread reply by design, so it is 
 other question; a thread that was never assessed at all is what blocks here. Handing a thread over
 is not an assessment of it either: an item whose fix failed, and an item you deselected at the
 delegated run's own approval gate, come back as `unassessed` and block exactly as a thread nobody
-saw does. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
+saw does, and so does a thread the gate named that the delegated run left out as already addressed.
+A thread this run already recorded as implemented is not handed to `iterate` again in a later round,
+on any forge; if it is still unresolved at the merge check, the report names it. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
 finding does; see
 [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside).
 On a forge that can neither reply to nor resolve review threads, such as Forgejo, a thread the
@@ -652,8 +654,8 @@ contract rather than prose.
 **One closed vocabulary, agreed on both ends.** An item comes back as `implemented`, `deferred`,
 `rejected`, or `unassessed`, and nothing else. The first three are assessments – somebody read the
 finding and reached an outcome about it. The fourth is the explicit absence of one, and it is what
-you see when the item's own implementation failed or when the item was deselected at the delegated
-run's approval gate: nobody judged that finding, so it blocks the merge exactly as a finding no round
+you see when the item's own implementation failed, when the item was deselected at the delegated
+run's approval gate, or when the delegated run left a named thread out as already addressed: nobody judged that finding, so it blocks the merge exactly as a finding no round
 ever saw does. The delegated run classifies how it _processed_ an item and the gate classifies how a
 finding was _assessed_, so the mapping between the two is written down in both tools rather than
 guessed; "deferred" in particular does not mean the same thing on each side until it is pinned.
@@ -808,9 +810,10 @@ Two further things worth knowing about what the gate writes:
   check wait is unsupported there,
   because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
-  gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
-  unsupported there; the last of the three because Forgejo serves no resolve route, not because
-  `tea` lacks the subcommand. The open-points observation adds one comment read per assessed issue
+  gate minus that wait. `review-create` also stays unsupported on every `tea`-backed forge.
+  `review-thread-reply` and `review-thread-resolve` are probed per instance from the forge's API
+  description: Gitea declares both routes and supports them, Forgejo serves neither, and an instance
+  that declares only one route is served neither, whatever subcommands `tea` offers. The open-points observation adds one comment read per assessed issue
   through the same helper, and the absence of that capability costs exactly that observation – the
   report then says the open points are unobserved and every verdict, offer, and write is what it
   would have been anyway.
