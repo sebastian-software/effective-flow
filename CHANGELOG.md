@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.67.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.0...effective-flow-v1.67.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* detect review-thread write support per tea instance and group replies ([#553](https://github.com/sebastian-software/effective-flow/issues/553)) ([39376bb](https://github.com/sebastian-software/effective-flow/commit/39376bba26044115d61975b6182252d8ea9f848e))
+* serve tea review-thread writes only as a pair and close iterate outcome gaps ([#556](https://github.com/sebastian-software/effective-flow/issues/556)) ([eb68ee0](https://github.com/sebastian-software/effective-flow/commit/eb68ee077a3381b16419e20b9d6ec42656b74e36))
+
 ## [1.67.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.1...effective-flow-v1.67.0) (2026-10-10)
 
 
