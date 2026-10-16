@@ -434,12 +434,42 @@ test('setup offers the CLAUDE.md import behind one ask fence that writes only @A
   assert.match(contract, near('not part of the configuration', 'declares no key', 200));
 });
 
-// Invariant: no setup mode skips the CLAUDE.md fence, and a run that cannot pose it writes nothing
-// and says so; there is no silent default.
-test('the CLAUDE.md import fence is posed in every mode and an unposable run writes nothing', () => {
-  const item = setupClaudeMdImportItem(source('src/tools/setup.md'));
+// Invariant: Profile, Express and Guided all pose the CLAUDE.md fence, and a run that cannot pose
+// it writes nothing and says so; there is no silent default. The only exceptions are hidden mode and
+// Targeted, both named explicitly: they skip item 7 at the top of Step 6, and Targeted writes no
+// root file at all, so it has no fence to pose.
+test('the CLAUDE.md import fence is posed in every full mode, Targeted skips it explicitly, and an unposable run writes nothing', () => {
+  const setup = source('src/tools/setup.md');
+  const item = setupClaudeMdImportItem(setup);
   const contract = prose(item);
   const ask = setupClaudeMdImportAsk(item);
+
+  // The Targeted exception is stated where hidden mode's is: once at the top of Step 6, and again
+  // beside the "unconditional" claim, so neither reads as covering every mode. The Step 6 rule is
+  // cut to its own sentence, so the hidden-mode sentence beside it cannot satisfy it.
+  const preamble = boundedSlice(setup, '### Step 6: Merge and write', '\n1. ');
+  const targetedRule = prose(boundedSlice(preamble, '**Targeted** runs', '.\n'));
+  assert.match(
+    targetedRule,
+    near('Targeted runs items 1, 2 and 4', 'its own item 3 from `setup-targeted-change`', 10),
+  );
+  assert.match(targetedRule, /skips items 5, 6, and 7[;.]/);
+  // In hidden mode the hidden write takes item 4's place only, after the Targeted item 3.
+  assert.match(
+    targetedRule,
+    near('with the hidden local file as source', 'replaces item 4 after that item 3', 80),
+  );
+  assert.match(contract, near('hidden mode and Targeted aside', 'which skip item 7', 10));
+  assert.match(contract, near('which skip item 7', 'as stated at the top of this step', 10));
+  // The fragment owns why Targeted has no fence to pose: it writes no root file at all.
+  const targetedIntro = prose(
+    boundedSlice(
+      source('src/shared/setup-targeted-change.md'),
+      '## Targeted setup change',
+      '### Precondition',
+    ),
+  );
+  assert.match(targetedIntro, near('It writes no root file', 'a `CLAUDE\\.md` import', 120));
 
   // The gate is the recorded file state, not the presentation path. A `when:` that named the
   // mode would let another mode write a file into the project root unasked.
@@ -453,9 +483,13 @@ test('the CLAUDE.md import fence is posed in every mode and an unposable run wri
     /absent or a pure prose pointer/,
     'the fence must name the two writable states',
   );
+  // Only positive mode gating is forbidden: an exclusion ("not in hidden mode", "the mode is not
+  // Targeted") names a mode that skips item 7 anyway and keeps every full mode inside the fence.
+  // Each negated clause is dropped up to its comma before the mode words are searched.
+  const positiveWhen = ask.when.replace(/\bnot\b[^,;.]*/gi, '');
   assert.doesNotMatch(
-    ask.when,
-    /profile|guided|express|wizard/i,
+    positiveWhen,
+    /profile|guided|express|wizard|targeted|hidden/i,
     'the fence condition must not gate on which mode is running',
   );
 
@@ -1097,9 +1131,26 @@ test('every lazy-include fragment referenced by a tool or shared fragment has a 
   }
 });
 
-// Invariant: setup accepts exactly five invocation forms and stops without mutation on anything
-// else, and only Profile loads the profile fragment.
-test('setup routes only the empty, profile, express, guided, and hidden invocations before mutation', () => {
+// Every `src/**/*.md` that includes `fragment`, split by include kind. Eager fences are found with
+// the build's own `EAGER_INCLUDE_RE`, so a fence the build inlines is never missed because of
+// trailing whitespace a hand-written pattern would not tolerate.
+function includeHostsOf(fragment) {
+  const hosts = { eager: [], lazy: [] };
+  const names = (text, pattern) => [...text.matchAll(pattern)].map((match) => match[1].trim());
+  for (const path of readdirSync(new URL('src/', repositoryRoot), { recursive: true }).sort()) {
+    if (!path.endsWith('.md')) continue;
+    const text = source(`src/${path}`);
+    if (names(text, EAGER_INCLUDE_RE).includes(fragment)) hosts.eager.push(path);
+    if (names(text, LAZY_INCLUDE_RE).includes(fragment)) hosts.lazy.push(path);
+  }
+  return hosts;
+}
+
+// Invariant: setup classifies every invocation before mutation — the five keyword forms select
+// their modes, and any other non-empty argument is a free-text Targeted request rather than an
+// error; only Profile loads the profile fragment, only Targeted the Targeted fragment, and Targeted
+// is never asked the Visibility question.
+test('setup classifies the five keyword invocations and routes any other argument to Targeted before mutation', () => {
   const setup = source('src/tools/setup.md');
   const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
 
@@ -1111,14 +1162,19 @@ test('setup routes only the empty, profile, express, guided, and hidden invocati
   assert.match(step0, /`\{\{SKILL:setup\}\} express` selects \*\*Express\*\*/);
   assert.match(step0, /`\{\{SKILL:setup\}\} guided` selects \*\*Guided\*\*/);
   assert.match(
-    prose(step0),
-    /An additional or unknown argument prints all five accepted forms above and stops without mutation/,
-  );
-  assert.match(step0, /Do not reinterpret it as free text and do not ask a setup-mode question/);
-  assert.match(
     step0,
     /`\{\{SKILL:setup\}\} hidden` selects \*\*Express\*\* with the visibility fixed/,
   );
+  assert.match(prose(step0), /Any other non-empty argument selects Targeted/);
+  assert.match(prose(step0), near('selects Targeted', 'its original text kept verbatim', 40));
+  // A keyword followed by more text is not that keyword: the whole text is the request.
+  assert.match(prose(step0), /`\{\{SKILL:setup\}\} guided tracker github` is Targeted, not Guided/);
+  // The retired "unknown argument is an error" contract must not survive beside the new one.
+  assert.doesNotMatch(
+    prose(step0),
+    /prints all five accepted forms above and stops without mutation/,
+  );
+  assert.doesNotMatch(prose(step0), /Do not reinterpret it as free text/);
   assert.match(
     prose(step0),
     /Express and Guided do not load it; they go on to the Visibility question and then to Step 1/,
@@ -1127,11 +1183,37 @@ test('setup routes only the empty, profile, express, guided, and hidden invocati
   const pointers = new Map(
     [...step0.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
   );
-  assert.deepEqual([...pointers.keys()], ['setup-profiles']);
+  assert.deepEqual([...pointers.keys()], ['setup-profiles', 'setup-targeted-change']);
   assert.match(
     pointers.get('setup-profiles'),
     /normalized invocation has no argument or its single argument is `profile`/,
   );
+  assert.match(
+    pointers.get('setup-targeted-change'),
+    /normalized invocation is non-empty and is not exactly one of the five keyword forms/,
+  );
+  // Both mode fragments are loaded only by this Step 0 pointer: an eager copy anywhere would put a
+  // mode contract into an always-loaded core, and a second lazy host would load it outside the
+  // classification that selects its mode.
+  for (const fragment of ['setup-profiles', 'setup-targeted-change']) {
+    const hosts = includeHostsOf(fragment);
+    assert.deepEqual(hosts.eager, [], `${fragment} must never be included eagerly`);
+    assert.deepEqual(hosts.lazy, ['tools/setup.md'], `${fragment} must load only from setup`);
+    assert.equal(
+      [...setup.matchAll(LAZY_INCLUDE_RE)].filter((match) => match[1].trim() === fragment).length,
+      1,
+      `setup must point to ${fragment} exactly once`,
+    );
+  }
+
+  // Targeted keeps the visibility of the configuration it resolves; asking would invite a switch
+  // that the Targeted fragment redirects to the full setup.
+  assert.match(prose(step0), /Every mode except Targeted then resolves the visibility/);
+  const visibility = askContracts(step0, 'tools/setup.md Step 0').filter(
+    (ask) => ask.header === 'Visibility',
+  );
+  assert.equal(visibility.length, 1, 'Step 0 must carry exactly one Visibility ask');
+  assert.match(visibility[0].when, /the mode is not Targeted/);
 });
 
 // Invariant: each setup lazy pointer fires at the decision point that owns its text, and that
@@ -1171,16 +1253,26 @@ test('every setup lazy pointer names the decision point that loads it', () => {
       decision: 'the Step 7 Rename path question answered Yes',
     },
   ];
+  // The Targeted fragment loads the owning fragments itself, so it is the one other host they may
+  // have; the rename probe belongs to Step 7, which a Targeted run never reaches.
+  const targetedHosts = new Set(['tools/setup.md', 'shared/setup-targeted-change.md']);
+  const hostsOf = {
+    'setup-hidden-mode': targetedHosts,
+    'setup-guided-core-switches': targetedHosts,
+    'setup-advanced-settings': targetedHosts,
+    'setup-rename-probe': new Set(['tools/setup.md']),
+  };
   for (const { fragment, step, trigger, decision } of pinned) {
     const when = pointerIn(step, fragment);
     assert.ok(when, `setup must keep its lazy-include pointer for ${fragment} in its step`);
     assert.match(when, trigger, `the ${fragment} pointer must name ${decision}; got: ${when}`);
-    // Only setup loads these, and never eagerly: an eager copy would put the text back in a core.
+    // Only its named hosts load each fragment, and never eagerly anywhere: an eager copy would put
+    // the text back in a core.
+    assert.deepEqual(includeHostsOf(fragment).eager, [], `${fragment} must never load eagerly`);
     for (const path of readdirSync(new URL('src/', repositoryRoot), { recursive: true })) {
-      if (!path.endsWith('.md') || path === 'tools/setup.md') continue;
+      if (!path.endsWith('.md') || hostsOf[fragment].has(path)) continue;
       assert.doesNotMatch(source(`src/${path}`), new RegExp(`\\n${fragment}\\n`), path);
     }
-    assert.doesNotMatch(setup, new RegExp(`\`\`\`include\\n${fragment}\\n`));
   }
 
   // The answer-gated pointers follow the question they wait for.
@@ -1231,6 +1323,177 @@ test('every setup lazy pointer names the decision point that loads it', () => {
     );
     assert.doesNotMatch(text, /Offer a `CLAUDE\.md` that imports/, fragment);
   }
+});
+
+// Invariant: a Targeted run loads each owning Guided fragment only for the key groups that fragment
+// owns, and hidden mode's fragment only for its write. The fragment's owner table is the source of
+// truth: every key group it assigns to the core switches must trigger the core-switch pointer, and
+// every group it assigns to a numbered block the advanced pointer, so a key group missing from a
+// `when:` silently runs its change without the owner's question. Each owning fragment's opener names
+// that Targeted entry and keeps it to the touched key's question (hidden mode: its write section).
+test('the Targeted setup fragment loads each owning fragment only for the keys it owns', () => {
+  const setup = source('src/tools/setup.md');
+  const targeted = source('src/shared/setup-targeted-change.md');
+  // Exactly one pointer per owning fragment: a second one with a narrower `when:` would make the
+  // load depend on which of the two a run happens to read first.
+  const targetedMatches = [...targeted.matchAll(LAZY_INCLUDE_RE)];
+  const pointerCount = (name) => targetedMatches.filter((match) => match[1].trim() === name).length;
+  for (const name of [
+    'setup-advanced-settings',
+    'setup-guided-core-switches',
+    'setup-hidden-mode',
+  ]) {
+    assert.equal(pointerCount(name), 1, `setup-targeted-change must point to ${name} exactly once`);
+  }
+  const targetedPointers = new Map(
+    targetedMatches.map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
+  );
+  assert.deepEqual([...targetedPointers.keys()].sort(), [
+    'setup-advanced-settings',
+    'setup-guided-core-switches',
+    'setup-hidden-mode',
+  ]);
+  const corePointer = targetedPointers.get('setup-guided-core-switches');
+  const advancedPointer = targetedPointers.get('setup-advanced-settings');
+  assert.match(corePointer, /Targeted operation touches a core-switch key/);
+  assert.match(advancedPointer, /Targeted operation touches a block key/);
+
+  // A key is covered by a `when:` code span naming it, or by a wildcard span (`language.*`,
+  // `tracker.external*`) whose prefix it starts with.
+  const spans = (text) => [...text.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  const covered = (span, key) =>
+    span.endsWith('*') ? key.startsWith(span.slice(0, -1)) : span === key;
+  const covers = (when, key) => spans(when).some((span) => covered(span, key));
+  // Every body row of the owner table, header and separator dropped. Each must lead with a full key
+  // span, and the lead keys are pinned as a list, so a deleted, merged or malformed row fails here
+  // instead of shrinking the derivation below.
+  const tableLines = section(targeted, '### Owner questions')
+    .split('\n')
+    .filter((line) => line.startsWith('|'));
+  assert.match(tableLines[0], /^\| Key group +\| Owner +\| Targeted rule +\|$/);
+  assert.match(tableLines[1], /^\|[-| ]+\|$/);
+  const ownerRows = tableLines.slice(2).map(rowCells);
+  for (const [group] of ownerRows) {
+    assert.match(group, /^`[a-z][^`]*`/i, `owner row must lead with a full key span: ${group}`);
+  }
+  assert.deepEqual(
+    ownerRows.map(([group]) => spans(group)[0]),
+    [
+      'review.*',
+      'applyReview.*',
+      'language.project',
+      'plan.dir',
+      'delivery.completion',
+      'delivery.baseBranch',
+      'delivery.branchPrefix',
+      'worktree.enabled',
+      'worktree.setup',
+      'tracker.mode',
+      'tracker.externalTool',
+      'skills.*',
+      'mergeGate.*',
+    ],
+  );
+  const owned = { core: [], block: [] };
+  for (const [group, owner] of ownerRows) {
+    // Only full key names are checked; `…Hint` and `.trigger` abbreviate the row's lead key.
+    const keys = spans(group).filter((key) => /^[a-z]/i.test(key));
+    const core = /core switches/.test(owner);
+    const block = /\bblock \d/.test(owner);
+    assert.ok(
+      core || block || /Step 4 base-branch rule/.test(owner),
+      `owner row ${group} must name a core switch, a block, or the setup core's base-branch rule`,
+    );
+    for (const key of keys) {
+      if (core) assert.ok(covers(corePointer, key), `core-switch pointer misses ${key}`);
+      if (block) assert.ok(covers(advancedPointer, key), `advanced pointer misses ${key}`);
+    }
+    if (core) owned.core.push(...keys);
+    if (block) owned.block.push(...keys);
+  }
+  // The reverse direction: a `when:` key whose row names another owner would load this fragment
+  // for a change it does not own.
+  for (const [when, keys, name] of [
+    [corePointer, owned.core, 'core-switch'],
+    [advancedPointer, owned.block, 'advanced'],
+  ]) {
+    for (const span of spans(when)) {
+      assert.ok(
+        keys.some((key) => covered(span, key)),
+        `the ${name} pointer names ${span}, which no row assigns to that fragment`,
+      );
+    }
+  }
+
+  assert.match(
+    targetedPointers.get('setup-hidden-mode'),
+    near(
+      'hidden local file as source reaches its write',
+      'only its "Writing the hidden local configuration" section applies',
+      40,
+    ),
+  );
+  // The hidden write pointer sits in the fragment's Hidden mode section, ahead of its Write section.
+  assert.match(
+    section(targeted, '### Hidden mode'),
+    /```lazy-include\nsetup-hidden-mode\n/,
+    'the setup-hidden-mode pointer must sit in the Targeted Hidden mode section',
+  );
+  // The hidden write is guarded like every hidden-configuration write: setup's runtime-state
+  // pointer admits it explicitly.
+  const runtimeSafety = [...setup.matchAll(LAZY_INCLUDE_RE)].find(
+    (match) => match[1].trim() === 'runtime-state-safety',
+  );
+  assert.ok(runtimeSafety, 'setup must keep its runtime-state-safety pointer');
+  assert.match(
+    runtimeSafety[2],
+    near(
+      'write or delete the hidden local configuration',
+      "a Targeted run's hidden write included",
+      20,
+    ),
+  );
+
+  // Each owning fragment's opener names the Targeted route beside its Guided one.
+  const opener = (fragment) =>
+    prose(
+      boundedSlice(
+        source(`src/shared/${fragment}.md`),
+        'This fragment is loaded only when',
+        '\n\n',
+      ),
+    );
+  for (const fragment of ['setup-guided-core-switches', 'setup-advanced-settings']) {
+    assert.match(
+      opener(fragment),
+      /a Targeted run \(`setup-targeted-change`\) touches a/,
+      fragment,
+    );
+    assert.match(
+      opener(fragment),
+      /Targeted (?:then )?asks only (?:that|the touched) key's question/,
+      `${fragment} must keep a Targeted run to the touched key's question`,
+    );
+  }
+  assert.match(
+    opener('setup-advanced-settings'),
+    /never a whole block, and never block 10/,
+    'Targeted never reaches the Fast pilot block, which stays Guided-only',
+  );
+  const hiddenMode = source('src/shared/setup-hidden-mode.md');
+  assert.match(hiddenMode, /^### Writing the hidden local configuration$/m);
+  assert.match(
+    opener('setup-hidden-mode'),
+    /a Targeted run with the hidden local file as source reaches its write/,
+  );
+  assert.match(
+    opener('setup-hidden-mode'),
+    near('follows only "Writing the hidden local configuration"', 'in place of item 4 alone', 20),
+  );
+  assert.match(
+    opener('setup-hidden-mode'),
+    near('item 4 alone', 'after its own Targeted item 3', 20),
+  );
 });
 
 // Invariant: Profile asks its two questions before any other setup handling and never guesses an
@@ -1674,12 +1937,16 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   assert.match(fragment, /never retry with new digests without showing them and asking again/);
 });
 
-// Invariant: every setup mode writes only after one explicit before/after confirmation, and an
-// External + forge drift discards that confirmation.
-test('all setup modes share the preview gate while Express and Guided retain their paths', () => {
+// Invariant: every setup mode, Targeted included, writes only after one explicit before/after
+// confirmation, and an External + forge drift discards that confirmation — for a Targeted run that
+// touches the external tracker keys as well. Targeted enters through its own Step 3 branch, reaches
+// Step 6 item 2's confirmation through its own write path, and replays the External + forge check
+// in its own item 3.
+test('all setup modes share the preview gate while Express, Guided and Targeted retain their paths', () => {
   const setup = source('src/tools/setup.md');
   const modeEntry = boundedSlice(setup, '### Step 3: Enter the selected mode', '### Step 4:');
   const write = boundedSlice(setup, '### Step 6: Merge and write', '### Step 7:');
+  const targetedWrite = prose(section(source('src/shared/setup-targeted-change.md'), '### Write'));
 
   assert.match(
     prose(modeEntry),
@@ -1687,6 +1954,13 @@ test('all setup modes share the preview gate while Express and Guided retain the
   );
   assert.match(modeEntry, /\*\*Guided:\*\* Continue with Step 4.*Step 5/s);
   assert.match(prose(modeEntry), /Do not ask any Guided core or advanced question/);
+  assert.match(prose(modeEntry), /Targeted: Follow the loaded `setup-targeted-change` contract/);
+  // Targeted runs item 2 — the shared before/after gate — and its own item 2 keeps that gate.
+  assert.match(prose(write), /Targeted runs items 1, 2 and 4 with its own item 3/);
+  assert.match(
+    targetedWrite,
+    near('one before/after list of every operation', 'then one explicit confirmation', 200),
+  );
   assert.match(prose(write), /Express and Guided retain their existing merge order/);
   assert.match(
     prose(write),
@@ -1712,6 +1986,266 @@ test('all setup modes share the preview gate while Express and Guided retain the
     prose(externalRevalidation),
     /discard the confirmation and stop, or rebuild the complete before\/after preview and obtain a new confirmation before writing/,
   );
+  // The same replay binds a Targeted run that touches any external tracker key; the Targeted item 3
+  // names the replay it reuses instead of restating it.
+  const targetedItem3 = boundedSlice(targetedWrite, 'Targeted item 3:', 'Item 4:');
+  assert.match(
+    targetedItem3,
+    /When the request touches `tracker\.externalTool`, `…Hint`, `…StartedState`, or `…DoneState`/,
+  );
+  assert.match(
+    targetedItem3,
+    near('`…DoneState`', "run Step 6 item 3's External \\+ forge replay here", 20),
+  );
+});
+
+// Invariant: a Targeted setup run changes only what its free text names, through the one write
+// path every mode shares. It stops before any mutation on a source it cannot write in place (and
+// on duplicate ADRs, which only manual cleanup resolves), stops on text it cannot recognize,
+// redirects the visibility switch and the Fast pilot opt-in to the full setup, answers questions
+// without writing or confirming, never writes a placeholder, keeps a merge-gate reviewer's trigger
+// and check rows with its login, follows the tracker mode's dependent keys, writes only after one
+// confirmed preview that a changed source, a fresh marker diagnostic, a touched key or a changed
+// rewrite set invalidates, writes and confirms nothing for a no-op request (unchanged rows, absent
+// resets, or only refused, redirected or read-only operations) and writes nothing when it cannot
+// ask, never rebinds the chat language, and poses none of the full setup's first-time questions.
+// In hidden mode its item 3 still runs, the hidden write replaces item 4 only, and any change of the
+// local file since the preview re-confirms and reruns item 3. Each half is pinned by its own
+// phrase so a dropped rule fails while rewording stays free.
+test('the Targeted setup fragment states its preconditions, redirects, and single confirmed write path', () => {
+  const setup = source('src/tools/setup.md');
+  const targeted = source('src/shared/setup-targeted-change.md');
+  const intro = prose(boundedSlice(targeted, '## Targeted setup change', '### Precondition'));
+  const precondition = prose(section(targeted, '### Precondition'));
+  const interpretation = prose(section(targeted, '### Interpretation'));
+  const refusals = prose(section(targeted, '### Refusals and redirects'));
+  const answers = prose(section(targeted, '### Read-only answers'));
+  const owners = prose(section(targeted, '### Owner questions'));
+  const hidden = prose(section(targeted, '### Hidden mode'));
+  const write = prose(section(targeted, '### Write'));
+  const summary = prose(section(targeted, '### Summary'));
+
+  // Not posed: the Visibility ask, the CLAUDE.md fence, and Step 7 — whose own ask excludes
+  // Targeted, so the skip is not left to the fragment alone.
+  assert.match(intro, /A Targeted run poses no Visibility question/);
+  assert.match(
+    intro,
+    near('Step 6 items 5 to 7', '\\(marker, migration, `CLAUDE\\.md` fence\\)', 5),
+  );
+  assert.match(intro, near('`CLAUDE\\.md` fence\\)', 'or Step 7', 5));
+  assert.match(intro, /It writes no root file/);
+  const renamePath = askContracts(setup, 'tools/setup.md').find(
+    (ask) => ask.header === 'Rename path',
+  );
+  assert.ok(renamePath, 'setup must keep its Rename path ask');
+  assert.match(renamePath.when, /the mode is not Targeted/);
+
+  // The chat language is resolved once and not rebound by the run's own change.
+  assert.match(intro, /Resolve `language\.chat` once at entry/);
+  assert.match(intro, near('never rebind it during the run', 'applies from the next run', 60));
+
+  // Precondition stops: only the hidden local file (step 0) or an ADR (steps 1–2) is written in
+  // place; everything else stops before mutation and points to the full setup.
+  assert.match(
+    precondition,
+    near('Continue only when `data\\.source\\.step` is 0', '\\(the hidden local file\\)', 5),
+  );
+  assert.match(
+    precondition,
+    near('\\(the hidden local file\\)', 'or 1–2 \\(a project setup ADR\\)', 5),
+  );
+  assert.match(precondition, near('Otherwise stop without mutation', 'name what was found', 20));
+  assert.match(
+    precondition,
+    /each of these stops points to `\{\{SKILL:setup\}\}` or `\{\{SKILL:setup\}\} express`/,
+  );
+  assert.match(
+    precondition,
+    /no configuration \(step 4\) or a transitional JSON source \(step 3\)/,
+  );
+  assert.match(
+    precondition,
+    near('invalid source', 'a Targeted run never offers a replacement or overwrite', 80),
+  );
+  assert.match(precondition, /`legacy-slug`, `dead-marker`, or `marker-divergence` diagnostic/);
+  assert.match(precondition, /unverifiable `RUNTIME_STATE_ROOT` \(exit 3\)/);
+  // Duplicate ADRs stop too, but no setup mode resolves them: every path, manual cleanup, no route.
+  const severalMatch = boundedSlice(
+    precondition,
+    'Several matching project setup ADRs',
+    '. A legacy',
+  );
+  assert.match(severalMatch, /`several-match`/);
+  assert.match(severalMatch, near('name every path', 'resolved by hand', 80));
+  assert.match(severalMatch, /with no pointer to a setup mode/);
+  assert.match(
+    precondition,
+    near('legacy `Firmo project setup:` marker is no stop', 'express` switches the spelling', 80),
+  );
+
+  // Unrecognized text, a typo of a keyword included, lists the accepted forms and mutates nothing.
+  assert.match(
+    interpretation,
+    near('When nothing is recognized', 'list the five keyword forms', 80),
+  );
+  assert.match(interpretation, near('list the five keyword forms', 'stop without mutation', 80));
+  assert.match(interpretation, near('nothing is recognized', 'a typo such as', 10));
+  assert.match(
+    interpretation,
+    near('list the five keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
+  );
+
+  // Redirects: the two keys that stay with the full setup.
+  assert.match(refusals, near('`visibility` →', '`\\{\\{SKILL:setup\\}\\} hidden` to hide', 10));
+  assert.match(
+    refusals,
+    near('`\\{\\{SKILL:setup\\}\\} guided`', 'answering `Standard` to unhide', 20),
+  );
+  assert.match(
+    refusals,
+    /`executionProfiles\.fast\.enabled` → `\{\{SKILL:setup\}\} guided` → Advanced → Block 10/,
+  );
+  // A redirect refuses its operation only; a precondition stop ends the run.
+  assert.match(refusals, /Precondition stops end the whole run/);
+  assert.match(refusals, /offer the remaining operations as one confirmed unit/);
+
+  // Read-only answers neither write nor confirm, and a retired row is answered with its action.
+  assert.match(answers, near('An answer writes nothing', 'asks no confirmation', 10));
+  assert.match(answers, near('asks no confirmation', 'emits no next-steps block', 10));
+  assert.match(
+    answers,
+    near('retired row `data\\.retired` lists', 'the action the retired-key rule', 60),
+  );
+
+  // An ask operation or a placeholder value runs the owner's question and is never written.
+  assert.match(interpretation, near('_ask_ `<key>`', "It runs the owner's question", 120));
+  assert.match(interpretation, near('visibly a placeholder', 'counts as no value', 60));
+  assert.match(interpretation, near('becomes an _ask_', 'it is never written', 10));
+  assert.match(interpretation, /never guess/);
+
+  // A reviewer's trigger and check rows travel with its login, in both directions.
+  assert.match(
+    owners,
+    /Adding a reviewer to `mergeGate\.bots` also touches its `\.trigger` and `\.check`/,
+  );
+  assert.match(owners, /per-reviewer follow-up asks both for the new reviewer/);
+  assert.match(
+    owners,
+    near(
+      'Removing a login from `mergeGate\\.bots`',
+      'also removes its `\\.trigger` and `\\.check` rows',
+      10,
+    ),
+  );
+  assert.match(owners, /run only that key's question from its owner, never a whole block/);
+  // The tracker mode drags its dependent keys along: all external follow-ups, the remote override
+  // only on an ambiguous host.
+  assert.match(
+    owners,
+    near(
+      'Changing `tracker\\.mode` to `external`',
+      "also touches the owner's external follow-ups",
+      10,
+    ),
+  );
+  assert.match(
+    owners,
+    near(
+      'Changing it to `remote` touches `tracker\\.remoteToolOverride`',
+      'only on `AMBIGUOUS_HOST`',
+      10,
+    ),
+  );
+
+  // Hidden mode: item 3 still runs first, and the hidden write replaces item 4 alone.
+  assert.match(
+    hidden,
+    near(
+      'Targeted item 3 runs first here too',
+      'no longer reports step 0 at the same path stops without writing',
+      40,
+    ),
+  );
+  assert.match(hidden, /then replaces item 4 only; follow only that section/);
+  // Any change to the local file since the preview invalidates it: rebuild, confirm again, and
+  // run item 3 again before the write.
+  assert.match(
+    hidden,
+    near('any change to the local file since the preview', 'rebuilds the preview', 10),
+  );
+  assert.match(hidden, near('rebuilds the preview', 'asks for confirmation again', 10));
+  assert.match(
+    hidden,
+    near('asks for confirmation again', 'Targeted item 3 then runs again before the write', 10),
+  );
+  assert.match(
+    hidden,
+    near(
+      'write-safety guard runs before the write',
+      'points to `\\{\\{SKILL:setup\\}\\} hidden`',
+      160,
+    ),
+  );
+
+  // The one write path: Step 6 items 1, 2 and 4 plus the Targeted item 3, one confirmation.
+  assert.match(
+    write,
+    near('The only write path is Step 6 items 1, 2 and 4', 'the Targeted item 3', 10),
+  );
+  assert.match(write, near('the Targeted item 3', 'under one explicit confirmation', 10));
+  ordered(
+    write,
+    'Item 1:',
+    'Item 2:',
+    'then one explicit confirmation',
+    'Targeted item 3:',
+    'Item 4:',
+  );
+  assert.match(
+    write,
+    near(
+      'the collapse always poses its `Bot conflict`',
+      'a reviewer the request does not touch',
+      20,
+    ),
+  );
+  assert.match(write, /A declined confirmation leaves every row unchanged/);
+  // Targeted item 3: a changed source or a fresh marker diagnostic stops; a changed touched key or
+  // rewrite set re-confirms.
+  const item3 = boundedSlice(write, 'Targeted item 3:', 'Item 4:');
+  assert.match(
+    item3,
+    /Another `data\.source\.step` or `path` \([^)]*\) or a fresh `legacy-slug`, `dead-marker`, or `marker-divergence` diagnostic stops without writing and points to the full setup/,
+  );
+  assert.match(
+    item3,
+    near(
+      'the fresh value of a touched key differs from the preview\'s "before" value',
+      'rebuild the preview and confirm again',
+      120,
+    ),
+  );
+  assert.match(
+    item3,
+    near(
+      'the set of item 1 rewrites \\(retired rows, bot collapse\\) changed',
+      'rebuild the preview and confirm again',
+      40,
+    ),
+  );
+  assert.match(write, /Targeted never reaches the new-ADR branch or `<adr-convention>`/);
+
+  // A no-op request writes nothing, not even the item 1 migrations; a non-interactive run writes
+  // nothing either.
+  const noOp = boundedSlice(write, 'A request whose requested rows', '. A non-interactive');
+  assert.match(noOp, near('all match what is recorded', 'resets only absent keys', 20));
+  assert.match(noOp, near('operations are all refused, redirected', 'or read-only questions', 10));
+  assert.match(noOp, /writes nothing \(no retired-row rewrite or bot collapse either\)/);
+  assert.match(noOp, near('asks no confirmation', 'says so', 10));
+  assert.match(write, /A non-interactive run [^.]*\bwrites nothing/);
+
+  // The summary stages nothing, so it offers no next step.
+  assert.match(summary, /It emits no next-steps block/);
 });
 
 // The check above is satisfied vacuously by a *deleted* pointer: a name nobody references is a

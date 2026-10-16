@@ -224,8 +224,9 @@ duties, the no-trace rule and the tracker-bound stops, stay in the prose of
   processed-thread ledger in
   [`src/shared/pr-thread-ledger.md`](../../src/shared/pr-thread-ledger.md) replaces the `iterate`
   marker as the record of answered threads.
-- **Setup.** Only `/effective-flow setup hidden` or the Visibility answer `Hidden` writes the local
-  file. Setup appends `.effective-flow/` to `$(git rev-parse --git-common-dir)/info/exclude`
+- **Setup.** Only `/effective-flow setup hidden` or the Visibility answer `Hidden` creates the local
+  file; a Targeted run only updates an existing one in place and never creates it or switches hidden
+  mode on. Setup appends `.effective-flow/` to `$(git rev-parse --git-common-dir)/info/exclude`
   idempotently, verifies it with `git check-ignore --no-index`, and writes no `.gitignore`, ADR,
   marker, `AGENTS.md`, or `CLAUDE.md`. It skips the legacy-config migration, which leaves a legacy
   source on disk as a read-only seed. Switching back to standard deletes the local file only after a

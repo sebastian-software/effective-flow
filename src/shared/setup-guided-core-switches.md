@@ -1,8 +1,9 @@
 ## Guided core switches
 
-This fragment is loaded only when Step 3 entered Guided mode and the run reaches Step 4. Profile
-and Express never load it. Step 4 in `{{SKILL:setup}}` keeps the hidden-mode forced values and the
-**Base branch** rule.
+This fragment is loaded only when Step 3 entered Guided mode and the run reaches Step 4, or when a
+Targeted run (`setup-targeted-change`) touches a core-switch key; Targeted then asks only that key's
+question. Profile and Express never load it. Step 4 in `{{SKILL:setup}}` keeps the hidden-mode
+forced values and the **Base branch** rule.
 
 These core switches determine the everyday behavior. **Before** each question, provide a short,
 understandable explanation (what is it, why is it relevant, what does the choice mean) –

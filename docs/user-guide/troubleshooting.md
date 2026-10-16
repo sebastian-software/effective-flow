@@ -35,8 +35,10 @@ in v0.12.0, and the flag they need on top of it (`--include`) is probed rather t
 `tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read` and
 `issue-close` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
-every run. `issue-close` joined that list without adding a probe of its own – it rides the same
-transport – so nothing about the check changed except its length. The gate's post-merge read of a
+every run. Comment creation (`issue-comment` and `pr-comment`) uses the same status-aware API
+transport and requires all three flags: `--method`, `--data`, and `--include`. If any is missing,
+creation reports `UNSUPPORTED_CAPABILITY` before writing, even if `tea comment` is available.
+The gate's post-merge read of a
 linked issue's canonical planning comment is deliberately **not** on that list: `issue-comments-read`
 is gated on `tea`'s issue and issue-comment support rather than on the `tea api` transport, so a
 `tea` built without `--include` still reports the open points recorded for an issue even where the

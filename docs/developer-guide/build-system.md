@@ -790,15 +790,24 @@ and directive syntax").
   `merge-gate-delegation-contract`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
-  `setup-rename-probe`, `adr-convention`, `plan-publication`, `plan-pr-continuation`.
+  `setup-targeted-change`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
+  `plan-pr-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
   argument classification: only an absent argument or the explicit `profile` token loads it.
   The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
   external-only connection/context/state interview. Express and Guided runs never pay that context
-  cost. Keeping the argument router in `tools/setup.md` also makes an unknown argument stop before
-  the fragment or any mutating setup step can run.
+  cost. `setup-targeted-change` sits at the same decision point with the complementary trigger: a
+  non-empty argument that is not exactly one of the five keyword forms. Keeping the argument router
+  in `tools/setup.md` classifies keyword modes versus Targeted before any fragment or mutating setup
+  step can run; a Targeted request that names no configuration key then stops in the fragment's
+  interpretation, still before any mutation. The Targeted fragment holds the whole Targeted
+  contract and itself lazily loads the owning fragments per touched key group:
+  `setup-guided-core-switches` for core-switch keys, `setup-advanced-settings` for block keys, and
+  only the "Writing the hidden local configuration" section of `setup-hidden-mode` for a hidden
+  write. Those three are therefore loaded only from `tools/setup.md` and
+  `shared/setup-targeted-change.md`, never eagerly.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that

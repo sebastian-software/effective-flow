@@ -502,6 +502,9 @@ exact `.check` context confirmed in a pull request that tool reviewed. A normal 
 top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
 writer, and the current gate result does not change. See the
 [unconfigured-reviewer hint](./tools-deliver.md#three-reviewer-states-not-two) for the full behavior.
+The shorter route is a [targeted request](./tools-setup.md#targeted-changes-and-questions) such as
+`/effective-flow setup add <login> as a merge-gate bot`: it asks only that reviewer's trigger and
+`.check`, with the same rule for the context.
 
 **Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
 controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
@@ -808,8 +811,11 @@ therefore gets that one behavior change without configuring anything; see
 
 There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
 with `review.profile: fast`, `review.validation: quick`, and
-`applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
-**Fast** implementation profile of the `build` and `refactor` field pilot and do not activate it.
+`applyReview.finalValidation: changedScope`. A
+[targeted request](./tools-setup.md#targeted-changes-and-questions) such as
+`/effective-flow setup set review.validation to quick` changes such a key without the full
+interview. Those existing workflow settings are separate from the **Fast** implementation profile
+of the `build` and `refactor` field pilot and do not activate it.
 
 ## Runtime-state safety
 
@@ -861,6 +867,17 @@ directory's `info/exclude`, verifies it with `git check-ignore`, and writes only
 `.effective-flow/project-setup.md`. It writes no ADR, marker, `.gitignore` line, or `CLAUDE.md`.
 It stops without writing when the directory is not a Git repository or when anything below
 `.effective-flow/` is already tracked, because `info/exclude` cannot hide a tracked file.
+
+`/effective-flow setup <free text>`, any argument other than the keyword forms, is a
+[targeted request](./tools-setup.md#targeted-changes-and-questions): the shorter route for changing
+a single key once a configuration exists. Setup interprets the free text, asks only the owning
+question of each key it touches, and writes in place to the existing ADR or hidden local file
+behind the same before/after confirmation; untouched and unknown rows stay byte for byte. Read-only
+questions about the current values are answered without writing. A targeted run creates no
+configuration, normalizes no `.gitignore`, writes no marker or `CLAUDE.md`, and migrates no legacy
+JSON source; without a usable configuration it stops and points to `/effective-flow setup` or
+`/effective-flow setup express`. Switching `visibility` and the
+`executionProfiles.fast.enabled` opt-in stay with the full setup.
 
 ### Migrating `plan.markerLanguage`
 

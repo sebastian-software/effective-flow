@@ -539,6 +539,14 @@ attests transport only: `head_commit_id`, the field that makes the merge's head 
 request-body field and cannot be probed at all, so a server older than the Gitea 1.16 API surface
 would ignore it silently.
 
+Forgejo/Gitea comment creation (`issue-comment` and `pr-comment`) uses that same status-aware API
+transport and requires `tea api` support for `--method`, `--data`, and `--include`. Both operations
+POST to `repos/<owner>/<repo>/issues/<number>/comments`, including ordinary pull-request
+conversation comments, with the selected login and repository and a JSON body on stdin. A
+successful applied call returns the raw created-comment JSON object in `data.result`, including
+the provider's comment `id`. Missing transport flags produce `UNSUPPORTED_CAPABILITY` before
+creation; support for the human `tea comment` renderer is not required.
+
 What a Forgejo `pr-status-read` does **not** report is worth knowing before you configure the gate
 against it:
 
