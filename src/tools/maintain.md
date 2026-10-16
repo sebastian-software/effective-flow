@@ -177,7 +177,9 @@ worktree-record-obligation
 Start in parallel with the verified execution-location receipt:
 
 1. `{{AGENT:code-validator}}` – type checking, lint, build status.
+   <!-- spawn-site:maintain/baseline-checks -->
 2. `{{AGENT:test-writer}}` – run only the existing tests and document the result; write no new tests in this phase.
+   <!-- spawn-site:maintain/baseline-tests -->
 
 Wait for both baseline workers to finish and preserve both diagnostics before deciding whether the
 baseline is green. Document the complete baseline. If either result is already red (build/tests
@@ -215,9 +217,10 @@ options:
 ```
 
 2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5.
-3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0. Emit the reduced-depth notice before `{{AGENT:generic-product-implementer}}`; reserve `{{AGENT:generic-implementer}}` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
-   - green → **one clean commit per group** (see commit rules), with the description in resolved
-     `language.git` and a stable Conventional Commit type, e.g. `chore(deps): …`.
+3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0.
+   <!-- spawn-site:maintain/api-adaptation -->
+   Emit the reduced-depth notice before `{{AGENT:generic-product-implementer}}`; reserve `{{AGENT:generic-implementer}}` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
+   - green → **one clean commit per group** (see commit rules), with the description in resolved `language.git` and a stable Conventional Commit type, e.g. `chore(deps): …`.
    - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
 4. Record the result and rationale per group in the wisdom file.
@@ -242,6 +245,7 @@ Only if code was adapted for breaking changes in phase 3:
 
 1. Start every reviewer selected by project routing for the changed files, including
    `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
+   <!-- spawn-site:maintain/review -->
 2. Fix critical findings before completion.
 3. Make exactly one automatic incorporation pass for new current-scope findings, then classify the
    residual batch through “Gated residual review-finding reports”. Preserve the maintenance
@@ -258,6 +262,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
 ### Phase 5: Report and completion
 
 1. Run `{{AGENT:code-validator}}` one last time as a final check.
+   <!-- spawn-site:maintain/final-validation -->
 2. Summarize based on the update-specific reporting from the skill:
    - which groups were implemented and committed (with version jumps),
    - which audit findings were fixed,

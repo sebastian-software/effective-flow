@@ -171,6 +171,16 @@ Measurement and observation failures expose only the stable `pilotControlOutcome
 incomplete evidence only when those fields explicitly confirm it; otherwise it states that
 cross-run control could not be proven without echoing the rejected value.
 
+After an update that changes the model that Quality runs use (protocol `1.2.0`, which lowers the
+Claude effort of the strongest tier from `xhigh` to `high` and moves its Codex model to
+`gpt-6.1-sol`), a pilot generation recorded before it
+is not continued. It is suspended once with the reason `quality-mapping-changed`, stays out of
+every later run, and cannot be resumed; Guided setup reports it and offers no action. Its only exit
+is the helper's `begin-review`, then `discard-generation` with the pilot disabled, which no
+workflow offers yet: run both through `scripts/pilot-measurement.mjs` directly, then start a new
+baseline from Guided setup. See the [developer protocol guide](../developer-guide/model-tiering-pilot-protocol.md#local-lifecycle-and-operation-boundary)
+for the exact behavior.
+
 ## See also
 
 - [Configuration](configuration.md#block-executionprofiles) – project admission versus per-run

@@ -89,10 +89,19 @@ For Claude Code, use the corresponding settings:
 
 These are caller recommendations, not settings written or enforced by Effective Flow. The caller
 still owns interpretation, orchestration, risk classification, and escalation. Native Effective
-Flow workers currently use separate role-specific assignments: implementers and reviewers favor
-the strongest configured capability, while documentation, testing, validation, and other support
-roles use a more economical assignment. Portable installations do not carry native model metadata;
-their delegated workers follow the consuming manager and harness instead.
+Flow workers use separate role-specific assignments: implementers and reviewers favor the
+strongest configured capability, while documentation, testing, validation, and other support
+roles use a more economical assignment.
+
+These assignments are three provider-neutral **model tiers**: `mechanical`, `standard` and `deep`.
+Every subagent the workflows start, workers as well as read-only exploration and analysis
+fan-outs, runs on one of them in every installation type, so none silently inherits your caller
+model. `deep` is the strongest assignment (implementers, reviewers, merge-conflict resolution) and
+`standard` the economical one; a `standard` spawn may move one tier up or down for a stated reason,
+while a `deep` spawn never moves down. Native Claude Code and Codex installations take the values
+from the generated worker definitions and the spawn instruction; the portable installation names
+both harnesses' values at each spawn and uses the pair that belongs to the host. A host with
+neither mechanism inherits the caller model and says so once.
 
 **Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
 strongest available configured implementation capability and is always the safe default. Fast
@@ -115,7 +124,8 @@ generation, Fast may be requested only for the first implementation attempt of a
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
 scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
 stays Quality-only. Portable installations remain
-Quality-only in V1 and contain no native sidecar inventory or model metadata. See the
+Quality-only in V1 and contain no native sidecar inventory, Fast sidecar or native model
+metadata. See the
 [configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
 Claude skills can request a different caller model or effort for their current turn, but that
@@ -128,10 +138,16 @@ a broad architectural decision, or a synthesis that repeatedly misses cross-cutt
 constraints. Increase reasoning effort first; for the hardest runs, select the quality-focused
 model as well. This is a per-run judgment and does not require changing the worker profiles.
 
-Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment variable has higher precedence than an
-agent's own model declaration. Leave it unset when you want Effective Flow's native Claude
-workers to use their role-specific model selection. Other user, project, or invocation-level
-harness overrides may likewise affect the effective caller or worker model.
+A per-spawn tier takes precedence over Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment
+variable and over an agent's own model declaration. To force one model for every subagent
+regardless, set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`: Claude Code then offers no `model` parameter for
+subagents, Effective Flow passes only the tier's effort, and tells you once that the host sets the
+subagent model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the reasoning effort of
+the tiers and is not detected. If a host rejects a tier parameter (for example, because of
+`availableModels`), the spawn is retried once without it and the omission is reported once. Other
+user, project, or invocation-level harness overrides may likewise affect the effective caller or
+worker model. The mapping and rules are in
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md).
 
 The runtime execution-profile gate treats the presence of
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. When a

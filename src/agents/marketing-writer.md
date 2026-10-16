@@ -1,13 +1,10 @@
 ---
 description: "Creates the root README.md as a marketing entry page entirely from the user's perspective: a clear value proposition, user-oriented language, and valid follow-up links for whichever user and technical documentation targets are available."
+tier: standard
 claude:
-  model: sonnet
-  effort: medium
   color: magenta
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-luna
-  model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
 

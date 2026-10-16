@@ -240,6 +240,7 @@ For each chosen issue in turn:
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
    a comment exists.
+   <!-- spawn-site:plan-issue/codebase-examination -->
 2. Apply the clarification methodology from `{{SKILL:plan}}` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
 3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
 4. Determine the recommended implementation (Feature / Bugfix / Refactoring / Documentation) according to the classification definitions from `{{SKILL:plan}}`.

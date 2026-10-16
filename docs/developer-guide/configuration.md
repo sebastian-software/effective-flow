@@ -314,6 +314,24 @@ remains the sole writer of the tracked ADR. The
 and the [risk-aware pilot ADR](../adr/risk-aware-model-tiering-pilot-policy.md) records the durable
 rationale.
 
+### Model tiers
+
+The model tier of a spawn is build metadata and has no configuration key. `MODEL_TIER_MAPPINGS` in
+`build.mjs` maps the provider-neutral tiers `mechanical`, `standard` and `deep` to Claude Code and
+Codex values, each agent source declares its default `tier:`, and the spawn-site table in
+[`src/shared/model-tiers.md`](../../src/shared/model-tiers.md) assigns a tier to every other spawn.
+`executionProfiles.fast.enabled` stays the only model-related key and the owner of the Fast pilot
+opt-in; it neither selects nor changes a tier, and the Quality intent runs on the role's `deep`
+tier. See [Per-spawn model tiers](../adr/per-spawn-model-tiers.md).
+
+The host's own variables interact with a per-spawn tier as follows. A per-spawn `model` now wins
+over `CLAUDE_CODE_SUBAGENT_MODEL`. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is the opt-out: when it is
+present, Claude Code offers no `model` parameter on its Agent tool; the orchestrator recognizes the
+forced model by that missing parameter, passes only the tier's effort, says so once, and the
+workers run on the forced model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort of every subagent; Effective Flow
+documents it and does not detect it. The tiers read no environment variable; only the Fast pilot checks the force variable's presence,
+and its value is never read, relayed, displayed or persisted.
+
 ### Bot registry encoding (`mergeGate.bots`)
 
 `mergeGate.bots` is the encoding's concrete example of a comma-separated list paired with dotted

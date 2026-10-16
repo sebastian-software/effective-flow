@@ -571,3 +571,27 @@ test('no agent narrows a sub-agent grant with the disproven Agent(<type>) form',
     );
   }
 });
+
+// The mandate is the one eager carrier of the tier obligation, and its lazy pointer is what ships
+// model-tiers to every target. The pointer must name each situation the rule fragment answers, or a
+// moved tier, a rejected parameter, a host override or an unrendered site would run unread.
+test('delegation-mandate.md binds the orchestrator to the rendered tier and lazily points at model-tiers', () => {
+  assert.match(
+    delegationMandate,
+    /The orchestrator gives every spawn it starts the tier rendered at its spawn site\./,
+    'missing: the eager tier sentence with the orchestrator as its subject',
+  );
+  const { eager, lazy } = collectIncludeNames(delegationMandate);
+  assert.equal(eager.size, 0, 'delegation-mandate.md includes nothing eagerly');
+  assert.deepEqual([...lazy], ['model-tiers'], 'the only lazy pointer goes to model-tiers');
+  const when = delegationMandate.match(/```lazy-include\nmodel-tiers\nwhen: ([^\n]+)\n```/)?.[1];
+  assert.ok(when, 'the model-tiers pointer needs a when: trigger');
+  for (const [pattern, situation] of [
+    [/tier is moved/, 'a moved tier'],
+    [/tier parameter is rejected/, 'a rejected tier parameter'],
+    [/host overrides/, 'a host override'],
+    [/no rendered tier line/, 'a spawn without a rendered tier line'],
+  ]) {
+    assert.match(when, pattern, `the model-tiers pointer must trigger on ${situation}`);
+  }
+});

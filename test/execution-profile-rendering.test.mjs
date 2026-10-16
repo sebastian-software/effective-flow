@@ -17,15 +17,25 @@ import { after, before, test } from 'node:test';
 import {
   extractBody,
   extractFrontmatter,
+  findProviderModelNames,
   getField,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
+  resolveAgentTier,
 } from '../build-lib.mjs';
-import { AGENT_PROFILE_MAPPINGS } from './support/native-profile-config.mjs';
+import { PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY } from '../src/scripts/pilot-measurement-protocol.mjs';
+import { AGENT_PROFILE_MAPPINGS, MODEL_TIER_MAPPINGS } from './support/native-profile-config.mjs';
 import { copyRepository } from './support/repository-copy.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CODEX_FAST = AGENT_PROFILE_MAPPINGS.fast.codex;
+const PROVIDER_MODEL_NAMES = [
+  ...new Set(
+    [...Object.values(MODEL_TIER_MAPPINGS), ...Object.values(AGENT_PROFILE_MAPPINGS)].flatMap(
+      ({ claude, codex }) => [claude.model, codex.model],
+    ),
+  ),
+];
 const FAST_SUFFIX =
   ' Fast-profile variant; use only for the first eligible implementation attempt.';
 const FAST_WORKERS = [
@@ -72,6 +82,17 @@ function replaceOnce(path, beforeText, afterText) {
   const occurrences = source.split(beforeText).length - 1;
   assert.equal(occurrences, 1, `mutation anchor must occur once in ${path}`);
   writeFileSync(path, source.replace(beforeText, afterText));
+}
+
+function raiseBudget(checkout, tool) {
+  const path = join(checkout, 'build.mjs');
+  const source = readFileSync(path, 'utf8');
+  const entry = new RegExp(`\\n    ${tool}: (\\d+),\\n`);
+  assert.match(source, entry, `CONTEXT_BUDGET_LINES must carry an entry for ${tool}`);
+  writeFileSync(
+    path,
+    source.replace(entry, (_, lines) => `\n    ${tool}: ${Number(lines) + 10},\n`),
+  );
 }
 
 function assertMutatedBuildFails(name, mutate, expected) {
@@ -182,6 +203,30 @@ test('all base workers retain complete native metadata and independent native ar
   for (const worker of sourceAgentNames()) {
     const claude = readFileSync(join(claudeAgents, `${worker}.md`), 'utf8');
     const codex = readFileSync(join(codexAgents, `${worker}.toml`), 'utf8');
+    // Invariant: each native sidecar's model and effort derive from the agent's `tier:` through
+    // MODEL_TIER_MAPPINGS, never from per-agent fields.
+    const source = readFileSync(
+      join(ROOT_DIR, 'src/agents', `${worker.replace(/^effective-flow-/, '')}.md`),
+      'utf8',
+    );
+    const tier =
+      MODEL_TIER_MAPPINGS[resolveAgentTier(extractFrontmatter(source), { agentName: worker })];
+    assert.equal(
+      field(extractFrontmatter(claude), 'model'),
+      tier.claude.model,
+      `${worker}: tier model`,
+    );
+    assert.equal(
+      field(extractFrontmatter(claude), 'effort'),
+      tier.claude.effort,
+      `${worker}: tier effort`,
+    );
+    assert.equal(tomlField(codex, 'model'), tier.codex.model, `${worker}: tier Codex model`);
+    assert.equal(
+      tomlField(codex, 'model_reasoning_effort'),
+      tier.codex.reasoning_effort,
+      `${worker}: tier Codex effort`,
+    );
     assert.notEqual(field(extractFrontmatter(claude), 'model'), '', `${worker}: Claude model`);
     assert.notEqual(field(extractFrontmatter(claude), 'effort'), '', `${worker}: Claude effort`);
     assert.notEqual(tomlField(codex, 'model'), '', `${worker}: Codex model`);
@@ -222,7 +267,18 @@ test('portable output contains only base workers and no native profile represent
       /^\s*(?:model|effort|model_reasoning_effort|reasoning_effort)\s*[:=]/m,
       path,
     );
-    assert.doesNotMatch(content, /\b(?:sonnet|gpt-5\.6-luna)\b/, path);
+    // Provider model names appear only as build-generated tier text: the marked harness table and
+    // the two-harness values of a rendered spawn-site line.
+    assert.deepEqual(
+      findProviderModelNames(content, {
+        modelNames: PROVIDER_MODEL_NAMES,
+        allowGenerated: true,
+        mappings: MODEL_TIER_MAPPINGS,
+      }),
+      [],
+      path,
+    );
+    assert.doesNotMatch(content, /<!-- spawn-site:/, path);
     for (const worker of FAST_WORKERS) assert.doesNotMatch(content, new RegExp(worker), path);
   }
 });
@@ -319,35 +375,24 @@ test('the pilot fragments render their own build target and keep portable runs u
   }
 });
 
-// The proof byte-compares every base worker whose source inputs are unchanged since the base and
-// compares only the native configuration (Claude frontmatter, Codex TOML keys other than the
-// `developer_instructions` body) of every source-changed one: legitimate shared-fragment edits
-// change sidecar bodies and must not churn this execution-profile proof.
+// Invariant: against release 6055c94 every native worker sidecar, base and Fast, is byte-identical
+// apart from the declared deltas of per-spawn model tiers (the `deep` workers' Claude effort and
+// Codex model, the mandate body), so any other configuration change or any other body change fails.
+// The pinned stdout names each delta and exactly the workers showing it.
 test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
   const result = spawnSync(
     process.execPath,
-    ['scripts/compare-native-agent-baseline.mjs', '--base', '7d1dcd5'],
+    ['scripts/compare-native-agent-baseline.mjs', '--base', '6055c94'],
     { cwd: ROOT_DIR, encoding: 'utf8' },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.equal(result.stderr, '');
-  // Agents whose source inputs (agent file plus transitive eager includes)
-  // changed since the base are named and exempt from the byte comparison;
-  // every other base agent must still build byte-identically. Exempt agents
-  // are compared by native configuration only, so each exemption is pinned
-  // here in the asserted stdout. An unexpected exemption changes this line.
   assert.equal(
     result.stdout,
-    'Native base agents match 7d1dcd5\n' +
-      'Source-changed since 7d1dcd5 (configuration compared only): ' +
-      'effective-flow-code-documenter, effective-flow-code-validator, ' +
-      'effective-flow-docs-writer, effective-flow-e2e-tester, ' +
-      'effective-flow-frontend-reviewer, effective-flow-generic-implementer, ' +
-      'effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, ' +
-      'effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, ' +
-      'effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, ' +
-      'effective-flow-rust-implementer, effective-flow-rust-reviewer, ' +
-      'effective-flow-test-writer, effective-flow-ui-implementer\n',
+    'Native agents match 6055c94\n' +
+      'Expected delta claude-deep-tier-effort: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
+      'Expected delta codex-deep-tier-model: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
+      'Expected delta delegation-mandate-model-tiers: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
 
@@ -392,10 +437,10 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
     (checkout) =>
       replaceOnce(
         join(checkout, 'build.mjs'),
-        "codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),",
-        "codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'ultra' }),",
+        "  fast: Object.freeze({\n    claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),\n    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),",
+        "  fast: Object.freeze({\n    claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),\n    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'ultra' }),",
       ),
-    /Unsupported Codex model\/reasoning combination/,
+    /Unsupported Codex model\/reasoning combination for Fast profile/,
   );
   assertMutatedBuildFails(
     'duplicate-eligible-worker',
@@ -437,20 +482,24 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
 
 test('profile tokens are accepted only in the initial implementation sections', () => {
   const token = '{{AGENT_PROFILE:nodejs-implementer:fast}}';
-  assertMutatedBuildSucceeds('build-phase-2-profile-token', (checkout) =>
+  // The probe adds two fixture lines, not a measured tool change: give it room in the line budget
+  // so the case tests token acceptance rather than the tool's current headroom.
+  assertMutatedBuildSucceeds('build-phase-2-profile-token', (checkout) => {
     replaceOnce(
       join(checkout, 'src/tools/build.md'),
       '### Phase 2: Implementation\n',
       `### Phase 2: Implementation\n\n${token}\n`,
-    ),
-  );
-  assertMutatedBuildSucceeds('refactor-phase-3-profile-token', (checkout) =>
+    );
+    raiseBudget(checkout, 'build');
+  });
+  assertMutatedBuildSucceeds('refactor-phase-3-profile-token', (checkout) => {
     replaceOnce(
       join(checkout, 'src/tools/refactor.md'),
       '### Phase 3: Refactoring\n',
       `### Phase 3: Refactoring\n\n${token}\n`,
-    ),
-  );
+    );
+    raiseBudget(checkout, 'refactor');
+  });
 
   assertMutatedBuildFails(
     'build-frontmatter-profile-token',
@@ -483,4 +532,231 @@ test('profile tokens are accepted only in the initial implementation sections', 
       ),
     /Fast-profile references.*(?:initial implementation|Phase 3)/i,
   );
+});
+
+// Invariant: MODEL_TIER_MAPPINGS and each agent's `tier:` are the single sources of native model
+// metadata, and every spawn-site marker resolves through exactly one model-tiers table row; each
+// broken case fails the build before the output swap.
+const PROBE_ROWS = [
+  '| `version/probe` | Probe sub-agent | `standard` | `no` |',
+  '| `version/mixed` | Probe implementer and validator | `role:nodejs-implementer,code-validator` | `yes` |',
+];
+const PROBE_TOOL_TEXT = [
+  '',
+  'Spawn an Explore sub-agent.',
+  '<!-- spawn-site:version/probe -->',
+  '',
+  '1. Spawn {{AGENT:nodejs-implementer}}, then {{AGENT:code-validator}}.',
+  '   <!-- spawn-site:version/mixed -->',
+  '',
+  '```lazy-include',
+  'model-tiers',
+  'when: a probe spawns',
+  '```',
+  '',
+].join('\n');
+
+function addProbeRows(checkout, rows = PROBE_ROWS) {
+  appendFileSync(join(checkout, 'src/shared/model-tiers.md'), `${rows.join('\n')}\n`);
+}
+
+test('model-tier mapping, agent tier and spawn-site errors fail before swap', () => {
+  assertMutatedBuildFails(
+    'unsupported-tier-claude-model',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'build.mjs'),
+        "claude: Object.freeze({ model: 'opus', effort: 'high' }),",
+        "claude: Object.freeze({ model: 'claude-opus', effort: 'high' }),",
+      ),
+    /Unsupported Claude model "claude-opus" for model tier "deep"/,
+  );
+  assertMutatedBuildFails(
+    'missing-agent-tier',
+    (checkout) => replaceOnce(join(checkout, 'src/agents/rust-reviewer.md'), 'tier: deep\n', ''),
+    /Missing required field "tier" for agent "rust-reviewer"/,
+  );
+  assertMutatedBuildFails(
+    'legacy-agent-model-field',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/agents/rust-reviewer.md'),
+        'claude:\n',
+        'claude:\n  effort: max\n',
+      ),
+    /Agent "rust-reviewer" declares legacy field "claude\.effort"/,
+  );
+  assertMutatedBuildFails(
+    'unknown-spawn-site',
+    (checkout) => appendFileSync(join(checkout, 'src/tools/version.md'), PROBE_TOOL_TEXT),
+    /Unknown spawn-site "version\/probe" \(in tools\/version\.md:\d+\)/,
+  );
+  assertMutatedBuildFails(
+    'duplicate-spawn-site-marker',
+    (checkout) => {
+      addProbeRows(checkout);
+      appendFileSync(
+        join(checkout, 'src/tools/version.md'),
+        `${PROBE_TOOL_TEXT}\n<!-- spawn-site:version/probe -->\n`,
+      );
+    },
+    /Duplicate spawn-site marker "version\/probe"/,
+  );
+  assertMutatedBuildFails(
+    'spawn-site-row-without-marker',
+    (checkout) => addProbeRows(checkout),
+    /Spawn-site table row "version\/probe" has no marker/,
+  );
+  assertMutatedBuildFails(
+    'malformed-spawn-site-row',
+    (checkout) => addProbeRows(checkout, ['| `version/probe` | Probe | `fast` | `no` |']),
+    /Unknown spawn-site tier "fast" for "version\/probe"/,
+  );
+  assertMutatedBuildFails(
+    'spawn-site-marker-in-worker',
+    (checkout) =>
+      appendFileSync(
+        join(checkout, 'src/agents/rust-reviewer.md'),
+        '\n<!-- spawn-site:rust-reviewer/x -->\n',
+      ),
+    /Spawn-site markers belong in src\/tools or src\/shared only; found one in agents\/rust-reviewer\.md/,
+  );
+  assertMutatedBuildFails(
+    'foreign-provider-model-name',
+    (checkout) => appendFileSync(join(checkout, 'src/tools/version.md'), '\nPrefer sonnet.\n'),
+    /foreign provider-model guard: codex file effective-flow\/tools\/version\.md names sonnet/,
+  );
+});
+
+// Invariant: the pilot protocol binds the Quality identity of the Fast-capable implementers to
+// MODEL_TIER_MAPPINGS.deep, so a Fast-capable implementer on another tier fails before swap.
+test('a Fast-capable implementer that does not resolve to the deep tier fails before swap', () => {
+  assertMutatedBuildFails(
+    'fast-capable-implementer-not-deep',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/agents/nodejs-implementer.md'),
+        'tier: deep\n',
+        'tier: standard\n',
+      ),
+    /Fast-capable implementer "nodejs-implementer" resolves to tier "standard"; the pilot protocol's Quality-mapping identity binds MODEL_TIER_MAPPINGS\.deep/,
+  );
+});
+
+// Invariant: workers spawn nothing, so neither a marked fragment in an agent's eager includes nor a
+// tier line in any rendered worker body reaches a build.
+test('a spawn-site tier line in a worker fails before swap', () => {
+  assertMutatedBuildFails(
+    'marked-fragment-in-worker-includes',
+    (checkout) => {
+      appendFileSync(
+        join(checkout, 'src/shared/model-tiers.md'),
+        '| `skill-discovery/probe` | Probe sub-agent | `standard` | `no` |\n',
+      );
+      appendFileSync(
+        join(checkout, 'src/shared/skill-discovery.md'),
+        '\nSpawn a probe.\n<!-- spawn-site:skill-discovery/probe -->\n',
+      );
+    },
+    /agents\/[a-z-]+\.md eagerly includes shared\/skill-discovery\.md, which carries a spawn-site marker/,
+  );
+  assertMutatedBuildFails(
+    'hand-written-tier-line-in-worker',
+    (checkout) =>
+      appendFileSync(
+        join(checkout, 'src/agents/rust-reviewer.md'),
+        '\nTier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).\n',
+      ),
+    /Worker tier-line guard: agents\/rust-reviewer\.md \((?:claude|codex|portable)\) renders a spawn-site tier line/,
+  );
+});
+
+// Invariant: the copied pilot protocol's Quality-mapping identity equals MODEL_TIER_MAPPINGS.deep,
+// whichever side drifts, so no protocol generation can span a Quality-mapping change.
+test('a pilot Quality-mapping identity that differs from the deep tier fails before swap', () => {
+  const expected =
+    /Pilot protocol Quality-mapping identity .* differs from MODEL_TIER_MAPPINGS\.deep/;
+  assertMutatedBuildFails(
+    'pilot-quality-mapping-drift',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'src/scripts/pilot-measurement-protocol.mjs'),
+        `'${PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY}'`,
+        `'sha256:${'0'.repeat(64)}'`,
+      ),
+    expected,
+  );
+  assertMutatedBuildFails(
+    'deep-tier-without-pilot-identity',
+    (checkout) =>
+      replaceOnce(
+        join(checkout, 'build.mjs'),
+        "codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'high' }),",
+        "codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'xhigh' }),",
+      ),
+    expected,
+  );
+});
+
+// Invariant: a spawn-site marker renders as one tier line in the target's own form (Claude values
+// only, Codex values only, both for portable), the shipped model-tiers fragment carries the generated
+// role defaults and harness table for its target, and the portable guards accept exactly that
+// generated text.
+test('spawn-site markers and the model-tiers fragment render per target', () => {
+  const caseRoot = join(sandbox, 'valid-spawn-sites');
+  const checkout = join(caseRoot, 'checkout');
+  const destination = join(caseRoot, 'output');
+  copyRepository(ROOT_DIR, checkout);
+  addProbeRows(checkout);
+  appendFileSync(join(checkout, 'src/tools/version.md'), PROBE_TOOL_TEXT);
+  // The probe is fixture text, not a measured tool change; give it room in the line budget.
+  replaceOnce(join(checkout, 'build.mjs'), '    version: 38,', '    version: 60,');
+  const result = runBuild(checkout, destination);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  const expected = {
+    claude: [
+      'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`, no downward move).',
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: pass `model: opus` and `effort: high` on the Agent tool. ' +
+        'Tier `standard` for `effective-flow-code-validator`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).',
+    ],
+    codex: [
+      'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`, no downward move).',
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn. ' +
+        'Tier `standard` for `effective-flow-code-validator`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`).',
+    ],
+    portable: [
+      'Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high`. ' +
+        'Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).',
+    ],
+  };
+  const headers = {
+    claude: '| Tier | Claude Code Agent tool |',
+    codex: '| Tier | Codex spawn |',
+    portable: '| Tier | Claude Code Agent tool | Codex spawn |',
+  };
+  for (const [target, lines] of Object.entries(expected)) {
+    const skill = join(destination, 'dist', target, 'effective-flow');
+    const tool = readFileSync(join(skill, 'tools/version.md'), 'utf8');
+    for (const line of lines) assert.ok(tool.split('\n').includes(line), `${target}: ${line}`);
+    assert.doesNotMatch(tool, /<!-- spawn-site:/, `${target}: marker survived`);
+
+    const tiers = readFileSync(join(skill, 'shared/model-tiers.md'), 'utf8');
+    assert.ok(tiers.includes(headers[target]), `${target}: harness table header`);
+    assert.doesNotMatch(tiers, /\{\{MODEL_TIER_/, `${target}: generated parts rendered`);
+    assert.equal(
+      (tiers.match(/^\| `[a-z0-9-]+` \| `(?:standard|deep)` \|$/gm) ?? []).length,
+      sourceAgentNames().length,
+      `${target}: one role-default row per agent`,
+    );
+    if (target === 'claude') assert.doesNotMatch(tiers, /gpt-5\.6/, target);
+    if (target === 'codex') assert.doesNotMatch(tiers, /\b(?:haiku|sonnet|opus)\b/, target);
+    if (target === 'portable') {
+      assert.match(
+        tiers,
+        /`model: haiku`, `effort: low` \| `model: gpt-5\.6-luna`, `reasoning_effort: low`/,
+      );
+    }
+  }
 });

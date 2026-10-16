@@ -45,17 +45,35 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder                | Meaning                          | Replacement                                                                                                                                                                                                            |
-| -------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{{FLOW}}`                 | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                     |
-| `{{SKILL:X}}`              | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                         |
-| `{{AGENT:X}}`              | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                   |
-| `{{AGENT_PROFILE:X:fast}}` | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) `` |
-| `{{BUILD_TARGET}}`         | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                |
-| `{{VERSION}}`              | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                        |
-| `{{TOOL_LIST}}`            | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                            |
+| Placeholder                    | Meaning                          | Replacement                                                                                                                                                                                                                                                       |
+| ------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                     | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                                                |
+| `{{SKILL:X}}`                  | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                                                    |
+| `{{AGENT:X}}`                  | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                                              |
+| `{{AGENT_PROFILE:X:fast}}`     | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) ``                                            |
+| `{{BUILD_TARGET}}`             | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                                                           |
+| `{{VERSION}}`                  | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                                                   |
+| `{{TOOL_LIST}}`                | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                                                       |
+| `{{MODEL_TIER_ROLE_DEFAULTS}}` | Role default tiers               | A Role / Tier table built from every `src/agents/*.md` `tier:`; allowed once, in `src/shared/model-tiers.md` only                                                                                                                                                 |
+| `{{MODEL_TIER_TABLE}}`         | Harness values per tier          | The marked table between `<!-- model-tier-table:start -->` and `<!-- model-tier-table:end -->`: Claude column in `dist/claude`, Codex column in `dist/codex`, both keyed by spawn mechanism in `dist/portable`; allowed once, in `src/shared/model-tiers.md` only |
 
-For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
+A third form is the **spawn-site marker**, a line of its own inside the paragraph or list item of a
+spawn instruction in `src/tools` or `src/shared`:
+
+```md
+<!-- spawn-site:<tool>/<id> -->
+```
+
+`<tool>` is the owning source's name (for a shared fragment, the fragment name) and `<id>` is
+kebab-case. The build replaces the whole line, keeping its indentation, with the site's resolved
+tier line in the target's own form, for example ``Tier `standard`: pass `model: sonnet` and
+`effort: medium` on the Agent tool (rules: `model-tiers`).`` Codex renders `model` and
+`reasoning_effort` on the spawn; portable renders both harnesses' values. Never hand-write that
+line. See [Model tiers](#model-tiers) for the site table and its guards.
+
+For a resolved source body, `renderGeneratedBody` first expands the model-tier directives (spawn-site
+markers and the two `{{MODEL_TIER_*}}` placeholders, so a multi-role line's `{{AGENT:X}}` references
+still receive their target syntax), then `renderBody` applies the harness-specific transforms in this order:
 `ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
 `{{BUILD_TARGET}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
 lazy-include pointers, and `{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
@@ -247,10 +265,10 @@ The build aborts with an error message if any of these guards is violated:
 
 - **Frontmatter/quoting guard:** `description` (and, for exposed tools, additionally
   `catalogHint`) must be strictly double-quoted.
-- **Claude effort guard:** Every agent's nested `claude` block must contain `effort`. The build
-  accepts exactly `low`, `medium`, `high`, `xhigh`, or `max`; a missing, empty, differently
-  cased, or unknown value aborts the build with the agent name and source path. The field is
-  rendered deterministically next to `model` in the native Claude sidecar.
+- **Claude effort guard:** The Claude `effort` of every tier in `MODEL_TIER_MAPPINGS` must be
+  exactly `low`, `medium`, `high`, `xhigh`, or `max`; a missing, differently cased, or unknown
+  value aborts the build. The native Claude sidecar renders it deterministically next to `model`,
+  both derived from the agent's `tier:` (see "Model tiers").
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
   `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
   accepts only `fast`, only for an implementation worker selected by the validated routing table,
@@ -261,12 +279,22 @@ The build aborts with an error message if any of these guards is violated:
   same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
   non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
   lines and `refactor` on its five Phase 3 implementer selector lines.
-- **Native profile-mapping guard:** Every registered base worker must supply nonempty native model
-  and effort metadata. The centralized Fast mapping is complete for Claude and Codex, Claude effort
-  uses the supported vocabulary, and each Codex model/reasoning combination is validated. The
+- **Native profile-mapping guard:** Every registered base worker resolves a native model and
+  effort from its `tier:` (the guards below). The centralized Fast mapping is complete for Claude
+  and Codex, Claude effort uses the supported vocabulary, and each Codex model/reasoning
+  combination is validated. The
   route classification covers every verified project-routing row exactly once and resolves the
   five Fast-capable route IDs to five unique implementation workers. Missing, extra, duplicate,
   unsupported, or colliding entries abort before the atomic swap.
+- **Model-tier guards:** `MODEL_TIER_MAPPINGS` must have exactly the tiers `mechanical`,
+  `standard` and `deep`, each with a Claude and a Codex entry; a Claude model must be `haiku`,
+  `sonnet` or `opus`, a Claude effort must pass the effort guard, and each Codex model and
+  reasoning-effort pair must be a supported combination. Each agent source needs exactly one
+  top-level `tier:` with a known value, and any of the removed per-agent fields `claude.model`,
+  `claude.effort`, `codex.model` and `codex.model_reasoning_effort` aborts the build. The
+  spawn-site checks (marker syntax, table, reconciliation, surviving marker), the native
+  cross-provider guard, the portable provider-name guard and the pilot Quality-identity guard are
+  described under "Model tiers".
 - **Native-agent inventory guard:** The build emits canonical schema-version-1
   `native-agent-inventory.json` files inside the Claude and Codex skill targets. Both inventories
   must use the exact key order, sorted unique worker stems, and identical base membership. Claude
@@ -544,11 +572,11 @@ keeps a short form of it and stays canonical for the two rules named there — t
 forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool needs.
 
 1. Create a new source file under `src/tools/<name>.md` or `src/agents/<name>.md`. For an agent,
-   select one of the repository's role profiles in its native frontmatter: implementers and
-   reviewers use the quality tier (Claude `opus`/`xhigh`, Codex `gpt-5.6-sol`/`high`), support
-   roles the economical tier (Claude `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). The agent
-   source is the canonical assignment — do not duplicate an exhaustive per-agent matrix in
-   documentation.
+   declare one top-level `tier:` in its frontmatter: implementers, reviewers and the
+   merge-conflict resolver use `deep`, support roles `standard`. Its native model and effort
+   derive from `MODEL_TIER_MAPPINGS`, so do not add a `claude.model`, `claude.effort`,
+   `codex.model` or `codex.model_reasoning_effort` field. The agent source is the canonical
+   assignment — do not duplicate an exhaustive per-agent matrix in documentation.
 2. To expose a tool via `/effective-flow`, add the name to exactly one intent group of
    `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from it, and the array/group order
    determines the catalog order in the router. An exposed tool also needs a `catalogHint`
@@ -579,7 +607,10 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    list must omit `Agent` and `Task` regardless of read/write authority. The parenthesised form
    cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
    the smallest supported history, plus the compact, self-contained handoff defined in
-   [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md).
+   [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md). Every spawn
+   instruction the tool writes carries a spawn-site marker and a row in the spawn-site table of
+   `src/shared/model-tiers.md` (see "Model tiers"); a new worker role needs no row of its own,
+   because a `role:` entry resolves to its `tier:`.
 7. If the tool writes into the repository or onto the forge, decide how it behaves in hidden mode
    (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)). Its artifacts
    must stay under the forced local directories and out of every staged path. Its commit messages,
@@ -588,7 +619,7 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    marker is stamped. A step that can only work against a forge or external tracker stops before its
    first tracker access and names hidden mode instead of writing labels or markers.
 8. Run `node build.mjs`. The guards described above cover missing sources, missing include
-   targets, a Claude agent without `effort`, unsupported Codex sandbox modes, a missing or
+   targets, an agent without a valid `tier:`, a spawn site without its table row, unsupported Codex sandbox modes, a missing or
    unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with no budget
    entry.
 
@@ -968,11 +999,13 @@ prose and `Agent(<type>)` cannot restrict. Native Codex and portable worker meta
 an equivalent per-role tool list, so their rendered instructions carry the same leaf-worker
 contract explicitly.
 
-The native frontmatter also owns role-based model selection. Implementers and reviewers use
-Claude `opus`/`xhigh` and Codex `gpt-5.6-sol`/`high`; support roles use Claude
-`sonnet`/`medium` and Codex `gpt-5.6-luna`/`medium`. The source agent files are the canonical
-per-role assignments. Portable workers intentionally omit these native fields, so the build
-does not imply that a portable manager can enforce the same profiles.
+The native frontmatter also owns role-based model selection, derived from each agent's `tier:`:
+implementers, reviewers and the merge-conflict resolver (`deep`) use Claude `opus`/`high` and
+Codex `gpt-6.1-sol`/`high`; support roles (`standard`) use Claude `sonnet`/`medium` and Codex
+`gpt-5.6-luna`/`medium`. The source agent files are the canonical per-role assignments. Portable
+workers carry no native frontmatter, so a portable manager cannot enforce a worker profile
+natively; instead each portable spawn site passes the tier's values for the harness that runs it
+(see "Model tiers").
 
 Fast-capable routes are classified centrally after the project-routing table is parsed. The five
 current routes—tooling, frontend JavaScript/TypeScript, Node.js, Rust, and generic product
@@ -992,8 +1025,8 @@ The same token renders an explicit Quality-only notice for portable managers, wh
 the normal worker-delegation bootstrap. A portable build records no gate reason: the pilot
 fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as unmeasured, whatever
 host runs it. Build guards reject native metadata,
-mapped aliases, Fast sidecar identifiers, inventories, and unresolved profile tokens in portable
-output. The token is authorized only in the initial implementation phase of `build` and
+Fast sidecar identifiers, inventories, and unresolved profile tokens in portable output, and
+provider model names there outside build-generated tier text (see "Model tiers"). The token is authorized only in the initial implementation phase of `build` and
 `refactor`. `build` Phase 2 and `refactor` Phase 3 each use it for their five Fast-capable
 implementers.
 
@@ -1021,13 +1054,66 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 1937/1940, `iterate` 1551/1551, `setup` 1545/1545,
-`apply-review` 1021/1021, `apply-issues` 933/933, and `cleanup` 833/833.
+`merge-gate` is 1943/1944, `iterate` 1555/1555, `setup` 1558/1560,
+`apply-review` 1025/1025, `apply-issues` 937/937, and `cleanup` 833/833.
 The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 692/693, `docs` 630/637, `build` 632/640, and `fix` 513/513. Read every
+`plan` 695/695, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
+
+## Model tiers
+
+Every spawn runs on a provider-neutral model tier: `mechanical`, `standard` or `deep`. Rationale
+and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mechanics are:
+
+- **One mapping.** `MODEL_TIER_MAPPINGS` in `build.mjs` maps each tier to Claude Code
+  `model`/`effort` and Codex `model`/`reasoning_effort` (frozen, next to `AGENT_PROFILE_MAPPINGS`,
+  which keeps the Fast values). It is validated against the supported vocabularies before any
+  rendering (see "Guards"). The current values are `mechanical` Claude `haiku`/`low` and Codex
+  `gpt-5.6-luna`/`low`, `standard` `sonnet`/`medium` and `gpt-5.6-luna`/`medium`, `deep`
+  `opus`/`high` and `gpt-6.1-sol`/`high`.
+- **Role default.** An agent's `tier:` is the single source of its native Claude and Codex model
+  and effort. `{{MODEL_TIER_ROLE_DEFAULTS}}` renders the role table into `model-tiers` from the same
+  field.
+- **Spawn sites.** `src/shared/model-tiers.md` holds the `## Spawn sites` table with the columns
+  `Site | Spawn | Tier | Down`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
+  placeholders, `Tier` one of `` `mechanical` ``, `` `standard` ``, `` `deep` `` or
+  `` `role:<agent>[,<agent>…]` `` (worker spawns resolve to the agents' `tier:`), and `Down`
+  `` `yes` `` or `` `no` ``. `no` marks a site whose one-step margin may not move down; a site
+  resolving only to `deep` must say `no`. A `standard` site with `Down: no` renders "no downward
+  move". Differing role tiers at one site render one clause per role. At the two Fast-adopting
+  initial-implementation sites the marker follows a sentence binding the rendered line to the
+  Quality selectors; a Fast spawn's own values are owned by `execution-profiles`.
+- **Reconciliation.** Each marker id must be `<owner>/<id>` with the owner equal to the
+  containing source, unique across all sources and present in the table, and every table row needs
+  its marker. Markers in the router or an agent source fail, as does a marker line with any other
+  shape or inside any fenced block. Workers spawn nothing: a marked fragment among an agent's eager
+  includes, direct or nested, and a tier line in any target's rendered worker body fail. No
+  `<!-- spawn-site:` marker may survive in a built file, and `model-tiers.md` is the only
+  source that may contain the two generated placeholders (once each) or the table markers.
+- **Provider names.** A native target may name only its own provider's models, so a Codex model
+  name in `dist/claude` or a Claude one in `dist/codex` fails. Portable output may name provider
+  models only inside build-generated tier text: an exact rendered line of the marked table and an
+  exact two-harness values phrase rendered from `MODEL_TIER_MAPPINGS` inside a spawn-site line. Line-start `model:`/`effort:` keys, Fast stems and native inventories
+  stay forbidden there.
+- **Pilot identity.** The pilot protocol module is copied byte for byte and cannot import
+  `build.mjs`, so it carries the SHA-256 digest of the canonical `MODEL_TIER_MAPPINGS.deep`
+  (`PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY`). The build fails when it differs from the
+  digest it computes, so a change of the `deep` values needs a new protocol version and migration
+  ([protocol guide](model-tiering-pilot-protocol.md#quality-mapping-identity)). Every Fast-capable
+  implementer must declare `tier: deep`, the tier that identity binds.
+- **Baseline proof.** `scripts/compare-native-agent-baseline.mjs --base <commit>` no longer skips
+  a changed worker: `EXPECTED_NATIVE_DELTAS` allows only, in the ten `deep` workers, the Claude
+  `effort` change `xhigh` to `high` (`claude-deep-tier-effort`) and the Codex `model` change
+  `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
+  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer); any other byte
+  difference fails. Once this change
+  ships in a release, move the test's pinned `--base` to that release commit and empty
+  `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
+  own exact allowlist entry.
+- **Context budget.** The mandate's tier sentence and lazy pointer add lines to every tool that
+  includes it; the spawn-site lines render in place of the marker and count in the built core.
 
 ## Optional upstream ownership audit
 

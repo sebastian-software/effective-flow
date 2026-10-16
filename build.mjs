@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { join, basename, dirname, relative, resolve, sep } from 'node:path';
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -24,9 +25,19 @@ import {
   cleanDescription,
   tomlString,
   normalizeCodexSandboxMode,
-  normalizeClaudeEffort,
-  normalizeCodexReasoningEffort,
   validateAgentProfileMappings,
+  validateModelTierMappings,
+  resolveAgentTier,
+  collectSpawnSiteMarkers,
+  parseSpawnSiteTable,
+  reconcileSpawnSites,
+  renderModelTierDirectives,
+  findProviderModelNames,
+  findRenderedSpawnSiteLines,
+  SPAWN_SITE_MARKER_PREFIX,
+  MODEL_TIER_GENERATED_PLACEHOLDERS,
+  MODEL_TIER_TABLE_START,
+  MODEL_TIER_TABLE_END,
   validateRefs,
   assertQuotedDescription,
   renderBody,
@@ -84,6 +95,10 @@ import {
   assertPlanContractProjection,
   assertPlanPlaceholderProjection,
 } from './build-lib.mjs';
+import {
+  PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
+  canonicalizeJson,
+} from './src/scripts/pilot-measurement-protocol.mjs';
 import { SUCCESSOR_SET_TOOLS, toolAliasDivergence } from './src/scripts/config-resolve-core.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -166,6 +181,23 @@ const AGENT_PROFILE_MAPPINGS = Object.freeze({
   fast: Object.freeze({
     claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),
     codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),
+  }),
+});
+// Provider-neutral model tiers: the one place each tier's Claude Code and Codex values live. Agent
+// sources declare a `tier:`, and spawn sites resolve through src/shared/model-tiers.md; both derive
+// their rendered values from this map. The Fast sidecars keep AGENT_PROFILE_MAPPINGS.
+const MODEL_TIER_MAPPINGS = Object.freeze({
+  mechanical: Object.freeze({
+    claude: Object.freeze({ model: 'haiku', effort: 'low' }),
+    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'low' }),
+  }),
+  standard: Object.freeze({
+    claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),
+    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),
+  }),
+  deep: Object.freeze({
+    claude: Object.freeze({ model: 'opus', effort: 'high' }),
+    codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'high' }),
   }),
 });
 const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([
@@ -717,14 +749,37 @@ try {
     knownTools,
     knownAgents,
   };
+  // Set once every agent tier and the spawn-site table are validated, before any target renders.
+  let modelTierConfig = null;
   const renderGeneratedBody = (body, harness, config) => {
-    const rendered = renderBody(body, harness, config);
+    if (!modelTierConfig) {
+      throw new Error(`model-tier configuration is not ready (in ${config.context})`);
+    }
+    const rendered = renderBody(
+      renderModelTierDirectives(body, harness, {
+        ...modelTierConfig,
+        context: `${config.context} (${harness})`,
+      }),
+      harness,
+      config,
+    );
     assertNoUnresolvedEagerIncludes(rendered, { context: `${config.context} (${harness})` });
     // A lazy fence is just as unshippable as an eager one: the delivered skill
     // never explains the directive, so a raw fence reads as inert prose and the
     // deferred fragment is silently skipped.
     assertNoUnresolvedLazyIncludes(rendered, { context: `${config.context} (${harness})` });
     return rendered;
+  };
+
+  // Workers spawn nothing, so a rendered worker body in any target carries no tier line.
+  const assertNoWorkerTierLine = (body, harness, context) => {
+    const lines = findRenderedSpawnSiteLines(body);
+    if (lines.length > 0) {
+      throw new Error(
+        `Worker tier-line guard: ${context} (${harness}) renders a spawn-site tier line at body line ${lines.join(', ')}; workers spawn nothing`,
+      );
+    }
+    return body;
   };
 
   // --- Central-skill ownership guard (#168) ---
@@ -900,6 +955,19 @@ try {
   validateAgentProfileMappings(AGENT_PROFILE_MAPPINGS, {
     context: 'native execution-profile mappings',
   });
+  validateModelTierMappings(MODEL_TIER_MAPPINGS, { context: 'MODEL_TIER_MAPPINGS (build.mjs)' });
+  // The pilot protocol script is copied byte for byte and cannot import this file, so its
+  // Quality-mapping identity is checked here: a drift would let one generation span a Quality change.
+  const qualityMappingIdentity = `sha256:${createHash('sha256')
+    .update(canonicalizeJson(MODEL_TIER_MAPPINGS.deep), 'utf8')
+    .digest('hex')}`;
+  if (PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY !== qualityMappingIdentity) {
+    throw new Error(
+      `Pilot protocol Quality-mapping identity ${PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY} ` +
+        `(scripts/pilot-measurement-protocol.mjs) differs from MODEL_TIER_MAPPINGS.deep ` +
+        `${qualityMappingIdentity}; a change needs a new protocol version and migration`,
+    );
+  }
   refConfig.profileMappings = AGENT_PROFILE_MAPPINGS;
   refConfig.fastProfileAgents = fastProfileAgents;
 
@@ -1291,8 +1359,115 @@ try {
   for (const file of agentFiles) {
     const context = `agents/${file}`;
     const { fm, body } = readSource(AGENTS_DIR, file, context);
-    agents.push({ name: basename(file, '.md'), fm, body });
+    const name = basename(file, '.md');
+    agents.push({ name, fm, body, tier: resolveAgentTier(fm, { agentName: name, context }) });
   }
+  // The pilot protocol's Quality-mapping identity binds MODEL_TIER_MAPPINGS.deep, so every
+  // Fast-capable implementer's Quality run must resolve to that tier.
+  for (const name of fastProfileAgents) {
+    const tier = agents.find((agent) => agent.name === name)?.tier;
+    if (tier !== 'deep') {
+      throw new Error(
+        `Fast-capable implementer "${name}" resolves to tier "${tier}"; the pilot protocol's ` +
+          'Quality-mapping identity binds MODEL_TIER_MAPPINGS.deep, so it must declare "tier: deep"',
+      );
+    }
+  }
+
+  // --- Model-tier spawn sites ---
+  // Every spawn-site marker in src/tools and src/shared resolves through exactly one row of the
+  // model-tiers spawn-site table, and every row has its marker. The router and the worker sources
+  // spawn nothing of their own, so a marker there fails. The two generated model-tiers parts and the
+  // generated-table markers are build output only: their placeholders live in model-tiers.md, once
+  // each, and no source writes a table marker by hand.
+  const modelTiersPath = join(SHARED_DIR, 'model-tiers.md');
+  if (!existsSync(modelTiersPath)) {
+    throw new Error(`Model-tier contract not found: ${modelTiersPath}`);
+  }
+  const agentTiers = new Map(agents.map(({ name, tier }) => [name, tier]));
+  const modelTiersSource = normalizeLineEndings(readFileSync(modelTiersPath, 'utf8'));
+  const spawnSites = parseSpawnSiteTable(modelTiersSource, {
+    agentTiers,
+    context: 'shared/model-tiers.md',
+  });
+  const spawnSiteMarkers = [];
+  const tierDirectiveSources = [
+    { context: 'SKILL.md', owner: null, text: readFileSync(ROUTER_SRC, 'utf8') },
+    ...agentFiles.map((file) => ({
+      context: `agents/${file}`,
+      owner: null,
+      text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
+    })),
+    ...toolFiles.map((file) => ({
+      context: `tools/${file}`,
+      owner: basename(file, '.md'),
+      text: readFileSync(join(TOOLS_DIR, file), 'utf8'),
+    })),
+    ...readdirSync(SHARED_DIR)
+      .filter((file) => file.endsWith('.md'))
+      .sort()
+      .map((file) => ({
+        context: `shared/${file}`,
+        owner: basename(file, '.md'),
+        text: readFileSync(join(SHARED_DIR, file), 'utf8'),
+      })),
+  ];
+  for (const { context, owner, text } of tierDirectiveSources) {
+    if (owner === null) {
+      if (text.includes(SPAWN_SITE_MARKER_PREFIX)) {
+        throw new Error(
+          `Spawn-site markers belong in src/tools or src/shared only; found one in ${context}`,
+        );
+      }
+    } else {
+      spawnSiteMarkers.push(...collectSpawnSiteMarkers(text, { owner, context }));
+    }
+    for (const token of MODEL_TIER_GENERATED_PLACEHOLDERS) {
+      const count = text.split(token).length - 1;
+      const expected = context === 'shared/model-tiers.md' ? 1 : 0;
+      if (count !== expected) {
+        throw new Error(
+          `${token} must appear exactly once in shared/model-tiers.md and nowhere else; found ${count} in ${context}`,
+        );
+      }
+    }
+    for (const marker of [MODEL_TIER_TABLE_START, MODEL_TIER_TABLE_END]) {
+      if (text.includes(marker)) {
+        throw new Error(`${marker} is generated by {{MODEL_TIER_TABLE}}; found it in ${context}`);
+      }
+    }
+  }
+  reconcileSpawnSites(spawnSites, spawnSiteMarkers, { context: 'shared/model-tiers.md' });
+  // Workers spawn nothing, so no fragment an agent includes eagerly, directly or nested, may carry a
+  // spawn-site marker.
+  const markedFragments = new Set(
+    spawnSiteMarkers
+      .filter(({ context }) => context.startsWith('shared/'))
+      .map(({ context }) => basename(context, '.md')),
+  );
+  for (const file of agentFiles) {
+    const pending = [...sourceIncludes.get(`agents/${file}`).eager];
+    const seen = new Set();
+    while (pending.length > 0) {
+      const fragment = pending.pop();
+      if (seen.has(fragment)) continue;
+      seen.add(fragment);
+      if (markedFragments.has(fragment)) {
+        throw new Error(
+          `Spawn-site marker guard: agents/${file} eagerly includes shared/${fragment}.md, which carries a spawn-site marker; workers spawn nothing`,
+        );
+      }
+      const fragmentPath = join(SHARED_DIR, `${fragment}.md`);
+      if (existsSync(fragmentPath)) {
+        pending.push(...collectIncludeNames(readFileSync(fragmentPath, 'utf8')).eager);
+      }
+    }
+  }
+  modelTierConfig = {
+    sites: new Map(spawnSites.map((site) => [site.id, site])),
+    mappings: MODEL_TIER_MAPPINGS,
+    agentTiers,
+  };
 
   if (tools.length === 0 || agents.length === 0) {
     throw new Error(`No tool or agent sources found under ${SOURCE_DIR}`);
@@ -1569,15 +1744,7 @@ try {
     for (const a of agents) {
       const context = `agents/${a.name}.md`;
       if (harness === 'claude') {
-        const claudeModel = getNested(a.fm, 'claude', 'model', { context });
-        if (!claudeModel) {
-          throw new Error(`Missing required claude model for ${a.name} (${context})`);
-        }
-        const claudeEffort = normalizeClaudeEffort(
-          getNested(a.fm, 'claude', 'effort', { context }),
-          a.name,
-          context,
-        );
+        const { model: claudeModel, effort: claudeEffort } = MODEL_TIER_MAPPINGS[a.tier].claude;
         const claudeColor = getNested(a.fm, 'claude', 'color', { context });
         const claudeTools = getNestedArray(a.fm, 'claude', 'tools', { context });
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
@@ -1586,7 +1753,7 @@ try {
         let agentFm = '---\n';
         agentFm += `name: ${claudeAgentName}\n`;
         agentFm += `description: "${agentDesc}"\n`;
-        if (claudeModel) agentFm += `model: ${claudeModel}\n`;
+        agentFm += `model: ${claudeModel}\n`;
         agentFm += `effort: ${claudeEffort}\n`;
         if (claudeColor) agentFm += `color: ${claudeColor}\n`;
         if (claudeTools) {
@@ -1598,7 +1765,11 @@ try {
           agentFm += `tools: ${toolList}\n`;
         }
         agentFm += '---\n';
-        const renderedBody = renderGeneratedBody(a.body, 'claude', { ...refConfig, context });
+        const renderedBody = assertNoWorkerTierLine(
+          renderGeneratedBody(a.body, 'claude', { ...refConfig, context }),
+          'claude',
+          context,
+        );
         const baseArtifact = agentFm + renderedBody;
         writeFileSync(join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`), baseArtifact);
 
@@ -1632,12 +1803,8 @@ try {
           writeFileSync(join(CLAUDE_AGENTS_DIR, `${fastName}.md`), fastArtifact);
         }
       } else if (harness === 'codex') {
-        const codexModel = getNested(a.fm, 'codex', 'model', { context });
-        const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort', { context });
-        if (!codexModel || !codexEffort) {
-          throw new Error(`Missing required Codex model metadata for ${a.name} (${context})`);
-        }
-        normalizeCodexReasoningEffort(codexModel, codexEffort, a.name, context);
+        const { model: codexModel, reasoning_effort: codexEffort } =
+          MODEL_TIER_MAPPINGS[a.tier].codex;
         const codexSandbox = normalizeCodexSandboxMode(
           getNested(a.fm, 'codex', 'sandbox_mode', { context }),
           a.name,
@@ -1650,7 +1817,12 @@ try {
         toml += `model = ${tomlString(codexModel)}\n`;
         toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
         if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
-        toml += `developer_instructions = '''\n${renderGeneratedBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
+        const codexBody = assertNoWorkerTierLine(
+          renderGeneratedBody(a.body, 'codex', { ...refConfig, context }),
+          'codex',
+          context,
+        );
+        toml += `developer_instructions = '''\n${codexBody.replace(/\n+$/, '')}\n'''\n`;
         writeFileSync(join(CODEX_AGENTS_DIR, `${codexAgentName}.toml`), toml);
       } else {
         const workerName = `${AGENT_PREFIX}${a.name}`;
@@ -1660,7 +1832,11 @@ try {
           '',
           description,
           '',
-          renderGeneratedBody(a.body, 'portable', { ...refConfig, context }).replace(/\n+$/, ''),
+          assertNoWorkerTierLine(
+            renderGeneratedBody(a.body, 'portable', { ...refConfig, context }),
+            'portable',
+            context,
+          ).replace(/\n+$/, ''),
           '',
         ].join('\n');
         writeFileSync(join(PORTABLE_WORKERS_DIR, `${workerName}.md`), contract);
@@ -1805,6 +1981,12 @@ try {
     },
   ];
   const foreignParameterDiagnostics = [];
+  const tierProfiles = [
+    ...Object.values(MODEL_TIER_MAPPINGS),
+    ...Object.values(AGENT_PROFILE_MAPPINGS),
+  ];
+  const claudeModelNames = [...new Set(tierProfiles.map(({ claude }) => claude.model))];
+  const codexModelNames = [...new Set(tierProfiles.map(({ codex }) => codex.model))];
 
   // Repository-only reference guard (#497): the set is collected once from the
   // source tree by a filesystem walk (no Git), and the sources map lets each
@@ -1874,6 +2056,24 @@ try {
       assertNoUnresolvedPlaceholders(content, {
         context: `rendered ${target.name} file ${relative(target.root, file)}`,
       });
+      if (content.includes(SPAWN_SITE_MARKER_PREFIX)) {
+        throw new Error(
+          `spawn-site marker guard: rendered ${target.name} file ${relative(target.root, file)} still carries a spawn-site marker`,
+        );
+      }
+      // A native target names only its own provider's models; portable is checked below, where
+      // build-generated tier text is the one place both providers' names may appear.
+      if (target.name !== 'portable') {
+        const foreign = findProviderModelNames(content, {
+          modelNames: target.name === 'claude' ? codexModelNames : claudeModelNames,
+        });
+        if (foreign.length > 0) {
+          throw new Error(
+            `foreign provider-model guard: ${target.name} file ${relative(target.root, file)} names ` +
+              foreign.map(({ line, name }) => `${name} (line ${line})`).join(', '),
+          );
+        }
+      }
       for (const ref of collectRenderedWorkerRefs(content, AGENT_PREFIX, target.workerNames)) {
         const workerPath = target.workerPath(ref);
         if (!existsSync(workerPath)) {
@@ -1922,13 +2122,20 @@ try {
     if (/^(?:model|effort|model_reasoning_effort|reasoning_effort)\s*[:=]/m.test(content)) {
       throw new Error(`portable native-profile metadata guard: ${file}`);
     }
-    for (const alias of [
-      AGENT_PROFILE_MAPPINGS.fast.claude.model,
-      AGENT_PROFILE_MAPPINGS.fast.codex.model,
-    ]) {
-      if (content.includes(alias)) {
-        throw new Error(`portable native-profile alias guard: ${file} contains ${alias}`);
-      }
+    // Provider model names reach portable output only as build-generated tier text: the marked
+    // model-tier table and the two-harness values of a rendered spawn-site line.
+    const providerNames = findProviderModelNames(content, {
+      modelNames: [...claudeModelNames, ...codexModelNames],
+      allowGenerated: true,
+      mappings: MODEL_TIER_MAPPINGS,
+      context: relative(PORTABLE_SKILL_DIR, file),
+    });
+    if (providerNames.length > 0) {
+      throw new Error(
+        `portable native-profile alias guard: ${file} contains ` +
+          providerNames.map(({ line, name }) => `${name} (line ${line})`).join(', ') +
+          ' outside build-generated tier text',
+      );
     }
     for (const fastWorker of claudeFastWorkerStems) {
       if (content.includes(fastWorker)) {
@@ -1994,27 +2201,27 @@ try {
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     'merge-gate': 1944,
-    iterate: 1551,
+    iterate: 1555,
     setup: 1560,
-    'apply-review': 1021,
-    'apply-issues': 933,
+    'apply-review': 1025,
+    'apply-issues': 937,
     cleanup: 833,
-    refactor: 939,
-    deliver: 795,
-    'plan-issue': 718,
-    review: 768,
-    plan: 693,
+    refactor: 943,
+    deliver: 796,
+    'plan-issue': 721,
+    review: 772,
+    plan: 695,
     'apply-review-commit-mechanics': 656,
-    maintain: 692,
+    maintain: 699,
     docs: 637,
     build: 640,
     apply: 550,
     'apply-plan': 545,
     investigate: 553,
-    fix: 513,
-    'plan-review': 445,
+    fix: 521,
+    'plan-review': 447,
     pr: 472,
-    'concept-review': 343,
+    'concept-review': 346,
     'apply-review-remote': 382,
     concept: 331,
     commit: 224,

@@ -1,13 +1,10 @@
 ---
 description: "Implements UI components and frontend code (HTML, CSS, JavaScript, TypeScript, React) under Effective Flow conventions for readability, file splitting, package manager and handoff; accessibility, responsive and design-system depth come from the central effective-web skill."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

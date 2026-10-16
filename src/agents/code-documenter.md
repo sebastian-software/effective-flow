@@ -1,13 +1,10 @@
 ---
 description: "Thin in-code documentation adapter: applies the central effective-delivery documentation guidance within Effective Flow's assigned files, source language, and no-product-change boundary."
+tier: standard
 claude:
-  model: sonnet
-  effort: medium
   color: cyan
   tools: [Read, Write, Edit, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-luna
-  model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
 

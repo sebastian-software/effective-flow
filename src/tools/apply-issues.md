@@ -206,6 +206,7 @@ Do not expose internal tracking IDs or session details in comments.
 ### Phase 3: Analysis & classification (in parallel per work item)
 
 Start an analysis sub-agent in parallel for **each work item**. These sub-agents implement nothing and change no files — they only analyze.
+<!-- spawn-site:apply-issues/issue-analysis -->
 
 Each analysis sub-agent receives the issue body **and the issue comments** and the task to investigate the codebase and deliver a structured result:
 
@@ -318,6 +319,7 @@ Issues with the same target PR run sequentially so that new commits are created 
 
 1. **Immediately before delegation**, apply the started transition from "Issue implementation lifecycle" exactly once. On the forge add `effective-flow-issue-in-progress`; on an external target freshly list states, validate or gatedly confirm `tracker.externalStartedState`, and make the native transition. Preserve terminal or later-active states. A missing, stale, ambiguous, non-writable, or unconfirmable external state stops this item before code; a transition error likewise delegates nothing.
 2. Delegate to the target skill determined in Phase 3 and pass along the prompt suggestion as the task description:
+   <!-- spawn-site:apply-issues/issue-delegation -->
    - Feature: `Use the skill {{SKILL:build}} for this issue.`
    - Bugfix: `Use the skill {{SKILL:fix}} for this issue.`
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`

@@ -1,13 +1,10 @@
 ---
 description: "Implements Node.js backend code, CLI tools and server-side applications under Effective Flow conventions for the Node runtime surface, package manager, file splitting and handoff; TypeScript type, module, async and error-contract depth comes from the central effective-engineering skill."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

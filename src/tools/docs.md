@@ -263,6 +263,7 @@ worktree-record-obligation
    - for target paths under `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` or `docs/runbooks/`, create missing directories before writing
    - do not create empty category directories if no file is written in them
 2. Start the appropriate agent:
+   <!-- spawn-site:docs/implementation -->
    - `{{AGENT:marketing-writer}}` for the root `README.md` as the marketing entry point
    - `{{AGENT:docs-writer}}` for category guides, category entry-point READMEs (e.g. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API/CLI docs, migration, changelog and skill documentation – **not** for the root marketing README
    - `{{AGENT:code-documenter}}` for repository-native API/code documentation, inline comments and CLI help texts in code files
@@ -303,6 +304,7 @@ worktree-record-obligation
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
 4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change.
+   <!-- spawn-site:docs/validation -->
 5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.
 
 ### Phase 4: Completion

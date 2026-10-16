@@ -1,13 +1,10 @@
 ---
 description: "Thin end-to-end adapter: routes browser journeys to effective-web, non-browser API or CLI workflow tests to effective-engineering, and established-check execution to effective-delivery."
+tier: standard
 claude:
-  model: sonnet
-  effort: medium
   color: yellow
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-luna
-  model_reasoning_effort: medium
   # danger-full-access deliberately: Playwright browser download (cache outside the workspace) and network access to the local dev server are blocked under workspace-write
   sandbox_mode: danger-full-access
 ---

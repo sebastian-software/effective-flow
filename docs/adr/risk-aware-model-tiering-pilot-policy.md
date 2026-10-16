@@ -20,9 +20,10 @@ away.
 ## Decision
 
 Effective Flow defines two implementation intents: **Quality** is the strongest available
-configured implementation capability and the safe default; **Fast** is a distinct native
-lower-cost, lower-latency capability for a bounded eligible packet. These are policy intents, not
-provider model names.
+configured implementation capability, the role's `deep` model tier (see
+[Per-spawn model tiers](./per-spawn-model-tiers.md)), and the safe default; **Fast** is a distinct
+native lower-cost, lower-latency capability for a bounded eligible packet. These are policy
+intents, not provider model names, and the Quality intent token is unchanged.
 
 The project-level `executionProfiles.fast.enabled` key is a strict Boolean and defaults off. Missing
 or `false` is disabled. Malformed, ambiguous, or unreadable input is invalid. Both states select
@@ -96,6 +97,12 @@ pass after a packet's initial attempt, including review incorporation and each r
 correction, stays Quality. Guided setup exposes the opt-in and the confirmed
 `begin-baseline` and `resume` actions; no workflow run calls those two, and portable output remains
 Quality-only.
+
+> **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable output stays without Fast, but its spawns now carry model tiers rather than
+> inheriting the manager's model. The Quality-mapping identity, a digest of the `deep` tier values
+> per harness, is part of the pilot protocol from version `1.2.0`; a generation recorded under
+> `1.1.0` is suspended once with `quality-mapping-changed` and never continued.
+
 Configuration, generation state, trace consent, native capability, and publication approval remain
 separate decisions. Review freezes new reservations; private aggregate evaluation precedes any
 separately approved publication of a suppressed candidate. Normal purge is digest-bound and
@@ -165,6 +172,7 @@ rewriting the durable policy.
 - [Pilot data and privacy](../user-guide/model-tiering-pilot.md)
 - [Pilot protocol](../developer-guide/model-tiering-pilot-protocol.md)
 - [Native execution-profile representation](./native-execution-profile-representation.md)
+- [Per-spawn model tiers](./per-spawn-model-tiers.md)
 
 This is a living decision. Update this file in place when the current policy changes; repository
 history preserves earlier states.

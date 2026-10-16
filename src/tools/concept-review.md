@@ -32,6 +32,7 @@ delegation-mandate
 ```
 
 This mandate authorizes **read-only** analysis fan-out only. The `Hard scope boundary` below is unaffected: never start an implementer, test writer, validator, code reviewer, or documentation specialist.
+<!-- spawn-site:concept-review/analysis-fan-out -->
 
 ```lazy-include
 completion-protocol

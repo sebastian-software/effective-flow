@@ -38,6 +38,11 @@ mechanism, but the optimization is not requested or emulated because the manager
 the native mapping and fallback contract. Behavioral correctness is shared across targets;
 performance optimization is intentionally native-only.
 
+> **Superseded in part** by [Per-spawn model tiers](./per-spawn-model-tiers.md): the Fast optimization stays native-only and portable output stays without
+> Fast, but portable spawns no longer inherit the manager's model. They carry a provider-neutral
+> tier whose values for both harnesses are build-generated, so "portable contains no model
+> metadata" no longer holds for generated tier text.
+
 The build now renders this native capability and publishes strict native-agent inventories as
 build/install consistency manifests. It generates the sanctioned Claude Fast implementer sidecars
 and can render the Codex per-spawn override form. Portable output still contains no native profile
@@ -60,6 +65,8 @@ requests Fast.
   is added when rendering lands.
 - **Attempt Fast in portable mode and fall back opportunistically.** A manager-dependent attempt
   cannot prove consistent enforcement or fallback behavior. V1 accepts no portable optimization.
+  (The portable restriction applies to Fast only; see
+  [Per-spawn model tiers](./per-spawn-model-tiers.md).)
 
 ## Consequences
 
@@ -67,14 +74,15 @@ requests Fast.
   while sharing one eligibility and correction policy.
 - Native inventories allow the build and local installer to reject representation drift without
   treating archive consistency as runtime capability or signed provenance.
-- Portable users retain correct Quality behavior but receive no V1 latency or cost optimization.
+- Portable users retain correct Quality behavior but receive no V1 Fast latency or cost
+  optimization (per-spawn tiers apply to them; see [Per-spawn model tiers](./per-spawn-model-tiers.md)).
 - Host overrides and missing native support degrade safely and observably instead of silently
   changing the effective profile.
 - Concrete model aliases and effort values can evolve in their build-owned mapping without changing
   project configuration or this ADR.
 - Build and distribution tests must prove target separation: native targets contain only their own
-  representation, portable output contains no native profile metadata, and absent capability never
-  produces a false enforcement claim.
+  representation, portable output contains no native profile metadata beyond build-generated tier
+  text, and absent capability never produces a false enforcement claim.
 
 ## Review triggers
 
@@ -82,11 +90,13 @@ Review this living decision when a harness changes its per-spawn or sidecar cont
 managers can guarantee equivalent profile selection and Quality fallback, native override precedence
 changes, a new target is added, or centralized mappings can no longer express the required
 capability. Concrete aliases and pilot thresholds are deliberately not review triggers for this
-record.
+record. The per-spawn trigger is satisfied by the Codex host check recorded in
+[Per-spawn model tiers](./per-spawn-model-tiers.md).
 
 ## References
 
 - [Risk-aware model-tiering pilot policy](./risk-aware-model-tiering-pilot-policy.md)
+- [Per-spawn model tiers](./per-spawn-model-tiers.md)
 - [Getting started: calling model](../user-guide/getting-started.md#recommended-calling-model)
 - [Native and portable worker rendering](../developer-guide/build-system.md#native-and-portable-worker-rendering)
 

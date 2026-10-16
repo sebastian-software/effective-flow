@@ -8,6 +8,7 @@ Diagnostic depth — competing hypotheses, a discriminating reproduction, episte
 
 1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
 2. Delegate the read-only investigation of the relevant code to an internal Explore sub-agent; work inline only under the delegation mandate's triviality exception. Either way it stays read-only.
+   <!-- spawn-site:investigation-method/explore -->
 3. Clarify open questions directly with the user:
    - when does the behavior occur
    - is there an error message or a clearly nameable expected versus actual behavior

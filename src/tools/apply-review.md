@@ -378,6 +378,7 @@ This phase consists of three sub-steps. Goal: maximize parallelism without break
 #### Phase 4.1: Pre-analysis (in parallel per finding)
 
 Start a pre-analysis sub-agent in parallel for **each implementable finding**. These sub-agents implement nothing and change no files — they only analyze.
+<!-- spawn-site:apply-review/finding-pre-analysis -->
 
 Each pre-analysis sub-agent receives:
 
@@ -427,6 +428,7 @@ Example (across actions) with five findings over multiple actions:
 #### Phase 4.3: Parallel delegation
 
 1. Start a delegation sub-agent for each **overlap component** from Phase 4.2. All components run in parallel (by construction they share no file); within a sub-agent its findings are worked through **sequentially** in component order — even if the component contains findings of multiple action groups.
+   <!-- spawn-site:apply-review/component-delegation -->
    - With commit strategy `Individually with worktrees`: create the worktree and its separate
      execution-location receipt per component beforehand. Pass the sub-agent the canonical
      absolute root and receipt; do not rely on an inherited or assigned persistent working

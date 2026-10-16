@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 
-// Proves that a change leaves the native agent sidecars it did not mean to touch
-// byte-identical:
+// Proves that a change leaves the native agent sidecars byte-identical except for
+// its declared deltas:
 //   node scripts/compare-native-agent-baseline.mjs --base <commit>
 // builds <commit>, which must be an ancestor of HEAD, and a copy of the working
 // tree (tracked plus untracked, non-ignored files) into temporary output roots.
-// Every base worker in the working native inventory must then build the same
-// Claude and Codex sidecar bytes as at <commit>, except a worker whose source
-// inputs (its agent file plus transitive eager includes) differ between the two
-// checkouts: that one is exempt from the byte comparison, still has its native
-// configuration (Claude frontmatter, Codex TOML keys other than the prompt body)
-// compared, and is named in the report. Importing the module runs nothing; main
-// runs only when the file is executed directly.
+// Every worker in the working native inventories (base and Fast) must then build
+// the same Claude and Codex sidecar bytes as at <commit>, apart from the deltas in
+// EXPECTED_NATIVE_DELTAS; the report names each delta and the workers showing it.
+// Importing the module runs nothing; main runs only when the file is executed
+// directly.
 
 import {
   cpSync,
@@ -29,10 +27,8 @@ import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
-  EAGER_INCLUDE_RE,
+  NATIVE_SIDECAR_CONFIG_PARSERS,
   assertBaselineWorkerMembership,
-  assertSameNativeSidecarConfiguration,
-  normalizeLineEndings,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
 } from '../build-lib.mjs';
@@ -40,69 +36,170 @@ import {
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const WORKER_PREFIX = 'effective-flow-';
 
-// The source inputs of one native agent: its `src/agents/<name>.md` plus every
-// `src/shared/<fragment>.md` it reaches through eager ```include fences,
-// transitively. Only eager includes inline content into an agent; a
-// ```lazy-include fence renders as a fixed load pointer, so its target is not
-// an input. `readSourceFile(relativePath)` returns the file's bytes, or null
-// when it does not exist; a missing file stays in the set as a null entry so a
-// membership difference is still visible. Returns a Map sorted by path.
-export function collectAgentSourceInputs(agentName, readSourceFile) {
-  const inputs = new Map();
-  const pending = [`src/agents/${agentName}.md`];
-  while (pending.length > 0) {
-    const relativePath = pending.shift();
-    if (inputs.has(relativePath)) continue;
-    const bytes = readSourceFile(relativePath);
-    inputs.set(relativePath, bytes);
-    if (bytes === null) continue;
-    for (const match of normalizeLineEndings(bytes.toString('utf8')).matchAll(EAGER_INCLUDE_RE)) {
-      const name = match[1].trim();
-      if (name) pending.push(`src/shared/${name}.md`);
-    }
+// Rendered delegation-mandate bullets the body delta anchors on, verbatim in every worker.
+const MANDATE_WORKER_BULLET =
+  '- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.';
+const MANDATE_LAST_BULLET =
+  "- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.";
+
+// The only deltas a native worker sidecar may show against the base build; any other byte
+// difference fails the proof. A delta is permitted, never required: a worker that builds
+// byte-identically always passes. A configuration delta changes exactly one key line.
+const DEEP_TIER_WORKERS = Object.freeze(
+  [
+    'frontend-reviewer',
+    'generic-implementer',
+    'generic-product-implementer',
+    'generic-product-reviewer',
+    'merge-conflict-resolver',
+    'nodejs-implementer',
+    'nodejs-reviewer',
+    'rust-implementer',
+    'rust-reviewer',
+    'ui-implementer',
+  ].map((name) => `${WORKER_PREFIX}${name}`),
+);
+export const EXPECTED_NATIVE_DELTAS = Object.freeze({
+  // Per-spawn model tiers move the ten `deep` workers to the `deep` tier: Claude effort xhigh to
+  // high, and the Codex model gpt-5.6-sol to gpt-6.1-sol (reasoning effort stays high).
+  configuration: Object.freeze([
+    Object.freeze({
+      id: 'claude-deep-tier-effort',
+      harness: 'claude',
+      key: 'effort',
+      from: 'xhigh',
+      to: 'high',
+      workers: DEEP_TIER_WORKERS,
+    }),
+    Object.freeze({
+      id: 'codex-deep-tier-model',
+      harness: 'codex',
+      key: 'model',
+      from: 'gpt-5.6-sol',
+      to: 'gpt-6.1-sol',
+      workers: DEEP_TIER_WORKERS,
+    }),
+  ]),
+  // The delegation mandate's worker-start bullet gains the tier sentence and the mandate gains the
+  // `model-tiers` load pointer; every edit of one body delta applies together, each to exactly one
+  // occurrence.
+  body: Object.freeze([
+    Object.freeze({
+      id: 'delegation-mandate-model-tiers',
+      edits: Object.freeze([
+        Object.freeze({
+          from: `${MANDATE_WORKER_BULLET}\n`,
+          to: `${MANDATE_WORKER_BULLET} The orchestrator gives every spawn it starts the tier rendered at its spawn site.\n`,
+        }),
+        Object.freeze({
+          from: `${MANDATE_LAST_BULLET}\n`,
+          to:
+            `${MANDATE_LAST_BULLET}\n\n` +
+            '**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.\n',
+        }),
+      ]),
+    }),
+  ]),
+});
+
+const CODEX_BODY_START = "developer_instructions = '''";
+
+// Splits a sidecar into its native configuration text and its prompt body. Claude: the `---`
+// frontmatter block and the rest. Codex: the file with the `developer_instructions` literal body
+// cut out, and that body.
+export function splitNativeSidecar(harness, content, file) {
+  if (harness === 'claude') {
+    const match = /^---\n[\s\S]*?\n---\n/.exec(content);
+    if (!match) throw new Error(`Unparseable native sidecar ${file}: missing frontmatter`);
+    return { configuration: match[0], body: content.slice(match[0].length) };
   }
-  return new Map([...inputs].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
+  if (harness === 'codex') {
+    const start = content.indexOf(CODEX_BODY_START);
+    const bodyStart = start + CODEX_BODY_START.length;
+    const end = start === -1 ? -1 : content.indexOf("'''", bodyStart);
+    if (end === -1) throw new Error(`Unparseable native sidecar ${file}: missing prompt body`);
+    return {
+      configuration: `${content.slice(0, bodyStart)}\0${content.slice(end)}`,
+      body: content.slice(bodyStart, end),
+    };
+  }
+  throw new Error(`Unsupported native sidecar harness "${harness}"`);
 }
 
-// True when two source-input sets differ in membership or in any file's bytes.
-export function sourceInputsChanged(baseInputs, workingInputs) {
-  const paths = new Set([...baseInputs.keys(), ...workingInputs.keys()]);
-  for (const path of paths) {
-    if (!baseInputs.has(path) || !workingInputs.has(path)) return true;
-    const base = baseInputs.get(path);
-    const working = workingInputs.get(path);
-    if (base === null || working === null) {
-      if (base !== working) return true;
-    } else if (!base.equals(working)) {
-      return true;
-    }
-  }
-  return false;
+// One native configuration key line, newline-delimited: Claude YAML frontmatter or Codex TOML.
+function configurationLine(harness, key, value) {
+  return harness === 'codex' ? `\n${key} = "${value}"\n` : `\n${key}: ${value}\n`;
 }
 
-// The base workers whose source inputs changed between the two checkouts,
-// sorted. These are exempt from the byte comparison and compared by native
-// configuration only; every other base worker must still build byte-identically.
-export function sourceChangedWorkers(workers, readBaseFile, readWorkingFile) {
-  return workers
-    .filter((worker) => {
-      if (!worker.startsWith(WORKER_PREFIX)) {
-        throw new Error(`Native base worker "${worker}" lacks the ${WORKER_PREFIX} prefix`);
-      }
-      const agentName = worker.slice(WORKER_PREFIX.length);
-      return sourceInputsChanged(
-        collectAgentSourceInputs(agentName, readBaseFile),
-        collectAgentSourceInputs(agentName, readWorkingFile),
+function applyEdits(text, edits) {
+  let result = text;
+  for (const { from, to } of edits) {
+    if (result.split(from).length !== 2) return null;
+    result = result.replace(from, () => to);
+  }
+  return result;
+}
+
+function configurationDrift(harness, file, baseline, working) {
+  const parse = NATIVE_SIDECAR_CONFIG_PARSERS[harness];
+  const before = parse(baseline, file);
+  const after = parse(working, file);
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .sort()
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .map(
+      (key) =>
+        `key "${key}": ${JSON.stringify(before[key]) ?? '<absent>'} -> ${JSON.stringify(after[key]) ?? '<absent>'}`,
+    );
+}
+
+// Compares one worker's native sidecar against its base build and returns the ids of the expected
+// deltas it shows; throws on any other difference. `deltas` defaults to EXPECTED_NATIVE_DELTAS.
+export function compareNativeSidecar(
+  harness,
+  worker,
+  baselineContent,
+  workingContent,
+  deltas = EXPECTED_NATIVE_DELTAS,
+) {
+  if (baselineContent === workingContent) return [];
+  const file = `${worker} (${harness})`;
+  const baseline = splitNativeSidecar(harness, baselineContent, file);
+  const working = splitNativeSidecar(harness, workingContent, file);
+  const used = [];
+
+  if (baseline.configuration !== working.configuration) {
+    const delta = deltas.configuration.find(
+      (candidate) =>
+        candidate.harness === harness &&
+        candidate.workers.includes(worker) &&
+        applyEdits(baseline.configuration, [
+          {
+            from: configurationLine(harness, candidate.key, candidate.from),
+            to: configurationLine(harness, candidate.key, candidate.to),
+          },
+        ]) === working.configuration,
+    );
+    if (delta === undefined) {
+      const drift = configurationDrift(harness, file, baselineContent, workingContent);
+      throw new Error(
+        `Base native configuration drift outside the expected deltas: ${file}` +
+          (drift.length > 0 ? `: ${drift.join('; ')}` : ' (formatting)'),
       );
-    })
-    .sort();
-}
+    }
+    used.push(delta.id);
+  }
 
-function checkoutReader(checkout) {
-  return (relativePath) => {
-    const path = join(checkout, relativePath);
-    return existsSync(path) ? readFileSync(path) : null;
-  };
+  if (baseline.body !== working.body) {
+    const delta = deltas.body.find(
+      (candidate) => applyEdits(baseline.body, candidate.edits) === working.body,
+    );
+    if (delta === undefined) {
+      throw new Error(`Base native body drift outside the expected deltas: ${file}`);
+    }
+    used.push(delta.id);
+  }
+  return used;
 }
 
 function run(command, args, { cwd = ROOT_DIR, env, encoding = 'utf8' } = {}) {
@@ -151,13 +248,7 @@ function inventory(outputRoot, harness) {
   );
 }
 
-function assertSameFile(left, right) {
-  if (!readFileSync(left).equals(readFileSync(right))) {
-    throw new Error(`Base native artifact drift: ${right}`);
-  }
-}
-
-function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingCheckout }) {
+function compareBaseline(baseOutput, workingOutput) {
   const claude = inventory(workingOutput, 'claude');
   const codex = inventory(workingOutput, 'codex');
   const claudeDir = join(workingOutput, 'dist', 'claude', 'agents');
@@ -167,42 +258,27 @@ function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingC
     codexArtifacts: readdirSync(codexDir),
     context: 'working-tree native distribution',
   });
-  const exempt = sourceChangedWorkers(
-    claude.baseWorkers,
-    checkoutReader(baselineCheckout),
-    checkoutReader(workingCheckout),
-  );
-  const exemptSet = new Set(exempt);
 
-  for (const [harness, extension] of [
-    ['claude', 'md'],
-    ['codex', 'toml'],
+  const usage = new Map();
+  for (const [harness, extension, native] of [
+    ['claude', 'md', claude],
+    ['codex', 'toml', codex],
   ]) {
     const baselineDir = join(baseOutput, 'dist', harness, 'agents');
     const workingDir = join(workingOutput, 'dist', harness, 'agents');
-    assertBaselineWorkerMembership(
-      harness,
-      readdirSync(baselineDir),
-      claude.baseWorkers,
-      extension,
-    );
-    for (const worker of claude.baseWorkers) {
+    const workers = [...native.baseWorkers, ...native.fastWorkers];
+    assertBaselineWorkerMembership(harness, readdirSync(baselineDir), workers, extension);
+    for (const worker of workers) {
       const file = `${worker}.${extension}`;
-      const baselinePath = join(baselineDir, file);
-      const workingPath = join(workingDir, file);
-      if (!exemptSet.has(worker)) {
-        assertSameFile(baselinePath, workingPath);
-        continue;
-      }
-      // A source-changed worker is deliberately not byte-compared, but its native configuration
-      // must still match; the report names every exemption, and the baseline-proof test pins that
-      // line so an unexpected one fails it.
-      assertSameNativeSidecarConfiguration(
+      for (const id of compareNativeSidecar(
         harness,
-        file,
-        { path: baselinePath, content: readFileSync(baselinePath, 'utf8') },
-        { path: workingPath, content: readFileSync(workingPath, 'utf8') },
-      );
+        worker,
+        readFileSync(join(baselineDir, file), 'utf8'),
+        readFileSync(join(workingDir, file), 'utf8'),
+      )) {
+        if (!usage.has(id)) usage.set(id, new Set());
+        usage.get(id).add(worker);
+      }
     }
   }
 
@@ -213,13 +289,17 @@ function compareBaseline(baseOutput, workingOutput, { baselineCheckout, workingC
   ) {
     throw new Error('Portable output unexpectedly contains a native agent inventory');
   }
-  return exempt;
+  return usage;
 }
 
-export function formatBaselineReport(base, exempt) {
-  let report = `Native base agents match ${base}\n`;
-  if (exempt.length > 0) {
-    report += `Source-changed since ${base} (configuration compared only): ${exempt.join(', ')}\n`;
+// `usage` maps an expected-delta id to the workers showing it; ids are reported in the order of
+// EXPECTED_NATIVE_DELTAS, workers sorted.
+export function formatBaselineReport(base, usage) {
+  let report = `Native agents match ${base}\n`;
+  for (const { id } of [...EXPECTED_NATIVE_DELTAS.configuration, ...EXPECTED_NATIVE_DELTAS.body]) {
+    const workers = usage.get(id);
+    if (workers === undefined || workers.size === 0) continue;
+    report += `Expected delta ${id}: ${[...workers].sort().join(', ')}\n`;
   }
   return report;
 }
@@ -232,7 +312,7 @@ function main(args) {
   run('git', ['rev-parse', '--verify', `${base}^{commit}`]);
   run('git', ['merge-base', '--is-ancestor', base, 'HEAD']);
 
-  let exempt;
+  let usage;
   const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-native-baseline-'));
   try {
     const baselineCheckout = join(temporary, 'baseline');
@@ -244,11 +324,11 @@ function main(args) {
     copyWorkingTree(workingCheckout);
     build(baselineCheckout, baselineOutput);
     build(workingCheckout, workingOutput);
-    exempt = compareBaseline(baselineOutput, workingOutput, { baselineCheckout, workingCheckout });
+    usage = compareBaseline(baselineOutput, workingOutput);
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
-  process.stdout.write(formatBaselineReport(base, exempt));
+  process.stdout.write(formatBaselineReport(base, usage));
 }
 
 function isEntryPoint() {

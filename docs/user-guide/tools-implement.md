@@ -132,6 +132,16 @@ the active run or keep it blocked. Only an independent admitted residual may be 
 under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
 appropriate implementation workflow.
 
+**Model tiers:** Every worker and sub-agent the workflow starts runs on a model tier
+(`mechanical`, `standard` or `deep`) in every installation type: routed implementers and reviewers
+run `deep`; tests, validation, and documentation run `standard`. This is the Quality assignment the
+Fast pilot below departs from. A `standard` spawn may move one tier for a stated reason, a `deep`
+spawn never moves down, and a retry or correction runs at least on the role or site default. Setting
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` fixes the subagent model, so the workflow passes only the tier's
+effort, and
+`CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
+[Getting started](getting-started.md#recommended-calling-model).
+
 **Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
 Quality/Fast pilot; `refactor`'s differences are listed in its section below.
 Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot

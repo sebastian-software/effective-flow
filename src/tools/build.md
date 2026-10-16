@@ -302,9 +302,10 @@ when: step 0 is complete and packets are about to be classified, and at every ex
 loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements
 check, and Fast→Quality transition, with `build` as the record's `workflow`.
 
-1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the
-   default; the Fast reference serves only the first attempted spawn of a packet whose envelope
-   selects `fast`, and `fastAttemptConsumed` is set immediately before that call:
+1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the default; the Fast
+   reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
+   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   <!-- spawn-site:build/initial-implementation -->
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.
    - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:rust-implementer:fast}}.
@@ -331,11 +332,14 @@ documentation-sync
 Start in parallel if possible:
 
 1. `{{AGENT:test-writer}}` for unit tests and component tests
+   <!-- spawn-site:build/unit-tests -->
 2. `{{AGENT:e2e-tester}}` for new user flows if a real flow was added
+   <!-- spawn-site:build/e2e-tests -->
 
 ### Phase 5: Validation
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
+   <!-- spawn-site:build/validation -->
 2. Give the user the complete list of all errors and warnings found.
 3. If errors are found: delegate the repair to the routed Quality implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
@@ -343,6 +347,7 @@ Start in parallel if possible:
 ### Phase 6: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
+   <!-- spawn-site:build/review -->
 2. Aggregate all review findings, then make exactly one automatic incorporation pass through the
    routed Quality implementer for every new finding that belongs to the authorized slice. Render
    again and re-run the affected review checks once after that pass; do not weaken or consume the
@@ -404,6 +409,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 ### Phase 7: Completion
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
+   <!-- spawn-site:build/final-validation -->
 2. Document the completed workflow in the plan file, without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.

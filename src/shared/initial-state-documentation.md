@@ -7,6 +7,7 @@ Before the actual workflow starts, check whether the project already has documen
    - create `<plan.dir>/` if needed
    - delegate the read-only investigation of the current project state to an internal sub-agent;
      work inline only under the delegation mandate's triviality exception:
+     <!-- spawn-site:initial-state-documentation/state-investigation -->
      - project structure
      - existing files
      - technologies used

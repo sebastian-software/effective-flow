@@ -1,13 +1,10 @@
 ---
 description: "Implements product code in languages and frameworks without a dedicated Effective Flow specialist by following repository-native instructions, architecture, commands, and established neighboring patterns in a disclosed reduced-depth mode."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

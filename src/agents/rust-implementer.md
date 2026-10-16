@@ -1,13 +1,10 @@
 ---
 description: "Implements Rust code, CLI tools and server-side applications under Effective Flow conventions for file splitting, dependency policy and handoff; Cargo, ownership, trait, concurrency and unsafe depth comes from the central effective-engineering skill."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

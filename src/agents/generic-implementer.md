@@ -1,13 +1,10 @@
 ---
 description: "Implements tooling-only changes: CI/CD, GitHub Actions, build and release tooling, configuration, dependency manifests, containers, and repository metadata; never serves as the fallback for unsupported product code."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

@@ -194,11 +194,12 @@ src/
   reports the deprecation once and then forwards the run unchanged to `tools/merge-gate.md`,
   carrying no gate logic of its own. It is removed with the next deliberate major release.
 - **`src/agents/<name>.md`**: Workers are **not** `/effective-flow` tools. Workflow tools call
-  them internally as subagents. The frontmatter carries native per-harness configuration under
-  `claude:` and `codex:`; the body is also the single contract rendered into the portable target.
-  Each Claude block requires `model` and `effort`, while each Codex block defines `model` and
-  `model_reasoning_effort`. Claude tool lists omit `Agent` and `Task` because every worker is a
-  leaf. These source fields are the canonical worker-profile assignments.
+  them internally as subagents. The frontmatter carries one top-level `tier:` (the role's default
+  model tier) and the remaining native configuration under `claude:` (color, tools) and `codex:`
+  (sandbox mode); the body is also the single contract rendered into the portable target. The
+  native model and effort derive from the tier, so a per-agent model or effort field fails the
+  build. Claude tool lists omit `Agent` and `Task` because every worker is a leaf. The `tier:`
+  fields are the canonical worker-profile assignments.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
   or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
@@ -432,11 +433,32 @@ skill at `effective-flow/`, which is the payload consumed by DALO and Skills CLI
 
 The model running the Effective Flow tool is the **caller**: it interprets the workflow,
 delegates work, and integrates the results. Native worker sidecars have independent,
-role-specific profiles. Implementers, reviewers, and the merge-conflict resolver use the quality
-tier—Claude `opus` with `xhigh` effort and Codex `gpt-5.6-sol` with `high` reasoning effort. Documentation, testing,
-validation, and other support roles use the economical tier—Claude `sonnet` with `medium`
-effort and Codex `gpt-5.6-luna` with `medium` reasoning effort. The individual files under
-`src/agents/` remain the exhaustive source of truth for which role belongs to which tier.
+role-specific profiles. Every profile is one of three provider-neutral **model tiers**:
+`mechanical`, `standard` and `deep`. Implementers, reviewers, and the merge-conflict resolver
+declare `deep` (Claude `opus` with `high` effort, Codex `gpt-6.1-sol` with `high` reasoning
+effort); documentation, testing, validation, and other support roles declare `standard` (Claude
+`sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). `mechanical` (Claude `haiku`/`low`, Codex
+`gpt-5.6-luna`/`low`) is defined for cheap scans, but no spawn site uses it yet. The individual
+files under `src/agents/` remain the exhaustive source of truth for which role belongs to which
+tier; `MODEL_TIER_MAPPINGS` in `build.mjs` is the only place the concrete values live. Tiers are
+build metadata and no configuration key, so `executionProfiles` stays the only model-related
+project setting (see [Configuration ownership](./configuration.md#model-tiers)).
+
+Tiers also govern spawns that are not workers. Every spawn instruction in `src/tools` and
+`src/shared` carries a spawn-site marker that the build replaces with the site's resolved tier and
+its values for the target (Claude values in `dist/claude`, Codex values in `dist/codex`, both
+keyed by spawn mechanism in `dist/portable`), so every spawn in every target passes a model and
+effort and none inherits the parent's by omission. The lazily loaded `model-tiers` fragment owns
+the rules: a bounded one-step margin (a `deep` default never moves down; a `standard` default may
+move one step with a stated reason; a retry runs at least on the role or site default) and the
+host overrides. A Fast attempt passes only its Fast reference's own values, never the site's tier
+line (owned by `execution-profiles`). The native sidecar values remain the harness-enforced fallback when a spawn passes
+none. A per-spawn tier now wins over `CLAUDE_CODE_SUBAGENT_MODEL`; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
+is the opt-out for the model: Claude Code then drops the Agent tool's `model` parameter, and the
+orchestrator passes only the tier's effort; `CLAUDE_CODE_EFFORT_LEVEL`
+overrides the effort and is not detected. See
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md) and
+[Model tiers](./build-system.md#model-tiers).
 
 Caller defaults are deliberately documentation rather than generated skill configuration.
 This keeps Effective Flow from overriding a user's global or project harness settings and lets
@@ -445,8 +467,9 @@ the worker fleet. Claude can apply a model or effort override from skill frontma
 current turn, but the next user prompt returns to the session selection; Effective Flow therefore
 does not place a caller override in its router. Native worker metadata is rendered only into the
 Claude and Codex sidecars.
-Portable worker contracts contain no native model metadata; their built-in/general subagents
-therefore follow the model-selection behavior of the consuming manager and harness.
+Portable worker contracts contain no native model metadata, but portable spawn sites pass the
+tier's values for whichever harness executes them. A portable host with neither spawn mechanism
+inherits the parent's model and says so once.
 
 The native execution-profile capability is deliberately asymmetric. For the five implementation
 roles selected by the validated project-routing table, Claude receives generated `-fast` sidecars
