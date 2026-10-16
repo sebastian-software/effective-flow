@@ -11,14 +11,17 @@ canonical `**Effective Flow project setup:** <path>` marker in `AGENTS.md` or an
 convention file. The standard wizard applies one of three common workflow profiles after asking
 only for the chat language and the profile. **Express** and **Guided** remain available as explicit
 modes. **Hidden mode** instead keeps the whole configuration local and untracked; see
-[Hidden mode](#hidden-mode).
+[Hidden mode](#hidden-mode). Once a configuration exists, **Targeted** mode takes a free-text
+request and changes only the settings it names, or answers questions about them; see
+[Targeted changes and questions](#targeted-changes-and-questions).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
-planning/tracking and delivery topology. Use Guided when you need to adjust individual settings
-(project and surface languages, worktree, completion action, tracker details, advanced
-review/apply-review values, skill discovery, or the `build`/`refactor` Fast pilot), and Express when you intentionally want the safe
-base without an interview. Any mode may offer the optional session-rename capability check
-described below.
+planning/tracking and delivery topology. To change or check one or a few settings of an existing
+configuration, describe the change in free text. Use Guided when you want to walk through the
+individual settings with explanations (project and surface languages, worktree, completion action,
+tracker details, advanced review/apply-review values, skill discovery, or the `build`/`refactor`
+Fast pilot), and Express when you intentionally want the safe base without an interview. Any mode
+except Targeted may offer the optional session-rename capability check described below.
 
 **Typical call:** `/effective-flow setup`
 
@@ -30,11 +33,17 @@ The accepted invocations are:
 /effective-flow setup express
 /effective-flow setup guided
 /effective-flow setup hidden
+/effective-flow setup <free text>
 ```
 
 The first two forms enter Profile mode. `hidden` enters Express with the visibility already set to
-hidden. An unknown or additional argument reports these five forms and stops before changing
-`.gitignore`, configuration, convention files, or runtime state.
+hidden. Surrounding whitespace and letter case do not matter for these keywords. Any other argument
+is a free-text request for [Targeted mode](#targeted-changes-and-questions), even one that starts
+with a keyword: `/effective-flow setup guided tracker github` is a targeted request, not Guided.
+With an existing configuration, a request in which setup recognizes no configuration setting, such
+as the typo `exprss`, lists the accepted forms and stops before changing `.gitignore`,
+configuration, convention files, or runtime state. Without a configuration, the
+[precondition stop](#targeted-changes-and-questions) applies first.
 
 **Input/output:** Profile mode first asks **Chat**, then **Profile**. Local and forge profiles need
 no further configuration answers; the external profile additionally asks only for the external
@@ -105,11 +114,88 @@ Completion, and Tracker questions like the Profile question, while "Ask at run t
 unscored; a value already recorded in your configuration is named in the question's explanation
 instead of being marked on an option.
 
+### Targeted changes and questions
+
+`/effective-flow setup <free text>` changes individual settings of an existing configuration, or
+answers questions about it, without walking through Profile, Express, or Guided again. Write the
+request in any language; setup maps it to configuration keys from
+[Configuration](configuration.md). For example:
+
+```text
+/effective-flow setup switch the review profile to fast
+/effective-flow setup reset language.chat
+/effective-flow setup which tracker is configured?
+/effective-flow setup add coderabbitai as a merge-gate bot
+```
+
+- **A change** proposes the value you named, here `fast` for `review.profile`, and shows the
+  current value as "currently recorded". A request without a value ("let me choose the merge
+  method") asks that key's question with the current value pre-selected.
+- **A reset** removes the row so the default applies. For `language.chat` that means mirroring the
+  language you write in.
+- **A question** is answered with the current value and the configuration path it comes from, or
+  "not set" with the default. It writes nothing and asks for no confirmation. A request that mixes
+  questions and changes answers first, then shows the changes.
+- **Adding a merge-gate reviewer** also asks for its trigger comment and its exact `.check`
+  context, where "not set" is a valid answer. A placeholder you paste unchanged, such as
+  `<exact check context>`, is never written; setup asks for the real value instead. Removing a
+  reviewer also removes its trigger and `.check` rows in the same preview.
+- **Switching the tracker** to `external` also asks for each missing or invalid external detail:
+  tool, connection hint, started state, and done state. Switching to `remote` asks for the provider
+  override only when the host is ambiguous.
+
+For each setting the request touches, setup asks only that setting's own question from Guided,
+never a whole block: a `mergeGate.maxRounds` change asks `maxRounds` alone. An ambiguous request
+gets one focused question: "prReview off" may mean `delivery.prReview` or the merge gate. An
+invalid value is asked again rather than replaced by the default. Setup then shows one before/after
+list of every change and asks for one confirmation. That list also contains what every setup write
+includes: rewriting retired `prReview.*` and `worktree.*` rows, and merging two spellings of one
+merge-gate reviewer. Declining leaves every row unchanged. Just before writing, setup reads the
+configuration again. It shows the preview again if a value it is about to change differs from the
+preview or the needed rewrites changed. It stops without writing if the configuration source
+changed or the legacy-slug, dead-marker, or marker-divergence finding below now applies. A request
+whose requested rows already match what is recorded, whose changes are all refused or redirected,
+or that only asks questions writes nothing, not even those rewrites, and asks for no confirmation.
+A run that cannot ask answers the questions, reports the changes it would have made, and writes
+nothing. A changed `language.chat` takes effect from the next run.
+
+**Precondition.** Targeted mode needs a configuration: a project-setup ADR or the hidden local
+file. It stops without changing anything, says what it found, and points to `/effective-flow setup`
+or `/effective-flow setup express` when there is no configuration or only a legacy JSON one, when
+the configuration source is invalid, when the ADR still uses the legacy slug or the
+convention-file marker is dead or diverges from the ADR, or when the runtime-state directory cannot
+be verified. When several files could be the project-setup ADR, it names every path and stops; you
+resolve the duplicates by hand before setup can continue. A legacy `**Firmo project setup:**`
+marker is only reported; `/effective-flow setup express` switches its spelling.
+
+**What it skips.** Targeted mode asks no Visibility question and keeps the visibility it finds. It
+does not touch `.gitignore` or `info/exclude`, sets or repairs no marker, migrates no legacy JSON
+configuration, makes no `CLAUDE.md` import offer, and runs no session-rename check. It writes in
+place at the existing ADR or hidden local file and changes only the rows the request names, plus the
+rewrites listed above. Its report names the mode `Targeted`, the interpreted changes, the rows
+written or why nothing was written, the configuration path, and each redirected request. It
+suggests no next step, because it stages nothing.
+
+**Redirects.** Some requests stay with the full setup. Setup lists them in the preview with the
+route to take and still offers the remaining changes:
+
+- **Visibility:** to hide, run `/effective-flow setup hidden`; to unhide, run
+  `/effective-flow setup` or `/effective-flow setup guided` and answer `Standard`.
+- **Fast pilot** (`executionProfiles.fast.enabled`): run `/effective-flow setup guided` →
+  **Advanced settings** → **Block 10 (`executionProfiles`)**; see
+  [Fast pilot block](#fast-pilot-block).
+- **First-time steps** (`.gitignore`, marker, `CLAUDE.md` import, session-rename check, legacy JSON
+  migration): run `/effective-flow setup`.
+- **In hidden mode**, every `tracker.*` key, the other
+  [forced rows](configuration.md#hidden-mode), and a `delivery.branchPrefix` containing
+  `effective-flow` are refused; answering `Standard` in `/effective-flow setup` leaves hidden mode.
+- **Unknown keys** are not written. Existing unknown rows stay as they are.
+
 ### Visibility question
 
-Every mode then asks **Visibility** before it touches `.gitignore` or any configuration: Profile
-after Chat and Profile, Express and Guided as their first question. `/effective-flow setup hidden`
-skips the question. `Standard` is the tracked ADR, marker, and `.gitignore` setup described on this
+Every mode except Targeted asks **Visibility** before it touches `.gitignore` or any
+configuration: Profile after Chat and Profile, Express and Guided as their first question.
+`/effective-flow setup hidden` skips the question. `Standard` is the tracked ADR, marker, and `.gitignore` setup described on this
 page. `Hidden` switches the run to [hidden mode](#hidden-mode). The question pre-selects `Hidden`
 when a hidden local configuration already exists, and `Standard` otherwise. A run that cannot ask
 keeps the pre-selected value and reports it.
@@ -236,7 +322,8 @@ ignores it. The values set here
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
-reliably present. The offer is a question in every mode, Express included, and a run that cannot
+reliably present. The offer is a question in every mode except Targeted, Express included, and a
+run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
 file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
 pointer to `AGENTS.md` and, where an earlier run left one there, setup's own marker line — and, when
