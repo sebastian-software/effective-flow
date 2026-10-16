@@ -356,8 +356,8 @@ Classify each candidate against the **effective** configuration already resolved
 duplicate entries, and never a retired `prReview.*` row; create no second login normalizer.
 
 1. **No effective reviewer login:** record `missing reviewer`. The advisory may recommend adding the
-   observed login to `mergeGate.bots`, plus an optional distinctive trigger when that reviewer
-   supports one and a manually confirmed check context when it publishes one.
+   observed login to `mergeGate.bots`; setup then asks for its trigger and its exact `.check` context,
+   and the user decides on both.
 2. **Effective reviewer login, no effective `.check`:** record `missing check`. Preserve the
    configured spelling and every existing trigger; the advisory recommends only completing the
    `.check` value. A conflicting collapsed `.check` pair supplies no effective value and stays on
@@ -1082,19 +1082,23 @@ reservation exactly once.
    - and, where Phase 5.5 observed linked issues, the items listed under
      `### Observation report items` in the loaded `merge-gate-issue-observation` fragment;
    - **as the final conditional summary item, one non-blocking configuration advisory** when the
-     wisdom record retains candidates from "Unconfigured automatic-reviewer advisory". Group every
-     candidate under one setup route, list each reviewer once with its compact non-body evidence,
-     and say whether its login is missing or only its `.check` is missing. For a missing login,
-     advise adding that observed login; for a missing `.check`, preserve the configured login and
-     trigger and advise adding only the context. Then show `{{SKILL:setup}} guided` → Advanced
-     settings → Block 9 (`mergeGate`) → add or select the login
-     in `mergeGate.bots` → preserve or set a distinctive per-reviewer `.trigger` only when the
-     reviewer supports one → set `.check` only to the exact context manually confirmed in a pull
-     request reviewed by that tool. Point to this pull request's checks list when the record says
-     one was reported, otherwise to a recent
-     pull request reviewed by the tool; never invent a check name. State that setup is the sole ADR
-     writer, `.check` stays unset only when the reviewer publishes none, and the advisory changed
-     neither this gate result nor the pull request. With no retained candidate, emit nothing.
+     wisdom record retains candidates from "Unconfigured automatic-reviewer advisory". List each
+     reviewer once with its compact non-body evidence and say whether its login is missing or only
+     its `.check` is missing; for a missing `.check`, preserve the configured login and trigger and
+     advise adding only the context. Then give one targeted invocation covering every candidate,
+     `<login>` filled with the retained spelling:
+     `{{SKILL:setup}} add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check`
+     for a missing login, `{{SKILL:setup}} ask me for mergeGate.bots.<login>.check` for a missing
+     `.check`; join several candidates' clauses with "and" after one `{{SKILL:setup}}`. The
+     invocation's `.check` clause never depends on `checksReported`. As the fallback, show
+     `{{SKILL:setup}} guided` → Advanced settings → Block 9 (`mergeGate`) → add or select the login in `mergeGate.bots` →
+     preserve or set a distinctive per-reviewer `.trigger` only when the reviewer supports one → set
+     `.check` only to the exact context manually confirmed in a pull request reviewed by that tool.
+     Point to this pull request's checks list when the record says one was reported, otherwise to a
+     recent pull request reviewed by the tool; never invent a check name, in the invocation or as a
+     placeholder. State that `.check` is left unset only by answering "not set" in setup, for a
+     reviewer without its own check context; that setup is the sole ADR writer; and that the advisory
+     changed neither this gate result nor the pull request. With no retained candidate, emit nothing.
 3. Emit the next-step block per the shared selection in `next-steps` as the last element of that
    chat report, with the verified source association, complete retained planning basis and observed
    merge/issue outcomes. Only for generic fallback, prefer the merged-but-linked-issues-open row

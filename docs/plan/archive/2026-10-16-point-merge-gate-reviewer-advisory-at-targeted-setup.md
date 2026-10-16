@@ -1,6 +1,6 @@
 # Point the merge-gate reviewer advisory at targeted setup
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -217,6 +217,65 @@ All findings come from the 2026-10-16 review and have been incorporated into thi
 - **Maintainability:** the eval wording was corrected to "skill digest" of a load-set seed.
 - **Testability:** the test update keeps every existing regex and both `near()` windows.
 - **Scope:** the budget raise is now planned rather than conditional.
+
+## Implementation notes
+
+Implemented by `effective-flow build` on 2026-10-16, on the branch of the plan pull request. Before
+implementing, `origin/develop` (with the targeted setup mode of #558) was merged into the plan
+branch as an ordinary merge commit, because `develop` had already changed `build.mjs`,
+`docs/user-guide/configuration.md` and the contract test. Deviations from the plan above:
+
+- **Trigger key named literally.** The missing-login invocation reads
+  `add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check`.
+- **`.check` rule worded normatively.** The advisory states that `.check` is left unset only by
+  answering "not set" in setup, for a reviewer without its own check context. An existing test
+  forbids the older phrasing in `src/tools/merge-gate.md`.
+- **Order stated explicitly.** The advisory lists the reviewers first, then gives the targeted
+  invocation, then the Guided fallback.
+- **Fallback chain kept in full.** The Phase 6 test pins every step of the Guided route, so it was
+  not shortened.
+- **Classification item aligned.** "Unconfigured automatic-reviewer advisory" item 1 now says setup
+  asks for the trigger and the exact `.check` context and the user decides on both.
+- **Docs.** The older duplicate targeted sentence in `docs/user-guide/configuration.md` was replaced
+  by the advisory description.
+- **Budget.** merge-gate measures 1941 lines; `CONTEXT_BUDGET_LINES['merge-gate']` is 1944.
+
+## Test results
+
+**Date:** 2026-10-16
+
+| Check                         | Result                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `pnpm agent:check`            | pass                                                                    |
+| `pnpm test`                   | 2256 pass, 1 skipped, 1 fail (environmental, see below)                 |
+| `node build.mjs`              | pass; merge-gate 1941/1944                                              |
+| `pnpm test:distribution`      | pass                                                                    |
+| `pnpm eval merge-gate verify` | stale, as expected: a re-recorded round is owed before the next release |
+| `pnpm eval iterate verify`    | all 6 scenarios current                                                 |
+| `pnpm eval next-steps verify` | all 11 scenarios current                                                |
+
+The failing test, `the shared seed commit disables inherited automatic Git maintenance before
+baseline capture`, fails identically on `develop` on this machine (unreadable global Git ignore
+symlink) and is unrelated. Mutation probes confirmed that the updated Phase 6 test fails when the
+Guided route comes first, when a placeholder or a check value enters an invocation, when the
+missing-check form is removed, and when a sentence conditions the `.check` clause on
+`checksReported`.
+
+## Review findings
+
+**Date:** 2026-10-16
+**Reviewer:** generic product reviewer (prompt source and docs, reduced depth), Node.js reviewer
+(test), code validator (tooling and documentation)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    13 |
+| Open / Not implemented |     0 |
+
+One suggestion was closed without a change: shortening the Guided fallback chain, which the
+existing Phase 6 test pins step by step.
 
 ## Open points
 
