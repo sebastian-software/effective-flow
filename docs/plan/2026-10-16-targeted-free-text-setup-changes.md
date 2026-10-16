@@ -212,6 +212,10 @@ Changes in `test/workflow-contracts.test.mjs`:
      never offers a replacement or overwrite of an invalid source.
 3. **Interpretation.** Map the free text, in any language, to operations on known schema keys:
    - _set_ `<key> = <value>`;
+   - _ask_ `<key>`: a change request without a value ("ask me for …", "let me choose …"). It runs
+     the owner's question for that key, with the current value as the pre-selection. A value that
+     is visibly a placeholder (such as `<exact check context>`) counts as no value and becomes an
+     _ask_; it is never written;
    - _reset_ `<key>`: remove the row, so the source skill's default applies;
    - _question_ about keys.
 
@@ -234,7 +238,10 @@ Changes in `test/workflow-contracts.test.mjs`:
    - A mixed request answers the questions first, then shows the change preview.
 5. **Per-key validation.** For each touched key, run only that key's question from its owner, as the
    key-to-owner table states. The requested value is the proposal and the current value is shown as
-   "currently recorded".
+   "currently recorded". Adding a reviewer to `mergeGate.bots` also counts as touching that
+   reviewer's `.trigger` and `.check`: Block 9's per-reviewer follow-up asks both for the new
+   reviewer, including its "not set" answer for `.check`. A request that touches only an existing
+   reviewer's `.check` asks only `.check`.
 6. **Hidden mode.**
    - Forced keys are refused with the reason, and the user is told that `setup` answering `Standard`
      leaves hidden mode.
@@ -318,6 +325,9 @@ Not relevant.
     `dead-marker`, `marker-divergence`;
   - redirects for `visibility` and `executionProfiles.fast.enabled`;
   - read-only answers write nothing and ask no confirmation;
+  - an _ask_ operation, or a placeholder value, runs the owner's question and never writes the
+    placeholder;
+  - adding a reviewer to `mergeGate.bots` asks that reviewer's `.trigger` and `.check`;
   - Step 6 items 1, 2 and 4 are the only write path, with one explicit confirmation;
   - Targeted item 3 stops on a changed source and re-confirms on a changed touched key;
   - non-interactive runs write nothing;
@@ -359,6 +369,9 @@ Not relevant.
   - **Hidden-mode "tracker github":** refused as forced, nothing written.
   - **Run without configuration:** stop text pointing to `setup` / `setup express`, nothing written.
   - **"enable the fast pilot":** redirect to `setup guided` → Advanced → Block 10.
+  - **"add coderabbitai to mergeGate.bots and set mergeGate.bots.coderabbitai.check to
+    `<exact check context>`" pasted unchanged:** Block 9 asks the reviewer's trigger and `.check`;
+    the placeholder is never written.
 
 ## Assumptions and open points
 
@@ -429,6 +442,16 @@ All findings come from the 2026-10-16 review and have been incorporated into thi
 - **Maintainability:** the lazy list in `build-system.md` was missing from the plan. Added.
 - **Testability:** the acceptance criteria are now named assertions, and the smoke cases have
   expected outcomes.
+
+### Revision 2026-10-16 (from the follow-up merge-gate advisory plan)
+
+The review of `docs/plan/2026-10-16-point-merge-gate-reviewer-advisory-at-targeted-setup.md`
+found two gaps here, both incorporated:
+
+- **Important, Error cases:** a pasted placeholder value would have been written as a literal
+  `.check`. Added the _ask_ operation; a placeholder value counts as no value.
+- **Important, Architecture:** adding a reviewer touched only `mergeGate.bots`, so its trigger and
+  `.check` could be skipped. Adding a reviewer now counts as touching both.
 
 ## Open points
 
