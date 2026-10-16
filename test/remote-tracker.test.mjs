@@ -3171,6 +3171,269 @@ test('body mutation previews require a caller-supplied fresh body hash', async (
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
 });
 
+for (const operation of ['issue-comment', 'pr-comment']) {
+  test(`Forgejo ${operation} creates once through the JSON API and returns the raw comment`, async () => {
+    const body = 'A review note';
+    const input = { repository: forgejoRepository, number: 17, payload: { body } };
+    const plan = buildCommandPlan(operation, input, forgejoRepository);
+    // The renderer can exit successfully after creating a comment while printing a human thread.
+    // Requiring the API route distinguishes that regression even if a fixture supplies JSON.
+    assert.equal(plan.executable, 'tea');
+    assert.deepEqual(plan.args, [
+      'api',
+      'repos/team/flow/issues/17/comments',
+      '--method',
+      'POST',
+      '--include',
+      '--login',
+      'work',
+      '--repo',
+      'team/flow',
+      '--data',
+      '@-',
+    ]);
+    assert.deepEqual(JSON.parse(plan.stdin), { body });
+    const created = {
+      id: 641,
+      body,
+      html_url: 'https://code.example.test/team/flow/issues/17#issuecomment-641',
+      user: { id: 9, login: 'reviewer' },
+      created_at: '2026-10-16T10:00:00Z',
+    };
+    const runner = fakeRunner([
+      {
+        ...teaApiResult(201, created),
+        stderr: 'HTTP/1.1 201 Created\r\nContent-Type: application/json\r\n\r\n',
+      },
+    ]);
+    const envelope = await executeOperation(operation, input, {
+      runner,
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.dryRun, false);
+    assert.deepEqual(envelope.data.result, created);
+    assert.deepEqual(runner.calls, [plan]);
+  });
+
+  test(`Forgejo ${operation} previews JSON stdin without creating and redacts sensitive values`, async () => {
+    const body = '## Review\nA "quoted" note: Grüße 世界.\n\n- **Markdown** and `code`';
+    const input = { repository: forgejoRepository, number: 17, payload: { body } };
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(operation, input, { runner, skipProbe: true });
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.dryRun, true);
+    assert.deepEqual(envelope.data.command, buildCommandPlan(operation, input, forgejoRepository));
+    assert.deepEqual(JSON.parse(envelope.data.command.stdin), { body });
+    assert.equal(envelope.data.command.args.includes(body), false);
+    assert.equal(envelope.data.command.args.includes('--output'), false);
+    assert.equal(runner.calls.length, 0);
+
+    const sensitive = await executeOperation(
+      operation,
+      { ...input, payload: { body: 'A note with token=github_pat_secret' } },
+      { runner, skipProbe: true },
+    );
+    assert.equal(sensitive.ok, true);
+    assert.doesNotMatch(JSON.stringify(sensitive), /github_pat_secret/);
+    assert.equal(JSON.parse(sensitive.data.command.stdin).body.includes('[REDACTED]'), true);
+    assert.equal(runner.calls.length, 0);
+  });
+
+  test(`Forgejo ${operation} rejects attribution and hidden disclosure before creating`, async () => {
+    for (const extra of [
+      { payload: { body: 'A note\n\nGenerated with Claude Code' } },
+      { visibility: 'hidden', payload: { body: 'Built with Effective Flow.' } },
+      { payload: { visibility: 'hidden', body: 'Built with Effective Flow.' } },
+    ]) {
+      const runner = fakeRunner([]);
+      const envelope = await executeOperation(
+        operation,
+        { repository: forgejoRepository, number: 17, ...extra },
+        { runner, skipProbe: true, apply: true },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+      assert.equal(envelope.error.details.field, 'payload.body');
+      assert.equal(runner.calls.length, 0);
+    }
+  });
+
+  for (const [status, format, response] of [
+    [401, 'JSON', teaApiResult(401, { message: 'unauthorized' })],
+    [401, 'HTML', teaApiRawResult(401, '<html>Unauthorized</html>')],
+    [403, 'plain text', teaApiRawResult(403, 'Forbidden', 'text/plain')],
+    [500, 'JSON', teaApiResult(500, { message: 'internal server error' })],
+    [502, 'HTML', teaApiRawResult(502, '<html>Bad Gateway</html>')],
+    [503, 'plain text', teaApiRawResult(503, 'Service Unavailable', 'text/plain')],
+  ]) {
+    test(`Forgejo ${operation} rejects exit-zero HTTP ${status} with ${format} diagnostics`, async () => {
+      const runner = fakeRunner([response]);
+      const envelope = await executeOperation(
+        operation,
+        { repository: forgejoRepository, number: 17, payload: { body: 'Note' } },
+        { runner, skipProbe: true, apply: true },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'COMMAND_FAILED');
+      assert.equal(envelope.error.details.status, status);
+      assert.equal(envelope.error.retryable, status >= 500);
+      assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+      if (format === 'JSON') {
+        assert.equal(envelope.error.details.message, JSON.parse(response.stdout).message);
+      } else {
+        assert.equal(Object.hasOwn(envelope.error.details, 'message'), false);
+      }
+      assert.equal(runner.calls.length, 1);
+    });
+  }
+
+  for (const [name, response] of [
+    ['missing HTTP status', { status: 0, stdout: '{"id":641,"body":"Note"}', stderr: '' }],
+    ['malformed successful JSON', teaApiRawResult(201, '---------\n**@reviewer** wrote:\nNote')],
+  ]) {
+    test(`Forgejo ${operation} fails closed for ${name} without another creation`, async () => {
+      const runner = fakeRunner([response]);
+      const envelope = await executeOperation(
+        operation,
+        { repository: forgejoRepository, number: 17, payload: { body: 'Note' } },
+        { runner, skipProbe: true, apply: true },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+      assert.equal(envelope.error.retryable, false);
+      assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+      assert.equal(runner.calls.length, 1);
+    });
+  }
+
+  test(`GitHub ${operation} preserves the POST command and raw creation result`, async () => {
+    const input = { repository: githubRepository, number: 17, payload: { body: 'Note' } };
+    const plan = buildCommandPlan(operation, input, githubRepository);
+    assert.equal(plan.executable, 'gh');
+    assert.deepEqual(plan.args, [
+      'api',
+      '-X',
+      'POST',
+      'repos/example/flow/issues/17/comments',
+      '--input',
+      '-',
+    ]);
+    assert.deepEqual(JSON.parse(plan.stdin), { body: 'Note' });
+    const created = { id: 641, body: 'Note', user: { login: 'reviewer' }, node_id: 'IC_641' };
+    const runner = fakeRunner([{ status: 0, stdout: JSON.stringify(created), stderr: '' }]);
+    const envelope = await executeOperation(operation, input, {
+      runner,
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.dryRun, false);
+    assert.deepEqual(envelope.data.result, created);
+    assert.deepEqual(runner.calls, [plan]);
+  });
+
+  for (const repository of [githubRepository, forgejoRepository]) {
+    test(`${repository.provider} ${operation} preserves ordinary-comment transport retry semantics`, async () => {
+      const runner = fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]);
+      const envelope = await executeOperation(
+        operation,
+        { repository, number: 17, payload: { body: 'Note' } },
+        { runner, skipProbe: true, apply: true },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'COMMAND_FAILED');
+      assert.equal(envelope.error.retryable, true);
+      assert.equal(Object.hasOwn(envelope.error.details, 'mutationMayHaveSucceeded'), false);
+      assert.equal(runner.calls.length, 1);
+    });
+  }
+}
+
+for (const [missing, overrides] of [
+  ['method', { commentUpdate: { status: 0, stdout: '--data', stderr: '' } }],
+  ['data', { commentUpdate: { status: 0, stdout: '--method', stderr: '' } }],
+  ['include', { apiInclude: { status: 0, stdout: '--method --data', stderr: '' } }],
+]) {
+  test(`Forgejo comment creation requires API ${missing} support before any write`, async () => {
+    const probeRunner = fakeRunner(teaProbeResults(overrides));
+    const probe = await probeProvider(forgejoRepository, probeRunner);
+    assert.equal(probeRunner.calls.length, 20);
+    for (const capability of ['issueComment', 'prComment', 'comments']) {
+      assert.equal(probe.capabilities[capability], false, capability);
+    }
+    for (const operation of ['issue-comment', 'pr-comment']) {
+      const runner = fakeRunner([]);
+      const envelope = await executeOperation(
+        operation,
+        { repository: forgejoRepository, number: 17, payload: { body: 'Note' }, probe },
+        { runner, skipProbe: true, apply: true },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+      assert.equal(
+        envelope.error.details.capability,
+        operation === 'issue-comment' ? 'issueComment' : 'prComment',
+      );
+      assert.equal(runner.calls.length, 0);
+    }
+  });
+}
+
+test('Forgejo comment creation stays available without the human comment renderer', async () => {
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ comment: { status: 1, stdout: '', stderr: 'unknown command' } })),
+  );
+  for (const capability of ['issueComment', 'prComment', 'comments']) {
+    assert.equal(probe.capabilities[capability], true, capability);
+  }
+  for (const operation of ['issue-comment', 'pr-comment']) {
+    const runner = fakeRunner([teaApiResult(201, { id: 641, body: 'Note' })]);
+    const envelope = await executeOperation(
+      operation,
+      { repository: forgejoRepository, number: 17, payload: { body: 'Note' }, probe },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.data.result.id, 641);
+    assert.equal(runner.calls.length, 1);
+  }
+});
+
+test('Forgejo comment API capabilities preserve the positional help-probe order', async () => {
+  const runner = fakeRunner(teaProbeResults());
+  const probe = await probeProvider(forgejoRepository, runner);
+  assert.equal(runner.calls.length, 20);
+  assert.deepEqual(
+    runner.calls.slice(2).map((plan) => plan.args),
+    [
+      ['issues', '--help'],
+      ['issues', '--help'],
+      ['issues', 'create', '--help'],
+      ['issues', 'edit', '--help'],
+      ['issues', 'edit', '--help'],
+      ['issues', 'edit', '--help'],
+      ['pulls', '--help'],
+      ['pulls', '--help'],
+      ['pulls', 'create', '--help'],
+      ['pulls', 'create', '--help'],
+      ['pulls', 'edit', '--help'],
+      ['comment', '--help'],
+      ['api', '--help'],
+      ['labels', 'create', '--help'],
+      ['labels', 'list', '--help'],
+      ['api', '--help'],
+      ['pulls', 'edit', '--help'],
+      ['pulls', 'create', '--help'],
+    ],
+  );
+  for (const capability of ['issueComment', 'prComment', 'comments']) {
+    assert.equal(probe.capabilities[capability], true, capability);
+  }
+});
+
 test('issue-comment-update builds the documented GitHub and Forgejo PATCH commands', () => {
   const github = buildCommandPlan(
     'issue-comment-update',

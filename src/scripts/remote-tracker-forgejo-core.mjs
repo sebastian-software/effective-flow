@@ -245,12 +245,22 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         jsonStdin({ state: 'closed' }),
       );
     case 'issue-comment':
-      return mutationPlan('tea', [
-        'comment',
-        String(issueNumber(input)),
-        ...teaJson,
-        publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
-      ]);
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(`issues/${issueNumber(input)}/comments`),
+          '--method',
+          'POST',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
+      );
     case 'issue-comment-update':
       return mutationPlan(
         'tea',
@@ -415,12 +425,22 @@ export function buildForgejoCommandPlan(operation, input, repository) {
       );
     }
     case 'pr-comment':
-      return mutationPlan('tea', [
-        'comment',
-        String(prNumber(input)),
-        ...teaJson,
-        publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
-      ]);
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(`issues/${prNumber(input)}/comments`),
+          '--method',
+          'POST',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({
+          body: publishedText(payload.body, 'payload.body', publishingVisibility(input, payload)),
+        }),
+      );
     // Call 1 of the review-thread walk, and the only one this builder can answer. Neither forge
     // exposes a flat review-comment listing — Forgejo's router declares
     // `GET …/pulls/{index}/reviews` and `GET …/pulls/{index}/reviews/{id}/comments` and nothing

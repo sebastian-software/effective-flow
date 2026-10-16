@@ -2593,7 +2593,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // `--include`, and the close plan uses all three, so the capability and the plan state one
       // requirement rather than the capability over-gating a plan that needs less.
       issueClose: teaApiTransport,
-      issueComment: comment,
+      issueComment: teaApiTransport,
       issueCommentUpdate: commentUpdate,
       issueLabelAdd,
       issueLabelRemove,
@@ -2630,8 +2630,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // where the installed tea both edits titles and states that its drafts are that prefix. The
       // edit is confirmed by one raw `pr-read`, so the transport flag that read needs is required too.
       pullRequestMarkReady: pullEditTitle && pullCreateDraftWip && apiInclude,
-      prComment: comment,
-      comments: comment,
+      prComment: teaApiTransport,
+      comments: teaApiTransport,
       labels: labelCreateSupported && issueLabelAdd && issueLabelRemove,
       labelList,
       // `labelCreate` is the key the operation gate reads, so the read the create depends on is
