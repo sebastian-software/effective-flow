@@ -164,9 +164,16 @@ the round consuming a relayed `iterate-approval` passes the approved outcomes as
 asks only for an ambiguous provider and the completion mode; every other question comes back
 through it.
 
-The delegated gate needs three levels of nesting below the main session: main session (0) →
-delegated gate run (1) → the per-item `fix` or `build` run that `iterate` starts inside it (2) →
-that run's implementer or validator (3); the conflict resolver and its validator sit at level 2.
+The delegated gate needs four levels of nesting below the main session: main session (0) →
+delegated gate run (1) → the `iterate` round it dispatches (2) → the per-item `fix` or `build` run
+that `iterate` starts (3) → that run's implementer or validator (4); the conflict resolver and its
+validator sit at level 2. On Claude, Claude Code's documented default nesting depth of 3, as
+reported in the host-capability note of
+[the plan](../plan/archive/2026-10-16-per-spawn-model-tiers-and-lean-orchestrator.md), refuses the
+per-item run's level-4 spawns, so that run performs its worker roles inline as declined
+delegations. Independent validation on
+that path is therefore reduced, a known trade-off of running `iterate` in its own subagent. The
+Codex limit is host-configured (`agents.max_depth`).
 Before any gate write, and whenever its wisdom file holds no passed-probe record, the delegated
 run's Entry probe starts one no-op child at tier `mechanical` and then records the pass, so a
 re-dispatch never probes again. No spawn tool, or a probe the host refuses or that fails, returns
@@ -183,9 +190,12 @@ and the parenthesised `Agent(<type>)` form is an unrestricted grant rather than 
 Codex and portable workers carry the same leaf contract in their instructions; their worker
 metadata does not expose an equivalent per-role tool-list boundary. Inline execution stays
 legitimate only as a disclosed orchestrator fallback — never silent. Workflow-to-workflow
-delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own mechanics and is out of scope for
-this mandate — which is why `merge-gate` carries the include for its worker-role delegations
-(`merge-conflict-resolver`, `code-validator`) while that one handoff stays exempt. That handoff's
+delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics and gates
+and is out of scope for this mandate — which is why `merge-gate` carries the include for its
+worker-role delegations (`merge-conflict-resolver`, `code-validator`), while each `iterate` round
+runs in a built-in subagent at the `deep` spawn site
+`merge-gate-delegation-contract/iterate-delegation`, and that subagent reads `tools/iterate.md`
+first. That handoff's
 message is never written by hand: the shipped `delegation-envelope` runtime helper builds it from
 structured input and then validates it against a digest and a manifest snapshot before dispatch.
 Above the delimiter it carries six control lines (`Item filter:`, `Summary comment:`,
@@ -451,7 +461,8 @@ proof that a running host discovered or accepted an agent. Rendered-reference gu
 native reference has an exact representation and every portable reference has an exact worker
 contract. Portable instructions never request those
 identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
-of pretending that a worker ran. In every target, the caller starts a worker with zero inherited
+of pretending that a worker ran, while a single spawn the host refuses at run time takes the
+delegation mandate's inline fallback. In every target, the caller starts a worker with zero inherited
 turns when supported, otherwise the smallest supported history, and supplies the compact,
 self-contained handoff defined by the delegation mandate. The worker remains a leaf.
 

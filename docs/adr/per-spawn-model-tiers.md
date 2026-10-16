@@ -148,7 +148,8 @@ out of the main session; the tier rules above are unchanged.
 - `merge-gate` runs as one delegated run at `deep`. The caller keeps Phase 0 and a closed table of
   user questions; a new run state `relayed` means the user is reachable through the caller, so
   every user gate returns `BLOCKED-USER <question-id>` and the caller re-dispatches with the
-  relayed answer. Without nested spawns the caller runs the gate inline and says so once.
+  relayed answer. Without nested spawns the caller runs the gate inline and says so once. Each
+  `iterate` round the gate delegates runs in its own built-in subagent at `deep`.
 
 Mechanics: [Build system](../developer-guide/build-system.md) (the split core and its budget) and
 the shipped fragments `central-reasoning-delegation` and `merge-gate-delegated-run`.

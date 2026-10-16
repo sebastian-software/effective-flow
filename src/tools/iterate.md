@@ -853,7 +853,7 @@ and stop delivery for reconciliation.
    - the worktree-record exit self-check result – in this summary, which is also the content
      handed back under `Summary comment: suppressed`, never in the returned outcome record
 4. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
-   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run.
+   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run. On normal completion a delegated run's final line is `DONE`, beside its stop returns `ABORT: <reason>` and `BLOCKED-USER <question-id>`.
 
 ## Rules
 

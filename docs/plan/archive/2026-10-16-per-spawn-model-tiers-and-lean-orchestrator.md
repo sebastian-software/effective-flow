@@ -324,6 +324,7 @@ Deviations from the plan text and additions from review:
 - A relayed stopping answer ends the run at Entry whatever its digest. After an invalid return the caller re-dispatches at most once with `Relayed answer: none`, which resolves completion to `report`.
 - The caller leaves `prReviewsRead` to the delegated run, and the inline fallback applies it with the caller's own run state.
 - The lean sentence keeps the plan-review wording, unbounded beyond its precedence clause; a reviewer proposal to bound it was declined as contrary to that decision.
+- The manual check found the `iterate` handoff spawned as a bare nested subagent that never loaded `tools/iterate.md`; each round is now a named built-in subagent spawn at `deep` (spawn site `merge-gate-delegation-contract/iterate-delegation`) that reads it, `iterate` ends a delegated run with `DONE`, and the CI-repair instruction carries no process directive. This adds one nesting level; `architecture.md` records the chain.
 
 ## Test results
 

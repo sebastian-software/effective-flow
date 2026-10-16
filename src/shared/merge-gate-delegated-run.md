@@ -78,8 +78,9 @@ under "Returned outcome record" – the run-wide rules in `merge-gate-delegation
 per-item receiver in `merge-gate-configured-reviewer` – and nowhere else.
 
 This gate is a delegator twice over, and the mandate governs the second kind. Handing the rest of a
-code change to `{{SKILL:iterate}}` is a workflow-to-workflow delegation and keeps that tool's own
-mechanics, including its interactive path – the mandate's own carve-out. Handing a conflicted merge
+code change to `{{SKILL:iterate}}` is a workflow-to-workflow delegation: each round runs in a
+dispatched subagent per `merge-gate-delegation-contract` and keeps that tool's own mechanics and
+gates, including its interactive path – the mandate's own carve-out. Handing a conflicted merge
 to `{{AGENT:merge-conflict-resolver}}` and the resolved tree to `{{AGENT:code-validator}}` is a
 delegation to **named worker roles**, which is exactly what the mandate binds: those two are
 mandatory, never a judgment call. Where the mandate's inline fallback would apply – no sub-agent
@@ -684,7 +685,7 @@ run can push an unbounded number of commits onto someone's pull request.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
    - A **relayed** run asks through `BLOCKED-USER checks-pending` under the same once-per-run record.
 3. **Failed checks.** Delegate to `{{SKILL:iterate}} <PR>` an instruction derived from the failing
-   check names – failing as step 4 defines it, never a `SKIPPED` or `NEUTRAL` one – and their reported failure detail, which the helper frames as **free-text-only**. The human-comment guard does **not** block this delegation. Build, validate and
+   check names – failing as step 4 defines it, never a `SKIPPED` or `NEUTRAL` one – and their reported failure detail, which the helper frames as **free-text-only**. The instruction describes the failure only and carries no commit, push or other process directive: `{{SKILL:iterate}}` owns those mechanics. The human-comment guard does **not** block this delegation. Build, validate and
    dispatch it per "Building and dispatching a delegation" in `merge-gate-delegation-contract`, with no thread and no body item, so the
    message ends at the delimiter line. Where `build` refuses the instruction because a line of it
    could state protocol, delegate nothing and **end the run here**: the report names the failing
@@ -1020,7 +1021,7 @@ reservation exactly once.
   whole item manifest **above** the body delimiter and every caller-supplied body **below** it. The
   gate writes none of those lines itself.
 - Build every delegation with the `delegation-envelope` helper's `build`, then `validate` it per
-  `merge-gate-delegation-contract`, and dispatch the validated file's content with nothing added; never assemble one by hand. A sender-side
+  `merge-gate-delegation-contract`, and dispatch the validated file's content with nothing added inside or after it; never assemble one by hand. A sender-side
   failure or a missing helper stops the run before `{{SKILL:iterate}}` is invoked.
 - Take every bot's state from the loaded "Automatic reviewer state", never treat an unprovable state
   as **has run**, and trigger only a bot that has **not started**, or re-trigger a **has run** bot once

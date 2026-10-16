@@ -78,7 +78,7 @@ Points 1–4 govern prompt text under `src/` and this file; point 5 governs `tes
 
 ## Delegation
 
-The contract is [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eager in every delegating tool and every `src/agents/*.md` worker. Every `src/agents/<name>.md` omits `Agent` and `Task` from `claude.tools`, writing or not: withholding them is the only enforceable Claude leaf boundary, since neither prose nor a parenthesised `Agent(<type>)` constrains a child once the tool is granted. Codex and portable workers carry the same leaf contract in their instructions instead. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics; `merge-gate` carries the eager include for its worker roles while its `iterate` handoff stays exempt.
+The contract is [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eager in every delegating tool and every `src/agents/*.md` worker. Every `src/agents/<name>.md` omits `Agent` and `Task` from `claude.tools`, writing or not: withholding them is the only enforceable Claude leaf boundary, since neither prose nor a parenthesised `Agent(<type>)` constrains a child once the tool is granted. Codex and portable workers carry the same leaf contract in their instructions instead. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics and gates; `merge-gate` carries the eager include for its worker roles and dispatches each `iterate` round in a built-in subagent at its own spawn site.
 
 ## Skill discovery
 

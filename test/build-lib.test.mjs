@@ -3569,6 +3569,13 @@ test('renderBody gives portable worker refs an explicit one-contract delegation 
   assert.match(rendered, /worker is a leaf executor/i);
   assert.match(rendered, /starts no child/i);
   assert.match(rendered, /returns missing essential context to the orchestrator/i);
+  // A host without built-in delegation still stops, but one spawn refused at run time (e.g. at
+  // the host's depth limit) must take the mandate's inline fallback instead of stopping the run.
+  assert.match(
+    rendered,
+    /If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback\./,
+  );
+  assert.match(rendered, /Never claim that an undiscoverable worker ran\./);
   assert.match(rendered, /Start `effective-flow-code-validator`\./);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
 });

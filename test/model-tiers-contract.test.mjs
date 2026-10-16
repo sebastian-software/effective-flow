@@ -613,6 +613,35 @@ test('the nested-spawn probe is a mechanical site marked in Entry step 7 of the 
   );
 });
 
+// Each iterate round the gate delegates is a whole workflow run that orchestrates its own workers,
+// like the sibling delegated-workflow sites, so it runs at `deep` and never moves down. Without a
+// site the nested spawn fell to `standard`; its marker sits in the dispatch step itself.
+test('the iterate round dispatch is a deep, no-downward-move site marked in the dispatch step', () => {
+  const site = spawnSites().find(
+    ({ id }) => id === 'merge-gate-delegation-contract/iterate-delegation',
+  );
+  assert.ok(site, 'missing spawn site merge-gate-delegation-contract/iterate-delegation');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['deep'],
+  );
+  assert.equal(site.downAllowed, false);
+  const fragment = readSource('shared/merge-gate-delegation-contract.md');
+  const markers = collectSpawnSiteMarkers(fragment, {
+    owner: 'merge-gate-delegation-contract',
+    context: 'shared/merge-gate-delegation-contract.md',
+  }).map(({ id }) => id);
+  assert.deepEqual(markers, ['merge-gate-delegation-contract/iterate-delegation']);
+  const step = fragment.slice(
+    fragment.indexOf('4. **Dispatch**'),
+    fragment.indexOf('Delete the message file and its snapshot'),
+  );
+  assert.ok(
+    step.includes('<!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->'),
+    'the marker sits inside the dispatch step',
+  );
+});
+
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
