@@ -374,3 +374,5 @@ existing files).
 The complete tool reference, guides on configuration, worktree/delivery,
 remote tracker, and skill discovery, as well as troubleshooting and the glossary are in the
 [User Guide index](README.md).
+
+Stage B manual check, test pull request 1. Do not merge into develop.
