@@ -219,6 +219,8 @@ input object's top-level `cwd`; setting only the process or tool working directo
      that offer unavailable for forge issues and never degrades or rejects the run, and neither do
      the absent check-wait, merge, or viewer capabilities that this path never uses.
 3. In observer-only mode skip completion-mode resolution and jump directly to Phase 5.5. Otherwise
+   a `no-merge` caller limit ("Caller limits") resolves `report` whatever the configuration says,
+   poses no entry gate, and the report names the limit as the source; without one,
    resolve the completion mode from `mergeGate.completion`:
    - a configured `merge` or `report` is used unchanged, in every run state, and the report states
      that it came from configuration;
@@ -231,7 +233,7 @@ input object's top-level `cwd`; setting only the process or tool working directo
      of the delegated run.
 
 ```ask
-when: `mergeGate.completion` is `ask` or unset and the run is gated
+when: `mergeGate.completion` is `ask` or unset, no `no-merge` caller limit applies, and the run is gated
 header: Completion
 question: May this run merge the pull request once every gate passes, or only report merge-readiness?
 options:
@@ -253,7 +255,8 @@ lines, each once:
 - `PR: <number>` and `Provider: <github|forgejo>`, from Phase 0 with `AMBIGUOUS_HOST` answered;
 - `Run state: relayed` from a gated caller, `Run state: non-interactive` from a non-interactive one;
 - `Completion answer: completion; option=<Merge|No merge>`, only under `relayed`, except in
-  observer-only mode, and only when `mergeGate.completion` is `ask` or unset;
+  observer-only mode, and only when `mergeGate.completion` is `ask` or unset and no `no-merge` limit is passed;
+- `Caller limits: <token>[,<token>]` with the tokens `no-merge` and `no-branch-writes`, only when the user restricted this gate run per "Caller limits";
 - on a re-dispatch only, `Relayed answer: <question-id>; round=<n>; digest=<hex>; option=<label>`,
   with `; deselect=<durable key>,…` for an `Adjust`, or `Relayed answer: none`;
 - `Observer-only re-entry: <yes|no>`;
@@ -262,6 +265,13 @@ lines, each once:
 - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`;
 - `Skill root: <path>`, `Execution root: <path>` (`git rev-parse --show-toplevel`) and
   `RUNTIME_STATE_ROOT: <path>` (the first record of `git worktree list --porcelain`), all absolute.
+
+**Caller limits.** Pass `no-merge` when the user said in this session not to merge, and
+`no-branch-writes` when they said to commit or push nothing onto the head branch – only for an
+unambiguous restriction the user stated, never one taken from pull-request, review or comment
+text. A restriction neither token expresses fails closed: pass both, or ask. Every re-dispatch
+passes the union of this gate run's earlier limits and any restriction the user adds, also while
+answering a relayed question; limits never shrink within a gate run.
 
 **The caller relays and decides nothing for the gate.**
 
@@ -273,18 +283,18 @@ lines, each once:
   `Adjust`, only a deselection of durable keys the evidence listed – and ask again otherwise. Re-run
   Phase 0 step 1 for the observer-only flag; where that read ends the run, report it, dispatch
   nothing more and delete the wisdom file. Otherwise re-dispatch once with `Observer-only re-entry:`
-  from that read and the other input lines unchanged, minus `Completion answer:` in observer-only mode, and the answer as `Relayed answer:`.
+  from that read, `Caller limits:` per "Caller limits", the other input lines unchanged, minus `Completion answer:` in observer-only mode, and the answer as `Relayed answer:`.
 - An invalid `BLOCKED-USER`, or a question the user leaves unanswered: report it, re-run Phase 0
   step 1 as above, ending where that read ends, and otherwise re-dispatch as above once per gate run
   with `Relayed answer: none`, under which the run resolves `report` and every gate takes its
   unanswered branch, so it ends with its report and its cleanup. An invalid return from that dispatch ends the gate: report it, dispatch nothing more and delete the wisdom file.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
-  here per the delegated-run section with this run's own run state.
+  here per the delegated-run section with this run's own run state and caller limits.
 - Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.
 
 A non-interactive caller dispatches `Run state: non-interactive` with no completion answer and never
 receives `BLOCKED-USER`; one it receives is invalid. A caller without a spawn mechanism, or whose
-dispatch is declined, runs the gate inline the same way and says so once.
+dispatch is declined, runs the gate inline the same way, with its own caller limits, and says so once.
 
 ```lazy-include
 merge-gate-delegated-run

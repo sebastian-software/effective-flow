@@ -2204,7 +2204,7 @@ try {
     setup: 1560,
     'apply-review': 1025,
     'apply-issues': 937,
-    'merge-gate': 873,
+    'merge-gate': 883,
     cleanup: 833,
     refactor: 943,
     deliver: 796,

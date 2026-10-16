@@ -397,7 +397,8 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run            |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
-a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
+a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
+session not to merge resolves `report` whatever this key says, and nothing is asked. An empty
 `mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
 than blocking the merge forever. Under `mergeGate.requireAllChecks: true` every reported check
 counts; under `false` only the checks the forge marks as required count, so a red optional check is

@@ -162,7 +162,10 @@ report. `iterate` accepts `relayed` too, while its per-item runs still receive `
 the round consuming a relayed `iterate-approval` passes the approved outcomes as the helper-built
 `Approved outcomes:` line, which `iterate` applies as its approval before any write. The caller
 asks only for an ambiguous provider and the completion mode; every other question comes back
-through it.
+through it. A restriction the user stated travels as the optional `Caller limits:` line
+(`no-merge`, `no-branch-writes`), which only grows across re-dispatches and takes precedence over
+configuration: `no-merge` resolves `report`, and `no-branch-writes` disables the base-into-head merge
+and every `iterate` delegation.
 
 The delegated gate needs four levels of nesting below the main session: main session (0) →
 delegated gate run (1) → the `iterate` round it dispatches (2) → the per-item `fix` or `build` run

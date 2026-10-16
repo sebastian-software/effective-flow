@@ -305,8 +305,11 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    is.
 
 **How it runs:** The gate runs as one delegated run on the `deep` tier, so the long wait-and-repair
-loop stays out of your session's context. Your session asks for the merge completion mode before
-the gate starts. Every later question – a waiver for a missing check list, a conflict resolution, a
+loop stays out of your session's context. A restriction you give your session – do not merge, or
+commit or push nothing onto the branch – travels into the delegated run and wins over
+`mergeGate.completion`: the run then only reports, or ends with its report where it would otherwise
+write to the branch. Without a "do not merge" restriction, your session asks for the merge
+completion mode before the gate starts. Every later question – a waiver for a missing check list, a conflict resolution, a
 finding it set aside, an issue transition – comes back through your session with what each answer
 does, and the run then continues with your answer, or ends with its report when you stop it. A host that cannot start a nested sub-agent runs the gate inline and says so once.
 

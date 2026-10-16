@@ -3,7 +3,7 @@
 This fragment is the gate after Phase 0 of `{{SKILL:merge-gate}}`, which stays in that tool's
 always-loaded core together with the run states, the closed question-id set and the return contract
 this fragment uses. It runs in the delegated run the caller dispatched, and in a caller that runs the
-gate inline with its own run state and Phase 0 results, which skips "Entry" but applies Phase 0
+gate inline with its own run state, caller limits and Phase 0 results, which skips "Entry" but applies Phase 0
 step 2's `prReviewsRead` bullet with that run state before Phase 1.
 `{{SKILL:merge-gate}}` is this fragment's only consumer.
 
@@ -14,18 +14,23 @@ In this order, before any other write:
 1. **Input lines.** Accept exactly the lines "Dispatching the delegated run" names, each once. An
    unknown, duplicated, malformed or missing line, a `Run state:` other than `relayed` or
    `non-interactive`, or under `non-interactive` a `Completion answer:` or a `Relayed answer:` other
-   than `none` returns `ABORT unparseable input line`.
+   than `none` returns `ABORT unparseable input line`. `Caller limits:` holds one or more
+   comma-separated tokens; an unknown, duplicated or empty token returns the same `ABORT`.
 2. **Roots.** Verify `RUNTIME_STATE_ROOT` and `Execution root` yourself per the deferred
    `runtime-state-safety`; a verified value that differs from the passed one returns `ABORT`.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
    file this check rejected. A present file is this gate run's record from an earlier dispatch.
+   A dispatch whose `Caller limits:` line is missing or lacks a limit that file records returns
+   `ABORT caller limits narrowed`.
 4. **Fresh state.** Re-read all pull-request state: re-run Phase 0 steps 1 and 2 read-only with the
    passed provider, asking nothing for `AMBIGUOUS_HOST` and leaving step 2's `prReviewsRead` bullet
    to step 8. A mismatch with the passed PR, provider or observer-only flag returns `ABORT`.
 5. **Completion source.** Except in observer-only mode, read `mergeGate.completion` yourself and
-   apply Phase 0 step 3. A configured `merge` or `report` together with a passed `Completion answer:`
+   apply Phase 0 step 3. A `no-merge` limit resolves `report` there before anything else in this
+   step, so neither the configuration conflict nor a missing `Completion answer:` returns `ABORT`.
+   A configured `merge` or `report` together with a passed `Completion answer:`
    returns `ABORT completion answer conflicts with configuration`. Under `ask` or an unset key, a
    `relayed` run takes `Merge` as `merge` and `No merge` as `report`, returns `ABORT` without that
    line, and never defaults to `merge`. Under `Relayed answer: none` the mode is `report`, whatever
@@ -61,6 +66,21 @@ In this order, before any other write:
   wisdom file, which the re-dispatch continues.
 - **A delegated orchestrator.** The delegation mandate's pending-child bullet binds this run: every
   child runs in the foreground, and no turn ends while one is pending.
+
+### Caller limits
+
+`Caller limits:` – in an inline run, the limits its own session derived per "Caller limits" of
+`{{SKILL:merge-gate}}` – binds every phase and takes precedence over configuration, every relayed
+answer and every rule below that would otherwise permit the action.
+
+- `no-merge` resolves the completion mode to `report` per Phase 0 step 3; the observer-only path
+  never merges, so it changes nothing there.
+- `no-branch-writes` makes both kinds of base-into-head merge in "Git write boundary" and every
+  `{{SKILL:iterate}}` delegation – CI repair and bot round – unavailable. Where Phase 2 step 1 would
+  provision a checkout, or Phase 2 step 3 or Phase 3 would build a delegation, the run instead ends
+  with its report and Phase 6, names the limit as the blocking condition, and makes no commit, no
+  push and no merge. It withholds no write outside the head branch: a bot trigger comment and Phase
+  5.5's `issueClose` stay governed by their own rules.
 
 ## `effective-delivery` stays out of this run
 
@@ -365,7 +385,9 @@ gate run inline generates it at the start. Use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
 - the resolved pull request (number, head/base branch, head SHA, URL) and the resolved completion
-  mode with its source (configuration or entry gate)
+  mode with its source (configuration, entry gate or a `no-merge` caller limit)
+- the caller limits of every dispatch, recorded before its first return, so Entry step 3 can reject
+  a narrowing re-dispatch
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the human-comment guard state and the evidence that set it
 - every item the guard's identity rule excluded that would otherwise have counted: its author, the
@@ -903,7 +925,7 @@ reservation exactly once.
    comment onto the pull request:** the gate has none of its own, and `{{SKILL:iterate}}`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
    instead. The merge itself is visible on the pull request anyway. Report:
-   - the resolved pull request and the resolved mode with its source;
+   - the resolved pull request, the resolved mode with its source, and every caller limit in force;
    - the check outcome per round;
    - **every conflict with the base this run met**: the resolved `mergeGate.conflictResolution` mode
      with its source, the conflicted paths with their risk classification, the resolver's per-file
@@ -1038,14 +1060,15 @@ reservation exactly once.
 - This workflow holds **no lock of its own**: `{{SKILL:iterate}}`'s commit mutex protects the index,
   two concurrent gate runs on one pull request could both wait, and that is out of scope – the merge
   SHA guard makes the second merge fail closed rather than duplicate work.
-- Ask the entry gate exactly once, at the start; only `ask` or an unset `mergeGate.completion` in a
-  non-interactive delegation behaves as `report`.
+- Ask the entry gate exactly once, at the start; absent a `no-merge` caller limit, only `ask` or an
+  unset `mergeGate.completion` in a non-interactive delegation behaves as `report`.
 - Clear a `deferred` or `rejected` finding of conditions 7 and 10 only through "The set-aside
   confirmation", never where the resolved completion mode is not `merge`; a decline, an unanswered
   question, and a non-interactive delegated run each end the run with a report.
 - Count an `implemented` body finding only where the head moved in that round.
 - `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
-  merge commit, the bot trigger, and the delegated `{{SKILL:iterate}}` rounds still run.
+  merge commit, the bot trigger, and the delegated `{{SKILL:iterate}}` rounds still run, unless a
+  `no-branch-writes` caller limit withholds them per "Caller limits".
 - After a pilot observation reservation, no controlled or exceptional path returns before the
   observation finalizer has run exactly once. Observation or pilot-control failure never changes
   the merge/report result and never activates an execution profile.
