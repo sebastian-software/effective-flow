@@ -326,10 +326,11 @@ tier. See [Per-spawn model tiers](../adr/per-spawn-model-tiers.md).
 
 The host's own variables interact with a per-spawn tier as follows. A per-spawn `model` now wins
 over `CLAUDE_CODE_SUBAGENT_MODEL`. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is the opt-out: when it is
-present, the orchestrator passes no tier parameters, says so once, and the workers inherit the
-forced model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort of every subagent; Effective Flow
-documents it and does not detect it. Presence of the force variable is the only environment signal
-read, and its value is never read, relayed, displayed or persisted.
+present, Claude Code offers no `model` parameter on its Agent tool; the orchestrator recognizes the
+forced model by that missing parameter, passes only the tier's effort, says so once, and the
+workers run on the forced model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort of every subagent; Effective Flow
+documents it and does not detect it. The tiers read no environment variable; only the Fast pilot checks the force variable's presence,
+and its value is never read, relayed, displayed or persisted.
 
 ### Bot registry encoding (`mergeGate.bots`)
 

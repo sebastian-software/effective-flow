@@ -24,8 +24,9 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 
 ## Host overrides
 
-- When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present (check presence only, never read its value),
-  pass no tier parameters and say so once.
+- On Claude Code, an Agent tool without a `model` parameter means the host forces the subagent
+  model (for example through `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`): pass only the tier's `effort`,
+  never probe the environment, and say once that the host sets the subagent model.
 - A spawn rejected because of a tier parameter is retried once without it, or without both
   parameters when it is unclear which one was rejected; omit the rejected parameter for the rest of
   the run and report that once.

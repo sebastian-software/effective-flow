@@ -137,7 +137,8 @@ appropriate implementation workflow.
 run `deep`; tests, validation, and documentation run `standard`. This is the Quality assignment the
 Fast pilot below departs from. A `standard` spawn may move one tier for a stated reason, a `deep`
 spawn never moves down, and a retry or correction runs at least on the role or site default. Setting
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` makes the workflow pass no tier parameters, and
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` fixes the subagent model, so the workflow passes only the tier's
+effort, and
 `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
 [Getting started](getting-started.md#recommended-calling-model).
 

@@ -69,7 +69,7 @@ Delivery: Stage A (per-spawn tiers) and Stage B (lean orchestrator at two concre
   - A retry or correction after a failed attempt runs at least on the role default.
 - **Portable renders harness-keyed values, not prose.** Portable output is one artifact for Claude Code and Codex. Its `model-tiers` fragment carries a generated table between markers, one column per spawn mechanism, and each spawn site carries the short two-harness form. A host with neither mechanism inherits as today and says so once. Provider names may appear in portable output only in build-generated tier text, meaning the marked table and the rendered spawn-site lines; the guard knows both shapes.
 - **Host overrides are respected, never bypassed.**
-  - When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present (presence only, as today), the orchestrator passes no tier parameters and says so once.
+  - On Claude Code, an Agent tool without a `model` parameter means the host forces the subagent model (for example through `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`): the orchestrator passes only the tier's `effort` and says once that the host sets the subagent model (revised after the force counter-check; the first version passed no tier parameters).
   - A spawn rejected because of a tier parameter is retried once without it. If attribution between `model` and `effort` is unclear, the retry drops both. The rejected parameter is then omitted for the rest of the run and reported once.
   - `CLAUDE_CODE_EFFORT_LEVEL` is documented as a user override and not detected.
 - **The Fast pilot keeps its contract.**
@@ -212,7 +212,7 @@ Not relevant.
 
 ### Edge cases
 
-- **`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` set:** no tier parameters, one visible line; the workers inherit the forced model.
+- **`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` set:** the Agent tool offers no `model` parameter; only the tier's `effort` is passed, one visible line; the workers run on the forced model.
 - **`CLAUDE_CODE_EFFORT_LEVEL` set:** the host overrides effort silently; documented only.
 - **Tier parameter rejected** (`availableModels`, an older host without per-invocation `effort`): retry once without it, or without both when attribution is unclear; omit it for the rest of the run; report once.
 - **Host without any spawn mechanism:** inline work per the existing mandate fallback; tiers do not apply.
@@ -254,7 +254,7 @@ Not relevant.
   - reviewers on `deep`;
   - one `mechanical` spawn on haiku/low accepted.
 
-  The same run with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` set shows the disable line and no tier parameters.
+  The same run with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` set shows the host-forced-model line, only `effort` passed, and the child on the forced model.
 
 - Manual Codex check (gates the ADR status): one built-in default-agent spawn with a tier override is accepted. Record whether a delegated orchestrator can spawn nested workers.
 - Stage B manual check on a test PR:
@@ -310,7 +310,7 @@ Addendum, 2026-10-16 (user decision after the host checks): the Codex `deep` tie
 - Manual host checks, 2026-10-16: passed; `docs/adr/per-spawn-model-tiers.md` is Active and records the details.
   - Claude Code 2.1.292: subagent transcripts show `standard` on `claude-sonnet-5-5`/`medium`, `deep` on `claude-opus-5-5`/`high`, and a direct `mechanical` call on `claude-haiku-5-5`/`low`.
   - Codex CLI 0.159.3: the built-in default agent accepted `gpt-5.6-luna`/`low` and `gpt-5.6-sol`/`high` overrides (child thread settings confirm them), and a nested spawn worked at depth 2.
-  - Not covered: the `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check.
+  - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check (headless `claude -p` on 2.1.292 and the desktop's 2.1.299, Sonnet and Opus parents): the host drops the Agent tool's `model` parameter and forces the child onto the configured model (`claude-sonnet-5-5`, effort `high` honored). The first rule could not probe the variable and misread the missing parameter as inheritance; `model-tiers.md` now treats a missing `model` parameter as a host-forced model and passes only `effort`.
   - Observation for a later mapping decision: Codex's host default is `gpt-6.1-sol`, newer than the mapped `deep` model.
 - Owed: the re-record of the three eval suites, which the plan schedules once after Stage B.
 

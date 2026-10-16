@@ -454,7 +454,8 @@ move one step with a stated reason; a retry runs at least on the role or site de
 host overrides. A Fast attempt passes only its Fast reference's own values, never the site's tier
 line (owned by `execution-profiles`). The native sidecar values remain the harness-enforced fallback when a spawn passes
 none. A per-spawn tier now wins over `CLAUDE_CODE_SUBAGENT_MODEL`; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
-is the opt-out, on which the orchestrator passes no tier parameters; `CLAUDE_CODE_EFFORT_LEVEL`
+is the opt-out for the model: Claude Code then drops the Agent tool's `model` parameter, and the
+orchestrator passes only the tier's effort; `CLAUDE_CODE_EFFORT_LEVEL`
 overrides the effort and is not detected. See
 [Per-spawn model tiers](../adr/per-spawn-model-tiers.md) and
 [Model tiers](./build-system.md#model-tiers).

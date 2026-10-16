@@ -11,7 +11,10 @@ Both manual host checks ran on 2026-10-16:
   - The `nodejs-reviewer` ran on `claude-opus-5-5` with effort `high` (`deep`).
   - A direct Agent call with `model: haiku`, `effort: low` ran on `claude-haiku-5-5` with effort `low` (`mechanical`).
   - A built-in Explore spawn accepted the `standard` override as well.
-  - Not covered: the `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check, which needs a fresh process with that variable set.
+  - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check: headless `claude -p` runs with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` and `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` on CLI 2.1.292 (Sonnet and Opus parents), repeated with the desktop app's bundled 2.1.299 (Opus parent); both versions behaved the same.
+    - The host removed the `model` parameter from the Agent tool, and `effort` stayed available.
+    - In both runs the child ran on `claude-sonnet-5-5` with the passed effort `high`, including under the Opus parent, so the host enforces the forced model.
+    - Found gap: the orchestrator could not check the variable's presence, because the permission layer blocked every environment probe. It read the missing `model` parameter as "host without the parameter, inherits the parent's model". It therefore reported an inherited Opus model that did not run, and it passed `effort` although the rule says to pass no tier parameters. The rule now treats a missing `model` parameter on the Claude Code Agent tool as the host forcing the subagent model, passes only `effort`, and reads no environment variable.
 - **Codex CLI 0.159.3:** `codex exec` spawned the built-in default agent with `model: gpt-5.6-luna`, `reasoning_effort: low` and with `model: gpt-5.6-sol`, `reasoning_effort: high`. Both overrides were accepted, and the child threads' recorded settings show exactly those values.
   - A child spawned a nested default agent at depth 2. Without its own override, the nested agent inherited the child's `gpt-5.6-sol`/`high`.
   - The parent thread itself ran on the host default `gpt-6.1-sol`, a newer model than the `deep` mapping named then.
@@ -101,8 +104,11 @@ text; the guard recognizes both shapes, and a native target may name only its ow
 
 **Host overrides are respected.**
 
-- When `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is present (presence only, never its value), the
-  orchestrator passes no tier parameters and says so once. This is the opt-out; without it, a
+- On Claude Code, an Agent tool without a `model` parameter means the host forces the subagent
+  model, as `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` does: the orchestrator passes only the tier's
+  `effort`, never probes the environment, and says once that the host sets the subagent model. The
+  force counter-check showed that the host then drops the parameter and honors `effort`. This is
+  the opt-out for the model; without it, a
   per-spawn tier now wins over `CLAUDE_CODE_SUBAGENT_MODEL`.
 - A spawn rejected because of a tier parameter is retried once without it, or without both when it
   is unclear which one was rejected. The rejected parameter is omitted for the rest of the run and
@@ -162,8 +168,8 @@ part of this decision and ships separately; this record neither describes nor de
   sentence delta, and nothing else.
 - Every spawn instruction needs a marker and a table row; the build fails on a missing, unknown,
   duplicate or surviving marker. Workflows add context lines per includer of the mandate.
-- A user with `CLAUDE_CODE_SUBAGENT_MODEL` set now sees the per-spawn tier win; the opt-out is
-  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`.
+- A user with `CLAUDE_CODE_SUBAGENT_MODEL` set now sees the per-spawn tier win; the opt-out is `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which fixes the model while the tier's effort
+  still applies.
 - Existing pilot generations under protocol `1.1.0` are suspended once and must be reviewed and
   discarded before a new baseline starts.
 - A host that rejects a tier parameter degrades to a spawn without it, which inherits or takes the

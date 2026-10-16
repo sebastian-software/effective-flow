@@ -567,7 +567,7 @@ test('margin, floor, retry and host-override rules live only in model-tiers.md',
     [/never moves down/i, 'the deep and Down: no floor'],
     [/past either end/i, 'the no-op past the scale ends'],
     [/at least on the role or site default/i, 'the retry floor'],
-    [/no tier parameters/i, 'the force-variable rule'],
+    [/Agent tool without a `model` parameter/i, 'the host-forced model rule'],
     [/rejected because of a tier parameter/i, 'the rejected-parameter rule'],
     [/CLAUDE_CODE_EFFORT_LEVEL/, 'the effort-level override'],
   ];

@@ -140,8 +140,9 @@ model as well. This is a per-run judgment and does not require changing the work
 
 A per-spawn tier takes precedence over Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment
 variable and over an agent's own model declaration. To force one model for every subagent
-regardless, set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`: Effective Flow then passes no tier
-parameters and tells you so once. `CLAUDE_CODE_EFFORT_LEVEL` overrides the reasoning effort of
+regardless, set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`: Claude Code then offers no `model` parameter for
+subagents, Effective Flow passes only the tier's effort, and tells you once that the host sets the
+subagent model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the reasoning effort of
 the tiers and is not detected. If a host rejects a tier parameter (for example, because of
 `availableModels`), the spawn is retried once without it and the omission is reported once. Other
 user, project, or invocation-level harness overrides may likewise affect the effective caller or
