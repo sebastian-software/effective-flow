@@ -1,7 +1,8 @@
 ## Guided advanced settings
 
-This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`.
-Step 5 in `{{SKILL:setup}}` keeps that question, its `No` branch, and "Collapsing two
+This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`, or
+when a Targeted run (`setup-targeted-change`) touches a block key. Targeted asks only the touched
+key's question, never a whole block, and never block 10. Step 5 in `{{SKILL:setup}}` keeps that question, its `No` branch, and "Collapsing two
 `mergeGate.bots` spellings of one reviewer", which Express and every Step 6 write run as well.
 
 Ask for each key block by block, each with a short explanation, the valid values from the config
@@ -52,7 +53,7 @@ Explain first, then ask. The gate is safe without any of these keys, so "keep th
 perfectly good answer.
 
 ```ask
-when: the user chose the advanced settings and the merge gate block is being asked
+when: the user chose the advanced settings and the merge gate block is being asked, or a Targeted run touches `mergeGate.completion`
 header: Merge gate
 question: When the merge gate has verified a pull request, may it merge, or should it only report?
 options:

@@ -1,7 +1,9 @@
 ## Hidden-mode setup arm
 
 This fragment is loaded only when the visibility resolved to `hidden`, through the `Hidden` answer
-or the `{{SKILL:setup}} hidden` invocation. It holds the hidden arm's two write steps: Step 1
+or the `{{SKILL:setup}} hidden` invocation, or when a Targeted run with the hidden local file as
+source reaches its write; that run follows only "Writing the hidden local configuration", in place
+of item 4 alone, after its own Targeted item 3. It holds the hidden arm's two write steps: Step 1
 (hidden), which replaces Step 1, and the Step 6 write that replaces items 3 and 4. Every other
 hidden-mode exception stays with its step in `{{SKILL:setup}}`.
 

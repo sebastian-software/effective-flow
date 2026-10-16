@@ -1,6 +1,6 @@
 # Targeted free-text setup changes
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -452,6 +452,65 @@ found two gaps here, both incorporated:
   `.check`. Added the _ask_ operation; a placeholder value counts as no value.
 - **Important, Architecture:** adding a reviewer touched only `mergeGate.bots`, so its trigger and
   `.check` could be skipped. Adding a reviewer now counts as touching both.
+
+## Implementation notes
+
+Implemented by `effective-flow build` on 2026-10-16, on the branch of the plan pull request.
+Deviations from the plan above:
+
+- **Router catalog hint unchanged.** The setup `catalogHint` is rendered into the built router
+  `SKILL.md`, which all three behavioural eval suites seed. Changing it would have owed a
+  re-recorded round of every suite, so it stays as it was. Only the tool `description` names the
+  Targeted mode.
+- **Core kept minimal.** After review, `src/tools/setup.md` carries only the Step 0 classification,
+  the pointer and the exception clauses; Step 6 item 2's source list is unchanged, because the
+  fragment owns the Targeted preview.
+- **Rules added during review:** a tracker dependency rule (`external` asks the missing external
+  details; `remote` asks `remoteToolOverride` only on `AMBIGUOUS_HOST`), removing a reviewer drops
+  its `.trigger`/`.check` rows, `Bot conflict` is always posed, `several-match` requires manual
+  cleanup, all `tracker.*` keys are refused in hidden mode, a request whose operations are all
+  refused, redirected or questions writes nothing, and hidden mode keeps Targeted item 3 before the
+  hidden write.
+- **Legacy key wording.** The fragment names "the owner's legacy-key migration proposal" instead
+  of the legacy key itself, because `test/build-lib.test.mjs` limits which files may mention it.
+- **Budget.** The setup core measures 1558 lines; `CONTEXT_BUDGET_LINES.setup` is 1560.
+
+## Test results
+
+**Date:** 2026-10-16
+
+| Check                         | Result                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm agent:check`            | pass                                                                                      |
+| `pnpm test`                   | 2223 pass, 1 skipped, 1 fail (environmental, see below)                                   |
+| `node build.mjs`              | pass; setup 1558/1560                                                                     |
+| `pnpm test:distribution`      | pass                                                                                      |
+| `pnpm eval merge-gate verify` | all 6 scenarios current                                                                   |
+| `pnpm eval iterate verify`    | all 6 scenarios current                                                                   |
+| `pnpm eval next-steps verify` | all 11 scenarios current                                                                  |
+| Protected sources unchanged   | `chat-language.md`, `config-migration.md`, `setup-execution-profiles.md`, `merge-gate.md` |
+
+The one failing test, `the shared seed commit disables inherited automatic Git maintenance before
+baseline capture`, fails identically on unchanged `develop` on this machine: the global Git ignore
+file is a symlink Git cannot read here. It is unrelated to this change. Mutation probes confirmed
+that the new and updated setup tests fail when the guarded source statements are removed.
+
+## Review findings
+
+**Date:** 2026-10-16
+**Reviewer:** generic product reviewer (prompt sources, reduced depth), Node.js reviewer (tests),
+code validator (tooling and documentation)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    34 |
+| Open / Not implemented |     0 |
+
+Two findings were closed without a change: a set operation asking the owner's question before the
+preview (kept, as the plan requires the requested value to be the owner question's proposal) and
+the catalog hint (kept unchanged, see Implementation notes).
 
 ## Open points
 

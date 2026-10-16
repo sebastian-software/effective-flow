@@ -227,7 +227,10 @@ and base-branch settings only after showing their exact before/after changes. Th
 profiles require a verifiable GitHub or Forgejo `origin`; setup never guesses the provider or
 downgrades silently. Use `/effective-flow setup guided` when you need provider overrides or other
 per-setting control, and `/effective-flow setup express` when you deliberately want the
-safe-default path without the profile questions.
+safe-default path without the profile questions. Later, `/effective-flow setup <free text>` changes
+single settings or answers questions about them, for example
+`/effective-flow setup switch the review profile to fast`; see
+[Targeted changes and questions](tools-setup.md#targeted-changes-and-questions).
 
 After the profile, setup asks **Visibility**. Keep `Standard` for a project that adopts Effective
 Flow: its configuration then lives in a tracked ADR. Choose `Hidden`, or run
