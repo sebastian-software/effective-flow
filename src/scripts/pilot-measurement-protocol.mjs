@@ -25,7 +25,7 @@ export function canonicalizeJson(value) {
 // This module is copied byte for byte and cannot import build.mjs; the build fails when this
 // identity differs from the digest of `MODEL_TIER_MAPPINGS.deep` there.
 export const PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY =
-  'sha256:bcf5997695bad92c83b15d211ee41d82bf0c7eebcb3ccf83b11417e59d414d68';
+  'sha256:ad6935d2580ca99243b79d4cf8d730a400d6452236404a4324491780771fdb96';
 
 const statePrecedence = [
   ['disabled', '*', 'not-evaluated', 'quality', 'fail-closed'],

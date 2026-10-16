@@ -24,8 +24,13 @@ function claude({ worker = 'effective-flow-rust-reviewer', model = 'opus', effor
   return `---\nname: ${worker}\nmodel: ${model}\neffort: ${effort}\ntools: Read, Skill\n---\n${body}`;
 }
 
-function codex({ model = 'gpt-5.6-sol', effort = 'high', body }) {
-  return `name = "effective-flow-rust-reviewer"\nmodel = "${model}"\nmodel_reasoning_effort = "${effort}"\ndeveloper_instructions = '''${body}'''\n`;
+function codex({
+  worker = 'effective-flow-rust-reviewer',
+  model = 'gpt-5.6-sol',
+  effort = 'high',
+  body,
+}) {
+  return `name = "${worker}"\nmodel = "${model}"\nmodel_reasoning_effort = "${effort}"\ndeveloper_instructions = '''${body}'''\n`;
 }
 
 test('an identical sidecar shows no delta', () => {
@@ -36,7 +41,7 @@ test('an identical sidecar shows no delta', () => {
   );
 });
 
-test('a deep worker may show the Claude effort delta and the mandate body delta', () => {
+test('a deep worker may show the deep-tier configuration delta and the mandate body delta', () => {
   assert.deepEqual(
     compareNativeSidecar(
       'claude',
@@ -54,6 +59,15 @@ test('a deep worker may show the Claude effort delta and the mandate body delta'
       codex({ body: MANDATE_BODY }),
     ),
     ['delegation-mandate-model-tiers'],
+  );
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ model: 'gpt-6.1-sol', body: MANDATE_BODY }),
+    ),
+    ['codex-deep-tier-model', 'delegation-mandate-model-tiers'],
   );
 });
 
@@ -83,6 +97,30 @@ test('a delta outside the allowlist fails', () => {
       claude({ effort: 'xhigh', body: BASE_BODY }),
       claude({ model: 'sonnet', effort: 'high', body: BASE_BODY }),
       /key "effort": "xhigh" -> "high"; key "model": "opus" -> "sonnet"/,
+    ],
+    [
+      'Codex model change in a standard worker',
+      'codex',
+      'effective-flow-code-validator',
+      codex({ worker: 'effective-flow-code-validator', body: BASE_BODY }),
+      codex({ worker: 'effective-flow-code-validator', model: 'gpt-6.1-sol', body: BASE_BODY }),
+      /configuration drift outside the expected deltas: effective-flow-code-validator \(codex\): key "model": "gpt-5\.6-sol" -> "gpt-6\.1-sol"/,
+    ],
+    [
+      'Codex model moved to another model',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ model: 'gpt-5.6-luna', body: BASE_BODY }),
+      /key "model": "gpt-5\.6-sol" -> "gpt-5\.6-luna"/,
+    ],
+    [
+      'Codex reasoning effort change beside the allowed model change',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ model: 'gpt-6.1-sol', effort: 'xhigh', body: BASE_BODY }),
+      /key "model": "gpt-5\.6-sol" -> "gpt-6\.1-sol"; key "model_reasoning_effort": "high" -> "xhigh"/,
     ],
     [
       'Codex reasoning effort change',
@@ -135,8 +173,9 @@ test('a delta outside the allowlist fails', () => {
   }
 });
 
-// Invariant: the effort allowlist names exactly the agents whose source declares `tier: deep`.
-test('the Claude effort delta covers exactly the deep-tier workers', () => {
+// Invariant: both configuration allowlists name exactly the agents whose source declares
+// `tier: deep`, and each changes only its one deep-tier key.
+test('the deep-tier configuration deltas cover exactly the deep-tier workers', () => {
   const deep = readdirSync(new URL('../src/agents/', import.meta.url))
     .filter((name) => name.endsWith('.md'))
     .filter((name) =>
@@ -145,12 +184,17 @@ test('the Claude effort delta covers exactly the deep-tier workers', () => {
     .map((name) => `effective-flow-${name.slice(0, -3)}`)
     .sort();
   assert.equal(deep.length, 10);
-  const [effort] = EXPECTED_NATIVE_DELTAS.configuration;
-  assert.deepEqual(EXPECTED_NATIVE_DELTAS.configuration, [effort]);
+  const [effort, model] = EXPECTED_NATIVE_DELTAS.configuration;
+  assert.deepEqual(EXPECTED_NATIVE_DELTAS.configuration, [effort, model]);
   assert.deepEqual([...effort.workers].sort(), deep);
+  assert.deepEqual([...model.workers].sort(), deep);
   assert.deepEqual(
-    [effort.harness, effort.key, effort.from, effort.to],
-    ['claude', 'effort', 'xhigh', 'high'],
+    [effort.id, effort.harness, effort.key, effort.from, effort.to],
+    ['claude-deep-tier-effort', 'claude', 'effort', 'xhigh', 'high'],
+  );
+  assert.deepEqual(
+    [model.id, model.harness, model.key, model.from, model.to],
+    ['codex-deep-tier-model', 'codex', 'model', 'gpt-5.6-sol', 'gpt-6.1-sol'],
   );
 });
 

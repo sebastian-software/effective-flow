@@ -6293,7 +6293,7 @@ test('validateModelTierMappings rejects a missing or extra per-harness value key
 });
 
 test('validateModelTierMappings rejects a Claude model outside haiku, sonnet and opus', () => {
-  for (const model of ['claude-opus-5-5', 'Opus', 'gpt-5.6-sol', '']) {
+  for (const model of ['claude-opus-5-5', 'Opus', 'gpt-6.1-sol', '']) {
     assert.throws(
       () =>
         validateModelTierMappings(
@@ -6693,7 +6693,7 @@ test('renderSpawnSiteLine flags a Down: no standard site and never a deep or mec
   );
   assert.equal(
     renderSite('| `build/plan-review` | Plan review | `deep` | `no` |', 'codex'),
-    'Tier `deep`: pass `model: gpt-5.6-sol` and `reasoning_effort: high` on the spawn (rules: `model-tiers`).',
+    'Tier `deep`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn (rules: `model-tiers`).',
   );
   assert.equal(
     renderSite('| `cleanup/scan` | Scan | `mechanical` | `no` |', 'claude'),
@@ -6719,7 +6719,7 @@ test('renderSpawnSiteLine renders several roles of one tier once and differing t
   assert.equal(
     renderSite(mixed, 'portable'),
     'Tier `deep` for {{AGENT:nodejs-implementer}}: Claude Code Agent tool `model: opus`, `effort: high`; ' +
-      'Codex spawn `model: gpt-5.6-sol`, `reasoning_effort: high`. ' +
+      'Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high`. ' +
       'Tier `standard` for {{AGENT:code-validator}}: Claude Code Agent tool `model: sonnet`, `effort: medium`; ' +
       'Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',
   );
@@ -6784,7 +6784,7 @@ test('the generated model-tiers parts render role defaults and the per-target ha
       '| ---- | ---- |',
       '| `mechanical` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
       '| `standard` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
-      '| `deep` | `model: gpt-5.6-sol`, `reasoning_effort: high` |',
+      '| `deep` | `model: gpt-6.1-sol`, `reasoning_effort: high` |',
       MODEL_TIER_TABLE_END,
     ].join('\n'),
   );
@@ -6796,7 +6796,7 @@ test('the generated model-tiers parts render role defaults and the per-target ha
       '| ---- | ---- | ---- |',
       '| `mechanical` | `model: haiku`, `effort: low` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
       '| `standard` | `model: sonnet`, `effort: medium` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
-      '| `deep` | `model: opus`, `effort: high` | `model: gpt-5.6-sol`, `reasoning_effort: high` |',
+      '| `deep` | `model: opus`, `effort: high` | `model: gpt-6.1-sol`, `reasoning_effort: high` |',
       MODEL_TIER_TABLE_END,
     ].join('\n'),
   );
@@ -6814,7 +6814,7 @@ test('the generated model-tiers parts render role defaults and the per-target ha
 // marked harness table and the two-harness values of a rendered spawn-site line); anywhere else,
 // and in any native target for the other provider, they are findings.
 
-const PROVIDER_NAMES = ['haiku', 'sonnet', 'opus', 'gpt-5.6-luna', 'gpt-5.6-sol'];
+const PROVIDER_NAMES = ['haiku', 'sonnet', 'opus', 'gpt-5.6-luna', 'gpt-6.1-sol'];
 const GENERATED = {
   modelNames: PROVIDER_NAMES,
   allowGenerated: true,
@@ -6830,9 +6830,9 @@ test('findProviderModelNames exempts only build-generated tier text in portable 
   ].join('\n');
   assert.deepEqual(findProviderModelNames(generated, GENERATED), []);
   assert.ok(findProviderModelNames(generated, { modelNames: PROVIDER_NAMES }).length > 0);
-  assert.deepEqual(findProviderModelNames('Prefer Sonnet here.\nUse gpt-5.6-sol.', GENERATED), [
+  assert.deepEqual(findProviderModelNames('Prefer Sonnet here.\nUse gpt-6.1-sol.', GENERATED), [
     { line: 1, name: 'Sonnet' },
-    { line: 2, name: 'gpt-5.6-sol' },
+    { line: 2, name: 'gpt-6.1-sol' },
   ]);
   assert.deepEqual(findProviderModelNames(site.replace('(rules:', 'or opus (rules:'), GENERATED), [
     { line: 1, name: 'opus' },

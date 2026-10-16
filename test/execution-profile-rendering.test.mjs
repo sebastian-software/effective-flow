@@ -376,9 +376,9 @@ test('the pilot fragments render their own build target and keep portable runs u
 });
 
 // Invariant: against release 6055c94 every native worker sidecar, base and Fast, is byte-identical
-// apart from the declared deltas of per-spawn model tiers, so a Codex configuration change, any
-// other Claude configuration change, or any other body change fails. The pinned stdout names each
-// delta and exactly the workers showing it.
+// apart from the declared deltas of per-spawn model tiers (the `deep` workers' Claude effort and
+// Codex model, the mandate body), so any other configuration change or any other body change fails.
+// The pinned stdout names each delta and exactly the workers showing it.
 test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
   const result = spawnSync(
     process.execPath,
@@ -391,6 +391,7 @@ test('the executable baseline proof preserves every Quality native configuration
     result.stdout,
     'Native agents match 6055c94\n' +
       'Expected delta claude-deep-tier-effort: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
+      'Expected delta codex-deep-tier-model: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
       'Expected delta delegation-mandate-model-tiers: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
@@ -690,8 +691,8 @@ test('a pilot Quality-mapping identity that differs from the deep tier fails bef
     (checkout) =>
       replaceOnce(
         join(checkout, 'build.mjs'),
-        "codex: Object.freeze({ model: 'gpt-5.6-sol', reasoning_effort: 'high' }),",
-        "codex: Object.freeze({ model: 'gpt-5.6-sol', reasoning_effort: 'xhigh' }),",
+        "codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'high' }),",
+        "codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'xhigh' }),",
       ),
     expected,
   );
@@ -721,12 +722,12 @@ test('spawn-site markers and the model-tiers fragment render per target', () => 
     ],
     codex: [
       'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`, no downward move).',
-      '   Tier `deep` for `effective-flow-nodejs-implementer`: pass `model: gpt-5.6-sol` and `reasoning_effort: high` on the spawn. ' +
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn. ' +
         'Tier `standard` for `effective-flow-code-validator`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`).',
     ],
     portable: [
       'Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',
-      '   Tier `deep` for `effective-flow-nodejs-implementer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-5.6-sol`, `reasoning_effort: high`. ' +
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high`. ' +
         'Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).',
     ],
   };

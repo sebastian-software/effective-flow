@@ -172,7 +172,8 @@ incomplete evidence only when those fields explicitly confirm it; otherwise it s
 cross-run control could not be proven without echoing the rejected value.
 
 After an update that changes the model that Quality runs use (protocol `1.2.0`, which lowers the
-Claude effort of the strongest tier from `xhigh` to `high`), a pilot generation recorded before it
+Claude effort of the strongest tier from `xhigh` to `high` and moves its Codex model to
+`gpt-6.1-sol`), a pilot generation recorded before it
 is not continued. It is suspended once with the reason `quality-mapping-changed`, stays out of
 every later run, and cannot be resumed; Guided setup reports it and offers no action. Its only exit
 is the helper's `begin-review`, then `discard-generation` with the pilot disabled, which no

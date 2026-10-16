@@ -435,7 +435,7 @@ The model running the Effective Flow tool is the **caller**: it interprets the w
 delegates work, and integrates the results. Native worker sidecars have independent,
 role-specific profiles. Every profile is one of three provider-neutral **model tiers**:
 `mechanical`, `standard` and `deep`. Implementers, reviewers, and the merge-conflict resolver
-declare `deep` (Claude `opus` with `high` effort, Codex `gpt-5.6-sol` with `high` reasoning
+declare `deep` (Claude `opus` with `high` effort, Codex `gpt-6.1-sol` with `high` reasoning
 effort); documentation, testing, validation, and other support roles declare `standard` (Claude
 `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). `mechanical` (Claude `haiku`/`low`, Codex
 `gpt-5.6-luna`/`low`) is defined for cheap scans, but no spawn site uses it yet. The individual

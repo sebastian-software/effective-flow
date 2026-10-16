@@ -296,6 +296,12 @@ Deviations from the plan text, all recorded in `docs/adr/per-spawn-model-tiers.m
 - Correction and respawn phrasing is not a detection candidate; such spawns resolve through the role or site default, and `deep` roles never move down.
 - Guided setup block 10 never offers `resume` for a generation recorded under an earlier protocol (`inventory` exposes `protocolCurrent`); its exit runs through the helper directly.
 
+Addendum, 2026-10-16 (user decision after the host checks): the Codex `deep` tier moves from `gpt-5.6-sol`/`high` to `gpt-6.1-sol`/`high`; Claude values, Codex `standard`/`mechanical` (`gpt-5.6-luna`) and the Fast mapping are unchanged.
+
+- The Quality-mapping identity changes within the unreleased protocol `1.2.0`; the `1.1.0` → suspended (`quality-mapping-changed`) migration and the build's identity guard are unchanged.
+- The Codex native configuration of the ten `deep` workers is no longer byte-identical: `compare-native-agent-baseline.mjs` allows the named delta `codex-deep-tier-model` (`model` `gpt-5.6-sol` → `gpt-6.1-sol`). This supersedes the "Codex native configuration is identical" part of the baseline acceptance criterion and test result.
+- A read-only Codex CLI 0.159.3 check confirmed the built-in default agent accepts the `gpt-6.1-sol`/`high` override; details in the ADR status.
+
 ## Test results
 
 - `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: pass.

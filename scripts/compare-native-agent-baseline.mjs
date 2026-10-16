@@ -44,9 +44,24 @@ const MANDATE_LAST_BULLET =
 
 // The only deltas a native worker sidecar may show against the base build; any other byte
 // difference fails the proof. A delta is permitted, never required: a worker that builds
-// byte-identically always passes. Codex native configuration has no permitted delta.
+// byte-identically always passes. A configuration delta changes exactly one key line.
+const DEEP_TIER_WORKERS = Object.freeze(
+  [
+    'frontend-reviewer',
+    'generic-implementer',
+    'generic-product-implementer',
+    'generic-product-reviewer',
+    'merge-conflict-resolver',
+    'nodejs-implementer',
+    'nodejs-reviewer',
+    'rust-implementer',
+    'rust-reviewer',
+    'ui-implementer',
+  ].map((name) => `${WORKER_PREFIX}${name}`),
+);
 export const EXPECTED_NATIVE_DELTAS = Object.freeze({
-  // Per-spawn model tiers move the Claude effort of the ten `deep` workers from xhigh to high.
+  // Per-spawn model tiers move the ten `deep` workers to the `deep` tier: Claude effort xhigh to
+  // high, and the Codex model gpt-5.6-sol to gpt-6.1-sol (reasoning effort stays high).
   configuration: Object.freeze([
     Object.freeze({
       id: 'claude-deep-tier-effort',
@@ -54,20 +69,15 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
       key: 'effort',
       from: 'xhigh',
       to: 'high',
-      workers: Object.freeze(
-        [
-          'frontend-reviewer',
-          'generic-implementer',
-          'generic-product-implementer',
-          'generic-product-reviewer',
-          'merge-conflict-resolver',
-          'nodejs-implementer',
-          'nodejs-reviewer',
-          'rust-implementer',
-          'rust-reviewer',
-          'ui-implementer',
-        ].map((name) => `${WORKER_PREFIX}${name}`),
-      ),
+      workers: DEEP_TIER_WORKERS,
+    }),
+    Object.freeze({
+      id: 'codex-deep-tier-model',
+      harness: 'codex',
+      key: 'model',
+      from: 'gpt-5.6-sol',
+      to: 'gpt-6.1-sol',
+      workers: DEEP_TIER_WORKERS,
     }),
   ]),
   // The delegation mandate's worker-start bullet gains the tier sentence and the mandate gains the
@@ -116,6 +126,11 @@ export function splitNativeSidecar(harness, content, file) {
   throw new Error(`Unsupported native sidecar harness "${harness}"`);
 }
 
+// One native configuration key line, newline-delimited: Claude YAML frontmatter or Codex TOML.
+function configurationLine(harness, key, value) {
+  return harness === 'codex' ? `\n${key} = "${value}"\n` : `\n${key}: ${value}\n`;
+}
+
 function applyEdits(text, edits) {
   let result = text;
   for (const { from, to } of edits) {
@@ -160,8 +175,8 @@ export function compareNativeSidecar(
         candidate.workers.includes(worker) &&
         applyEdits(baseline.configuration, [
           {
-            from: `\n${candidate.key}: ${candidate.from}\n`,
-            to: `\n${candidate.key}: ${candidate.to}\n`,
+            from: configurationLine(harness, candidate.key, candidate.from),
+            to: configurationLine(harness, candidate.key, candidate.to),
           },
         ]) === working.configuration,
     );

@@ -197,7 +197,7 @@ const MODEL_TIER_MAPPINGS = Object.freeze({
   }),
   deep: Object.freeze({
     claude: Object.freeze({ model: 'opus', effort: 'high' }),
-    codex: Object.freeze({ model: 'gpt-5.6-sol', reasoning_effort: 'high' }),
+    codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'high' }),
   }),
 });
 const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([

@@ -223,7 +223,7 @@ const CODEX_REASONING_EFFORT_LEVELS = new Set([
   'ultra',
 ]);
 const CODEX_MODEL_REASONING_EFFORTS = Object.freeze({
-  'gpt-5.6-sol': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+  'gpt-6.1-sol': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
   'gpt-5.6-luna': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),
 });
 const AGENT_PROFILE_REF_RE = /\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g;

@@ -451,7 +451,7 @@ test('protocol versions move to 1.2.0 with the Quality-mapping identity in the d
     PILOT_MEASUREMENT_PROTOCOL.qualityMappingIdentity,
     canonicalDigest({
       claude: { model: 'opus', effort: 'high' },
-      codex: { model: 'gpt-5.6-sol', reasoning_effort: 'high' },
+      codex: { model: 'gpt-6.1-sol', reasoning_effort: 'high' },
     }),
   );
   assert.equal(

@@ -14,7 +14,9 @@ Both manual host checks ran on 2026-10-16:
   - Not covered: the `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check, which needs a fresh process with that variable set.
 - **Codex CLI 0.159.3:** `codex exec` spawned the built-in default agent with `model: gpt-5.6-luna`, `reasoning_effort: low` and with `model: gpt-5.6-sol`, `reasoning_effort: high`. Both overrides were accepted, and the child threads' recorded settings show exactly those values.
   - A child spawned a nested default agent at depth 2. Without its own override, the nested agent inherited the child's `gpt-5.6-sol`/`high`.
-  - The parent thread itself ran on the host default `gpt-6.1-sol`, a newer model than the `deep` mapping names.
+  - The parent thread itself ran on the host default `gpt-6.1-sol`, a newer model than the `deep` mapping named then.
+- **Codex `deep` mapping change, Codex CLI 0.159.3:** `deep` moved from `gpt-5.6-sol`/`high` to `gpt-6.1-sol`/`high` (see "Review triggers"). A read-only `codex exec` spawned the built-in default agent with `model: gpt-6.1-sol`, `reasoning_effort: high`. The override was accepted: the spawn call carried both values, and the child thread's `turn_context` records `gpt-6.1-sol`/`high`.
+  - The earlier check verified the `gpt-5.6-sol`/`high` override for a child and saw `gpt-6.1-sol` only as the parent's configured default. In this check the parent's configured default is also `gpt-6.1-sol`/`high`, so the child's recorded settings alone do not tell the override from inheritance; the accepted spawn call does.
 
 ## Context
 
@@ -44,14 +46,15 @@ spawn runs on. Workflow prose names only the tier. `MODEL_TIER_MAPPINGS` in `bui
 | ------------ | ------------------- | ------------------------- |
 | `mechanical` | `haiku` / `low`     | `gpt-5.6-luna` / `low`    |
 | `standard`   | `sonnet` / `medium` | `gpt-5.6-luna` / `medium` |
-| `deep`       | `opus` / `high`     | `gpt-5.6-sol` / `high`    |
+| `deep`       | `opus` / `high`     | `gpt-6.1-sol` / `high`    |
 
 The build validates the mapping: exactly these tiers, Claude models limited to `haiku`, `sonnet`
 and `opus`, and only supported effort and Codex model and reasoning-effort combinations. `deep`
 lowers the Claude effort of implementers, reviewers and the merge-conflict resolver from `xhigh` to
-`high`, a deliberate cost decision; the Codex values do not change. The concrete values are build
-metadata and may change without superseding this record, except for the `deep` values, which the
-pilot protocol binds (below).
+`high`, a deliberate cost decision. On Codex, `deep` moves the same roles from `gpt-5.6-sol` to
+`gpt-6.1-sol` at unchanged `high` reasoning. The concrete values are build metadata and may
+change without superseding this record, except for the `deep` values, which the pilot protocol
+binds (below).
 
 **The role default is the single source.** Each `src/agents/*.md` declares one top-level `tier:`.
 Implementers, reviewers and the merge-conflict resolver are `deep`; the validator, test, end-to-end,
@@ -153,8 +156,10 @@ part of this decision and ships separately; this record neither describes nor de
   some strength on `standard` roles for lower cost. Re-measuring Claude Code usage after the change
   decides whether further sites are added.
 - Native Claude implementers, reviewers and the conflict resolver run at `high` instead of `xhigh`.
-  Codex native configuration is byte-identical. The baseline-comparison script allows exactly this
-  effort delta and the mandate sentence delta, and nothing else.
+  Native Codex implementers, reviewers and the conflict resolver run on `gpt-6.1-sol` instead of
+  `gpt-5.6-sol`, at unchanged `high` reasoning. The baseline-comparison script allows exactly these
+  two configuration deltas (`claude-deep-tier-effort`, `codex-deep-tier-model`) and the mandate
+  sentence delta, and nothing else.
 - Every spawn instruction needs a marker and a table row; the build fails on a missing, unknown,
   duplicate or surviving marker. Workflows add context lines per includer of the mandate.
 - A user with `CLAUDE_CODE_SUBAGENT_MODEL` set now sees the per-spawn tier win; the opt-out is
@@ -170,8 +175,10 @@ Review this decision when a harness changes its per-spawn parameter or precedenc
 fourth tier or a `mechanical` site is added, usage re-measurement shows the targets missed, or the
 `deep` mapping changes (which also needs a new pilot protocol generation boundary). Concrete model
 aliases outside the `deep` identity are deliberately not review triggers. The Codex host check
-showed a host default (`gpt-6.1-sol`) newer than the mapped `deep` model; whether `deep` moves to
-it is such a `deep` mapping change.
+showed a host default (`gpt-6.1-sol`) newer than the mapped `deep` model; moving `deep` to it was
+such a `deep` mapping change and is recorded under "Status". It landed while protocol `1.2.0` was
+unreleased, so the Quality-mapping identity changed within `1.2.0`: no released generation spans
+the old and new value, and the `1.1.0` migration stays the only generation boundary.
 
 ## References
 

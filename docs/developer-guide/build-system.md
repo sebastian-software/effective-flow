@@ -1001,7 +1001,7 @@ contract explicitly.
 
 The native frontmatter also owns role-based model selection, derived from each agent's `tier:`:
 implementers, reviewers and the merge-conflict resolver (`deep`) use Claude `opus`/`high` and
-Codex `gpt-5.6-sol`/`high`; support roles (`standard`) use Claude `sonnet`/`medium` and Codex
+Codex `gpt-6.1-sol`/`high`; support roles (`standard`) use Claude `sonnet`/`medium` and Codex
 `gpt-5.6-luna`/`medium`. The source agent files are the canonical per-role assignments. Portable
 workers carry no native frontmatter, so a portable manager cannot enforce a worker profile
 natively; instead each portable spawn site passes the tier's values for the harness that runs it
@@ -1072,7 +1072,7 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   which keeps the Fast values). It is validated against the supported vocabularies before any
   rendering (see "Guards"). The current values are `mechanical` Claude `haiku`/`low` and Codex
   `gpt-5.6-luna`/`low`, `standard` `sonnet`/`medium` and `gpt-5.6-luna`/`medium`, `deep`
-  `opus`/`high` and `gpt-5.6-sol`/`high`.
+  `opus`/`high` and `gpt-6.1-sol`/`high`.
 - **Role default.** An agent's `tier:` is the single source of its native Claude and Codex model
   and effort. `{{MODEL_TIER_ROLE_DEFAULTS}}` renders the role table into `model-tiers` from the same
   field.
@@ -1104,10 +1104,11 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   ([protocol guide](model-tiering-pilot-protocol.md#quality-mapping-identity)). Every Fast-capable
   implementer must declare `tier: deep`, the tier that identity binds.
 - **Baseline proof.** `scripts/compare-native-agent-baseline.mjs --base <commit>` no longer skips
-  a changed worker: `EXPECTED_NATIVE_DELTAS` allows only the Claude `effort` change `xhigh` to
-  `high` in the ten `deep` workers and the delegation-mandate delta (the tier sentence closing the
-  worker-start bullet, plus the `model-tiers` pointer); any other byte
-  difference fails, and the Codex native configuration has no allowed delta. Once this change
+  a changed worker: `EXPECTED_NATIVE_DELTAS` allows only, in the ten `deep` workers, the Claude
+  `effort` change `xhigh` to `high` (`claude-deep-tier-effort`) and the Codex `model` change
+  `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
+  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer); any other byte
+  difference fails. Once this change
   ships in a release, move the test's pinned `--base` to that release commit and empty
   `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
   own exact allowlist entry.
