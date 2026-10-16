@@ -883,3 +883,5 @@ forward.
   needs, and their `gh` version floor
 - [Tools: Implement](tools-implement.md) – the workflows that `commit` and `pr` typically
   trigger at the end, and `iterate`, which the merge gate delegates every code change to
+
+Stage B manual check, test pull request 2. Do not merge into develop.
