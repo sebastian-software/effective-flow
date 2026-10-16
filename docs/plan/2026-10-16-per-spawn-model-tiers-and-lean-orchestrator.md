@@ -301,7 +301,12 @@ Deviations from the plan text, all recorded in `docs/adr/per-spawn-model-tiers.m
 - `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: pass.
 - `pnpm test`: 2305 tests, 2303 pass, 1 skipped, 1 fail. The failure is environmental and also fails on the base commit: `test/next-steps-eval.test.mjs` "the shared seed commit disables inherited automatic Git maintenance…", because macOS blocks reading the iCloud-linked `~/.config/git/ignore`.
 - `scripts/compare-native-agent-baseline.mjs --base 6055c94`: pass with the expected deltas `claude-deep-tier-effort` (10 `deep` workers, `effort` `xhigh` → `high`) and `delegation-mandate-model-tiers` (worker bodies: the tier sentence and the `model-tiers` pointer). Codex native configuration is byte-identical.
-- Owed, not run: the manual Claude Code and Codex host checks (the Codex check gates the ADR from Proposed to Active) and the re-record of the three eval suites, which the plan schedules once after Stage B.
+- Manual host checks, 2026-10-16: passed; `docs/adr/per-spawn-model-tiers.md` is Active and records the details.
+  - Claude Code 2.1.292: subagent transcripts show `standard` on `claude-sonnet-5-5`/`medium`, `deep` on `claude-opus-5-5`/`high`, and a direct `mechanical` call on `claude-haiku-5-5`/`low`.
+  - Codex CLI 0.159.3: the built-in default agent accepted `gpt-5.6-luna`/`low` and `gpt-5.6-sol`/`high` overrides (child thread settings confirm them), and a nested spawn worked at depth 2.
+  - Not covered: the `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check.
+  - Observation for a later mapping decision: Codex's host default is `gpt-6.1-sol`, newer than the mapped `deep` model.
+- Owed: the re-record of the three eval suites, which the plan schedules once after Stage B.
 
 ## Review findings
 

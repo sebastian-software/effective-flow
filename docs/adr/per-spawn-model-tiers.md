@@ -2,16 +2,19 @@
 
 ## Status
 
-Proposed
+Active
 
-This decision becomes Active only after the manual Codex host check: one spawn of the built-in
-default agent with a tier override must be accepted. If that check fails, Codex is recorded here as
-a "host without mechanism" (it inherits the parent's model and reports that once) before the
-status changes to Active. The check has not run yet. The Claude Code values are implemented and
-covered by build guards and tests; the manual Claude Code check is likewise still owed: in one
-`effective-flow review` run the subagent transcripts show the mapped `standard` and `deep` models,
-and, because no `mechanical` site exists, a direct Agent call with `model: haiku` and
-`effort: low` that the orchestrator issues during that run is accepted.
+Both manual host checks ran on 2026-10-16:
+
+- **Claude Code 2.1.292:** in an `effective-flow review` run following the built portable `review.md`, the subagent transcripts show the rendered tiers taking effect.
+  - The design-decision collectors and the `code-validator` ran on `claude-sonnet-5-5` with effort `medium` (`standard`).
+  - The `nodejs-reviewer` ran on `claude-opus-5-5` with effort `high` (`deep`).
+  - A direct Agent call with `model: haiku`, `effort: low` ran on `claude-haiku-5-5` with effort `low` (`mechanical`).
+  - A built-in Explore spawn accepted the `standard` override as well.
+  - Not covered: the `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check, which needs a fresh process with that variable set.
+- **Codex CLI 0.159.3:** `codex exec` spawned the built-in default agent with `model: gpt-5.6-luna`, `reasoning_effort: low` and with `model: gpt-5.6-sol`, `reasoning_effort: high`. Both overrides were accepted, and the child threads' recorded settings show exactly those values.
+  - A child spawned a nested default agent at depth 2. Without its own override, the nested agent inherited the child's `gpt-5.6-sol`/`high`.
+  - The parent thread itself ran on the host default `gpt-6.1-sol`, a newer model than the `deep` mapping names.
 
 ## Context
 
@@ -121,8 +124,8 @@ against `MODEL_TIER_MAPPINGS`.
 portable output Quality-only and without model metadata: that holds for Fast only, while portable
 spawns now carry tiers. It amends
 [Risk-aware model-tiering pilot policy](./risk-aware-model-tiering-pilot-policy.md) in the same
-way for portable output, and it sharpens what Quality means there. The Codex host check satisfies
-the review trigger of the representation record on per-spawn contracts.
+way for portable output, and it sharpens what Quality means there. The Codex host check (see
+"Status") satisfies the review trigger of the representation record on per-spawn contracts.
 
 **Planned follow-up.** A second change moves the heaviest inline orchestrator work out of the main
 session (judgment in a subagent for planning artifacts and a delegated `merge-gate` run). It is not
@@ -163,11 +166,12 @@ part of this decision and ships separately; this record neither describes nor de
 
 ## Review triggers
 
-Review this decision when the Codex host check completes (to set the status, or to record Codex as
-a host without mechanism), a harness changes its per-spawn parameter or precedence contract, a
+Review this decision when a harness changes its per-spawn parameter or precedence contract, a
 fourth tier or a `mechanical` site is added, usage re-measurement shows the targets missed, or the
 `deep` mapping changes (which also needs a new pilot protocol generation boundary). Concrete model
-aliases outside the `deep` identity are deliberately not review triggers.
+aliases outside the `deep` identity are deliberately not review triggers. The Codex host check
+showed a host default (`gpt-6.1-sol`) newer than the mapped `deep` model; whether `deep` moves to
+it is such a `deep` mapping change.
 
 ## References
 

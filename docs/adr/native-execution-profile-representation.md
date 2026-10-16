@@ -38,8 +38,7 @@ mechanism, but the optimization is not requested or emulated because the manager
 the native mapping and fallback contract. Behavioral correctness is shared across targets;
 performance optimization is intentionally native-only.
 
-> **Superseded in part** by [Per-spawn model tiers](./per-spawn-model-tiers.md) (Proposed until
-> its Codex host check): the Fast optimization stays native-only and portable output stays without
+> **Superseded in part** by [Per-spawn model tiers](./per-spawn-model-tiers.md): the Fast optimization stays native-only and portable output stays without
 > Fast, but portable spawns no longer inherit the manager's model. They carry a provider-neutral
 > tier whose values for both harnesses are build-generated, so "portable contains no model
 > metadata" no longer holds for generated tier text.

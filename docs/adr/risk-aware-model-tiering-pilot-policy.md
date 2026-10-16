@@ -98,8 +98,7 @@ correction, stays Quality. Guided setup exposes the opt-in and the confirmed
 `begin-baseline` and `resume` actions; no workflow run calls those two, and portable output remains
 Quality-only.
 
-> **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md) (Proposed until its Codex host
-> check): portable output stays without Fast, but its spawns now carry model tiers rather than
+> **Amended** by [Per-spawn model tiers](./per-spawn-model-tiers.md): portable output stays without Fast, but its spawns now carry model tiers rather than
 > inheriting the manager's model. The Quality-mapping identity, a digest of the `deep` tier values
 > per harness, is part of the pilot protocol from version `1.2.0`; a generation recorded under
 > `1.1.0` is suspended once with `quality-mapping-changed` and never continued.
