@@ -886,4 +886,4 @@ forward.
 
 Stage B manual check, test pull request 2. Do not merge into develop.
 
-This *emphasis* line is deliberately unformatted for the Stage B check.
+This _emphasis_ line is deliberately unformatted for the Stage B check.
