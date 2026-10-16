@@ -17039,6 +17039,14 @@ test('every fresh review read accumulates advisory candidates before evaluation'
   );
 });
 
+// Invariant: the Phase 6 configuration advisory leads with targeted `{{SKILL:setup}}` invocations,
+// one form per gap (missing login: `add <login> to mergeGate.bots and ask me for` its `.trigger` and
+// `.check`; missing check: `ask me for mergeGate.bots.<login>.check`), joined with "and" after one
+// `{{SKILL:setup}}`. Each names the keys literally and leaves the check context to the user's answer
+// instead of a check name or placeholder, and that never depends on `checksReported`, which Phase 6
+// mentions only to say so. `.check` stays unset only by answering "not set" in setup; the full
+// Guided route (Advanced settings, Block 9) stays as the fallback, and the next-step block stays the
+// last report element.
 test('Phase 6 gives the complete setup route before the literal final next-step block', () => {
   const phase6Raw = section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## ');
   const phase6 = prose(phase6Raw);
@@ -17087,6 +17095,71 @@ test('Phase 6 gives the complete setup route before the literal final next-step 
     phase6,
     /next-step block[^.]*last element of that chat report/i,
     'the unchanged next-step block must remain the literal final report element',
+  );
+
+  // Every `{{SKILL:setup}} …` code span with arguments is a literal invocation the advisory shows
+  // (a bare `{{SKILL:setup}}` only names the command); the targeted ones are all but the Guided
+  // fallback, and they must come first.
+  const invocations = [...phase6.matchAll(/`\{\{SKILL:setup\}\}([^`]*)`/g)].map((match) => ({
+    index: match.index,
+    args: match[1].trim(),
+  }));
+  const guided = invocations.find(({ args }) => args === 'guided');
+  const targeted = invocations.filter(({ args }) => args !== '' && args !== 'guided');
+  assert.ok(guided, 'the Guided setup route must remain as the fallback');
+  const exactlyOne = (form, pattern) => {
+    const matches = targeted.filter(({ args }) => pattern.test(args));
+    assert.equal(matches.length, 1, `the advisory must show exactly one ${form} invocation`);
+    return matches[0];
+  };
+  const missingLogin = exactlyOne('missing-login', /^add <login> to mergeGate\.bots\b/);
+  const missingCheck = exactlyOne('missing-check', /^ask me for mergeGate\.bots\.<login>\.check$/);
+  assert.match(
+    missingLogin.args,
+    /\band ask me for mergeGate\.bots\.<login>\.trigger and mergeGate\.bots\.<login>\.check$/,
+    'the missing-login invocation must ask for the trigger and the check by their literal keys',
+  );
+  for (const { index, args } of targeted) {
+    assert.ok(
+      index < guided.index,
+      `the targeted invocation \`${args}\` must precede the Guided fallback`,
+    );
+    assert.match(
+      args,
+      /\bask me for .*\bmergeGate\.bots\.<login>\.check$/,
+      `the targeted invocation \`${args}\` must name \`mergeGate.bots.<login>.check\` only as the last target of "ask me for", with no value after it`,
+    );
+    assert.equal(
+      args.split('mergeGate.bots.<login>.check').length - 1,
+      1,
+      `the targeted invocation \`${args}\` must name \`mergeGate.bots.<login>.check\` exactly once`,
+    );
+    assert.deepEqual(
+      (args.match(/<[^>]+>/g) ?? []).filter((placeholder) => placeholder !== '<login>'),
+      [],
+      `the targeted invocation \`${args}\` must carry no placeholder other than \`<login>\``,
+    );
+  }
+  ordered(phase6, 'one targeted invocation', 'As the fallback, show `{{SKILL:setup}} guided`');
+  assert.match(
+    phase6,
+    near('several candidates', 'with "and" after one `\\{\\{SKILL:setup\\}\\}`', 40),
+    'several candidates must share one setup invocation joined with "and"',
+  );
+  assert.match(
+    phase6,
+    near('`\\.check` clause', 'never depends on `checksReported`', 40),
+    'the targeted `.check` clause must not be conditioned on checksReported',
+  );
+  assert.equal(
+    phase6.split('checksReported').length - 1,
+    1,
+    'Phase 6 may mention checksReported only to say the `.check` clause never depends on it',
+  );
+  assert.match(
+    phase6,
+    near('left unset only', 'answering "not set" in setup', 20),
+    '`.check` must stay unset only through an explicit "not set" answer in setup',
   );
 });
 

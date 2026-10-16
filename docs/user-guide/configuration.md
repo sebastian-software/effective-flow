@@ -496,15 +496,25 @@ configuring `.check`. See
 
 When the gate conservatively observes a bot-typed submitted review or review thread whose login is
 missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
-effective `.check`, its final chat summary recommends `/effective-flow setup guided` →
-**Advanced settings** → **Block 9 (`mergeGate`)**. Add or select the reviewer there and copy only an
-exact `.check` context confirmed in a pull request that tool reviewed. A normal check name or
-top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
-writer, and the current gate result does not change. See the
+effective `.check`, its final chat summary lists those reviewers and then gives one
+copy-paste-ready [targeted setup request](./tools-setup.md#targeted-changes-and-questions) that
+covers all of them, with the reviewer's login filled in (the observed login for a missing reviewer,
+the configured spelling when only `.check` is missing):
+
+```text
+/effective-flow setup add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check
+/effective-flow setup ask me for mergeGate.bots.<login>.check
+```
+
+The first shape is for a missing login, the second for a login whose `.check` is missing; several
+reviewers are joined with "and" in one request. The request carries no check name: setup asks for
+`.check` itself, and `.check` is left unset only by answering "not set" there, for a reviewer
+without its own check context. The Guided route follows as the fallback:
+`/effective-flow setup guided` → **Advanced settings** → **Block 9 (`mergeGate`)**. Either way,
+copy only an exact `.check` context confirmed in a pull request that tool reviewed. A normal check
+name or top-level bot comment alone does not qualify. The hint is informational: setup remains the
+only ADR writer, and the current gate result does not change. See the
 [unconfigured-reviewer hint](./tools-deliver.md#three-reviewer-states-not-two) for the full behavior.
-The shorter route is a [targeted request](./tools-setup.md#targeted-changes-and-questions) such as
-`/effective-flow setup add <login> as a merge-gate bot`: it asks only that reviewer's trigger and
-`.check`, with the same rule for the context.
 
 **Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
 controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
