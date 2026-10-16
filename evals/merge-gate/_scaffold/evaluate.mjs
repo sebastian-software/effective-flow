@@ -14,10 +14,14 @@ import {
   operationStarts,
   startRecords,
 } from '../../_scaffold/evaluate.mjs';
-import { CONFIGURED_REVIEWER_SCENARIO } from './configured-reviewer-scenario.mjs';
+import {
+  CONFIGURED_REVIEWER_SCENARIO,
+  NON_INTERACTIVE_DISPATCH_SCENARIO,
+} from './configured-reviewer-scenario.mjs';
 
 const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
 const LIFECYCLE_SCENARIO = 'unreported-checks-at-phase-four';
+const NESTED_SPAWN_SCENARIO = 'nested-spawn-abort-runs-inline';
 const ITERATE_TRACE_SCHEMA = 'effective-flow/merge-gate-iterate-echo/v1';
 const ITERATE_TRACE_KEYS = [
   'body',
@@ -175,10 +179,59 @@ function iterateTraceFindings(records, fixture) {
   return findings;
 }
 
+// The two scenarios whose subject is the dispatch of the delegated run. Neither the delegated run
+// nor its caller writes a call log of its own: both reach the forge through the one stub, so the
+// dispatch is visible only through the reads it repeats. The caller's Phase 0 probes the provider
+// once, and the delegated run's "Entry" step 4 re-runs Phase 0 steps 1 and 2 read-only before its
+// Phase 1, so a dispatched gate shows exactly two `probe` starts, both ahead of the first
+// guard-surface read. A caller that runs the gate inline after `ABORT nested-spawn-unavailable`
+// skips "Entry" and probes no third time.
+//
+// What the count does **not** show: which process made a call, so a delegated run that completed
+// the gate and a caller that completed it inline after the abort leave the same log. The two are
+// told apart only by the per-slot nesting depth the round attests (README, "Delegation scenarios
+// and the host's nesting depth"), which the archived-run tests check.
+const DISPATCH_SCENARIOS = Object.freeze([
+  NON_INTERACTIVE_DISPATCH_SCENARIO,
+  NESTED_SPAWN_SCENARIO,
+]);
+const DISPATCH_PROBES = 2;
+
+function firstGuardRead(records) {
+  const reads = startRecords(records).filter((record) => GUARD_SURFACES.includes(record.operation));
+  return reads.length === 0 ? null : Math.min(...reads.map((record) => record.seq));
+}
+
+function dispatchFindings(records) {
+  const findings = [];
+  const probes = operationStarts(records, 'probe');
+  const guard = firstGuardRead(records);
+  const early = guard === null ? probes : probes.filter((record) => record.seq < guard);
+  if (early.length < DISPATCH_PROBES) {
+    findings.push(
+      `${early.length} probe start(s) precede the first guard-surface read; the caller's Phase 0 and the delegated run's Entry re-read take one each, so the delegated run was never dispatched or never re-read the pull request`,
+    );
+  }
+  findings.push(...redispatchFindings(records));
+  return findings;
+}
+
+// A third probe is a second dispatch or a caller that re-ran "Entry" inline, and no continuation can
+// undo either, so `decisiveFindings` reads it too.
+function redispatchFindings(records) {
+  const probes = operationStarts(records, 'probe').length;
+  return probes > DISPATCH_PROBES
+    ? [
+        `the run probed the provider ${probes} times; one caller Phase 0 and one delegated Entry re-read take ${DISPATCH_PROBES}, so a further probe is a second dispatch or a re-run Entry`,
+      ]
+    : [];
+}
+
 // The merge each scenario that refuses one is failed by, with the finding it is recorded as. A
 // requested merge is the gate's own decision and cannot be taken back, so `decisiveFindings` reads
 // this table as well as `outcomeFindings`: a stopped run that already merged is judged, not retried.
-// `merge-proceeds` is the one scenario absent here, because a merge is what it expects.
+// `merge-proceeds` and the nested-spawn scenario are absent here, because a merge is what they
+// expect.
 const MERGE_REFUSALS = Object.freeze({
   [CONFIGURED_REVIEWER_SCENARIO]:
     'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
@@ -186,6 +239,8 @@ const MERGE_REFUSALS = Object.freeze({
   'linked-issue-open-points': 'the observer-only run requested pr-merge',
   'unreported-checks-block-merge': 'the gate merged with no reported check list',
   [LIFECYCLE_SCENARIO]: 'the gate requested pr-merge after checks became unreported',
+  [NON_INTERACTIVE_DISPATCH_SCENARIO]:
+    'the gate requested pr-merge although mergeGate.completion is ask and a non-interactive delegation behaves as report',
 });
 
 function mergeRefusalFindings(scenario, records) {
@@ -220,6 +275,15 @@ function outcomeFindings(scenario, records, fixture) {
   if (scenario === CONFIGURED_REVIEWER_SCENARIO) {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
+  } else if (scenario === NON_INTERACTIVE_DISPATCH_SCENARIO) {
+    findings.push(...mergeRefusalFindings(scenario, records));
+    guardReadFindings();
+    findings.push(...dispatchFindings(records));
+  } else if (scenario === NESTED_SPAWN_SCENARIO) {
+    if (merges.length === 0) findings.push('the gate did not request pr-merge after the abort');
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+    findings.push(...dispatchFindings(records));
   } else if (scenario === 'merge-proceeds') {
     if (merges.length === 0) findings.push('the gate did not request pr-merge');
     const applied = appliedMergeCount(records);
@@ -272,6 +336,8 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   'guard-blocks-merge',
   'linked-issue-open-points',
   'merge-proceeds',
+  NESTED_SPAWN_SCENARIO,
+  NON_INTERACTIVE_DISPATCH_SCENARIO,
   'unreported-checks-block-merge',
   LIFECYCLE_SCENARIO,
 ]);
@@ -319,8 +385,9 @@ export function findings({ scenario, records, fixture, auxiliaryRecords, require
 // The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
 // discards an attempt that left a call (see `assessAbortedEvidence` in the shared evaluator). Only
 // what no continuation could undo counts: a merge the scenario refuses, a second applied merge where
-// one is expected, an applied mutation by the observer, and a configured-reviewer handoff the echo
-// recorded wrong. A correct recorded handoff is a pass, and discarding a pass hides no deviation.
+// one is expected, an applied mutation by the observer, a second dispatch in a dispatch scenario,
+// and a configured-reviewer handoff the echo recorded wrong. A correct recorded handoff is a pass,
+// and discarding a pass hides no deviation.
 // Missing guard reads, an absent merge or an absent delegation are not decisive — a stopped run is
 // expected to be missing things — so a run whose deviation is an omission is distinguished from a
 // capacity abort only by the host's error line on the stop receipt.
@@ -332,7 +399,7 @@ export function decisiveFindings({
   requiresAuxiliary,
 }) {
   const findings = [];
-  if (scenario === 'merge-proceeds') {
+  if (scenario === 'merge-proceeds' || scenario === NESTED_SPAWN_SCENARIO) {
     const applied = appliedMergeCount(records);
     if (applied > 1) findings.push(appliedMergeFinding(applied));
   } else if (Object.hasOwn(MERGE_REFUSALS, scenario)) {
@@ -341,6 +408,7 @@ export function decisiveFindings({
     throw new Error(`${scenario} is registered as branched but reaches no outcome branch`);
   }
   if (scenario === 'linked-issue-open-points') findings.push(...appliedMutationFindings(records));
+  if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
   if (requiresAuxiliary && auxiliaryRecords.length > 0) {
     findings.push(...iterateTraceFindings(auxiliaryRecords, fixture));
   }

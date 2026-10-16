@@ -1,7 +1,8 @@
 // Sender-side builder and validator for the message `merge-gate` hands to `iterate`.
 //
-// `build` turns structured input into the canonical envelope (six control lines, an optional
-// CI-repair instruction, the boundary token, the manifest, the delimiter, the body spans), checks
+// `build` turns structured input into the canonical envelope (six control lines, the optional
+// approval line, an optional CI-repair instruction, the boundary token, the manifest, the delimiter,
+// the body spans), checks
 // its own output with the same structural validator `validate` uses, and writes it to a fresh file
 // below `<cwd>/.effective-flow/merge-gate/` together with a snapshot of the expected structure.
 // `validate` re-reads that file, binds it to the digest `build` returned, and re-runs the text-only
@@ -74,6 +75,7 @@ export const INSTRUCTION_FORBIDDEN_PREFIXES = Object.freeze([
   'Next steps:',
   'Run state:',
   'Language context:',
+  'Approved outcomes:',
   'Item:',
   'Thread item:',
   'Boundary token:',
@@ -89,7 +91,22 @@ export const LANGUAGE_CONTEXT_KEYS = Object.freeze([
 ]);
 
 const LANGUAGE_VALUES = new Set(['de', 'en']);
-const RUN_STATES = new Set(['gated', 'non-interactive']);
+// `relayed` means the user is reachable through the caller: a gate asks through the caller instead
+// of degrading as under `non-interactive`. This module only validates and carries the value
+// verbatim; no derived field or check branches on it, and `iterate.md` owns its meaning.
+export const RUN_STATES = Object.freeze(['gated', 'non-interactive', 'relayed']);
+// The approval line: written only into the round that consumes a relayed `iterate-approval`
+// answer, directly after the six control lines, and never a seventh control line. It names every
+// delegated item's minted identifier, in manifest order, with the outcome the user approved for it;
+// `iterate.md` applies it as that round's Phase 2.5 approval.
+export const APPROVAL_KEYWORD = 'Approved outcomes';
+export const APPROVED_OUTCOME_VALUES = Object.freeze([
+  'implemented',
+  'deferred',
+  'rejected',
+  'unassessed',
+]);
+const APPROVAL_ENTRY = /^([A-Z0-9]{32,})=([a-z]+)$/;
 const FIXED_CONTROL_VALUES = Object.freeze({
   summaryComment: 'suppressed',
   reviewGuard: 'established',
@@ -226,6 +243,36 @@ function normalizeLanguageContext(value) {
   return Object.fromEntries(LANGUAGE_CONTEXT_KEYS.map((key) => [key, value[key]]));
 }
 
+// `approvedOutcomes` maps every delegated item's durable key to its approved outcome. It is legal
+// only beside `runState: non-interactive`, because only the approval round carries it, and it must
+// name exactly the durable keys of the thread and body items, so no item travels unapproved and no
+// approval names an item this round does not delegate.
+function normalizeApprovedOutcomes(value, runState, durableKeys) {
+  requireObject(value, 'approvedOutcomes');
+  if (runState !== 'non-interactive') {
+    fail('INVALID_PAYLOAD', 'approvedOutcomes requires runState non-interactive');
+  }
+  const entries = Object.entries(value);
+  if (entries.length === 0) fail('INVALID_PAYLOAD', 'approvedOutcomes must not be empty');
+  const approved = new Map();
+  for (const [durableKey, outcome] of entries) {
+    if (!durableKeys.has(durableKey)) {
+      fail('INVALID_PAYLOAD', `approvedOutcomes names ${durableKey}, which is no delegated item`);
+    }
+    if (!APPROVED_OUTCOME_VALUES.includes(outcome)) {
+      fail(
+        'INVALID_PAYLOAD',
+        `approvedOutcomes.${durableKey} must be ${APPROVED_OUTCOME_VALUES.join(', ')}`,
+      );
+    }
+    approved.set(durableKey, outcome);
+  }
+  if (approved.size !== durableKeys.size) {
+    fail('INVALID_PAYLOAD', 'approvedOutcomes must name every thread and body item');
+  }
+  return approved;
+}
+
 export function normalizeBuildInput(input) {
   requireObject(input, 'input');
   const cwd = requireNonEmptyString(input.cwd, 'cwd');
@@ -234,8 +281,8 @@ export function normalizeBuildInput(input) {
   for (const [field, expected] of Object.entries(FIXED_CONTROL_VALUES)) {
     if (input[field] !== expected) fail('INVALID_PAYLOAD', `${field} must be ${expected}`);
   }
-  if (!RUN_STATES.has(input.runState)) {
-    fail('INVALID_PAYLOAD', 'runState must be gated or non-interactive');
+  if (!RUN_STATES.includes(input.runState)) {
+    fail('INVALID_PAYLOAD', 'runState must be gated, non-interactive or relayed');
   }
   const languageContext = normalizeLanguageContext(input.languageContext);
 
@@ -295,6 +342,11 @@ export function normalizeBuildInput(input) {
     instruction = requireNonEmptyString(input.instruction, 'instruction');
   }
 
+  const approvedOutcomes =
+    input.approvedOutcomes === undefined || input.approvedOutcomes === null
+      ? null
+      : normalizeApprovedOutcomes(input.approvedOutcomes, input.runState, durableKeys);
+
   return {
     cwd,
     pr,
@@ -307,6 +359,7 @@ export function normalizeBuildInput(input) {
     threadItems,
     bodyItems,
     instruction,
+    approvedOutcomes,
   };
 }
 
@@ -386,6 +439,29 @@ export function languageContextValue(languageContext) {
   return LANGUAGE_CONTEXT_KEYS.map((key) => `${key}=${languageContext[key]}`).join('; ');
 }
 
+// The approval line's value: `<identifier>=<outcome>` per delegated item, in manifest order.
+export function approvedOutcomesValue(entries) {
+  return entries.map(({ identifier, outcome }) => `${identifier}=${outcome}`).join(',');
+}
+
+// Parses an approval value strictly; returns the ordered entries, or null for any other form.
+export function parseApprovedOutcomes(value) {
+  if (typeof value !== 'string' || value === '') return null;
+  const entries = [];
+  for (const part of value.split(',')) {
+    const match = APPROVAL_ENTRY.exec(part);
+    if (!match || !APPROVED_OUTCOME_VALUES.includes(match[2])) return null;
+    entries.push({ identifier: match[1], outcome: match[2] });
+  }
+  return entries;
+}
+
+function manifestIdentifierOf(line) {
+  const prefix = line.startsWith('Thread item: ') ? 'Thread item: ' : 'Item: ';
+  const end = line.indexOf(' | ', prefix.length);
+  return end === -1 ? null : line.slice(prefix.length, end);
+}
+
 export function threadItemLine(identifier, threadId) {
   return `Thread item: ${identifier} | thread=${threadId}`;
 }
@@ -394,10 +470,14 @@ export function bodyItemLine(identifier, { reviewId, author, url }) {
   return `Item: ${identifier} | review=${reviewId} | author=${author} | url=${url}`;
 }
 
-// The entries above the delimiter, in order: six control lines, the instruction (one entry, which
-// may itself span lines), the token line, the manifest lines.
+// The entries above the delimiter, in order: six control lines, the approval line when the control
+// values carry one, the instruction (one entry, which may itself span lines), the token line, the
+// manifest lines.
 export function headerLines({ controlValues, instruction, token, manifestLines }) {
   const lines = CONTROL_KEYWORDS.map((keyword) => `${keyword}: ${controlValues[keyword]}`);
+  if (controlValues[APPROVAL_KEYWORD] !== undefined) {
+    lines.push(`${APPROVAL_KEYWORD}: ${controlValues[APPROVAL_KEYWORD]}`);
+  }
   if (instruction !== null && instruction !== undefined) lines.push(instruction);
   lines.push(`Boundary token: ${token}`, ...manifestLines);
   return lines;
@@ -456,6 +536,22 @@ function requireSnapshot(snapshot) {
   if (controls['Item filter'] !== itemFilterValue(snapshot.threadIds)) {
     invalid('controlValues.Item filter disagrees with threadIds');
   }
+  const approval = controls[APPROVAL_KEYWORD];
+  const approvalCount = approval === undefined ? 0 : 1;
+  if (approval !== undefined) {
+    const entries = parseApprovedOutcomes(approval);
+    if (!entries) invalid(`controlValues.${APPROVAL_KEYWORD}`);
+    if (controls['Run state'] !== 'non-interactive') {
+      invalid(`controlValues.${APPROVAL_KEYWORD} requires Run state non-interactive`);
+    }
+    const identifiers = snapshot.manifestLines.map(manifestIdentifierOf);
+    if (
+      entries.length !== identifiers.length ||
+      entries.some(({ identifier }, index) => identifier !== identifiers[index])
+    ) {
+      invalid(`controlValues.${APPROVAL_KEYWORD} disagrees with the manifest identifiers`);
+    }
+  }
   // The header must be exactly the control lines, an optional instruction, the token line and the
   // manifest lines the rest of the snapshot declares.
   const header = snapshot.headerLines;
@@ -463,11 +559,11 @@ function requireSnapshot(snapshot) {
     invalid('headerLines');
   }
   const instructionCount =
-    header.length - CONTROL_KEYWORDS.length - 1 - snapshot.manifestLines.length;
+    header.length - CONTROL_KEYWORDS.length - approvalCount - 1 - snapshot.manifestLines.length;
   if (instructionCount !== 0 && instructionCount !== 1) invalid('headerLines length');
   const expected = headerLines({
     controlValues: controls,
-    instruction: instructionCount === 1 ? header[CONTROL_KEYWORDS.length] : null,
+    instruction: instructionCount === 1 ? header[CONTROL_KEYWORDS.length + approvalCount] : null,
     token: snapshot.token,
     manifestLines: snapshot.manifestLines,
   });
@@ -539,6 +635,37 @@ export function validateStructure(text, snapshotInput) {
     if (value !== snapshot.controlValues[keyword]) {
       fail('CONTROL_LINE_MISMATCH', `control line "${keyword}:" differs from the snapshot`, {
         line,
+      });
+    }
+  }
+
+  // The approval line: at most once, present exactly when the snapshot declares one, and equal to it.
+  const approvals = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(`${APPROVAL_KEYWORD}:`)) return;
+    approvals.push({ line: index + 1, value: trimmed.slice(APPROVAL_KEYWORD.length + 1).trim() });
+  });
+  if (approvals.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${APPROVAL_KEYWORD}:" appears more than once`, {
+      line: approvals[1].line,
+    });
+  }
+  const expectedApproval = snapshot.controlValues[APPROVAL_KEYWORD];
+  if (expectedApproval === undefined && approvals.length === 1) {
+    fail('CONTROL_LINE_MISMATCH', `"${APPROVAL_KEYWORD}:" is not in the snapshot`, {
+      line: approvals[0].line,
+    });
+  }
+  if (expectedApproval !== undefined) {
+    if (approvals.length === 0) {
+      fail('CONTROL_LINE_MISSING', `"${APPROVAL_KEYWORD}:" is missing above the delimiter`, {
+        line: delimiterLine,
+      });
+    }
+    if (approvals[0].value !== expectedApproval) {
+      fail('CONTROL_LINE_MISMATCH', `"${APPROVAL_KEYWORD}:" differs from the snapshot`, {
+        line: approvals[0].line,
       });
     }
   }
@@ -852,6 +979,16 @@ export async function buildEnvelope(input, deps = {}) {
     'Run state': normalized.runState,
     'Language context': languageContextValue(normalized.languageContext),
   };
+  // Every approved item `build` refused is undelegated, so an approval that leaves no identifier
+  // writes no line, exactly as a round without approved items writes none.
+  if (normalized.approvedOutcomes !== null && identifiers.length > 0) {
+    controlValues[APPROVAL_KEYWORD] = approvedOutcomesValue(
+      identifiers.map(({ identifier, durableKey }) => ({
+        identifier,
+        outcome: normalized.approvedOutcomes.get(durableKey),
+      })),
+    );
+  }
   const text = serialize({
     controlValues,
     instruction: normalized.instruction,

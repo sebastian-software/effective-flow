@@ -16,6 +16,12 @@ import {
   resolveLazyIncludes,
 } from '../build-lib.mjs';
 import { pilotOperationKeys } from './support/pilot-helper-contract.mjs';
+import {
+  DELEGATED_RUN_POINTER_RE,
+  mergeGateCore,
+  mergeGateDelegatedRun,
+  mergeGateWithDelegatedRun,
+} from './support/merge-gate-source.mjs';
 import { inspectPlanPrMarker } from '../src/scripts/remote-tracker-core.mjs';
 import {
   classifySetupStem,
@@ -39,6 +45,16 @@ const repositoryRoot = new URL('..', import.meta.url);
 // to one of those nine belongs in both files, and an edit to any other helper here does not.
 function source(path) {
   return readFileSync(new URL(path, repositoryRoot), 'utf8');
+}
+
+// merge-gate reads as one document – its caller core with the delegated-run pointer replaced by the
+// fragment – everywhere a test pins the gate's own prose; see test/support/merge-gate-source.mjs.
+const MERGE_GATE_PATH = 'src/tools/merge-gate.md';
+function mergeGateSource() {
+  return mergeGateWithDelegatedRun(repositoryRoot);
+}
+function gateAwareSource(path) {
+  return path === MERGE_GATE_PATH ? mergeGateSource() : source(path);
 }
 
 function askContracts(text, context) {
@@ -2636,7 +2652,7 @@ test('no source outside the retired-key contract pairs a retired key with fallba
 // sentence, so rewording the clause stays free while dropping the decision point fails.
 test('every merge-gate lazy pointer names the decision point that loads it', () => {
   const triggers = new Map(
-    [...source('src/tools/merge-gate.md').matchAll(LAZY_INCLUDE_RE)].map((match) => [
+    [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)].map((match) => [
       match[1].trim(),
       (match[2] ?? '').trim(),
     ]),
@@ -2790,7 +2806,7 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
 // Invariant: a pilot reservation happens only after a non-observer mode is resolved and before
 // Phase 1, and every non-reserving state is a read-only no-op.
 test('merge-gate reserves pilot observations only after mode resolution and before Phase 1', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const fragment = source('src/shared/pilot-measurement.md');
   ordered(
     gate,
@@ -2889,7 +2905,7 @@ test('merge-gate projects report readiness from Phase-4 conditions 2 through 10 
 // Invariant: a reserved observation is finalized exactly once before cleanup, and no observation
 // failure changes the merge or report result.
 test('merge-gate finalizes a reserved observation exactly once before cleanup without changing its result', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const fragment = source('src/shared/pilot-measurement.md');
   const phase6 = section(gate, '### Phase 6: Summary', '\n## ');
   ordered(
@@ -2928,7 +2944,7 @@ test('merge-gate finalizes a reserved observation exactly once before cleanup wi
 // Invariant: the deferred configured-reviewer route keeps its single lazy edge and exact headings,
 // and the retained Phase-4 shells stay fail-closed without it.
 test('the configured-reviewer route stays reachable through exact retained workflow shells', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const route = configuredReviewerRoute();
   const headings = [
     '## Configured reviewer configuration',
@@ -2967,8 +2983,8 @@ test('the configured-reviewer route stays reachable through exact retained workf
   );
   assert.deepEqual(
     carriers,
-    ['src/tools/merge-gate.md'],
-    "merge-gate must remain the configured-reviewer fragment's single consumer",
+    ['src/shared/merge-gate-delegated-run.md'],
+    "merge-gate's delegated run must remain the configured-reviewer fragment's single consumer",
   );
   const configuredReviewerPointer = [...gate.matchAll(LAZY_INCLUDE_RE)].find(
     (match) => match[1].trim() === 'merge-gate-configured-reviewer',
@@ -5843,11 +5859,11 @@ test('the merge gate writes no marker of its own', () => {
   // not — fails here rather than waiting for someone to guess its spelling.
   for (const file of ['src/tools/merge-gate.md', 'src/tools/iterate.md']) {
     assert.doesNotMatch(
-      source(file),
+      gateAwareSource(file),
       token,
       `${file} must neither write nor read the merge gate marker`,
     );
-    for (const marker of markersIn(source(file))) {
+    for (const marker of markersIn(gateAwareSource(file))) {
       assert.ok(
         PULL_REQUEST_MARKERS.includes(`<!-- ${marker} -->`),
         `${file} names a marker outside the two that are written: ${marker}`,
@@ -5900,7 +5916,7 @@ test('a marker counts only as a body’s leading line, and a reader must require
 });
 
 test('the merge gate evaluates bot authorship before it consults the identity lookup', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = flat(section(mergeGateSource(), '### Phase 1'));
 
   // The rules are an ordered evaluation, not a set of independent conditions.
   assert.match(phase1, /\border\b/i, 'Phase 1 must state that its rules are evaluated in order');
@@ -5948,7 +5964,7 @@ test('a bot-typed author is excluded before the catch-all counts it as human', (
   // 1 and never reaches the human-comment guard. A rewrite that made the exclusion reachable only
   // through `mergeGate.bots` would put every one of those comments back in front of the guard, and
   // the normalization test would stay green while it happened.
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = flat(section(mergeGateSource(), '### Phase 1'));
 
   // Both rules are picked by content, deliberately not by position. The numbered split cuts at every
   // " <n>. " a rule's own prose contains, so an index-based pick can land on a slice that is not a
@@ -6038,7 +6054,7 @@ function exclusionSentence(rule) {
 }
 
 test('the merge gate excludes every item its own account wrote', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = flat(section(mergeGateSource(), '### Phase 1'));
   const rule = identityRule(phase1);
 
   // The rule is an identity comparison and nothing else: the login the identity operation returned,
@@ -6119,7 +6135,7 @@ test('the merge gate excludes every item its own account wrote', () => {
 });
 
 test('the merge gate excludes its own top-level summary comment by author alone', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = flat(section(mergeGateSource(), '### Phase 1'));
   const rule = identityRule(phase1);
 
   // A top-level comment has no resolved state on either provider, so a summary comment from a
@@ -6179,7 +6195,7 @@ test('Phase 6 reports every item the identity rule excluded that would otherwise
   // Sliced to Phase 6 rather than to the rest of the file: "Edge cases" below it discusses the same
   // exclusions in the same words, so a deleted summary item would otherwise be satisfied by an edge
   // case that reports nothing to anyone.
-  const phase6 = flat(section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## '));
+  const phase6 = flat(section(mergeGateSource(), '### Phase 6', '\n## '));
   const item = phase6
     .split(/(?=\s-\s)/)
     .find((bullet) => /\bexcluded\b/i.test(bullet) && /\bcounted\b/i.test(bullet));
@@ -6221,7 +6237,7 @@ test('Phase 6 reports every item the identity rule excluded that would otherwise
 });
 
 test('a deferred bot finding is named in chat instead of answered in its thread', () => {
-  const mergeGate = flat(source('src/tools/merge-gate.md'));
+  const mergeGate = flat(mergeGateSource());
 
   // The gate's own writes are what broke the previous contract across runs: an unresolved
   // reply left behind is read as a human comment by the next run. The report therefore leaves
@@ -6246,7 +6262,7 @@ test('a deferred bot finding is named in chat instead of answered in its thread'
 });
 
 test('an unprovable identity activates the merge gate guard and binds only the identity rule', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = flat(section(mergeGateSource(), '### Phase 1'));
 
   // Fail-closed direction: an identity the gate cannot establish makes the item count and the
   // guard activate, never the reverse. The reverse reading is the one that merges a pull
@@ -6389,7 +6405,7 @@ test('the merge gate announces the exact suppression literal iterate parses', ()
 });
 
 test('every claim that the trigger comment is the only own write names what makes it true', () => {
-  const mergeGate = flat(source('src/tools/merge-gate.md'));
+  const mergeGate = flat(mergeGateSource());
 
   // The claim is only true together with the suppression of the delegated run's summary
   // comment, so a sentence that makes it without naming that qualifier is the contradiction
@@ -6424,7 +6440,7 @@ test('the gate bounds its own trigger comments per verified head, not per run', 
   // reads the bound as a rule about its own behaviour skips the next trigger, leaves a configured
   // bot in "not started", and deadlocks the gate into a report. The bound therefore has to be
   // stated per head, with the run-level ceiling it implies.
-  const gate = prose(source('src/tools/merge-gate.md'));
+  const gate = prose(mergeGateSource());
 
   assert.match(
     gate,
@@ -6501,7 +6517,7 @@ test('the check-wait question states its cadence at every site that poses it', (
   // ask` spells its own cadence out twice. At `maxRounds: 10` and `checkWaitMinutes: 20` a
   // per-round reading interrupts a human ten times, each after a twenty-minute block. The
   // resolved cadence is once per run, and a run that already asked needs a stated behaviour.
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const phase2 = prose(section(gate, '### Phase 2: Check gate (bounded)'));
 
   assert.match(
@@ -6547,7 +6563,7 @@ test('the check-wait question states its cadence at every site that poses it', (
 // as a failing one. The criterion exists only in the Phase 2 prose of merge-gate.md, so this test
 // is its only guard.
 test('the check criterion counts SKIPPED and NEUTRAL as satisfied, as GitHub does', () => {
-  const phase2 = section(source('src/tools/merge-gate.md'), '### Phase 2: Check gate (bounded)');
+  const phase2 = section(mergeGateSource(), '### Phase 2: Check gate (bounded)');
   const step3 = prose(boundedSlice(phase2, '3. **Failed checks.**', '4. **Re-read the status**'));
   const step4 = prose(
     boundedSlice(phase2, '4. **Re-read the status**', '\nLeave the loop when the check criterion'),
@@ -6606,7 +6622,7 @@ test('the check criterion counts SKIPPED and NEUTRAL as satisfied, as GitHub doe
 });
 
 test('only the bot threads this run implemented can block the merge', () => {
-  const preconditions = flat(section(source('src/tools/merge-gate.md'), '### Phase 4'));
+  const preconditions = flat(section(mergeGateSource(), '### Phase 4'));
 
   // Unscoped, this precondition was unsatisfiable by construction: a deferred or rejected
   // finding gets no reply and no resolution by design, so "every bot thread is answered or
@@ -6638,7 +6654,7 @@ test('only the bot threads this run implemented can block the merge', () => {
 });
 
 test('a reviewer thread no round assessed blocks the merge in a condition of its own', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const phase4 = section(gate, '### Phase 4');
 
   // The window: a reviewer's check goes terminal before the reviewer's last thread is published,
@@ -6856,7 +6872,7 @@ test('the trigger idempotency check rests on evidence the forge actually exposes
 });
 
 test('merge-gate states its no-commit/no-push boundary and delegates every other change to iterate', () => {
-  const mergeGate = flat(source('src/tools/merge-gate.md'));
+  const mergeGate = flat(mergeGateSource());
 
   // Both prohibitions must sit close to the stated boundary, so a later edit that keeps
   // "no commit" but drops "no push" (or vice versa) cannot pass silently.
@@ -6868,9 +6884,7 @@ test('merge-gate states its no-commit/no-push boundary and delegates every other
   // weakening any single guarantee fails: the count, the mechanism of the clean kind, the
   // mechanism of the conflicted kind, and the per-occurrence bound. Emphasis is stripped, because
   // where the bold markers sit is editorial.
-  const boundary = prose(
-    section(source('src/tools/merge-gate.md'), '## Git write boundary', '\n## '),
-  );
+  const boundary = prose(section(mergeGateSource(), '## Git write boundary', '\n## '));
   assert.match(
     boundary,
     near('two', 'sanctioned kinds', 40),
@@ -6954,7 +6968,7 @@ test('merge-gate states its no-commit/no-push boundary and delegates every other
   // The pre-capability sentence this workflow replaced. Re-inserting it would leave the file
   // claiming both that a conflict stops the run and that the gate repairs it.
   assert.doesNotMatch(
-    source('src/tools/merge-gate.md'),
+    mergeGateSource(),
     /Not repaired automatically/i,
     'the sentence "Not repaired automatically: stop, report the conflict, and do not merge" must ' +
       'stay removed: the gate now repairs a conflict with the base',
@@ -7133,7 +7147,7 @@ test('the resolved tree is verified independently before the gate commits and pu
 });
 
 test('the human-comment guard and the report mode both leave the conflict resolution running', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
 
   // The guard blocks what a reviewer is negotiating, not an objective defect of the branch. The
   // conflict repair sits beside the CI repair for exactly that reason: dropping its bullet would
@@ -7180,11 +7194,11 @@ test('the human-comment guard and the report mode both leave the conflict resolu
   // resolution would make a report run report the same conflict forever — the very state the
   // operator invoked the gate to clear — so the source accepts the one write and says so instead.
   //
-  // Sliced to the phase that resolves the completion mode rather than run over the whole 1180-line
-  // file, and again pinned as direction: `near('conflict resolution', 'not withhold')` matches "the
+  // Sliced to the delegated run's step before Phase 1, which states what the resolved completion
+  // mode scopes, rather than run over the whole gate, and again pinned as direction: `near('conflict resolution', 'not withhold')` matches "the
   // conflict resolution **is withheld** with the merge" exactly as well as the rule it is meant to
   // protect.
-  const completion = prose(section(gate, '### Phase 0', '\n### '));
+  const completion = prose(section(gate, '### Before Phase 1', '\n### '));
   assert.match(
     completion,
     near('`report` withholds', 'one action', 60),
@@ -7363,7 +7377,7 @@ test("the merge gate's own Configuration table carries every key with its defaul
   // have stayed green on a default changed here and nowhere else, while the three places that do
   // pin defaults — setup.md, the user guide, the fragment — went on reporting agreement about a
   // value the gate no longer used.
-  const configuration = section(source('src/tools/merge-gate.md'), '## Configuration', '\n## ');
+  const configuration = section(mergeGateSource(), '## Configuration', '\n## ');
   for (const [key, value] of [
     ['mergeGate.completion', '`ask`'],
     ['mergeGate.conflictResolution', '`auto`'],
@@ -7587,7 +7601,7 @@ test('skill-ownership.json names no merge gate among the consumers of effective-
   // and puts it back. The three named behaviours are the substance: they are what the skill would
   // bring and what this workflow forbids, and they are why the gate is a non-consumer rather than
   // an unlisted one.
-  const gate = flat(source('src/tools/merge-gate.md'));
+  const gate = flat(mergeGateSource());
   assert.match(
     gate,
     /Do not load `effective-delivery` here\./,
@@ -7648,7 +7662,7 @@ test('the shared reviewer-state contract is loaded by the gate and by the guard'
     // The include fence, not a mere mention: a tool that only names the fragment in prose never
     // receives its rules.
     assert.match(
-      source(path),
+      gateAwareSource(path),
       /```(?:lazy-)?include\n(?:[a-z0-9-]+\n)*review-bot-state\n(?:[a-z0-9-]+\n)*(?:when:[^\n]*\n)?```/,
       `${path} must load review-bot-state through an include fence`,
     );
@@ -7740,7 +7754,7 @@ test('the reviewer-state observation half loads where a state is resolved, and t
     'src/shared/setup-retired-login-migration.md',
   ]) {
     assert.equal(
-      collectIncludeNames(source(path)).eager.has('review-bot-state-observation'),
+      collectIncludeNames(gateAwareSource(path)).eager.has('review-bot-state-observation'),
       false,
       `${path} must not inline review-bot-state-observation`,
     );
@@ -7753,7 +7767,7 @@ test('the reviewer-state observation half loads where a state is resolved, and t
 // hand-assembled message, and the per-head bound the summary-comment suppression sustains.
 // `delegation-mandate` stays eager.
 test('the merge-gate delegation contract is deferred to its two sites and its decisions stay in the core', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const contract = mergeGateDelegationContract();
   const gateIncludes = collectIncludeNames(gate);
 
@@ -7909,7 +7923,7 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     near('reaction', '(?:is not a check|no check to configure)', 300),
     "a reaction must be stated not to be evidence about the reviewer's check context",
   );
-  for (const sourceText of [source('src/tools/merge-gate.md'), gateSource]) {
+  for (const sourceText of [mergeGateSource(), gateSource]) {
     assert.doesNotMatch(
       flat(sourceText),
       /publishes no check/i,
@@ -8378,7 +8392,7 @@ test('the gate Rules and the has-run state both name the stale-verdict re-trigge
   // the unmoved-head deadlock the re-trigger exists to break.
   const rule = prose(
     boundedSlice(
-      section(source('src/tools/merge-gate.md'), '## Rules', '\n## '),
+      section(mergeGateSource(), '## Rules', '\n## '),
       "- Take every bot's state from the loaded",
       '\n- ',
     ),
@@ -8869,7 +8883,7 @@ test('the stale-verdict state is reported with its evidence and the gate allows 
     'the report item must not present itself as a clearing rule',
   );
 
-  const gate = prose(source('src/tools/merge-gate.md'));
+  const gate = prose(mergeGateSource());
   assert.match(
     gate,
     near(
@@ -9846,7 +9860,7 @@ test('one rule decides when a configured reviewer login matches a reported one',
 });
 
 test('every site that matches mergeGate.bots resolves through the shared login rule', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const phase1 = flat(section(gate, '### Phase 1'));
   const phase3 = flat(configuredReviewerSection('## Phase 3: Automatic reviewer round'));
 
@@ -9887,7 +9901,7 @@ test('every site that matches mergeGate.bots resolves through the shared login r
 });
 
 test('condition 7 finding no reviewer thread is reported, not passed over in silence', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
 
   // The numbered preconditions and the commentary after them come out of one shared cut, so every
   // assertion below can tell a merge condition apart from the prose that follows it — and so this
@@ -9950,7 +9964,7 @@ test('issue-backed apply workflows share one started-before-delegation lifecycle
   const lifecycle = source('src/shared/issue-lifecycle.md');
   const applyIssues = source('src/tools/apply-issues.md');
   const applyReview = source('src/tools/apply-review-remote.md');
-  const mergeGate = source('src/tools/merge-gate.md');
+  const mergeGate = mergeGateSource();
 
   for (const workflow of [applyIssues, applyReview, mergeGate]) {
     assert.match(workflow, /```include\nissue-lifecycle\n```/);
@@ -10110,7 +10124,7 @@ test('container completion is deferred until a linked issue is observed terminal
 });
 
 test('merge-gate supports already-merged observer re-entry with terminal-only reconciliation', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const phase0 = prose(
     section(gate, '### Phase 0: Resolve the pull request and the completion mode'),
   );
@@ -10448,7 +10462,7 @@ test('the completion verdict recognizes the legacy planning-blocker spelling on 
   const lifecycle = prose(
     section(source('src/shared/issue-post-merge-observation.md'), '### Post-merge observation'),
   );
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
 
   // The label convention in `issue-tracker.md` treats `firmo-needs-planning` as permanently
   // equivalent on every forge read, and the gate does not load that fragment. Without the
@@ -10857,10 +10871,7 @@ test('the comment read enters step 3 budget only, and step 4 says why it does no
 // the close is never counted as a required read.
 test('the forge preflight probes issueClose, degrades without it, and never calls it a read', () => {
   const phase0 = prose(
-    section(
-      source('src/tools/merge-gate.md'),
-      '### Phase 0: Resolve the pull request and the completion mode',
-    ),
+    section(mergeGateSource(), '### Phase 0: Resolve the pull request and the completion mode'),
   );
 
   assert.match(
@@ -10924,7 +10935,7 @@ test('the forge preflight probes issueClose, degrades without it, and never call
 // Invariant: the Phase-6 report names the verdict by its locators and never
 // quotes criterion or pull-request text; merged-PR re-entry allows the completion assessment.
 test('the Phase-6 summary and the merged-PR re-entry allowlist name the completion assessment', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const reportItems = prose(
     section(source('src/shared/merge-gate-issue-observation.md'), '### Observation report items'),
   );
@@ -10955,7 +10966,7 @@ test('the Phase-6 receipt result stays inline and the per-issue report items fol
   // A merge with a missing or invalid lifecycle receipt ends Phase 5.5 before the observation
   // fragment loads, yet still owes the receipt result. That item therefore stays in the core, and
   // only the per-issue items a run can owe after reaching the pointer are read from the fragment.
-  const phase6 = prose(section(source('src/tools/merge-gate.md'), '### Phase 6: Summary', '\n## '));
+  const phase6 = prose(section(mergeGateSource(), '### Phase 6: Summary', '\n## '));
   assert.match(
     phase6,
     /after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;/,
@@ -11016,7 +11027,7 @@ test('both force-close prohibitions survive verbatim beside the operator-confirm
 // Invariant: the gate never closes an issue on its own authority; a transition
 // needs a `complete` verdict and explicit operator confirmation in a gated run.
 test('the merge-gate rules drop the observe-only closure claim for the confirmed-transition rule', () => {
-  const gate = prose(source('src/tools/merge-gate.md'));
+  const gate = prose(mergeGateSource());
 
   // The retired sentence sat in `## Rules`, where it read as a scope statement — this gate
   // observes, it does not close — and the offer makes that false. A reader who greps the Rules and
@@ -11040,7 +11051,7 @@ test('the in-run reasoning enumeration names the completion assessment as its fi
   // The carve-out from the delegation mandate is a closed enumeration, so a guard that authorizes
   // a write is either named in it or delegated away. Reading an exception into the four is exactly
   // what this pin prevents.
-  const gate = prose(source('src/tools/merge-gate.md'));
+  const gate = prose(mergeGateSource());
 
   assert.match(
     gate,
@@ -11266,10 +11277,7 @@ test('the completion offer adds no mergeGate.* key: all four key tables still ca
   // key a gate run reads. Allowed explicitly and only in that position: an unlisted extra row
   // here is a key the other three tables never learned about.
   assert.deepEqual(
-    keyRows(
-      section(source('src/tools/merge-gate.md'), '## Configuration', '\n## '),
-      'src/tools/merge-gate.md',
-    ),
+    keyRows(section(mergeGateSource(), '## Configuration', '\n## '), 'src/tools/merge-gate.md'),
     [...prefixed, '`delivery.mergeMethod`'],
   );
 });
@@ -11290,7 +11298,7 @@ test('an unreadable conflictResolution resolves to off in every source that docu
     ],
     ['docs/user-guide/configuration.md', '## Block `mergeGate`', '\n## '],
   ]) {
-    const block = flat(section(source(path), heading, until));
+    const block = flat(section(gateAwareSource(path), heading, until));
     assert.match(
       block,
       near('(?:unreadable|invalid)', 'resolves to `off`', 200),
@@ -11386,10 +11394,7 @@ test('generic fallback retains observer re-entry only for actual unfinished reco
     /observer-only (?:post-merge )?re-entry/,
   );
   assert.match(flat(nextSteps), /observer-only[^.]*actual unfinished reconciliation/);
-  assert.match(
-    flat(source('src/tools/merge-gate.md')),
-    /Only for generic fallback[^.]*linked-issues-open row/,
-  );
+  assert.match(flat(mergeGateSource()), /Only for generic fallback[^.]*linked-issues-open row/);
   assert.match(
     source('docs/user-guide/troubleshooting.md'),
     /A linked issue remains open after merge/,
@@ -11682,7 +11687,7 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
     .filter((file) => file.endsWith('.md'))
     .map((file) => file.slice(0, -3));
   const deliveryConsumers = toolNames.filter((name) => {
-    const { eager, lazy } = collectIncludeNames(source(`src/tools/${name}.md`));
+    const { eager, lazy } = collectIncludeNames(gateAwareSource(`src/tools/${name}.md`));
     return eager.has('worktree-integration') || lazy.has('worktree-integration');
   });
   assert.deepEqual(
@@ -11705,7 +11710,7 @@ test('every workflow that keeps a plan file defers plan-archival, and every exem
   ]);
 
   for (const name of deliveryConsumers) {
-    const body = source(`src/tools/${name}.md`);
+    const body = gateAwareSource(`src/tools/${name}.md`);
     const { eager, lazy } = collectIncludeNames(body);
     assert.equal(
       eager.has('plan-archival'),
@@ -12759,7 +12764,7 @@ test('both consumers of the reviewer contract read the submitted reviews', () =>
   // fresh read. Widening one consumer's read and not the other's makes the two disagree about the
   // same reviewer on the same pull request — the exact drift the fragment's own contract forbids,
   // and one that no assertion on either file alone would catch.
-  const gate = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const gate = flat(section(mergeGateSource(), '### Phase 1'));
   const iterate = flat(section(source('src/tools/iterate.md'), '### Phase 1:'));
 
   for (const [label, text] of [
@@ -12790,7 +12795,7 @@ test('both consumers of the reviewer contract read the submitted reviews', () =>
     'iterate must state what an unavailable review read costs its run',
   );
 
-  const preflight = flat(section(source('src/tools/merge-gate.md'), '### Phase 0'));
+  const preflight = flat(section(mergeGateSource(), '### Phase 0'));
   assert.match(
     preflight,
     /`prReviewsRead`/,
@@ -12849,7 +12854,7 @@ test('one supersession rule serves the gate condition and the guard, and lives i
 
   // One home, referenced from every consumer, as the login-matching rule already is. Four sites
   // restating it is four places for it to drift.
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const verdictCondition = flat(configuredReviewerCondition(10));
   assert.ok(verdictCondition, 'Phase 4 must carry condition 10');
   assert.match(
@@ -12944,7 +12949,7 @@ test('the unassessed-verdict condition blocks the absence of an outcome, never t
 });
 
 test('a changes-requested review is the guard third counting surface, decided by state alone', () => {
-  const phase1 = prose(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const phase1 = prose(section(mergeGateSource(), '### Phase 1'));
 
   assert.match(
     phase1,
@@ -13066,7 +13071,7 @@ test('a review body reaches iterate as identified free text, never as direction'
 });
 
 test('the sentences reviews make false are corrected rather than left standing', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const configuredReviewer = configuredReviewerRoute();
   // Both halves of the split contract: the eager core and its deferred observation remainder.
   const shared = `${source('src/shared/review-bot-state.md')}\n${reviewBotStateObservation()}`;
@@ -13125,7 +13130,7 @@ test('the sentences reviews make false are corrected rather than left standing',
 
 test('an undecided latest verdict blocks in its own right, on both halves of the rule', () => {
   const state = source('src/shared/review-bot-state.md');
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const supersession = prose(
     section(state, '### A changes-requested verdict and what supersedes it'),
   );
@@ -13165,7 +13170,7 @@ test('an undecided latest verdict blocks in its own right, on both halves of the
 });
 
 test('the undecided cause is scoped to condition 10 and never reaches the human-comment guard', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const state = source('src/shared/review-bot-state.md');
   const guard = prose(section(gate, '### Phase 1'));
 
@@ -13287,7 +13292,7 @@ test('an implemented body finding counts only with an observed head movement, st
 });
 
 test('one set-aside confirmation per round covers both returning conditions and quotes no review', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const confirmation = configuredReviewerSection('## The set-aside confirmation');
   const flatConfirmation = prose(confirmation);
 
@@ -13484,7 +13489,7 @@ test('a mixed Phase-4 evaluation poses the confirmation and returns in the same 
 // verdict. The gate then spends its whole round budget re-posing one question the operator already
 // answered. What makes the answer survive is a record keyed by something that outlives the round.
 test('a confirmed item is recorded durably, consumed later, and expired by a head movement', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const confirmation = prose(configuredReviewerSection('## The set-aside confirmation'));
   const wisdom = prose(configuredReviewerSection('## Configured reviewer wisdom records'));
   const phase6 = prose(configuredReviewerSection('## Phase 6 configured-reviewer report items'));
@@ -13662,7 +13667,7 @@ test('a confirmed item is recorded durably, consumed later, and expired by a hea
 // gate could ever merge. The waiver is the one operator answer that clears that single clause, and
 // every assertion below is about keeping it that narrow: one clause, one evaluation, one head.
 test('the no-check-list waiver clears one clause of condition 2 and nothing else', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const raw = section(source('src/shared/merge-gate-check-list-waiver.md'), '### Waiver rules');
   const waiver = prose(raw);
   const condition2 = prose(mergeCondition(mergeConditions(gate), 2));
@@ -13836,7 +13841,7 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
 // The three endings an implementer copying the wrong precedent gets wrong, plus the record that
 // keeps the answer from outliving the head it was given for.
 test('the no-check-list waiver ends the run three ways and expires with the head', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const waiver = prose(
     section(source('src/shared/merge-gate-check-list-waiver.md'), '### Waiver rules'),
   );
@@ -13949,7 +13954,7 @@ test('the no-check-list waiver ends the run three ways and expires with the head
 // its thread ID, and a missing one is recorded as missing rather than synthesized, so the set-aside
 // confirmation never promises the operator a link it cannot give.
 test('a thread item records its inspection URL where the gate still has it', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const delegation = prose(
     section(mergeGateDelegationContract(), '## Delegation contract', '\n## '),
   );
@@ -14069,7 +14074,7 @@ test('condition 7 blocks an unassessed thread and shares the confirmation with c
 // only on the operator's confirmation, and condition 10 stays separated from condition 6 by surface
 // while leaving the gate's own internal writers out of that rule.
 test('the retired rejected-merges sentence is gone and condition 6 is disambiguated by surface', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const conditions = mergeConditions(gate);
   const condition = prose(configuredReviewerCondition(10));
 
@@ -14134,8 +14139,8 @@ function providerSettledFragment() {
   return prose(source(providerSettledFragmentPath));
 }
 
-test('merge-gate loads the provider-settled rule lazily, after the Phase 0 list', () => {
-  const gate = source('src/tools/merge-gate.md');
+test('merge-gate loads the provider-settled rule lazily, before Phase 1 of its delegated run', () => {
+  const gate = mergeGateSource();
   providerSettledFragment();
 
   // Lazy only: an eager include would charge the rule to every GitHub run, whose threads never
@@ -14147,17 +14152,21 @@ test('merge-gate loads the provider-settled rule lazily, after the Phase 0 list'
     'the rule must never be an eager include',
   );
 
-  // Column 0: `LAZY_INCLUDE_RE` would still match an indented fence inside the Phase 0 list, but a
-  // fence there ends the list, so the pointer has to sit after it, flush left.
-  const fence = gate.search(/^```lazy-include\nmerge-gate-provider-settled-threads\n/m);
-  assert.notEqual(fence, -1, 'the pointer must be a column-0 lazy-include fence');
-  const phase0 = gate.indexOf('### Phase 0');
-  const lastPhase0Item = gate.indexOf('\n3. In observer-only mode', phase0);
-  const phase1 = gate.indexOf('### Phase 1', phase0);
-  assert.notEqual(lastPhase0Item, -1, 'Phase 0 must keep its numbered list');
+  // The pointer sits in the delegated-run fragment's `### Before Phase 1`, flush left: the caller
+  // core never loads it, and every run that selects bot threads passes that section first.
+  const beforePhase1 = boundedSlice(
+    mergeGateDelegatedRun(repositoryRoot),
+    '### Before Phase 1',
+    '### Phase 1:',
+  );
+  assert.match(
+    beforePhase1,
+    /^```lazy-include\nmerge-gate-provider-settled-threads\n/m,
+    'the pointer must be a column-0 lazy-include fence inside "### Before Phase 1"',
+  );
   assert.ok(
-    fence > lastPhase0Item && fence < phase1,
-    'the pointer must sit after the Phase 0 list and before Phase 1',
+    !mergeGateCore(repositoryRoot).includes('merge-gate-provider-settled-threads'),
+    'the caller core must not carry the pointer',
   );
 
   // Phase 0 reads the two capabilities the pointer's condition names.
@@ -14379,7 +14388,7 @@ test('the provider-settled report names each thread, its URL and the manual next
 test('thread-write support on a tea-backed forge is stated per instance, not per provider', () => {
   const writes = prose(source('src/shared/pr-review-thread-writes.md'));
   const comments = prose(source('src/shared/pr-review-comments.md'));
-  const gate = prose(source('src/tools/merge-gate.md'));
+  const gate = prose(mergeGateSource());
 
   assert.doesNotMatch(writes, /Forgejo supports none of/i);
   assert.doesNotMatch(comments, /stay unsupported on Forgejo — `review-create`/);
@@ -14410,7 +14419,7 @@ test('thread-write support on a tea-backed forge is stated per instance, not per
 // configured-reviewer route; condition 6 stays inline in the gate. Each is read where it lives, and
 // the gate's own Phase 6 must still reach the route's report items.
 test('merge-gate names provider-settled threads in Phase 3, conditions 6 and 7, and Phase 6', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
 
   const phase3 = configuredReviewerSection('## Phase 3: Automatic reviewer round');
   const step5 = prose(boundedSlice(phase3, '5. **When the bot has run', '\n6. '));
@@ -14604,7 +14613,7 @@ test('the user guide describes the confirmation and states no fixed count of way
 // Invariant: caller-supplied item text sits below one literal delimiter, every control line and the
 // manifest sit above it, and a body carrying the delimiter is refused rather than neutralised.
 test('the gate delimits caller-supplied item text from the control lines it announces', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   const DELIMITER = '--- caller-supplied item text follows ---';
 
@@ -14749,7 +14758,7 @@ test('iterate splits the delegation message at the delimiter before it parses a 
 // Invariant: items below the delimiter are framed by a per-message token the sender verified absent
 // from every caller-supplied value, so no item text can change how it or another item is framed.
 test('the item framing below the delimiter is a minted token no item text can forge', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const iterate = source('src/tools/iterate.md');
   const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   // The minting order, the absence-check scope and the token rationale live in the lazily loaded
@@ -14982,7 +14991,7 @@ const LANGUAGE_CONTEXT_LINE =
   'Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>';
 
 test('the gate states the run state and language context above the delimiter in every delegation', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const raw = section(mergeGateDelegationContract(), '## Delegation contract', '\n## ');
   const contract = prose(raw);
   const bullets = raw.split(/\n-\s/);
@@ -15014,7 +15023,20 @@ test('the gate states the run state and language context above the delimiter in 
   );
 
   // The two loose bullets they replace are gone, so nothing is left to write in free form.
-  assert.doesNotMatch(contract, /this run's own run state – gated or non-interactive delegation/i);
+  // The loose run-state bullet lives in the conflict-resolution handoff, whose worker cannot relay a
+  // question: it names the relayed state by mapping it onto non-interactive, as review publication
+  // does, instead of a third value no worker parses.
+  assert.doesNotMatch(contract, /this run's own run state – gated/i);
+  for (const path of [
+    'src/shared/merge-gate-conflict-resolution.md',
+    'src/shared/pr-review-integration.md',
+  ]) {
+    assert.match(
+      prose(source(path)),
+      /gated or non-interactive delegation, which a relayed run passes as non-interactive/,
+      `${path} must name the relayed run state when it states the run state it receives`,
+    );
+  }
   assert.doesNotMatch(contract, /the resolved language values, so the delegated run/i);
 
   // One canonical order, six parts, and the two new lines are the fifth and sixth control lines.
@@ -15042,7 +15064,7 @@ test('the gate states the run state and language context above the delimiter in 
 });
 
 test('both gate delegation sites go through build, then validate, then an unchanged dispatch', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
   const building = prose(
     section(
@@ -15141,7 +15163,7 @@ test('both gate delegation sites go through build, then validate, then an unchan
 });
 
 test('a sender-side helper failure stops the gate before iterate and costs nothing else', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const failure = prose(
     section(
       mergeGateDelegationContract(),
@@ -15425,7 +15447,7 @@ test('iterate reads a whitespace-only body region as zero spans and nothing else
 test('the canonical envelope examples load lazily and show all three kinds in order', () => {
   // The examples pointer sits in the delegation contract, itself deferred from merge-gate's core,
   // so neither the core nor the contract may carry the examples eagerly.
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const contractIncludes = collectIncludeNames(mergeGateDelegationContract());
   assert.ok(
     contractIncludes.lazy.has('delegation-envelope-examples'),
@@ -15745,7 +15767,7 @@ test('the gate consumes the iterate return only through identifiers it recorded 
   );
   assert.match(record, near('at most', 'ten', 120), 'the inert report must state a concrete bound');
   assert.match(
-    prose(section(source('src/tools/merge-gate.md'), '### Phase 6')),
+    prose(section(mergeGateSource(), '### Phase 6')),
     near('inert returned outcome', '(?:count|identifier)', 300),
     'Phase 6 must be where the inert outcomes reach the user',
   );
@@ -15812,7 +15834,7 @@ test('no side of the iterate channel still claims a per-item ABORT', () => {
   const gate = mergeGateDelegationContract();
   const iterate = source('src/tools/iterate.md');
 
-  for (const text of [source('src/tools/merge-gate.md'), gate, configuredReviewerRoute()]) {
+  for (const text of [mergeGateSource(), gate, configuredReviewerRoute()]) {
     assert.doesNotMatch(
       prose(text),
       /On `ABORT` for an item/i,
@@ -15975,7 +15997,7 @@ test('merge-gate resumes a keyword-less iterate return once and never retries it
 // conflicting-outcome mismatch and fail a round that actually succeeded, so the receiver rule reads
 // only the resumed turn's final return and nothing in the interim text counts.
 test('merge-gate reads outcomes only from the resumed final return, never the interim text', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const paragraph = section(mergeGateDelegationContract(), '## Returned outcome record', '\n## ')
     .split(/\n\s*\n/)
     .find((block) => /neither `DONE` nor `ABORT`[\s\S]{0,40}exactly one resume/i.test(block));
@@ -16056,7 +16078,7 @@ test('the Claude Code pending-child specifics live in the architecture guide, no
     'src/shared/completion-protocol.md',
     'src/tools/merge-gate.md',
   ]) {
-    assert.ok(!source(path).includes('SendMessage'), `${path} must not name SendMessage`);
+    assert.ok(!gateAwareSource(path).includes('SendMessage'), `${path} must not name SendMessage`);
   }
 });
 
@@ -16148,7 +16170,7 @@ test('no site presents a forge thread ID as a valid return key', () => {
   // that had already been corrected, so a scan bounded to the section would have missed it.
   const sites = [
     [prose(source('src/tools/iterate.md')), 'iterate'],
-    [prose(source('src/tools/merge-gate.md')), 'merge-gate'],
+    [prose(mergeGateSource()), 'merge-gate'],
     [prose(configuredReviewerRoute()), 'merge-gate configured-reviewer route'],
     [prose(source('docs/user-guide/tools-deliver.md')), 'the user guide'],
   ];
@@ -16221,7 +16243,7 @@ test('both ends record the identifier a thread item travels under beside its thr
 });
 
 test('the gate mints its item identifier per message, to the token concrete requirement', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
 
   // The same concrete numbers the boundary token carries. "Comparable to" was unmeasurable, and an
@@ -16345,7 +16367,7 @@ test('the gate mints its item identifier per message, to the token concrete requ
 });
 
 test('the return is declared in its own section and adds no seventh control line', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const record = returnedRecord(configuredReviewerRoute(), 'merge-gate configured-reviewer route');
   const contract = prose(section(mergeGateDelegationContract(), '## Delegation contract', '\n## '));
 
@@ -16845,7 +16867,7 @@ test('commit-message-rules keeps the fallback usable where effective-delivery is
 // --- Advisory for observed but incompletely configured automatic reviewers ---
 
 test('the reviewer advisory conservatively classifies and retains candidates without gating', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const advisory = flat(section(gate, '## Unconfigured automatic-reviewer advisory', '\n## '));
   const wisdom = flat(section(gate, '## Wisdom accumulation', '\n## '));
 
@@ -16994,7 +17016,7 @@ test('the reviewer advisory conservatively classifies and retains candidates wit
 });
 
 test('Phase 4 completes a new status read before its guard reads and evaluates only the full snapshot', () => {
-  const phase4 = flat(section(source('src/tools/merge-gate.md'), '### Phase 4', '\n### Phase 5'));
+  const phase4 = flat(section(mergeGateSource(), '### Phase 4', '\n### Phase 5'));
 
   // The order is the concurrency contract: Phase 2's status result cannot stand in for Phase 4's,
   // and none of the advisory or merge conditions may observe a partial mix of the four responses.
@@ -17012,7 +17034,7 @@ test('Phase 4 completes a new status read before its guard reads and evaluates o
 });
 
 test('every fresh review read accumulates advisory candidates before evaluation', () => {
-  const gate = source('src/tools/merge-gate.md');
+  const gate = mergeGateSource();
   const phase1 = flat(section(gate, '### Phase 1', '\n### Phase 2'));
   const phase3 = configuredReviewerSection('## Phase 3: Automatic reviewer round');
   const postWait = flat(
@@ -17057,7 +17079,7 @@ test('every fresh review read accumulates advisory candidates before evaluation'
 // Guided route (Advanced settings, Block 9) stays as the fallback, and the next-step block stays the
 // last report element.
 test('Phase 6 gives the complete setup route before the literal final next-step block', () => {
-  const phase6Raw = section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## ');
+  const phase6Raw = section(mergeGateSource(), '### Phase 6', '\n## ');
   const phase6 = prose(phase6Raw);
 
   // The configuration advisory is a non-blocking summary item that precedes the next-step block,
@@ -19599,7 +19621,7 @@ test('iterate uses the processed-thread ledger in hidden mode and explicit PR re
   );
 
   assert.match(
-    prose(source('src/tools/merge-gate.md')),
+    prose(mergeGateSource()),
     /leave `\{\{SKILL:iterate\}\}`'s processed-thread ledger in place: it is not a delegation message/,
   );
 });
@@ -21384,7 +21406,7 @@ test('plan-first recommendation selection owns completed merge, apply, PR review
     ['src/tools/apply.md', '## Execution', '\n## Recommended'],
     ['src/tools/review.md', '### Pull-request mode', '\n## '],
   ]) {
-    const raw = source(path);
+    const raw = gateAwareSource(path);
     // Scope each assertion to its completion site rather than accepting a policy mention elsewhere.
     const body = flat(
       path.endsWith('merge-gate.md')
@@ -21422,4 +21444,856 @@ test('plan-first recommendation selection owns completed merge, apply, PR review
   assert.match(integration, /final (?:emitter|emitting workflow)/);
   assert.match(integration, /shared `next-steps` selection even after automatic merge/);
   assert.match(integration, /Suppressed delegations still emit no block/);
+});
+
+// --- merge-gate delegated run and the `relayed` run state -------------------------------------
+//
+// The caller core of `src/tools/merge-gate.md` runs Phase 0 and dispatches the gate as one
+// delegated run, whose body sits behind one lazy pointer in `src/shared/merge-gate-delegated-run.md`.
+// The tests below pin that split and the relayed contract both halves read.
+
+const RELAYED_QUESTION_IDS = [
+  'completion',
+  'reviews-unestablished',
+  'checks-pending',
+  'check-list-waiver',
+  'conflict-resolution',
+  'set-aside',
+  'issue-done',
+  'iterate-in-flight',
+  'iterate-approval',
+];
+
+function runStatesSection(core) {
+  return boundedSlice(core, '## Caller, delegated run and run states', '\n## Workflow');
+}
+
+function relayedQuestionTable(core) {
+  return runStatesSection(core)
+    .split('\n')
+    .filter((line) => /^\| `[a-z-]+` /.test(line))
+    .map((line) => {
+      const cells = line.split('|').map((cell) => cell.trim());
+      return {
+        id: cells[1].replace(/`/g, ''),
+        gate: cells[2],
+        options: [...cells[3].matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+        consequence: cells[4],
+      };
+    });
+}
+
+// Invariant: the eager caller core carries Phase 0, the run states and the dispatch, and nothing of
+// the gate body; that body reaches a run only through the one delegated-run pointer, whose trigger
+// names the delegated run and every inline fallback, and merge-gate is the fragment's only consumer.
+test('merge-gate defers its gate body behind one delegated-run pointer', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const fragment = mergeGateDelegatedRun(repositoryRoot);
+  const pointers = [...core.matchAll(LAZY_INCLUDE_RE)].filter(
+    (match) => match[1].trim() === 'merge-gate-delegated-run',
+  );
+  assert.equal(pointers.length, 1, 'the core must carry exactly one delegated-run pointer');
+  assert.equal(
+    collectIncludeNames(core).eager.has('merge-gate-delegated-run'),
+    false,
+    'the gate body must never become an eager include of the core',
+  );
+  assert.match(
+    pointers[0][2] ?? '',
+    /(?=[\s\S]*delegated merge-gate run)(?=[\s\S]*inline)(?=[\s\S]*declined dispatch)(?=[\s\S]*`ABORT nested-spawn-unavailable`)/,
+    'the pointer must fire for the delegated run and for every inline fallback',
+  );
+  for (const heading of [
+    '## Wisdom accumulation',
+    '## Git write boundary',
+    '### Phase 1: Read the state fresh',
+    '#### Human-comment guard',
+    '### Phase 4: Merge preconditions',
+    '### Phase 6: Summary',
+    '## Rules',
+  ]) {
+    assert.ok(!core.includes(heading), `the eager core must not carry the gate body (${heading})`);
+    assert.ok(fragment.includes(heading), `the delegated-run fragment must carry ${heading}`);
+  }
+  for (const heading of [
+    '## Caller, delegated run and run states',
+    '### Phase 0: Resolve the pull request and the completion mode',
+    '### Dispatching the delegated run',
+  ]) {
+    assert.ok(core.includes(heading), `the eager core must carry ${heading}`);
+  }
+  const consumers = ['src/tools', 'src/shared'].flatMap((directory) =>
+    readdirSync(new URL(`${directory}/`, repositoryRoot))
+      .filter((file) => file.endsWith('.md'))
+      .filter((file) => {
+        const { eager, lazy } = collectIncludeNames(source(`${directory}/${file}`));
+        return eager.has('merge-gate-delegated-run') || lazy.has('merge-gate-delegated-run');
+      })
+      .map((file) => `${directory}/${file}`),
+  );
+  assert.deepEqual(consumers, [MERGE_GATE_PATH], 'merge-gate must stay the only consumer');
+  assert.ok(DELEGATED_RUN_POINTER_RE.test(core));
+});
+
+// Invariant: `relayed` is defined once, in the core both the caller and the delegated run read,
+// beside the closed question-id set, the question instance with its state digest, and the
+// three-keyword return whose `BLOCKED-USER` stays local to two channels.
+test('merge-gate defines relayed, the closed question-id set, instances and the return contract', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const runStates = prose(runStatesSection(core));
+  assert.match(runStates, /gated – the user answers in this run/);
+  assert.match(runStates, /non-interactive – nobody can answer/);
+  assert.match(
+    runStates,
+    /relayed – the user is reachable through the caller\. Every user gate of the delegated run, and of every `\{\{SKILL:iterate\}\}` round it delegates, returns `BLOCKED-USER <question-id>` with an id from the closed set below instead of asking/,
+  );
+  assert.match(runStates, /no `non-interactive` branch applies to it/);
+
+  const table = relayedQuestionTable(core);
+  assert.deepEqual(
+    table.map(({ id }) => id),
+    RELAYED_QUESTION_IDS,
+    'the closed question-id set drifted',
+  );
+  assert.match(table[0].gate, /asked by the caller and never returned/);
+
+  assert.match(
+    runStates,
+    /A question instance is its id, this gate run's round counter at the gate \(`0` before the first Phase-2 round\) and its state digest: the SHA-256 hex of the line `<question-id>\|<head SHA>\|<subject keys>`/,
+  );
+
+  const returns = boundedSlice(
+    core,
+    'The delegated run returns exactly one of:',
+    '\n\n`BLOCKED-USER` is',
+  );
+  assert.match(returns, /^- `DONE`, followed by its Phase-6 report as the \*\*outcome record\*\*/m);
+  assert.match(
+    returns,
+    /^- `BLOCKED-USER <question-id>`, followed by `Round: <n>`, `State digest: <hex>`/m,
+  );
+  assert.match(returns, /^- `ABORT <reason>`; `ABORT nested-spawn-unavailable`/m);
+  assert.match(
+    runStates,
+    /`BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies to it/,
+  );
+  assert.ok(
+    !source('src/shared/completion-protocol.md').includes('BLOCKED-USER'),
+    'the eager completion protocol stays unchanged and never learns the local keyword',
+  );
+  const contract = prose(
+    boundedSlice(
+      mergeGateDelegationContract(),
+      '## Returned outcome record',
+      '**A return with neither',
+    ),
+  );
+  assert.match(
+    contract,
+    /A `BLOCKED-USER <question-id>` return comes only from a delegation that carried `Run state: relayed`, and it is a keyword of this channel, never a keyword-less return/,
+  );
+  assert.match(
+    contract,
+    /naming each item its evidence lists by durable key, never by per-message identifier/,
+  );
+});
+
+// Invariant: the caller renders a question's options from the merge-gate source, never from the
+// returned payload, so each table row must carry exactly the labels of the gate it relays.
+test('the relayed question table carries the option labels of each owning ask fence', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const table = new Map(relayedQuestionTable(core).map((row) => [row.id, row.options]));
+  const fenced = [
+    ['completion', core, 'Completion'],
+    ['check-list-waiver', source('src/shared/merge-gate-check-list-waiver.md'), 'Checks'],
+    ['conflict-resolution', source('src/shared/merge-gate-conflict-resolution.md'), 'Conflict'],
+    ['set-aside', configuredReviewerRoute(), 'Findings'],
+    ['issue-done', source('src/shared/merge-gate-issue-observation.md'), 'Issue done'],
+    ['iterate-in-flight', source('src/tools/iterate.md'), 'In flight'],
+    ['iterate-approval', source('src/tools/iterate.md'), 'Approval'],
+  ];
+  for (const [id, text, header] of fenced) {
+    const fences = askContracts(text, id).filter((ask) => ask.header === header);
+    assert.equal(fences.length, 1, `${id}: expected exactly one "${header}" ask fence`);
+    assert.deepEqual(
+      table.get(id),
+      fences[0].options.map(({ label }) => label),
+      `${id}: the table's options must equal the "${header}" fence labels`,
+    );
+  }
+  for (const id of ['reviews-unestablished', 'checks-pending']) {
+    assert.deepEqual(table.get(id), ['Continue', 'Stop'], `${id}: prose gate options`);
+  }
+});
+
+// Invariant: every gate the plan maps to `BLOCKED-USER` carries its relayed branch at its own
+// decision point, and every `BLOCKED-USER <id>` anywhere in src/ names an id of the closed set.
+test('every relayed gate returns its own question id, and no source names an id outside the set', () => {
+  const branches = [
+    [mergeGateCore(repositoryRoot), 'reviews-unestablished'],
+    [mergeGateDelegatedRun(repositoryRoot), 'checks-pending'],
+    [source('src/shared/merge-gate-check-list-waiver.md'), 'check-list-waiver'],
+    [source('src/shared/merge-gate-conflict-resolution.md'), 'conflict-resolution'],
+    [configuredReviewerRoute(), 'set-aside'],
+    [source('src/shared/merge-gate-issue-observation.md'), 'issue-done'],
+    [source('src/tools/iterate.md'), 'iterate-in-flight'],
+    [source('src/tools/iterate.md'), 'iterate-approval'],
+  ];
+  for (const [text, id] of branches) {
+    assert.match(
+      prose(text),
+      new RegExp(`relayed[^.]{0,160}\`BLOCKED-USER ${id}\``),
+      `the ${id} gate must carry a relayed branch returning its id`,
+    );
+  }
+  const ids = new Set(RELAYED_QUESTION_IDS.filter((id) => id !== 'completion'));
+  for (const directory of ['src/tools', 'src/shared', 'src/agents']) {
+    for (const file of readdirSync(new URL(`${directory}/`, repositoryRoot))) {
+      if (!file.endsWith('.md')) continue;
+      for (const match of source(`${directory}/${file}`).matchAll(/`BLOCKED-USER ([a-z-]+)`/g)) {
+        assert.ok(
+          ids.has(match[1]),
+          `${directory}/${file} names an unknown question id ${match[1]}`,
+        );
+      }
+    }
+  }
+});
+
+// Invariant: `relayed` is additive. Each gate's non-interactive branch keeps its exact wording, so
+// a non-interactive caller of the delegated run degrades exactly as before.
+test('the non-interactive branches of every relayed gate keep their wording', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const iterate = source('src/tools/iterate.md');
+  // Each sentence is pinned inside its own gate, so a copy left elsewhere cannot keep it green.
+  const pinned = [
+    [
+      boundedSlice(core, '   - Without `prReviewsRead`', '   - Without `viewerRead`'),
+      'a non-interactive run ends with that report and never merges.',
+    ],
+    [
+      boundedSlice(core, '3. In observer-only mode skip completion-mode resolution', '```ask'),
+      '`ask` or an unset key in a non-interactive delegation cannot pose the question, so that combination – and only that combination – behaves as `report`.',
+    ],
+    [
+      boundedSlice(
+        mergeGateDelegatedRun(repositoryRoot),
+        '2. **Pending checks.**',
+        '3. **Failed checks.**',
+      ),
+      'An unanswered or non-interactive run ends there with a report and never merges.',
+    ],
+    [
+      boundedSlice(
+        source('src/shared/merge-gate-check-list-waiver.md'),
+        '### Waiver rules',
+        '- **A relayed run asks through',
+      ),
+      'A non-interactive run cannot pose it, so it blocks and reports.',
+    ],
+    [
+      boundedSlice(
+        source('src/shared/merge-gate-conflict-resolution.md'),
+        '1. **Resolve the mode before any further write.**',
+        '2. **Capture the conflict state**',
+      ),
+      '`ask` in a non-interactive delegated run: the question cannot be posed, so it behaves as `off`',
+    ],
+    [
+      boundedSlice(
+        configuredReviewerRoute(),
+        '## The set-aside confirmation',
+        '## Unmatched configured-reviewer reports',
+      ),
+      'A non-interactive delegated run cannot pose it, so it blocks and reports.',
+    ],
+    [
+      boundedSlice(
+        source('src/shared/merge-gate-issue-observation.md'),
+        '4. **Offer the terminal transition, then perform it.**',
+        '5. For every forge issue freshly observed',
+      ),
+      'A non-interactive run poses nothing, transitions nothing, and carries the recommended transition into the Phase-6 summary',
+    ],
+    [
+      boundedSlice(
+        iterate,
+        '6. **Fail closed when the question cannot be asked.**',
+        '7. **Record**',
+      ),
+      'and that did not receive `Review guard: established` returns `ABORT: review still in flight`',
+    ],
+    [
+      boundedSlice(iterate, '### Phase 2.5: Approval', '```ask\nheader: Approval'),
+      'The approval is omitted exactly when the run state of Phase 0 step 10 is non-interactive',
+    ],
+    [
+      boundedSlice(iterate, '### Phase 3: Implementation', '### Phase 4: Validation'),
+      "every one of them also carries `Run state: non-interactive`, so the delegated workflow's documentation-sync gate carries a blocked surface forward instead of asking.",
+    ],
+  ];
+  for (const [text, sentence] of pinned) {
+    assert.ok(prose(text).includes(sentence), `non-interactive wording changed: ${sentence}`);
+  }
+});
+
+// Invariant: iterate accepts `relayed` in its fail-closed run-state parser, relays its two questions,
+// and never forwards `relayed` to a per-item workflow, whose gates keep their blocked surface.
+test('iterate parses relayed and forwards non-interactive to its per-item runs', () => {
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.match(
+    iterate,
+    /`Run state: gated`, `Run state: non-interactive` or `Run state: relayed` — whether anyone can answer this run's questions\.[\s\S]{0,700}Any other form returns `ABORT: unparseable run-state switch` immediately/,
+  );
+  assert.match(
+    iterate,
+    /`relayed` means the user is reachable through the caller: the Phase 1\.5 question and the Phase 2\.5 approval each return `BLOCKED-USER <question-id>`/,
+  );
+  assert.match(
+    iterate,
+    /A `relayed` run forwards `Run state: non-interactive` as well, never `relayed`/,
+  );
+  assert.doesNotMatch(iterate, /carries `Run state: relayed`|forwards `Run state: relayed`/);
+});
+
+// Invariant: iterate only returns the question id with its evidence; how the caller answers and
+// binds an answer is owned once by merge-gate (caller loop, delegation contract), so iterate keeps
+// no caller-side answer mapping that could drift from it.
+test('iterate returns relayed question ids and keeps no caller-side answer mapping', () => {
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.match(
+    iterate,
+    /A `relayed` run without that line returns `BLOCKED-USER iterate-in-flight` instead, with the same evidence\. 7\./,
+  );
+  assert.match(
+    iterate,
+    /A `relayed` run returns `BLOCKED-USER iterate-approval` in its place, listing each classified item by its caller-supplied identifier with the returned value its classification maps to as the proposed outcome\./,
+  );
+  for (const [pattern, what] of [
+    [/re-delegating with `Review guard: established`/, 'the iterate-in-flight answer mapping'],
+    [/binds the answer to that item set/, 'the iterate-approval binding rule'],
+    [/an `Adjust` that does anything but deselect/, 'the Adjust validation'],
+  ]) {
+    assert.doesNotMatch(iterate, pattern, `iterate must not restate ${what}`);
+  }
+  assert.match(
+    prose(mergeGateCore(repositoryRoot)),
+    /for `Adjust`, only a deselection of durable keys the evidence listed – and ask again otherwise/,
+    'Adjust under relayed means deselecting listed items only, stated by the caller',
+  );
+});
+
+// Invariant: merge-gate passes `relayed` on to iterate and leaves it only for the one round that
+// consumes a matching approval, where `non-interactive` omits exactly that approval.
+test('the delegation contract carries relayed as a third run state', () => {
+  const contract = prose(
+    boundedSlice(
+      mergeGateDelegationContract(),
+      '## Delegation contract',
+      '## Returned outcome record',
+    ),
+  );
+  assert.match(
+    contract,
+    /in exactly one of three literal forms: `Run state: gated`, `Run state: non-interactive` or `Run state: relayed`/,
+  );
+  assert.match(
+    contract,
+    /A relayed run passes `Run state: non-interactive` for one round only: the round consuming an `iterate-approval` answer whose digest it recomputes from the fresh head, the item set it is about to delegate and the outcomes recorded from the relayed return/,
+  );
+});
+
+// Invariant: the iterate-approval digest has one subject set – the item set merge-gate delegated,
+// each key bound to its proposed outcome – so the approving answer, the consuming round and its
+// returned outcomes all speak about the same items and the same actions; a fresh non-interactive
+// iterate that acts otherwise than approved fails the round instead of counting.
+test('the iterate-approval digest binds the delegated item set to each proposed outcome', () => {
+  const core = prose(runStatesSection(mergeGateCore(repositoryRoot)));
+  assert.match(
+    core,
+    /for `iterate-approval`, each durable key of the item set this run delegated as `<key>=<proposed outcome>`/,
+  );
+  const contract = prose(mergeGateDelegationContract());
+  assert.match(
+    contract,
+    /a returned outcome other than `unassessed` or the approved one is a mismatch that ends the round/,
+  );
+  assert.match(
+    contract,
+    /naming each item its evidence lists by durable key, never by per-message identifier, with its proposed outcome, which the wisdom file records/,
+  );
+  // One set: no source still binds the digest to the listed items alone.
+  assert.doesNotMatch(
+    core,
+    /durable keys of the listed items for `set-aside` and `iterate-approval`/,
+  );
+});
+
+// Invariant: the delegated run validates everything it was handed before any write, in a fixed
+// order, owns the completion source, and rejects a passed answer that configuration overrides.
+test('the delegated-run entry validates its input before any write', () => {
+  const fragment = mergeGateDelegatedRun(repositoryRoot);
+  const entry = prose(boundedSlice(fragment, '### Entry', '### Answers and returns'));
+  assert.match(entry, /^### Entry In this order, before any other write:/);
+  ordered(
+    entry,
+    'Input lines.',
+    'Roots.',
+    'Wisdom file.',
+    'Fresh state.',
+    'Completion source.',
+    'Stopping answer.',
+    'Nested-spawn probe.',
+    'Review verdicts.',
+  );
+  assert.match(
+    entry,
+    /An unknown, duplicated, malformed or missing line[\s\S]{0,200}returns `ABORT unparseable input line`/,
+  );
+  assert.match(entry, /Verify `RUNTIME_STATE_ROOT` and `Execution root` yourself/);
+  assert.match(
+    entry,
+    /must resolve under the verified `RUNTIME_STATE_ROOT\/\.effective-flow\/`, its name must match `\.wisdom-accumulation-\*?\.tmp\.md`/,
+  );
+  assert.match(entry, /touch nothing at that path, never cleaning up a file this check rejected/);
+  assert.match(entry, /Re-read all pull-request state: re-run Phase 0 steps 1 and 2 read-only/);
+  assert.match(
+    entry,
+    /A mismatch with the passed PR, provider or observer-only flag returns `ABORT`/,
+  );
+  assert.match(
+    entry,
+    /A configured `merge` or `report` together with a passed `Completion answer:` returns `ABORT completion answer conflicts with configuration`/,
+    'a passed completion answer is rejected when configuration is merge or report',
+  );
+  assert.match(entry, /never defaults to `merge`/);
+  // An observer-only re-entry resolves no completion mode, so `ask` or an unset key there neither
+  // aborts for a missing completion answer nor invents a completion question.
+  assert.match(
+    entry,
+    /Completion source\. Except in observer-only mode, read `mergeGate\.completion`/,
+  );
+  assert.match(entry, /Under `Relayed answer: none` the mode is `report`, whatever its source\./);
+  // The probe is behavioural: a host can keep the spawn tool at its depth limit and refuse only the
+  // call, so the run starts one no-op child instead of inspecting its tool set.
+  assert.match(
+    entry,
+    /start one child that does nothing, starts nothing, writes nothing and returns `DONE`/,
+  );
+  assert.match(
+    entry,
+    /No spawn mechanism, or a probe the host refuses or that fails, returns `ABORT nested-spawn-unavailable`/,
+  );
+  assert.ok(
+    fragment.includes('   <!-- spawn-site:merge-gate-delegated-run/nested-spawn-probe -->'),
+    'the probe spawn carries its spawn-site marker inside Entry step 7',
+  );
+  assert.doesNotMatch(entry, /tool set has a spawn mechanism/, 'no tool-set inspection is left');
+  ordered(fragment, '### Entry', '```lazy-include\npilot-measurement', '### Phase 1:');
+  // The worker-role fallback stays: the gate never resolves a conflict inline.
+  assert.match(
+    prose(fragment),
+    /this gate does not resolve inline: it says so visibly and stops, because implementing is the one thing this workflow never does itself/,
+  );
+});
+
+// Invariant: a BLOCKED-USER return leaves the wisdom file for the re-dispatch, DONE and ABORT clean
+// up exactly once, and the reservation rule is referenced, never restated.
+test('only BLOCKED-USER keeps the wisdom file, and the reservation rule stays in pilot-measurement', () => {
+  const fragment = mergeGateDelegatedRun(repositoryRoot);
+  const returns = prose(
+    boundedSlice(
+      fragment,
+      '### Answers and returns',
+      '## `effective-delivery` stays out of this run',
+    ),
+  );
+  assert.match(returns, /`DONE` and `ABORT` run Phase 6 exactly once/);
+  assert.match(
+    returns,
+    /`BLOCKED-USER` first ends an in-progress merge[\s\S]{0,160}without deleting the wisdom file/,
+  );
+  assert.match(returns, /An `ABORT` from Entry steps 1 to 3 writes and deletes nothing/);
+  assert.match(
+    returns,
+    /every child runs in the foreground, and no turn ends while one is pending/,
+  );
+  assert.match(
+    returns,
+    /consumes a `Relayed answer:` of its id whose digest equals the one recomputed from this run's fresh read/,
+  );
+  const phase6 = prose(boundedSlice(fragment, '### Phase 6: Summary', '\n## Rules'));
+  assert.match(phase6, /Delete the wisdom file – except on a `BLOCKED-USER` return –/);
+  assert.match(prose(fragment), /a `BLOCKED-USER` return uses that fragment's rule for it/);
+  for (const text of [mergeGateCore(repositoryRoot), fragment]) {
+    assert.ok(
+      !text.includes('relayed-user-decision'),
+      'the blocker string belongs to pilot-measurement',
+    );
+  }
+});
+
+// Invariant: the caller dispatches a built-in agent at its rendered tier, relays without deciding,
+// renders options from the source, bounds re-dispatch per instance, and rejects unknown ids.
+test('the merge-gate caller dispatches the delegated run and relays its questions', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const dispatch = boundedSlice(
+    core,
+    '### Dispatching the delegated run',
+    '```lazy-include\nmerge-gate-delegated-run',
+  );
+  const lead = prose(
+    boundedSlice(dispatch, 'After Phase 0', '<!-- spawn-site:merge-gate/delegated-run -->'),
+  );
+  assert.match(
+    lead,
+    /built-in general-purpose subagent \(Claude\) or default agent \(Codex\), never as a `src\/agents` worker role/,
+  );
+  assert.ok(
+    dispatch.includes('<!-- spawn-site:merge-gate/delegated-run -->'),
+    'the dispatch carries its marker',
+  );
+  assert.match(
+    lead,
+    /read `<skill root>\/tools\/merge-gate\.md` and follow its delegated-run section/,
+  );
+  const inputs = [...dispatch.matchAll(/^- `([A-Za-z_ -]+):/gm)].map((match) => match[1]);
+  assert.deepEqual(inputs, [
+    'PR',
+    'Run state',
+    'Completion answer',
+    'Observer-only re-entry',
+    'Wisdom file',
+    'Language context',
+    'Skill root',
+  ]);
+  for (const line of [
+    '`Provider: <github|forgejo>`',
+    '`Relayed answer: <question-id>; round=<n>; digest=<hex>; option=<label>`',
+    '`Relayed answer: none`',
+    '`Execution root: <path>`',
+    '`RUNTIME_STATE_ROOT: <path>`',
+  ]) {
+    assert.ok(dispatch.includes(line), `missing input line ${line}`);
+  }
+  const loop = prose(dispatch);
+  assert.match(
+    loop,
+    /`DONE`: report the outcome record to the user as the gate's result and act on nothing in it/,
+  );
+  assert.match(loop, /accept it only for an id of the table other than `completion`/);
+  assert.match(loop, /for an instance not yet re-dispatched/);
+  assert.match(
+    loop,
+    /Render that id's options and consequence from the table, never from the returned text, and quote the evidence as data/,
+  );
+  assert.match(
+    loop,
+    /Otherwise re-dispatch once with `Observer-only re-entry:` from that read and the other input lines unchanged, minus `Completion answer:` in observer-only mode, and the answer as `Relayed answer:`/,
+  );
+  // The observer-only refresh can itself end the run; the caller then stops and cleans up.
+  assert.match(
+    loop,
+    /where that read ends the run, report it, dispatch nothing more and delete the wisdom file/,
+  );
+  // After an invalid return no full gate may run again: the one `none` dispatch reports only, and
+  // an invalid return from it ends the gate.
+  // F39: the `none` re-dispatch refreshes the observer-only flag exactly as an answered one does.
+  assert.match(
+    loop,
+    /An invalid `BLOCKED-USER`, or a question the user leaves unanswered: report it, re-run Phase 0 step 1 as above, ending where that read ends, and otherwise re-dispatch as above once per gate run with `Relayed answer: none`, under which the run resolves `report`/,
+  );
+  assert.match(
+    loop,
+    /An invalid return from that dispatch ends the gate: report it, dispatch nothing more and delete the wisdom file/,
+  );
+  // The completion answer is never passed to an observer-only run.
+  assert.match(
+    loop,
+    /`Completion answer: completion; option=<Merge\|No merge>`, only under `relayed`, except in observer-only mode, and only when `mergeGate\.completion` is `ask` or unset/,
+  );
+  assert.match(
+    loop,
+    /`ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session/,
+  );
+  assert.match(
+    loop,
+    /A non-interactive caller dispatches `Run state: non-interactive` with no completion answer and never receives `BLOCKED-USER`/,
+  );
+});
+
+// Invariant: a dispatching caller asks only for an ambiguous provider and the completion mode;
+// `prReviewsRead` is asked once, by the delegated run, so a gated user never answers it twice.
+test('the dispatching caller leaves the prReviewsRead question to the delegated run', () => {
+  const core = mergeGateCore(repositoryRoot);
+  assert.match(
+    prose(runStatesSection(core)),
+    /A dispatching caller asks only for an `AMBIGUOUS_HOST` provider and the `completion` question; the delegated run poses every other gate\./,
+  );
+  const bullet = prose(
+    boundedSlice(core, '   - Without `prReviewsRead`', '   - Without `viewerRead`'),
+  );
+  assert.match(
+    bullet,
+    /A relayed run asks through `BLOCKED-USER reviews-unestablished`, once per gate run\. A dispatching caller neither asks nor ends here; its delegated run, or its inline run, applies this bullet\./,
+  );
+});
+
+// Invariant: the caller renders bare labels it holds eagerly, while the owning ask fences sit in
+// lazy fragments, so every relayed question carries its consequence in the eager table and the
+// caller renders it with the options; the consent-critical ones are pinned by wording.
+test('every relayed question carries its consequence in the eager table', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const rows = new Map(relayedQuestionTable(core).map((row) => [row.id, row]));
+  assert.match(
+    prose(runStatesSection(core)),
+    /The caller renders each question's options together with its consequence\./,
+  );
+  for (const [id, row] of rows) {
+    assert.ok(row.consequence && row.consequence.length > 0, `${id}: missing consequence cell`);
+    if (id === 'completion' || id === 'iterate-in-flight') continue;
+    assert.ok(
+      row.options.some((label) => row.consequence.includes(`\`${label}\``)),
+      `${id}: the consequence must name what one of its options does`,
+    );
+  }
+  for (const [id, wording] of [
+    ['check-list-waiver', '`Waive` authorizes a merge with no reported check list'],
+    ['set-aside', '`Confirm` sets the listed findings aside, so they no longer block the merge'],
+    ['issue-done', 'read each criterion, the question quotes none'],
+    ['conflict-resolution', '`Resolve` commits and pushes one merge commit onto the head branch'],
+  ]) {
+    assert.ok(rows.get(id).consequence.includes(wording), `${id}: consequence wording changed`);
+  }
+});
+
+// Invariant: a question instance includes its state digest, so a legitimate re-ask after state
+// drift in the same round is a new instance the caller's once-only rule does not reject.
+test('a question instance is keyed by id, round and state digest', () => {
+  const core = mergeGateCore(repositoryRoot);
+  assert.match(
+    prose(runStatesSection(core)),
+    /A re-ask after the state drifted is a new instance\./,
+  );
+  assert.match(
+    prose(boundedSlice(core, '**The caller relays and decides nothing', '```lazy-include')),
+    /for an instance not yet re-dispatched/,
+  );
+});
+
+// Invariant (F28): a caller that runs the gate inline skips "Entry", so it applies the
+// `prReviewsRead` degradation itself before Phase 1 – a gated caller asks Continue/Stop, a
+// non-interactive one ends never merging – instead of merging with no verdict read.
+test('the inline gate applies the prReviewsRead bullet before Phase 1', () => {
+  const lead = prose(
+    boundedSlice(mergeGateDelegatedRun(repositoryRoot), '## Delegated run', '### Entry'),
+  );
+  assert.match(
+    lead,
+    /in a caller that runs the gate inline with its own run state and Phase 0 results, which skips "Entry" but applies Phase 0 step 2's `prReviewsRead` bullet with that run state before Phase 1\./,
+  );
+  const bullet = prose(
+    boundedSlice(
+      mergeGateCore(repositoryRoot),
+      '   - Without `prReviewsRead`',
+      '   - Without `viewerRead`',
+    ),
+  );
+  assert.match(bullet, /its delegated run, or its inline run, applies this bullet/);
+  assert.match(
+    bullet,
+    /ask once in a gated run; a non-interactive run ends with that report and never merges/,
+  );
+});
+
+// Invariant (F29): a relayed stopping answer ends the run at Entry, whatever its digest, instead of
+// waiting for the gate to pose the same instance again; every stopping option it names belongs to
+// its id's row of the closed question table, and a once-per-run record is written only when an
+// answer is consumed.
+test('a relayed stopping answer ends the run at Entry and once-per-run records follow consumption', () => {
+  const fragment = mergeGateDelegatedRun(repositoryRoot);
+  const entry = prose(boundedSlice(fragment, '### Entry', '### Answers and returns'));
+  const step = boundedSlice(entry, 'Stopping answer.', 'Nested-spawn probe.');
+  assert.match(
+    step,
+    /ends the run here, whatever its digest, as that gate's decline does: with its report and Phase 6\./,
+  );
+  const table = new Map(
+    relayedQuestionTable(mergeGateCore(repositoryRoot)).map((row) => [row.id, row.options]),
+  );
+  const stopping = {
+    Stop: ['reviews-unestablished', 'checks-pending', 'check-list-waiver', 'set-aside'],
+    'Report only': ['conflict-resolution'],
+  };
+  for (const [option, ids] of Object.entries(stopping)) {
+    const named = new RegExp(`\`${option}\` \\(([^)]*)\\)`).exec(step);
+    assert.ok(named, `the stopping step must name \`${option}\` with its ids`);
+    assert.deepEqual(
+      [...named[1].matchAll(/`([a-z-]+)`/g)].map((match) => match[1]),
+      ids,
+      `${option}: stopping ids drifted`,
+    );
+    for (const id of ids) {
+      assert.ok(table.get(id).includes(option), `${id} has no \`${option}\` option`);
+    }
+  }
+  // Neither `Leave open` nor an `iterate-approval` option ends the run by itself.
+  for (const id of ['issue-done', 'iterate-approval', 'iterate-in-flight', 'completion']) {
+    assert.ok(!step.includes(`\`${id}\``), `${id} is no stopping answer`);
+  }
+  const returns = prose(
+    boundedSlice(fragment, '### Answers and returns', '## `effective-delivery`'),
+  );
+  assert.match(
+    returns,
+    /A once-per-run record of a relayed gate is written when its answer is consumed, never when the question is returned\./,
+  );
+});
+
+// Invariant (F31, F37): the probe is keyed on its own record in the wisdom file, not on the file's
+// presence, so an earlier return cannot skip it, and a re-dispatch after a passed probe never
+// re-probes and so never loses the wisdom file's round counter and once-per-run records; a first
+// dispatch meets no wisdom file, because the caller mints one session ID per gate run.
+test('the nested-spawn probe runs whenever its passed record is missing', () => {
+  const entry = prose(
+    boundedSlice(mergeGateDelegatedRun(repositoryRoot), '### Entry', '### Answers and returns'),
+  );
+  const probe = boundedSlice(entry, 'Nested-spawn probe.', 'Review verdicts.');
+  assert.match(
+    probe,
+    /^Nested-spawn probe\. Except in observer-only mode, whenever the wisdom file holds no `nested-spawn probe passed` record, start one child/,
+  );
+  assert.match(probe, /returns `DONE`, then write that record to the wisdom file\./);
+  assert.doesNotMatch(probe, /first dispatch|wisdom file absent/, 'no presence-keyed condition');
+  assert.match(
+    entry,
+    /it must be absent or a regular file, absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file`/,
+  );
+  assert.match(entry, /A present file is this gate run's record from an earlier dispatch\./);
+});
+
+// Invariant (F36): only the last Entry step can return `BLOCKED-USER`: the fresh read leaves the
+// `prReviewsRead` bullet out, so the completion conflict, a stopping answer and the probe are all
+// decided before a `reviews-unestablished` answer is consumed or a new instance returned.
+test('the delegated run applies the prReviewsRead bullet only after the probe', () => {
+  const entry = prose(
+    boundedSlice(mergeGateDelegatedRun(repositoryRoot), '### Entry', '### Answers and returns'),
+  );
+  const fresh = boundedSlice(entry, 'Fresh state.', 'Completion source.');
+  assert.match(
+    fresh,
+    /asking nothing for `AMBIGUOUS_HOST` and leaving step 2's `prReviewsRead` bullet to step 8\./,
+  );
+  const last = entry.slice(entry.indexOf('8. Review verdicts.'));
+  assert.ok(last.startsWith('8. Review verdicts.'), 'Review verdicts is Entry step 8');
+  assert.match(
+    last,
+    /Only now apply Phase 0 step 2's `prReviewsRead` bullet with this run state, consuming a `reviews-unestablished` answer per "Answers and returns"; no earlier step returns `BLOCKED-USER`\./,
+  );
+  ordered(entry, 'Completion source.', 'Stopping answer.', 'Nested-spawn probe.', '8. Review');
+});
+
+// Invariant (F32): of iterate's relayed questions only `iterate-approval` passes through the gate –
+// `iterate-in-flight` is unreachable under `Review guard: established` – and under
+// `Relayed answer: none` no question can be relayed, so the run ends at that delegation site.
+test('only iterate-approval passes through, and Relayed answer none ends the run at the delegation', () => {
+  const contract = prose(
+    boundedSlice(
+      mergeGateDelegationContract(),
+      '**A `BLOCKED-USER <question-id>` return**',
+      '**A return with neither',
+    ),
+  );
+  assert.match(
+    contract,
+    /Only `iterate-approval` passes: any other id, or one from another run state, is a protocol error that ends the round as a whole-run `ABORT` does\./,
+  );
+  assert.match(
+    contract,
+    /Under `Relayed answer: none` it returns nothing and ends the run at that delegation site with its report\./,
+  );
+  assert.match(
+    relayedQuestionTable(mergeGateCore(repositoryRoot)).find(({ id }) => id === 'iterate-in-flight')
+      .gate,
+    /never reached here, as every delegation carries `Review guard: established`/,
+  );
+});
+
+// Invariant (F30): the approval round enforces the relayed approval inside iterate before any write:
+// merge-gate hands the approved outcomes to the helper, which writes the `Approved outcomes:` line,
+// and iterate treats it as its Phase 2.5 approval, returning a reclassified item `unassessed`.
+test('the approval round carries the approved outcomes into iterate as its Phase 2.5 approval', () => {
+  const contract = prose(mergeGateDelegationContract());
+  assert.match(
+    contract,
+    /hands `build` each delegated item's approved outcome as `approvedOutcomes`, which the helper writes as the `Approved outcomes:` line `\{\{SKILL:iterate\}\}` applies in place of that approval, so an item it reclassifies comes back `unassessed` before any write/,
+  );
+  assert.match(contract, /an approval round's `approvedOutcomes` \(durable key → outcome\)/);
+  assert.match(contract, /then `Approved outcomes:` in an approval round only/);
+  const iterate = prose(source('src/tools/iterate.md'));
+  assert.match(
+    iterate,
+    /`Approved outcomes: <identifier>=<outcome>,…` — only in the round a caller consumes a relayed Phase 2\.5 approval, beside `Run state: non-interactive`: every manifest identifier once, in manifest order, each with a value of "Returned outcome record"\. Phase 2\.5 applies it\. Any other form, or another run state, returns `ABORT: unparseable approved-outcomes line`\./,
+  );
+  const approval = prose(
+    boundedSlice(source('src/tools/iterate.md'), '### Phase 2.5: Approval', '```ask'),
+  );
+  assert.match(
+    approval,
+    /An `Approved outcomes:` line is this run's approval instead: an item whose returned value differs from its approved one is returned `unassessed` as deselected here, and gets no implementation, push or reply\./,
+  );
+  // The mapping row that makes `unassessed` a non-assessment covers the approval-gate deselection.
+  assert.match(
+    prose(source('src/tools/iterate.md')),
+    /\| deselected at the approval gate \(Phase 2\.5\) \| `unassessed` \|/,
+  );
+});
+
+// Invariant (F38): an approval round that delegates no thread or body item – a CI repair alone, or
+// an `Adjust` that deselected everything – passes no `approvedOutcomes`, because the helper rejects
+// an explicitly empty map before its `nothing-to-delegate` check.
+test('an approval round without a delegated item passes no approvedOutcomes', () => {
+  assert.match(
+    prose(mergeGateDelegationContract()),
+    /a round that delegates no thread or body item passes no `approvedOutcomes`/,
+  );
+  assert.match(
+    prose(mergeGateDelegatedRun(repositoryRoot)),
+    /plus an approval round's `approvedOutcomes` whenever it delegates a thread or body item/,
+  );
+});
+
+// Invariant (F33): the issue-done re-dispatch re-derives the observer-only flag from the caller's
+// fresh Phase 0 step 1 read, so the merged pull request re-enters in observer-only mode and Entry
+// step 4's flag comparison does not abort it.
+test('a re-dispatch carries the observer-only flag from the fresh re-read', () => {
+  const loop = prose(
+    boundedSlice(
+      mergeGateCore(repositoryRoot),
+      '**The caller relays and decides nothing',
+      '```lazy-include',
+    ),
+  );
+  assert.match(
+    loop,
+    /Re-run Phase 0 step 1 for the observer-only flag;[\s\S]{0,160}Otherwise re-dispatch once with `Observer-only re-entry:` from that read/,
+  );
+  assert.doesNotMatch(loop, /re-dispatch once with the other input lines unchanged/);
+});
+
+// Invariant (F34): after any `ABORT` but `ABORT invalid wisdom file` the caller deletes its own
+// wisdom path, so an Entry abort on a re-dispatch orphans no file, while a path Entry rejected is
+// never touched.
+test('the caller deletes its wisdom file after every ABORT but an invalid wisdom file', () => {
+  const loop = prose(
+    boundedSlice(
+      mergeGateCore(repositoryRoot),
+      '**The caller relays and decides nothing',
+      '```lazy-include',
+    ),
+  );
+  assert.match(
+    loop,
+    /Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file\./,
+  );
 });

@@ -22,8 +22,8 @@ Hand `{{AGENT:merge-conflict-resolver}}`:
 - the **conflicted paths** as `git status` reports them in that checkout, with their staged and
   unstaged state;
 - the **resolved language values**, so the worker does not re-read the project setup ADR;
-- **this run's own run state** – gated or non-interactive delegation – so the worker knows whether a
-  question could be answered at all;
+- **this run's own run state** – gated or non-interactive delegation, which a relayed run passes as
+  non-interactive – so the worker knows whether a question could be answered at all;
 - the **boundary it works inside**, restated because it is the gate's boundary and not the worker's
   to relax: it resolves, validates, and stages by explicit path, and it never commits, never
   continues the merge, never aborts it, never pushes, and never rewrites history. The commit, the
@@ -109,6 +109,9 @@ checkout is the one step 1 provisioned – never a second one.
    - **`ask` in a non-interactive delegated run:** the question cannot be posed, so it behaves as
      `off`, and the report names `mergeGate.conflictResolution: auto` as the setting that would
      authorize the resolution.
+   - **`ask` in a relayed run:** end the merge as the `off` branch does, then return
+     `BLOCKED-USER conflict-resolution`; a consumed `Resolve` is `auto` for that round, and
+     `Report only` is `off`.
    - **`auto`** (the default): continue with step 2.
 2. **Capture the conflict state** – the conflicted paths, their staged and unstaged status, and the
    two sides per file – and delegate to `{{AGENT:merge-conflict-resolver}}` per

@@ -32,6 +32,15 @@ chat-language
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+```lazy-include
+completion-protocol
+when: an internal sub-agent's result is returned
+```
+
 ```lazy-include
 config-migration
 when: the Effective Flow configuration is read for the first time or an old config is migrated
@@ -162,7 +171,8 @@ Use the structural template from the concept contract, and observe:
 
 ### Phase 4: Self-check
 
-Check the written concept against this scorecard:
+Obtain the judgment of the written concept per "Judgment handoff" and normalize it into this
+scorecard:
 
 | Criterion      | Target                                                                |
 | -------------- | --------------------------------------------------------------------- |

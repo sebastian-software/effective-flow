@@ -1,6 +1,6 @@
 # Per-spawn model tiers and a lean orchestrator
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -302,6 +302,29 @@ Addendum, 2026-10-16 (user decision after the host checks): the Codex `deep` tie
 - The Codex native configuration of the ten `deep` workers is no longer byte-identical: `compare-native-agent-baseline.mjs` allows the named delta `codex-deep-tier-model` (`model` `gpt-5.6-sol` → `gpt-6.1-sol`). This supersedes the "Codex native configuration is identical" part of the baseline acceptance criterion and test result.
 - A read-only Codex CLI 0.159.3 check confirmed the built-in default agent accepts the `gpt-6.1-sol`/`high` override; details in the ADR status.
 
+## Stage B implementation
+
+Implemented on 2026-10-16 by `effective-flow build` on `effective-flow/build/per-spawn-model-tiers-and-lean-orchestrator-2`, from `origin/develop` at `e02d194`.
+
+- **Lean sentence:** it closes the analysis-default bullet of `delegation-mandate.md`, which stays at 15 lines; no includer pays a line for it.
+- **Judgment delegation:** `central-reasoning-delegation.md` carries a judgment handoff (spawn site `central-reasoning-delegation/judgment`, `deep`). The issue-mode draft snapshot sits behind the lazy fragment `judgment-draft-snapshot.md`. `concept` gained the eager mandate include, because it now spawns. `audit-reasoning-delegation.md` is byte-unchanged and pinned by SHA-256.
+- **`merge-gate`:** `merge-gate.md` is the caller core (Phase 0, run states, the closed question-id table with a consequence per option, dispatch and caller loop; 1943 → 873 always-loaded lines). The gate body moved to the lazy fragment `merge-gate-delegated-run.md` (spawn site `merge-gate/delegated-run`, `deep`).
+  - Question ids: `completion` (caller only), `reviews-unestablished`, `checks-pending`, `check-list-waiver`, `conflict-resolution`, `set-aside`, `issue-done`, `iterate-in-flight` (never reached from `merge-gate`), `iterate-approval`.
+  - Entry runs eight ordered steps: input lines, roots, wisdom file, fresh state, completion source, stopping answer, nested-spawn probe, review verdicts.
+- **`relayed`:** accepted by `delegation-envelope-core.mjs` and `iterate`. `iterate` forwards `non-interactive` to per-item runs.
+- **Pilot:** a `BLOCKED-USER` return finalizes the reservation as `reported-blocked` with the transient blocker `relayed-user-decision` (`pilot-measurement.md`). No protocol change was needed.
+- **Evals:** new scenarios `merge-gate/non-interactive-dispatch-reports`, `merge-gate/nested-spawn-abort-runs-inline` (tool-policy token `nesting-by-scenario`) and `iterate/relayed-run-state-clean-done`; the `merge-gate` instrument changed deliberately (`project-setup.mjs`, `configured-reviewer-scenario.mjs`).
+
+Deviations from the plan text and additions from review:
+
+- A question instance is keyed by id, round **and** state digest; a re-ask after state drift within one round is a new instance.
+- The nested-spawn probe is behavioural: it starts one no-op `mechanical` child (spawn site `merge-gate-delegated-run/nested-spawn-probe`) and records that it passed, because Codex CLI keeps its spawn tool at the depth limit and only refuses the call. A spawn the host refuses for depth is a declined delegation, never a tier-parameter rejection (`model-tiers.md`).
+- The edge case "Nested depth" above undercounts: a bot or CI repair runs main (0) → delegated gate (1) → `iterate` per-item `fix`/`build` run (2) → its implementer or validator (3); `docs/developer-guide/architecture.md` records the chain.
+- A relayed `iterate-approval` travels to the approved round as the helper-built line `Approved outcomes: <identifier>=<outcome>,…` beside `Run state: non-interactive`; `iterate` returns an item whose new classification differs as `unassessed` without any write. A round without a delegated item passes none.
+- A relayed stopping answer ends the run at Entry whatever its digest. After an invalid return the caller re-dispatches at most once with `Relayed answer: none`, which resolves completion to `report`.
+- The caller leaves `prReviewsRead` to the delegated run, and the inline fallback applies it with the caller's own run state.
+- The lean sentence keeps the plan-review wording, unbounded beyond its precedence clause; a reviewer proposal to bound it was declined as contrary to that decision.
+
 ## Test results
 
 - `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: pass.
@@ -313,6 +336,17 @@ Addendum, 2026-10-16 (user decision after the host checks): the Codex `deep` tie
   - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` counter-check (headless `claude -p` on 2.1.292 and the desktop's 2.1.299, Sonnet and Opus parents): the host drops the Agent tool's `model` parameter and forces the child onto the configured model (`claude-sonnet-5-5`, effort `high` honored). The first rule could not probe the variable and misread the missing parameter as inheritance; `model-tiers.md` now treats a missing `model` parameter as a host-forced model and passes only `effort`. A re-check on 2.1.299 confirmed the revised rule: only `effort: high` passed, no environment probe, the correct one-line notice, and the child on the forced `claude-sonnet-5-5`.
   - Observation for a later mapping decision: Codex's host default is `gpt-6.1-sol`, newer than the mapped `deep` model.
 - Owed: the re-record of the three eval suites, which the plan schedules once after Stage B.
+
+Stage B, 2026-10-16:
+
+- `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: pass.
+- `pnpm test`: 2369 tests, 2355 pass, 13 skipped, 1 fail — the same environmental `next-steps-eval` failure as above.
+- `scripts/compare-native-agent-baseline.mjs --base 6055c94`: pass with the expected deltas `claude-deep-tier-effort`, `codex-deep-tier-model`, `delegation-mandate-model-tiers` and `delegation-mandate-lean-orchestrator` (body deltas now combine in declared order).
+- Always-loaded core (lines/budget): `merge-gate` 873/873, `iterate` 1572/1572, `plan` 713/713, `plan-review` 470/470, `plan-issue` 740/740, `concept` 362/362, `concept-review` 366/366.
+- `pnpm eval … verify`: `next-steps` current; `merge-gate` stale (6 scenarios) plus 2 absent; `iterate` stale (6) plus 1 absent.
+- Owed, not done in this run:
+  - one re-recorded round of `merge-gate` and `iterate` in fresh sessions (the nested-spawn scenario needs a Codex setting under which a spawned agent's spawn is refused, e.g. `-c agents.max_depth=1`); `next-steps` currently needs none;
+  - the manual Stage B check on a test PR (one `DONE`, one `BLOCKED-USER` round trip, one forged question id).
 
 ## Review findings
 
@@ -327,6 +361,18 @@ Addendum, 2026-10-16 (user decision after the host checks): the Codex `deep` tie
 | Open / Not implemented |     0 |
 
 By severity: 1 Critical, 5 Important, 14 Notes, all fixed.
+
+### Stage B
+
+**Date:** 2026-10-16
+**Reviewer:** generic-product-reviewer, nodejs-reviewer (plus two re-checks of the correction passes)
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    36 |
+| Open / Not implemented |     0 |
+
+By severity: 9 Important and 7 Notes (product), 11 Notes (Node.js), then 3 Medium and 9 Low from the re-checks. Three were closed without change: the bound on the lean sentence (contrary to the plan-review decision), the probe-count proxy in the dispatch evaluator (accepted design, attested per slot), and the owed eval re-record (tracked under Test results).
 
 ## Plan review
 

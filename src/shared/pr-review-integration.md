@@ -38,7 +38,8 @@ restated here. Pull requests stay on the forge behind `origin` regardless of `tr
 ### Inputs
 
 The caller supplies a **resolved pull request** (number, head ref, base ref, URL, state), its **run
-state** — gated or non-interactive delegation — and exactly one of these three **input states**:
+state** — gated or non-interactive delegation, which a relayed run passes as non-interactive — and
+exactly one of these three **input states**:
 
 - **`finding-set`** — the caller's residual findings: what survived its own correction rounds, not
   its full finding history. Publish the survivors of the handoff and the gates below.

@@ -137,9 +137,21 @@ spawns now carry tiers. It amends
 way for portable output, and it sharpens what Quality means there. The Codex host check (see
 "Status") satisfies the review trigger of the representation record on per-spawn contracts.
 
-**Planned follow-up.** A second change moves the heaviest inline orchestrator work out of the main
-session (judgment in a subagent for planning artifacts and a delegated `merge-gate` run). It is not
-part of this decision and ships separately; this record neither describes nor depends on it.
+**Lean orchestrator (shipped as the second change).** The heaviest inline orchestrator work moved
+out of the main session; the tier rules above are unchanged.
+
+- The delegation mandate carries one sentence: the orchestrator sends other substantive work to a
+  sub-agent unless a tool's in-run rule binds it or the triviality exception applies.
+- Judgment for `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
+  read-only `deep` sub-agent after the artifact is written. `review` and `refactor` keep inline
+  judgment.
+- `merge-gate` runs as one delegated run at `deep`. The caller keeps Phase 0 and a closed table of
+  user questions; a new run state `relayed` means the user is reachable through the caller, so
+  every user gate returns `BLOCKED-USER <question-id>` and the caller re-dispatches with the
+  relayed answer. Without nested spawns the caller runs the gate inline and says so once.
+
+Mechanics: [Build system](../developer-guide/build-system.md) (the split core and its budget) and
+the shipped fragments `central-reasoning-delegation` and `merge-gate-delegated-run`.
 
 ## Alternatives and tradeoffs
 

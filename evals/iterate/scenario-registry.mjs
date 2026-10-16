@@ -6,6 +6,7 @@ export const SCENARIOS = Object.freeze([
   'duplicated-control-line-aborts',
   'empty-selection-clean-done',
   'manifest-span-mismatch-aborts',
+  'relayed-run-state-clean-done',
   'review-in-flight-aborts',
   'unparseable-item-filter-aborts',
   'unparseable-run-state-aborts',

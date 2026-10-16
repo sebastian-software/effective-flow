@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +41,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'investigate',
   'plan-review',
   'concept-review',
+  'concept',
 ]);
 
 const SUB_AGENT_TOOLS = ['Agent', 'Task'];
@@ -308,7 +310,8 @@ test('exactly the expected tool sources carry the eager delegation-mandate inclu
     'the set of tools eagerly including delegation-mandate drifted from the expected set. ' +
       'A tool belongs on the list when it delegates to a named worker role or runs analysis — ' +
       'merge-gate does, through the merge-conflict resolver and the code-validator that verifies ' +
-      "its result. It stays off the list when it only hands off to another workflow, the mandate's " +
+      'its result, and concept does, through the judgment handoff of central-reasoning-delegation. ' +
+      "It stays off the list when it only hands off to another workflow, the mandate's " +
       'own carve-out, which is why apply-plan is absent and merge-gate → iterate earns the gate ' +
       'no include of its own.',
   );
@@ -594,4 +597,245 @@ test('delegation-mandate.md binds the orchestrator to the rendered tier and lazi
   ]) {
     assert.match(when, pattern, `the model-tiers pointer must trigger on ${situation}`);
   }
+});
+
+// The lean principle has one eager carrier, the mandate, and binds the orchestrator only: the
+// mandate ships into every worker body, so a sentence without "the orchestrator" as its subject, or
+// a leaf rule qualified by it, would let a leaf worker read it as license to start a child. Its
+// precedence clause keeps a tool's explicit in-run rule (merge-gate's guard reasoning) and the
+// triviality exception above it; joining the analysis-default bullet keeps the file within its cap.
+const LEAN_SENTENCE =
+  "The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's " +
+  'explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and ' +
+  'guard evaluation) or the triviality exception applies.';
+
+test('delegation-mandate.md states the lean principle once, for the orchestrator, with its precedence clause', () => {
+  const bullet = delegationMandate
+    .split('\n')
+    .find((line) => line.startsWith('- For analysis, exploration, and research'));
+  assert.ok(bullet, 'missing: the analysis-default bullet');
+  assert.ok(
+    bullet.endsWith(` ${LEAN_SENTENCE}`),
+    'the lean sentence closes the analysis-default bullet, after the triviality definition it names',
+  );
+  assertClauses(LEAN_SENTENCE, [
+    [/^The orchestrator /, 'the lean sentence has the orchestrator as its subject'],
+    [/explicit in-run rule binds that work to the run/, 'precedence: an explicit in-run rule'],
+    [/`merge-gate` state reading and guard evaluation/, 'precedence example: merge-gate'],
+    [/or the triviality exception applies\.$/, 'precedence: the triviality exception'],
+  ]);
+  assert.equal(
+    delegationMandate.split(/substantive work/).length - 1,
+    1,
+    'the lean principle is stated exactly once in the mandate',
+  );
+  const leaf = delegationMandate.match(
+    /Every named worker is a \*\*leaf executor\*\*: [^\n]*?\./,
+  )?.[0];
+  assert.ok(leaf, 'the mandate keeps its leaf sentence');
+  assert.doesNotMatch(leaf, /substantive|unless|in-run/, 'the leaf rule stays unqualified');
+  assert.ok(delegationMandate.split('\n').length <= 16, 'the mandate stays within its line cap');
+});
+
+test('the router Rules point at the mandate and carry no copy of the lean principle', () => {
+  const { section } = splitAtSection(skill, '## Rules', 'src/SKILL.md');
+  assert.doesNotMatch(
+    section,
+    /substantive work|in-run rule/i,
+    'the router Rules must not restate the lean principle; delegation-mandate.md owns it',
+  );
+});
+
+const readShared = (name) => readSource('shared', `${name}.md`);
+const JUDGMENT_INCLUDERS = ['concept', 'concept-review', 'plan', 'plan-issue', 'plan-review'];
+const JUDGMENT_MARKER = '<!-- spawn-site:central-reasoning-delegation/judgment -->';
+
+// The five artifact-based planning and concept tools judge a written artifact in a `deep`
+// sub-agent through the one shared handoff; review and refactor aggregate in-memory reviewer
+// findings and keep their inline judgment through the audit fragment, which must not drift.
+test('exactly the five artifact-based tools include the judgment handoff, and review/refactor keep the audit fragment', () => {
+  const central = [];
+  const audit = [];
+  for (const file of readdirSync(TOOLS_DIR).filter((name) => name.endsWith('.md'))) {
+    const { eager, lazy } = collectIncludeNames(readSource('tools', file));
+    assert.ok(!lazy.has('central-reasoning-delegation'), `${file}: the handoff is never lazy`);
+    if (eager.has('central-reasoning-delegation')) central.push(file.slice(0, -3));
+    if (eager.has('audit-reasoning-delegation')) audit.push(file.slice(0, -3));
+  }
+  assert.deepEqual(central.sort(), JUDGMENT_INCLUDERS);
+  assert.deepEqual(audit.sort(), ['refactor', 'review']);
+  for (const tool of JUDGMENT_INCLUDERS) {
+    assert.ok(
+      EXPECTED_EAGER_INCLUDE_TOOLS.has(tool),
+      `${tool} starts the judgment sub-agent, so it carries the eager delegation mandate`,
+    );
+  }
+  for (const tool of ['review', 'refactor']) {
+    assert.doesNotMatch(
+      readSource('tools', `${tool}.md`),
+      /Judgment handoff/,
+      `${tool} keeps its inline judgment and names no judgment handoff`,
+    );
+  }
+  assert.equal(
+    createHash('sha256').update(readShared('audit-reasoning-delegation')).digest('hex'),
+    'fec773b685b05bc17f9ddd241cc0cc63998905d0ba0f5adf1ff986c6ebdf168c',
+    'src/shared/audit-reasoning-delegation.md must stay byte-unchanged (plan acceptance criterion: ' +
+      'review and refactor keep their inline judgment). Revert the edit; changing that judgment ' +
+      'needs its own plan, which then updates this pin.',
+  );
+});
+
+test('central-reasoning-delegation.md hands the judgment of the written artifact to a deep sub-agent', () => {
+  const fragment = readShared('central-reasoning-delegation');
+  assert.match(
+    fragment,
+    /<!-- skill-ownership:relevance-gate-owners \[/,
+    'the relevance-gate marker build.mjs reads stays in place',
+  );
+  const { section } = splitAtSection(fragment, '### Judgment handoff', 'central fragment');
+  const step = (number) =>
+    section.match(new RegExp(`^${number}\\. [\\s\\S]*?(?=\\n\\d\\. |\\n\\n)`, 'm'))?.[0] ?? '';
+  assert.match(
+    step(1),
+    /^1\. Write the artifact first/,
+    'the artifact is written before the handoff',
+  );
+  const spawn = step(2);
+  assertClauses(spawn, [
+    [/read-only sub-agent/, 'the judgment runs in a read-only sub-agent'],
+    [/artifact path/, 'the handoff carries the artifact path'],
+    [/scope/, 'the handoff carries the scope'],
+    [/resolved artifact language/, 'the handoff carries the language'],
+    [/output\s+contract/, 'the handoff carries the output contract'],
+    [/writes nothing/, 'the delegate writes nothing'],
+    [/starts no sub-agent/, 'the delegate is a leaf and starts no sub-agent'],
+  ]);
+  assert.ok(
+    spawn.split('\n').some((line) => line.trim() === JUDGMENT_MARKER),
+    'the spawn instruction carries its spawn-site marker in its own list item',
+  );
+  assert.match(
+    step(3),
+    /Normalize its findings[\s\S]*stay with the orchestrator/,
+    'the orchestrator normalizes the findings and keeps questions, writes and status',
+  );
+  assert.match(
+    section,
+    /\*\*Output contract:\*\* findings only[\s\S]*?no report, artifact, comment, or tracker write of its own/,
+    'the output contract returns findings only and forbids the delegate any artifact of its own',
+  );
+  const row = readShared('model-tiers')
+    .split('\n')
+    .find((line) => line.includes('`central-reasoning-delegation/judgment`'));
+  assert.ok(row, 'the judgment spawn site has its model-tiers row');
+  assert.match(
+    row,
+    /\|\s*`deep`\s*\|\s*`no`\s*\|$/,
+    'the judgment spawn site is deep and never moves down',
+  );
+});
+
+// Issue mode judges a remote planning comment, which has no local file: a draft snapshot under the
+// verified runtime root stands in for it, guarded like every runtime-state write, deleted on every
+// exit of the step, and never reordering a tracker write; the third-party comment text is data. The
+// rule sits in its own lazy fragment, so the three file-mode-only hosts never pay for it.
+test('issue mode hands over a local draft snapshot and keeps the publication order', () => {
+  const central = readShared('central-reasoning-delegation');
+  const pointers = collectIncludeNames(central);
+  assert.ok(
+    pointers.lazy.has('judgment-draft-snapshot'),
+    'the handoff points at the snapshot rule',
+  );
+  assert.ok(!pointers.eager.has('judgment-draft-snapshot'), 'the snapshot rule is never eager');
+  for (const absent of ['**Issue mode**', 'runtime-state-safety', 'effective-flow-dir-migration']) {
+    assert.ok(!central.includes(absent), `the eager handoff carries no ${absent}`);
+  }
+  assert.match(
+    central,
+    /```lazy-include\njudgment-draft-snapshot\nwhen: issue mode – the judged artifact is a remote planning comment\n```/,
+  );
+  for (const file of readdirSync(TOOLS_DIR).filter((name) => name.endsWith('.md'))) {
+    const { eager } = collectIncludeNames(readSource('tools', file));
+    assert.ok(!eager.has('judgment-draft-snapshot'), `${file}: the snapshot rule stays lazy`);
+  }
+
+  const fragment = readShared('judgment-draft-snapshot');
+  const issue = fragment.slice(fragment.indexOf('**Issue mode**'));
+  const flat = issue.replace(/\s+/g, ' ');
+  assertClauses(flat, [
+    [/`plan-issue`, and `plan-review` delegated by it/, 'issue mode names both hosts'],
+    [
+      /`<RUNTIME_STATE_ROOT>\/\.effective-flow\/\.judgment-draft-<SESSION_ID>\.tmp\.md`/,
+      'the snapshot lives under the runtime root',
+    ],
+    [/under the verified runtime root/, 'the runtime root is verified'],
+    [
+      /deletes the snapshot on every exit of the step: once the findings are normalized, and after an abort or a failed judgment alike/,
+      'the snapshot is deleted on every exit, abort included',
+    ],
+    [/Every tracker write keeps its place and order/, 'the publication order is unchanged'],
+    [/third-party data: the handoff quotes it/, 'comment text travels as quoted data'],
+  ]);
+  const before = fragment.slice(0, fragment.indexOf('**Issue mode**'));
+  const { lazy } = collectIncludeNames(before);
+  assert.ok(lazy.has('runtime-state-safety'), 'the runtime-state guard is loaded before the write');
+  assert.ok(lazy.has('effective-flow-dir-migration'), 'the migration prerequisite precedes it too');
+
+  const planIssue = readSource('tools', 'plan-issue.md');
+  const baseline = splitAtSection(
+    planIssue.replace('### Phase 3:', '## Phase 3:'),
+    '## Phase 3: Automatic quality baseline per issue',
+    'src/tools/plan-issue.md',
+  ).section.replace(/\s+/g, ' ');
+  assert.match(
+    baseline,
+    /Steps 1 and 3 each hand over a fresh draft snapshot of the active comment per "Judgment handoff"; no tracker write moves ahead of Phase 4\./,
+    'plan-issue judges a fresh draft snapshot and publishes only in Phase 4',
+  );
+  const planReview = readSource('tools', 'plan-review.md').replace(/\s+/g, ' ');
+  assert.match(
+    planReview,
+    /the file adapter writes the plan file back when Phase 1 changed it, so that normalization is persisted before the user decides anything/,
+    'plan-review states that file mode now persists its normalization before any user decision',
+  );
+  assert.match(
+    planReview,
+    /the issue adapter writes only the draft snapshot, and its first tracker update stays in Phase 4/,
+    'plan-review in issue mode writes only the snapshot before its judgment',
+  );
+  assert.match(
+    planReview,
+    /the draft snapshot of "Judgment handoff", and the targeted update/,
+    "plan-review's issue-mode scope boundary admits the snapshot",
+  );
+});
+
+// File-mode hosts write their artifact before the judgment reads it: plan and concept write it in
+// their creation phase, the two review tools write back their Phase 1 normalization.
+test('every file-mode host writes its artifact before the judgment handoff', () => {
+  const phaseOrder = (body, written, judged, context) => {
+    const writeAt = body.indexOf(written);
+    const judgeAt = body.indexOf(judged);
+    assert.ok(writeAt !== -1 && judgeAt !== -1, `${context}: both phases exist`);
+    assert.ok(writeAt < judgeAt, `${context}: the artifact is written before it is judged`);
+  };
+  phaseOrder(planTool, 'Write the plan file to', '### Phase 4: Gap analysis', 'plan');
+  const concept = readSource('tools', 'concept.md');
+  phaseOrder(concept, 'Write the concept file to', '### Phase 4: Self-check', 'concept');
+  assert.match(
+    concept.replace(/\s+/g, ' '),
+    /Obtain the judgment of the written concept per "Judgment handoff"/,
+    'concept judges its written concept through the handoff',
+  );
+  assert.match(
+    planReview.replace(/\s+/g, ' '),
+    /Before the handoff, the file adapter writes the plan file back when Phase 1 changed it/,
+    'plan-review writes its Phase 1 normalization back before the handoff',
+  );
+  assert.match(
+    conceptReview.replace(/\s+/g, ' '),
+    /Before the handoff, write the concept file back when Phase 1 changed it\./,
+    'concept-review writes its Phase 1 normalization back before the handoff',
+  );
 });

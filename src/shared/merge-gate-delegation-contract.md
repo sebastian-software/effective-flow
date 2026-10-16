@@ -83,8 +83,8 @@ contract that helper implements and `{{SKILL:iterate}}` Phase 0 parses. Every me
 
 - the **body delimiter**, on its own line, in the exact literal form
   `--- caller-supplied item text follows ---`, exactly once in the whole message. Everything above it
-  is this gate's own contract – all six control lines, each exactly once, plus the boundary token and
-  the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
+  is this gate's own contract – all six control lines, each exactly once, the approval round's
+  `Approved outcomes:` line, plus the boundary token and the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
   nothing else. `{{SKILL:iterate}}` Phase 0 reads every control line from above it alone;
 
 - the **boundary token**, above the delimiter and above the manifest, on its own line, in the exact
@@ -155,16 +155,25 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   The line stays its own and is deliberately **not** derived from `Item filter:`: a filter states only
   scope, and only the caller knows whether that scope or its own prior observation earns the exemption;
 
-- the **run state**, on its own line, in exactly one of two literal forms: `Run state: gated` or
-  `Run state: non-interactive` – this run's own state, passed on. This is mandatory in **every**
-  delegation from this gate. `{{SKILL:iterate}}` reads it for every decision that depends on
+- the **run state**, on its own line, in exactly one of three literal forms: `Run state: gated`,
+  `Run state: non-interactive` or `Run state: relayed` – this run's own state, passed on. This is
+  mandatory in **every** delegation from this gate. `{{SKILL:iterate}}` reads it for every decision that depends on
   interactivity – its review-in-flight question, its Phase 2.5 item approval, and, only when
   non-interactive, the documentation-sync gate of the workflows it delegates to. A gated gate run therefore still gets
   that item approval once per round, and a gate run that is itself a non-interactive delegation
   passes that state on so the delegated run does not hang on a question nobody can answer. Stated
   rather than left to be inferred from the delimiter, because the delimiter says where caller text
   begins and nothing about who is present; `{{SKILL:iterate}}` answers any other form with
-  `ABORT: unparseable run-state switch`;
+  `ABORT: unparseable run-state switch`. A relayed run passes `Run state: non-interactive` for one
+  round only: the round consuming an `iterate-approval` answer whose digest it recomputes from the
+  fresh head, the item set it is about to delegate and the outcomes recorded from the relayed
+  return. It delegates that set minus every durable key an `Adjust` deselected, recorded as
+  `unassessed`, because `non-interactive` omits exactly that approval, and hands `build` each
+  delegated item's approved outcome as `approvedOutcomes`, which the helper writes as the
+  `Approved outcomes:` line `{{SKILL:iterate}}` applies in place of that approval, so an item it
+  reclassifies comes back `unassessed` before any write; a round that delegates no thread or body
+  item passes no `approvedOutcomes`; a returned outcome other than `unassessed` or the approved one
+  is a mismatch that ends the round;
 - the **language context**, on its own line, in the exact literal form
   `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`,
   with the keys in exactly that order and the values this run resolved once. This is mandatory in
@@ -189,7 +198,8 @@ the refusal reading as if it covered the other two:
 **The canonical order.** Every message is these six parts, in this order and no other:
 
 1. the six control lines, each exactly once: `Item filter:`, `Summary comment:`, `Review guard:`,
-   `Next steps:`, `Run state:`, `Language context:`;
+   `Next steps:`, `Run state:`, `Language context:`, then `Approved outcomes:` in an approval round
+   only;
 2. the CI-repair instruction, only when there is one;
 3. `Boundary token: <token>`;
 4. the manifest: every `Thread item:` line in thread order, then every `Item:` line in body order;
@@ -214,8 +224,8 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    carries the pull-request number as `pr` and the round number as `round` – those exact keys, no
    other spelling – the control values `summaryComment`, `reviewGuard`,
    `nextSteps`, `runState` and `languageContext`, the ordered `threadItems` (`durableKey`,
-   `threadId`), the ordered `bodyItems` (`durableKey`, `reviewId`, `author`, `url`, `text`), and a
-   CI repair's `instruction`; `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
+   `threadId`), the ordered `bodyItems` (`durableKey`, `reviewId`, `author`, `url`, `text`), a
+   CI repair's `instruction`, and an approval round's `approvedOutcomes` (durable key → outcome); `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
    above, checks its own output, and writes the message below that directory with a snapshot of its
    manifest beside it – exclusively, never over an existing file or through a symlinked parent. A
    successful `build` returns `ok: true` with one of three statuses: `written` – the path, a
@@ -249,7 +259,7 @@ fault of the channel:
 - an empty or whitespace-only body: not delegated, and the review keeps the gate-internal outcome
   "Returned outcome record" assigns an empty-bodied review;
 - a CI-repair instruction with a line that, after trimming, equals the delimiter or begins with one of
-  the six control keywords, `Item:`, `Thread item:` or `Boundary token:` (status
+  the six control keywords, `Approved outcomes:`, `Item:`, `Thread item:` or `Boundary token:` (status
   `instruction-refused`): no message is written and nothing is delegated, and the run ends at
   Phase 2 step 3 with a report naming the failing check as **not auto-repairable** – it still blocks
   the merge, and no further round rebuilds the same refused instruction;
@@ -286,6 +296,16 @@ channel – an item whose own implementation delegation aborted comes back marke
 is the mapped non-assessment above rather than a fault of the channel. `DONE`/`ABORT` is the
 completion protocol for **internal sub-agents**; across a workflow handoff it carries the whole run
 and nothing smaller.
+
+**A `BLOCKED-USER <question-id>` return** comes only from a delegation that carried
+`Run state: relayed`, and it is a keyword of this channel, never a keyword-less return. Only
+`iterate-approval` passes: any other id, or one from another run state, is a protocol error that
+ends the round as a whole-run `ABORT` does. It is no per-item outcome: the round ends unsuccessfully
+as after a whole-run `ABORT`, no outcome is recorded for its identifiers, and this run returns the
+same question id to its caller per "Answers and returns" in `merge-gate-delegated-run`, naming each
+item its evidence lists by durable key, never by per-message identifier, with its proposed outcome,
+which the wisdom file records. Under `Relayed answer: none` it returns nothing and ends the run at
+that delegation site with its report.
 
 **A return with neither `DONE` nor `ABORT` gets exactly one resume, and never Retry 1–3.** At both
 delegation sites – the Phase 2 step 3 CI repair and the Phase 3 step 5 bot round – a keyword-less

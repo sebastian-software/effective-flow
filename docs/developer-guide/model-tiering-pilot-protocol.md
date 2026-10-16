@@ -249,6 +249,11 @@ workflow exit calls it once. A pre-Phase-4 stop in report mode records `reported
 with unavailable check evidence; a reserved merge-mode run without a verified merge records
 `failed` rather than silently dropping the observation.
 
+A delegated `merge-gate` run that returns `BLOCKED-USER` before a verified merge finalizes its
+reservation as `reported-blocked` in either mode, and the caller's re-dispatch reserves afresh.
+One logical gate run can therefore leave several observations, each counted on its own in the
+per-mode medians of the correction counters.
+
 If reservation or finalization fails, the helper classifies the failure as described under
 [Failure semantics](#failure-semantics); a fault in either gate-observation operation persists an
 `evidence-gap` suspension. The error envelope reports only the stable `pilotControlOutcome`,

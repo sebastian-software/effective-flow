@@ -62,10 +62,11 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 - **File mode:** only analysis, user follow-up questions, and changes to exactly one referenced
   plan file under `<plan.dir>/` or `<plan.dir>/archive/` are allowed.
 - **Issue mode:** only when delegated by `{{SKILL:plan-issue}}`; only analysis, user follow-up
-  questions, and the targeted update of exactly one supplied canonical planning-comment ID are
-  allowed. The tracker adapter supplied with the delegation is the resolved target's access path:
-  the helper's `issue-comment-update` on the forge, or the connection's update-comment-by-ID
-  capability on an external target. Return readiness to the caller; do not change labels here.
+  questions, the draft snapshot of "Judgment handoff", and the targeted update of exactly one
+  supplied canonical planning-comment ID are allowed. The tracker adapter supplied with the
+  delegation is the resolved target's access path: the helper's `issue-comment-update` on the forge,
+  or the connection's update-comment-by-ID capability on an external target. Return readiness to the
+  caller; do not change labels here.
 - Changes to source code, tests, configuration, build files,
   README files, ADRs, review reports, and other project files are forbidden.
 - In issue mode, creating a plan file, adding a comment, updating another comment, changing the
@@ -160,6 +161,10 @@ central-reasoning-delegation
    the delegate does not resolve configuration independently.
 
 ### Phase 2: Identify findings
+
+Before the handoff, the file adapter writes the plan file back when Phase 1 changed it, so that
+normalization is persisted before the user decides anything; the issue adapter writes only the draft
+snapshot, and its first tracker update stays in Phase 4.
 
 The domain review **judgment** is provided by `effective-delivery` (see "Delegating the
 domain judgment to central skills"): apply the skill to the loaded planning artifact so that it

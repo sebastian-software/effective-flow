@@ -24,6 +24,8 @@ export const SCENARIOS = Object.freeze([
   'guard-blocks-merge',
   'linked-issue-open-points',
   'merge-proceeds',
+  'nested-spawn-abort-runs-inline',
+  'non-interactive-dispatch-reports',
   'unreported-checks-at-phase-four',
   'unreported-checks-block-merge',
 ]);

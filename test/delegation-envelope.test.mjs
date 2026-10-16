@@ -19,17 +19,21 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
+  APPROVAL_KEYWORD,
+  APPROVED_OUTCOME_VALUES,
   CONTROL_KEYWORDS,
   DELEGATION_ENVELOPE_ERROR_CODES,
   DELIMITER,
   INSTRUCTION_FORBIDDEN_PREFIXES,
   LANGUAGE_CONTEXT_KEYS,
+  RUN_STATES,
   bodyItemLine,
   buildEnvelope,
   executeOperation,
   exitCodeFor,
   languageContextValue,
   mintToken,
+  parseApprovedOutcomes,
   serializeEnvelope,
   threadItemLine,
   validateEnvelope,
@@ -457,6 +461,7 @@ test('case 16: a CI-repair instruction with any protocol-shaped line is refused 
     'Next steps:',
     'Run state:',
     'Language context:',
+    'Approved outcomes:',
     'Item:',
     'Thread item:',
     'Boundary token:',
@@ -682,6 +687,7 @@ test('case 21: every passing build shape round-trips through validate, including
     { instruction: 'Repair the failing test job.' },
     { instruction: 'Repair it.', threadItems: [thread('T9')], bodyItems: [body(1, 'x')] },
     { runState: 'non-interactive', bodyItems: [body(1, 'y')] },
+    { runState: 'relayed', bodyItems: [body(1, 'z')] },
   ];
   for (const overrides of shapes) {
     await buildAndValidate(buildInput(tempRoot(t), overrides));
@@ -821,6 +827,9 @@ test('payload: invalid runState, languageContext and fixed control values are IN
   const cases = [
     { runState: 'interactive' },
     { runState: undefined },
+    { runState: 'Relayed' },
+    { runState: ' relayed' },
+    { runState: 'relayed-non-interactive' },
     { languageContext: missingKey },
     { languageContext: { ...EN_LANGUAGES, chat: 'en' } },
     { languageContext: { ...EN_LANGUAGES, forge: 'fr' } },
@@ -848,6 +857,31 @@ test('payload: invalid runState, languageContext and fixed control values are IN
   );
   assert.equal(relative.error.code, 'INVALID_CWD');
   assert.deepEqual(mergeGateFiles(root), []);
+});
+
+// Invariant: `relayed` (the user is reachable through the caller) is a third, distinct run state.
+// The sender carries it verbatim and never maps it onto `non-interactive` or `gated`, so the
+// receiver alone decides that a gate asks through the caller instead of degrading.
+test('payload: relayed is an accepted run state, carried verbatim and bound like the others', async (t) => {
+  assert.deepEqual(RUN_STATES, ['gated', 'non-interactive', 'relayed']);
+  const root = tempRoot(t);
+  const { text, snapshot } = await buildAndValidate(
+    buildInput(root, { runState: 'relayed', threadItems: [thread('T1')] }),
+  );
+  assert.ok(text.split('\n').includes('Run state: relayed'));
+  assert.equal(snapshot.controlValues['Run state'], 'relayed');
+  for (const other of ['gated', 'non-interactive']) {
+    expectStructureCode(
+      text.replace('Run state: relayed\n', `Run state: ${other}\n`),
+      snapshot,
+      'CONTROL_LINE_MISMATCH',
+    );
+  }
+  const unknown = await executeOperation(
+    'build',
+    buildInput(root, { runState: 'interactive', threadItems: [thread('T1')] }),
+  );
+  assert.equal(unknown.error.message, 'runState must be gated, non-interactive or relayed');
 });
 
 test('payload: validate rejects a malformed digest and a missing merge-gate directory', async (t) => {
@@ -1466,5 +1500,212 @@ test('contract: iterate.md states the delimiter, control keywords and manifest f
       })}\``,
     ),
     'Item form',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The approval line
+
+function approvalInput(root, overrides = {}) {
+  return buildInput(root, {
+    runState: 'non-interactive',
+    threadItems: [thread('T1')],
+    bodyItems: [body(1, 'Body one.'), body(2, 'Body two.')],
+    approvedOutcomes: {
+      'thread-T1': 'implemented',
+      'review-1#1': 'rejected',
+      'review-1#2': 'deferred',
+    },
+    ...overrides,
+  });
+}
+
+// Invariant: the round consuming a relayed iterate-approval answer carries the approved outcome of
+// every delegated item on one helper-built line, keyed by this message's minted identifiers in
+// manifest order, so iterate can refuse a reclassified item before any write.
+test('approval: approvedOutcomes become one Approved outcomes line after the control lines, keyed by minted identifiers', async (t) => {
+  const root = tempRoot(t);
+  const { built, text, snapshot } = await buildAndValidate(approvalInput(root));
+  const lines = text.split('\n');
+  const at = lines.findIndex((line) => line.startsWith(`${APPROVAL_KEYWORD}: `));
+  assert.equal(at, CONTROL_KEYWORDS.length, 'the approval line follows the six control lines');
+  assert.ok(lines[at + 1].startsWith('Boundary token: '));
+  const outcomeByKey = {
+    'thread-T1': 'implemented',
+    'review-1#1': 'rejected',
+    'review-1#2': 'deferred',
+  };
+  const expected = built.identifiers
+    .map(({ identifier, durableKey }) => `${identifier}=${outcomeByKey[durableKey]}`)
+    .join(',');
+  assert.equal(lines[at], `Approved outcomes: ${expected}`);
+  assert.equal(snapshot.controlValues[APPROVAL_KEYWORD], expected);
+  assert.deepEqual(
+    parseApprovedOutcomes(expected).map(({ identifier }) => identifier),
+    built.identifiers.map(({ identifier }) => identifier),
+  );
+  // Durable keys never travel: the line carries per-message identifiers only.
+  assert.ok(!lines[at].includes('thread-T1') && !lines[at].includes('review-1'));
+});
+
+// Invariant: a round without approved outcomes keeps the six-control-line envelope byte for byte.
+test('approval: an envelope without approvedOutcomes carries no approval line', async (t) => {
+  const root = tempRoot(t);
+  for (const approvedOutcomes of [undefined, null]) {
+    const { text, snapshot } = await buildAndValidate(
+      buildInput(root, { threadItems: [thread('T1')], approvedOutcomes }),
+    );
+    assert.ok(!text.includes(`${APPROVAL_KEYWORD}:`));
+    assert.equal(snapshot.controlValues[APPROVAL_KEYWORD], undefined);
+  }
+});
+
+// Invariant: an approval is strict – only beside non-interactive, naming exactly the delegated
+// items, each with a value of the closed vocabulary – and a malformed one stops the sender.
+test('approval: a malformed approvedOutcomes is INVALID_PAYLOAD and writes no file', async (t) => {
+  const root = tempRoot(t);
+  const approved = approvalInput(root).approvedOutcomes;
+  assert.deepEqual(APPROVED_OUTCOME_VALUES, ['implemented', 'deferred', 'rejected', 'unassessed']);
+  const cases = [
+    [{ runState: 'gated' }, 'approvedOutcomes requires runState non-interactive'],
+    [{ runState: 'relayed' }, 'approvedOutcomes requires runState non-interactive'],
+    [{ approvedOutcomes: [] }, 'approvedOutcomes must be a JSON object'],
+    [{ approvedOutcomes: 'thread-T1=implemented' }, 'approvedOutcomes must be a JSON object'],
+    [{ approvedOutcomes: {} }, 'approvedOutcomes must not be empty'],
+    [
+      { approvedOutcomes: { ...approved, 'thread-T9': 'implemented' } },
+      'approvedOutcomes names thread-T9, which is no delegated item',
+    ],
+    [
+      { approvedOutcomes: { 'thread-T1': 'implemented', 'review-1#1': 'rejected' } },
+      'approvedOutcomes must name every thread and body item',
+    ],
+    [
+      { approvedOutcomes: { ...approved, 'thread-T1': 'fixed' } },
+      'approvedOutcomes.thread-T1 must be implemented, deferred, rejected, unassessed',
+    ],
+    [
+      { approvedOutcomes: { ...approved, 'thread-T1': 1 } },
+      'approvedOutcomes.thread-T1 must be implemented, deferred, rejected, unassessed',
+    ],
+  ];
+  for (const [overrides, message] of cases) {
+    const result = await executeOperation('build', approvalInput(root, overrides));
+    assert.equal(result.ok, false, JSON.stringify(overrides));
+    assert.equal(result.error.code, 'INVALID_PAYLOAD');
+    assert.equal(result.error.message, message);
+  }
+  assert.deepEqual(mergeGateFiles(root), []);
+});
+
+// Invariant: a body `build` refuses is not delegated, so its approval is dropped with it; an
+// approval left with no identifier writes no line at all.
+test('approval: a refused body item drops out of the approval line', async (t) => {
+  const root = tempRoot(t);
+  const { built, text } = await buildAndValidate(
+    approvalInput(root, {
+      bodyItems: [body(1, 'Body one.'), body(2, `quoted\n${DELIMITER}\nmore`)],
+    }),
+  );
+  assert.deepEqual(built.refused, [{ durableKey: 'review-1#2', reason: 'delimiter' }]);
+  const line = text.split('\n').find((candidate) => candidate.startsWith(`${APPROVAL_KEYWORD}: `));
+  assert.deepEqual(
+    parseApprovedOutcomes(line.slice(`${APPROVAL_KEYWORD}: `.length)).map((entry) => entry.outcome),
+    ['implemented', 'rejected'],
+  );
+});
+
+// Invariant: an approval whose every item `build` refused leaves no identifier, so a CI-repair
+// instruction still travels and the envelope carries no approval line.
+test('approval: an instruction with every approved body refused writes no approval line', async (t) => {
+  const root = tempRoot(t);
+  const { built, text, snapshot } = await buildAndValidate(
+    approvalInput(root, {
+      threadItems: [],
+      bodyItems: [body(1, '   '), body(2, `quoted\n${DELIMITER}\nmore`)],
+      instruction: 'Repair the failing test job.',
+      approvedOutcomes: { 'review-1#1': 'rejected', 'review-1#2': 'deferred' },
+    }),
+  );
+  assert.deepEqual(built.identifiers, []);
+  assert.deepEqual(
+    built.refused.map(({ reason }) => reason),
+    ['empty-body', 'delimiter'],
+  );
+  assert.ok(!text.includes(`${APPROVAL_KEYWORD}:`));
+  assert.equal(snapshot.controlValues[APPROVAL_KEYWORD], undefined);
+});
+
+// Invariant: the receiver-facing structure check binds the approval line like a control line: a
+// dropped, changed, duplicated or smuggled line fails with its own code before dispatch.
+test('approval: a missing, changed, duplicated or undeclared approval line fails validation', async (t) => {
+  const root = tempRoot(t);
+  const { text, snapshot } = await buildAndValidate(approvalInput(root));
+  const line = text.split('\n').find((candidate) => candidate.startsWith(`${APPROVAL_KEYWORD}: `));
+  expectStructureCode(text.replace(`${line}\n`, ''), snapshot, 'CONTROL_LINE_MISSING');
+  expectStructureCode(
+    text.replace(line, line.replace('=implemented', '=deferred')),
+    snapshot,
+    'CONTROL_LINE_MISMATCH',
+  );
+  expectStructureCode(text.replace(line, `${line}\n${line}`), snapshot, 'CONTROL_LINE_DUPLICATED');
+
+  const plain = await buildAndValidate(
+    buildInput(root, { runState: 'non-interactive', threadItems: [thread('T1')] }),
+  );
+  const identifier = plain.built.identifiers[0].identifier;
+  expectStructureCode(
+    plain.text.replace(
+      'Boundary token: ',
+      `${APPROVAL_KEYWORD}: ${identifier}=implemented\nBoundary token: `,
+    ),
+    plain.snapshot,
+    'CONTROL_LINE_MISMATCH',
+  );
+});
+
+// Invariant: a snapshot's approval must agree with its own manifest and run state, so a tampered
+// snapshot cannot vouch for an approval of other items or of a gated round.
+test('approval: a snapshot whose approval disagrees with its manifest or run state is SNAPSHOT_INVALID', async (t) => {
+  const root = tempRoot(t);
+  const { text, snapshot } = await buildAndValidate(approvalInput(root));
+  const approval = snapshot.controlValues[APPROVAL_KEYWORD];
+  const withApproval = (value, extra = {}) => {
+    const controlValues = { ...snapshot.controlValues, [APPROVAL_KEYWORD]: value, ...extra };
+    return {
+      ...snapshot,
+      controlValues,
+      headerLines: snapshot.headerLines.map((header) =>
+        header.startsWith(`${APPROVAL_KEYWORD}: `)
+          ? `${APPROVAL_KEYWORD}: ${value}`
+          : header.startsWith('Run state: ')
+            ? `Run state: ${controlValues['Run state']}`
+            : header,
+      ),
+    };
+  };
+  const entries = approval.split(',');
+  for (const value of [
+    entries.slice(1).join(','),
+    [entries[1], entries[0], entries[2]].join(','),
+    `${entries.join(',')},${letters('Q')}=implemented`,
+    approval.replace('=implemented', '=fixed'),
+    approval.replace(/^[A-Z0-9]+/, 'short'),
+    `${approval},`,
+    '',
+  ]) {
+    expectStructureCode(text, withApproval(value), 'SNAPSHOT_INVALID');
+  }
+  expectStructureCode(text, withApproval(approval, { 'Run state': 'gated' }), 'SNAPSHOT_INVALID');
+  assert.equal(parseApprovedOutcomes(approval.replace('=implemented', '=fixed')), null);
+});
+
+// Invariant: iterate.md states the approval line in the exact form the helper writes, so the
+// sender and the receiver cannot drift apart.
+test('contract: iterate.md states the Approved outcomes form the helper produces', () => {
+  const iterate = readFileSync(join(REPO_ROOT, 'src', 'tools', 'iterate.md'), 'utf8');
+  assert.ok(
+    iterate.includes(`\`${APPROVAL_KEYWORD}: <identifier>=<outcome>,…\``),
+    'Approved outcomes form',
   );
 });

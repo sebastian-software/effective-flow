@@ -17,9 +17,8 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `effective-delivery`, provided it is available and relevant to the concrete
-task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
-into the Effective Flow artifact form.
+`effective-delivery` is the **default owner** for this generic reasoning, provided it is available
+and relevant to the concrete task; "Judgment handoff" below says where it runs.
 
 ### Specialists only at a crossed boundary (one generic rule)
 
@@ -48,3 +47,25 @@ authoritative skill is not available (not installed, `skills.enabled: false`, or
 (over-engineering, scope creep, missing measurable acceptance criteria, edge cases,
 implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
 handbook.
+
+### Judgment handoff
+
+Each step that applies these skills to the written artifact, or obtains their judgment on it, runs
+that judgment outside this run:
+
+1. Write the artifact first; the judgment reads only what is persisted.
+2. Start one read-only sub-agent with the artifact path, the scope (calling step and criteria), the
+   resolved artifact language, the owners, relevance gate and fallback above, and the output
+   contract. It loads the owning skills itself, starts no sub-agent and writes nothing.
+   <!-- spawn-site:central-reasoning-delegation/judgment -->
+3. Normalize its findings into the tool's artifact form; incorporating them, user questions,
+   writes, and the status decision stay with the orchestrator.
+
+**Output contract:** findings only, each with area, proposed severity (Critical, Important, Note),
+problem with its artifact location, and whether it is directly incorporable or needs a decision;
+no report, artifact, comment, or tracker write of its own, and no mere summary.
+
+```lazy-include
+judgment-draft-snapshot
+when: issue mode – the judged artifact is a remote planning comment
+```

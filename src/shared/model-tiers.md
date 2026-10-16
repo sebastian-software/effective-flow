@@ -29,7 +29,8 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
   never probe the environment, and say once that the host sets the subagent model.
 - A spawn rejected because of a tier parameter is retried once without it, or without both
   parameters when it is unclear which one was rejected; omit the rejected parameter for the rest of
-  the run and report that once.
+  the run and report that once. A spawn the host refuses for its nesting depth is a declined
+  delegation under the delegation mandate, never a tier-parameter rejection.
 - `CLAUDE_CODE_EFFORT_LEVEL` is a user override of the effort and is not detected.
 - A host whose spawn mechanism takes neither parameter inherits the parent's model and says so
   once.
@@ -83,10 +84,13 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 | `review/design-decision-sources`                  | Read-only design-decision search per active source                                         | `standard`                                                                                                | `yes` |
 | `review/technical-validation`                     | Technical validation of the review scope                                                   | `role:code-validator`                                                                                     | `yes` |
 | `review/quality-review`                           | Routed reviewers per bucket and directory split                                            | `role:frontend-reviewer,nodejs-reviewer,rust-reviewer,generic-product-reviewer`                           | `no`  |
+| `central-reasoning-delegation/judgment`           | Read-only judgment of the written plan, issue plan or concept artifact                     | `deep`                                                                                                    | `no`  |
 | `documentation-sync-contract/code-documenter`     | In-code documentation update of the sync gate                                              | `role:code-documenter`                                                                                    | `yes` |
 | `documentation-sync-contract/docs-writer`         | User and technical document update of the sync gate                                        | `role:docs-writer`                                                                                        | `yes` |
 | `documentation-sync-contract/marketing-writer`    | Root README update of the sync gate                                                        | `role:marketing-writer`                                                                                   | `yes` |
 | `initial-state-documentation/state-investigation` | Read-only investigation of the current project state                                       | `standard`                                                                                                | `yes` |
 | `investigation-method/explore`                    | Read-only Explore investigation of the relevant code                                       | `standard`                                                                                                | `yes` |
+| `merge-gate/delegated-run`                        | Delegated merge-gate run after Phase 0 (orchestrates its own workers)                      | `deep`                                                                                                    | `no`  |
 | `merge-gate-conflict-resolution/resolver`         | Resolution of a conflicted base-into-head merge                                            | `role:merge-conflict-resolver`                                                                            | `no`  |
 | `merge-gate-conflict-resolution/verification`     | Independent verification of a conflict resolution                                          | `role:code-validator`                                                                                     | `no`  |
+| `merge-gate-delegated-run/nested-spawn-probe`     | No-op child proving the delegated merge-gate run can spawn                                 | `mechanical`                                                                                              | `yes` |

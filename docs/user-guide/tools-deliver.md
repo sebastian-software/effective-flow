@@ -304,6 +304,12 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    completed only after its linked issue is observed terminal – which an issue transitioned here now
    is.
 
+**How it runs:** The gate runs as one delegated run on the `deep` tier, so the long wait-and-repair
+loop stays out of your session's context. Your session asks for the merge completion mode before
+the gate starts. Every later question – a waiver for a missing check list, a conflict resolution, a
+finding it set aside, an issue transition – comes back through your session with what each answer
+does, and the run then continues with your answer, or ends with its report when you stop it. A host that cannot start a nested sub-agent runs the gate inline and says so once.
+
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
 bot notes by hand. Also useful as a pure merge-readiness report: run it in report mode to see

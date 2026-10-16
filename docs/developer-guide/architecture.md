@@ -146,6 +146,36 @@ Retry 1–3. Its receiver rule reads outcomes only from the resumed turn's final
 the interim keyword-less text. The shipped fragments name no harness tool or parameter: the build's
 harness leak guard fails the Codex and portable targets on `run_in_background`.
 
+The mandate also keeps the orchestrator lean: it sends other substantive work to a sub-agent unless
+a tool's in-run rule binds it or the triviality exception applies. Two sites follow from that.
+Judgment for `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
+read-only `deep` sub-agent after the artifact is written
+([`central-reasoning-delegation`](../../src/shared/central-reasoning-delegation.md)); `review` and
+`refactor` keep inline judgment. `merge-gate` splits into an eager caller core (Phase 0, run
+states, the closed question-id table, dispatch and the caller loop) and the lazy fragment
+[`merge-gate-delegated-run`](../../src/shared/merge-gate-delegated-run.md) that holds the gate
+itself and runs as one delegated run at `deep`. The run state `relayed` means the user is
+reachable through the caller, unlike `non-interactive`: every user gate returns
+`BLOCKED-USER <question-id>` from the closed set, and the caller re-dispatches with the user's
+answer as `Relayed answer:`; a `Stop` (or `Report only`) answer ends the gate at Entry with its
+report. `iterate` accepts `relayed` too, while its per-item runs still receive `non-interactive`;
+the round consuming a relayed `iterate-approval` passes the approved outcomes as the helper-built
+`Approved outcomes:` line, which `iterate` applies as its approval before any write. The caller
+asks only for an ambiguous provider and the completion mode; every other question comes back
+through it.
+
+The delegated gate needs three levels of nesting below the main session: main session (0) →
+delegated gate run (1) → the per-item `fix` or `build` run that `iterate` starts inside it (2) →
+that run's implementer or validator (3); the conflict resolver and its validator sit at level 2.
+Before any gate write, and whenever its wisdom file holds no passed-probe record, the delegated
+run's Entry probe starts one no-op child at tier `mechanical` and then records the pass, so a
+re-dispatch never probes again. No spawn tool, or a probe the host refuses or that fails, returns
+`ABORT nested-spawn-unavailable`, and the caller runs the gate inline and says so once. The probe is behavioural because a host can keep
+the spawn tool at its depth limit and refuse only the call: the Codex CLI answers such a call
+"Agent depth limit reached". A deeper spawn the host later refuses for depth is a declined
+delegation under the delegation mandate, never a tier-parameter rejection
+([`model-tiers`](../../src/shared/model-tiers.md), "Host overrides").
+
 Every Claude worker omits `Agent` and `Task` from `claude.tools`, regardless of its own read/write
 authority. Withholding the capability is the enforceable Claude boundary: if a worker receives a
 sub-agent tool, prose cannot prevent it from starting a child with that child's own capabilities,

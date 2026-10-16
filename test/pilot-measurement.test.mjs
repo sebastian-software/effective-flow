@@ -581,6 +581,100 @@ test('gate observation check evidence rejects unavailable fields without consumi
   }
 });
 
+// Invariant: a delegated merge-gate run that returns BLOCKED-USER after its reservation ends it as a
+// controlled `reported-blocked` stop with unavailable check evidence in either mode, without a
+// blocker field in the closed payload, and each re-dispatch reserves a separate observation.
+for (const mode of ['merge', 'report'])
+  test(`a BLOCKED-USER return finalizes a ${mode}-mode reservation as reported-blocked and a re-dispatch reserves afresh`, async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    const reserve = async () =>
+      (
+        await executeOperation(
+          'start-gate-observation',
+          {
+            ...fx.common,
+            generationId,
+            configState: 'enabled',
+            generationState: 'baseline',
+            mode,
+            harnessFamily: 'claude',
+          },
+          fx.deps,
+        )
+      ).result;
+    const observationPath = (observationId) =>
+      join(generationRoot(fx, generationId), 'gate-observations', `${observationId}.json`);
+    const blockedUser = (reserved) => ({
+      ...fx.common,
+      generationId,
+      observationId: reserved.observationId,
+      capability: reserved.capability,
+      terminalOutcome: 'reported-blocked',
+      ciRepairCorrections: 1,
+      reviewerCorrections: 0,
+      conflictCorrections: 0,
+      checksReported: false,
+      requiredCheckCount: 'unavailable',
+      requiredChecksSatisfied: 'unavailable',
+    });
+
+    const first = await reserve();
+    await assert.rejects(
+      () =>
+        executeOperation(
+          'finalize-gate-observation',
+          { ...blockedUser(first), blocker: 'relayed-user-decision' },
+          fx.deps,
+        ),
+      { code: 'INVALID_PAYLOAD' },
+    );
+    assert.equal(
+      (await executeOperation('finalize-gate-observation', blockedUser(first), fx.deps)).result
+        .status,
+      'finalized',
+    );
+    const finalized = JSON.parse(readFileSync(observationPath(first.observationId), 'utf8'));
+    assert.equal(finalized.kind, 'gate-observation');
+    assert.equal(finalized.mode, mode);
+    assert.equal(finalized.terminalOutcome, 'reported-blocked');
+    assert.deepEqual(finalized.corrections, {
+      ciRepair: 1,
+      configuredReviewer: 0,
+      conflictResolution: 0,
+    });
+    assert.equal(finalized.checksReported, false);
+    assert.equal(finalized.requiredCheckCount, 'unavailable');
+    assert.equal(finalized.requiredChecksSatisfied, 'unavailable');
+
+    const redispatch = await reserve();
+    assert.notEqual(redispatch.observationId, first.observationId);
+    assert.notEqual(redispatch.capability, first.capability);
+    assert.ok(redispatch.ordinal > first.ordinal);
+    assert.equal(
+      JSON.parse(readFileSync(observationPath(redispatch.observationId), 'utf8')).kind,
+      'gate-observation-reservation',
+    );
+    await assert.rejects(
+      () =>
+        executeOperation(
+          'finalize-gate-observation',
+          { ...blockedUser(redispatch), capability: first.capability },
+          fx.deps,
+        ),
+      { code: 'AUTHENTICATION_FAILED' },
+    );
+    assert.equal(
+      (await executeOperation('finalize-gate-observation', blockedUser(redispatch), fx.deps)).result
+        .status,
+      'finalized',
+    );
+    assert.equal(
+      JSON.parse(readFileSync(observationPath(first.observationId), 'utf8')).terminalOutcome,
+      'reported-blocked',
+    );
+  });
+
 test('inventory binds unknown evidence as raw bytes while admission rejects it', async (t) => {
   const fx = fixture(t);
   const { generationId } = await beginBaseline(fx);

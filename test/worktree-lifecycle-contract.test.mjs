@@ -14,6 +14,7 @@ import {
   resolveLazyIncludes,
 } from '../build-lib.mjs';
 import { AGENT_PROFILE_MAPPINGS, FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
+import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -398,10 +399,19 @@ test('the record obligation fragment pins the allowed exit states and its own li
   assert.match(flat, /never creates or backfills/);
 });
 
+// Invariant: every run that can create a worktree reads the record path, the fixed sentence and the
+// self-check trigger. merge-gate creates one only in its delegated run, which reads the core and
+// then `merge-gate-delegated-run`, so its render is checked over both; the eager include itself is
+// pinned to the core by the test above.
+const renderedHostBody = (name) =>
+  name === 'merge-gate'
+    ? spliceDelegatedRun(toolBody(name), readShared('merge-gate-delegated-run'), `tools/${name}.md`)
+    : toolBody(name);
+
 test('the record obligation survives every harness render of every host tool', () => {
   for (const name of obligationHosts) {
     const context = `tools/${name}.md`;
-    const eagerResolved = resolveEagerIncludes(toolBody(name), {
+    const eagerResolved = resolveEagerIncludes(renderedHostBody(name), {
       context,
       readFragment: readShared,
     });

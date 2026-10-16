@@ -307,6 +307,10 @@ recorded outcome and reported guidance, never in a stop.
    changing. Step 5 stays forge-only: an external issue that became terminal here reaches step 6 and
    not step 5, and the summary reflects that instead of reporting a label removal that never applied.
 
+   A **relayed** run lists the eligible issues the same way and returns `BLOCKED-USER issue-done`;
+   its re-dispatch re-enters in observer-only mode, and a consumed `Set to done` confirms exactly
+   as a posed answer does.
+
    A decline transitions nothing. A **non-interactive** run poses nothing, transitions nothing, and
    carries the recommended transition into the Phase-6 summary — the same shape the `ask` conflict
    resolution already takes in Phase 2, where a question that cannot be posed performs no write,

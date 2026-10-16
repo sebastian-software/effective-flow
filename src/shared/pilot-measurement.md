@@ -116,8 +116,12 @@ terminal outcome `failed`; it never discards product changes or changes the gate
      in transient workflow state and the chat explanation; it is not part of the closed helper
      payload. For this path use `checksReported: false`, `requiredCheckCount: "unavailable"`, and
      `requiredChecksSatisfied: "unavailable"` regardless of earlier check reads;
-   - `failed` for a reserved merge-mode run that did not reach a verified merge and for an
-     unhandled workflow failure after reservation.
+   - a `BLOCKED-USER` return of the delegated run before a verified merge records
+     `reported-blocked` in either mode, with the counters dispatched so far and the unavailable
+     check evidence above; its stable blocker, retained as above, is `relayed-user-decision`. The
+     returned question carries no observation identity, and its re-dispatch reserves afresh;
+   - `failed` for a reserved merge-mode run that did not reach a verified merge and ended other
+     than through `BLOCKED-USER`, and for an unhandled workflow failure after reservation.
 2. Derive check evidence only from the final normalized `pr-status-read`. An unreported check list
    is unavailable. The count is taken from that deduplicated list, the latest run per check identity.
    With `mergeGate.requireAllChecks: true`, the required-check count is every reported check. With `false`, count only checks carrying `required: true`; any missing
