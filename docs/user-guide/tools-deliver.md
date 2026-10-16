@@ -885,3 +885,5 @@ forward.
   trigger at the end, and `iterate`, which the merge gate delegates every code change to
 
 Stage B manual check, test pull request 2. Do not merge into develop.
+
+This *emphasis* line is deliberately unformatted for the Stage B check.
