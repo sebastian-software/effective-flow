@@ -1,13 +1,10 @@
 ---
 description: "Performs read-only qualitative review of product code without a dedicated language specialist, using repository evidence and effective-delivery audit reasoning while disclosing reduced language-specific depth."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: read-only
 ---
 

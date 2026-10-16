@@ -1,13 +1,10 @@
 ---
 description: "Thin test adapter: routes browser test depth to effective-web, focused non-frontend test design to effective-engineering, and existing-check execution to effective-delivery."
+tier: standard
 claude:
-  model: sonnet
-  effort: medium
   color: green
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-luna
-  model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
 

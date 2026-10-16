@@ -54,3 +54,25 @@ export const FAST_PROFILE_AGENTS = (() => {
     }),
   );
 })();
+
+// The provider-neutral model-tier mapping, in the shape `validateModelTierMappings` accepts.
+export const MODEL_TIER_MAPPINGS = (() => {
+  const text = declaration('MODEL_TIER_MAPPINGS');
+  const tiers = [
+    ...text.matchAll(
+      /(\w+): Object\.freeze\(\{\s*claude: Object\.freeze\(\{ model: '([^']+)', effort: '([^']+)' \}\),\s*codex: Object\.freeze\(\{ model: '([^']+)', reasoning_effort: '([^']+)' \}\),\s*\}\)/g,
+    ),
+  ];
+  assert.ok(tiers.length > 0, 'build.mjs must declare the model-tier mappings');
+  return Object.freeze(
+    Object.fromEntries(
+      tiers.map(([, tier, claudeModel, claudeEffort, codexModel, codexEffort]) => [
+        tier,
+        Object.freeze({
+          claude: Object.freeze({ model: claudeModel, effort: claudeEffort }),
+          codex: Object.freeze({ model: codexModel, reasoning_effort: codexEffort }),
+        }),
+      ]),
+    ),
+  );
+})();

@@ -4,7 +4,6 @@ import {
   NATIVE_SIDECAR_CONFIG_PARSERS,
   NATIVE_SIDECAR_PROMPT_BODY_KEY,
   assertBaselineWorkerMembership,
-  assertSameNativeSidecarConfiguration,
   parseClaudeSidecarConfig,
   parseCodexSidecarConfig,
 } from '../build-lib.mjs';
@@ -37,15 +36,6 @@ function codexSidecar({
   body = '\n# Effective Flow Alpha\n\nReview the assigned scope.\n',
 } = {}) {
   return `${settings.join('\n')}\ndeveloper_instructions = '''\n${body}'''\n`;
-}
-
-function compare(harness, baselineContent, workingContent, file = CLAUDE_FILE) {
-  assertSameNativeSidecarConfiguration(
-    harness,
-    file,
-    { path: `/baseline/dist/${harness}/agents/${file}`, content: baselineContent },
-    { path: `/working/dist/${harness}/agents/${file}`, content: workingContent },
-  );
 }
 
 function parseClaude(content) {
@@ -127,79 +117,15 @@ test('a Codex setting after the multiline prompt body is still parsed', () => {
   assert.equal(parseCodex(content).trailing_flag, 'false');
 });
 
-test('identical sidecars compare equal for both harnesses', () => {
-  assert.doesNotThrow(() => compare('claude', claudeSidecar(), claudeSidecar()));
-  assert.doesNotThrow(() => compare('codex', codexSidecar(), codexSidecar(), CODEX_FILE));
-});
-
-test('the prompt body is excluded from the comparison', () => {
-  assert.doesNotThrow(() =>
-    compare('claude', claudeSidecar(), claudeSidecar({ body: 'Entirely different prose.\n' })),
+test('the prompt body never reaches the parsed configuration', () => {
+  assert.deepEqual(
+    { ...parseClaude(claudeSidecar()) },
+    { ...parseClaude(claudeSidecar({ body: 'Entirely different prose.\n' })) },
   );
-  assert.doesNotThrow(() =>
-    compare(
-      'codex',
-      codexSidecar(),
-      codexSidecar({ body: '\nEntirely different\ndeveloper instructions.\n' }),
-      CODEX_FILE,
-    ),
+  assert.deepEqual(
+    { ...parseCodex(codexSidecar()) },
+    { ...parseCodex(codexSidecar({ body: '\nEntirely different\ndeveloper instructions.\n' })) },
   );
-});
-
-test('a Claude value change is reported as configuration drift', () => {
-  const working = claudeSidecar({
-    frontmatter: ['name: effective-flow-alpha', 'model: sonnet', 'effort: high'],
-  });
-  const baseline = claudeSidecar({
-    frontmatter: ['name: effective-flow-alpha', 'model: opus', 'effort: high'],
-  });
-  assert.throws(
-    () => compare('claude', baseline, working),
-    /^Error: Base native configuration drift: claude effective-flow-alpha\.md key "model": "opus" -> "sonnet"$/,
-  );
-});
-
-test('a Claude key added or removed is reported with <absent>', () => {
-  const plain = claudeSidecar({ frontmatter: ['name: effective-flow-alpha', 'model: opus'] });
-  const colored = claudeSidecar({
-    frontmatter: ['name: effective-flow-alpha', 'model: opus', 'color: blue'],
-  });
-  assert.throws(
-    () => compare('claude', plain, colored),
-    /^Error: Base native configuration drift: claude effective-flow-alpha\.md key "color": <absent> -> "blue"$/,
-  );
-  assert.throws(
-    () => compare('claude', colored, plain),
-    /^Error: Base native configuration drift: claude effective-flow-alpha\.md key "color": "blue" -> <absent>$/,
-  );
-});
-
-test('a Codex value change is reported as configuration drift', () => {
-  const baseline = codexSidecar({ settings: ['name = "a"', 'model_reasoning_effort = "high"'] });
-  const working = codexSidecar({ settings: ['name = "a"', 'model_reasoning_effort = "low"'] });
-  assert.throws(
-    () => compare('codex', baseline, working, CODEX_FILE),
-    /^Error: Base native configuration drift: codex effective-flow-alpha\.toml key "model_reasoning_effort": "high" -> "low"$/,
-  );
-});
-
-test('a Codex key added or removed is reported with <absent>', () => {
-  const plain = codexSidecar({ settings: ['name = "a"'] });
-  const flagged = codexSidecar({ settings: ['name = "a"', 'some_flag = true'] });
-  assert.throws(
-    () => compare('codex', plain, flagged, CODEX_FILE),
-    /^Error: Base native configuration drift: codex effective-flow-alpha\.toml key "some_flag": <absent> -> "true"$/,
-  );
-  assert.throws(
-    () => compare('codex', flagged, plain, CODEX_FILE),
-    /^Error: Base native configuration drift: codex effective-flow-alpha\.toml key "some_flag": "true" -> <absent>$/,
-  );
-});
-
-test('the first drifting key in sorted order is the one reported', () => {
-  const baseline = claudeSidecar({ frontmatter: ['name: a', 'model: opus', 'effort: high'] });
-  const working = claudeSidecar({ frontmatter: ['name: a', 'model: sonnet', 'effort: low'] });
-  assert.throws(() => compare('claude', baseline, working), /key "effort": "high" -> "low"$/);
 });
 
 test('Claude parsing fails closed on frontmatter it does not recognize', async (t) => {
@@ -339,34 +265,20 @@ test('Codex parsing fails closed on TOML it does not recognize', async (t) => {
   }
 });
 
-test('a parse error during comparison names the offending side by its full path', () => {
+test('a parse error names the sidecar by the path it was given', () => {
   const broken = '# no frontmatter\n';
   assert.throws(
-    () => compare('claude', broken, claudeSidecar()),
+    () => parseClaudeSidecarConfig(broken, '/baseline/dist/claude/agents/effective-flow-alpha.md'),
     /^Error: Unparseable native sidecar \/baseline\/dist\/claude\/agents\/effective-flow-alpha\.md: missing or unterminated frontmatter$/,
   );
   assert.throws(
-    () => compare('claude', claudeSidecar(), broken),
-    /^Error: Unparseable native sidecar \/working\/dist\/claude\/agents\/effective-flow-alpha\.md: missing or unterminated frontmatter$/,
-  );
-  assert.throws(
-    () => compare('codex', codexSidecar(), 'name = "a"\n', CODEX_FILE),
+    () =>
+      parseCodexSidecarConfig(
+        'name = "a"\n',
+        '/working/dist/codex/agents/effective-flow-alpha.toml',
+      ),
     /^Error: Unparseable native sidecar \/working\/dist\/codex\/agents\/effective-flow-alpha\.toml: missing "developer_instructions"$/,
   );
-});
-
-test('an unknown harness is rejected with a clear error', () => {
-  for (const harness of ['portable', 'toString', '__proto__']) {
-    assert.throws(
-      () => compare(harness, claudeSidecar(), claudeSidecar()),
-      (error) => {
-        assert.ok(error instanceof Error);
-        assert.ok(!(error instanceof TypeError));
-        assert.equal(error.message, `Unsupported native sidecar harness "${harness}"`);
-        return true;
-      },
-    );
-  }
 });
 
 test('current behavior: Codex scalars compare as strings, so 1 and "1" are equal', () => {
@@ -375,7 +287,6 @@ test('current behavior: Codex scalars compare as strings, so 1 and "1" are equal
   const number = codexSidecar({ settings: ['name = "a"', 'max_turns = 1'] });
   const string = codexSidecar({ settings: ['name = "a"', 'max_turns = "1"'] });
   assert.equal(parseCodex(number).max_turns, parseCodex(string).max_turns);
-  assert.doesNotThrow(() => compare('codex', number, string, CODEX_FILE));
 });
 
 test('baseline worker membership accepts the same set in any order', () => {

@@ -1,13 +1,10 @@
 ---
 description: "Runs a specialized frontend review – accessibility, performance, UI patterns, design system, CSS and state architecture – with Effective Flow confidence, design-decision filter, and report format; the central effective-web skill provides the browser domain depth."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: read-only
 ---
 

@@ -219,10 +219,12 @@ post-validation); each write-capable boundary revalidates it and roots every ope
 Start in parallel:
 
 1. `{{AGENT:code-validator}}`
+   <!-- spawn-site:refactor/baseline-checks -->
    - TypeScript errors
    - lint errors
    - build status
 2. `{{AGENT:test-writer}}`
+   <!-- spawn-site:refactor/baseline-tests -->
    - run all existing tests and document the result
    - do not write new tests in this phase
 
@@ -259,8 +261,9 @@ handoff adds the baseline evidence. `fastAttemptConsumed` survives every later P
 eligibility is never evaluated again.
 
 1. Start the appropriate implementer skill. The Quality selector is the default; the Fast reference
-   serves only the first attempted spawn of a packet whose envelope selects `fast`, and
-   `fastAttemptConsumed` is set immediately before that call:
+   serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
+   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   <!-- spawn-site:refactor/initial-implementation -->
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.
    - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:rust-implementer:fast}}.
@@ -295,6 +298,7 @@ documentation-sync
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
    routing selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
+   <!-- spawn-site:refactor/review -->
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
    items through the routed Quality implementer. Render again and run the affected review checks once after the pass, then classify the residual batch via
    “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
@@ -327,7 +331,9 @@ documentation-sync
 Render the diff baseline, then start in parallel:
 
 1. `{{AGENT:code-validator}}` with the path list per "Diff baseline"
+   <!-- spawn-site:refactor/post-validation-checks -->
 2. `{{AGENT:test-writer}}`
+   <!-- spawn-site:refactor/post-validation-tests -->
    - runs all existing tests again
    - writes no new tests
 

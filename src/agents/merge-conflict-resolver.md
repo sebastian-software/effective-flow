@@ -1,13 +1,10 @@
 ---
 description: "Resolves an in-progress base-into-head merge in a checkout the merge gate provisioned: inventories the conflicted files with their routing role, classifies each one's risk, resolves only what is resolvable without a new product or architecture decision, validates the result with the repository's own checks, stages by explicit path, and reports per file — it never commits, pushes, or rewrites history."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---
 

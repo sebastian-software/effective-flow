@@ -255,6 +255,7 @@ On a revision run:
 - Offer Phase 6b again, as on any other run.
 
 5. Delegate the read-only examination of the relevant areas of the codebase to an internal sub-agent; examine them inline only under the delegation mandate's triviality exception:
+   <!-- spawn-site:plan/codebase-examination -->
    - project structure
    - affected modules and files
    - existing architecture decisions

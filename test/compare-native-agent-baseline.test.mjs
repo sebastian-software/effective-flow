@@ -1,96 +1,184 @@
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-  collectAgentSourceInputs,
+  EXPECTED_NATIVE_DELTAS,
+  compareNativeSidecar,
   formatBaselineReport,
-  sourceChangedWorkers,
-  sourceInputsChanged,
+  splitNativeSidecar,
 } from '../scripts/compare-native-agent-baseline.mjs';
 
-function reader(files) {
-  return (relativePath) =>
-    Object.hasOwn(files, relativePath) ? Buffer.from(files[relativePath], 'utf8') : null;
+const WORKER =
+  '- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.';
+const LAST =
+  "- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.";
+const TIER_SENTENCE =
+  ' The orchestrator gives every spawn it starts the tier rendered at its spawn site.';
+const POINTER =
+  '**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.';
+
+const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
+const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
+
+function claude({ worker = 'effective-flow-rust-reviewer', model = 'opus', effort, body }) {
+  return `---\nname: ${worker}\nmodel: ${model}\neffort: ${effort}\ntools: Read, Skill\n---\n${body}`;
 }
 
-const BASE = Object.freeze({
-  'src/agents/alpha.md': '# Alpha\n\n```include\nouter\n```\n',
-  'src/agents/beta.md':
-    '# Beta\n\n```lazy-include\nlazy-target\nwhen: invoked directly\n```\n\nBody.\n',
-  'src/shared/outer.md': 'Outer.\n\n```include\ninner\n```\n',
-  'src/shared/inner.md': 'Inner.\n',
-  'src/shared/lazy-target.md': 'Lazy.\n',
-});
-
-function changedWorkers(working) {
-  return sourceChangedWorkers(
-    ['effective-flow-alpha', 'effective-flow-beta'],
-    reader(BASE),
-    reader(working),
-  );
+function codex({ model = 'gpt-5.6-sol', effort = 'high', body }) {
+  return `name = "effective-flow-rust-reviewer"\nmodel = "${model}"\nmodel_reasoning_effort = "${effort}"\ndeveloper_instructions = '''${body}'''\n`;
 }
 
-test('collects the agent file plus every transitively eager-included fragment', () => {
-  const inputs = collectAgentSourceInputs('alpha', reader(BASE));
+test('an identical sidecar shows no delta', () => {
+  const content = claude({ effort: 'xhigh', body: BASE_BODY });
   assert.deepEqual(
-    [...inputs.keys()],
-    ['src/agents/alpha.md', 'src/shared/inner.md', 'src/shared/outer.md'],
+    compareNativeSidecar('claude', 'effective-flow-rust-reviewer', content, content),
+    [],
   );
 });
 
-test('a lazy-include pointer target is not a source input', () => {
-  const inputs = collectAgentSourceInputs('beta', reader(BASE));
-  assert.deepEqual([...inputs.keys()], ['src/agents/beta.md']);
+test('a deep worker may show the Claude effort delta and the mandate body delta', () => {
+  assert.deepEqual(
+    compareNativeSidecar(
+      'claude',
+      'effective-flow-rust-reviewer',
+      claude({ effort: 'xhigh', body: BASE_BODY }),
+      claude({ effort: 'high', body: MANDATE_BODY }),
+    ),
+    ['claude-deep-tier-effort', 'delegation-mandate-model-tiers'],
+  );
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ body: MANDATE_BODY }),
+    ),
+    ['delegation-mandate-model-tiers'],
+  );
 });
 
-test('unchanged inputs keep every worker in the byte comparison', () => {
-  assert.deepEqual(changedWorkers({ ...BASE }), []);
+// Invariant: every native difference outside EXPECTED_NATIVE_DELTAS fails the baseline proof.
+test('a delta outside the allowlist fails', () => {
+  const cases = [
+    [
+      'Claude effort change in a standard worker',
+      'claude',
+      'effective-flow-code-validator',
+      claude({ worker: 'effective-flow-code-validator', effort: 'xhigh', body: BASE_BODY }),
+      claude({ worker: 'effective-flow-code-validator', effort: 'high', body: BASE_BODY }),
+      /configuration drift outside the expected deltas: effective-flow-code-validator \(claude\): key "effort": "xhigh" -> "high"/,
+    ],
+    [
+      'Claude effort moved to another level',
+      'claude',
+      'effective-flow-rust-reviewer',
+      claude({ effort: 'xhigh', body: BASE_BODY }),
+      claude({ effort: 'max', body: BASE_BODY }),
+      /key "effort": "xhigh" -> "max"/,
+    ],
+    [
+      'Claude model change beside the allowed effort change',
+      'claude',
+      'effective-flow-rust-reviewer',
+      claude({ effort: 'xhigh', body: BASE_BODY }),
+      claude({ model: 'sonnet', effort: 'high', body: BASE_BODY }),
+      /key "effort": "xhigh" -> "high"; key "model": "opus" -> "sonnet"/,
+    ],
+    [
+      'Codex reasoning effort change',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ effort: 'xhigh', body: BASE_BODY }),
+      codex({ effort: 'high', body: BASE_BODY }),
+      /configuration drift outside the expected deltas: effective-flow-rust-reviewer \(codex\): key "model_reasoning_effort"/,
+    ],
+    [
+      'an unrelated body edit',
+      'claude',
+      'effective-flow-rust-reviewer',
+      claude({ effort: 'xhigh', body: BASE_BODY }),
+      claude({ effort: 'xhigh', body: BASE_BODY.replace('Another bullet.', 'Another bullet!') }),
+      /body drift outside the expected deltas: effective-flow-rust-reviewer \(claude\)/,
+    ],
+    [
+      'the mandate delta plus an unrelated body edit',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ body: MANDATE_BODY.replace('Another bullet.', 'Another bullet!') }),
+      /body drift outside the expected deltas/,
+    ],
+    [
+      'half of the mandate delta',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ body: BASE_BODY.replace(WORKER, `${WORKER}${TIER_SENTENCE}`) }),
+      /body drift outside the expected deltas/,
+    ],
+    [
+      'the tier sentence on another bullet than the worker-start bullet',
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({
+        body: MANDATE_BODY.replace(`${WORKER}${TIER_SENTENCE}`, WORKER).replace(
+          '- Another bullet.',
+          `- Another bullet.${TIER_SENTENCE}`,
+        ),
+      }),
+      /body drift outside the expected deltas/,
+    ],
+  ];
+  for (const [name, harness, worker, baseline, working, expected] of cases) {
+    assert.throws(() => compareNativeSidecar(harness, worker, baseline, working), expected, name);
+  }
 });
 
-test('a changed agent file exempts only that worker', () => {
-  assert.deepEqual(changedWorkers({ ...BASE, 'src/agents/beta.md': '# Beta, edited\n' }), [
-    'effective-flow-beta',
-  ]);
+// Invariant: the effort allowlist names exactly the agents whose source declares `tier: deep`.
+test('the Claude effort delta covers exactly the deep-tier workers', () => {
+  const deep = readdirSync(new URL('../src/agents/', import.meta.url))
+    .filter((name) => name.endsWith('.md'))
+    .filter((name) =>
+      /^tier: deep$/m.test(readFileSync(new URL(`../src/agents/${name}`, import.meta.url), 'utf8')),
+    )
+    .map((name) => `effective-flow-${name.slice(0, -3)}`)
+    .sort();
+  assert.equal(deep.length, 10);
+  const [effort] = EXPECTED_NATIVE_DELTAS.configuration;
+  assert.deepEqual(EXPECTED_NATIVE_DELTAS.configuration, [effort]);
+  assert.deepEqual([...effort.workers].sort(), deep);
+  assert.deepEqual(
+    [effort.harness, effort.key, effort.from, effort.to],
+    ['claude', 'effort', 'xhigh', 'high'],
+  );
 });
 
-test('a changed transitively included fragment exempts its consumer', () => {
-  assert.deepEqual(changedWorkers({ ...BASE, 'src/shared/inner.md': 'Inner, edited.\n' }), [
-    'effective-flow-alpha',
-  ]);
+test('a sidecar splits into native configuration and prompt body', () => {
+  assert.deepEqual(splitNativeSidecar('claude', claude({ effort: 'high', body: 'B\n' }), 'x'), {
+    configuration:
+      '---\nname: effective-flow-rust-reviewer\nmodel: opus\neffort: high\ntools: Read, Skill\n---\n',
+    body: 'B\n',
+  });
+  const split = splitNativeSidecar('codex', codex({ body: '\nB\n' }), 'x');
+  assert.equal(split.body, '\nB\n');
+  assert.doesNotMatch(split.configuration, /\nB\n/);
+  assert.throws(() => splitNativeSidecar('codex', 'name = "x"\n', 'x'), /missing prompt body/);
+  assert.throws(() => splitNativeSidecar('claude', 'body only\n', 'x'), /missing frontmatter/);
 });
 
-test('a newly added eager include is a membership change', () => {
-  const working = {
-    ...BASE,
-    'src/agents/beta.md': `${BASE['src/agents/beta.md']}\n\`\`\`include\ninner\n\`\`\`\n`,
-  };
-  assert.deepEqual(changedWorkers(working), ['effective-flow-beta']);
-});
-
-test('a changed lazy-include pointer target keeps its consumer compared', () => {
-  assert.deepEqual(changedWorkers({ ...BASE, 'src/shared/lazy-target.md': 'Lazy, edited.\n' }), []);
-});
-
-test('a missing input on one side counts as changed', () => {
-  const base = new Map([['src/agents/alpha.md', Buffer.from('a')]]);
-  assert.equal(sourceInputsChanged(base, new Map([['src/agents/alpha.md', null]])), true);
+test('the report names each used delta with its workers', () => {
+  assert.equal(formatBaselineReport('abc1234', new Map()), 'Native agents match abc1234\n');
   assert.equal(
-    sourceInputsChanged(base, new Map([['src/agents/alpha.md', Buffer.from('a')]])),
-    false,
-  );
-});
-
-test('a worker without the Effective Flow prefix is rejected', () => {
-  assert.throws(
-    () => sourceChangedWorkers(['alpha'], reader(BASE), reader(BASE)),
-    /lacks the effective-flow- prefix/,
-  );
-});
-
-test('the report names exempt workers on a second line only when there are any', () => {
-  assert.equal(formatBaselineReport('abc1234', []), 'Native base agents match abc1234\n');
-  assert.equal(
-    formatBaselineReport('abc1234', ['effective-flow-a', 'effective-flow-b']),
-    'Native base agents match abc1234\n' +
-      'Source-changed since abc1234 (configuration compared only): effective-flow-a, effective-flow-b\n',
+    formatBaselineReport(
+      'abc1234',
+      new Map([
+        ['delegation-mandate-model-tiers', new Set(['effective-flow-b', 'effective-flow-a'])],
+        ['claude-deep-tier-effort', new Set(['effective-flow-b'])],
+      ]),
+    ),
+    'Native agents match abc1234\n' +
+      'Expected delta claude-deep-tier-effort: effective-flow-b\n' +
+      'Expected delta delegation-mandate-model-tiers: effective-flow-a, effective-flow-b\n',
   );
 });

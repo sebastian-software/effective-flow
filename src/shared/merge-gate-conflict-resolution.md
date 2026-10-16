@@ -114,12 +114,14 @@ checkout is the one step 1 provisioned – never a second one.
    two sides per file – and delegate to `{{AGENT:merge-conflict-resolver}}` per
    "Conflict-resolution delegation contract". The human-comment guard does **not** block this
    delegation, for the reason stated beside the CI repair.
+   <!-- spawn-site:merge-gate-conflict-resolution/resolver -->
 3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
    bullet. `DONE` continues.
 4. **Reconcile, then verify independently** – in that order, per that contract, ending with the
    resolved but uncommitted tree handed to `{{AGENT:code-validator}}` in `full` mode. A modified path
    the record does not name and justify, a failing verdict from either role, or a verification that
    executed **no** check at all ends this step as a stop that commits nothing.
+   <!-- spawn-site:merge-gate-conflict-resolution/verification -->
 5. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
    branch normally. Keep Git's default merge-commit message, which already lists the conflicted paths;
    add no `Co-Authored-By` trailer and no AI attribution. Then re-read the status, exactly as the

@@ -70,15 +70,15 @@ longer holds; nothing is claimed that the helper did not return.
 1. Re-read `executionProfiles.fast.enabled` freshly through the configuration contract, then read
    the generation with `inventory` and exactly `runtimeStateRoot` and `repositoryIdentity`.
    `generationStatus=absent` is `none`; a present generation yields `generationId`,
-   `generationState`, `inventoryDigest`, `suspensionDigest`, `incompleteCounts`, and
-   `orphanTemporaries`. An ambiguous or failed inventory offers no action.
+   `generationState`, `protocolCurrent`, `inventoryDigest`, `suspensionDigest`, `incompleteCounts`,
+   and `orphanTemporaries`. An ambiguous or failed inventory offers no action.
 2. Offer at most the one action the proven state allows, and only with `configState=enabled`:
 
-   | Proven generation state                                  | Offered action   |
-   | -------------------------------------------------------- | ---------------- |
-   | `none`                                                   | `begin-baseline` |
-   | `suspended` with healthy evidence                        | `resume`         |
-   | `baseline`, `active`, `review`, or unhealthy `suspended` | none             |
+   | Proven generation state                                                   | Offered action   |
+   | ------------------------------------------------------------------------- | ---------------- |
+   | `none`                                                                    | `begin-baseline` |
+   | `suspended` with `protocolCurrent: true` and healthy evidence             | `resume`         |
+   | `baseline`, `active`, `review`, unhealthy or earlier-protocol `suspended` | none             |
 
    Evidence is healthy only when every `incompleteCounts` value is zero and no orphan temporary is
    listed. Setup never activates: a `baseline` generation is activated automatically by the next
@@ -86,8 +86,11 @@ longer holds; nothing is claimed that the helper did not return.
    report it as collecting its baseline. `review` is terminal under every configuration state,
    including disabled or invalid: report that the generation is under review and can never resume.
    An unhealthy `suspended` generation is reported as not resumable until its incomplete evidence
-   is reconciled. A disabled or invalid configuration offers no action and reports the stored state
-   unchanged.
+   is reconciled. `protocolCurrent: false` means an earlier protocol recorded the generation: report
+   that it can never resume and that its only exit is offered by no workflow and must be run through
+   the helper directly with the pilot disabled: `begin-review` then `discard-generation` from
+   `suspended`, `discard-generation` alone from `review`. A disabled or invalid
+   configuration offers no action and reports the stored state unchanged.
 
 3. Each action has its own `ask` below. Send `confirmation: true` only after the user's explicit
    confirmation of that action in this same run. A refused, skipped, unanswered, or non-interactive
@@ -125,13 +128,13 @@ generation state it proves; never report the state as unchanged without that re-
 ambiguous or failed re-read reports the state as unknown. Never re-send `begin-baseline` in the
 same run.
 
-**`resume`.** Offer it only while the guarded `inventory` proves `generationState=suspended` with
-healthy evidence and `configState=enabled`. Show the generation state and the exact
+**`resume`.** Offer it only while the guarded `inventory` proves `generationState=suspended`,
+`protocolCurrent: true`, healthy evidence, and `configState=enabled`. Show the generation state and the exact
 `inventoryDigest` and `suspensionDigest` it is bound to. Show no cause summary, because the
 inventory exposes none, and offer no target: the helper restores only its stored `resumeTo`.
 
 ```ask
-when: block 10 proved configState=enabled and a suspended generation with healthy evidence and showed both digests
+when: block 10 proved configState=enabled and a suspended current-protocol generation with healthy evidence and showed both digests
 header: Resume
 question: Clear the suspension bound to the digests shown and restore the stored prior state?
 options:

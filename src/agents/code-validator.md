@@ -1,13 +1,10 @@
 ---
 description: "Thin validation adapter: applies the central effective-delivery skill to Effective Flow's assigned scopes and full, quick, or off mode."
+tier: standard
 claude:
-  model: sonnet
-  effort: medium
   color: magenta
   tools: [Read, Bash, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-luna
-  model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
 

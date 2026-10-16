@@ -704,9 +704,10 @@ options:
 1. Before delegation, record the analyzed file ownership of every actionable item. Items whose
    analyzed file sets overlap run sequentially; only items with disjoint sets may implement in
    parallel.
-2. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}},
-   {{SKILL:build}}, or {{SKILL:docs}}), on the PR head branch (PR mode) or the current
-   branch (local mode). Every one of those delegations carries the literal line
+2. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}},
+   or {{SKILL:docs}}), on the PR head branch (PR mode) or the current branch (local mode).
+   <!-- spawn-site:iterate/item-delegation -->
+   Every one of those delegations carries the literal line
    `Next steps: suppressed` on its own line: the skill is user-invocable, but it returns its result
    here and a per-item recommendation would name a step this run has not reached. When this run's
    effective run state from Phase 0 step 10 — announced or inferred — is non-interactive, every one
@@ -789,6 +790,7 @@ and stop delivery for reconciliation.
 ### Phase 4: Validation
 
 1. Start {{AGENT:code-validator}} or the project-wide quality gate.
+   <!-- spawn-site:iterate/validation -->
 2. Fix errors found and verify again per "Goal-driven completion control":
    limit the internal correction rounds and escalate to the user if the checks still fail
    afterwards.

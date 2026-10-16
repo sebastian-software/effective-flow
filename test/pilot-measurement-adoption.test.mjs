@@ -31,6 +31,7 @@ import {
   PILOT_MEASUREMENT_PROTOCOL,
   PILOT_MEASUREMENT_PROTOCOL_DIGEST,
   PILOT_MEASUREMENT_PROTOCOL_VERSION,
+  PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
   canonicalizeJson,
 } from '../src/scripts/pilot-measurement-protocol.mjs';
 
@@ -39,8 +40,11 @@ import {
 // inclusion rules. The fixture helpers mirror test/pilot-measurement.test.mjs.
 
 const DAY_MS = 86_400_000;
-const PREVIOUS_PROTOCOL_DIGEST =
+const PROTOCOL_1_0_DIGEST =
   'sha256:4b3ed3440cf1641086497a281b3def740c8893405d72f05b638c69bf5902f5e4';
+// The digest every release from 1.66.0 through 1.67.1 persisted generations under.
+const PROTOCOL_1_1_DIGEST =
+  'sha256:18ff022103e4ff0f5d5aebb492f58e738fdabbbfe367f6594b8dad2c80f15e3d';
 const INCIDENTS = [
   ['safety', 'critical-safety-incident'],
   ['data-integrity', 'critical-data-integrity-incident'],
@@ -438,11 +442,25 @@ function treeBytes(root) {
   }, 0);
 }
 
-test('protocol versions move to 1.1.0 with a new aggregation algorithm and digest', async (t) => {
-  assert.equal(PILOT_MEASUREMENT_PROTOCOL_VERSION, '1.1.0');
-  assert.equal(PILOT_MEASUREMENT_PROTOCOL.version, '1.1.0');
+// Invariant: protocol 1.2.0 binds the Quality-mapping identity (the `deep` tier per harness) into
+// the digest, so its digest differs from every earlier one.
+test('protocol versions move to 1.2.0 with the Quality-mapping identity in the digest', async (t) => {
+  assert.equal(PILOT_MEASUREMENT_PROTOCOL_VERSION, '1.2.0');
+  assert.equal(PILOT_MEASUREMENT_PROTOCOL.version, '1.2.0');
+  assert.equal(
+    PILOT_MEASUREMENT_PROTOCOL.qualityMappingIdentity,
+    canonicalDigest({
+      claude: { model: 'opus', effort: 'high' },
+      codex: { model: 'gpt-5.6-sol', reasoning_effort: 'high' },
+    }),
+  );
+  assert.equal(
+    PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
+    PILOT_MEASUREMENT_PROTOCOL.qualityMappingIdentity,
+  );
   assert.equal(PILOT_MEASUREMENT_PROTOCOL.aggregation.algorithmVersion, 2);
-  assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, PREVIOUS_PROTOCOL_DIGEST);
+  assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, PROTOCOL_1_0_DIGEST);
+  assert.notEqual(PILOT_MEASUREMENT_PROTOCOL_DIGEST, PROTOCOL_1_1_DIGEST);
   assert.match(PILOT_MEASUREMENT_PROTOCOL_DIGEST, /^sha256:[0-9a-f]{64}$/);
   assert.deepEqual(PILOT_MEASUREMENT_PROTOCOL.enums.packetAttempts, [
     'started',
@@ -470,6 +488,426 @@ test('protocol versions move to 1.1.0 with a new aggregation algorithm and diges
   const record = readJsonFile(target);
   assert.equal(record.schema, 2);
   assert.equal(record.packets[0].attempt, 'started');
+});
+
+// Rewrites a generation's state and evidence as protocol 1.1.0 persisted them, so the fixture is
+// exactly what a release from 1.66.0 through 1.67.1 leaves behind.
+function persistUnderProtocol(fx, generationId, version, digest, stateOverrides = {}) {
+  const root = generationRoot(fx, generationId);
+  writeState(fx, generationId, {
+    protocolVersion: version,
+    protocolDigest: digest,
+    ...stateOverrides,
+  });
+  for (const directory of ['records', 'gate-observations']) {
+    for (const name of readdirSync(join(root, directory))) {
+      const target = join(root, directory, name);
+      const value = readJsonFile(target);
+      if (Object.hasOwn(value, 'protocolDigest')) {
+        writeFileSync(target, `${canonicalizeJson({ ...value, protocolDigest: digest })}\n`);
+      }
+    }
+  }
+}
+
+function writeSuspension(fx, generationId, resumeTo, reasons) {
+  writeFileSync(
+    join(generationRoot(fx, generationId), 'suspension.json'),
+    `${canonicalizeJson({
+      schema: 1,
+      kind: 'pilot-suspension',
+      generationId,
+      status: 'suspended',
+      resumeTo,
+      reasons,
+      affectedRecordIds: [],
+    })}\n`,
+  );
+}
+
+// Invariant: a generation persisted under protocol 1.1.0 is never rejected as UNSAFE_STORAGE. Read-only
+// inventory reports it suspended with a pending transition; the first locked operation moves it once
+// to suspended(`quality-mapping-changed`) with its 1.1.0 binding intact, after which no operation
+// extends or resumes it and it can only be reviewed and discarded before a new baseline starts.
+test('a generation persisted under protocol 1.1.0 migrates once to suspended(quality-mapping-changed)', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  await finalizeOne(fx, generationId);
+  persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST);
+  const persisted = snapshot(fx, generationId);
+
+  const pending = await inventory(fx, generationId);
+  assert.equal(pending.generationStatus, 'present');
+  assert.equal(pending.generationState, 'suspended');
+  assert.equal(pending.transitionPending, true);
+  assert.equal(pending.suspensionDigest, null);
+  const observation = await executeOperation(
+    'start-gate-observation',
+    gateInput(fx, generationId),
+    fx.deps,
+  );
+  assert.deepEqual(observation.result, {
+    status: 'not-recorded',
+    reason: 'admission-closed',
+    pilotControlOutcome: 'none',
+  });
+  assert.deepEqual(snapshot(fx, generationId), persisted, 'read paths never migrate');
+
+  assert.equal(
+    (
+      await rejection(
+        'start',
+        {
+          ...fx.common,
+          generationId,
+          configState: 'enabled',
+          workflow: 'build',
+          harnessFamily: 'codex',
+          packets: [packetReservation()],
+        },
+        fx.deps,
+      )
+    ).error.code,
+    'PROTOCOL_DRIFT',
+  );
+  const state = readState(fx, generationId);
+  assert.deepEqual(
+    [state.generationState, state.protocolVersion, state.protocolDigest],
+    ['suspended', '1.1.0', PROTOCOL_1_1_DIGEST],
+  );
+  const suspension = readSuspension(fx, generationId);
+  assert.deepEqual(suspension.reasons, ['quality-mapping-changed']);
+  assert.equal(suspension.resumeTo, 'baseline');
+  assert.equal(existsSync(markerPath(fx, generationId)), false);
+  const migrated = await inventory(fx, generationId);
+  assert.equal(migrated.generationState, 'suspended');
+  assert.equal(migrated.transitionPending, false);
+  assert.equal(migrated.suspensionDigest, canonicalDigest(suspension));
+
+  // Idempotent: further locked operations find nothing to migrate and change no byte.
+  const afterMigration = snapshot(fx, generationId);
+  for (const [operation, input] of [
+    [
+      'start',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'enabled',
+        workflow: 'build',
+        harnessFamily: 'codex',
+        packets: [packetReservation()],
+      },
+    ],
+    ['activate', activateInput(fx, generationId)],
+    [
+      'resume',
+      {
+        ...fx.common,
+        generationId,
+        configState: 'enabled',
+        expectedSuspensionDigest: migrated.suspensionDigest,
+        expectedInventoryDigest: migrated.inventoryDigest,
+        confirmation: true,
+      },
+    ],
+    [
+      'finalize',
+      finalizeInput(fx, generationId, {
+        runId: opaqueId(9, 1),
+        workflowCapability: opaqueId(9, 2),
+        packets: [],
+      }),
+    ],
+  ]) {
+    assert.equal(
+      (await rejection(operation, input, fx.deps)).error.code,
+      'PROTOCOL_DRIFT',
+      operation,
+    );
+    assert.deepEqual(snapshot(fx, generationId), afterMigration, operation);
+  }
+  assert.equal(
+    (
+      await rejection(
+        'begin-baseline',
+        {
+          ...fx.common,
+          configState: 'enabled',
+          fastEnabled: true,
+          protocolVersion: PILOT_MEASUREMENT_PROTOCOL_VERSION,
+          protocolDigest: PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+          confirmation: true,
+        },
+        fx.deps,
+      )
+    ).error.code,
+    'INVALID_STATE',
+  );
+
+  const review = await executeOperation(
+    'begin-review',
+    {
+      ...fx.common,
+      generationId,
+      configState: 'disabled',
+      expectedInventoryDigest: migrated.inventoryDigest,
+      confirmation: true,
+    },
+    fx.deps,
+  );
+  assert.deepEqual(
+    [review.result.generationState, review.result.preservedSuspension],
+    ['review', true],
+  );
+  assert.equal(readState(fx, generationId).protocolDigest, PROTOCOL_1_1_DIGEST);
+  assert.equal((await inventory(fx, generationId)).transitionPending, false);
+  const dryRun = await executeOperation(
+    'discard-generation',
+    { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+    fx.deps,
+  );
+  const discarded = await executeOperation(
+    'discard-generation',
+    {
+      ...fx.common,
+      generationId,
+      configState: 'disabled',
+      dryRun: false,
+      fullInventoryDigest: dryRun.result.fullInventoryDigest,
+      decision: 'stop',
+      confirmation: true,
+    },
+    fx.deps,
+  );
+  assert.equal(discarded.result.generationStatus, 'absent');
+  const fresh = await beginBaseline(fx);
+  assert.notEqual(fresh.generationId, generationId);
+  assert.equal(fresh.protocolDigest, PILOT_MEASUREMENT_PROTOCOL_DIGEST);
+});
+
+// Invariant: the migration recognises exactly the 1.1.0 version and digest pair; every other
+// persisted protocol identity still fails UNSAFE_STORAGE on read and locked paths alike.
+test('only the exact protocol 1.1.0 identity migrates; any other stays UNSAFE_STORAGE', async (t) => {
+  for (const [label, version, digest] of [
+    ['released 1.0.0', '1.0.0', PROTOCOL_1_0_DIGEST],
+    ['unknown digest', '1.1.0', `sha256:${'0'.repeat(64)}`],
+    ['1.1.0 digest under another version', '1.0.0', PROTOCOL_1_1_DIGEST],
+    ['current digest under 1.1.0', '1.1.0', PILOT_MEASUREMENT_PROTOCOL_DIGEST],
+  ]) {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, version, digest);
+    const before = snapshot(fx, generationId);
+    assert.equal(
+      (await rejection('inventory', { ...fx.common, generationId }, fx.deps)).error.code,
+      'UNSAFE_STORAGE',
+      label,
+    );
+    assert.equal(
+      (
+        await rejection(
+          'start',
+          {
+            ...fx.common,
+            generationId,
+            configState: 'enabled',
+            workflow: 'build',
+            harnessFamily: 'codex',
+            packets: [packetReservation()],
+          },
+          fx.deps,
+        )
+      ).error.code,
+      'UNSAFE_STORAGE',
+      label,
+    );
+    assert.deepEqual(snapshot(fx, generationId), before, label);
+  }
+});
+
+// Invariant: the migration is crash-safe through the existing transition marker and merges into an
+// existing 1.1.0 suspension, keeping its stored resumeTo and earlier reasons.
+test('an interrupted or pre-suspended 1.1.0 migration completes under the lifecycle lock', async (t) => {
+  await t.test('marker and suspension written, state not yet suspended', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST, {
+      generationState: 'active',
+      activatedAt: new Date(fx.clock.wallMs).toISOString(),
+    });
+    writeMarker(fx, generationId, 'quality-mapping-changed');
+    writeSuspension(fx, generationId, 'active', ['quality-mapping-changed']);
+    const pending = await inventory(fx, generationId);
+    assert.deepEqual([pending.generationState, pending.transitionPending], ['suspended', true]);
+    assert.equal(
+      (await rejection('activate', activateInput(fx, generationId), fx.deps)).error.code,
+      'PROTOCOL_DRIFT',
+    );
+    assert.equal(readState(fx, generationId).generationState, 'suspended');
+    assert.equal(existsSync(markerPath(fx, generationId)), false);
+    assert.deepEqual(readSuspension(fx, generationId).reasons, ['quality-mapping-changed']);
+    assert.equal(readSuspension(fx, generationId).resumeTo, 'active');
+  });
+  await t.test('already suspended under 1.1.0', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST, {
+      generationState: 'suspended',
+    });
+    writeSuspension(fx, generationId, 'baseline', ['evidence-gap']);
+    assert.equal((await inventory(fx, generationId)).transitionPending, true);
+    const suspended = await executeOperation(
+      'suspend',
+      {
+        ...fx.common,
+        generationId,
+        pilotControlOutcome: 'capacity-exhausted',
+        affectedRecordIds: [],
+      },
+      fx.deps,
+    );
+    assert.equal(suspended.result.generationState, 'suspended');
+    assert.deepEqual(readSuspension(fx, generationId).reasons, [
+      'capacity-exhausted',
+      'evidence-gap',
+      'quality-mapping-changed',
+    ]);
+    assert.equal(readSuspension(fx, generationId).resumeTo, 'baseline');
+    assert.equal((await inventory(fx, generationId)).transitionPending, false);
+  });
+});
+
+async function reviewAndDiscard(fx, generationId, expectedInventoryDigest) {
+  const review = await executeOperation(
+    'begin-review',
+    {
+      ...fx.common,
+      generationId,
+      configState: 'disabled',
+      expectedInventoryDigest,
+      confirmation: true,
+    },
+    fx.deps,
+  );
+  assert.equal(review.result.generationState, 'review');
+  assert.equal(readState(fx, generationId).protocolDigest, PROTOCOL_1_1_DIGEST);
+  const dryRun = await executeOperation(
+    'discard-generation',
+    { ...fx.common, generationId, configState: 'disabled', dryRun: true },
+    fx.deps,
+  );
+  const discarded = await executeOperation(
+    'discard-generation',
+    {
+      ...fx.common,
+      generationId,
+      configState: 'disabled',
+      dryRun: false,
+      fullInventoryDigest: dryRun.result.fullInventoryDigest,
+      decision: 'stop',
+      confirmation: true,
+    },
+    fx.deps,
+  );
+  assert.equal(discarded.result.generationStatus, 'absent');
+}
+
+const START_INPUT = (fx, generationId) => ({
+  ...fx.common,
+  generationId,
+  configState: 'enabled',
+  workflow: 'build',
+  harnessFamily: 'codex',
+  packets: [packetReservation()],
+});
+
+// Invariant: a transition marker left by release 1.67.1 never blocks the review exit. The migration
+// completes a suspension-reason marker before its own write and leaves a suspend or resume marker it
+// cannot adopt in place, so locked operations still answer PROTOCOL_DRIFT and begin-review, then
+// discard-generation, stay reachable.
+test('a 1.1.0 generation with a leftover transition marker still reaches review and discard', async (t) => {
+  await t.test('suspension-reason marker from the unlocked fallback', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST);
+    writeMarker(fx, generationId, 'evidence-gap');
+    assert.equal(
+      (await rejection('start', START_INPUT(fx, generationId), fx.deps)).error.code,
+      'PROTOCOL_DRIFT',
+    );
+    assert.equal(existsSync(markerPath(fx, generationId)), false);
+    assert.deepEqual(readSuspension(fx, generationId).reasons, [
+      'evidence-gap',
+      'quality-mapping-changed',
+    ]);
+    assert.equal(readSuspension(fx, generationId).resumeTo, 'baseline');
+    assert.equal(readState(fx, generationId).generationState, 'suspended');
+    await reviewAndDiscard(fx, generationId, (await inventory(fx, generationId)).inventoryDigest);
+  });
+  await t.test('crashed suspend marker', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST);
+    writeMarker(fx, generationId, 'suspend');
+    const before = snapshot(fx, generationId);
+    assert.equal(
+      (await rejection('start', START_INPUT(fx, generationId), fx.deps)).error.code,
+      'PROTOCOL_DRIFT',
+    );
+    assert.deepEqual(snapshot(fx, generationId), before, 'an unadoptable marker stays in place');
+    const pending = await inventory(fx, generationId);
+    assert.deepEqual(
+      [pending.generationState, pending.transitionPending, pending.protocolCurrent],
+      ['suspended', true, false],
+    );
+    await reviewAndDiscard(fx, generationId, pending.inventoryDigest);
+  });
+  await t.test('crashed resume marker after suspension.json was unlinked', async (t) => {
+    const fx = fixture(t);
+    const { generationId } = await beginBaseline(fx);
+    persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST, {
+      generationState: 'suspended',
+    });
+    writeFileSync(
+      markerPath(fx, generationId),
+      `${canonicalizeJson({
+        schema: 1,
+        kind: 'suspension-transition',
+        generationId,
+        operation: 'resume',
+        ownerNonce: 'M'.repeat(32),
+        expectedInventoryDigest: `sha256:${'1'.repeat(64)}`,
+        expectedSuspensionDigest: `sha256:${'2'.repeat(64)}`,
+        resumeTo: 'baseline',
+      })}\n`,
+    );
+    const before = snapshot(fx, generationId);
+    assert.equal(
+      (await rejection('start', START_INPUT(fx, generationId), fx.deps)).error.code,
+      'PROTOCOL_DRIFT',
+    );
+    assert.deepEqual(snapshot(fx, generationId), before, 'an unadoptable marker stays in place');
+    const pending = await inventory(fx, generationId);
+    assert.deepEqual([pending.generationState, pending.transitionPending], ['suspended', true]);
+    await reviewAndDiscard(fx, generationId, pending.inventoryDigest);
+  });
+});
+
+// Invariant: begin-review accepts the inventory digest read before the lock on a generation the
+// migration has not touched yet, because the review exit does not migrate; inventory reports the
+// previous binding as protocolCurrent false and a current generation as true.
+test('begin-review succeeds first try with the digest of a pre-migration 1.1.0 inventory', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  await finalizeOne(fx, generationId);
+  assert.equal((await inventory(fx, generationId)).protocolCurrent, true);
+  persistUnderProtocol(fx, generationId, '1.1.0', PROTOCOL_1_1_DIGEST);
+  const pending = await inventory(fx, generationId);
+  assert.deepEqual(
+    [pending.generationState, pending.transitionPending, pending.protocolCurrent],
+    ['suspended', true, false],
+  );
+  await reviewAndDiscard(fx, generationId, pending.inventoryDigest);
 });
 
 test('activate needs no confirmation and reports exactly the unmet window and sample', async (t) => {

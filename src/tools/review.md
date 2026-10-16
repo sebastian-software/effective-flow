@@ -450,6 +450,7 @@ Determine the active design-decision sources from `review.designDecisionSources`
 - `minimal`: ADRs and convention files.
 
 Start a dedicated sub-agent for each active source **in parallel**. Each sub-agent searches only its own source:
+<!-- spawn-site:review/design-decision-sources -->
 
 - ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs may exist in the living, slug-named format (`# <title>`, `## Status`) **or** in the numbered old format (`# NNNN — title`); both forms are read, and the search globs stay unchanged. **Exception:** the Effective Flow project-setup ADR (config, known slug `effective-flow-project-setup`, old `firmo-project-setup`, each matched after stripping an optional leading `^\d+[-_]` numeric prefix, e.g. `docs/adr/effective-flow-project-setup.md` or `docs/adr/0002-effective-flow-project-setup.md`) is configuration, not an architecture rationale, and is **not** collected as a design-decision source.
 - Plan files — `<plan.dir>/`, `plans/`
@@ -473,6 +474,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 #### Phase 2b: Technical validation
 
 1. Observe `review.validation`:
+   <!-- spawn-site:review/technical-validation -->
    - `full`: Start `{{AGENT:code-validator}}` in check mode `full` (all safely discovered repository-native checks, no fixes).
    - `quick`: Start `{{AGENT:code-validator}}` in check mode `quick` (prefer a fast combined repository-native check; otherwise run the safely discoverable fast checks and skip the rest with reasons).
    - `off`: Do not start a validator. Document in the wisdom file and in the report that technical validation was disabled by the profile.
@@ -482,6 +484,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 #### Phase 2c: Quality review
 
 1. **Reviewer selection per routing bucket:**
+   <!-- spawn-site:review/quality-review -->
    - Frontend → `{{AGENT:frontend-reviewer}}`
    - Backend / CLI / Node.js → `{{AGENT:nodejs-reviewer}}`
    - Rust → `{{AGENT:rust-reviewer}}`

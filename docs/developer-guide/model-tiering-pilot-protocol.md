@@ -25,10 +25,24 @@ contract, and changing the protocol export without refreshing this mirror aborts
 <!-- pilot-measurement-protocol:start -->
 
 ```json
-{"adoptionGates":[{"comparison":"gte","gate":"baseline-sample","metric":"eligibleBaselinePackets","threshold":{"denominator":1,"numerator":20}},{"comparison":"gte","gate":"fast-without-escalation","metric":"fastWithoutEscalation","threshold":{"denominator":5,"numerator":4}},{"comparison":"lt","gate":"fallback-frequency","metric":"fallbackOccurrences","threshold":{"denominator":1,"numerator":3}},{"comparison":"gte","gate":"workflow-completion-non-regression","metric":"workflowCompletionDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"gte","gate":"validation-non-regression","metric":"validationSuccessDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"lte","gate":"critical-review-non-regression","metric":"criticalReviewFindingDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"quality-correction-non-regression","metric":"qualityCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"merge-gate-non-regression","metric":"mergeGateCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"cost-benefit","metric":"compatibleCostMedianRatio","threshold":{"denominator":5,"numerator":4}}],"aggregation":{"algorithmVersion":2,"baselineEligiblePacketMinimum":20,"baselineWindowMinimumDays":7,"caveat":"observational-unpaired","cohortMinimum":20,"exactRationalVersion":1,"groupingVersion":1,"metricStratumMinimum":5,"ordinalHalfMinimum":5,"periodObservationMinimum":5,"suppressionMinimum":5},"enums":{"checkOutcomes":["passed","failed","skipped","unavailable"],"cohorts":["baseline","pilot"],"completionStatuses":["completed","aborted","failed","abandoned"],"discardDecisions":["change","stop"],"evaluationResults":["pass","fail","unavailable"],"findingSeverities":["critical","important","note"],"findingStatuses":["open","resolved","accepted"],"harnessFamilies":["claude","codex"],"observationModes":["merge","report"],"observationOutcomes":["merged","reported-ready","reported-blocked","failed"],"packetAttempts":["started","not-started","unknown"],"requirementStatuses":["completed","incomplete","not-applicable"],"reviewStatuses":["completed","not-run","unavailable"],"validationStatuses":["passed","failed","not-required","unavailable"],"workflows":["build","refactor"]},"limits":{"bootEstimateToleranceMs":5000,"maxChecksPerTrace":256,"maxCliInputBytes":4194304,"maxCostValueDigits":39,"maxDetailedTraceBytes":4194304,"maxDurationMs":86400000,"maxFindingsPerTrace":256,"maxGateObservationsPerGeneration":10000,"maxPacketsPerWorkflow":128,"maxRawGenerationBytes":268435456,"maxRelativePathBytes":512,"maxRequirementsPerTrace":256,"maxTokenBytes":128,"maxWorkflowRecordBytes":1048576,"maxWorkflowRecordsPerGeneration":10000,"wallMonotonicToleranceMs":2000},"metricRegistry":{"attemptOutcomes":{"value":"closed packet counts by attempt: started, not-started, unknown"},"attemptedFastPackets":{"denominator":"all packets with a consumed Fast attempt and attempt other than not-started","numerator":"packets with selectedProfile fast and fallback none"},"cost":{"unavailable":"missing, incompatible, or unsupported attempt proxy, or attempt unknown","value":"canonical unsigned decimal totals grouped by compatible kind and unit"},"duration":{"unavailable":"closed started-packet intervals without continuity proof","value":"bounded integer milliseconds for continuity-valid intervals of started packets"},"fallbackRate":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with fallback other than none"},"fastWithoutEscalation":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with attempt started and without escalation"},"mergeGateCorrections":{"denominator":"completed observations grouped by mode and harness","numerator":"actual correction attempts by closed counter"},"packetInclusion":{"notStarted":"excluded from every packet metric and counted only in attemptOutcomes","started":"counted in every packet metric","unknown":"counted in packet, eligibility, attempted-Fast, fallback-outcome, and cost-unavailable counts; never a success; excluded from cost groups and duration"},"qualityCorrections":{"denominator":"completed workflows","numerator":"quality correction rounds"},"reviewFindings":{"denominator":"completed workflows","numerator":"findings by severity"},"validationSuccess":{"denominator":"all terminal records for which required validation applied","numerator":"required-validation records passed"},"workflowCompletion":{"denominator":"all terminal workflow records","numerator":"terminal workflow records completed"}},"schema":1,"timing":{"algorithmVersion":1,"bootContinuity":"wall-minus-uptime","bootEstimateToleranceMs":5000,"durationUnit":"integer-milliseconds","hostContinuity":"packet-salted-sha256-hostname","maxDurationMs":86400000,"wallMonotonicToleranceMs":2000},"version":"1.1.0"}
+{"adoptionGates":[{"comparison":"gte","gate":"baseline-sample","metric":"eligibleBaselinePackets","threshold":{"denominator":1,"numerator":20}},{"comparison":"gte","gate":"fast-without-escalation","metric":"fastWithoutEscalation","threshold":{"denominator":5,"numerator":4}},{"comparison":"lt","gate":"fallback-frequency","metric":"fallbackOccurrences","threshold":{"denominator":1,"numerator":3}},{"comparison":"gte","gate":"workflow-completion-non-regression","metric":"workflowCompletionDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"gte","gate":"validation-non-regression","metric":"validationSuccessDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"lte","gate":"critical-review-non-regression","metric":"criticalReviewFindingDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"quality-correction-non-regression","metric":"qualityCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"merge-gate-non-regression","metric":"mergeGateCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"cost-benefit","metric":"compatibleCostMedianRatio","threshold":{"denominator":5,"numerator":4}}],"aggregation":{"algorithmVersion":2,"baselineEligiblePacketMinimum":20,"baselineWindowMinimumDays":7,"caveat":"observational-unpaired","cohortMinimum":20,"exactRationalVersion":1,"groupingVersion":1,"metricStratumMinimum":5,"ordinalHalfMinimum":5,"periodObservationMinimum":5,"suppressionMinimum":5},"enums":{"checkOutcomes":["passed","failed","skipped","unavailable"],"cohorts":["baseline","pilot"],"completionStatuses":["completed","aborted","failed","abandoned"],"discardDecisions":["change","stop"],"evaluationResults":["pass","fail","unavailable"],"findingSeverities":["critical","important","note"],"findingStatuses":["open","resolved","accepted"],"harnessFamilies":["claude","codex"],"observationModes":["merge","report"],"observationOutcomes":["merged","reported-ready","reported-blocked","failed"],"packetAttempts":["started","not-started","unknown"],"requirementStatuses":["completed","incomplete","not-applicable"],"reviewStatuses":["completed","not-run","unavailable"],"validationStatuses":["passed","failed","not-required","unavailable"],"workflows":["build","refactor"]},"limits":{"bootEstimateToleranceMs":5000,"maxChecksPerTrace":256,"maxCliInputBytes":4194304,"maxCostValueDigits":39,"maxDetailedTraceBytes":4194304,"maxDurationMs":86400000,"maxFindingsPerTrace":256,"maxGateObservationsPerGeneration":10000,"maxPacketsPerWorkflow":128,"maxRawGenerationBytes":268435456,"maxRelativePathBytes":512,"maxRequirementsPerTrace":256,"maxTokenBytes":128,"maxWorkflowRecordBytes":1048576,"maxWorkflowRecordsPerGeneration":10000,"wallMonotonicToleranceMs":2000},"metricRegistry":{"attemptOutcomes":{"value":"closed packet counts by attempt: started, not-started, unknown"},"attemptedFastPackets":{"denominator":"all packets with a consumed Fast attempt and attempt other than not-started","numerator":"packets with selectedProfile fast and fallback none"},"cost":{"unavailable":"missing, incompatible, or unsupported attempt proxy, or attempt unknown","value":"canonical unsigned decimal totals grouped by compatible kind and unit"},"duration":{"unavailable":"closed started-packet intervals without continuity proof","value":"bounded integer milliseconds for continuity-valid intervals of started packets"},"fallbackRate":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with fallback other than none"},"fastWithoutEscalation":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with attempt started and without escalation"},"mergeGateCorrections":{"denominator":"completed observations grouped by mode and harness","numerator":"actual correction attempts by closed counter"},"packetInclusion":{"notStarted":"excluded from every packet metric and counted only in attemptOutcomes","started":"counted in every packet metric","unknown":"counted in packet, eligibility, attempted-Fast, fallback-outcome, and cost-unavailable counts; never a success; excluded from cost groups and duration"},"qualityCorrections":{"denominator":"completed workflows","numerator":"quality correction rounds"},"reviewFindings":{"denominator":"completed workflows","numerator":"findings by severity"},"validationSuccess":{"denominator":"all terminal records for which required validation applied","numerator":"required-validation records passed"},"workflowCompletion":{"denominator":"all terminal workflow records","numerator":"terminal workflow records completed"}},"schema":1,"timing":{"algorithmVersion":1,"bootContinuity":"wall-minus-uptime","bootEstimateToleranceMs":5000,"durationUnit":"integer-milliseconds","hostContinuity":"packet-salted-sha256-hostname","maxDurationMs":86400000,"wallMonotonicToleranceMs":2000},"version":"1.2.0"}
 ```
 
 <!-- pilot-measurement-protocol:end -->
+
+### Quality-mapping identity
+
+Every Quality packet runs on the role's `deep` model tier, so a change of those values would
+silently mix two Quality populations in one generation. Protocol `1.2.0` therefore binds the
+**Quality-mapping identity** into `protocolSource`, and so into the protocol digest:
+`PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY` is the SHA-256 digest (`sha256:` plus hex) of the
+canonical JSON of `MODEL_TIER_MAPPINGS.deep` in `build.mjs`, covering both harnesses. It is a digest
+rather than the values because the portable target forbids provider model names in copied scripts.
+The module is copied byte for byte and cannot import `build.mjs`, so the build computes the
+digest from the mapping and fails when it differs. Changing the `deep` values then requires a new
+protocol version and a migration. The JSON mirror above projects only measurement-specific fields
+and carries the version, not the identity; the policy side states the rule in
+[`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md).
 
 ## Local lifecycle and operation boundary
 
@@ -72,7 +86,8 @@ suspended state, then removes the marker. Generations outside `baseline`, `activ
 are skipped, and a leftover `suspend` or `resume` marker keeps its previous handling. For a present
 generation, `inventory` reports `transitionPending: true` while any marker exists, so a frozen
 admission is never invisible. The marker allowlist and the capacity-check exemption are derived
-from the protocol's suspension reasons (plus `suspend`, and `resume` for the allowlist only).
+from the protocol's suspension reasons plus `quality-mapping-changed`, the reason of the protocol
+migration below (and `suspend`, and `resume` for the allowlist only).
 
 When an automatic suspension cannot take the lifecycle lock, its unlocked fallback publishes a
 suspension-reason marker atomically: it writes a temporary and publishes it exclusively, never over
@@ -358,12 +373,38 @@ Once a JSON object input is dispatched to one of these four operations, its erro
 control fields in the error envelope. Input that is not a JSON object fails `INVALID_PAYLOAD`, and
 an unknown operation fails `INVALID_OPERATION`, before dispatch and without control fields.
 
-The persisted protocol digest binds every generation. A local development generation created
-before protocol `1.1.0` therefore fails the stored-state check with `UNSAFE_STORAGE`; no migration
-is provided, because no released generation exists. Remove that generation's directory,
-`<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/generations/<generationId>/`, by hand and
-start a new baseline. This one-time development remedy sits outside the protocol, like any other
-manual deletion.
+The persisted protocol digest binds every generation, and an unrecognized digest fails the
+stored-state check with `UNSAFE_STORAGE`. The one exception is the single earlier protocol a
+release persisted generations under: version `1.1.0` with its exact digest, shipped by releases
+1.66.0 through 1.67.1. Protocol `1.2.0` changed the Quality-mapping identity, so a generation
+recorded under `1.1.0` must never continue; it migrates in one step instead of failing.
+
+- **Locked paths migrate.** Before every locked operation except `begin-review` and
+  `discard-generation`, the lifecycle lock first moves a pending `1.1.0` generation to `suspended`
+  with the reason `quality-mapping-changed`. It writes the suspension through the ordinary
+  marker-guarded path, records `resumeTo` as the stored `baseline` or `active` state, keeps the
+  stored `1.1.0` binding of all its evidence, and is a no-op once persisted. An interrupted
+  migration (marker or suspension present, state not yet suspended) completes under the same lock.
+  A suspension-reason marker left by release 1.67.1 is completed first; a leftover `suspend` or
+  `resume` marker cannot be adopted, so the migration leaves it in place without failing. A
+  `review` generation is already closed and keeps its state.
+- **Read-only paths never migrate.** `inventory` reports such a generation as `suspended` with
+  `transitionPending: true` until a locked operation persists the migration, and reports
+  `protocolCurrent: false` for every generation bound to an earlier protocol, so Guided setup never
+  offers `resume` for it. The anonymous gate
+  observation admission check and the suspension and incident writers read it as suspended as well.
+- **Everything else is `PROTOCOL_DRIFT`.** After the migration no operation extends, activates,
+  records into, finalizes or resumes the generation, and `begin-baseline` refuses to adopt it
+  (`INVALID_STATE`). Its evidence keeps its `1.1.0` protocol binding and is never mixed into a
+  later generation.
+- **Exits.** The generation can only be reviewed and removed: `begin-review`, then
+  `discard-generation` with its usual disabled-configuration and confirmation preconditions, after
+  which a new baseline starts under `1.2.0`. Neither migrates, so `begin-review` accepts the
+  `inventoryDigest` read before it. No workflow offers either operation yet; an operator calls the
+  shipped helper directly.
+- **Nothing else migrates.** A different version, the `1.1.0` digest under another version, the
+  current digest under `1.1.0`, or any other unknown digest still fails `UNSAFE_STORAGE` on read and
+  locked paths alike.
 
 ## Further reading
 

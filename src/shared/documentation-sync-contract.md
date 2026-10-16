@@ -33,8 +33,11 @@ Whether an enumerated surface is genuinely stale is the owner's judgment, not a 
 ### Worker routing
 
 - `{{AGENT:code-documenter}}` — in-code documentation, inline comments, CLI help text
+  <!-- spawn-site:documentation-sync-contract/code-documenter -->
 - `{{AGENT:docs-writer}}` — user and technical documents, including category entry points
+  <!-- spawn-site:documentation-sync-contract/docs-writer -->
 - `{{AGENT:marketing-writer}}` — the root `README.md` in its marketing entry-point role
+  <!-- spawn-site:documentation-sync-contract/marketing-writer -->
 
 Disjoint file sets may run in parallel. The `Doc categories` write boundary and its conditional
 root-README follow-up-link rule apply unchanged.

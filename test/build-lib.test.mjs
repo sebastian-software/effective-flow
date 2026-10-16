@@ -20,6 +20,21 @@ import {
   normalizeClaudeEffort,
   normalizeCodexReasoningEffort,
   validateAgentProfileMappings,
+  validateModelTierMappings,
+  resolveAgentTier,
+  MODEL_TIERS,
+  LEGACY_AGENT_MODEL_FIELDS,
+  collectSpawnSiteMarkers,
+  parseSpawnSiteTable,
+  reconcileSpawnSites,
+  renderSpawnSiteLine,
+  renderSpawnSiteMarkers,
+  renderModelTierRoleDefaults,
+  renderModelTierTable,
+  renderModelTierDirectives,
+  findProviderModelNames,
+  MODEL_TIER_TABLE_START,
+  MODEL_TIER_TABLE_END,
   validateRefs,
   assertQuotedDescription,
   transformRefs,
@@ -109,7 +124,11 @@ import {
   canonicalizeJson,
 } from '../src/scripts/pilot-measurement-protocol.mjs';
 import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from '../src/scripts/plan-lint-core.mjs';
-import { AGENT_PROFILE_MAPPINGS, FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
+import {
+  AGENT_PROFILE_MAPPINGS,
+  FAST_PROFILE_AGENTS,
+  MODEL_TIER_MAPPINGS,
+} from './support/native-profile-config.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
@@ -6185,4 +6204,675 @@ test('deliveryGuidance is idempotent (a re-delivery writes identical bytes)', ()
   const twice = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
   assert.equal(twice.agents, once.agents);
   assert.equal(twice.claude, once.claude);
+});
+
+// --- Model tiers ---
+//
+// Invariant: MODEL_TIER_MAPPINGS is the single source of every tier's Claude Code and Codex values,
+// so the build rejects any mapping a harness could not run: a missing or extra tier or harness key,
+// a Claude model outside the alias allowlist, a Claude effort outside the supported levels, and a
+// Codex model/effort pair the model does not support.
+
+function tierMappings(mutate = (mappings) => mappings) {
+  return mutate(structuredClone(MODEL_TIER_MAPPINGS));
+}
+
+test('the declared model-tier mapping is valid and covers exactly the three tiers', () => {
+  assert.equal(validateModelTierMappings(MODEL_TIER_MAPPINGS), MODEL_TIER_MAPPINGS);
+  assert.deepEqual(Object.keys(MODEL_TIER_MAPPINGS), [...MODEL_TIERS]);
+  assert.deepEqual(MODEL_TIERS, ['mechanical', 'standard', 'deep']);
+});
+
+test('validateModelTierMappings rejects a missing tier', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.mechanical;
+          return m;
+        }),
+      ),
+    /Model-tier mappings is missing "mechanical"/,
+  );
+});
+
+test('validateModelTierMappings rejects an extra tier key', () => {
+  assert.throws(
+    () => validateModelTierMappings(tierMappings((m) => ({ ...m, premium: m.deep }))),
+    /Model-tier mappings has unsupported field\(s\): premium/,
+  );
+});
+
+test('validateModelTierMappings rejects a missing harness', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.standard.codex;
+          return m;
+        }),
+      ),
+    /Model-tier "standard" mapping is missing "codex"/,
+  );
+});
+
+test('validateModelTierMappings rejects an extra harness key', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.deep.gemini = { model: 'x' };
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping has unsupported field\(s\): gemini/,
+  );
+});
+
+test('validateModelTierMappings rejects a missing or extra per-harness value key', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.deep.claude.effort;
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping for claude is missing "effort"/,
+  );
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.deep.codex.model_reasoning_effort = 'high';
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping for codex has unsupported field\(s\): model_reasoning_effort/,
+  );
+});
+
+test('validateModelTierMappings rejects a Claude model outside haiku, sonnet and opus', () => {
+  for (const model of ['claude-opus-5-5', 'Opus', 'gpt-5.6-sol', '']) {
+    assert.throws(
+      () =>
+        validateModelTierMappings(
+          tierMappings((m) => {
+            m.deep.claude.model = model;
+            return m;
+          }),
+        ),
+      /Unsupported Claude model ".*" for model tier "deep".*expected one of: haiku, sonnet, opus/,
+      model,
+    );
+  }
+});
+
+test('validateModelTierMappings rejects a Claude effort outside the supported levels', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.mechanical.claude.effort = 'minimal';
+          return m;
+        }),
+      ),
+    /Unsupported claude effort "minimal" for model tier "mechanical"/,
+  );
+});
+
+test('validateModelTierMappings rejects a Codex model/effort pair outside the supported pairs', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.standard.codex.reasoning_effort = 'ultra';
+          return m;
+        }),
+      ),
+    /Unsupported Codex model\/reasoning combination for model tier "standard": gpt-5\.6-luna\/ultra/,
+  );
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.standard.codex.model = 'gpt-4';
+          return m;
+        }),
+      ),
+    /Unsupported Codex model\/reasoning combination for model tier "standard": gpt-4\/medium/,
+  );
+});
+
+// Invariant: an agent's `tier:` is the single source of its native model and effort. A missing,
+// unknown or duplicate tier and any of the four legacy per-harness fields fail.
+
+const tierFrontmatter = (lines) =>
+  ['description: "x"', ...lines, 'claude:', '  color: cyan', 'codex:', '  sandbox_mode: read-only']
+    .filter((line) => line !== null)
+    .join('\n');
+
+test('resolveAgentTier returns the declared tier', () => {
+  for (const tier of MODEL_TIERS) {
+    assert.equal(resolveAgentTier(tierFrontmatter([`tier: ${tier}`]), { agentName: 'a' }), tier);
+  }
+});
+
+test('resolveAgentTier rejects a missing tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter([]), { agentName: 'a', context: 'agents/a.md' }),
+    /Missing required field "tier" for agent "a" \(in agents\/a\.md\)/,
+  );
+});
+
+test('resolveAgentTier rejects an unknown tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter(['tier: premium']), { agentName: 'a' }),
+    /Unknown tier "premium" for agent "a".*expected one of: mechanical, standard, deep/,
+  );
+});
+
+test('resolveAgentTier rejects a duplicate tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter(['tier: deep', 'tier: deep']), { agentName: 'a' }),
+    /Duplicate field "tier" for agent "a"/,
+  );
+});
+
+test('resolveAgentTier rejects each reappearing legacy model or effort field', () => {
+  assert.equal(LEGACY_AGENT_MODEL_FIELDS.length, 4);
+  for (const [section, key] of LEGACY_AGENT_MODEL_FIELDS) {
+    const frontmatter = tierFrontmatter(['tier: deep']).replace(
+      `${section}:\n`,
+      `${section}:\n  ${key}: x\n`,
+    );
+    assert.throws(
+      () => resolveAgentTier(frontmatter, { agentName: 'a' }),
+      new RegExp(`Agent "a" declares legacy field "${section}\\.${key}"`),
+      `${section}.${key}`,
+    );
+  }
+});
+
+test('every checked-in agent declares the planned default tier', () => {
+  const expected = {
+    deep: [
+      'frontend-reviewer',
+      'generic-implementer',
+      'generic-product-implementer',
+      'generic-product-reviewer',
+      'merge-conflict-resolver',
+      'nodejs-implementer',
+      'nodejs-reviewer',
+      'rust-implementer',
+      'rust-reviewer',
+      'ui-implementer',
+    ],
+    standard: [
+      'code-documenter',
+      'code-validator',
+      'docs-writer',
+      'e2e-tester',
+      'marketing-writer',
+      'test-writer',
+    ],
+  };
+  const actual = { deep: [], standard: [] };
+  for (const name of checkedInAgentNames) {
+    const source = readFileSync(new URL(`../src/agents/${name}.md`, import.meta.url), 'utf8');
+    const tier = resolveAgentTier(extractFrontmatter(source), { agentName: name });
+    (actual[tier] ??= []).push(name);
+  }
+  assert.deepEqual(actual, expected);
+});
+
+// Invariant: a spawn-site marker is a line of its own whose `<owner>/<id>` names its source, and it
+// resolves through exactly one spawn-site table row in both directions.
+
+test('collectSpawnSiteMarkers accepts indented marker lines and keeps their position', () => {
+  const text = 'Spawn a sub-agent.\n   <!-- spawn-site:build/explore -->\nmore\n';
+  assert.deepEqual(collectSpawnSiteMarkers(text, { owner: 'build', context: 'tools/build.md' }), [
+    { id: 'build/explore', line: 2, context: 'tools/build.md' },
+  ]);
+});
+
+test('collectSpawnSiteMarkers rejects a marker that does not stand on its own line', () => {
+  assert.throws(
+    () => collectSpawnSiteMarkers('Spawn it. <!-- spawn-site:build/explore -->', {}),
+    /Malformed spawn-site marker/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:build/explore-->', {}),
+    /Malformed spawn-site marker/,
+  );
+});
+
+test('collectSpawnSiteMarkers rejects a malformed id and a foreign owner', () => {
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:build -->', {}),
+    /Malformed spawn-site id "build"/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:Build/Explore -->', {}),
+    /Malformed spawn-site id "Build\/Explore"/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:fix/explore -->', { owner: 'build' }),
+    /must be prefixed with its owning source "build\/"/,
+  );
+});
+
+// Invariant: a marker inside any fenced block (verbatim, ask, include or lazy-include) would be
+// rendered as fence content or vanish with the directive, so it fails instead.
+test('collectSpawnSiteMarkers rejects a marker inside a fenced block', () => {
+  for (const info of ['', 'text', 'ask', 'include', 'lazy-include']) {
+    const text = `Spawn it.\n\n   \`\`\`${info}\n   <!-- spawn-site:build/explore -->\n   \`\`\`\n`;
+    assert.throws(
+      () => collectSpawnSiteMarkers(text, { owner: 'build' }),
+      /Spawn-site marker inside a fenced block/,
+      info,
+    );
+  }
+  assert.throws(
+    () => collectSpawnSiteMarkers('~~~~\n<!-- spawn-site:build/explore -->\n~~~~\n', {}),
+    /inside a fenced block/,
+  );
+  // After the fence closes, a marker is collected as usual.
+  assert.deepEqual(
+    collectSpawnSiteMarkers(
+      '```ask\nheader: X\n```\n\nSpawn it.\n<!-- spawn-site:build/explore -->\n',
+      { owner: 'build' },
+    ).map(({ line }) => line),
+    [6],
+  );
+});
+
+const spawnAgentTiers = new Map([
+  ['code-validator', 'standard'],
+  ['test-writer', 'standard'],
+  ['nodejs-implementer', 'deep'],
+]);
+
+function spawnTable(rows, { header = '| Site | Spawn | Tier | Down |' } = {}) {
+  return [
+    '# Model tiers',
+    '',
+    '## Spawn sites',
+    '',
+    header,
+    '| ---- | ----- | ---- | ---- |',
+    ...rows,
+    '',
+    '## After',
+    '',
+    '| not | the | spawn | table |',
+  ].join('\n');
+}
+
+const parseSites = (rows, options = {}) =>
+  parseSpawnSiteTable(spawnTable(rows, options), {
+    agentTiers: spawnAgentTiers,
+    context: 'shared/model-tiers.md',
+  });
+
+test('parseSpawnSiteTable accepts an empty table', () => {
+  assert.deepEqual(parseSites([]), []);
+});
+
+test('parseSpawnSiteTable resolves literal tiers and role tiers in table order', () => {
+  const sites = parseSites([
+    '| `build/explore` | Explore fan-out | `standard` | `yes` |',
+    '| `cleanup/scan` | Inventory scan | `mechanical` | `no` |',
+    '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
+    '| `build/mixed` | Implementer then validator | `role:nodejs-implementer,code-validator` | `yes` |',
+  ]);
+  assert.deepEqual(
+    sites.map(({ id, spawn, clauses, downAllowed }) => ({ id, spawn, clauses, downAllowed })),
+    [
+      {
+        id: 'build/explore',
+        spawn: 'Explore fan-out',
+        clauses: [{ role: null, tier: 'standard' }],
+        downAllowed: true,
+      },
+      {
+        id: 'cleanup/scan',
+        spawn: 'Inventory scan',
+        clauses: [{ role: null, tier: 'mechanical' }],
+        downAllowed: false,
+      },
+      {
+        id: 'build/validate',
+        spawn: 'Validators',
+        clauses: [
+          { role: 'code-validator', tier: 'standard' },
+          { role: 'test-writer', tier: 'standard' },
+        ],
+        downAllowed: false,
+      },
+      {
+        id: 'build/mixed',
+        spawn: 'Implementer then validator',
+        clauses: [
+          { role: 'nodejs-implementer', tier: 'deep' },
+          { role: 'code-validator', tier: 'standard' },
+        ],
+        downAllowed: true,
+      },
+    ],
+  );
+});
+
+test('parseSpawnSiteTable rejects a missing heading, a wrong header and a missing separator', () => {
+  assert.throws(
+    () => parseSpawnSiteTable('# Model tiers\n', { agentTiers: spawnAgentTiers }),
+    /exactly one "## Spawn sites" heading/,
+  );
+  assert.throws(
+    () => parseSites([], { header: '| Site | Spawn | Tier |' }),
+    /Spawn-site table header must be Site \| Spawn \| Tier \| Down/,
+  );
+  assert.throws(
+    () =>
+      parseSpawnSiteTable('## Spawn sites\n\n| Site | Spawn | Tier | Down |\n', {
+        agentTiers: spawnAgentTiers,
+      }),
+    /needs a separator row/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed row', () => {
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `standard` |']),
+    /Spawn-site table row must have 4 cells \(in shared\/model-tiers\.md:7\)/,
+  );
+  assert.throws(
+    () => parseSites(['| build/explore | Explore | `standard` | `yes` |']),
+    /Spawn-site Site cell must be one inline code span/,
+  );
+  assert.throws(
+    () => parseSites(['| `build` | Explore | `standard` | `yes` |']),
+    /Malformed spawn-site id "build"/,
+  );
+  assert.throws(
+    () =>
+      parseSites([
+        '| `build/explore` | Explore | `standard` | `yes` |',
+        '| `build/explore` | Again | `standard` | `yes` |',
+      ]),
+    /Duplicate spawn-site row "build\/explore"/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/explore` | Uses {{AGENT:code-validator}} | `standard` | `yes` |']),
+    /needs a plain Spawn description without placeholders/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed tier', () => {
+  for (const tier of ['`premium`', '`role:`', '`role:Code-Validator`', 'standard']) {
+    assert.throws(
+      () => parseSites([`| \`build/explore\` | Explore | ${tier} | \`yes\` |`]),
+      /Unknown spawn-site tier|must be one inline code span/,
+      tier,
+    );
+  }
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `role:unknown-agent` | `yes` |']),
+    /names unknown role "unknown-agent"/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `role:test-writer,test-writer` | `yes` |']),
+    /repeats a role/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed Down value and a deep site that may move down', () => {
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `standard` | `maybe` |']),
+    /Down must be `yes` or `no`/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/plan-review` | Plan review | `deep` | `yes` |']),
+    /resolves to tier "deep", which never moves down/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/implement` | Implementer | `role:nodejs-implementer` | `yes` |']),
+    /resolves to tier "deep", which never moves down/,
+  );
+});
+
+test('reconcileSpawnSites requires every marker to be unique and known, and every row marked', () => {
+  const sites = parseSites(['| `build/explore` | Explore | `standard` | `yes` |']);
+  const marker = (id, context = 'tools/build.md', line = 3) => ({ id, context, line });
+  assert.doesNotThrow(() => reconcileSpawnSites(sites, [marker('build/explore')]));
+  assert.throws(
+    () => reconcileSpawnSites(sites, [marker('build/explore'), marker('build/unknown')]),
+    /Unknown spawn-site "build\/unknown" \(in tools\/build\.md:3\)/,
+  );
+  assert.throws(
+    () =>
+      reconcileSpawnSites(sites, [
+        marker('build/explore'),
+        marker('build/explore', 'tools/build.md', 9),
+      ]),
+    /Duplicate spawn-site marker "build\/explore" \(in tools\/build\.md:3 and tools\/build\.md:9\)/,
+  );
+  assert.throws(
+    () => reconcileSpawnSites(sites, []),
+    /Spawn-site table row "build\/explore" has no marker/,
+  );
+});
+
+// Invariant: a rendered spawn-site line carries only the target's own values in inline code (never
+// a line-start `model:`/`effort:` key), both forms in portable, and the no-downward-move flag only
+// for a standard clause.
+
+const renderSite = (row, harness) =>
+  renderSpawnSiteLine(parseSites([row])[0], harness, { mappings: MODEL_TIER_MAPPINGS });
+
+test('renderSpawnSiteLine renders the target form for a standard site', () => {
+  const row = '| `build/explore` | Explore | `standard` | `yes` |';
+  assert.equal(
+    renderSite(row, 'claude'),
+    'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite(row, 'codex'),
+    'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite(row, 'portable'),
+    'Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).',
+  );
+});
+
+test('renderSpawnSiteLine flags a Down: no standard site and never a deep or mechanical one', () => {
+  assert.equal(
+    renderSite('| `build/validate` | Validator | `standard` | `no` |', 'claude'),
+    'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`, no downward move).',
+  );
+  assert.equal(
+    renderSite('| `build/plan-review` | Plan review | `deep` | `no` |', 'codex'),
+    'Tier `deep`: pass `model: gpt-5.6-sol` and `reasoning_effort: high` on the spawn (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite('| `cleanup/scan` | Scan | `mechanical` | `no` |', 'claude'),
+    'Tier `mechanical`: pass `model: haiku` and `effort: low` on the Agent tool (rules: `model-tiers`).',
+  );
+});
+
+test('renderSpawnSiteLine renders several roles of one tier once and differing tiers per role', () => {
+  assert.equal(
+    renderSite(
+      '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
+      'codex',
+    ),
+    'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`, no downward move).',
+  );
+  const mixed = '| `build/mixed` | Both | `role:nodejs-implementer,code-validator` | `no` |';
+  assert.equal(
+    renderSite(mixed, 'claude'),
+    'Tier `deep` for {{AGENT:nodejs-implementer}}: pass `model: opus` and `effort: high` on the Agent tool. ' +
+      'Tier `standard` for {{AGENT:code-validator}}: pass `model: sonnet` and `effort: medium` on the Agent tool ' +
+      '(rules: `model-tiers`, no downward move).',
+  );
+  assert.equal(
+    renderSite(mixed, 'portable'),
+    'Tier `deep` for {{AGENT:nodejs-implementer}}: Claude Code Agent tool `model: opus`, `effort: high`; ' +
+      'Codex spawn `model: gpt-5.6-sol`, `reasoning_effort: high`. ' +
+      'Tier `standard` for {{AGENT:code-validator}}: Claude Code Agent tool `model: sonnet`, `effort: medium`; ' +
+      'Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',
+  );
+});
+
+test('renderSpawnSiteMarkers replaces each marker line, keeps its indentation, and rejects an unknown site', () => {
+  const sites = new Map(
+    parseSites(['| `build/explore` | Explore | `standard` | `yes` |']).map((site) => [
+      site.id,
+      site,
+    ]),
+  );
+  const body = '1. Spawn an Explore sub-agent.\n   <!-- spawn-site:build/explore -->\n2. Next.\n';
+  const rendered = renderSpawnSiteMarkers(body, 'claude', {
+    sites,
+    mappings: MODEL_TIER_MAPPINGS,
+  });
+  assert.equal(
+    rendered,
+    '1. Spawn an Explore sub-agent.\n   Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).\n2. Next.\n',
+  );
+  assert.doesNotMatch(rendered, /^\s*(?:model|effort|reasoning_effort)\s*[:=]/m);
+  assert.throws(
+    () =>
+      renderSpawnSiteMarkers('<!-- spawn-site:build/other -->', 'codex', {
+        sites,
+        mappings: MODEL_TIER_MAPPINGS,
+        context: 'tools/build.md',
+      }),
+    /Unknown spawn-site "build\/other" \(in tools\/build\.md\)/,
+  );
+});
+
+test('the generated model-tiers parts render role defaults and the per-target harness table', () => {
+  assert.equal(
+    renderModelTierRoleDefaults(spawnAgentTiers),
+    [
+      '| Role | Tier |',
+      '| ---- | ---- |',
+      '| `code-validator` | `standard` |',
+      '| `nodejs-implementer` | `deep` |',
+      '| `test-writer` | `standard` |',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('claude', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Claude Code Agent tool |',
+      '| ---- | ---- |',
+      '| `mechanical` | `model: haiku`, `effort: low` |',
+      '| `standard` | `model: sonnet`, `effort: medium` |',
+      '| `deep` | `model: opus`, `effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('codex', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Codex spawn |',
+      '| ---- | ---- |',
+      '| `mechanical` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
+      '| `standard` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
+      '| `deep` | `model: gpt-5.6-sol`, `reasoning_effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('portable', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Claude Code Agent tool | Codex spawn |',
+      '| ---- | ---- | ---- |',
+      '| `mechanical` | `model: haiku`, `effort: low` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
+      '| `standard` | `model: sonnet`, `effort: medium` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
+      '| `deep` | `model: opus`, `effort: high` | `model: gpt-5.6-sol`, `reasoning_effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  const rendered = renderModelTierDirectives(
+    '## Role defaults\n\n{{MODEL_TIER_ROLE_DEFAULTS}}\n\n{{MODEL_TIER_TABLE}}\n',
+    'codex',
+    { sites: new Map(), mappings: MODEL_TIER_MAPPINGS, agentTiers: spawnAgentTiers },
+  );
+  assert.doesNotMatch(rendered, /\{\{MODEL_TIER_/);
+  assert.match(rendered, /\| `nodejs-implementer` \| `deep` \|/);
+  assert.doesNotMatch(rendered, /\b(?:haiku|sonnet|opus)\b/);
+});
+
+// Invariant: provider model names reach portable output only as build-generated tier text (the
+// marked harness table and the two-harness values of a rendered spawn-site line); anywhere else,
+// and in any native target for the other provider, they are findings.
+
+const PROVIDER_NAMES = ['haiku', 'sonnet', 'opus', 'gpt-5.6-luna', 'gpt-5.6-sol'];
+const GENERATED = {
+  modelNames: PROVIDER_NAMES,
+  allowGenerated: true,
+  mappings: MODEL_TIER_MAPPINGS,
+};
+
+test('findProviderModelNames exempts only build-generated tier text in portable mode', () => {
+  const site = renderSite('| `build/explore` | Explore | `standard` | `no` |', 'portable');
+  const generated = [
+    'Intro.',
+    renderModelTierTable('portable', MODEL_TIER_MAPPINGS),
+    `   ${site}`,
+  ].join('\n');
+  assert.deepEqual(findProviderModelNames(generated, GENERATED), []);
+  assert.ok(findProviderModelNames(generated, { modelNames: PROVIDER_NAMES }).length > 0);
+  assert.deepEqual(findProviderModelNames('Prefer Sonnet here.\nUse gpt-5.6-sol.', GENERATED), [
+    { line: 1, name: 'Sonnet' },
+    { line: 2, name: 'gpt-5.6-sol' },
+  ]);
+  assert.deepEqual(findProviderModelNames(site.replace('(rules:', 'or opus (rules:'), GENERATED), [
+    { line: 1, name: 'opus' },
+  ]);
+  // A hand-written line in the rendered shape whose values are no mapped pair is still caught.
+  assert.deepEqual(
+    findProviderModelNames(
+      'Tier `deep`: Claude Code Agent tool `model: sonnet`, `effort: high`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: high` (rules: `model-tiers`).',
+      GENERATED,
+    ),
+    [
+      { line: 1, name: 'sonnet' },
+      { line: 1, name: 'gpt-5.6-luna' },
+    ],
+  );
+  // Inside the markers only an exact rendered table line is exempt.
+  assert.deepEqual(
+    findProviderModelNames(
+      `${MODEL_TIER_TABLE_START}\n| \`deep\` | \`model: sonnet\`, \`effort: high\` |\n${MODEL_TIER_TABLE_END}`,
+      GENERATED,
+    ),
+    [{ line: 2, name: 'sonnet' }],
+  );
+  assert.throws(
+    () => findProviderModelNames('x', { modelNames: PROVIDER_NAMES, allowGenerated: true }),
+    /needs mappings/,
+  );
+  assert.deepEqual(
+    findProviderModelNames('magnum-opus and opusculum', { modelNames: PROVIDER_NAMES }),
+    [],
+  );
+});
+
+test('findProviderModelNames rejects an unbalanced generated-table marker', () => {
+  assert.throws(
+    () => findProviderModelNames(`${MODEL_TIER_TABLE_START}\n| sonnet |`, GENERATED),
+    /start marker without end/,
+  );
+  assert.throws(
+    () => findProviderModelNames(MODEL_TIER_TABLE_END, GENERATED),
+    /end marker without start/,
+  );
 });

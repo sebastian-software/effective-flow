@@ -1846,14 +1846,23 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   const gating = boundedSlice(text, '| Proven generation state', '\n\n').replace(/^ {3}/gm, '');
   assert.deepEqual(firstColumnCells(gating).slice(2), [
     '`none`',
-    '`suspended` with healthy evidence',
-    '`baseline`, `active`, `review`, or unhealthy `suspended`',
+    '`suspended` with `protocolCurrent: true` and healthy evidence',
+    '`baseline`, `active`, `review`, unhealthy or earlier-protocol `suspended`',
   ]);
   assert.match(tableRow(gating, '`none`'), /`begin-baseline`/);
-  assert.match(tableRow(gating, '`suspended` with healthy evidence'), /`resume`/);
   assert.match(
-    tableRow(gating, '`baseline`, `active`, `review`, or unhealthy `suspended`'),
+    tableRow(gating, '`suspended` with `protocolCurrent: true` and healthy evidence'),
+    /`resume`/,
+  );
+  assert.match(
+    tableRow(gating, '`baseline`, `active`, `review`, unhealthy or earlier-protocol `suspended`'),
     /\| none\s*\|$/,
+  );
+  // A generation recorded under an earlier protocol always fails `resume` with PROTOCOL_DRIFT, so
+  // setup never offers it and names the real exit instead.
+  assert.match(
+    prose(fragment),
+    /`protocolCurrent: false` means an earlier protocol recorded the generation: report that it can never resume and that its only exit is offered by no workflow and must be run through the helper directly with the pilot disabled: `begin-review` then `discard-generation` from `suspended`, `discard-generation` alone from `review`/,
   );
   assert.match(
     fragment,
@@ -1870,7 +1879,7 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
 
   for (const [header, state] of [
     ['Baseline', /generationState=none/],
-    ['Resume', /suspended generation with healthy evidence/],
+    ['Resume', /suspended current-protocol generation with healthy evidence/],
   ]) {
     const ask = setupPilotAsk(header);
     assert.match(ask.when, /configState=enabled/, `${header} requires an enabled configuration`);

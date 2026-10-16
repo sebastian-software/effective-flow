@@ -285,6 +285,488 @@ export function validateAgentProfileMappings(mappings, { context } = {}) {
   return mappings;
 }
 
+// --- Model tiers (per-spawn model and reasoning effort) ---
+//
+// Three provider-neutral tiers name the model class a spawn runs on. Build metadata
+// (`MODEL_TIER_MAPPINGS` in build.mjs) maps each tier once to its Claude Code and Codex values; an
+// agent source declares only its default `tier:`, and every spawn instruction in `src/tools` or
+// `src/shared` carries a `<!-- spawn-site:<owner>/<id> -->` marker line whose site resolves through
+// the `## Spawn sites` table in `src/shared/model-tiers.md`. The build replaces each marker line
+// with that site's rendered tier line in the target's own form.
+export const MODEL_TIERS = Object.freeze(['mechanical', 'standard', 'deep']);
+export const CLAUDE_TIER_MODELS = Object.freeze(['haiku', 'sonnet', 'opus']);
+const MODEL_TIER_HARNESS_KEYS = Object.freeze({
+  claude: Object.freeze(['model', 'effort']),
+  codex: Object.freeze(['model', 'reasoning_effort']),
+});
+// The four per-agent fields `tier:` replaced. Any of them reappearing would be a second source
+// for a sidecar value, so each one fails the build.
+export const LEGACY_AGENT_MODEL_FIELDS = Object.freeze([
+  Object.freeze(['claude', 'model']),
+  Object.freeze(['claude', 'effort']),
+  Object.freeze(['codex', 'model']),
+  Object.freeze(['codex', 'model_reasoning_effort']),
+]);
+
+function assertExactKeys(value, keys, label, context) {
+  assertPlainObject(value, label, context);
+  assertOnlyKeys(value, keys, label, context);
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) {
+      throw new Error(`${label} is missing "${key}"${contextSuffix(context)}`);
+    }
+  }
+}
+
+export function validateModelTierMappings(mappings, { context } = {}) {
+  assertExactKeys(mappings, MODEL_TIERS, 'Model-tier mappings', context);
+  for (const tier of MODEL_TIERS) {
+    const label = `Model-tier "${tier}" mapping`;
+    assertExactKeys(mappings[tier], Object.keys(MODEL_TIER_HARNESS_KEYS), label, context);
+    const { claude, codex } = mappings[tier];
+    assertExactKeys(claude, MODEL_TIER_HARNESS_KEYS.claude, `${label} for claude`, context);
+    if (!CLAUDE_TIER_MODELS.includes(claude.model)) {
+      throw new Error(
+        `Unsupported Claude model "${claude.model}" for model tier "${tier}"${contextSuffix(context)}; expected one of: ${CLAUDE_TIER_MODELS.join(', ')}`,
+      );
+    }
+    normalizeClaudeEffort(claude.effort, `model tier "${tier}"`, context);
+    assertExactKeys(codex, MODEL_TIER_HARNESS_KEYS.codex, `${label} for codex`, context);
+    normalizeCodexReasoningEffort(
+      codex.model,
+      codex.reasoning_effort,
+      `model tier "${tier}"`,
+      context,
+    );
+  }
+  return mappings;
+}
+
+// Resolve an agent source's default tier from its frontmatter. The tier is the single source of
+// the native sidecar's model and effort, so a missing, unknown or duplicate `tier:` and any legacy
+// per-harness model/effort field fail.
+export function resolveAgentTier(frontmatter, { agentName, context } = {}) {
+  for (const [section, key] of LEGACY_AGENT_MODEL_FIELDS) {
+    const block = sectionBlock(frontmatter, section);
+    if (block !== null && new RegExp(`^\\s+${escapeRegex(key)}:`, 'm').test(block)) {
+      throw new Error(
+        `Agent "${agentName}" declares legacy field "${section}.${key}"${contextSuffix(context)}; declare one top-level "tier:" instead, its model and effort derive from MODEL_TIER_MAPPINGS`,
+      );
+    }
+  }
+  const tierLines = frontmatter.split('\n').filter((line) => /^tier:/.test(line));
+  if (tierLines.length === 0) {
+    throw new Error(
+      `Missing required field "tier" for agent "${agentName}"${contextSuffix(context)}`,
+    );
+  }
+  if (tierLines.length > 1) {
+    throw new Error(`Duplicate field "tier" for agent "${agentName}"${contextSuffix(context)}`);
+  }
+  const tier = parseScalar(tierLines[0].slice('tier:'.length), 'tier', context);
+  if (!MODEL_TIERS.includes(tier)) {
+    throw new Error(
+      `Unknown tier "${tier}" for agent "${agentName}"${contextSuffix(context)}; expected one of: ${MODEL_TIERS.join(', ')}`,
+    );
+  }
+  return tier;
+}
+
+const KEBAB = '[a-z0-9]+(?:-[a-z0-9]+)*';
+export const SPAWN_SITE_ID_RE = new RegExp(`^(${KEBAB})/(${KEBAB})$`);
+export const SPAWN_SITE_MARKER_PREFIX = '<!-- spawn-site:';
+const SPAWN_SITE_MARKER_LINE_RE = /^([ \t]*)<!-- spawn-site:(\S+) -->[ \t]*$/;
+
+// Every marker line of one source, in order. A line that mentions the marker prefix in any other
+// shape or inside any fenced block (an `ask`, `include` or `lazy-include` fence included), an id
+// that is not `<owner>/<id>` in kebab case, or an owner that differs from the source's own name
+// fails, so a malformed marker can never survive as an inert comment.
+export function collectSpawnSiteMarkers(text, { owner, context } = {}) {
+  const markers = [];
+  const lines = normalizeLineEndings(text).split('\n');
+  let fence = null;
+  for (const [index, line] of lines.entries()) {
+    const fenceMatch = line.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const run = fenceMatch[1];
+      if (fence === null) fence = run;
+      else if (run[0] === fence[0] && run.length >= fence.length && line.trim() === run) {
+        fence = null;
+      }
+    }
+    if (!line.includes(SPAWN_SITE_MARKER_PREFIX)) continue;
+    const where = `${context ?? 'source'}:${index + 1}`;
+    if (fence !== null) {
+      throw new Error(
+        `Spawn-site marker inside a fenced block (in ${where}); place it in the spawn instruction's paragraph or list item`,
+      );
+    }
+    const match = line.match(SPAWN_SITE_MARKER_LINE_RE);
+    if (!match) {
+      throw new Error(
+        `Malformed spawn-site marker (in ${where}); expected a line of its own: <!-- spawn-site:<owner>/<id> -->`,
+      );
+    }
+    const idMatch = match[2].match(SPAWN_SITE_ID_RE);
+    if (!idMatch) {
+      throw new Error(
+        `Malformed spawn-site id "${match[2]}" (in ${where}); expected <owner>/<id> in kebab case`,
+      );
+    }
+    if (owner !== undefined && idMatch[1] !== owner) {
+      throw new Error(
+        `Spawn-site marker "${match[2]}" (in ${where}) must be prefixed with its owning source "${owner}/"`,
+      );
+    }
+    markers.push({ id: match[2], line: index + 1, context });
+  }
+  return markers;
+}
+
+export const MODEL_TIER_SPAWN_SITES_HEADING = '## Spawn sites';
+export const SPAWN_SITE_TABLE_HEADERS = Object.freeze(['Site', 'Spawn', 'Tier', 'Down']);
+const SPAWN_SITE_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
+
+function spawnSiteTableCells(line, where) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|') || trimmed.length < 2) {
+    throw new Error(`Malformed spawn-site table row (in ${where}): ${line}`);
+  }
+  return trimmed
+    .slice(1, -1)
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+function spawnSiteCode(cell, column, where) {
+  const match = cell.match(/^`([^`]+)`$/);
+  if (!match) {
+    throw new Error(
+      `Spawn-site ${column} cell must be one inline code span (in ${where}): ${cell}`,
+    );
+  }
+  return match[1];
+}
+
+// Parse the `## Spawn sites` table of model-tiers.md into resolved sites. `agentTiers` maps every
+// agent source name to its `tier:`; a `role:` row resolves to those tiers. An empty table (header
+// and separator only) is valid. Each site becomes `{ id, spawn, clauses, downAllowed, line }`,
+// where `clauses` lists `{ role, tier }` (`role` null for a literal tier) in table order.
+export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
+  if (!(agentTiers instanceof Map)) {
+    throw new Error(`parseSpawnSiteTable requires agentTiers${contextSuffix(context)}`);
+  }
+  const lines = normalizeLineEndings(markdown).split('\n');
+  const headings = lines.flatMap((line, index) =>
+    line === MODEL_TIER_SPAWN_SITES_HEADING ? [index] : [],
+  );
+  if (headings.length !== 1) {
+    throw new Error(
+      `Model tiers need exactly one "${MODEL_TIER_SPAWN_SITES_HEADING}" heading${contextSuffix(context)}; found ${headings.length}`,
+    );
+  }
+  let end = lines.findIndex((line, index) => index > headings[0] && /^#{1,2} /.test(line));
+  if (end === -1) end = lines.length;
+  const section = lines.slice(headings[0] + 1, end).map((text, offset) => ({
+    text,
+    line: headings[0] + 2 + offset,
+  }));
+  const tableStart = section.findIndex(({ text }) => text.trim().startsWith('|'));
+  if (tableStart === -1) {
+    throw new Error(`"${MODEL_TIER_SPAWN_SITES_HEADING}" has no table${contextSuffix(context)}`);
+  }
+  let tableEnd = section.findIndex(
+    ({ text }, index) => index > tableStart && !text.trim().startsWith('|'),
+  );
+  if (tableEnd === -1) tableEnd = section.length;
+  if (section.slice(tableEnd).some(({ text }) => text.trim().startsWith('|'))) {
+    throw new Error(
+      `"${MODEL_TIER_SPAWN_SITES_HEADING}" must hold exactly one table${contextSuffix(context)}`,
+    );
+  }
+  const table = section.slice(tableStart, tableEnd);
+  const at = (line) => `${context ?? 'model-tiers'}:${line}`;
+  const header = spawnSiteTableCells(table[0].text, at(table[0].line));
+  if (JSON.stringify(header) !== JSON.stringify(SPAWN_SITE_TABLE_HEADERS)) {
+    throw new Error(
+      `Spawn-site table header must be ${SPAWN_SITE_TABLE_HEADERS.join(' | ')} (in ${at(table[0].line)})`,
+    );
+  }
+  const separator = table[1];
+  if (
+    !separator ||
+    spawnSiteTableCells(separator.text, at(separator.line)).length !== 4 ||
+    !spawnSiteTableCells(separator.text, at(separator.line)).every((cell) =>
+      SPAWN_SITE_SEPARATOR_CELL_RE.test(cell),
+    )
+  ) {
+    throw new Error(
+      `Spawn-site table needs a separator row after its header (in ${at(table[0].line + 1)})`,
+    );
+  }
+
+  const sites = [];
+  const seen = new Set();
+  for (const { text, line } of table.slice(2)) {
+    const where = at(line);
+    const cells = spawnSiteTableCells(text, where);
+    if (cells.length !== 4) {
+      throw new Error(`Spawn-site table row must have 4 cells (in ${where}): ${text}`);
+    }
+    const [siteCell, spawn, tierCell, downCell] = cells;
+    const id = spawnSiteCode(siteCell, 'Site', where);
+    if (!SPAWN_SITE_ID_RE.test(id)) {
+      throw new Error(`Malformed spawn-site id "${id}" (in ${where}); expected <owner>/<id>`);
+    }
+    if (seen.has(id)) throw new Error(`Duplicate spawn-site row "${id}" (in ${where})`);
+    seen.add(id);
+    if (spawn === '' || spawn.includes('{{')) {
+      throw new Error(
+        `Spawn-site "${id}" needs a plain Spawn description without placeholders (in ${where})`,
+      );
+    }
+    const tierValue = spawnSiteCode(tierCell, 'Tier', where);
+    let clauses;
+    if (MODEL_TIERS.includes(tierValue)) {
+      clauses = [{ role: null, tier: tierValue }];
+    } else {
+      const roleMatch = tierValue.match(new RegExp(`^role:(${KEBAB}(?:,${KEBAB})*)$`));
+      if (!roleMatch) {
+        throw new Error(
+          `Unknown spawn-site tier "${tierValue}" for "${id}" (in ${where}); expected ${MODEL_TIERS.join(', ')} or role:<agent>[,<agent>…]`,
+        );
+      }
+      const roles = roleMatch[1].split(',');
+      if (new Set(roles).size !== roles.length) {
+        throw new Error(`Spawn-site "${id}" repeats a role (in ${where})`);
+      }
+      clauses = roles.map((role) => {
+        if (!agentTiers.has(role)) {
+          throw new Error(`Spawn-site "${id}" names unknown role "${role}" (in ${where})`);
+        }
+        return { role, tier: agentTiers.get(role) };
+      });
+    }
+    const down = spawnSiteCode(downCell, 'Down', where);
+    if (down !== 'yes' && down !== 'no') {
+      throw new Error(`Spawn-site "${id}" Down must be \`yes\` or \`no\` (in ${where}): ${down}`);
+    }
+    if (down === 'yes' && clauses.every(({ tier }) => tier === 'deep')) {
+      throw new Error(
+        `Spawn-site "${id}" resolves to tier "deep", which never moves down; its Down must be \`no\` (in ${where})`,
+      );
+    }
+    sites.push({ id, spawn, clauses, downAllowed: down === 'yes', line });
+  }
+  return sites;
+}
+
+// Reconcile marker lines with table rows in both directions: every marker id is unique across all
+// sources and has a row, and every row has a marker.
+export function reconcileSpawnSites(sites, markers, { context } = {}) {
+  const rows = new Set(sites.map(({ id }) => id));
+  const markerAt = new Map();
+  for (const marker of markers) {
+    const where = `${marker.context ?? 'source'}:${marker.line}`;
+    if (markerAt.has(marker.id)) {
+      throw new Error(
+        `Duplicate spawn-site marker "${marker.id}" (in ${markerAt.get(marker.id)} and ${where})`,
+      );
+    }
+    markerAt.set(marker.id, where);
+    if (!rows.has(marker.id)) {
+      throw new Error(
+        `Unknown spawn-site "${marker.id}" (in ${where}); add its row to the spawn-site table${contextSuffix(context)}`,
+      );
+    }
+  }
+  for (const { id } of sites) {
+    if (!markerAt.has(id)) {
+      throw new Error(
+        `Spawn-site table row "${id}" has no marker in src/tools or src/shared${contextSuffix(context)}`,
+      );
+    }
+  }
+}
+
+function tierValuesPhrase(tier, harness, mappings, context) {
+  const { claude, codex } = mappings[tier];
+  if (harness === 'claude') {
+    return `pass \`model: ${claude.model}\` and \`effort: ${claude.effort}\` on the Agent tool`;
+  }
+  if (harness === 'codex') {
+    return `pass \`model: ${codex.model}\` and \`reasoning_effort: ${codex.reasoning_effort}\` on the spawn`;
+  }
+  if (harness === 'portable') {
+    return (
+      `Claude Code Agent tool \`model: ${claude.model}\`, \`effort: ${claude.effort}\`; ` +
+      `Codex spawn \`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\``
+    );
+  }
+  throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+}
+
+// The shape of a rendered spawn-site line; the portable provider-name guard exempts inside it only
+// the exact two-harness values phrases rendered from the mappings.
+const RENDERED_SPAWN_SITE_LINE_RE =
+  /^[ \t]*Tier `[a-z]+`.* \(rules: `model-tiers`(?:, no downward move)?\)\.$/;
+
+// Line numbers of every rendered spawn-site tier line in a rendered body. Workers spawn nothing,
+// so a worker body must yield none.
+export function findRenderedSpawnSiteLines(text) {
+  return normalizeLineEndings(text)
+    .split('\n')
+    .flatMap((line, index) => (RENDERED_SPAWN_SITE_LINE_RE.test(line) ? [index + 1] : []));
+}
+
+// Render one site's tier line. A single resolved tier renders once; differing role tiers render
+// one clause per role. A standard clause at a `Down: no` site states that it may not move down.
+export function renderSpawnSiteLine(site, harness, { mappings, context } = {}) {
+  const tiers = [...new Set(site.clauses.map(({ tier }) => tier))];
+  const noDown = !site.downAllowed && tiers.includes('standard');
+  const suffix = ` (rules: \`model-tiers\`${noDown ? ', no downward move' : ''}).`;
+  if (tiers.length === 1) {
+    return `Tier \`${tiers[0]}\`: ${tierValuesPhrase(tiers[0], harness, mappings, context)}${suffix}`;
+  }
+  return (
+    site.clauses
+      .map(
+        ({ role, tier }) =>
+          `Tier \`${tier}\` for {{AGENT:${role}}}: ${tierValuesPhrase(tier, harness, mappings, context)}`,
+      )
+      .join('. ') + suffix
+  );
+}
+
+// Replace every spawn-site marker line of a resolved body with its site's tier line, keeping the
+// marker's indentation. `sites` maps site id to resolved site.
+export function renderSpawnSiteMarkers(body, harness, { sites, mappings, context } = {}) {
+  if (!body.includes(SPAWN_SITE_MARKER_PREFIX)) return body;
+  const markers = collectSpawnSiteMarkers(body, { context });
+  const lines = body.split('\n');
+  for (const { id, line } of markers) {
+    const site = sites.get(id);
+    if (!site) {
+      throw new Error(`Unknown spawn-site "${id}"${contextSuffix(context)}`);
+    }
+    const indent = lines[line - 1].match(/^[ \t]*/)[0];
+    lines[line - 1] = `${indent}${renderSpawnSiteLine(site, harness, { mappings, context })}`;
+  }
+  return lines.join('\n');
+}
+
+export const MODEL_TIER_TABLE_START = '<!-- model-tier-table:start -->';
+export const MODEL_TIER_TABLE_END = '<!-- model-tier-table:end -->';
+export const MODEL_TIER_GENERATED_PLACEHOLDERS = Object.freeze([
+  '{{MODEL_TIER_ROLE_DEFAULTS}}',
+  '{{MODEL_TIER_TABLE}}',
+]);
+
+// Role | Tier for every agent source, sorted by name.
+export function renderModelTierRoleDefaults(agentTiers) {
+  const rows = [...agentTiers].sort(([left], [right]) => left.localeCompare(right));
+  return ['| Role | Tier |', '| ---- | ---- |']
+    .concat(rows.map(([role, tier]) => `| \`${role}\` | \`${tier}\` |`))
+    .join('\n');
+}
+
+// The harness values per tier between the generated-table markers: the Claude column for the
+// Claude target, the Codex column for Codex, and both, keyed by spawn mechanism, for portable.
+export function renderModelTierTable(harness, mappings, { context } = {}) {
+  const columns = {
+    claude: [
+      [
+        'Claude Code Agent tool',
+        ({ claude }) => `\`model: ${claude.model}\`, \`effort: ${claude.effort}\``,
+      ],
+    ],
+    codex: [
+      [
+        'Codex spawn',
+        ({ codex }) => `\`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\``,
+      ],
+    ],
+  };
+  columns.portable = [...columns.claude, ...columns.codex];
+  const selected = columns[harness];
+  if (!selected) throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+  const header = `| Tier | ${selected.map(([title]) => title).join(' | ')} |`;
+  const separator = `| ---- | ${selected.map(() => '----').join(' | ')} |`;
+  const rows = MODEL_TIERS.map(
+    (tier) => `| \`${tier}\` | ${selected.map(([, cell]) => cell(mappings[tier])).join(' | ')} |`,
+  );
+  return [MODEL_TIER_TABLE_START, header, separator, ...rows, MODEL_TIER_TABLE_END].join('\n');
+}
+
+// All model-tier build directives for one resolved body and target: spawn-site marker lines and
+// the two generated model-tiers parts. Runs before renderBody, so a multi-role line's
+// {{AGENT:…}} references receive their target syntax there.
+export function renderModelTierDirectives(
+  body,
+  harness,
+  { sites, mappings, agentTiers, context } = {},
+) {
+  const withSites = renderSpawnSiteMarkers(body, harness, { sites, mappings, context });
+  if (!MODEL_TIER_GENERATED_PLACEHOLDERS.some((token) => withSites.includes(token))) {
+    return withSites;
+  }
+  return withSites
+    .replaceAll('{{MODEL_TIER_ROLE_DEFAULTS}}', () => renderModelTierRoleDefaults(agentTiers))
+    .replaceAll('{{MODEL_TIER_TABLE}}', () => renderModelTierTable(harness, mappings, { context }));
+}
+
+function providerNamePattern(names) {
+  const alternatives = [...new Set(names)].map(escapeRegex).join('|');
+  return new RegExp(`(?<![A-Za-z0-9_-])(?:${alternatives})(?![A-Za-z0-9_-])`, 'gi');
+}
+
+// Provider model names in rendered text, as `{ line, name }`. With `allowGenerated`, only the
+// portable build-generated tier text rendered from `mappings` is exempt: a line between the
+// model-tier-table markers that equals a rendered table line, and an exact two-harness values
+// phrase inside a rendered spawn-site line. An unbalanced table marker fails.
+export function findProviderModelNames(
+  text,
+  { modelNames, allowGenerated = false, mappings, context } = {},
+) {
+  const pattern = providerNamePattern(modelNames);
+  let tableLines = new Set();
+  let valuePhrases = [];
+  if (allowGenerated) {
+    if (!mappings) {
+      throw new Error(
+        `findProviderModelNames needs mappings with allowGenerated${contextSuffix(context)}`,
+      );
+    }
+    tableLines = new Set(renderModelTierTable('portable', mappings, { context }).split('\n'));
+    valuePhrases = MODEL_TIERS.map((tier) => tierValuesPhrase(tier, 'portable', mappings, context));
+  }
+  const findings = [];
+  let inTable = false;
+  for (const [index, line] of normalizeLineEndings(text).split('\n').entries()) {
+    if (allowGenerated && line === MODEL_TIER_TABLE_START) {
+      if (inTable) throw new Error(`Nested model-tier table start marker at line ${index + 1}`);
+      inTable = true;
+      continue;
+    }
+    if (allowGenerated && line === MODEL_TIER_TABLE_END) {
+      if (!inTable)
+        throw new Error(`Model-tier table end marker without start at line ${index + 1}`);
+      inTable = false;
+      continue;
+    }
+    if (inTable && tableLines.has(line)) continue;
+    const scanned =
+      allowGenerated && RENDERED_SPAWN_SITE_LINE_RE.test(line)
+        ? valuePhrases.reduce((rest, phrase) => rest.replaceAll(phrase, ''), line)
+        : line;
+    for (const match of scanned.matchAll(pattern)) {
+      findings.push({ line: index + 1, name: match[0] });
+    }
+  }
+  if (inTable) throw new Error('Model-tier table start marker without end');
+  return findings;
+}
+
 // Fail the build if any {{SKILL:X}} / {{AGENT:X}} reference points at a name
 // that has no matching tool/agent source.
 export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
@@ -601,27 +1083,6 @@ export const NATIVE_SIDECAR_CONFIG_PARSERS = Object.freeze({
   claude: parseClaudeSidecarConfig,
   codex: parseCodexSidecarConfig,
 });
-
-// Compares the parsed configuration of one base worker's sidecar in the baseline and the working
-// build. `baseline` and `working` are `{ path, content }`; parse errors name the offending path.
-export function assertSameNativeSidecarConfiguration(harness, file, baseline, working) {
-  if (!Object.hasOwn(NATIVE_SIDECAR_CONFIG_PARSERS, harness)) {
-    throw new Error(`Unsupported native sidecar harness "${harness}"`);
-  }
-  const parse = NATIVE_SIDECAR_CONFIG_PARSERS[harness];
-  const before = parse(baseline.content, baseline.path);
-  const after = parse(working.content, working.path);
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
-  for (const key of keys) {
-    const beforeValue = Object.hasOwn(before, key) ? JSON.stringify(before[key]) : '<absent>';
-    const afterValue = Object.hasOwn(after, key) ? JSON.stringify(after[key]) : '<absent>';
-    if (beforeValue !== afterValue) {
-      throw new Error(
-        `Base native configuration drift: ${harness} ${file} key "${key}": ${beforeValue} -> ${afterValue}`,
-      );
-    }
-  }
-}
 
 // The baseline build must ship exactly one `<worker>.<extension>` sidecar per base worker the
 // working inventory declares. Inputs are copied before sorting and never mutated.

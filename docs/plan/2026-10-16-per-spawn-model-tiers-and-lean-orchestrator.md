@@ -283,6 +283,40 @@ Not relevant.
   - merging `AGENT_PROFILE_MAPPINGS` into `MODEL_TIER_MAPPINGS`.
 - **Exempt tools:** `version`, the `pr-review` alias and `open-plans` stay inline. `commit` and `pr` stay inline when run standalone.
 
+## Stage A implementation
+
+Implemented on 2026-10-16 by `effective-flow build` on `effective-flow/build/per-spawn-model-tiers-and-lean-orchestrator`. Stage B is not implemented; the plan status stays open until Stage B ships.
+
+Deviations from the plan text, all recorded in `docs/adr/per-spawn-model-tiers.md`:
+
+- The pilot protocol binds the Quality-mapping identity as a SHA-256 digest (`qualityMappingIdentity`), not as raw values: the protocol script is copied byte for byte into the portable target, which forbids provider names outside build-generated tier text.
+- The orchestrator tier sentence closes the worker-start bullet of `delegation-mandate.md` instead of standing as its own bullet, so the file stays within its 16-line cap (15 lines).
+- A Fast spawn passes only its Fast reference's own values, never the site's tier line (carve-out owned by `execution-profiles.md`); without it, a per-invocation tier would override the `-fast` sidecar.
+- 44 spawn sites: the `concept-review` fan-out is `deep` by analogy with `plan-review`, the delegated workflow runs in `apply-issues`, `apply-review` and `iterate` are `deep`, and no `mechanical` site exists yet (no cleanup or inventory scan is a spawn today). The manual Claude check therefore proves the `mechanical` tier with a direct Agent call (`haiku`/`low`) instead of a `mechanical` site.
+- Correction and respawn phrasing is not a detection candidate; such spawns resolve through the role or site default, and `deep` roles never move down.
+- Guided setup block 10 never offers `resume` for a generation recorded under an earlier protocol (`inventory` exposes `protocolCurrent`); its exit runs through the helper directly.
+
+## Test results
+
+- `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: pass.
+- `pnpm test`: 2305 tests, 2303 pass, 1 skipped, 1 fail. The failure is environmental and also fails on the base commit: `test/next-steps-eval.test.mjs` "the shared seed commit disables inherited automatic Git maintenance…", because macOS blocks reading the iCloud-linked `~/.config/git/ignore`.
+- `scripts/compare-native-agent-baseline.mjs --base 6055c94`: pass with the expected deltas `claude-deep-tier-effort` (10 `deep` workers, `effort` `xhigh` → `high`) and `delegation-mandate-model-tiers` (worker bodies: the tier sentence and the `model-tiers` pointer). Codex native configuration is byte-identical.
+- Owed, not run: the manual Claude Code and Codex host checks (the Codex check gates the ADR from Proposed to Active) and the re-record of the three eval suites, which the plan schedules once after Stage B.
+
+## Review findings
+
+**Date:** 2026-10-16
+**Reviewer:** generic-product-reviewer, nodejs-reviewer (plus one re-check after the incorporation pass)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    20 |
+| Open / Not implemented |     0 |
+
+By severity: 1 Critical, 5 Important, 14 Notes, all fixed.
+
 ## Plan review
 
 **Result:** Approved

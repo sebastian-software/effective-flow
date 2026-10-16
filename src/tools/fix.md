@@ -177,6 +177,7 @@ Run the read-only investigation per "Investigation method", section "Investigate
 1. Try to reproduce the bug with `{{AGENT:code-validator}}` for the current technical state. If
    possible, specify a failing test that documents the behavior (file, case, expected failure)
    without writing it; Phase 3 writes it once the diff baseline exists.
+   <!-- spawn-site:fix/reproduction -->
 2. Perform a gap analysis for the diagnosis and fix strategy:
    - over-engineering
    - unspoken assumptions
@@ -223,9 +224,11 @@ worktree-record-obligation
    fails as expected, before any implementer starts; if it does not, start no implementer and
    return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
    diff baseline, and resumes here: the test-writer revises the already written test in place.
+   <!-- spawn-site:fix/failing-test -->
 2. Start every implementer selected by the canonical routing contract. Before
    `{{AGENT:generic-product-implementer}}`, emit the reduced-depth notice. Never send product code
    to `{{AGENT:generic-implementer}}`.
+   <!-- spawn-site:fix/implementation -->
 3. Give a precise assignment:
    - root cause
    - affected files
@@ -245,8 +248,10 @@ documentation-sync
 ### Phase 4: Verification
 
 1. First `{{AGENT:test-writer}}`
+   <!-- spawn-site:fix/regression-test -->
    - confirms that the Phase 3 failing test now passes, or writes a regression test
 2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
+   <!-- spawn-site:fix/verification -->
    - `{{AGENT:code-validator}}`: repository-native lint, type, build and documentation checks that
      can be discovered safely
    - for every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`: a read-only

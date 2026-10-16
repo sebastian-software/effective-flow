@@ -1,13 +1,10 @@
 ---
 description: "Runs a specialized Rust review: memory safety, unsafe, error handling, Clippy idiomatics, concurrency, API design, security, and design-decision-aware findings."
+tier: deep
 claude:
-  model: opus
-  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:
-  model: gpt-5.6-sol
-  model_reasoning_effort: high
   sandbox_mode: read-only
 ---
 
