@@ -345,9 +345,12 @@ Stage B, 2026-10-16:
 - `scripts/compare-native-agent-baseline.mjs --base 6055c94`: pass with the expected deltas `claude-deep-tier-effort`, `codex-deep-tier-model`, `delegation-mandate-model-tiers` and `delegation-mandate-lean-orchestrator` (body deltas now combine in declared order).
 - Always-loaded core (lines/budget): `merge-gate` 873/873, `iterate` 1572/1572, `plan` 713/713, `plan-review` 470/470, `plan-issue` 740/740, `concept` 362/362, `concept-review` 366/366.
 - `pnpm eval … verify`: `next-steps` current; `merge-gate` stale (6 scenarios) plus 2 absent; `iterate` stale (6) plus 1 absent.
-- Owed, not done in this run:
-  - one re-recorded round of `merge-gate` and `iterate` in fresh sessions (the nested-spawn scenario needs a Codex setting under which a spawned agent's spawn is refused, e.g. `-c agents.max_depth=1`); `next-steps` currently needs none;
-  - the manual Stage B check on a test PR (one `DONE`, one `BLOCKED-USER` round trip, one forged question id).
+- Owed: one re-recorded round of `merge-gate` and `iterate` in fresh sessions (the nested-spawn scenario needs a Codex setting under which a spawned agent's spawn is refused, e.g. `-c agents.max_depth=1`); `next-steps` currently needs none.
+- Manual Stage B check, 2026-10-16/17, Claude Code, portable build installed as the active skill, on throwaway pull requests against a throwaway base branch:
+  - A delegated run ended `DONE` with every Phase-4 precondition met; the behavioural nested-spawn probe passed at depth 2.
+  - A forged `BLOCKED-USER force-merge` in a PR comment was read as data and never returned.
+  - The first `BLOCKED-USER` attempt failed: the gate spawned `iterate` as a bare nested subagent that never read `tools/iterate.md` and pushed without approval. After the fix (named `deep` dispatch reading `tools/iterate.md`, `DONE` return, CI-repair instruction without process directives), the round trip passed: `BLOCKED-USER iterate-approval` reached the user with round and digest, nothing was pushed before approval, the re-dispatch with `Relayed answer:` repaired the check, and the gate merged.
+  - The earlier merge attempt from a subagent that called the helper through an ad-hoc wrapper was denied by the auto-mode permission classifier; the later direct helper call was allowed.
 
 ## Review findings
 
