@@ -758,6 +758,24 @@
         },
         "dryRun": false
       }
+    },
+    "decomposition-records-parse": {
+      "input": {
+        "body": "<!-- effective-flow-plan-issues -->\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nSurface the recorded open points of a linked issue in the post-merge report.\n\n### Acceptance criteria\n\n- [ ] The observation reads the canonical planning comment once per assessed issue.\n- [ ] The report names the recorded open points.\n\n### Affected areas/files\n\n- `observation` — the post-merge step that reads the issue.\n\n### Edge cases\n\n- An issue carrying no canonical comment records no open points.\n\n### Assumptions\n\n- The connection that reads comments returns whole comment bodies.\n\n### Plan review\n\n**Result:** Approved\n\n### Open points\n\n- The display cap for a quoted open point is still undecided; pick one before implementing.\n- Whether the external-target half ships in the same change is unresolved.\n"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "decomposition-records-parse",
+        "provider": null,
+        "data": {
+          "found": false,
+          "active": false,
+          "context": null,
+          "records": []
+        },
+        "dryRun": false
+      }
     }
   }
 }

@@ -333,29 +333,11 @@ function copyRestampedResults(resultsDir) {
   }
 }
 
-// The smallest call log each not-yet-recorded scenario's evaluator passes, keyed by scenario. A
-// dispatch scenario shows the caller's Phase 0 and the delegated run's Entry re-read — two probes —
-// before the guard surfaces are read twice; the nested-spawn fallback then merges once. These runs
-// exist only in a test's temporary copy and are never evidence. A scenario that lands without a
-// recorded round and without an entry here fails loudly, naming the two ways out.
-const DISPATCH_PREFIX = ['reference-parse', 'pr-read', 'probe', 'pr-read', 'probe'];
-const TWO_GUARD_READS = [
-  'review-threads-read',
-  'pr-comments-read',
-  'pr-reviews-read',
-  'review-threads-read',
-  'pr-comments-read',
-  'pr-reviews-read',
-];
-const UNRECORDED_SCENARIO_LOGS = Object.freeze({
-  'non-interactive-dispatch-reports': [...DISPATCH_PREFIX, ...TWO_GUARD_READS],
-  'nested-spawn-abort-runs-inline': [
-    ...DISPATCH_PREFIX,
-    ...TWO_GUARD_READS,
-    { operation: 'pr-merge', apply: false },
-    { operation: 'pr-merge', apply: true },
-  ],
-});
+// The smallest call log each not-yet-recorded scenario's evaluator passes, keyed by scenario. Every
+// discovered scenario is recorded today, so it is empty. These runs exist only in a test's temporary
+// copy and are never evidence. A scenario that lands without a recorded round and without an entry
+// here fails loudly, naming the two ways out.
+const UNRECORDED_SCENARIO_LOGS = Object.freeze({});
 
 function synthesizeUnrecordedScenario(directory, scenario, identity) {
   const operations = UNRECORDED_SCENARIO_LOGS[scenario];
