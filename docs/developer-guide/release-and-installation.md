@@ -68,7 +68,7 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 
 ### The release pull request gates the behavioural eval evidence
 
-The behavioural eval suites under `evals/<tool>/` — `merge-gate` and `iterate` — archive evidence
+The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate` and `next-steps` — archive evidence
 about a build, and the build that matters is the one that ships, so the release pull request is
 where that evidence has to be current. The last step of the required `Format, test and build` job,
 `Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command
@@ -76,7 +76,7 @@ that rebuilds the skill into a throwaway root and compares it against that suite
 writing nothing and launching no model. Every suite is verified even after an earlier one failed,
 each verdict gets its own section of the job summary, and the step fails if any suite did. On an
 ordinary pull request it reports — the verdicts go to the job summary and the check stays green
-even when a corpus is stale, because a round costs six scenarios times five fresh agent sessions per
+even when a corpus is stale, because a round costs five fresh agent sessions per scenario of each
 suite and the claim it supports is about the delivered build rather than about every merge on the
 way there. When the head ref starts with `release-please--` — the prefix of release-please's own
 `release-please--branches--develop--components--effective-flow`, matched rather than the full name

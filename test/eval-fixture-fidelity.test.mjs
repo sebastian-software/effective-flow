@@ -20,8 +20,10 @@ import { validateArchivedPairing } from '../evals/_scaffold/run-evidence.mjs';
 import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
 import {
   CONFIGURED_REVIEWER_SCENARIO,
+  NON_INTERACTIVE_DISPATCH_SCENARIO,
   scenarioSetup,
 } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
+import { projectDocuments } from '../evals/merge-gate/_scaffold/project-setup.mjs';
 import {
   bodyHash,
   errorEnvelope,
@@ -121,6 +123,10 @@ function runIterateEcho(message, sandbox = null) {
   return { root, result, trace: join(root, 'trace', 'iterate-calls.jsonl') };
 }
 
+// Which slot sees which configuration is the scenario's composition: the configured-reviewer
+// scenario alone adds reviewer rows and the echo, the non-interactive dispatch scenario alone changes
+// one base row, and every other scenario keeps the shared setup, so a difference in outcome stays
+// attributable to the one fact each scenario changes.
 test('only the configured-reviewer scenario opts into resolved reviewer rows and the iterate echo', () => {
   assert.deepEqual(scenarioSetup(CONFIGURED_REVIEWER_SCENARIO), {
     projectSetupRows: [
@@ -130,13 +136,57 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
     ],
     iterateEcho: true,
   });
+  assert.deepEqual(scenarioSetup(NON_INTERACTIVE_DISPATCH_SCENARIO), {
+    projectSetupRows: [['mergeGate.completion', 'ask']],
+    iterateEcho: false,
+  });
   for (const file of fixtureFiles()) {
     const scenario = file.slice(0, -'.json'.length);
-    if (scenario === CONFIGURED_REVIEWER_SCENARIO) continue;
+    if ([CONFIGURED_REVIEWER_SCENARIO, NON_INTERACTIVE_DISPATCH_SCENARIO].includes(scenario))
+      continue;
     assert.deepEqual(
       scenarioSetup(scenario),
       { projectSetupRows: [], iterateEcho: false },
       `${scenario}: an existing scenario no longer has the shared no-reviewer setup`,
+    );
+  }
+});
+
+// A key stated twice would leave the configuration a gate run reads ambiguous, so a scenario row
+// whose key the base table carries replaces that row in place, and only a new key is appended.
+test('a scenario row replaces a base configuration row instead of stating its key twice', () => {
+  const completionRows = (rows) =>
+    projectDocuments({ scenario: 'unit', rows })
+      .setupAdr.split('\n')
+      .filter((line) => line.startsWith('| mergeGate.completion '));
+  assert.deepEqual(completionRows([]), ['| mergeGate.completion             | merge          |']);
+  assert.deepEqual(
+    completionRows(scenarioSetup(NON_INTERACTIVE_DISPATCH_SCENARIO).projectSetupRows),
+    ['| mergeGate.completion             | ask            |'],
+  );
+  const reviewer = projectDocuments({
+    scenario: 'unit',
+    rows: scenarioSetup(CONFIGURED_REVIEWER_SCENARIO).projectSetupRows,
+  }).setupAdr;
+  assert.ok(reviewer.endsWith('| mergeGate.bots.recensor.check    | recensor       |\n'));
+  assert.equal(reviewer.split('| mergeGate.completion ').length, 2);
+});
+
+// The same ambiguity inside one scenario: two rows with one key would otherwise be resolved by their
+// order (a base key) or appended twice (a new key), so the scenario setup is rejected outright.
+test('a scenario that states one configuration key twice is rejected', () => {
+  for (const key of ['mergeGate.completion', 'mergeGate.bots.recensor.check']) {
+    assert.throws(
+      () =>
+        projectDocuments({
+          scenario: 'unit',
+          rows: [
+            [key, 'ask'],
+            [key, 'merge'],
+          ],
+        }),
+      { message: `scenario configuration states ${key} twice` },
+      key,
     );
   }
 });
@@ -1468,7 +1518,7 @@ function applyMutation(built, mutation) {
 
 test('iterate: every stored delegation is genuine sender output changed in exactly its declared way', () => {
   const fixtures = iterateFixtures();
-  assert.equal(fixtures.length, 6, 'the iterate corpus is expected to hold its six scenarios');
+  assert.equal(fixtures.length, 7, 'the iterate corpus is expected to hold its seven scenarios');
   for (const { scenario, fixture } of fixtures) {
     const { input, built, snapshot, mutation, message } = fixture.delegation ?? {};
     assert.equal(typeof built, 'string', `${scenario}: the fixture stores no built envelope`);

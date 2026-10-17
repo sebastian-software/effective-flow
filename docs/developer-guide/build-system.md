@@ -229,6 +229,17 @@ portable target from 2,883 to 2,260. The configured-reviewer
 contract remains in one source fragment while the default, row-absent route no longer pays its
 context cost.
 
+`merge-gate-delegated-run` is the larger split of the same tool: the eager core keeps Phase 0, the
+run states, the closed question-id table, dispatch and the caller loop (1943 to 873 lines), and
+the fragment holds the whole gate after Phase 0. It is single-consumer and loads when the run is
+the delegated run or the caller runs the gate inline. The other single-consumer `merge-gate`
+fragments are now lazily included from inside it, at their own decision points, so none of them
+reaches the caller's core.
+
+`judgment-draft-snapshot` holds the issue-mode draft snapshot of the judgment handoff in
+`central-reasoning-delegation`, so `plan`, `concept` and `concept-review`, which judge only local
+files, no longer pay for it; `plan-issue` and `plan-review` load it in issue mode.
+
 `durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
 implementation, investigation, planning, or decomposition run. Common implementation workflows
 reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
@@ -818,7 +829,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
@@ -1054,10 +1065,10 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`merge-gate` is 1943/1944, `iterate` 1555/1555, `setup` 1558/1560,
-`apply-review` 1025/1025, `apply-issues` 937/937, and `cleanup` 833/833.
-The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 695/695, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every
+`iterate` is 1572/1572, `setup` 1558/1560, `apply-review` 1025/1025, `apply-issues` 937/937,
+`merge-gate` 873/873 (the gate moved into the lazy `merge-gate-delegated-run`), and `cleanup`
+833/833. The four tools that formerly shared a 700-line allowance now carry individual ratchets:
+`plan` 713/713, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every
 other tool's current measurement and exact headroom from the build report rather than from a
 category-wide assumption. The conditional Profile contract remains in the lazy
 `setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.

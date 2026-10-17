@@ -51,7 +51,7 @@ both halves, and neither is safe alone.
 | `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                      |
 | `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it |
 | `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument          |
-| `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace |
+| `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace, and which one changes a base configuration row |
 | `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads           |
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                    |
 | `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`        |
@@ -103,6 +103,16 @@ record what the host actually used. The pinned model is in the Codex CLI model c
 documented rather than enforced, because pinning the CLI version would owe a full round for every
 CLI update.
 
+**The pinned profile is the caller's.** The fresh session the host starts is the gate's caller: it
+runs Phase 0 and dispatches the rest of the gate to a delegated run ("Dispatching the delegated run"
+in `tools/merge-gate.md`), which in turn spawns the `iterate` round and the worker roles. Those
+spawns run on their own model tiers — the delegated run on `deep` (`shared/model-tiers.md`, site
+`merge-gate/delegated-run`) — which the round neither pins nor attests. A delegated run that cannot
+spawn returns `ABORT nested-spawn-unavailable`, and the caller then runs the gate inline
+on the pinned profile. Caller and delegated run reach the forge through the same stub and write one
+call log, so no log records which of them ran Phases 1 to 6; only the two delegation scenarios pin
+it, through the host's nesting depth (see "Delegation scenarios and the host's nesting depth").
+
 ```sh
 pnpm eval merge-gate prepare \
   --harness HARNESS_NAME \
@@ -143,6 +153,11 @@ from that directory does not populate the JSON contract, and a missing field mak
 record invalid even when the inherited process directory happened to be correct. `prompt.mjs`
 therefore requires `{{PROJECT_ROOT}}` exactly twice in every template.
 
+The non-interactive dispatch scenario modifies only its own project-setup ADR: its
+`mergeGate.completion` row reads `ask` instead of `merge`. `project-setup.mjs` replaces a base row
+whose key a scenario row repeats in place, and appends every other row, so no key is ever stated
+twice.
+
 The configured-reviewer scenario modifies only its own slots. Provisioning appends the current
 `mergeGate.bots`, `mergeGate.bots.<login>.trigger`, and `mergeGate.bots.<login>.check` rows to that
 slot's project-setup ADR, replaces the slot's copy of `tools/iterate.md` with the echo, adds the
@@ -182,6 +197,40 @@ calling host must start a **new, non-forked session** with:
   overlaid `tools/iterate.md`. For the Codex CLI, give each session a throwaway `HOME` and
   `CODEX_HOME` that hold only the authentication file, and record that as `isolated-home` in the
   tool policy.
+
+#### Delegation scenarios and the host's nesting depth
+
+Every scenario's session is a caller that dispatches a delegated run, and for every scenario's own
+claim it does not matter whether the delegated run completes the gate or aborts with
+`ABORT nested-spawn-unavailable` and leaves the caller to complete it inline. Two scenarios are
+about exactly that difference, and the call log cannot show it, so the host sets the nesting depth
+**per slot**:
+
+- `nested-spawn-abort-runs-inline`: the session keeps a spawn mechanism, and every agent it spawns
+  can spawn nothing — it is offered no spawn tool, or the host refuses its spawn call;
+- every other scenario, `non-interactive-dispatch-reports` above all: an agent the session spawns
+  can spawn agents of its own.
+
+A round carries one profile for all of its slots, and the first round after a change to the load
+set has to cover the whole corpus, because publication refuses a candidate that carries forward a
+stale or missing scenario. The per-slot depth is therefore attested once per round: declare
+`nesting-by-scenario` in `--tool-policy` for every round that includes either delegation scenario —
+in practice every full round — for example
+`--tool-policy approve-for-me,ephemeral,ignore-user-config,isolated-home,nesting-by-scenario`.
+`test/merge-gate-eval.test.mjs` fails an archived run of either delegation scenario without the
+token. Like every other part of the profile, the token attests and does not enforce.
+
+For the Codex CLI the nesting of spawned agents is bounded by the `agents.max_depth` configuration
+key, set per `codex exec` invocation with `-c agents.max_depth=<n>`. This README records no
+verified default for it. Establish both settings on the recording host with a throwaway session
+before the first slot: the value at which a spawned agent can itself spawn twice more (the gate's
+per-item runs and their workers sit two levels below it), for every slot but the nested-spawn
+scenario's, and a setting under which a spawned agent cannot spawn, for that scenario's slots.
+`-c agents.max_depth=1` composes the second condition when the host keeps the tool and refuses the
+call (`codex-cli 0.159.3` answers it "Agent depth limit reached"): the delegated run's Entry probe
+starts one no-op child, so a refused probe aborts exactly as a missing tool does. If no host setting
+stops a spawned agent from spawning, the scenario cannot be composed on that host; stop and decide
+rather than record it.
 
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
@@ -488,8 +537,8 @@ profile flags either, so for a suite that pins its profile, as this one does, th
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-serial runs of one scenario are therefore about half an hour, and thirty serial runs for the six
-scenarios that exist today are about three hours. The round layout makes those runs
+serial runs of one scenario are therefore about half an hour, and forty serial runs for the eight
+scenarios that exist today are about three and a half hours. The round layout makes those runs
 independent, so elapsed time now depends primarily on how many fresh sessions the host can run at
 once; it does not promise a particular speedup. Where the suite has to be shortened, the scenario
 count gives way — never the five-of-five requirement, because for a fail-closed rule a single
@@ -608,8 +657,8 @@ correlated `complete` events are not additional calls.
 
 ## What this deliberately does not cover
 
-- **Six scenarios exist: one pair, one observer, two unreported-check-list refusals, and one
-  configured-reviewer refusal.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+- **Eight scenarios exist: one pair, one observer, two unreported-check-list refusals, one
+  configured-reviewer refusal, and two delegation scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
   nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`
@@ -623,7 +672,14 @@ correlated `complete` events are not additional calls.
   configured-reviewer route, delegates one thread and one review-body finding through the
   slot-local echo, and reaches the Phase-4 set-aside decision without an interactive operator. Its two
   traces prove those boundaries and the absence of a merge request, not the text of the gate's final
-  report. WP3 to WP6 of the plan — the guard's three ordered rules across its three
+  report. `non-interactive-dispatch-reports` and `nested-spawn-abort-runs-inline` are about the
+  handoff from the session to the delegated run: the first that a non-interactive caller dispatches
+  with no completion answer and the delegated run, under `mergeGate.completion: ask`, reports instead
+  of merging; the second that the caller completes the gate inline, once, after
+  `ABORT nested-spawn-unavailable`. Both show the dispatch only through the delegated run's Entry
+  re-read — exactly two `probe` starts ahead of the first guard read — and neither log can show which
+  agent ran Phases 1 to 6, which the per-slot nesting depth and its attestation decide. WP3 to WP6 of
+  the plan — the guard's three ordered rules across its three
   counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
   bound — are still to come. Read a green result as a proven mechanism, not as a net.
 - **No single log can prove a refusal was a decision.** A refusal is defined by absence, and a call
@@ -882,3 +938,13 @@ held lock.
    assertion's own comment that this is weaker than either pair proxy: it shows the read happened,
    never that anything was evaluated against it, and never which of several correct stops the run
    ended at.
+
+   A **delegation** scenario is the fifth shape and adds one assertion to whichever of the others
+   its ending takes: the delegated run's Entry re-read, as exactly two `probe` starts both ahead of
+   the first guard-surface read. Fewer means nothing was dispatched; more means a second dispatch.
+   The count rests on no `probe` call after Entry: Phases 1 to 6 reuse the capabilities Phase 0
+   read, the slots replace `iterate`, whose own Phase 1 probes, with the echo, and the Entry
+   nested-spawn probe starts an agent, not the helper. A gate change that adds a later `probe` call
+   breaks this proxy and owes this paragraph and the evaluator a new count.
+   The log cannot tell the delegated run from an inline caller, so such a scenario also names the
+   host condition it needs and the test checks its attestation.

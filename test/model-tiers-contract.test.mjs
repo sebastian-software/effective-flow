@@ -335,32 +335,45 @@ const SPAWN_MENTION_ALLOWLIST = [
     '**Only from work-subject tools:**',
     'sub-agents never rename the session',
   ],
-  // merge-gate: its worker-role delegations are marked in merge-gate-conflict-resolution.
-  ['tools/merge-gate.md', 'This gate is a delegator twice over', 'classifies the two delegations'],
+  // merge-gate's delegated run: its worker-role delegations are marked in
+  // merge-gate-conflict-resolution.
   [
-    'tools/merge-gate.md',
+    'shared/merge-gate-delegated-run.md',
+    'This gate is a delegator twice over',
+    'classifies the two delegations',
+  ],
+  [
+    'shared/merge-gate-delegated-run.md',
     "does not reach this gate's own state",
     'in-run reasoning that is never delegated',
   ],
   [
-    'tools/merge-gate.md',
+    'shared/merge-gate-delegated-run.md',
     'Scope of that completion control here',
     'states the gate starts no validator of its own',
   ],
-  ['tools/merge-gate.md', 'This workflow performs no `git commit`', 'Git write boundary'],
   [
-    'tools/merge-gate.md',
+    'shared/merge-gate-delegated-run.md',
+    'This workflow performs no `git commit`',
+    'Git write boundary',
+  ],
+  [
+    'shared/merge-gate-delegated-run.md',
     'Which gate stands in for `pre-commit-gate`',
     'names the verification marked in the fragment',
   ],
-  ['tools/merge-gate.md', 'The head branch is untrusted input', 'threat model'],
+  ['shared/merge-gate-delegated-run.md', 'The head branch is untrusted input', 'threat model'],
   [
-    'tools/merge-gate.md',
+    'shared/merge-gate-delegated-run.md',
     '`mergeGate.conflictResolution` decides what the gate does',
     'configuration semantics',
   ],
-  ['tools/merge-gate.md', 'per round, where the base-into-head merge conflicted', 'report record'],
-  ['tools/merge-gate.md', 'Resolve a conflict only through', 'rules summary'],
+  [
+    'shared/merge-gate-delegated-run.md',
+    'per round, where the base-into-head merge conflicted',
+    'report record',
+  ],
+  ['shared/merge-gate-delegated-run.md', 'Resolve a conflict only through', 'rules summary'],
   ['shared/pilot-measurement.md', '`conflictResolutionAttempts`', 'measurement counter'],
   [
     'shared/pr-review-integration.md',
@@ -372,6 +385,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'shared/delegation-mandate.md',
     'Invoking an Effective Flow tool **is**',
     'mandate prose, included into worker bodies',
+  ],
+  [
+    'shared/delegation-mandate.md',
+    'For analysis, exploration, and research',
+    'analysis default and lean principle, included into worker bodies',
   ],
   [
     'shared/delegation-mandate.md',
@@ -551,6 +569,79 @@ test('conflict-resolution verification, Fast-packet validation and deep sites ne
   }
 });
 
+// The delegated merge-gate run carries the irreversible merge and reads third-party-controlled PR
+// text, so it runs at `deep` (user decision) and never moves down; its marker sits in the caller
+// core, at the dispatch, so a skipped lazy load cannot leave the spawn inheriting the parent model.
+test('the delegated merge-gate run is a deep, no-downward-move site marked at the caller dispatch', () => {
+  const site = spawnSites().find(({ id }) => id === 'merge-gate/delegated-run');
+  assert.ok(site, 'missing spawn site merge-gate/delegated-run');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['deep'],
+  );
+  assert.equal(site.downAllowed, false);
+  const markers = collectSpawnSiteMarkers(readSource('tools/merge-gate.md'), {
+    owner: 'merge-gate',
+    context: 'tools/merge-gate.md',
+  }).map(({ id }) => id);
+  assert.deepEqual(markers, ['merge-gate/delegated-run']);
+});
+
+// The delegated merge-gate run proves it can spawn by starting one no-op child before any write; a
+// probe that only does nothing needs the cheapest tier. Its marker sits in Entry step 7 of the
+// fragment, so the rendered tier line reaches the probe whenever the delegated run reads Entry.
+test('the nested-spawn probe is a mechanical site marked in Entry step 7 of the delegated run', () => {
+  const site = spawnSites().find(({ id }) => id === 'merge-gate-delegated-run/nested-spawn-probe');
+  assert.ok(site, 'missing spawn site merge-gate-delegated-run/nested-spawn-probe');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['mechanical'],
+  );
+  const fragment = readSource('shared/merge-gate-delegated-run.md');
+  const markers = collectSpawnSiteMarkers(fragment, {
+    owner: 'merge-gate-delegated-run',
+    context: 'shared/merge-gate-delegated-run.md',
+  }).map(({ id }) => id);
+  assert.deepEqual(markers, ['merge-gate-delegated-run/nested-spawn-probe']);
+  const step7 = fragment.slice(
+    fragment.indexOf('7. **Nested-spawn probe.**'),
+    fragment.indexOf('8. **Review verdicts.**'),
+  );
+  assert.ok(
+    step7.includes('<!-- spawn-site:merge-gate-delegated-run/nested-spawn-probe -->'),
+    'the marker sits inside Entry step 7',
+  );
+});
+
+// Each iterate round the gate delegates is a whole workflow run that orchestrates its own workers,
+// like the sibling delegated-workflow sites, so it runs at `deep` and never moves down. Without a
+// site the nested spawn fell to `standard`; its marker sits in the dispatch step itself.
+test('the iterate round dispatch is a deep, no-downward-move site marked in the dispatch step', () => {
+  const site = spawnSites().find(
+    ({ id }) => id === 'merge-gate-delegation-contract/iterate-delegation',
+  );
+  assert.ok(site, 'missing spawn site merge-gate-delegation-contract/iterate-delegation');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['deep'],
+  );
+  assert.equal(site.downAllowed, false);
+  const fragment = readSource('shared/merge-gate-delegation-contract.md');
+  const markers = collectSpawnSiteMarkers(fragment, {
+    owner: 'merge-gate-delegation-contract',
+    context: 'shared/merge-gate-delegation-contract.md',
+  }).map(({ id }) => id);
+  assert.deepEqual(markers, ['merge-gate-delegation-contract/iterate-delegation']);
+  const step = fragment.slice(
+    fragment.indexOf('4. **Dispatch**'),
+    fragment.indexOf('Delete the message file and its snapshot'),
+  );
+  assert.ok(
+    step.includes('<!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->'),
+    'the marker sits inside the dispatch step',
+  );
+});
+
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
@@ -570,6 +661,7 @@ test('margin, floor, retry and host-override rules live only in model-tiers.md',
     [/Agent tool without a `model` parameter/i, 'the host-forced model rule'],
     [/rejected because of a tier parameter/i, 'the rejected-parameter rule'],
     [/CLAUDE_CODE_EFFORT_LEVEL/, 'the effort-level override'],
+    [/refuses for its nesting depth/i, 'the depth-refusal rule'],
   ];
   const files = walk(SRC_DIR).map((path) => relative(SRC_DIR, path));
   for (const [pattern, rule] of anchors) {
@@ -706,6 +798,30 @@ test('built worker bodies keep the leaf rule unqualified and the tier sentence n
       assert.ok(body.includes(leafSentence), `${where}: leaf rule changed`);
       assert.ok(body.includes(tierSentences[0]), `${where}: tier sentence missing`);
       assert.ok(body.includes(pointer), `${where}: model-tiers pointer missing`);
+    }
+  }
+});
+
+// The lean-orchestrator sentence ships into every worker body with the mandate, so it binds the
+// orchestrator by name and leaves the leaf rule beside it untouched in every target; the judgment
+// handoff it motivates is a spawn site, so no worker body may carry that fragment's tier line.
+test('built worker bodies carry the lean sentence for the orchestrator and keep the leaf rule unqualified', () => {
+  const mandate = readSource('shared/delegation-mandate.md');
+  const lean = mandate
+    .split('\n')
+    .flatMap((line) => line.split(/(?<=\.) /))
+    .filter((sentence) => /substantive work/.test(sentence));
+  assert.equal(lean.length, 1, 'exactly one lean sentence');
+  assert.match(lean[0], /^The orchestrator .*unless a tool's explicit in-run rule binds that work/);
+  for (const target of TARGETS) {
+    for (const artifact of workerArtifacts(target)) {
+      const body = readFileSync(artifact, 'utf8');
+      const where = relative(distRoot, artifact);
+      assert.ok(body.includes(lean[0]), `${where}: lean sentence missing`);
+      const leaf = body.match(/Every named worker is a \*\*leaf executor\*\*: [^\n]*?\./)?.[0];
+      assert.ok(leaf, `${where}: leaf rule missing`);
+      assert.doesNotMatch(leaf, /substantive|unless/, `${where}: leaf rule qualified`);
+      assert.doesNotMatch(body, /Judgment handoff/, `${where}: workers carry no judgment handoff`);
     }
   }
 });

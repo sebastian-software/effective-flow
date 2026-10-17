@@ -25,6 +25,7 @@ import {
 } from '../evals/_scaffold/build-identity.mjs';
 import {
   alwaysAllowedOperations,
+  assessAbortedEvidence,
   evaluateEvidence,
   mutatingTrackerOperations,
 } from '../evals/_scaffold/evaluate.mjs';
@@ -238,6 +239,7 @@ const LOADED_BY_A_RUN = [
   'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
+  'shared/merge-gate-delegated-run.md',
   'shared/pr-merge-completion.md',
 ];
 
@@ -331,7 +333,8 @@ test('the build stamp covers the built tree a run actually loads', () => {
 // above catches a pointer that pulls the fragment in; this catches the subtler drift of prose about
 // the diff baseline landing in a member itself — an eager include inlined into a seed, or a direct
 // edit — which would move the digest just the same. The six sources the plan names as that
-// boundary are checked as sources too, because a source edit is where the drift starts.
+// boundary, plus the delegated-run half split out of `merge-gate.md`, are checked as sources too,
+// because a source edit is where the drift starts.
 const DIFF_BASELINE_REFERENCE = /diff-baseline|diff baseline/i;
 const DIFF_BASELINE_FREE_SOURCES = [
   'src/agents/code-validator.md',
@@ -339,6 +342,7 @@ const DIFF_BASELINE_FREE_SOURCES = [
   'src/shared/runtime-state-safety.md',
   'src/shared/execution-location.md',
   'src/tools/merge-gate.md',
+  'src/shared/merge-gate-delegated-run.md',
   'src/tools/iterate.md',
 ];
 
@@ -397,7 +401,7 @@ for (const each of SUITES) {
     assert.equal(
       widened.digest,
       baseline.digest,
-      `the instrument digest moved from ${baseline.digest} to ${widened.digest} when the scenario registry gained one name. A registry entry is a list of names no run reads, so hashing it invalidates every archived round of every other scenario for a change none of them could observe — six scenarios times five runs of hand-recorded sessions per added name. Keep the registry out of the instrument.`,
+      `the instrument digest moved from ${baseline.digest} to ${widened.digest} when the scenario registry gained one name. A registry entry is a list of names no run reads, so hashing it invalidates every archived round of every other scenario for a change none of them could observe — every scenario times five runs of hand-recorded sessions per added name. Keep the registry out of the instrument.`,
     );
 
     // The other half of the same property, and the reason the assertion above is not merely true of
@@ -420,7 +424,7 @@ for (const each of SUITES) {
 
     assert.ok(
       !hashed.includes(registryPath),
-      `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of all six scenarios — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
+      `${registryPath} is hashed as an instrument file. It declares the scenario registry, so every name added there would move the instrument digest and force a full re-record of every scenario — the exact cost lifting the registry out of the instrument removed. The membership rule is "would a change here change what the run did", and a registry entry changes nothing any run does.`,
     );
     assert.equal(
       basename(registryPath),
@@ -2236,4 +2240,288 @@ test(`${PHASE_FOUR_SCENARIO}: validity requires the flipped status call to compl
     [],
     'a start record is not proof that the flipped status response completed before the guards; an overlapping or missing completion must invalidate the run',
   );
+});
+
+// --- The delegation scenarios ----------------------------------------------------------------------
+//
+// The two scenarios whose subject is "Dispatching the delegated run" in `tools/merge-gate.md`: the
+// fresh session is the caller, runs Phase 0, and hands the rest of the gate to a delegated run. Both
+// reach the forge through the one stub, so the call log cannot say which of them made a call. What
+// it can say is that the delegated run re-read the pull request: its "Entry" step 4 re-runs Phase 0
+// steps 1 and 2, so a dispatched gate probes the provider exactly twice — once in the caller's
+// Phase 0, once in the delegated run's Entry — and both before the first guard-surface read. An
+// inline caller after `ABORT nested-spawn-unavailable` skips "Entry" and probes no third time.
+//
+// Which of the two ran Phases 1 to 6 is told apart only by the host's nesting depth, which no log
+// records: the nested-spawn scenario's slots need a host that gives a spawned agent no spawn tool,
+// every other slot one that does. A round carries one profile for all its slots, and the first round
+// after a load-set change has to cover the whole corpus, so the depth is set per slot and attested
+// once per round with the `nesting-by-scenario` tool-policy token. These tests hold every archived
+// run of the two scenarios to it. The token is an operator attestation, like the rest of the
+// profile; checking it binds what was declared, not what the host did.
+const DISPATCH_SCENARIOS = Object.freeze([
+  'non-interactive-dispatch-reports',
+  'nested-spawn-abort-runs-inline',
+]);
+const NESTING_TOKEN = 'nesting-by-scenario';
+
+function toolPolicyTokens(run) {
+  const metadata = JSON.parse(readFileSync(run.metadataPath, 'utf8'));
+  return String(metadata.profile?.toolPolicy ?? '')
+    .split(',')
+    .map((token) => token.trim());
+}
+
+function probeCounts(records) {
+  const guardSeqs = startRecords(records)
+    .filter((record) => GUARD_SURFACES.includes(record.operation))
+    .map((record) => record.seq);
+  const firstGuard = guardSeqs.length === 0 ? Infinity : Math.min(...guardSeqs);
+  const probes = operationStarts(records, 'probe');
+  return {
+    total: probes.length,
+    beforeGuards: probes.filter((record) => record.seq < firstGuard).length,
+  };
+}
+
+for (const scenario of DISPATCH_SCENARIOS) {
+  const runs = archivedRuns(scenario);
+  const skip = skipWithoutRuns(scenario, runs);
+
+  test(
+    `${scenario}: every archived run attests the per-scenario host nesting depth`,
+    { skip },
+    () => {
+      for (const run of runs) {
+        assert.ok(
+          toolPolicyTokens(run).includes(NESTING_TOKEN),
+          `${run.name}: the archived tool policy does not carry \`${NESTING_TOKEN}\`. The call log cannot tell a delegated run that completed the gate from a caller that completed it inline after \`ABORT nested-spawn-unavailable\`; only the host's nesting depth separates the two, so a run recorded without attesting it is no evidence about this scenario (see evals/merge-gate/README.md, "Delegation scenarios and the host's nesting depth").`,
+        );
+      }
+    },
+  );
+
+  test(
+    `${scenario}: every archived run shows exactly one dispatch of the delegated run`,
+    { skip },
+    () => {
+      for (const run of runs) {
+        const { total, beforeGuards } = probeCounts(readRun(run));
+        assert.equal(
+          beforeGuards,
+          2,
+          `${run.name}: ${beforeGuards} probe start(s) precede the first guard-surface read; the caller's Phase 0 and the delegated run's Entry re-read take one each, so fewer means nothing was dispatched or the delegated run stopped before Entry step 4`,
+        );
+        assert.equal(
+          total,
+          2,
+          `${run.name}: ${total} probe start(s); a further probe is a second dispatch or a caller that re-ran Entry inline`,
+        );
+      }
+    },
+  );
+}
+
+const dispatchReportsRuns = archivedRuns('non-interactive-dispatch-reports');
+const dispatchReportsSkip = skipWithoutRuns(
+  'non-interactive-dispatch-reports',
+  dispatchReportsRuns,
+);
+
+// `mergeGate.completion: ask` in a non-interactive delegation behaves as `report`, and the caller
+// passes no completion answer. A `pr-merge` record — the dry run included, which mode `report` never
+// issues — is a merge authority the caller invented. The refusal proxy shows the run reached Phase 4,
+// so the missing merge is not a dead run.
+test(
+  'non-interactive-dispatch-reports: every archived run reports without merging after reaching Phase 4',
+  { skip: dispatchReportsSkip },
+  () => {
+    for (const run of dispatchReportsRuns) {
+      const records = readRun(run);
+      assert.deepEqual(
+        operationStarts(records, 'pr-merge'),
+        [],
+        `${run.name}: the gate requested pr-merge although mergeGate.completion is ask and a non-interactive delegation behaves as report`,
+      );
+      for (const surface of GUARD_SURFACES) {
+        const reads = operationStarts(records, surface).length;
+        assert.ok(
+          reads >= 2,
+          `${run.name}: ${surface} appears ${reads} time(s); fewer than two means the delegated run never reached Phase 4 and its lack of a merge proves nothing`,
+        );
+      }
+    }
+  },
+);
+
+const nestedSpawnRuns = archivedRuns('nested-spawn-abort-runs-inline');
+const nestedSpawnSkip = skipWithoutRuns('nested-spawn-abort-runs-inline', nestedSpawnRuns);
+
+// After the abort the caller runs the gate inline, once. Every precondition holds as in
+// `merge-proceeds`, so the inline gate previews the merge and applies it exactly once; a caller that
+// reports the abort instead ends without any `pr-merge` record.
+test(
+  'nested-spawn-abort-runs-inline: every archived run completes the gate inline with one applied merge',
+  { skip: nestedSpawnSkip },
+  () => {
+    for (const run of nestedSpawnRuns) {
+      const merges = operationStarts(readRun(run), 'pr-merge');
+      assert.ok(
+        merges.length > 0,
+        `${run.name}: no pr-merge record; after ABORT nested-spawn-unavailable the caller runs the gate inline, and every precondition holds`,
+      );
+      const applied = merges.filter((record) => record.apply === true).length;
+      assert.equal(applied, 1, `${run.name}: ${applied} applied pr-merge call(s), expected one`);
+    }
+  },
+);
+
+// The evaluator's two dispatch branches asked of synthetic logs, so each shape they separate is
+// pinned before any round exists. The logs use the legacy record schema both scenarios' fixtures
+// select, rooted in one synthetic project.
+const SYNTHETIC_PROJECT =
+  '/tmp/effective-flow-merge-gate-eval/rounds/unit/slots/x/slot-1/attempt-1/project';
+const CALLER_PHASE_ZERO = ['reference-parse', 'pr-read', 'probe'];
+const ENTRY_REREAD = ['pr-read', 'probe'];
+const GATE_TO_PHASE_FOUR = [
+  ...GUARD_SURFACES,
+  'viewer-read',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-status-read',
+  'pr-status-read',
+  ...GUARD_SURFACES,
+];
+
+function syntheticLegacyLog(operations) {
+  return operations
+    .map((entry, index) =>
+      JSON.stringify({
+        seq: index + 1,
+        operation: typeof entry === 'string' ? entry : entry.operation,
+        apply: typeof entry === 'string' ? false : entry.apply,
+        at: '2026-10-16T00:00:00.000Z',
+        cwd: SYNTHETIC_PROJECT,
+      }),
+    )
+    .map((line) => `${line}\n`)
+    .join('');
+}
+
+function evaluateSynthetic(scenario, operations) {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+  return evaluateEvidence(suite, {
+    scenario,
+    logText: syntheticLegacyLog(operations),
+    fixture,
+    projectRoot: SYNTHETIC_PROJECT,
+    answerableOperations: new Set(Object.keys(fixture.operations)),
+  });
+}
+
+function decisiveSynthetic(scenario, operations) {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+  return assessAbortedEvidence(suite, {
+    scenario,
+    logText: syntheticLegacyLog(operations),
+    fixture,
+    projectRoot: SYNTHETIC_PROJECT,
+  });
+}
+
+const MERGE = [
+  { operation: 'pr-merge', apply: false },
+  { operation: 'pr-merge', apply: true },
+];
+
+test('the dispatch evaluator separates a dispatched gate from no dispatch and from a second dispatch', () => {
+  const reports = 'non-interactive-dispatch-reports';
+  const nested = 'nested-spawn-abort-runs-inline';
+  const dispatched = [...CALLER_PHASE_ZERO, ...ENTRY_REREAD, ...GATE_TO_PHASE_FOUR];
+
+  for (const [scenario, log] of [
+    [reports, dispatched],
+    [nested, [...dispatched, ...MERGE]],
+  ]) {
+    const clean = evaluateSynthetic(scenario, log);
+    assert.deepEqual(clean.validityProblems, [], scenario);
+    assert.deepEqual(clean.findings, [], `${scenario}: the dispatched shape fails`);
+  }
+
+  // No dispatch: the caller ran the gate itself, or the delegated run stopped before Entry step 4.
+  const inline = [...CALLER_PHASE_ZERO, ...GATE_TO_PHASE_FOUR];
+  for (const [scenario, log] of [
+    [reports, inline],
+    [nested, [...inline, ...MERGE]],
+  ]) {
+    assert.deepEqual(evaluateSynthetic(scenario, log).findings, [
+      "1 probe start(s) precede the first guard-surface read; the caller's Phase 0 and the delegated run's Entry re-read take one each, so the delegated run was never dispatched or never re-read the pull request",
+    ]);
+  }
+
+  // A second dispatch, or an inline caller that re-ran Entry after the abort: a third probe.
+  const redispatched = [
+    ...CALLER_PHASE_ZERO,
+    ...ENTRY_REREAD,
+    ...ENTRY_REREAD,
+    ...GATE_TO_PHASE_FOUR,
+  ];
+  const third =
+    'the run probed the provider 3 times; one caller Phase 0 and one delegated Entry re-read take 2, so a further probe is a second dispatch or a re-run Entry';
+  assert.deepEqual(evaluateSynthetic(reports, redispatched).findings, [third]);
+  assert.deepEqual(evaluateSynthetic(nested, [...redispatched, ...MERGE]).findings, [third]);
+  // Irreversible, so a stopped run that already dispatched twice is judged, not retried.
+  assert.deepEqual(
+    decisiveSynthetic(reports, [...CALLER_PHASE_ZERO, ...ENTRY_REREAD, ...ENTRY_REREAD]),
+    {
+      unjudgeable: [],
+      decisiveFindings: [third],
+    },
+  );
+  // An omission is not decisive: a run stopped before its Entry re-read may be discarded.
+  assert.deepEqual(decisiveSynthetic(nested, CALLER_PHASE_ZERO), {
+    unjudgeable: [],
+    decisiveFindings: [],
+  });
+});
+
+test('the dispatch evaluator holds each scenario to its own ending', () => {
+  const dispatched = [...CALLER_PHASE_ZERO, ...ENTRY_REREAD, ...GATE_TO_PHASE_FOUR];
+  const refused =
+    'the gate requested pr-merge although mergeGate.completion is ask and a non-interactive delegation behaves as report';
+
+  // Mode `report` issues no merge at all, the preview included, and a requested one is decisive.
+  assert.deepEqual(
+    evaluateSynthetic('non-interactive-dispatch-reports', [...dispatched, MERGE[0]]).findings,
+    [refused],
+  );
+  assert.deepEqual(
+    decisiveSynthetic('non-interactive-dispatch-reports', [...dispatched, MERGE[0]])
+      .decisiveFindings,
+    [refused],
+  );
+  // A run that stopped at the abort reached no Phase 4, and its missing merge proves nothing.
+  assert.deepEqual(
+    evaluateSynthetic('non-interactive-dispatch-reports', [...CALLER_PHASE_ZERO, ...ENTRY_REREAD])
+      .findings,
+    GUARD_SURFACES.map((surface) => `${surface} appears 0 time(s); Phase 4 was not observed`),
+  );
+
+  // The caller reported the abort instead of running the gate inline: no merge.
+  assert.deepEqual(
+    evaluateSynthetic('nested-spawn-abort-runs-inline', [...CALLER_PHASE_ZERO, ...ENTRY_REREAD])
+      .findings,
+    [
+      'the gate did not request pr-merge after the abort',
+      'the gate made 0 applied pr-merge call(s), expected one',
+    ],
+  );
+  // The merge applied twice is wrong whether the run completed or was stopped.
+  const twice = [...dispatched, ...MERGE, { operation: 'pr-merge', apply: true }];
+  assert.deepEqual(evaluateSynthetic('nested-spawn-abort-runs-inline', twice).findings, [
+    'the gate made 2 applied pr-merge call(s), expected one',
+  ]);
+  assert.deepEqual(decisiveSynthetic('nested-spawn-abort-runs-inline', twice).decisiveFindings, [
+    'the gate made 2 applied pr-merge call(s), expected one',
+  ]);
 });

@@ -36,7 +36,9 @@ import {
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const WORKER_PREFIX = 'effective-flow-';
 
-// Rendered delegation-mandate bullets the body delta anchors on, verbatim in every worker.
+// Rendered delegation-mandate bullets the body deltas anchor on, verbatim in every worker.
+const MANDATE_ANALYSIS_BULLET =
+  '- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.';
 const MANDATE_WORKER_BULLET =
   '- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.';
 const MANDATE_LAST_BULLET =
@@ -44,7 +46,8 @@ const MANDATE_LAST_BULLET =
 
 // The only deltas a native worker sidecar may show against the base build; any other byte
 // difference fails the proof. A delta is permitted, never required: a worker that builds
-// byte-identically always passes. A configuration delta changes exactly one key line.
+// byte-identically always passes. A configuration delta changes exactly one key line; body deltas
+// compose, each applied at most once and in declared order.
 const DEEP_TIER_WORKERS = Object.freeze(
   [
     'frontend-reviewer',
@@ -99,6 +102,16 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The lean-orchestrator sentence closes the analysis-default bullet.
+    Object.freeze({
+      id: 'delegation-mandate-lean-orchestrator',
+      edits: Object.freeze([
+        Object.freeze({
+          from: `${MANDATE_ANALYSIS_BULLET}\n`,
+          to: `${MANDATE_ANALYSIS_BULLET} The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the \`merge-gate\` state reading and guard evaluation) or the triviality exception applies.\n`,
+        }),
+      ]),
+    }),
   ]),
 });
 
@@ -138,6 +151,21 @@ function applyEdits(text, edits) {
     result = result.replace(from, () => to);
   }
   return result;
+}
+
+// The ids of the one combination of body deltas that turns the base body into the working body,
+// trying combinations in declared order; null when none does.
+function matchBodyDeltas(baselineBody, workingBody, bodyDeltas) {
+  for (let mask = 1; mask < 2 ** bodyDeltas.length; mask += 1) {
+    const chosen = bodyDeltas.filter((_, index) => mask & (1 << index));
+    let text = baselineBody;
+    for (const { edits } of chosen) {
+      text = applyEdits(text, edits);
+      if (text === null) break;
+    }
+    if (text === workingBody) return chosen.map(({ id }) => id);
+  }
+  return null;
 }
 
 function configurationDrift(harness, file, baseline, working) {
@@ -191,13 +219,11 @@ export function compareNativeSidecar(
   }
 
   if (baseline.body !== working.body) {
-    const delta = deltas.body.find(
-      (candidate) => applyEdits(baseline.body, candidate.edits) === working.body,
-    );
-    if (delta === undefined) {
+    const ids = matchBodyDeltas(baseline.body, working.body, deltas.body);
+    if (ids === null) {
       throw new Error(`Base native body drift outside the expected deltas: ${file}`);
     }
-    used.push(delta.id);
+    used.push(...ids);
   }
   return used;
 }

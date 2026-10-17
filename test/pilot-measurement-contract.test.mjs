@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
+import { mergeGateWithDelegatedRun } from './support/merge-gate-source.mjs';
+
 const ROOT = new URL('..', import.meta.url);
 const source = (path) => readFileSync(new URL(path, ROOT), 'utf8');
 const fragment = source('src/shared/pilot-measurement.md');
-const mergeGate = source('src/tools/merge-gate.md');
+// The gate as a delegated run reads it: the caller core, then the deferred delegated-run fragment.
+const mergeGate = mergeGateWithDelegatedRun(ROOT);
 const cli = source('src/scripts/pilot-measurement.mjs');
 const core = source('src/scripts/pilot-measurement-core.mjs');
 
@@ -88,6 +91,28 @@ test('report-mode readiness excludes only merge authorization and preserves the 
   assert.match(fragment, /excluded only from this measurement projection/);
   assert.match(fragment, /`reported-ready`/);
   assert.match(fragment, /`reported-blocked`/);
+});
+
+// Invariant: a BLOCKED-USER return of the delegated merge-gate run is a controlled ending that
+// finalizes its reservation as `reported-blocked` with unavailable evidence in either mode, keeps
+// observation identity out of the returned question, and leaves each re-dispatch its own
+// reservation; the rule is stated once, in this fragment.
+test('a BLOCKED-USER return finalizes the reservation as reported-blocked and re-dispatch reserves afresh', () => {
+  const finalization = fragment
+    .slice(fragment.indexOf('### Phase 6 observation finalization'))
+    .replace(/\s+/g, ' ');
+  for (const clause of [
+    'a `BLOCKED-USER` return of the delegated run before a verified merge records `reported-blocked` in either mode',
+    'the unavailable check evidence above',
+    'its stable blocker, retained as above, is `relayed-user-decision`',
+    'The returned question carries no observation identity, and its re-dispatch reserves afresh',
+    'did not reach a verified merge and ended other than through `BLOCKED-USER`',
+  ]) {
+    assert.ok(finalization.includes(clause), `missing BLOCKED-USER clause: ${clause}`);
+  }
+  assert.match(fragment, /it is not part of the closed helper\s+payload/);
+  assert.doesNotMatch(core, /relayed-user-decision/);
+  assert.equal(mergeGate.includes('relayed-user-decision'), false);
 });
 
 test('the CLI is thin and maps every failure to one non-echoing envelope and stderr code', () => {

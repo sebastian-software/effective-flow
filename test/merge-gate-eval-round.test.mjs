@@ -279,6 +279,11 @@ const REPOSITORY_RESULTS = resolve(import.meta.dirname, '..', 'evals', 'merge-ga
 // `publishRound refuses a carried-forward run whose stamp describes another build`. That case is
 // stronger than the coverage it replaces: it names the drifted run instead of depending on whoever
 // runs the suite happening to have a dirty working tree.
+//
+// A scenario the repository corpus does not hold yet — one that landed before its first recorded
+// round — is filled in with synthetic runs (`synthesizeUnrecordedScenario`), because publication and
+// `verify` walk the whole discovered corpus and these tests are about the lifecycle, not about
+// whether every scenario has been recorded. That question belongs to `verify` on the real corpus.
 function copyRestampedResults(resultsDir) {
   rmSync(resultsDir, { recursive: true, force: true });
   cpSync(REPOSITORY_RESULTS, resultsDir, { recursive: true });
@@ -298,7 +303,14 @@ function copyRestampedResults(resultsDir) {
     const skillRoot = buildPortableSkill(outputRoot);
     for (const scenario of discoverSuite(suite).scenarios) {
       const directory = resolve(resultsDir, scenario);
-      if (!existsSync(directory)) continue;
+      if (!existsSync(directory)) {
+        synthesizeUnrecordedScenario(
+          directory,
+          scenario,
+          pristineScenarioBuildIdentity(suite, scenario, skillRoot),
+        );
+        continue;
+      }
       const identity = pristineScenarioBuildIdentity(suite, scenario, skillRoot);
       for (const name of readdirSync(directory).filter((entry) =>
         /^run-\d+\.build\.json$/.test(entry),
@@ -320,6 +332,92 @@ function copyRestampedResults(resultsDir) {
     rmSync(outputRoot, { recursive: true, force: true });
   }
 }
+
+// The smallest call log each not-yet-recorded scenario's evaluator passes, keyed by scenario. A
+// dispatch scenario shows the caller's Phase 0 and the delegated run's Entry re-read — two probes —
+// before the guard surfaces are read twice; the nested-spawn fallback then merges once. These runs
+// exist only in a test's temporary copy and are never evidence. A scenario that lands without a
+// recorded round and without an entry here fails loudly, naming the two ways out.
+const DISPATCH_PREFIX = ['reference-parse', 'pr-read', 'probe', 'pr-read', 'probe'];
+const TWO_GUARD_READS = [
+  'review-threads-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+  'review-threads-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+];
+const UNRECORDED_SCENARIO_LOGS = Object.freeze({
+  'non-interactive-dispatch-reports': [...DISPATCH_PREFIX, ...TWO_GUARD_READS],
+  'nested-spawn-abort-runs-inline': [
+    ...DISPATCH_PREFIX,
+    ...TWO_GUARD_READS,
+    { operation: 'pr-merge', apply: false },
+    { operation: 'pr-merge', apply: true },
+  ],
+});
+
+function synthesizeUnrecordedScenario(directory, scenario, identity) {
+  const operations = UNRECORDED_SCENARIO_LOGS[scenario];
+  if (!operations) {
+    throw new Error(
+      `${scenario} has no archived runs and no synthetic passing log in UNRECORDED_SCENARIO_LOGS; record its round or add one`,
+    );
+  }
+  mkdirSync(directory, { recursive: true });
+  for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+    const projectRoot = `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1/project`;
+    const target = resolve(directory, `run-${slot}`);
+    const log = operations
+      .map((entry, index) =>
+        JSON.stringify({
+          seq: index + 1,
+          operation: typeof entry === 'string' ? entry : entry.operation,
+          apply: typeof entry === 'string' ? false : entry.apply,
+          at: '2026-10-16T00:00:00.000Z',
+          cwd: projectRoot,
+        }),
+      )
+      .join('\n');
+    writeFileSync(`${target}.jsonl`, `${log}\n`);
+    writeFileSync(`${target}.build.json`, `${JSON.stringify(identity, null, 2)}\n`);
+    const prompt = `synthetic prompt for ${scenario} slot ${slot}\n`;
+    writeFileSync(`${target}.prompt.txt`, prompt);
+    const metadata = {
+      schemaVersion: 1,
+      roundId: 'synthetic',
+      scenario,
+      slot,
+      attempt: 1,
+      sourceRevision: 'synthetic',
+      projectRoot,
+      profile: { ...PROFILE },
+      promptDigest: `sha256:${createHash('sha256').update(prompt).digest('hex')}`,
+      buildDigest: identity.digest,
+      hostAttestation: hostReceipt(projectRoot),
+    };
+    writeFileSync(`${target}.metadata.json`, `${JSON.stringify(metadata, null, 2)}\n`);
+  }
+}
+
+// Invariant: a synthetic log stands in only for a scenario the repository corpus does not hold. Once
+// a round records it, `copyRestampedResults` reads the archived runs and the entry is dead code that
+// would silently mask a scenario that later loses its evidence, so a recorded or undiscovered
+// scenario in `UNRECORDED_SCENARIO_LOGS` fails until the entry is removed.
+test('every synthetic log names a discovered scenario the repository corpus has not recorded', () => {
+  const scenarios = discoverSuite(suite).scenarios;
+  for (const scenario of Object.keys(UNRECORDED_SCENARIO_LOGS)) {
+    assert.ok(
+      scenarios.includes(scenario),
+      `${scenario} is no merge-gate scenario; remove its entry from UNRECORDED_SCENARIO_LOGS`,
+    );
+    assert.equal(
+      existsSync(resolve(REPOSITORY_RESULTS, scenario)),
+      false,
+      `${scenario} is recorded in ${REPOSITORY_RESULTS}; remove its entry from UNRECORDED_SCENARIO_LOGS`,
+    );
+  }
+});
 
 test('prompt rendering is strict and slot paths cannot collide', () => {
   const source = `<!-- prompt:start -->\n\n\`\`\`text\nUse {{SKILL_ROOT}} and {{SKILL_ROOT}} plus {{SKILL_ROOT}} from {{PROJECT_ROOT}} with cwd {{PROJECT_ROOT}}.\n\`\`\`\n\n<!-- prompt:end -->`;
@@ -2256,7 +2354,13 @@ test(
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.split('\n')[0], `corpus: ${REPOSITORY_RESULTS}`);
-    for (const scenario of discoverSuite(suite).scenarios) {
+    // Only scenarios the repository corpus holds can show the wrong reading; one that landed before
+    // its first recorded round is absent under either reading and says nothing about the seam.
+    const recorded = discoverSuite(suite).scenarios.filter((scenario) =>
+      existsSync(resolve(REPOSITORY_RESULTS, scenario)),
+    );
+    assert.ok(recorded.length > 0, 'the repository corpus holds no recorded scenario to read');
+    for (const scenario of recorded) {
       assert.doesNotMatch(
         result.stdout,
         new RegExp(`^${scenario}\tabsent\t`, 'm'),
@@ -2859,18 +2963,37 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     assert.deepEqual(assessment.unjudgeable, [], scenario);
     return assessment.decisiveFindings;
   };
+  // The two scenarios a merge is expected in: the positive control, and the nested-spawn fallback,
+  // whose inline gate merges the same pull request.
+  const merging = ['merge-proceeds', 'nested-spawn-abort-runs-inline'];
   for (const scenario of suite.scenarios) {
     assert.deepEqual(decisive(scenario, []), [], `${scenario}: an empty partial log`);
     assert.deepEqual(decisive(scenario, ['pr-status-read']), [], `${scenario}: a lone read`);
     const merged = decisive(scenario, [{ operation: 'pr-merge', apply: false }]);
-    if (scenario === 'merge-proceeds') assert.deepEqual(merged, [], scenario);
+    if (merging.includes(scenario)) assert.deepEqual(merged, [], scenario);
     else assert.equal(merged.length, 1, `${scenario}: a refused merge is not decisive`);
   }
   const applied = { operation: 'pr-merge', apply: true };
-  assert.deepEqual(decisive('merge-proceeds', [applied]), []);
-  assert.deepEqual(decisive('merge-proceeds', [applied, applied]), [
-    'the gate made 2 applied pr-merge call(s), expected one',
-  ]);
+  for (const scenario of merging) {
+    assert.deepEqual(decisive(scenario, [applied]), [], scenario);
+    assert.deepEqual(
+      decisive(scenario, [applied, applied]),
+      ['the gate made 2 applied pr-merge call(s), expected one'],
+      scenario,
+    );
+  }
+  // A dispatch scenario's second dispatch has already happened, so it is decisive; a run stopped
+  // before its first dispatch is an omission and is not.
+  for (const scenario of ['non-interactive-dispatch-reports', 'nested-spawn-abort-runs-inline']) {
+    assert.deepEqual(decisive(scenario, ['probe']), [], `${scenario}: one probe`);
+    assert.deepEqual(
+      decisive(scenario, ['probe', 'probe', 'probe']),
+      [
+        'the run probed the provider 3 times; one caller Phase 0 and one delegated Entry re-read take 2, so a further probe is a second dispatch or a re-run Entry',
+      ],
+      scenario,
+    );
+  }
   assert.deepEqual(
     decisive('linked-issue-open-points', [{ operation: 'issue-comment', apply: true }]),
     ['the observer-only run performed an applied mutation'],

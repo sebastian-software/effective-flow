@@ -103,6 +103,11 @@ from the generated worker definitions and the spawn instruction; the portable in
 both harnesses' values at each spawn and uses the pair that belongs to the host. A host with
 neither mechanism inherits the caller model and says so once.
 
+To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
+judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
+read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
+run. Questions of a delegated run reach you through your session as usual.
+
 **Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
 strongest available configured implementation capability and is always the safe default. Fast
 means a distinct native lower-cost, lower-latency implementation capability for a bounded packet

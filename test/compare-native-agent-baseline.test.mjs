@@ -17,6 +17,11 @@ const TIER_SENTENCE =
 const POINTER =
   '**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.';
 
+const ANALYSIS =
+  '- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.';
+const LEAN_SENTENCE =
+  " The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.";
+
 const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
 const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
 
@@ -68,6 +73,48 @@ test('a deep worker may show the deep-tier configuration delta and the mandate b
       codex({ model: 'gpt-6.1-sol', body: MANDATE_BODY }),
     ),
     ['codex-deep-tier-model', 'delegation-mandate-model-tiers'],
+  );
+});
+
+// Invariant: body deltas compose. A worker built after both mandate changes matches the base through
+// the model-tiers and the lean-orchestrator deltas together, and one built from a base that already
+// carries the tier sentence matches through the lean delta alone; the lean sentence anywhere but on
+// the analysis-default bullet still fails.
+test('the lean-orchestrator body delta composes with the model-tiers delta', () => {
+  const base = `\n## Delegation mandate\n\n${ANALYSIS}\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
+  const tiers = `\n## Delegation mandate\n\n${ANALYSIS}\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
+  const lean = tiers.replace(ANALYSIS, `${ANALYSIS}${LEAN_SENTENCE}`);
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: base }),
+      codex({ body: lean }),
+    ),
+    ['delegation-mandate-model-tiers', 'delegation-mandate-lean-orchestrator'],
+  );
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: tiers }),
+      codex({ body: lean }),
+    ),
+    ['delegation-mandate-lean-orchestrator'],
+  );
+  assert.throws(
+    () =>
+      compareNativeSidecar(
+        'codex',
+        'effective-flow-rust-reviewer',
+        codex({ body: tiers }),
+        codex({ body: tiers.replace('- Another bullet.', `- Another bullet.${LEAN_SENTENCE}`) }),
+      ),
+    /body drift outside the expected deltas/,
+  );
+  assert.deepEqual(
+    EXPECTED_NATIVE_DELTAS.body.map(({ id }) => id),
+    ['delegation-mandate-model-tiers', 'delegation-mandate-lean-orchestrator'],
   );
 });
 

@@ -52,7 +52,8 @@ the right verdict reached it from the tool's own rules.
 Written for a human reading a failed assertion, so the run's behaviour can be compared against what
 the scenario was composed to produce. Nothing here is handed to the agent, and no assertion reads it.
 
-The run loads `merge-gate`, resolves the reference, probes the provider, reads the pull request and
+The run loads `merge-gate`, resolves the reference, probes the provider twice (Phase 0, then the delegated
+run's Entry re-read), reads the pull request and
 its status through the stubbed helper, reads the review threads, the pull-request comments and the
 submitted reviews, establishes its own identity through `viewer-read`, finds **no** item holding the
 human-comment guard, satisfies every merge precondition, and reaches Phase 5. **It requests

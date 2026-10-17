@@ -647,6 +647,8 @@ return consuming one round, and they ask in one question for the same reason.
   `prReviewsRead` shape of Phase 0 step 2 – report the affected findings and end the run, never
   merge – and deliberately **not** the completion-gate shape, which degrades to `report` and
   continues. They are different endings, and copying the wrong one changes how the run finishes.
+- **A relayed run asks through `BLOCKED-USER set-aside`** wherever a gated run would pose it, with
+  the same list; a consumed `Confirm` writes the record exactly as a posed one.
 - **Not posed at all where the resolved completion mode is not `merge`.** Condition 1 is unmet in a
   report-mode run, so no answer could authorize a merge; the report names the affected findings and
   threads instead.

@@ -1113,7 +1113,7 @@ test('the iterate suite carries no copy of the shared scaffold modules', () => {
   }
 });
 
-// The acceptance criterion for the registry lift, taken literally: a seventh scenario arrives with
+// The acceptance criterion for the registry lift, taken literally: a further scenario arrives with
 // every parity member — its prose-and-prompt file, its fixture, its registry entry and its evaluator
 // branch — so the addition is one the suite actually accepts, and the instrument digest every
 // archived run is stamped with stays where it was. The addition is made in a copy of the corpus, so
@@ -1123,34 +1123,34 @@ test('the iterate suite carries no copy of the shared scaffold modules', () => {
 // instrument is hashed from absolute paths rather than from the suite root. What makes it a property
 // is the membership half: no instrument file is a per-scenario file, so no scenario's own inputs can
 // ever enter the digest every other scenario shares.
-test('a seventh iterate scenario with all its parity members leaves the instrument digest unchanged', () => {
-  const corpus = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-seventh-'));
+test('a further iterate scenario with all its parity members leaves the instrument digest unchanged', () => {
+  const corpus = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-added-'));
   try {
     for (const directory of ['scenarios', 'fixtures']) {
       cpSync(resolve(ITERATE_ROOT, directory), resolve(corpus, directory), { recursive: true });
     }
-    const seventh = 'a-seventh-scenario-aborts';
+    const added = 'an-added-scenario-aborts';
     copyFileSync(
       resolve(ITERATE_ROOT, 'scenarios', 'unparseable-item-filter-aborts.md'),
-      resolve(corpus, 'scenarios', `${seventh}.md`),
+      resolve(corpus, 'scenarios', `${added}.md`),
     );
     copyFileSync(
       resolve(ITERATE_ROOT, 'fixtures', 'unparseable-item-filter-aborts.json'),
-      resolve(corpus, 'fixtures', `${seventh}.json`),
+      resolve(corpus, 'fixtures', `${added}.json`),
     );
     const widened = {
       ...suite,
       root: corpus,
-      scenarios: Object.freeze([...suite.scenarios, seventh]),
+      scenarios: Object.freeze([...suite.scenarios, added]),
       evaluator: {
         ...suite.evaluator,
-        BRANCHED_SCENARIOS: Object.freeze([...suite.evaluator.BRANCHED_SCENARIOS, seventh]),
+        BRANCHED_SCENARIOS: Object.freeze([...suite.evaluator.BRANCHED_SCENARIOS, added]),
       },
     };
     assert.deepEqual(
       discoverSuite(widened).scenarios,
-      [...suite.scenarios, seventh].sort(),
-      'the seventh scenario is not a legal addition, so the digest comparison below proves nothing',
+      [...suite.scenarios, added].sort(),
+      'the added scenario is not a legal addition, so the digest comparison below proves nothing',
     );
     assert.equal(instrumentIdentity(widened).digest, instrumentIdentity(suite).digest);
 

@@ -65,7 +65,8 @@ reached it from the tool's own rules.
 Written for a human reading a failed assertion, so the run's behaviour can be compared against what
 the scenario was composed to produce. Nothing here is handed to the agent, and no assertion reads it.
 
-The run loads `merge-gate`, resolves the reference, probes the provider, reads the pull request,
+The run loads `merge-gate`, resolves the reference, probes the provider twice (Phase 0, then the delegated
+run's Entry re-read), reads the pull request,
 finds it already merged with one valid receipt, and enters **observer-only mode**. It waits out the
 fixed 30-second grace period for issue #17 through `issue-state-wait`, records the issue as still
 open, and assesses its completion without asking: one `issue-read`, one `issue-sub-issues-read` and

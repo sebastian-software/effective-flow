@@ -276,7 +276,8 @@ For each chosen issue in turn:
 ### Phase 3: Automatic quality baseline per issue
 
 Before offering the deep interactive review, run the same quality baseline as the local planning
-workflow for the active issue only:
+workflow for the active issue only. Steps 1 and 3 each hand over a fresh draft snapshot of the
+active comment per "Judgment handoff"; no tracker write moves ahead of Phase 4.
 
 1. Ask `effective-delivery` for the generic gap judgment from `{{SKILL:plan}}` Phase 4:
    over-engineering, scope creep, hidden assumptions, missing or non-measurable acceptance

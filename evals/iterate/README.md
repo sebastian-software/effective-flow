@@ -6,8 +6,9 @@ rewrite that keeps the sentences while moving them somewhere a run never reaches
 unit suite. This suite asserts what a run **does** with a broken or empty caller contract.
 
 The first tranche covers `iterate`'s **fail-closed input parsing**: four rules that must refuse a
-delegation before anything is read, and two situations in which a run reads the forge and must then
-stop without writing. Classification proper — which outcome a judged item receives — is not
+delegation before anything is read, and three situations in which a run reads the forge and must then
+stop without writing — one of them a run state, `relayed`, that the parser must accept rather than
+refuse. Classification proper — which outcome a judged item receives — is not
 covered. The plan behind it is
 [`docs/plan/2026-09-21-iterate-behavioural-eval-coverage.md`](../../docs/plan/2026-09-21-iterate-behavioural-eval-coverage.md).
 
@@ -40,6 +41,7 @@ the sandbox's git state" below).
 | `unparseable-run-state-aborts`   | `Run state: unattended`                                                              | report carries `ABORT: unparseable run-state switch` as its last line and no other `ABORT:`; no forge call                 |
 | `review-in-flight-aborts`        | non-interactive, no `Review guard:` line, configured reviewer `recensor` pending     | report carries `ABORT: review still in flight` as its last line and names `recensor`; the three Phase-1 reads, each exactly once; no write at all |
 | `empty-selection-clean-done`     | `threads=` names only a thread resolved since the caller read it; a second, open thread — an exact fix request — is unnamed | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
+| `relayed-run-state-clean-done`   | `empty-selection-clean-done` with `Run state: relayed`, which the shipped sender writes | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
 
 Every scenario additionally requires the sealed git state untouched: the sandbox's `origin` at the
 fixture's two SHAs, the checkout on the head branch at the head SHA, and an empty status.
@@ -69,6 +71,14 @@ and write `.effective-flow/merge-gate/`). The helper exports no such classificat
 named and a unit test pins the helper's whole local set beside it: any operation added to or removed
 from that set fails the test until someone classifies it. The ledger operations, `probe`, every
 remote read, every write and every name the helper does not know still fail a Phase-0 scenario.
+
+`relayed-run-state-clean-done` asserts acceptance only. Its delegation is genuine sender output with
+no mutation, and everything else is the empty-selection fixture, so a parser that still refused
+`relayed` would end with `ABORT: unparseable run-state switch` before Phase 1 and fail both the clean
+`DONE` and the Phase-1 reads. Neither question that `relayed` turns into `BLOCKED-USER` — the Phase
+1.5 in-flight question and the Phase 2.5 approval — is reachable from an empty selection, so a
+`BLOCKED-USER` ending fails too; whether a relayed run asks through its caller where it should is
+not observed here.
 
 Each fixture is minimal so that exactly one rule fires, and the four Phase-0 defects were checked
 against the order `iterate` Phase 0 applies its rules in: the delimiter split and the duplicate
@@ -213,7 +223,11 @@ live sender.
 
 Exactly as for `merge-gate`, with `iterate` as the tool name, the same pinned profile (harness
 `codex-cli`, model `gpt-6-sol`, reasoning effort `medium`) and the sandbox under
-`/tmp/effective-flow-iterate-eval/rounds/`:
+`/tmp/effective-flow-iterate-eval/rounds/`. As there, the pinned profile is the **caller's**: the
+profile of the fresh session the host starts, which here runs `iterate` itself on the handed-over
+delegation. A spawn that session starts runs on its own model tier (`shared/model-tiers.md`), which
+the round neither pins nor attests; no scenario of this suite reaches one, because every scenario
+ends at or before Phase 2.
 
 ```sh
 pnpm eval iterate prepare \
@@ -297,6 +311,10 @@ has to find it inside prose is reading prose. The `recensor` name may appear any
   delegation targets.
 - **`unparseable-language-context-aborts`.** A real fail-closed rule whose failure mode is a wrong
   language in a commit message; it is the cheapest scenario to add next.
+- **A relayed question round trip.** `relayed-run-state-clean-done` proves that the parser accepts
+  the state. The two `BLOCKED-USER` returns it enables, and a caller answering them, need a
+  non-empty selection or a missing review guard and a caller to answer; that round trip is a manual
+  check, not a scenario.
 - **Which sentence decided.** The evidence records what the run asked the forge for and what it
   reported, not which rule in the tool produced the report. A report carrying the right refusal
   from a run that made no call is the strongest statement available, and it is still a statement

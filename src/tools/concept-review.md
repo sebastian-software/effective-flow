@@ -120,6 +120,8 @@ central-reasoning-delegation
 
 ### Phase 2: Identify findings
 
+Before the handoff, write the concept file back when Phase 1 changed it.
+
 The domain review **judgment** is provided by the skills named above: apply them to the loaded
 concept so that they assess the findings — among others contradictions between problem, audience,
 use cases, scope, and technical direction; a first version that is not viable; missing non-goals;

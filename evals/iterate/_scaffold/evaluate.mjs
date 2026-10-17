@@ -70,7 +70,7 @@ export const PHASE_ZERO_REFUSALS = Object.freeze({
   'unparseable-run-state-aborts': 'ABORT: unparseable run-state switch',
 });
 
-// The two scenarios that read the forge and then stop without writing.
+// The scenarios that read the forge and then stop without writing.
 //
 // `readsOnce` says whether each Phase-1 read has to occur **exactly** once rather than at least
 // once. It is set where a second read is itself the signature of the wrong branch: in the
@@ -99,6 +99,15 @@ export const FORGE_READING = Object.freeze({
   // observable this suite has. The report is deliberately not required to leave that thread
   // unnamed: Phase 6 lists a deselected item as such, and a correct summary may do exactly that.
   'empty-selection-clean-done': Object.freeze({
+    refusal: null,
+    names: Object.freeze([]),
+    readsOnce: false,
+  }),
+  // Phase 0 step 10: the empty-selection delegation with `Run state: relayed`, the third accepted
+  // state. A parser that still refuses it returns `ABORT: unparseable run-state switch` before
+  // Phase 1, which fails both the clean `DONE` and the Phase-1 reads. Neither question `relayed`
+  // turns into `BLOCKED-USER` is reachable from an empty selection, so `BLOCKED-USER` fails too.
+  'relayed-run-state-clean-done': Object.freeze({
     refusal: null,
     names: Object.freeze([]),
     readsOnce: false,
@@ -308,11 +317,11 @@ export function usesLifecycleSchema() {
 }
 
 // **An absent or empty call log is zero records, and zero records is valid evidence here — decided,
-// not inherited.** Four of the six scenarios are correct exactly when the run makes no forge call,
+// not inherited.** Four of the seven scenarios are correct exactly when the run makes no forge call,
 // so a rule that rejected an empty log as "a run that never started" would reject every correct
 // Phase-0 run. The merge-gate evaluator keeps that rule because every gate scenario reads the forge
 // first; this suite cannot. What proves a run happened is therefore not the call log but the exit
-// channel: a run with no report record fails regardless of its log. It holds for the two
+// channel: a run with no report record fails regardless of its log. It holds for the three
 // forge-reading scenarios as well, where an empty log is a failed conjunction (the Phase-1 reads are
 // missing) rather than broken evidence.
 //
