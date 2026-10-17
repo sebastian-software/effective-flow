@@ -249,8 +249,9 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    <!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->
    No return-protocol text goes with it: how the return is read is this run's business under
    "Returned outcome record", never an instruction to the delegated run. A host with no spawn
-   mechanism, or a declined dispatch, runs `{{SKILL:iterate}}` inline in this run with that same
-   argument and its own gates, and says so once; that inline run's final keyword line (`DONE`,
+   mechanism, a declined dispatch, or a gate run bound by a restriction neither caller-limit token
+   expresses runs `{{SKILL:iterate}}` inline in this run with that same argument and its own gates,
+   and says so once; that inline run's final keyword line (`DONE`,
    `ABORT: …` or `BLOCKED-USER iterate-approval`) is the round's return under "Returned outcome
    record", and this run continues instead of ending its turn on it. Only now record the outcomes of a `written` build's
    refused items – each delimiter-carrying or `missing-provenance` body as `unassessed` – because a sender stop before this point records no

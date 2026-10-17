@@ -73,6 +73,9 @@ In this order, before any other write:
 `{{SKILL:merge-gate}}` – binds every phase and takes precedence over configuration, every relayed
 answer and every rule below that would otherwise permit the action. An inline run also binds every
 restriction the user stated in its session that neither token expresses, with the same precedence.
+That binding also covers an inline `{{SKILL:iterate}}` round, and every worker or workflow handoff
+written under it – this run's and that round's – restates the restriction verbatim among its
+authority limits; a worker that cannot honor it returns `ABORT`.
 
 - `no-merge` resolves the completion mode to `report` per Phase 0 step 3; the observer-only path
   never merges, so it changes nothing there.

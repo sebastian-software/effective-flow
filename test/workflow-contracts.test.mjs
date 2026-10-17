@@ -15213,11 +15213,11 @@ test('each iterate round is dispatched in a built-in subagent told to read tools
   assert.match(
     dispatch,
     near(
-      'no spawn mechanism, or a declined dispatch',
+      'no spawn mechanism, a declined dispatch, or a gate run bound by a restriction neither caller-limit token expresses runs `\\{\\{SKILL:iterate\\}\\}`',
       'inline in this run[\\s\\S]{0,80}says so once',
       120,
     ),
-    'a host without a spawn mechanism must run iterate inline and say so once',
+    'a host without a spawn mechanism, a declined dispatch and a gate run bound by an untokenised restriction must each run iterate inline in this run and say so once',
   );
   assert.match(
     dispatch,
@@ -22216,7 +22216,11 @@ test('the merge-gate caller derives limits only from the user and fails closed',
 
 // Invariant: a user restriction neither token expresses runs the gate inline, so the delegated-run
 // fragment must load for it (the lazy-include `when:` names that case) and the inline run binds it
-// with the same precedence as a token.
+// with the same precedence as a token. That binding reaches every iterate round: a gate run bound
+// by an untokenised restriction runs each round inline, since a spawned round's closed handoff
+// cannot carry the restriction, and every worker or workflow handoff written under it – the run's
+// and the round's – restates the restriction verbatim among its authority limits, a worker that
+// cannot honor it returning `ABORT`.
 test('the merge-gate inline run loads the delegated-run fragment and binds untokenised restrictions', () => {
   const core = mergeGateCore(repositoryRoot);
   const fence = boundedSlice(core, '```lazy-include\nmerge-gate-delegated-run', '\n```');
@@ -22224,9 +22228,25 @@ test('the merge-gate inline run loads the delegated-run fragment and binds untok
     fence,
     /when: this run is the delegated merge-gate run, or the caller runs the gate inline – without a spawn mechanism, after a declined dispatch, after `ABORT nested-spawn-unavailable`, or for a user restriction neither token expresses/,
   );
+  const binding = mergeGateCallerLimitsBinding();
   assert.match(
-    mergeGateCallerLimitsBinding(),
+    binding,
     /An inline run also binds every restriction the user stated in its session that neither token expresses, with the same precedence\./,
+  );
+  assert.match(
+    binding,
+    /That binding also covers an inline `\{\{SKILL:iterate\}\}` round, and every worker or workflow handoff written under it – this run's and that round's – restates the restriction verbatim among its authority limits; a worker that cannot honor it returns `ABORT`\./,
+    'the binding must reach an inline iterate round and every handoff under it, with ABORT for a worker that cannot honor it',
+  );
+  ordered(
+    binding,
+    'An inline run also binds every restriction the user stated in its session that neither token expresses, with the same precedence.',
+    'That binding also covers an inline `{{SKILL:iterate}}` round',
+  );
+  assert.match(
+    binding,
+    /with the same precedence\. That binding also covers/,
+    'the iterate-round sentence must directly follow the untokenised-restriction sentence',
   );
 });
 
