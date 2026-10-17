@@ -238,7 +238,14 @@ reaches the caller's core.
 
 `judgment-draft-snapshot` holds the issue-mode draft snapshot of the judgment handoff in
 `central-reasoning-delegation`, so `plan`, `concept` and `concept-review`, which judge only local
-files, no longer pay for it; `plan-issue` and `plan-review` load it in issue mode.
+files, no longer pay for it; `plan-issue` and `plan-review` load it in issue mode. The snapshot appends
+the issue body and comments, minus the canonical planning comment, as a separately quoted
+third-party section and lives until the step's last attempt ends. `judgment-inline-fallback`
+holds the inline, skip and reduced-scope records (EN/DE) and their location and lifetime for that
+handoff and for the `investigate` skeptic step (`investigate/skeptic`). Both load it when their
+spawn is unavailable, declined, aborted or escalated past Retry 1; the handoff also loads it when
+the judged artifact already holds a `Record (`/`Vermerk (` line or a `not performed`/`nicht
+durchgeführt` open point.
 
 `durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
 implementation, investigation, planning, or decomposition run. Common implementation workflows
@@ -829,7 +836,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
