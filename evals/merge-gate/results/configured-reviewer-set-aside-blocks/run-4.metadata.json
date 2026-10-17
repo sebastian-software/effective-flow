@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "roundId": "mv46zoru-4fef4c6e-86fa-4259-b61f-bce4fa7c3d9f",
+  "roundId": "mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1",
   "scenario": "configured-reviewer-set-aside-blocks",
   "slot": 4,
   "attempt": 1,
-  "sourceRevision": "eb68ee077a3381b16419e20b9d6ec42656b74e36",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mv46zoru-4fef4c6e-86fa-4259-b61f-bce4fa7c3d9f/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project",
+  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
     "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
   },
-  "promptDigest": "sha256:2cb0229fe4003172382f64035af9e2bb0c244c38cea72bbb8242df1332586811",
+  "promptDigest": "sha256:68a89552972bfd22f2847a29dda3ee8e854b898b75e721941a84ee620f881d12",
   "fixtureDigest": "sha256:69a79bb815bd2e1379900eb87be82f4abcdbadc849072413f9f9cb25033d6743",
-  "buildDigest": "sha256:3434e3d5e7e1d88c09f83cbd875e35d5c28aba2dabd172e61fbad059c3cb0e63",
+  "buildDigest": "sha256:fcfff4c376630ebe601362a2c6af931447757ae00be5b68c0f0875b8d59b9a25",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mv46zoru-4fef4c6e-86fa-4259-b61f-bce4fa7c3d9f/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/configured-reviewer-set-aside-blocks/slot-4/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
@@ -27,7 +27,7 @@
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
       "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
     }
   }
 }

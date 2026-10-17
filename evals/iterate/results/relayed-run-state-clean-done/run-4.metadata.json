@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e",
+  "scenario": "relayed-run-state-clean-done",
+  "slot": 4,
+  "attempt": 1,
+  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/relayed-run-state-clean-done/slot-4/attempt-1/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "codex-cli 0.159.3",
+    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+  },
+  "promptDigest": "sha256:f2b4442a44f70c092c2c2f10502fb59ce8463dc146f7cc3bc6fb58006de850b4",
+  "fixtureDigest": "sha256:68af58efd930c512e9292ef8e1250b6395938f3a850b3770ab7f6ef5f2457ebd",
+  "buildDigest": "sha256:77b70cddae8d59753a61afa732eb134102c5ec81fe4b6bc0a00a1a0170e986f9",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/relayed-run-state-clean-done/slot-4/attempt-1/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium",
+      "reportedVersion": "codex-cli 0.159.3",
+      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+    }
+  }
+}

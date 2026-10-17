@@ -1,0 +1,69 @@
+{
+  "scenario": "nested-spawn-abort-runs-inline",
+  "digest": "sha256:422b282f2b44bab6191dadcc1e21573050de969fd1c5c9c244b2a52771769e9a",
+  "skill": {
+    "digest": "sha256:019dc25cc43a9786f301dc019f82295b1ecb7815ed256218fbfa13b754757ba6",
+    "versionNeutralDigest": "sha256:dfc10b965352e9f2123e7ad0021a836983e3ffb1ab073e38ed42ecdf8afc5024",
+    "files": {
+      "SKILL.md": "sha256:8bf4981bc011889bd5a91e3c61d2f3d33af68748eb11df9d11d8815005400621",
+      "scripts/config-resolve-core.mjs": "sha256:5e39a3d707106b2816780b4752b7cccd9955c5951df0fe83042a47b267deb66c",
+      "scripts/config-resolve.mjs": "sha256:eff11b9757e08804946823946ade96d2eaf56935552d401f18f3a1e7dd5f068b",
+      "scripts/delegation-envelope-core.mjs": "sha256:218ec3e26db18ffd13cb539496e65ded49d0ce37a70a19109d4a8301b93af5c8",
+      "scripts/delegation-envelope.mjs": "sha256:ead3d76abebbbf7fc4304078356df87441be8fd29fed7e8471028ee7997d1c48",
+      "shared/config-migration-edge-cases.md": "sha256:519a0cc04ad2ce0f28fabd5c4065c5796ade61eec6a2a7fb3af265bab8d4c290",
+      "shared/config-migration.md": "sha256:d5dc3a52ca75c5feb2c1518edc10a930821d3eb97ff085f0bf8f09ceb11072e9",
+      "shared/delegation-envelope-examples.md": "sha256:42e614a52ddc5a430a833cd6d0187c01f7026a4a85db7d6fd9d5ebbd2483e167",
+      "shared/durable-follow-up-gate.md": "sha256:fc9a5485a9567890bab1462a0c46a5d204b2e26edd1a39b0a5b205c55a1bd3b0",
+      "shared/effective-flow-dir-migration.md": "sha256:138441ccb26b75dd4ea6c540b0d05ba27fa2cf73aa640489f1f1b5111edeb567",
+      "shared/issue-post-merge-observation.md": "sha256:53b300a64c629366c3b2404627eef215b7977ea1200498c9492546d4517fa06f",
+      "shared/issue-tracker-forge.md": "sha256:a722523ecdec21d127d50193469526121c603e1ae3c049c4f457b8fbd1e44e27",
+      "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
+      "shared/merge-gate-check-list-waiver.md": "sha256:84c77e60c6c8197460ddd2c378904dc8dc6b35677e21b2c73486f90fc7e01129",
+      "shared/merge-gate-checkout-boundary.md": "sha256:da753db78137623b2700416c210d4f385e33cbec108e898a157faef23e953543",
+      "shared/merge-gate-configured-reviewer.md": "sha256:5786cb2e41d78fc011d15e10ac9f55e7ac8bc9b77b29a877b2e8e8c509c0ebfa",
+      "shared/merge-gate-conflict-resolution.md": "sha256:c392039c7cee39f499ffeed919ddcec06a59a6870a843f1a8ee6ca6e772971c3",
+      "shared/merge-gate-delegated-run.md": "sha256:42604f1b6a7931202993dcaab2ada60dc08438c59a65a7f3e5efd5ca8ca7747b",
+      "shared/merge-gate-delegation-contract.md": "sha256:d230a084ba17f06e7277a2cbf36ba567ad14b2483728723ef9807b4b95b6a541",
+      "shared/merge-gate-issue-observation.md": "sha256:5bac5f52ffbf58767d8c0d36553266d7acea272b61014df87b1ef04bd91259be",
+      "shared/merge-gate-provider-settled-threads.md": "sha256:17f9fc146e459b8e8bf4bc96406a1d4dce513a288339f27f89c633711ce648d5",
+      "shared/model-tiers.md": "sha256:95092d99cf96f1c148880a4b6f1949e620fa0f96ba4d65f213c4387b9cdcee70",
+      "shared/next-steps.md": "sha256:cc7d37c1e64ed68a342676c6ef27338d9753f5494bc30bd4fe8d6fd50d61a2ee",
+      "shared/pilot-measurement.md": "sha256:6a4e55a0157a8f7d7635da2b0b20b6c8c89f56240aad0437f47d3c6ce450fda8",
+      "shared/pr-merge-completion.md": "sha256:fb9654e7f68003ccda0d560c937fd2fde973f82a7443b523ee563016bdd6794e",
+      "shared/pr-review-integration.md": "sha256:30fb4985e9de0be5b2533b0c5e81f2844571e0491be60f41ee70a2b40188a433",
+      "shared/pr-thread-ledger.md": "sha256:ab8a47112ea57fa532f219b2cfce3b6c38294a0fe8c2bfb0fd2493e7cc6bd04e",
+      "shared/review-bot-state-observation.md": "sha256:b92237c8e6a767c15c8074e4d86cff1aaec69ff56c4f8aa365e8c0ba406b9a8d",
+      "shared/review-bot-state.md": "sha256:a5e8ed5c38746f609b8061032f73d4b11e205c795da38ddfb38860392e098d49",
+      "shared/runtime-state-safety.md": "sha256:8f15d49689bd3eb7456e1bb3c1ca877a71669ae7f5f40ce966b2fccec3cb75f5",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:c873d11d21921dcc96338223d283db03e0ea5d38f30bfb2b2ceb24e83d7500a4",
+      "shared/tracker-target.md": "sha256:41adc7e385b0abb4daecc2048e745faef9829f8a04adf5874d2a6431df711f31",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "shared/worktree-integration.md": "sha256:86b249771ebaccc843381ba01b5d12d8e12be5ea7ec364c8eed8439c661aa623",
+      "tools/iterate.md": "sha256:f27fa3ef679a083e068453076ac45d6fae97ed4689e045834302e35285477d77",
+      "tools/merge-gate.md": "sha256:c15017a71ad2826f06ff755e121f0bda840a4f221ea235d2bf13f7a9541b42ae",
+      "workers/effective-flow-code-validator.md": "sha256:921d83bf6ada3b5fd659d4425ebc0b90883b89c8e8ed157d5024157f6e3ffe62",
+      "workers/effective-flow-merge-conflict-resolver.md": "sha256:06b6359df94f8ddea9c63b93aef8f328b0a25beb83f0aabd63e3e5a425e3eef5"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:7b67054dea9f1cc0b6f6a5944dd159b4bc278c7734d392ca9b7746c94b825b81",
+    "files": {
+      "evals/merge-gate/suite.config.mjs": "sha256:980c46c3b956056c72dca851671a0eaf10b9a800e41a82a83a8647431a80f209",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs": "sha256:0953bddcad06cbd1caa7f99b7a7e690ed654ebf28af4bf9c46dd4f554f7adc9d",
+      "evals/merge-gate/_scaffold/project-setup.mjs": "sha256:cefee33c9e6d1bcdf8d113d9e7b870131cc6724166f0a37625c2aad20e55b7a6"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:a1ddd32b660ef2ec0e604968fca247f17e3a2e4d518112cafcd1abca64c8e831",
+    "files": {
+      "evals/merge-gate/fixtures/nested-spawn-abort-runs-inline.json": "sha256:15848d8ec357ad83db9489c0fe8bd2980b8618c53317ff9c7e3efd71f6221430",
+      "evals/merge-gate/scenarios/nested-spawn-abort-runs-inline.md": "sha256:9b259425d7e84898a1184440cf19c653918f8cd7aa815a1b8bb8711487a21745"
+    }
+  }
+}

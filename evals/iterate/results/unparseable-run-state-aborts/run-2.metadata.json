@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "roundId": "mv46zwi4-4c086ec2-1f92-4c26-8813-dde1a612afea",
+  "roundId": "mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e",
   "scenario": "unparseable-run-state-aborts",
   "slot": 2,
   "attempt": 1,
-  "sourceRevision": "eb68ee077a3381b16419e20b9d6ec42656b74e36",
-  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mv46zwi4-4c086ec2-1f92-4c26-8813-dde1a612afea/slots/unparseable-run-state-aborts/slot-2/attempt-1/project",
+  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-run-state-aborts/slot-2/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
     "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
   },
-  "promptDigest": "sha256:8082fbf9f064fb5c0fe87f2132c7459deaaf3c4a37408a910fac22daab4b1184",
+  "promptDigest": "sha256:d5c003f1dded490c9acdb55a06419457e6558b9cf2f702b77c19eaf73e959360",
   "fixtureDigest": "sha256:a7418ea4cf47988db8c2fd488787fabee473f88ac62acd6869f42c3468b2eecc",
-  "buildDigest": "sha256:f9ce984e25164c65a70e837601b8dbefd53d67bdcc72b6419fb8fa6205f936be",
+  "buildDigest": "sha256:db552f7db29a9b05e6d2359353e0627fc007fb5b608906bf52615b23b5547e98",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mv46zwi4-4c086ec2-1f92-4c26-8813-dde1a612afea/slots/unparseable-run-state-aborts/slot-2/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-run-state-aborts/slot-2/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
@@ -27,7 +27,7 @@
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
       "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ephemeral,ignore-user-config,isolated-home"
+      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
     }
   }
 }

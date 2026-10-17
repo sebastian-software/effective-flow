@@ -216,21 +216,29 @@ set has to cover the whole corpus, because publication refuses a candidate that 
 stale or missing scenario. The per-slot depth is therefore attested once per round: declare
 `nesting-by-scenario` in `--tool-policy` for every round that includes either delegation scenario —
 in practice every full round — for example
-`--tool-policy approve-for-me,ephemeral,ignore-user-config,isolated-home,nesting-by-scenario`.
+`--tool-policy approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario`.
 `test/merge-gate-eval.test.mjs` fails an archived run of either delegation scenario without the
 token. Like every other part of the profile, the token attests and does not enforce.
 
-For the Codex CLI the nesting of spawned agents is bounded by the `agents.max_depth` configuration
-key, set per `codex exec` invocation with `-c agents.max_depth=<n>`. This README records no
-verified default for it. Establish both settings on the recording host with a throwaway session
-before the first slot: the value at which a spawned agent can itself spawn twice more (the gate's
-per-item runs and their workers sit two levels below it), for every slot but the nested-spawn
-scenario's, and a setting under which a spawned agent cannot spawn, for that scenario's slots.
-`-c agents.max_depth=1` composes the second condition when the host keeps the tool and refuses the
-call (`codex-cli 0.159.3` answers it "Agent depth limit reached"): the delegated run's Entry probe
-starts one no-op child, so a refused probe aborts exactly as a missing tool does. If no host setting
-stops a spawned agent from spawning, the scenario cannot be composed on that host; stop and decide
-rather than record it.
+Establish both settings on the recording host with a throwaway session before the first slot: one
+under which a spawned agent can itself spawn twice more (the gate's per-item runs and their workers
+sit two levels below it), for every slot but the nested-spawn scenario's, and one under which a
+spawned agent cannot spawn, for that scenario's slots. On `codex-cli 0.159.3` with the pinned model,
+which runs multi-agent v2, the probe found:
+
+- `--ephemeral` breaks every spawn ("collab spawn failed: … no rollout found for thread id"), so no
+  slot of a delegating suite may pass it; the throwaway `CODEX_HOME` keeps the rollouts it writes.
+- Without it, the default lets a spawned agent spawn three levels below the session.
+- `-c agents.max_depth=<n>` changes nothing under v2: with `1` and with `3` the chain still reached
+  three levels below the session, and `--disable multi_agent_v2` does not switch the model to v1.
+- `-c features.multi_agent_v2.max_concurrent_threads_per_session=2` admits the session and one
+  child and refuses that child's spawn ("collab spawn failed: agent thread limit reached"). It is a
+  thread cap rather than a depth limit, but the delegated run is the caller's only live child when
+  its Entry probe starts one no-op child, so the probe is refused and aborts exactly as a missing
+  tool does.
+
+Re-run the probe after a CLI or model change. If no host setting stops a spawned agent from
+spawning, the scenario cannot be composed on that host; stop and decide rather than record it.
 
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
