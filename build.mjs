@@ -2220,7 +2220,7 @@ try {
     investigate: 553,
     fix: 521,
     'plan-review': 470,
-    pr: 472,
+    pr: 493,
     'concept-review': 366,
     'apply-review-remote': 382,
     concept: 362,

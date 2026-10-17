@@ -19515,10 +19515,29 @@ test('pr in hidden mode references no plan file, no .effective-flow/ path, and n
   );
   assert.match(
     step9,
-    /Hidden mode \(`visibility: hidden` .*?\): reference no plan file, and let neither the title nor the body contain a path under `\.effective-flow\/` or name Effective Flow \(`effective-flow`, `Effective Flow`\)\. Derive both from the changes alone/,
+    /Hidden mode \(`visibility: hidden` .*?\): reference no plan file, and let neither the title nor the body contain a path under `\.effective-flow\/` or name Effective Flow \(`effective-flow`, `Effective Flow`\)\. The body draft gets no plan path\./,
   );
+  // The delegated body draft receives no plan path in hidden mode, so it cannot read the plan.
+  assert.match(prose(pr), /the resolved title, the plan path \(none in hidden mode\)/);
   // The hidden rule follows the plan-reference rule it overrides.
   ordered(step9, 'reference an associated plan file', 'Hidden mode');
+  // Invariant: on the delegated body-draft path the orchestrator's own read set is the commit
+  // messages, the stat and the name list, so the full diff stays out of its context.
+  assert.match(
+    step9,
+    /The orchestrator reads the full commit messages of step 4's range .*?`git -C <execution-root> diff --stat <remote-tracking-base>\.\.\.<head OID>` and its `--name-only -z --diff-filter=AMR` list; on the delegated path it never reads the full diff or a plan file's content\./,
+  );
+  // Invariant: a derived body reaches the helper only after effectful tokens are stripped, the
+  // supplied references are required and forbidden content is rejected; only a body that still
+  // fails is replaced inline.
+  const bodyCheck = prose(boundedSlice(pr, '**Body check,**', '10. **Create the PR:**'));
+  ordered(
+    bodyCheck,
+    'first strip effectful tokens',
+    'Then require every supplied reference verbatim',
+    'reject internal tracking IDs',
+    'replaced by one derived inline',
+  );
   assert.match(
     prose(pr),
     /In hidden mode, never reference a plan file, a path under `\.effective-flow\/`, or Effective Flow by name in the PR title or description/,
