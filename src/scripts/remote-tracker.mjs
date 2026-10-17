@@ -1,88 +1,8 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { spawn } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { createProcessRunner } from './process-runner.mjs';
 import { errorEnvelope, executeOperation, RemoteTrackerError } from './remote-tracker-core.mjs';
-
-// A spawn against a missing working directory and a spawn of a missing executable both surface as
-// ENOENT with the executable in `error.path`, so the core could not tell them apart. Detect the
-// unusable directory here, at the single I/O boundary, and report it under its own code.
-function isUsableDirectory(path) {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-// A bounded spawn is stopped with SIGTERM so the child can still flush and exit cleanly. SIGTERM is
-// catchable and ignorable, though, so a child that swallows it would keep the run open — exactly the
-// hang the bound exists to prevent. After this grace period the stop is forced with SIGKILL, which
-// no process can refuse. One second is ample for a CLI that holds no state worth flushing.
-const FORCED_KILL_GRACE_MS = 1000;
-
-function createProcessRunner() {
-  return ({ executable, args = [], stdin, cwd, env, timeoutMs }) =>
-    new Promise((resolve) => {
-      if (cwd !== undefined && !isUsableDirectory(cwd)) {
-        resolve({
-          status: null,
-          stdout: '',
-          stderr: '',
-          error: { code: 'INVALID_CWD', path: cwd },
-        });
-        return;
-      }
-      const child = spawn(executable, args, {
-        cwd,
-        env: env ? { ...process.env, ...env } : process.env,
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        // Only a plan that carries its own bound is bounded. A blocking provider watch has no
-        // timeout flag of its own, so the limit travels with the plan and is enforced here, at the
-        // single process boundary; every other spawn stays unbounded exactly as before.
-        ...(timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: 'SIGTERM' }),
-      });
-      let stdout = '';
-      let stderr = '';
-      let forcedKill = false;
-      // Armed only for a bounded spawn, so an unbounded one creates no timer at all. It fires once,
-      // after the bound plus the grace period, and is cleared as soon as the child is gone — a
-      // child that stops on its own never sees it.
-      const escalation =
-        timeoutMs === undefined
-          ? undefined
-          : setTimeout(() => {
-              if (child.exitCode === null && child.signalCode === null) {
-                forcedKill = true;
-                child.kill('SIGKILL');
-              }
-            }, timeoutMs + FORCED_KILL_GRACE_MS);
-      const settle = (result) => {
-        if (escalation !== undefined) clearTimeout(escalation);
-        resolve(forcedKill ? { ...result, forcedKill: true } : result);
-      };
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk) => (stdout += chunk));
-      child.stderr.on('data', (chunk) => (stderr += chunk));
-      child.on('error', (error) => settle({ status: null, stdout, stderr, error }));
-      // The terminating signal travels with the result: a child killed on its bound exits with a
-      // null status, and only the signal distinguishes that bounded stop from a crash.
-      child.on('close', (status, signal) => settle({ status, signal, stdout, stderr }));
-      // A child that fails at once — an unauthenticated or instantly exiting gh — closes its end of
-      // the pipe while this write is still outstanding, and the EPIPE that follows is emitted on the
-      // stdin stream rather than on the child. A stream with no `error` listener turns that into an
-      // uncaught exception, so the process would die before `main` printed anything and a caller
-      // waiting for a structured envelope would receive none at all. The listener stays empty on
-      // purpose: the child's own `error` and `close` handlers above already carry the real outcome
-      // and report it as a COMMAND_FAILED, and a second reading of the same failure here could only
-      // contradict them.
-      child.stdin.on('error', () => {});
-      child.stdin.end(stdin);
-    });
-}
 
 async function readStdin(stream = process.stdin) {
   let input = '';
