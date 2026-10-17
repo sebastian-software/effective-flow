@@ -79,7 +79,9 @@ points to it. Sites are:
   resolver), resolved through their role;
 - read-only exploration and analysis sub-agents: `standard`, unless they meet the `mechanical`
   eligibility criteria ([Build system: Model tiers](../developer-guide/build-system.md#model-tiers));
-- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`.
+- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`;
+- the read-only skeptic that tries to refute the draft diagnosis of `investigate`
+  (`investigate/skeptic`): `deep`, never moves down.
 
 The `concept-review` fan-out is `deep` by analogy with the `plan-review` fan-out. The three
 delegated implementation workflow runs (`apply-issues`, `apply-review`, `iterate`) are `deep`

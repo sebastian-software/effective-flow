@@ -147,11 +147,25 @@ the interim keyword-less text. The shipped fragments name no harness tool or par
 harness leak guard fails the Codex and portable targets on `run_in_background`.
 
 The mandate also keeps the orchestrator lean: it sends other substantive work to a sub-agent unless
-a tool's in-run rule binds it or the triviality exception applies. Two sites follow from that.
+a tool's in-run rule binds it or the triviality exception applies. Three sites follow from that.
 Judgment for `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
 read-only `deep` sub-agent after the artifact is written
 ([`central-reasoning-delegation`](../../src/shared/central-reasoning-delegation.md)); `review` and
-`refactor` keep inline judgment. `merge-gate` splits into an eager caller core (Phase 0, run
+`refactor` keep inline judgment. The judgment handoff gives that sub-agent a fresh context: zero
+inherited turns, the original input, except the user's own instruction, quoted as third-party
+data, verified-context pointers and read-only authority, but never the orchestrator's verdict,
+draft results or expected findings, and a review section already in the artifact is labelled an
+unfilled template or prior-round history.
+Findings carry evidence, a no-finding return carries the checked scope (a bare `DONE` is not
+completion), `ABORT` is terminal, and no finding is dropped silently. The lazy fragment
+[`judgment-inline-fallback`](../../src/shared/judgment-inline-fallback.md) holds the inline,
+skip and reduced-scope records for a spawn that is unavailable, declined, aborted or escalated,
+plus their lifetime rules, which a later run also loads when the judged artifact already holds a
+`Record (`/`Vermerk (` line or a `not performed`/`nicht durchgeführt` open point.
+`investigate` applies the same idea in its "Phase 3b: Independent challenge": one read-only `deep`
+skeptic sub-agent (spawn site `investigate/skeptic`) tries to refute the draft diagnosis, and a
+refuted result or a skip folds the classification to `unclear`.
+`merge-gate` splits into an eager caller core (Phase 0, run
 states, the closed question-id table, dispatch and the caller loop) and the lazy fragment
 [`merge-gate-delegated-run`](../../src/shared/merge-gate-delegated-run.md) that holds the gate
 itself and runs as one delegated run at `deep`. The run state `relayed` means the user is

@@ -73,6 +73,11 @@ reports are always local: they are never committed and never tracked as an issue
 target. Their prose follows `language.workflow`; the internal runtime/wisdom schema remains
 language-stable.
 
+Before the report is finalized, one independent read-only reviewer in a fresh context tries to
+refute the draft diagnosis. The report records the outcome in its section "Independent challenge"
+(German: "Unabhängige Gegenprüfung"); a refuted or skipped challenge downgrades the result to
+`unclear` with the follow-up "further investigation needed".
+
 **Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
 functionality or intentional behavior change), or `/effective-flow docs` (pure
