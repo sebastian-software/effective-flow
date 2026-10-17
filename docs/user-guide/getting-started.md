@@ -101,7 +101,8 @@ model. `deep` is the strongest assignment (implementers, reviewers, merge-confli
 while a `deep` spawn never moves down. Native Claude Code and Codex installations take the values
 from the generated worker definitions and the spawn instruction; the portable installation names
 both harnesses' values at each spawn and uses the pair that belongs to the host. A host with
-neither mechanism inherits the caller model and says so once.
+neither mechanism inherits the caller model and says so once. When `effective-flow pr` has to draft
+the PR body, it does so on the `mechanical` tier.
 
 To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
 judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one

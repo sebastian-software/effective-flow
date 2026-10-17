@@ -1125,6 +1125,20 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   own exact allowlist entry.
 - **Context budget.** The mandate's tier sentence and lazy pointer add lines to every tool that
   includes it; the spawn-site lines render in place of the marker and count in the built core.
+- **`mechanical` eligibility.** A site is `mechanical` only when all five conditions hold. The
+  criteria are maintainer-facing: no runtime decision reads them, so `model-tiers` carries only the
+  table row.
+  - (a) The spawn is read-only and returns a draft or facts only.
+  - (b) Its inputs are bounded and named in the brief.
+  - (c) The orchestrator checks the output before any effect.
+  - (d) The spawn makes no safety, classification, judgment or approval decision and asks the user
+    nothing.
+  - (e) The orchestrator does not itself read the bulk input the spawn reads, so work actually
+    moves. For `pr/body-draft` that bulk is the full diff and the plan content; `--stat`,
+    `--name-only` and commit messages stay allowed.
+
+  `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
+  no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.
 
 ## Optional upstream ownership audit
 

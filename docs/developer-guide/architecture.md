@@ -485,7 +485,9 @@ role-specific profiles. Every profile is one of three provider-neutral **model t
 declare `deep` (Claude `opus` with `high` effort, Codex `gpt-6.1-sol` with `high` reasoning
 effort); documentation, testing, validation, and other support roles declare `standard` (Claude
 `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). `mechanical` (Claude `haiku`/`low`, Codex
-`gpt-5.6-luna`/`low`) is defined for cheap scans, but no spawn site uses it yet. The individual
+`gpt-5.6-luna`/`low`) is reserved for read-only drafts or fact returns that meet the eligibility criteria in
+[Build system](./build-system.md#model-tiers); the PR body draft in `pr` step 9 is the first such
+site, besides the no-op nested-spawn probe. The individual
 files under `src/agents/` remain the exhaustive source of truth for which role belongs to which
 tier; `MODEL_TIER_MAPPINGS` in `build.mjs` is the only place the concrete values live. Tiers are
 build metadata and no configuration key, so `executionProfiles` stays the only model-related
