@@ -310,6 +310,47 @@ Run `node build.mjs` to reconcile all declared relationships, this table, every
 `pnpm audit:skill-ownership -- <local-skills-directory>` only as a non-blocking review aid for a
 local upstream checkout.
 
+## Shipped ownership projection
+
+`setup status` reports which declared owner the project's `skills` configuration disables, per
+exposed tool. The shipped script cannot read sources, so `node build.mjs` writes the projection
+`scripts/setup-status-owners.json` beside the runtime scripts in every target (native Claude,
+native Codex, portable, and therefore the delivery branch). It carries the installed SemVer from
+`.release-please-manifest.json` (no Git hash), the exposed tools, the declared workflow edges (each
+`{ from, to, mode }`, `mode` null unless `from` runs `to` only in that resolver mode), and
+one row per **`delegate`** relationship of the manifest: `skill`, `consumer`, `consumerKind`
+(`tool`, `agent`, `shared`), `classification`, the sorted exposed `tools` that reach the consumer,
+and `reach`, one `{ tool, scope }` entry per exposed tool and `skills` scope it is reached through.
+`route-when-relevant` rows are optional routes and are not projected.
+
+Reachability is explicit, never inferred from every `{{SKILL:X}}` mention. An exposed tool reaches
+itself, its eager and lazy include closure, the agents its source or that closure spawns
+(`{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`) with their own include closures, and every tool behind a
+declared `WORKFLOW_EDGES` entry in `build.mjs`, transitively, whatever the edge's mode (the edges
+into exposed tools are `merge-gate → iterate`, mode `pr`; `apply-plan`, `apply-issues`,
+`apply-review` and `iterate` → `build`, `fix`, `refactor`, `docs`; and `deliver` → `commit`, `pr`).
+The `commit` and `pr` runs that `build`, `fix`, `refactor`, `docs`, `maintain` and `iterate` start
+through the shared `worktree-integration` fragment are not declared, because an edge must match a
+reference in its `from` tool's own source; their owner reach therefore omits the owners of `commit`
+and `pr`, while the retired-row stops lose nothing, since each of those hosts stops on
+`worktree.baseBranch`, the only row `pr` stops on, through its own successor set. A tool consumer is reached through `tools.<consumer>`, an agent through
+`agents.<consumer>`, and a shared fragment through each host's scope: `tools.<host tool>` or
+`agents.<host agent>`. Agents are leaves, so an agent's own `{{AGENT:X}}` mentions are not followed.
+
+The build fails when the projection's `delegate` rows differ from the manifest, when a `delegate`
+consumer reaches no exposed tool, when a declared edge or pointer has no matching reference in its
+`from` source (`{{SKILL:X}}`, a lazy-include fence, or a literal `tools/X.md` path), or when a tool
+source references an internal tool without a declared `WORKFLOW_EDGES` or
+`WORKFLOW_POINTER_REFERENCES` entry. A reference to an exposed tool is not checked in reverse, so an
+in-run delegation into one is declared by hand; a pointer whitelists its whole `(from, to)` pair, so
+a later real delegation between a listed pair moves to `WORKFLOW_EDGES`. The build also fails when an
+edge's `mode` is no resolver mode of its target, and when a `SUCCESSOR_SETS` entry other than `setup`
+is run by no exposed tool in its mode, so `setup status` can always name the exposed tools a retired
+row stops (at runtime such a tool would keep its own name, listed in `unmappedTools`).
+`assertDisjointConsumerNames` also keeps `src/shared/` names
+apart from tool and agent names, so `consumerKind` follows from a bare name. The derivation and the
+guards are pure functions in `build-lib.mjs`, covered in `test/build-lib.test.mjs`.
+
 ## See also
 
 - `src/shared/skill-discovery.md` – the operative skill-discovery and authority contract.

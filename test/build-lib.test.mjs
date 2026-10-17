@@ -116,7 +116,16 @@ import {
   assertDisjointConsumerNames,
   assertSkillOwnershipContract,
   assertAgentSkillRecommendationRoster,
+  collectToolReferences,
+  assertWorkflowEdgeContract,
+  assertSuccessorSetsReachExposedTools,
+  deriveSetupStatusProjection,
+  assertSetupStatusProjection,
 } from '../build-lib.mjs';
+import {
+  exposedToolsReaching,
+  validateOwnersProjection,
+} from '../src/scripts/setup-status-core.mjs';
 import { auditSkillOwnership } from '../scripts/audit-skill-ownership.mjs';
 import {
   PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION,
@@ -970,10 +979,298 @@ test('the checked-in tool and agent basenames stay disjoint', () => {
 
   assert.doesNotThrow(() =>
     assertDisjointConsumerNames(
-      { toolNames: sourceNames('tools'), agentNames: sourceNames('agents') },
+      {
+        toolNames: sourceNames('tools'),
+        agentNames: sourceNames('agents'),
+        sharedNames: sourceNames('shared'),
+      },
       { context: 'checked-in sources' },
     ),
   );
+});
+
+test('a shared fragment named like a tool or agent fails the disjoint-name guard', () => {
+  // Invariant: the setup-status projection derives consumerKind from a bare name, so a shared
+  // fragment must never share its basename with a tool or an agent.
+  assert.throws(
+    () =>
+      assertDisjointConsumerNames(
+        { toolNames: ['plan'], agentNames: ['docs-writer'], sharedNames: ['docs-writer', 'x'] },
+        { context: 'central-skill ownership guard' },
+      ),
+    /Shared fragment and tool or agent share the basename\(s\) docs-writer:.*consumerKind.*central-skill ownership guard/s,
+  );
+  assert.doesNotThrow(() =>
+    assertDisjointConsumerNames({ toolNames: ['plan'], agentNames: ['docs-writer'] }),
+  );
+});
+
+// --- Setup-status ownership projection (#485) ---
+
+const projectionTools = () =>
+  new Map([
+    ['merge-gate', 'Evaluates notes through {{SKILL:iterate}}.\n'],
+    ['iterate', '```include\nwriting-rules\n```\nSpawn {{AGENT:docs-writer}}.\n'],
+    ['build', '```lazy-include\nlazy-gate\nwhen: rarely\n```\nSee {{SKILL:iterate}} later.\n'],
+    ['apply', 'Delegates to {{SKILL:apply-review}}.\n'],
+    ['apply-review', 'Read `tools/apply-review-remote.md`.\n'],
+    ['apply-review-remote', 'Loaded by tools/apply-review.md.\n'],
+    ['pr-review', 'Forwards to {{SKILL:merge-gate}}.\n'],
+  ]);
+const projectionAgents = () =>
+  new Map([
+    ['docs-writer', '```include\nlanguage-rules\n```\nHand over to {{AGENT:marketing-writer}}.\n'],
+    ['marketing-writer', 'Writes.\n'],
+  ]);
+const projectionShared = () =>
+  new Map([
+    ['writing-rules', 'Plain.\n'],
+    ['language-rules', 'Rules.\n'],
+    ['lazy-gate', '```include\nnested-gate\n```\n'],
+    ['nested-gate', 'Nested.\n'],
+  ]);
+const PROJECTION_EXPOSED = ['apply', 'build', 'iterate', 'merge-gate'];
+const PROJECTION_EDGES = [
+  { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+  { from: 'apply', to: 'apply-review' },
+  { from: 'apply-review', to: 'apply-review-remote' },
+];
+
+function projectionManifest(consumers) {
+  return parseSkillOwnershipManifest(
+    JSON.stringify({
+      schemaVersion: 1,
+      relationships: Object.entries(consumers).map(([skill, rows]) => ({
+        skill,
+        consumers: rows.map(([consumer, classification = 'delegate']) => ({
+          consumer,
+          classification,
+        })),
+      })),
+      relevanceGateOwners: [],
+      externalRecommendationAllowlist: [],
+    }),
+  );
+}
+
+function deriveProjection(manifest, overrides = {}) {
+  return deriveSetupStatusProjection({
+    manifest,
+    toolSources: projectionTools(),
+    agentSources: projectionAgents(),
+    sharedSources: projectionShared(),
+    exposedTools: PROJECTION_EXPOSED,
+    workflowEdges: PROJECTION_EDGES,
+    version: '1.68.0',
+    ...overrides,
+  });
+}
+
+test('collectToolReferences finds the three tool reference forms', () => {
+  const references = collectToolReferences(
+    'Use {{SKILL:apply-plan}}, read tools/apply-review-remote.md, and\n```lazy-include\niterate\nwhen: x\n```\n',
+  );
+  assert.deepEqual([...references.get('apply-plan')], ['skill']);
+  assert.deepEqual([...references.get('apply-review-remote')], ['path']);
+  assert.deepEqual([...references.get('iterate')], ['lazy-include']);
+});
+
+test('the projection follows declared edges, spawns and include closures onto exposed tools', () => {
+  // Invariant: merge-gate inherits the owners of iterate through its declared workflow edge, while a
+  // bare {{SKILL:iterate}} mention (build) is no edge; an agent-hosted shared consumer is reached
+  // through the agents.<host> scope; only delegate rows are projected.
+  const manifest = projectionManifest({
+    'effective-delivery': [['iterate'], ['apply-review-remote'], ['nested-gate']],
+    'effective-writing': [['language-rules'], ['marketing-writer', 'route-when-relevant']],
+  });
+  const projection = deriveProjection(manifest);
+  assert.equal(projection.schemaVersion, 1);
+  assert.equal(projection.version, '1.68.0');
+  assert.deepEqual(projection.exposedTools, PROJECTION_EXPOSED);
+  // Every shipped edge carries its mode, null when it runs the target in every mode.
+  assert.deepEqual(projection.workflowEdges, [
+    { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+    { from: 'apply', to: 'apply-review', mode: null },
+    { from: 'apply-review', to: 'apply-review-remote', mode: null },
+  ]);
+  const row = (consumer) => projection.owners.find((entry) => entry.consumer === consumer);
+  assert.deepEqual(row('iterate'), {
+    skill: 'effective-delivery',
+    consumer: 'iterate',
+    consumerKind: 'tool',
+    classification: 'delegate',
+    tools: ['iterate', 'merge-gate'],
+    reach: [
+      { tool: 'iterate', scope: 'tools.iterate' },
+      { tool: 'merge-gate', scope: 'tools.iterate' },
+    ],
+  });
+  assert.deepEqual(row('apply-review-remote').reach, [
+    { tool: 'apply', scope: 'tools.apply-review-remote' },
+  ]);
+  // A lazy include and its own eager include are part of the host tool's closure.
+  assert.deepEqual(row('nested-gate').reach, [{ tool: 'build', scope: 'tools.build' }]);
+  assert.equal(row('language-rules').consumerKind, 'shared');
+  assert.deepEqual(row('language-rules').reach, [
+    { tool: 'iterate', scope: 'agents.docs-writer' },
+    { tool: 'merge-gate', scope: 'agents.docs-writer' },
+  ]);
+  assert.equal(row('marketing-writer'), undefined, 'route-when-relevant rows are not projected');
+  // The shipped script accepts what the build writes.
+  assert.doesNotThrow(() => validateOwnersProjection(JSON.parse(JSON.stringify(projection))));
+});
+
+test('the projection guards reject a consumer no exposed tool reaches and diverging rows', () => {
+  // Invariant: guard (b) — every delegate consumer maps to at least one exposed tool; guard (a) —
+  // the projected delegate rows equal the manifest's.
+  const unreachable = projectionManifest({ 'effective-marketing': [['marketing-writer']] });
+  assert.throws(
+    () => deriveProjection(unreachable),
+    /delegate consumer "marketing-writer" \(effective-marketing\) maps to no exposed tool/,
+  );
+  const manifest = projectionManifest({ 'effective-delivery': [['iterate'], ['writing-rules']] });
+  const projection = deriveProjection(manifest);
+  assert.throws(
+    () =>
+      assertSetupStatusProjection({ ...projection, owners: projection.owners.slice(1) }, manifest),
+    /missing delegate row effective-delivery \/ iterate \/ delegate/,
+  );
+  assert.throws(
+    () =>
+      assertSetupStatusProjection(
+        {
+          ...projection,
+          owners: [...projection.owners, { ...projection.owners[0], skill: 'effective-web' }],
+        },
+        manifest,
+      ),
+    /delegate row effective-web \/ iterate \/ delegate is not in the manifest/,
+  );
+  assert.throws(
+    () => deriveProjection(projectionManifest({ 'effective-web': [['ghost']] })),
+    /manifest consumer "ghost" is no tool, agent or shared source/,
+  );
+});
+
+test('the workflow edge guard checks declared edges forward and internal references in reverse', () => {
+  // Invariant: a declared edge needs a matching reference in its source (forward), and every
+  // reference from a tool source to an internal tool is declared (reverse); aliases are excluded.
+  const contract = (overrides = {}) =>
+    assertWorkflowEdgeContract({
+      toolSources: projectionTools(),
+      exposedTools: PROJECTION_EXPOSED,
+      aliases: ['pr-review'],
+      workflowEdges: PROJECTION_EDGES,
+      pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review' }],
+      toolModes: { iterate: ['local', 'pr'] },
+      ...overrides,
+    });
+  assert.doesNotThrow(() => contract());
+  assert.throws(
+    () => contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'build', to: 'apply-review' }] }),
+    /workflow edge build -> apply-review has no matching reference .* in src\/tools\/build\.md/,
+  );
+  assert.throws(
+    () => contract({ pointerReferences: [] }),
+    /src\/tools\/apply-review-remote\.md references the internal tool "apply-review" without a declared workflow edge or pointer reference/,
+  );
+  assert.throws(
+    () => contract({ workflowEdges: PROJECTION_EDGES.slice(0, 2) }),
+    /src\/tools\/apply-review\.md references the internal tool "apply-review-remote"/,
+  );
+  assert.throws(
+    () =>
+      contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'pr-review', to: 'merge-gate' }] }),
+    /names a deprecated alias/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate', mode: 'pr' }],
+      }),
+    /merge-gate -> iterate is declared more than once/,
+  );
+});
+
+test('the workflow edge guard accepts only resolver modes of the target on an edge', () => {
+  // Invariant: an edge's mode decides which (tool, mode) retired-row evaluation maps onto its
+  // source, so it must be a real resolver mode of the target, never on a pointer, and one pair
+  // never mixes a mode-less edge with a mode-specific one.
+  const contract = (overrides = {}) =>
+    assertWorkflowEdgeContract({
+      toolSources: projectionTools(),
+      exposedTools: PROJECTION_EXPOSED,
+      aliases: ['pr-review'],
+      workflowEdges: PROJECTION_EDGES,
+      pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review' }],
+      toolModes: { iterate: ['local', 'pr'] },
+      ...overrides,
+    });
+  assert.doesNotThrow(() => contract());
+  assert.doesNotThrow(() =>
+    contract({
+      workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate', mode: 'local' }],
+    }),
+  );
+  assert.throws(
+    () => contract({ toolModes: { iterate: ['local'] } }),
+    /workflow edge merge-gate -> iterate \(mode pr\): "pr" is no resolver mode of iterate \(local\)/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        workflowEdges: [
+          ...PROJECTION_EDGES.slice(1),
+          { from: 'apply', to: 'apply-review', mode: 'x' },
+        ],
+      }),
+    /"x" is no resolver mode of apply-review \(none\)/,
+  );
+  assert.throws(
+    () => contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate' }] }),
+    /merge-gate -> iterate mixes a mode-less edge with mode-specific edges/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review', mode: 'local' }],
+      }),
+    /pointer reference apply-review-remote -> apply-review carries a mode/,
+  );
+});
+
+test('every successor set must be run by an exposed tool in its mode', () => {
+  // Invariant: `setup status` can name an exposed tool for every retired-row stop; a successor-set
+  // tool, or one of its modes, no declared edge reaches fails the build instead of degrading to the
+  // resolver's own tool name at runtime.
+  const guard = (workflowEdges) =>
+    assertSuccessorSetsReachExposedTools({
+      successorSets: [
+        { tool: 'build', mode: null },
+        { tool: 'apply-review', mode: 'remote' },
+        { tool: 'iterate', mode: 'local' },
+        { tool: 'setup', mode: null },
+      ],
+      exemptTools: ['setup'],
+      exposedTools: ['apply', 'build', 'merge-gate'],
+      workflowEdges,
+      reaching: exposedToolsReaching,
+    });
+  assert.doesNotThrow(() =>
+    guard([
+      { from: 'apply', to: 'apply-review', mode: null },
+      { from: 'merge-gate', to: 'iterate', mode: 'local' },
+    ]),
+  );
+  assert.throws(
+    () =>
+      guard([
+        { from: 'apply', to: 'apply-review', mode: null },
+        { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+      ]),
+    /iterate \(mode local\) is run by no exposed tool/,
+  );
+  assert.throws(() => guard([]), /apply-review \(mode remote\) is run by no exposed tool/);
 });
 
 test('the ownership reverse check requires a Set of recommendation-capable consumers', () => {

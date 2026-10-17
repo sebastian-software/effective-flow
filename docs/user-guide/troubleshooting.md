@@ -282,6 +282,14 @@ artifact surface. Three results surprise people, and none of them is a bug:
 Leaving `language.chat` out is the default and is not inheritance: replies mirror whatever
 language you write in, and `language.project` is reached only when that language is unclear.
 
+## Checking whether the setup is healthy
+
+Run [`/effective-flow setup status`](./tools-setup.md#status). It reports, without changing
+anything, where the configuration comes from and what is wrong with it, whether `.effective-flow/`
+is ignored correctly, which central domain skills are missing or disabled and which tools fall back
+because of it, and whether a newer Effective Flow release is published. Each problem names the
+setup form or manual step that fixes it.
+
 ## There is no project-setup ADR
 
 This is not an error. Without an ADR or transitional legacy source, every tool uses the safe

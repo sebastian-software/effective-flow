@@ -80,6 +80,9 @@ import {
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
   assertDisjointConsumerNames,
+  assertWorkflowEdgeContract,
+  assertSuccessorSetsReachExposedTools,
+  deriveSetupStatusProjection,
   collectRecommendedSkillChains,
   collectRecommendedSkillSections,
   parseSkillOwnershipRelevanceGateOwners,
@@ -99,7 +102,14 @@ import {
   PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
   canonicalizeJson,
 } from './src/scripts/pilot-measurement-protocol.mjs';
-import { SUCCESSOR_SET_TOOLS, toolAliasDivergence } from './src/scripts/config-resolve-core.mjs';
+import {
+  MODE_TOOLS,
+  RETIRED_EXEMPT_TOOLS,
+  SUCCESSOR_SETS,
+  SUCCESSOR_SET_TOOLS,
+  toolAliasDivergence,
+} from './src/scripts/config-resolve-core.mjs';
+import { exposedToolsReaching } from './src/scripts/setup-status-core.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -132,7 +142,11 @@ const RUNTIME_SCRIPT_FILES = [
   'plan-lint-core.mjs',
   'config-resolve.mjs',
   'config-resolve-core.mjs',
+  'setup-status.mjs',
+  'setup-status-core.mjs',
 ];
+// Generated beside the runtime scripts in every target: the setup-status ownership projection.
+const SETUP_STATUS_PROJECTION_FILE = 'setup-status-owners.json';
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
@@ -276,6 +290,61 @@ const EXPOSED_TOOLS = TOOL_GROUPS.flatMap((group) => group.tools);
 // derived from this list is what makes the old name route at all. An entry is
 // removed with the next deliberate major release.
 const DEPRECATED_TOOL_ALIASES = [{ alias: 'pr-review', replacement: 'merge-gate' }];
+
+// Declared tool-to-tool workflow edges: `from` runs `to` as part of its own run. The setup-status
+// ownership projection follows exactly these edges (and the deprecated aliases never), so the domain
+// owners of `to` are reported for `from` too; a plain `{{SKILL:X}}` mention is no edge. The workflow
+// edge guard checks each against a reference in the `from` source and requires every reference from
+// a tool source to an internal tool to be declared here or in WORKFLOW_POINTER_REFERENCES; a
+// reference to an exposed tool is not checked in reverse, so an edge into one must be added by hand.
+// The edges into exposed tools are `merge-gate -> iterate`, the per-item dispatch of `iterate` and of
+// the three apply sub-workflows into `build`, `fix`, `refactor` and `docs`, and `deliver -> commit`
+// and `deliver -> pr`. An optional `mode` says `from` runs `to` only in that resolver mode
+// (`MODE_TOOLS`); retired-row stops map per (tool, mode), owner reach ignores it.
+// Known gap: `build`, `fix`, `refactor`, `docs`, `maintain` and `iterate` also run `commit` and `pr`,
+// but only through the shared `worktree-integration` fragment; the forward guard matches an edge
+// against its `from` tool's own source only, so those edges are not declared. The stop mapping loses
+// nothing by it, since each of those hosts already stops on the retired row of `delivery.baseBranch`,
+// the only successor `pr` evaluates, through its own successor set (`iterate` in mode `local`); their
+// owner reach omits the owners of `commit` and `pr`.
+const WORKFLOW_EDGES = [
+  { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+  ...['apply-plan', 'apply-issues', 'apply-review', 'iterate'].flatMap((from) =>
+    ['build', 'fix', 'refactor', 'docs'].map((to) => ({ from, to })),
+  ),
+  { from: 'deliver', to: 'commit' },
+  { from: 'deliver', to: 'pr' },
+  { from: 'apply', to: 'apply-plan' },
+  { from: 'apply', to: 'apply-review' },
+  { from: 'apply', to: 'apply-issues' },
+  { from: 'apply-review', to: 'apply-review-remote' },
+  { from: 'apply-review', to: 'apply-review-commit-mechanics' },
+  { from: 'concept', to: 'concept-review' },
+  { from: 'review', to: 'concept-review' },
+  { from: 'plan', to: 'plan-review' },
+  { from: 'plan-issue', to: 'plan-review' },
+  { from: 'review', to: 'plan-review' },
+];
+// References from a tool source to an internal tool that run nothing: a redirect that ends the run
+// and points the user elsewhere, a back-reference from a sub-file to its host, or a hand-off the user
+// starts later. The projection does not follow them; declaring them keeps the reverse guard exact.
+// The guard whitelists per (from, to) pair, not per occurrence: once a pair is listed here, a later
+// real delegation between the same two tools passes it silently, so a new in-run delegation must be
+// declared in WORKFLOW_EDGES (and removed from this list).
+const WORKFLOW_POINTER_REFERENCES = [
+  { from: 'apply-issues', to: 'apply-plan' }, // wrong source type: point and end
+  { from: 'apply-issues', to: 'apply-review' }, // wrong source type: point and end
+  { from: 'apply-plan', to: 'apply-review' }, // wrong source type: point and end
+  { from: 'apply-plan', to: 'apply-issues' }, // wrong source type: point and end
+  { from: 'apply-review-remote', to: 'apply-plan' }, // wrong source type: point and end
+  { from: 'apply-review-remote', to: 'apply-issues' }, // wrong source type: point and end
+  { from: 'apply-review-remote', to: 'apply-review' }, // sub-file naming its host
+  { from: 'apply-review-commit-mechanics', to: 'apply-review' }, // sub-file naming its host
+  { from: 'plan', to: 'apply-plan' }, // the plan's later implementation, started by the user
+  { from: 'plan-issue', to: 'apply-issues' }, // the issue's later implementation
+  { from: 'refactor', to: 'apply-review' }, // findings applied later by the user
+  { from: 'setup', to: 'apply-review' }, // the owner of the `applyReview` config keys
+];
 
 // Guard: an alias is reachable by name only. It must never be an exposed tool
 // (that would put the retired name back into the catalog and the autocomplete),
@@ -692,6 +761,7 @@ const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
 let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of every tool (#99)
 let fastProfileAgents = new Set();
+let setupStatusProjectionJson = null; // generated scripts/setup-status-owners.json (#485)
 
 try {
   const toolFiles = readdirSync(TOOLS_DIR)
@@ -812,10 +882,17 @@ try {
   // The ownership manifest and the pair keys inside assertSkillOwnershipContract
   // identify a consumer by bare name, so the two kinds must stay distinguishable
   // by name alone.
+  const sharedOwnershipSources = new Map(
+    readdirSync(SHARED_DIR)
+      .filter((file) => file.endsWith('.md'))
+      .sort()
+      .map((file) => [basename(file, '.md'), readFileSync(join(SHARED_DIR, file), 'utf8')]),
+  );
   assertDisjointConsumerNames(
     {
       toolNames: toolRecommendationSources.map((source) => source.consumer),
       agentNames: agentRecommendationSources.map((source) => source.consumer),
+      sharedNames: [...sharedOwnershipSources.keys()],
     },
     { context: 'central-skill ownership guard' },
   );
@@ -865,6 +942,53 @@ try {
     },
     { context: 'central-skill ownership guard' },
   );
+
+  // --- Setup-status ownership projection (#485) ---
+  // The declared tool-to-tool edges are checked against the tool sources in both directions, then
+  // the manifest's `delegate` rows are projected onto the exposed tools that reach each consumer.
+  // The projection ships beside the runtime scripts; guards (a) and (b) run inside the derivation.
+  const toolOwnershipSources = new Map(
+    toolRecommendationSources.map((source) => [source.consumer, source.text]),
+  );
+  assertWorkflowEdgeContract(
+    {
+      toolSources: toolOwnershipSources,
+      exposedTools: EXPOSED_TOOLS,
+      aliases: DEPRECATED_TOOL_ALIASES.map((entry) => entry.alias),
+      workflowEdges: WORKFLOW_EDGES,
+      pointerReferences: WORKFLOW_POINTER_REFERENCES,
+      toolModes: MODE_TOOLS,
+    },
+    { context: 'setup-status workflow edges' },
+  );
+  assertSuccessorSetsReachExposedTools(
+    {
+      successorSets: SUCCESSOR_SETS,
+      exemptTools: RETIRED_EXEMPT_TOOLS,
+      exposedTools: EXPOSED_TOOLS,
+      workflowEdges: WORKFLOW_EDGES,
+      reaching: exposedToolsReaching,
+    },
+    { context: 'setup-status workflow edges' },
+  );
+  setupStatusProjectionJson = `${JSON.stringify(
+    deriveSetupStatusProjection(
+      {
+        manifest: ownershipManifest,
+        toolSources: toolOwnershipSources,
+        agentSources: new Map(
+          agentRecommendationSources.map((source) => [source.consumer, source.text]),
+        ),
+        sharedSources: sharedOwnershipSources,
+        exposedTools: EXPOSED_TOOLS,
+        workflowEdges: WORKFLOW_EDGES,
+        version: VERSION,
+      },
+      { context: 'setup-status ownership projection' },
+    ),
+    null,
+    2,
+  )}\n`;
 
   // --- Shared project-routing contract guard (#164) ---
   // All project-aware workflows load this runtime contract. Parse and validate
@@ -1711,6 +1835,11 @@ try {
     for (const file of RUNTIME_SCRIPT_FILES) {
       copyFileSync(join(RUNTIME_SCRIPTS_DIR, file), join(skillDir, 'scripts', file));
     }
+    // Generated, not copied: the ownership projection the setup-status script reads beside itself.
+    writeFileSync(
+      join(skillDir, 'scripts', SETUP_STATUS_PROJECTION_FILE),
+      setupStatusProjectionJson,
+    );
 
     // Tools (exposed + internal), no frontmatter — loaded on demand by the router.
     for (const t of tools) {
@@ -1919,6 +2048,12 @@ try {
           `runtime helper shipping guard: ${target} copy differs from src/scripts/${file}`,
         );
       }
+    }
+    const projection = join(skillDir, 'scripts', SETUP_STATUS_PROJECTION_FILE);
+    if (!existsSync(projection) || readFileSync(projection, 'utf8') !== setupStatusProjectionJson) {
+      throw new Error(
+        `runtime helper shipping guard: ${target} is missing or differs in scripts/${SETUP_STATUS_PROJECTION_FILE}`,
+      );
     }
   }
 
@@ -2201,7 +2336,7 @@ try {
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     iterate: 1572,
-    setup: 1560,
+    setup: 1564,
     'apply-review': 1025,
     'apply-issues': 937,
     'merge-gate': 888,
