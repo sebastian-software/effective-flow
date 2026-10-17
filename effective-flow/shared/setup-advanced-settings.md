@@ -1,7 +1,8 @@
 ## Guided advanced settings
 
-This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`.
-Step 5 in `effective-flow setup` keeps that question, its `No` branch, and "Collapsing two
+This fragment is loaded only when the Guided `Advanced` question of Step 5 was answered `Yes`, or
+when a Targeted run (`setup-targeted-change`) touches a block key. Targeted asks only the touched
+key's question, never a whole block, and never block 10. Step 5 in `effective-flow setup` keeps that question, its `No` branch, and "Collapsing two
 `mergeGate.bots` spellings of one reviewer", which Express and every Step 6 write run as well.
 
 Ask for each key block by block, each with a short explanation, the valid values from the config
@@ -48,7 +49,7 @@ different things:
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
 perfectly good answer.
 
-If the user chose the advanced settings and the merge gate block is being asked: Ask the user: **When the merge gate has verified a pull request, may it merge, or should it only report?**
+If the user chose the advanced settings and the merge gate block is being asked, or a Targeted run touches `mergeGate.completion`: Ask the user: **When the merge gate has verified a pull request, may it merge, or should it only report?**
 - Ask each time -- mergeGate.completion = ask (default) — a gated run asks once per pull request
 - Merge -- mergeGate.completion = merge — merge as soon as every precondition holds
 - No merge -- mergeGate.completion = report — the gate still repairs failing checks, answers bot threads, and resolves a conflict with the base by pushing one merge commit; it only never merges the pull request. mergeGate.conflictResolution = off is the switch for a run that makes no commit and no push at all

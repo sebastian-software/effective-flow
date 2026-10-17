@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.1.0';
+export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.2.0';
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -18,6 +18,14 @@ export function canonicalizeJson(value) {
     .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(value[key])}`)
     .join(',')}}`;
 }
+
+// The Quality-mapping identity: the SHA-256 of the canonical JSON of the `deep` model-tier values
+// per harness, which every Quality packet runs on. It is part of the protocol digest, so changing it
+// starts a new protocol generation. A digest keeps provider model names out of the portable copy.
+// This module is copied byte for byte and cannot import build.mjs; the build fails when this
+// identity differs from the digest of `MODEL_TIER_MAPPINGS.deep` there.
+export const PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY =
+  'sha256:ad6935d2580ca99243b79d4cf8d730a400d6452236404a4324491780771fdb96';
 
 const statePrecedence = [
   ['disabled', '*', 'not-evaluated', 'quality', 'fail-closed'],
@@ -269,6 +277,7 @@ const protocolSource = deepFreeze({
   schema: 1,
   version: PILOT_MEASUREMENT_PROTOCOL_VERSION,
   policyProjection: PILOT_MEASUREMENT_POLICY_PROJECTION,
+  qualityMappingIdentity: PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
   limits,
   timing: {
     algorithmVersion: 1,

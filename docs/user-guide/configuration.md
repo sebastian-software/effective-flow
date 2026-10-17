@@ -397,7 +397,8 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run            |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
-a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
+a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
+session not to merge resolves `report` whatever this key says, and nothing is asked. An empty
 `mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
 than blocking the merge forever. Under `mergeGate.requireAllChecks: true` every reported check
 counts; under `false` only the checks the forge marks as required count, so a red optional check is
@@ -496,11 +497,24 @@ configuring `.check`. See
 
 When the gate conservatively observes a bot-typed submitted review or review thread whose login is
 missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
-effective `.check`, its final chat summary recommends `/effective-flow setup guided` →
-**Advanced settings** → **Block 9 (`mergeGate`)**. Add or select the reviewer there and copy only an
-exact `.check` context confirmed in a pull request that tool reviewed. A normal check name or
-top-level bot comment alone does not qualify. The hint is informational: setup remains the only ADR
-writer, and the current gate result does not change. See the
+effective `.check`, its final chat summary lists those reviewers and then gives one
+copy-paste-ready [targeted setup request](./tools-setup.md#targeted-changes-and-questions) that
+covers all of them, with the reviewer's login filled in (the observed login for a missing reviewer,
+the configured spelling when only `.check` is missing):
+
+```text
+/effective-flow setup add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check
+/effective-flow setup ask me for mergeGate.bots.<login>.check
+```
+
+The first shape is for a missing login, the second for a login whose `.check` is missing; several
+reviewers are joined with "and" in one request. The request carries no check name: setup asks for
+`.check` itself, and `.check` is left unset only by answering "not set" there, for a reviewer
+without its own check context. The Guided route follows as the fallback:
+`/effective-flow setup guided` → **Advanced settings** → **Block 9 (`mergeGate`)**. Either way,
+copy only an exact `.check` context confirmed in a pull request that tool reviewed. A normal check
+name or top-level bot comment alone does not qualify. The hint is informational: setup remains the
+only ADR writer, and the current gate result does not change. See the
 [unconfigured-reviewer hint](./tools-deliver.md#three-reviewer-states-not-two) for the full behavior.
 
 **Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
@@ -808,8 +822,11 @@ therefore gets that one behavior change without configuring anything; see
 
 There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
 with `review.profile: fast`, `review.validation: quick`, and
-`applyReview.finalValidation: changedScope`. Those existing workflow settings are separate from the
-**Fast** implementation profile of the `build` and `refactor` field pilot and do not activate it.
+`applyReview.finalValidation: changedScope`. A
+[targeted request](./tools-setup.md#targeted-changes-and-questions) such as
+`/effective-flow setup set review.validation to quick` changes such a key without the full
+interview. Those existing workflow settings are separate from the **Fast** implementation profile
+of the `build` and `refactor` field pilot and do not activate it.
 
 ## Runtime-state safety
 
@@ -861,6 +878,17 @@ directory's `info/exclude`, verifies it with `git check-ignore`, and writes only
 `.effective-flow/project-setup.md`. It writes no ADR, marker, `.gitignore` line, or `CLAUDE.md`.
 It stops without writing when the directory is not a Git repository or when anything below
 `.effective-flow/` is already tracked, because `info/exclude` cannot hide a tracked file.
+
+`/effective-flow setup <free text>`, any argument other than the keyword forms, is a
+[targeted request](./tools-setup.md#targeted-changes-and-questions): the shorter route for changing
+a single key once a configuration exists. Setup interprets the free text, asks only the owning
+question of each key it touches, and writes in place to the existing ADR or hidden local file
+behind the same before/after confirmation; untouched and unknown rows stay byte for byte. Read-only
+questions about the current values are answered without writing. A targeted run creates no
+configuration, normalizes no `.gitignore`, writes no marker or `CLAUDE.md`, and migrates no legacy
+JSON source; without a usable configuration it stops and points to `/effective-flow setup` or
+`/effective-flow setup express`. Switching `visibility` and the
+`executionProfiles.fast.enabled` opt-in stay with the full setup.
 
 ### Migrating `plan.markerLanguage`
 

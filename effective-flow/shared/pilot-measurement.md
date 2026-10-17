@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
 ## Merge-gate pilot observation
 
@@ -120,8 +120,12 @@ terminal outcome `failed`; it never discards product changes or changes the gate
      in transient workflow state and the chat explanation; it is not part of the closed helper
      payload. For this path use `checksReported: false`, `requiredCheckCount: "unavailable"`, and
      `requiredChecksSatisfied: "unavailable"` regardless of earlier check reads;
-   - `failed` for a reserved merge-mode run that did not reach a verified merge and for an
-     unhandled workflow failure after reservation.
+   - a `BLOCKED-USER` return of the delegated run before a verified merge records
+     `reported-blocked` in either mode, with the counters dispatched so far and the unavailable
+     check evidence above; its stable blocker, retained as above, is `relayed-user-decision`. The
+     returned question carries no observation identity, and its re-dispatch reserves afresh;
+   - `failed` for a reserved merge-mode run that did not reach a verified merge and ended other
+     than through `BLOCKED-USER`, and for an unhandled workflow failure after reservation.
 2. Derive check evidence only from the final normalized `pr-status-read`. An unreported check list
    is unavailable. The count is taken from that deduplicated list, the latest run per check identity.
    With `mergeGate.requireAllChecks: true`, the required-check count is every reported check. With `false`, count only checks carrying `required: true`; any missing

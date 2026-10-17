@@ -1,10 +1,10 @@
 # Execution profiles
 
 This provider-neutral contract defines two implementation intents. **Quality** uses the strongest
-available configured implementation capability and is the safe default. **Fast** uses a distinct
-native lower-cost, lower-latency implementation capability only for a bounded packet that passes
-every gate below. Neither name identifies a provider model, and an enabled project key is never
-proof that the current host can enforce Fast.
+available configured implementation capability, the role's `deep` model tier, and is the safe
+default. **Fast** uses a distinct native lower-cost, lower-latency implementation capability only
+for a bounded packet that passes every gate below. Neither name identifies a provider model, and
+an enabled project key is never proof that the current host can enforce Fast.
 
 `build` adopts this policy for its Phase 2 initial implementation packets and `refactor` for its
 Phase 3 initial packets after the Phase 2 baseline; both load it on demand, and no other workflow
@@ -169,6 +169,10 @@ reconciliation leaves the generation in review and `resume` rejects. Opt-in chan
 successful Quality run never clear suspension. Later runs check both suspension and incomplete
 inventory before Fast.
 
+A change of the Quality-mapping identity, the `deep` tier values per harness, starts a new protocol
+generation: the helper suspends a generation recorded under the previous identity with
+`quality-mapping-changed` and never resumes it or mixes its evidence into a later generation.
+
 ## Attempt, capability, and correction rules
 
 <!-- execution-profile-rule:start -->
@@ -297,6 +301,10 @@ spawn, for attribution and retained-state transfer only. Once a record is reserv
 applies the `pilot-measurement-workflow` fragment's finalization.
 
 **Delegation.** One keyword-less resume is the same delegation; every retry is a new Quality spawn.
+A Fast spawn passes only its Fast reference's own values, never the spawn site's tier line: on
+Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on Codex the
+reference's `model` and `reasoning_effort`. The Quality spawn and every correction pass the site's
+tier.
 
 **Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a
 mismatch is its single `requirements-mismatch` transition below, before `finish-packet`. Every

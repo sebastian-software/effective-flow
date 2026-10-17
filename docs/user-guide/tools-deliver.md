@@ -304,6 +304,17 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    completed only after its linked issue is observed terminal – which an issue transitioned here now
    is.
 
+**How it runs:** The gate runs as one delegated run on the `deep` tier, so the long wait-and-repair
+loop stays out of your session's context. A restriction you give your session – do not merge, or
+commit or push nothing onto the branch – travels into the delegated run and wins over
+`mergeGate.completion`: the run then only reports, or ends with its report where it would otherwise
+write to the branch. A restriction neither of those expresses, such as read only, is never
+translated: your session asks you to restate it or stops, and if you insist, runs the gate inline in
+your session. Without a "do not merge" restriction, your session asks for the merge
+completion mode before the gate starts. Every later question – a waiver for a missing check list, a conflict resolution, a
+finding it set aside, an issue transition – comes back through your session with what each answer
+does, and the run then continues with your answer, or ends with its report when you stop it. A host that cannot start a nested sub-agent runs the gate inline and says so once.
+
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
 bot notes by hand. Also useful as a pure merge-readiness report: run it in report mode to see
@@ -497,13 +508,21 @@ steps. Repeated sightings and the bare/`[bot]` spellings are reported once. A ch
 a top-level bot comment does not qualify, so ordinary CI, coverage, deployment, and dependency
 activity does not produce the hint; a reviewer that writes only a top-level or sticky comment can
 therefore go unnoticed. The advisory does not enroll the reviewer in the current run, trigger or
-wait for it, change a merge condition, write the project-setup ADR, or post to the pull request. To
-complete the configuration, run `/effective-flow setup guided`, open **Advanced settings**, and
-select **Block 9 (`mergeGate`)**. Add or select the login in `mergeGate.bots`, keep an
-existing login and trigger when only `.check` is missing, set a distinctive per-reviewer trigger
-only when the tool supports one, and copy the exact `.check` context from the checks list of a pull
-request that reviewer has handled. Never guess the context; leave it unset only when the reviewer
-publishes no check.
+wait for it, change a merge condition, write the project-setup ADR, or post to the pull request. After
+listing the reviewers, it gives one copy-paste-ready
+[targeted setup request](tools-setup.md#targeted-changes-and-questions) for all of them,
+with the reviewer's login filled in (the observed login for a missing reviewer, the configured
+spelling when only `.check` is missing):
+`/effective-flow setup add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check`
+for a missing login, or `/effective-flow setup ask me for mergeGate.bots.<login>.check` when only
+`.check` is missing. Several reviewers are joined with "and" in one request, so one setup run shows
+one preview and asks for one confirmation. The request carries no check name: setup asks for
+`.check` itself and keeps an existing login and trigger when only `.check` is missing. The Guided
+route follows as the fallback: `/effective-flow setup guided` → **Advanced settings** →
+**Block 9 (`mergeGate`)**, where you add or select the login in `mergeGate.bots`. On either route, set a distinctive per-reviewer trigger only
+when the tool supports one, and copy the exact `.check` context from the checks list of a pull
+request that reviewer has handled. Never guess the context: `.check` is left unset only by
+answering "not set" in setup, for a reviewer without its own check context.
 
 The same reviewer states guard [`/effective-flow iterate`](tools-implement.md). Called directly on
 a pull request where a configured reviewer is still running, `iterate` no longer classifies a thread

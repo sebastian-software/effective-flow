@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
 # Effective Flow Setup
 
@@ -14,6 +14,8 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 - migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults; use **Profile** as the standard two-question path and retain
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
+- after setup, apply a free-text request (**Targeted**) as changes to the named keys only, behind
+  one confirmed before/after list, or answer a read-only question about the current configuration
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
 - do not run project validation such as linting, tests, or build checks
@@ -68,7 +70,7 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker, or to write or delete the hidden local configuration.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker, or is about to write or delete the hidden local configuration, a Targeted run's hidden write included.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
@@ -617,7 +619,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git`, `chat` overrides
   (`de`/`en`; a missing artifact-surface override inherits `language.project`, whose default is
   `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
-- **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files
+- **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files; beside it `concept.dir` (source: `effective-flow concept`, string, default `docs/concept`) — directory of the concept files
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
 - **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
@@ -685,7 +687,8 @@ that writes, and it is what changes behavior for a project upgrading from an ear
 ### Step 0: Resolve the setup mode
 
 Classify the invocation before Step 1 and before any file, Git, ADR, marker, migration, or runtime
-mutation. Trim surrounding whitespace and fold ASCII case only. Accept exactly these forms:
+mutation. Trim surrounding whitespace and fold ASCII case only. Only these exact forms select a
+keyword mode:
 
 - `effective-flow setup` and `effective-flow setup profile` select **Profile**;
 - `effective-flow setup express` selects **Express**;
@@ -693,9 +696,9 @@ mutation. Trim surrounding whitespace and fold ASCII case only. Accept exactly t
 - `effective-flow setup hidden` selects **Express** with the visibility fixed to `hidden`, so the
   Visibility question below is not asked.
 
-An additional or unknown argument prints all five accepted forms above and stops without mutation.
-Do not reinterpret it as free text and do not ask a setup-mode question. Record the resolved mode
-once and carry it through the summary.
+Any other non-empty argument selects **Targeted**, its original text kept verbatim
+(`effective-flow setup guided tracker github` is Targeted, not Guided); load and follow the Targeted
+contract below. Record the resolved mode once and carry it through the summary.
 
 For Profile mode, resolve the entry chat language read-only under the shared chat-language rule,
 then load and follow the profile contract below immediately. Its `Chat` and `Profile` asks are the
@@ -704,9 +707,12 @@ load it; they go on to the Visibility question and then to Step 1.
 
 **Load on demand:** Read `shared/setup-profiles.md`, when the normalized invocation has no argument or its single argument is `profile`.
 
-**Visibility.** Every mode then resolves the visibility before Step 1, because Step 1 already
-differs between the two values: Profile after its `Chat` and `Profile` asks, Express and Guided as
-their first question, `effective-flow setup hidden` not at all. Pre-select `Hidden` when the locator's
+**Load on demand:** Read `shared/setup-targeted-change.md`, when the normalized invocation is non-empty and is not exactly one of the five keyword forms.
+
+**Visibility.** Every mode except Targeted then resolves the visibility before Step 1, because
+Step 1 already differs between the two values: Profile after its `Chat` and `Profile` asks, Express
+and Guided as their first question, `effective-flow setup hidden` not at all; Targeted keeps the
+visibility of the configuration it resolves. Pre-select `Hidden` when the locator's
 step 0 finds a local file declaring `visibility | hidden` — the building block's resolution call
 with `tool: "setup"` returns `data.visibility: hidden` — otherwise `Standard`. Step 0 reads that
 file only below the `RUNTIME_STATE_ROOT` it resolves and verifies itself, so a run from a linked
@@ -718,7 +724,7 @@ concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, 
 are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names
 Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
 
-If the invocation is not `hidden` and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
+If the invocation is not `hidden`, the mode is not Targeted, and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
 - Standard -- visibility = standard (default) — tracked project setup ADR, AGENTS.md marker, and a .gitignore entry
 - Hidden -- visibility = hidden — local configuration in .effective-flow/project-setup.md, ignored through info/exclude; no tracked file is written
 
@@ -858,6 +864,7 @@ If several ADR directories exist and none is clearly `docs/adr/`: Ask the user: 
   advanced question. A local or forge profile proceeds directly to Step 6; only External + forge
   may first ask the integration questions required by that fragment. The common before/after list
   and confirmation in Step 6 remain the write authority.
+- **Targeted:** Follow the loaded `setup-targeted-change` contract.
 
 ### Step 4: Core switches (guided path only)
 
@@ -928,6 +935,10 @@ If two collapsing current `mergeGate.bots` entries, or two retired login-keyed s
 in the before/after list, replaces items 3 and 4 with "Writing the hidden local configuration" of `setup-hidden-mode`,
 and skips items 5, 6, and 7 entirely: it sets no marker, migrates and untracks nothing, and poses no
 `CLAUDE.md` fence. It never writes or edits `AGENTS.md` or `CLAUDE.md`.
+
+**Targeted** runs items 1, 2 and 4 with its own item 3 from `setup-targeted-change` and skips items
+5, 6, and 7; with the hidden local file as source, "Writing the hidden local configuration"
+replaces item 4 after that item 3.
 
 1. Build the target configuration non-destructively. Express and Guided retain their existing merge
    order. For Profile, use `safe defaults → freshly read existing known and unknown values →
@@ -1287,8 +1298,8 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      marker-already-in-`AGENTS.md` state above — not the content-bearing one this rule now sits
      under — and never report the import as written.
 
-This fence is deliberately **unconditional** rather than guided-path only — hidden mode aside, which
-skips item 7 as stated at the top of this step — for the reason
+This fence is deliberately **unconditional** rather than guided-path only — hidden mode and
+Targeted aside, which skip item 7 as stated at the top of this step — for the reason
 `project-adr-convention` gives for its own: it decides whether a file is written to the project
 root rather than a presentation detail. Profile, Express, and Guided all pose it, and a run that
 cannot pose it — unanswered, skipped, or non-interactive — writes nothing and reports that the
@@ -1306,7 +1317,8 @@ blocks, and adds nothing to the ADR written in item 4.
 #### Rewriting a legacy `prReview.*` merge-gate block in place
 
 The merge-gate keys were formerly `prReview.*`, and three `delivery` keys were `worktree.*`. If Step 2
-recorded these retired rows, rewrite them **in place** in this same confirmed Express or Guided write.
+recorded these retired rows, rewrite them **in place** in this same confirmed Express, Guided, or
+Targeted write.
 From a table source, every carried-over retired row is written as its recorded original `line` with only the key cell replaced
 by the successor key; the value cell, its escapes and its spacing stay byte for byte, never re-encoded from `raw` (a JSON source, `line: null`, encodes the value from `raw` in the table-encoding form, pipe escape included).
 
@@ -1372,7 +1384,7 @@ harness configuration. Its one announced side effect outside this repository is 
 probe's: with the user's go-ahead it renames the current session once, because a rename nobody can
 see proves nothing.
 
-If the configuration write completed and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
+If the configuration write completed, the mode is not Targeted, and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
 - Yes -- Detect the harness, explain its established path, and prove it once by renaming this session
 - No -- Skip only this visible capability check; later runs keep following their host's path
 
@@ -1385,7 +1397,7 @@ the capability.
 
 ### Step 8: Summary
 
-Report to the user:
+Report to the user (a Targeted run reports only the summary items of `setup-targeted-change`):
 
 - the resolved visibility; in hidden mode, instead of the `.gitignore`, ADR, marker, convention, and
   `CLAUDE.md` bullets below: the absolute `info/exclude` path and whether its `.effective-flow/` line
@@ -1396,7 +1408,7 @@ Report to the user:
   file leaves hidden mode active), that the `info/exclude` line stays, and every local plan and
   concept path left in place
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
-- which mode was chosen (Profile, Express, or Guided); for Profile, the selected topology, chat
+- which mode was chosen (Profile, Express, Guided, or Targeted); for Profile, the selected topology, chat
   choice, profile-owned final values and detected provider/base, and for Guided whether advanced
   settings were adjusted
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
@@ -1488,6 +1500,7 @@ with nothing staged matches no row and emits nothing.
   sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
   renames the current session once, with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
+- A Targeted run writes only what `setup-targeted-change` allows.
 - Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge
   profiles ask no further substantive configuration questions; only External + forge may ask for
   its missing integration details. Safety, consent, invalid-source and write-confirmation questions

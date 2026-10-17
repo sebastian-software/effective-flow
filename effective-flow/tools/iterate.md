@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
 # Effective Flow Iterate
 
@@ -82,11 +82,13 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
 
@@ -1111,12 +1113,17 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     own line and read per step 5's split: with a delimiter, read only from above the first delimiter,
     and below it both are body text; without one, from the whole argument, so an interactive
     invocation may carry them too. A second announcement returns `ABORT: duplicated control line`.
-    - `Run state: gated` or `Run state: non-interactive` — whether anyone can answer this run's
-      questions. It governs every decision here that depends on interactivity: the fail-closed
-      branch of Phase 1.5 step 6, the Phase 2.5 approval, and the documentation-sync gate of the
-      workflows Phase 3 delegates to, which receive the line only when it is non-interactive. Any other form returns
+    - `Run state: gated`, `Run state: non-interactive` or `Run state: relayed` — whether anyone can
+      answer this run's questions. It governs every decision here that depends on interactivity: the
+      fail-closed branch of Phase 1.5 step 6, the Phase 2.5 approval, and the documentation-sync gate
+      of the workflows Phase 3 delegates to, which receive the line only when it is non-interactive
+      or relayed, then as `Run state: non-interactive`. Any other form returns
       `ABORT: unparseable run-state switch` immediately, before Phase 1: a misread state would
       either hang on a question nobody can answer or skip an approval someone is present to give.
+      `relayed` means the user is reachable through the caller: the Phase 1.5 question and the
+      Phase 2.5 approval each return `BLOCKED-USER <question-id>` from the closed set of
+      effective-flow merge-gate instead of asking or failing closed, and the run ends there as an `ABORT`
+      would, having implemented, pushed and replied nothing.
     - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`
       — the six keys in exactly that order, each `de` or `en`. When present, these are this run's
       resolved languages: use them wherever this run needs a language — `language.git` in Phase 3,
@@ -1124,6 +1131,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
       project setup ADR. The line carries no chat key, because `language.chat` is never handed
       down. Any other form — a missing, extra, reordered or invalid key — returns
       `ABORT: unparseable language-context switch` immediately, before Phase 1.
+    - `Approved outcomes: <identifier>=<outcome>,…` — only in the round a caller consumes a relayed
+      Phase 2.5 approval, beside `Run state: non-interactive`: every manifest identifier once, in
+      manifest order, each with a value of "Returned outcome record". Phase 2.5 applies it. Any
+      other form, or another run state, returns `ABORT: unparseable approved-outcomes line`.
 
     Both lines are additive, and a missing one has a stated fallback rather than a guess:
     - **No `Run state:` line:** a run invoked with a body delimiter is non-interactive, and every
@@ -1131,8 +1142,8 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     - **No `Language context:` line:** resolve the languages yourself, as an interactive invocation
       does.
 
-    Record both values, or their absence and the fallback taken, in the wisdom file and carry them
-    into Phases 1.5, 2.5 and 3.
+    Record both values, or their absence and the fallback taken, and any approval line in the wisdom
+    file and carry them into Phases 1.5, 2.5 and 3.
 
 ### Phase 1: Gather context
 
@@ -1248,6 +1259,8 @@ If at least one configured automatic reviewer counts as running for the current 
    none; any other run without the line is gated — and that did not receive `Review guard: established` returns `ABORT: review still in flight`, naming the reviewers and the
    evidence. Never continue such a run silently: it has a caller that can be told, and classifying a
    growing thread set is the outcome this phase exists to prevent.
+   A `relayed` run without that line returns `BLOCKED-USER iterate-in-flight` instead, with the
+   same evidence.
 7. **Record** the observed state per reviewer, the branch taken, and any wait in the wisdom file.
 
 The guard narrows the window; it does not close it. A reviewer's threads can still arrive moments
@@ -1329,6 +1342,11 @@ approval. Without approval **no** externally visible action takes place (no push
 comment). The approval is omitted exactly when the run state of Phase 0 step 10 is
 non-interactive — a `Run state: non-interactive` line, or a delimiter-invoked run that announced
 none; any other run without the line is gated. A caller's `Run state: gated` keeps it, once per delegated run.
+A `relayed` run returns `BLOCKED-USER iterate-approval` in its place, listing each classified item
+by its caller-supplied identifier with the returned value its classification maps to as the
+proposed outcome. An `Approved outcomes:` line is this run's approval instead: an item whose
+returned value differs from its approved one is returned `unassessed` as deselected here, and gets
+no implementation, push or reply.
 
 Ask the user: **Approve and implement the classified items?**
 - Yes -- Approval granted, implementation and delivery-back continue
@@ -1339,14 +1357,16 @@ Ask the user: **Approve and implement the classified items?**
 1. Before delegation, record the analyzed file ownership of every actionable item. Items whose
    analyzed file sets overlap run sequentially; only items with disjoint sets may implement in
    parallel.
-2. Delegate each actionable item to the appropriate skill (effective-flow fix, effective-flow refactor,
-   effective-flow build, or effective-flow docs), on the PR head branch (PR mode) or the current
-   branch (local mode). Every one of those delegations carries the literal line
+2. Delegate each actionable item to the appropriate skill (effective-flow fix, effective-flow refactor, effective-flow build,
+   or effective-flow docs), on the PR head branch (PR mode) or the current branch (local mode).
+   Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Every one of those delegations carries the literal line
    `Next steps: suppressed` on its own line: the skill is user-invocable, but it returns its result
    here and a per-item recommendation would name a step this run has not reached. When this run's
    effective run state from Phase 0 step 10 — announced or inferred — is non-interactive, every one
    of them also carries `Run state: non-interactive`, so the delegated workflow's documentation-sync
-   gate carries a blocked surface forward instead of asking. A gated run forwards no `Run state:`
+   gate carries a blocked surface forward instead of asking. A `relayed` run forwards
+   `Run state: non-interactive` as well, never `relayed`. A gated run forwards no `Run state:`
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
    Each delegation receives its analyzed owned paths and reports its actual
@@ -1424,6 +1444,7 @@ and stop delivery for reconciliation.
 ### Phase 4: Validation
 
 1. Start `effective-flow-code-validator` or the project-wide quality gate.
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
 2. Fix errors found and verify again per "Goal-driven completion control":
    limit the internal correction rounds and escalate to the user if the checks still fail
    afterwards.
@@ -1469,7 +1490,7 @@ and stop delivery for reconciliation.
    - the worktree-record exit self-check result – in this summary, which is also the content
      handed back under `Summary comment: suppressed`, never in the returned outcome record
 4. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
-   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run.
+   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run. On normal completion a delegated run's final line is `DONE`, beside its stop returns `ABORT: <reason>` and `BLOCKED-USER <question-id>`.
 
 ## Rules
 

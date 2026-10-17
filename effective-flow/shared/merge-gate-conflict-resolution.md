@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
 ## Conflict-resolution delegation contract
 
@@ -26,8 +26,8 @@ Hand ``effective-flow-merge-conflict-resolver``:
 - the **conflicted paths** as `git status` reports them in that checkout, with their staged and
   unstaged state;
 - the **resolved language values**, so the worker does not re-read the project setup ADR;
-- **this run's own run state** – gated or non-interactive delegation – so the worker knows whether a
-  question could be answered at all;
+- **this run's own run state** – gated or non-interactive delegation, which a relayed run passes as
+  non-interactive – so the worker knows whether a question could be answered at all;
 - the **boundary it works inside**, restated because it is the gate's boundary and not the worker's
   to relax: it resolves, validates, and stages by explicit path, and it never commits, never
   continues the merge, never aborts it, never pushes, and never rewrites history. The commit, the
@@ -113,17 +113,22 @@ checkout is the one step 1 provisioned – never a second one.
    - **`ask` in a non-interactive delegated run:** the question cannot be posed, so it behaves as
      `off`, and the report names `mergeGate.conflictResolution: auto` as the setting that would
      authorize the resolution.
+   - **`ask` in a relayed run:** end the merge as the `off` branch does, then return
+     `BLOCKED-USER conflict-resolution`; a consumed `Resolve` is `auto` for that round, and
+     `Report only` is `off`.
    - **`auto`** (the default): continue with step 2.
 2. **Capture the conflict state** – the conflicted paths, their staged and unstaged status, and the
    two sides per file – and delegate to ``effective-flow-merge-conflict-resolver`` per
    "Conflict-resolution delegation contract". The human-comment guard does **not** block this
    delegation, for the reason stated beside the CI repair.
+   Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
 3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
    bullet. `DONE` continues.
 4. **Reconcile, then verify independently** – in that order, per that contract, ending with the
    resolved but uncommitted tree handed to ``effective-flow-code-validator`` in `full` mode. A modified path
    the record does not name and justify, a failing verdict from either role, or a verification that
    executed **no** check at all ends this step as a stop that commits nothing.
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 5. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
    branch normally. Keep Git's default merge-commit message, which already lists the conflicted paths;
    add no `Co-Authored-By` trailer and no AI attribution. Then re-read the status, exactly as the

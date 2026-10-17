@@ -84,6 +84,8 @@ consumer, and "this section" below means that Phase-4 section.
   that an **interactive** run with `mergeGate.completion: merge` is what would authorize the waiver.
   The waiver is available to a **gated** run only, so a repository with no CI stays unmergeable from
   a non-interactive run, precisely as a set-aside finding stays unconfirmable from one.
+- **A relayed run asks through `BLOCKED-USER check-list-waiver`** wherever a gated run would pose
+  it; a consumed `Waive` is recorded exactly as a posed one.
 - **Not posed at all where the resolved completion mode is not `merge`.** Condition 1 is unmet in a
   report-mode run, so no answer could authorize a merge; the report names the unreported check list
   instead.

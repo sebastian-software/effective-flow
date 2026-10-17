@@ -71,13 +71,16 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
+**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
+
 This mandate authorizes **read-only** analysis fan-out only. The `Hard scope boundary` below is unaffected: never start an implementer, test writer, validator, code reviewer, or documentation specialist.
+Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
@@ -121,10 +124,11 @@ Rules:
 - **File mode:** only analysis, user follow-up questions, and changes to exactly one referenced
   plan file under `<plan.dir>/` or `<plan.dir>/archive/` are allowed.
 - **Issue mode:** only when delegated by `effective-flow plan-issue`; only analysis, user follow-up
-  questions, and the targeted update of exactly one supplied canonical planning-comment ID are
-  allowed. The tracker adapter supplied with the delegation is the resolved target's access path:
-  the helper's `issue-comment-update` on the forge, or the connection's update-comment-by-ID
-  capability on an external target. Return readiness to the caller; do not change labels here.
+  questions, the draft snapshot of "Judgment handoff", and the targeted update of exactly one
+  supplied canonical planning-comment ID are allowed. The tracker adapter supplied with the
+  delegation is the resolved target's access path: the helper's `issue-comment-update` on the forge,
+  or the connection's update-comment-by-ID capability on an external target. Return readiness to the
+  caller; do not change labels here.
 - Changes to source code, tests, configuration, build files,
   README files, ADRs, review reports, and other project files are forbidden.
 - In issue mode, creating a plan file, adding a comment, updating another comment, changing the
@@ -242,9 +246,8 @@ points, handoff).
 - the review **judgment** (which findings hold and how heavily they weigh) at the artifact
   level.
 
-For this, apply `effective-delivery`, provided it is available and relevant to the concrete
-task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
-into the Effective Flow artifact form.
+`effective-delivery` is the **default owner** for this generic reasoning, provided it is available
+and relevant to the concrete task; "Judgment handoff" below says where it runs.
 
 ### Specialists only at a crossed boundary (one generic rule)
 
@@ -273,6 +276,25 @@ authoritative skill is not available (not installed, `skills.enabled: false`, or
 (over-engineering, scope creep, missing measurable acceptance criteria, edge cases,
 implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
 handbook.
+
+### Judgment handoff
+
+Each step that applies these skills to the written artifact, or obtains their judgment on it, runs
+that judgment outside this run:
+
+1. Write the artifact first; the judgment reads only what is persisted.
+2. Start one read-only sub-agent with the artifact path, the scope (calling step and criteria), the
+   resolved artifact language, the owners, relevance gate and fallback above, and the output
+   contract. It loads the owning skills itself, starts no sub-agent and writes nothing.
+   Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+3. Normalize its findings into the tool's artifact form; incorporating them, user questions,
+   writes, and the status decision stay with the orchestrator.
+
+**Output contract:** findings only, each with area, proposed severity (Critical, Important, Note),
+problem with its artifact location, and whether it is directly incorporable or needs a decision;
+no report, artifact, comment, or tracker write of its own, and no mere summary.
+
+**Load on demand:** Read `shared/judgment-draft-snapshot.md`, when issue mode – the judged artifact is a remote planning comment.
 
 ### Phase 1: Load and normalize through the artifact adapter
 
@@ -318,6 +340,10 @@ handbook.
    the delegate does not resolve configuration independently.
 
 ### Phase 2: Identify findings
+
+Before the handoff, the file adapter writes the plan file back when Phase 1 changed it, so that
+normalization is persisted before the user decides anything; the issue adapter writes only the draft
+snapshot, and its first tracker update stays in Phase 4.
 
 The domain review **judgment** is provided by `effective-delivery` (see "Delegating the
 domain judgment to central skills"): apply the skill to the loaded planning artifact so that it

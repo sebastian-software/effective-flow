@@ -129,16 +129,31 @@ const LIFECYCLE_LOCK_OPERATIONS = new Set([
   'purge',
   'discard-generation',
 ]);
-// Every suspension reason the protocol defines may leave a transition marker behind, and each of
-// them bypasses the raw-capacity check so a suspension can still be written at the capacity limit.
+// The only earlier protocol a release persisted generations under: releases 1.66.0 through 1.67.1
+// all ship this digest. Derived by importing src/scripts/pilot-measurement-protocol.mjs at tag
+// effective-flow-v1.67.1 and reading PILOT_MEASUREMENT_PROTOCOL_DIGEST.
+const PREVIOUS_PROTOCOL = Object.freeze({
+  version: '1.1.0',
+  digest: 'sha256:18ff022103e4ff0f5d5aebb492f58e738fdabbbfe367f6594b8dad2c80f15e3d',
+});
+// The one-step migration suspends a generation recorded under PREVIOUS_PROTOCOL with this reason:
+// the Quality-mapping identity changed, so its evidence never continues under the current protocol.
+const QUALITY_MAPPING_CHANGED = 'quality-mapping-changed';
+// Every suspension reason the protocol defines, plus the migration's, may leave a transition marker
+// behind, and each of them bypasses the raw-capacity check so a suspension can still be written at
+// the capacity limit.
 const SUSPENSION_REASONS = Object.freeze([
-  ...new Set(
-    PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings
+  ...new Set([
+    ...PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings
       .map(({ suspensionReason }) => suspensionReason)
       .filter((reason) => reason !== 'none'),
-  ),
+    QUALITY_MAPPING_CHANGED,
+  ]),
 ]);
 const TRANSITION_MARKER_OPERATIONS = new Set([...SUSPENSION_REASONS, 'suspend', 'resume']);
+// The review exit skips the migration: begin-review closes admission and keeps the stored binding,
+// so the inventory digest a caller read before the lock still matches, and discard needs review.
+const MIGRATION_EXEMPT_OPERATIONS = new Set(['begin-review', 'discard-generation']);
 const CAPACITY_EXEMPT_OPERATIONS = new Set([...SUSPENSION_REASONS, 'suspend']);
 // Temporary file names embed the writing operation. These names are fixed by the helper and the
 // protocol rather than supplied by a caller, so they are checked against this closed set instead
@@ -999,6 +1014,9 @@ async function withLock(context, generationId, operation, deps, action) {
   let completed = false;
   let result;
   try {
+    if (!MIGRATION_EXEMPT_OPERATIONS.has(operation)) {
+      await migratePreviousProtocolGeneration(context, generationId, deps);
+    }
     result = await action();
     completed = true;
   } finally {
@@ -1031,7 +1049,9 @@ async function withPacketLock(context, generationId, packetId, operation, deps, 
   }
 }
 
-function validatePersistedState(state, generationId) {
+// `previousProtocol` also admits a state bound to PREVIOUS_PROTOCOL; every other protocol identity
+// stays UNSAFE_STORAGE.
+function validatePersistedState(state, generationId, { previousProtocol = false } = {}) {
   exactObject(state, [
     'schema',
     'kind',
@@ -1049,8 +1069,13 @@ function validatePersistedState(state, generationId) {
     state.schema !== STATE_SCHEMA ||
     state.kind !== 'pilot-generation-state' ||
     state.generationId !== generationId ||
-    state.protocolVersion !== PILOT_MEASUREMENT_PROTOCOL_VERSION ||
-    state.protocolDigest !== PILOT_MEASUREMENT_PROTOCOL_DIGEST ||
+    !(
+      (state.protocolVersion === PILOT_MEASUREMENT_PROTOCOL_VERSION &&
+        state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST) ||
+      (previousProtocol &&
+        state.protocolVersion === PREVIOUS_PROTOCOL.version &&
+        state.protocolDigest === PREVIOUS_PROTOCOL.digest)
+    ) ||
     !PILOT_MEASUREMENT_POLICY_PROJECTION.generationStates.includes(state.generationState) ||
     state.generationState === 'none' ||
     !Number.isSafeInteger(state.nextWorkflowOrdinal) ||
@@ -1076,9 +1101,6 @@ function validatePersistedSuspension(value, generationId) {
     'reasons',
     'affectedRecordIds',
   ]);
-  const allowedReasons = PILOT_MEASUREMENT_POLICY_PROJECTION.pilotControlMappings
-    .map(({ suspensionReason }) => suspensionReason)
-    .filter((reason) => reason !== 'none');
   if (
     value.schema !== 1 ||
     value.kind !== 'pilot-suspension' ||
@@ -1087,7 +1109,7 @@ function validatePersistedSuspension(value, generationId) {
     !['baseline', 'active'].includes(value.resumeTo) ||
     !Array.isArray(value.reasons) ||
     value.reasons.length === 0 ||
-    value.reasons.some((reason) => !allowedReasons.includes(reason)) ||
+    value.reasons.some((reason) => !SUSPENSION_REASONS.includes(reason)) ||
     new Set(value.reasons).size !== value.reasons.length ||
     !Array.isArray(value.affectedRecordIds) ||
     value.affectedRecordIds.some((id) => !OPAQUE.test(id)) ||
@@ -1223,16 +1245,77 @@ function evidenceBusy(evidence) {
   );
 }
 
-async function loadState(context, generationId) {
+// A generation bound to PREVIOUS_PROTOCOL loads only for callers passing `previousProtocol`
+// (inventory, begin-review, the gate-observation admission check, and the suspension writers);
+// every other caller gets PROTOCOL_DRIFT, so its evidence is inspected, reviewed, or discarded but
+// never extended or resumed. Until the migration persists, a stored baseline or active state reads
+// as suspended.
+async function loadState(context, generationId, { previousProtocol = false } = {}) {
   const root = generationPath(context, generationId);
   if (!(await directoryState(root))) fail('NOT_FOUND');
-  const state = await readJson(path.join(root, 'state.json'));
+  const stored = await readJson(path.join(root, 'state.json'));
+  let state;
   try {
-    return { root, state: validatePersistedState(state, generationId) };
+    state = validatePersistedState(stored, generationId, { previousProtocol: true });
   } catch (error) {
     if (error instanceof PilotMeasurementError && error.code === 'PROTOCOL_DRIFT') throw error;
     fail('UNSAFE_STORAGE', { cause: error });
   }
+  if (state.protocolDigest !== PREVIOUS_PROTOCOL.digest) {
+    return { root, state, migrationPending: false };
+  }
+  if (!previousProtocol) fail('PROTOCOL_DRIFT');
+  const migrationPending = await previousProtocolMigrationPending(root, state);
+  return {
+    root,
+    state:
+      migrationPending && ['baseline', 'active'].includes(state.generationState)
+        ? { ...state, generationState: 'suspended' }
+        : state,
+    migrationPending,
+  };
+}
+
+// A previous-protocol generation still needs the migration while it stores baseline or active
+// state, its suspension lacks the boundary reason, or the migration's own marker is pending. A
+// review generation is already closed to admission and keeps its state.
+async function previousProtocolMigrationPending(root, state) {
+  if (state.generationState === 'review') return false;
+  if ((await transitionMarker(root))?.operation === QUALITY_MAPPING_CHANGED) return true;
+  if (state.generationState !== 'suspended') return true;
+  return !(await suspensionValue(root))?.reasons.includes(QUALITY_MAPPING_CHANGED);
+}
+
+async function storedPreviousProtocolState(root, generationId) {
+  const stored = await readJson(path.join(root, 'state.json'), { missing: true });
+  if (stored?.protocolDigest !== PREVIOUS_PROTOCOL.digest) return null;
+  try {
+    return validatePersistedState(stored, generationId, { previousProtocol: true });
+  } catch (error) {
+    fail('UNSAFE_STORAGE', { cause: error });
+  }
+}
+
+// One-step migration across the Quality-mapping generation boundary. withLock runs it under the
+// lifecycle lock before every locked operation except the review exit; it moves a pending
+// previous-protocol generation to suspended(`quality-mapping-changed`) through the marker-guarded
+// suspension write, keeps the stored protocol binding of all its evidence, and is a no-op once that
+// state is persisted. A leftover suspension-reason marker is completed first; a leftover suspend or
+// resume marker cannot be adopted, so the migration leaves it in place without failing: the read
+// view already reports the generation suspended, and only review and discard remain.
+async function migratePreviousProtocolGeneration(context, generationId, deps) {
+  const root = generationPath(context, generationId);
+  if (!(await directoryState(root))) return;
+  let state = await storedPreviousProtocolState(root, generationId);
+  if (state === null || !(await previousProtocolMigrationPending(root, state))) return;
+  const marker = await transitionMarker(root);
+  if (marker !== null) {
+    if (!SUSPENSION_REASONS.includes(marker.operation)) return;
+    await rollForwardTransition(context, generationId, deps, state);
+    state = await storedPreviousProtocolState(root, generationId);
+    if (!(await previousProtocolMigrationPending(root, state))) return;
+  }
+  await writeSuspension(context, root, generationId, state, QUALITY_MAPPING_CHANGED, [], deps);
 }
 
 function commonInput(input, extraRequired = [], optional = []) {
@@ -1332,7 +1415,11 @@ async function inspectGenerationInitialization(root, generationId) {
       continue;
     }
     if (entry.isFile() && entry.name === 'state.json') {
-      state = validatePersistedState(await readJson(path.join(root, entry.name)), generationId);
+      state = validatePersistedState(await readJson(path.join(root, entry.name)), generationId, {
+        previousProtocol: true,
+      });
+      // A previous-protocol generation is never adopted as a new baseline.
+      if (state.protocolDigest === PREVIOUS_PROTOCOL.digest) fail('INVALID_STATE');
       continue;
     }
     if (
@@ -1584,7 +1671,12 @@ function validateStoredFinalPacket(value, generationState, completionStatus) {
   return value;
 }
 
-function validateStoredWorkflow(value, generationId, runId) {
+function validateStoredWorkflow(
+  value,
+  generationId,
+  runId,
+  protocolDigest = PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+) {
   return incompleteStoredValue(() => {
     const common = [
       'schema',
@@ -1620,7 +1712,7 @@ function validateStoredWorkflow(value, generationId, runId) {
       !['workflow-reservation', 'workflow-record'].includes(value.kind) ||
       value.runId !== runId ||
       value.generationId !== generationId ||
-      value.protocolDigest !== PILOT_MEASUREMENT_PROTOCOL_DIGEST
+      value.protocolDigest !== protocolDigest
     ) {
       fail('INVALID_PAYLOAD');
     }
@@ -1709,7 +1801,12 @@ function validateStoredTiming(value, generationId, runId, packetId) {
   });
 }
 
-function validateStoredObservation(value, generationId, observationId) {
+function validateStoredObservation(
+  value,
+  generationId,
+  observationId,
+  protocolDigest = PILOT_MEASUREMENT_PROTOCOL_DIGEST,
+) {
   return incompleteStoredValue(() => {
     const common = [
       'schema',
@@ -1742,7 +1839,7 @@ function validateStoredObservation(value, generationId, observationId) {
       !['gate-observation-reservation', 'gate-observation'].includes(value.kind) ||
       value.observationId !== observationId ||
       value.generationId !== generationId ||
-      value.protocolDigest !== PILOT_MEASUREMENT_PROTOCOL_DIGEST
+      value.protocolDigest !== protocolDigest
     ) {
       fail('INVALID_PAYLOAD');
     }
@@ -1786,8 +1883,8 @@ function temporaryIdentity(name, generationId) {
   return { operation: match[1], ownerNonce: match[2] };
 }
 
-async function evidenceInventory(context, generationId) {
-  const { root, state } = await loadState(context, generationId);
+async function evidenceInventory(context, generationId, options) {
+  const { root, state, migrationPending } = await loadState(context, generationId, options);
   const expectedDirectories = new Set([
     'records',
     'traces',
@@ -1885,7 +1982,9 @@ async function evidenceInventory(context, generationId) {
     if (timingMatch !== null) {
       timings.push(validateStoredTiming(value, generationId, timingMatch[1], timingMatch[2]));
     } else {
-      workflows.push(validateStoredWorkflow(value, generationId, workflowMatch[1]));
+      workflows.push(
+        validateStoredWorkflow(value, generationId, workflowMatch[1], state.protocolDigest),
+      );
     }
   }
 
@@ -2010,6 +2109,7 @@ async function evidenceInventory(context, generationId) {
       await readEvidenceJson(target),
       generationId,
       match[1],
+      state.protocolDigest,
     );
     if (observationOrdinals.has(observation.ordinal)) fail('INCOMPLETE_EVIDENCE');
     observationOrdinals.add(observation.ordinal);
@@ -2087,6 +2187,7 @@ async function evidenceInventory(context, generationId) {
   return {
     root,
     state,
+    migrationPending,
     suspension,
     transition,
     locks,
@@ -2160,7 +2261,7 @@ async function inventoryOperation(input, deps) {
       discardTombstones,
     };
   }
-  const evidence = await evidenceInventory(context, generationId);
+  const evidence = await evidenceInventory(context, generationId, { previousProtocol: true });
   return {
     generationId,
     generationStatus: 'present',
@@ -2170,7 +2271,8 @@ async function inventoryOperation(input, deps) {
     incompleteCounts: evidence.inventory.incompleteCounts,
     orphanTemporaries: evidence.orphanTemporaries,
     rawBytes: evidence.inventory.rawBytes,
-    transitionPending: evidence.transition !== null,
+    transitionPending: evidence.transition !== null || evidence.migrationPending,
+    protocolCurrent: evidence.state.protocolDigest === PILOT_MEASUREMENT_PROTOCOL_DIGEST,
     normalTombstones,
     discardTombstones,
   };
@@ -2502,13 +2604,15 @@ async function writeSuspension(
 }
 
 // Completes a suspension-reason marker that a crashed or lock-contended control write left behind.
-// It runs under the lifecycle lock; a leftover suspend or resume marker keeps its own handling.
-async function rollForwardTransition(context, generationId, deps) {
+// It runs under the lifecycle lock; a leftover suspend or resume marker keeps its own handling. The
+// migration passes the stored state, because the read view masks a pending generation as suspended.
+async function rollForwardTransition(context, generationId, deps, storedState) {
   const root = generationPath(context, generationId);
   const marker = await transitionMarker(root);
   if (marker === null || !SUSPENSION_REASONS.includes(marker.operation)) return;
   if (marker.generationId !== generationId) fail('UNSAFE_STORAGE');
-  const { state } = await loadState(context, generationId);
+  const state =
+    storedState ?? (await loadState(context, generationId, { previousProtocol: true })).state;
   if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return;
   await writeSuspension(context, root, generationId, state, marker.operation, [], deps);
 }
@@ -2524,7 +2628,9 @@ async function persistPilotControl(input, deps, reason, affectedRecordIds = []) 
     const context = await ensureNamespace(input, deps);
     return await withLock(context, input.generationId, 'pilot-control', deps, async () => {
       await rollForwardTransition(context, input.generationId, deps);
-      const { root, state } = await loadState(context, input.generationId);
+      const { root, state } = await loadState(context, input.generationId, {
+        previousProtocol: true,
+      });
       if (!['baseline', 'active', 'suspended'].includes(state.generationState)) return false;
       await writeSuspension(
         context,
@@ -3103,7 +3209,7 @@ async function startGateObservation(input, deps) {
     });
     const context = await inspectNamespace(input, deps);
     if (!context.exists) return notRecorded('no-generation');
-    const { state } = await loadState(context, input.generationId);
+    const { state } = await loadState(context, input.generationId, { previousProtocol: true });
     if (
       input.configState !== 'enabled' ||
       !['baseline', 'active'].includes(state.generationState) ||
@@ -3295,7 +3401,9 @@ async function suspendGeneration(input, deps) {
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'suspend', deps, async () => {
     await rollForwardTransition(context, input.generationId, deps);
-    const { root, state } = await loadState(context, input.generationId);
+    const { root, state } = await loadState(context, input.generationId, {
+      previousProtocol: true,
+    });
     if (!['baseline', 'active', 'suspended'].includes(state.generationState)) fail('INVALID_STATE');
     const suspension = await writeSuspension(
       context,
@@ -3328,13 +3436,15 @@ async function recordIncident(input, deps) {
     await assertGenerationExists(context, input.generationId);
     return await withLock(context, input.generationId, 'record-incident', deps, async () => {
       stage = 'locked';
-      const { state } = await loadState(context, input.generationId);
+      const { state } = await loadState(context, input.generationId, { previousProtocol: true });
       if (!['baseline', 'active', 'suspended'].includes(state.generationState)) {
         fail('INVALID_STATE');
       }
       stage = 'writing';
       await rollForwardTransition(context, input.generationId, deps);
-      const { root, state: current } = await loadState(context, input.generationId);
+      const { root, state: current } = await loadState(context, input.generationId, {
+        previousProtocol: true,
+      });
       const suspension = await writeSuspension(
         context,
         root,
@@ -3377,7 +3487,9 @@ async function beginReview(input, deps) {
   if (!booleanValue(input.confirmation)) fail('INVALID_PAYLOAD');
   const context = await ensureNamespace(input, deps);
   return await withLock(context, input.generationId, 'begin-review', deps, async () => {
-    const evidence = await evidenceInventory(context, input.generationId);
+    const evidence = await evidenceInventory(context, input.generationId, {
+      previousProtocol: true,
+    });
     if (!['baseline', 'active', 'suspended'].includes(evidence.state.generationState))
       fail('INVALID_STATE');
     if (evidence.inventoryDigest !== input.expectedInventoryDigest) fail('STALE_REVIEW');

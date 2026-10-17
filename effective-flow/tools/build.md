@@ -1,6 +1,6 @@
 ## Portable worker delegation
 
-Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
+Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
 # Effective Flow Build
 
@@ -61,11 +61,13 @@ If no task tool is available, give the user a short progress update after each c
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+**Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
 
@@ -433,9 +435,10 @@ removes or claims a worktree and never creates or backfills a record.
 loaded `execution-profiles` fragment: its per-packet state, preflight, delegation, requirements
 check, and Fast→Quality transition, with `build` as the record's `workflow`.
 
-1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the
-   default; the Fast reference serves only the first attempted spawn of a packet whose envelope
-   selects `fast`, and `fastAttemptConsumed` is set immediately before that call:
+1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the default; the Fast
+   reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
+   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    - Frontend: `Use the `effective-flow-ui-implementer` skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
    - Backend/CLI: `Use the `effective-flow-nodejs-implementer` skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
    - Rust: `Use the `effective-flow-rust-implementer` skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
@@ -473,11 +476,14 @@ surface prevents completion under the blocking rule of the detail contract.
 Start in parallel if possible:
 
 1. ``effective-flow-test-writer`` for unit tests and component tests
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 2. ``effective-flow-e2e-tester`` for new user flows if a real flow was added
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 
 ### Phase 5: Validation
 
 1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline".
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 2. Give the user the complete list of all errors and warnings found.
 3. If errors are found: delegate the repair to the routed Quality implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
@@ -485,6 +491,7 @@ Start in parallel if possible:
 ### Phase 6: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `effective-flow review` default, which delivers only Critical + Important.
+   Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
 2. Aggregate all review findings, then make exactly one automatic incorporation pass through the
    routed Quality implementer for every new finding that belongs to the authorized slice. Render
    again and re-run the affected review checks once after that pass; do not weaken or consume the
@@ -546,6 +553,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 ### Phase 7: Completion
 
 1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 2. Document the completed workflow in the plan file, without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `effective-flow plan`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
