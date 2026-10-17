@@ -78,7 +78,9 @@ points to it. Sites are:
 - worker spawns (implementers, reviewers, validators, test and documentation writers, the conflict
   resolver), resolved through their role;
 - read-only exploration and analysis sub-agents: `standard`;
-- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`.
+- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`;
+- the read-only skeptic that tries to refute the draft diagnosis of `investigate`
+  (`investigate/skeptic`): `deep`, never moves down.
 
 The `concept-review` fan-out is `deep` by analogy with the `plan-review` fan-out. The three
 delegated implementation workflow runs (`apply-issues`, `apply-review`, `iterate`) are `deep`

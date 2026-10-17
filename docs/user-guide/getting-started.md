@@ -106,7 +106,9 @@ neither mechanism inherits the caller model and says so once.
 To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
 judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
 read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
-run. Questions of a delegated run reach you through your session as usual.
+run. If that judgment sub-agent cannot run, the artifact records it, and a skipped judgment leaves
+a blocking open point that names the command to rerun it. Questions of a delegated run reach you
+through your session as usual.
 
 **Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
 strongest available configured implementation capability and is always the safe default. Fast
