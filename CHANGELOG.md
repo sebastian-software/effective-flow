@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.68.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.1...effective-flow-v1.68.0) (2026-10-17)
+
+
+### Features
+
+* let setup apply targeted free-text changes after first-time setup ([#558](https://github.com/sebastian-software/effective-flow/issues/558)) ([0730aed](https://github.com/sebastian-software/effective-flow/commit/0730aed9ac0748adba87921ec5c4605d43a06bed))
+* point the merge-gate reviewer advisory at targeted setup ([#559](https://github.com/sebastian-software/effective-flow/issues/559)) ([648e013](https://github.com/sebastian-software/effective-flow/commit/648e01345f35d432c7fc8ad6727ef58e1d413ce6))
+* run every delegated spawn on a provider-neutral model tier ([#563](https://github.com/sebastian-software/effective-flow/issues/563)) ([e02d194](https://github.com/sebastian-software/effective-flow/commit/e02d194ea3ffb4a0bdb0ab985a0996956a17a275))
+* run merge-gate as a delegated run and move plan judgment into a deep subagent ([#564](https://github.com/sebastian-software/effective-flow/issues/564)) ([266eb7e](https://github.com/sebastian-software/effective-flow/commit/266eb7e22d1171d41da333cdd3c9eb0d08c31c68))
+
+
+### Bug Fixes
+
+* create Forgejo comments through the status-aware API ([1c67144](https://github.com/sebastian-software/effective-flow/commit/1c671441d6d9226abb0e58590a556e1d34512f57)), closes [#560](https://github.com/sebastian-software/effective-flow/issues/560)
+
 ## [1.67.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.0...effective-flow-v1.67.1) (2026-10-11)
 
 
