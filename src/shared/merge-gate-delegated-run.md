@@ -71,7 +71,8 @@ In this order, before any other write:
 
 `Caller limits:` – in an inline run, the limits its own session derived per "Caller limits" of
 `{{SKILL:merge-gate}}` – binds every phase and takes precedence over configuration, every relayed
-answer and every rule below that would otherwise permit the action.
+answer and every rule below that would otherwise permit the action. An inline run also binds every
+restriction the user stated in its session that neither token expresses, with the same precedence.
 
 - `no-merge` resolves the completion mode to `report` per Phase 0 step 3; the observer-only path
   never merges, so it changes nothing there.

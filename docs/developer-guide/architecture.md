@@ -165,7 +165,9 @@ asks only for an ambiguous provider and the completion mode; every other questio
 through it. A restriction the user stated travels as the optional `Caller limits:` line
 (`no-merge`, `no-branch-writes`), which only grows across re-dispatches and takes precedence over
 configuration: `no-merge` resolves `report`, and `no-branch-writes` disables the base-into-head merge
-and every `iterate` delegation.
+and every `iterate` delegation. A restriction neither token expresses is never mapped onto them: the
+caller asks for a restatement or stops, and if the user insists runs the gate inline, where the
+restriction binds every phase.
 
 The delegated gate needs four levels of nesting below the main session: main session (0) →
 delegated gate run (1) → the `iterate` round it dispatches (2) → the per-item `fix` or `build` run
