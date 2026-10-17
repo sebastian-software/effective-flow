@@ -4,7 +4,8 @@ This fragment is the gate after Phase 0 of `{{SKILL:merge-gate}}`, which stays i
 always-loaded core together with the run states, the closed question-id set and the return contract
 this fragment uses. It runs in the delegated run the caller dispatched, and in a caller that runs the
 gate inline with its own run state, caller limits and Phase 0 results, which skips "Entry" but applies Phase 0
-step 2's `prReviewsRead` bullet with that run state before Phase 1.
+step 2's `prReviewsRead` bullet with that run state before Phase 1, to the capabilities its Phase 0
+already read and without probing the provider again.
 `{{SKILL:merge-gate}}` is this fragment's only consumer.
 
 ### Entry
@@ -43,7 +44,9 @@ In this order, before any other write:
    nothing and returns `DONE`, then write that record to the wisdom file.
    <!-- spawn-site:merge-gate-delegated-run/nested-spawn-probe -->
    No spawn mechanism, or a probe the host refuses or that fails, returns
-   `ABORT nested-spawn-unavailable`: the caller then runs the gate inline.
+   `ABORT nested-spawn-unavailable`: the caller then runs the gate inline. Return it only from this
+   step, after steps 1 to 6, and, where a spawn tool is offered, only once the probe call itself was
+   refused or failed.
 8. **Review verdicts.** Only now apply Phase 0 step 2's `prReviewsRead` bullet with this run state,
    consuming a `reviews-unestablished` answer per "Answers and returns"; no earlier step returns
    `BLOCKED-USER`.

@@ -6378,6 +6378,16 @@ test('iterate lets a caller suppress its summary comment and posts it by default
   );
 });
 
+// Invariant: the sender's `build` input carries `languageContext` as the object the helper
+// validates, not the rendered `Language context:` line a delegated run would otherwise copy from the
+// message format, which `build` refuses as INVALID_PAYLOAD before any round is dispatched.
+test('the delegation build input names languageContext as a six-key object', () => {
+  assert.match(
+    prose(mergeGateDelegationContract()),
+    /`languageContext` – the last a JSON object whose six keys `source`, `documentation\.user`, `documentation\.technical`, `workflow`, `forge` and `git` each hold `de` or `en`, never the rendered `Language context:` line –/,
+  );
+});
+
 test('the merge gate announces the exact suppression literal iterate parses', () => {
   const contract = section(mergeGateDelegationContract(), '## Delegation contract', '\n## ');
 
@@ -21982,6 +21992,12 @@ test('the delegated-run entry validates its input before any write', () => {
     entry,
     /No spawn mechanism, or a probe the host refuses or that fails, returns `ABORT nested-spawn-unavailable`/,
   );
+  // The abort is an observation, not a guess: a delegated run that holds a spawn tool and answers it
+  // before Entry ran or before its probe call was refused hands a gate it could run back inline.
+  assert.match(
+    entry,
+    /Return it only from this step, after steps 1 to 6, and, where a spawn tool is offered, only once the probe call itself was refused or failed\./,
+  );
   assert.ok(
     fragment.includes('   <!-- spawn-site:merge-gate-delegated-run/nested-spawn-probe -->'),
     'the probe spawn carries its spawn-site marker inside Entry step 7',
@@ -22468,14 +22484,16 @@ test('a question instance is keyed by id, round and state digest', () => {
 
 // Invariant (F28): a caller that runs the gate inline skips "Entry", so it applies the
 // `prReviewsRead` degradation itself before Phase 1 – a gated caller asks Continue/Stop, a
-// non-interactive one ends never merging – instead of merging with no verdict read.
+// non-interactive one ends never merging – instead of merging with no verdict read. It applies it
+// to the capabilities its own Phase 0 read and probes no third time, which the nested-spawn eval
+// scenario counts.
 test('the inline gate applies the prReviewsRead bullet before Phase 1', () => {
   const lead = prose(
     boundedSlice(mergeGateDelegatedRun(repositoryRoot), '## Delegated run', '### Entry'),
   );
   assert.match(
     lead,
-    /in a caller that runs the gate inline with its own run state, caller limits and Phase 0 results, which skips "Entry" but applies Phase 0 step 2's `prReviewsRead` bullet with that run state before Phase 1\./,
+    /in a caller that runs the gate inline with its own run state, caller limits and Phase 0 results, which skips "Entry" but applies Phase 0 step 2's `prReviewsRead` bullet with that run state before Phase 1, to the capabilities its Phase 0 already read and without probing the provider again\./,
   );
   const bullet = prose(
     boundedSlice(
