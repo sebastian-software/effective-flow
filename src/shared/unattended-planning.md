@@ -58,7 +58,7 @@ Validate without asking, before using issue text:
    returns `ABORT: unparseable issue switch`; a malformed or non-absolute `Issue text:` returns
    `ABORT: unparseable issue-text switch`.
 4. Load `config-migration` and use its existing `config-resolve.mjs resolve` call with the
-   execution checkout as `cwd` and `tool: plan`, read-only. Require its verified
+   execution checkout as `cwd` and `tool: "plan"`, read-only. Require its verified
    `data.runtimeStateRoot` as `RUNTIME_STATE_ROOT`, retain `EXECUTION_ROOT` and the verified
    execution-location receipt, and resolve `<plan.dir>` there. A missing or mismatched runtime
    root, configuration failure or other operational failure terminates as `ABORT: <diagnostic>`

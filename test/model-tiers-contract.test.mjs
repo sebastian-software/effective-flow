@@ -196,6 +196,16 @@ const SPAWN_MENTION_ALLOWLIST = [
     '**Validation:** hand',
     'handoff content for the validator sites of the hosts',
   ],
+  [
+    'shared/unattended-planning.md',
+    'Every unattended worker handoff',
+    'handoff constraints for existing planning workers; starts no new spawn',
+  ],
+  [
+    'shared/unattended-planning.md',
+    '| Site  | File',
+    'question-site outcome inventory for existing planning decisions; starts no new spawn',
+  ],
   // Completion protocol given to sub-agents, or how their keywords are read.
   ['tools/apply-review.md', 'Prescribe the completion protocol', 'completion-protocol rule'],
   ['tools/build.md', 'Give internal sub-agents the instruction', 'completion-protocol rule'],
