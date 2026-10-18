@@ -49,3 +49,5 @@ is no runtime application – you edit `src/`, never `dist/`.
 - [Architecture and consistency review](../review/2026-08-31-architecture-and-consistency-review.md)
   – point-in-time audit of the repository at `3b44300` against the central skills; it is kept as
   the record it was, and its implementation-status table tracks which findings have since landed.
+- [Codex exec unattended evidence](codex-exec-unattended-evidence.md) – point-in-time evidence for
+  unattended planning, delegation, environment behavior, and the `0.163.0` compatibility run.
