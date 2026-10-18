@@ -1,10 +1,17 @@
 # Codex exec spike: delegation and question-free completion of the portable build
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
 **Target path:** docs/developer-guide/codex-exec-unattended-evidence.md
+
+**Completed:** 2026-10-18; [PR #574](https://github.com/sebastian-software/effective-flow/pull/574),
+merged into `develop` as `9043181`.
+**Reconciled:** 2026-10-18, against the merged
+[evidence record](../../developer-guide/codex-exec-unattended-evidence.md) and the operator's approved
+CLI substitution. This is a completion record; the execution steps below describe the delivered
+spike and do not authorize another run.
 
 **Planned against:** effective-flow `e846936` and llm-automatisator `d800310` on 2026-10-01.
 **Working state:** Preserve the untracked `docs/concept/` tree and the untracked plans under
@@ -14,7 +21,7 @@
 
 Work package 1 (Codex exec spike) of `docs/concept/2026-09-29-issue-buddy.md`: verify that the
 portable Effective Flow build delegates to sub-agents and completes without any question under
-llm-automatisator's pinned `codex exec` invocation, and record the evidence. The concept names
+llm-automatisator's generated `codex exec` invocation, and record the evidence. The concept names
 this as the first risk to settle ("Codex exec behaviour" under Risks): both properties are
 inferred, not tested.
 
@@ -22,10 +29,15 @@ The result is a written evidence document with no product change. It states, per
 delegation behaviour, the no-question behaviour, and the time taken, and it closes with a verdict
 for each and the consequence for the later packages.
 
+The operator approved Codex CLI `0.163.0` for the isolated primary matrix after updating the CLI
+for the newer worker model. The generated contract and production-supported pin remain `0.153.4`.
+The accepted deliverable is compatibility evidence for `0.163.0`, plus two supplementary `0.153.4`
+baselines; it does not establish the originally proposed full matrix on the production pin.
+
 Sibling plans (Issue Buddy roadmap):
 
 - Depends on: none.
-- Depended on by: `docs/plan/archive/2026-10-01-unattended-planning-and-readiness-contract.md` (WP2),
+- Depended on by: `docs/plan/2026-10-01-unattended-planning-and-readiness-contract.md` (WP2),
   which uses the no-question result for its ask-site mapping and contract test, and
   `docs/plan/2026-10-01-issue-buddy-tool-stage-1.md` (WP5), which relies on the delegation
   result. The llm-automatisator plan `2026-10-01-issue-buddy-dry-run-auftrag.md` (WP6a) relies
@@ -49,9 +61,11 @@ evidence-gathering part of writing that document; their raw output is not commit
   runs pass `privilegeDrop: 'none'` (`process.ts:33-40`). The guest run uses the default
   `setpriv` with `unshare`. The throwaway driver script that calls these functions lives in a
   scratch directory and is not committed in either repository.
-- **Codex 0.153.4 only.** That is the only version the contract describes
-  (`SUPPORTED_CODEX_VERSION`, `contracts.ts:36`). The locally installed `codex-cli 0.157.0`
-  (Homebrew) is never used for a recorded run.
+- **Approved isolated binary: Codex 0.163.0; generated contract: 0.153.4.** The contract still
+  accepts only `0.153.4`. The primary matrix used the operator-approved `0.163.0` binary without
+  changing product code or the production pin. Each primary run records `actualCodexVersion`,
+  `contractCodexVersion`, and `invocationCompatibilityOnly: true`. Generated arguments are
+  unchanged after path normalization. Two earlier `0.153.4` baselines remain supplementary.
 - **Run locally first, then confirm once on the guest.** Local runs are cheap but differ in
   operating system, `PATH` contents, and privilege drop. The guest run is the authoritative one
   for tool availability and the environment. Every difference is recorded in the document.
@@ -78,7 +92,9 @@ evidence-gathering part of writing that document; their raw output is not commit
 | `docs/developer-guide/codex-exec-unattended-evidence.md` | New dated evidence record: question, setup and versions, method, per-run results, verdicts, consequences for WP2/WP5/WP6a, limits.                                                                        |
 | `docs/developer-guide/README.md`                         | Add one "See also" entry for the evidence record, worded as a point-in-time record like the existing architecture-review entry. It does not join the reading order, because it is not a living reference. |
 
-No other tracked file in either repository changes.
+The delivered spike changed only these two tracked files; it left the source plan unchanged.
+This follow-up reconciliation changes only this plan, including its completion status and archive
+location. No llm-automatisator file or production configuration changes.
 
 ## Implementation details
 
@@ -95,11 +111,13 @@ No other tracked file in either repository changes.
    `dist/portable/effective-flow/` into a snapshot directory inside the spike layout's skill
    root. Record the snapshot digest: SHA-256 over the sorted list of per-file digests, with the
    command written into the document.
-3. **Obtain Codex 0.153.4.** Use the vendor artifact for the local platform from the npm
+3. **Obtain the approved Codex binary.** Use `0.163.0` for the isolated primary matrix and retain
+   the two original-pin `0.153.4` baselines separately. Use the vendor artifact from the npm
    registry, checked against its `dist.integrity`. Ask the user before the download, naming the
    package, source, and size. The binary sits at the layout's `<installRoot>/codex/bin/codex`.
-   `codex --version` must report `codex-cli 0.153.4`. If no 0.153.4 artifact exists for the local
-   platform, skip the local runs and run the full matrix on the guest instead (see Edge cases).
+   `codex --version` must report the actual binary version. Preserve the `0.153.4` contract
+   validation and record the approved binary substitution explicitly; never infer production
+   support from a compatibility run.
 4. **Prepare an isolated home and workspace.**
    - Create the spike layout with `deploymentLayout` overrides, so that `stateRoot` points to a
      scratch directory outside every repository.
@@ -116,6 +134,8 @@ No other tracked file in either repository changes.
    - The prompt is the workload text, using the `$effective-flow plan …` form.
    - The driver calls `parseContract` and `buildRunnerCommand` and writes the resulting command
      to the run directory before anything is spawned.
+   - The generated contract declares `0.153.4`; record the actual `0.163.0` binary separately,
+     together with the compatibility-only flag. Do not change the contract guard.
 6. **Run the local matrix.**
    - Four runs: baseline ×2 and unattended preamble ×2. Each starts from a fresh copy of the
      workspace, records wall-clock start and end, and is terminated at 3600 s if still running.
@@ -123,16 +143,16 @@ No other tracked file in either repository changes.
      final `git status` of the workspace under the run directory.
 7. **Run on the guest.**
    - The operator runs the unattended-preamble workload once on the llm-automatisator guest with
-     Codex 0.153.4 and the default `setpriv` command, as the runner user.
+     Codex `0.163.0` and the default `unshare`/`setpriv` command, as the runner user.
    - The run uses its own spike layout, its own Codex home signed in by the operator, and its
      own workspace. It never uses a service home-pool slot, workspace, or skill snapshot, and it
      does not go through the service.
    - The operator returns the same artefacts and the digests.
 8. **Classify each run.** Apply the rules below to each run's artefacts:
-   - _Delegation:_ the number of `collab_tool_call` items in the stream (the item type the
-     service already accepts, `llm-automatisator/src/codex/events.ts:54`). Also record whether
-     every started child completed before `turn.completed`, and whether the run reported
-     delegation as unavailable or worked inline.
+   - _Delegation:_ record unique `collab_tool_call` items separately from child lifecycle proof.
+     Use retained parent-linked child rollouts to establish starts and terminal ordering; the
+     JSONL wait items alone expose neither complete child identity nor lifecycle state. Distinguish
+     successful completion from an aborted child and its replacement, and report inline fallback.
    - _Question:_
      - Compile the list of rendered portable ask questions on the path. Every Codex/portable ask
        renders as `Ask the user: **<question>**` (`build-lib.mjs:3218-3278`). Take them from the
@@ -147,8 +167,9 @@ No other tracked file in either repository changes.
      with the router's rule of loading only the invoked tool. The service's stdin line says
      "and its referenced files" (`contracts.ts:325`), which may cause eager reading.
    - _Environment:_ whether `node`, `git`, and `pnpm` were reachable in the agent shell.
-     `CHILD_ENVIRONMENT` fixes `PATH=/usr/bin:/bin` (`llm-automatisator/src/codex/layout.ts:127`),
-     and macOS has no `node` there.
+     Record the current runner's separate agent-tool directory plus `/usr/bin:/bin`, rather than
+     assuming the earlier layout. macOS has no `node` in those system directories; successful
+     local runs discovered an absolute Node path.
 9. **Write the evidence document** in English with these sections:
    - question and scope;
    - setup table: versions, commits, snapshot digest, model and effort, and local-versus-guest
@@ -171,8 +192,8 @@ No other tracked file in either repository changes.
 
 ### Edge cases
 
-- **No local 0.153.4 artifact:** skip the local runs, and run the guest matrix with ≥2 runs per
-  workload. The document states this. Never substitute 0.157.0.
+- **Unavailable approved binary:** stop and obtain an explicit version decision; never silently
+  substitute another version. The `0.163.0` substitution recorded here was approved by the operator.
 - **Agent shell lacks `node` locally:** keep the exact environment rather than widening `PATH`,
   record the failures as a local-only difference, and rely on the guest run for that dimension.
 - **Turn ends while a child is still running:** classify as `ended-with-pending-child`, which is
@@ -190,35 +211,40 @@ No other tracked file in either repository changes.
 
 ### Stop conditions
 
-- The llm-automatisator pin moved away from 0.153.4, or `buildInvocation` changed since
-  `d800310`: re-read `contracts.ts` and `process.ts` before running, and record the new commit.
+- The llm-automatisator pin or invocation changed since planning: re-read the contract and process
+  sources and record the measured commit. The completed spike used `cc5eb3a`; its contract still
+  pins `0.153.4`. This record does not authorize a new version or another measurement matrix.
 - `parseContract` rejects the spike contract for a reason that would require changing
   llm-automatisator code: stop. This package changes no product code.
 - A run touches files outside the scratch layout: stop the matrix and report before continuing.
 
 ## Acceptance criteria
 
-- [ ] `docs/developer-guide/codex-exec-unattended-evidence.md` exists and names:
-  - the Codex version as reported by the binary (`0.153.4`);
+- [x] `docs/developer-guide/codex-exec-unattended-evidence.md` exists and names:
+  - the approved primary binary (`0.163.0`), the generated contract and production pin (`0.153.4`),
+    and the compatibility-only interpretation;
   - the effective-flow and llm-automatisator commits;
   - the portable snapshot digest;
   - the model and reasoning effort.
-- [ ] The document lists ≥2 baseline runs and ≥2 unattended-preamble runs (locally, or on the
-      guest when no local artifact exists), plus ≥1 guest run of the unattended preamble. Each row
-      gives the environment, workload, exit code or signal, terminal state, duration in seconds,
-      `collab_tool_call` count, whether a plan file was produced, and the raw-file digests.
-- [ ] The document states three verdicts, each backed by those rows:
+- [x] The document lists two local baseline runs and two local unattended-preamble runs with
+      `0.163.0`, plus one guest unattended run and two supplementary `0.153.4` baselines. Each
+      primary row gives the environment, workload, exit code or signal, terminal state, duration
+      in seconds, unique `collab_tool_call` count, and plan/review state; the raw-file digests are
+      listed separately. Supplementary rows give CLI, environment, exit/signal, duration, outcome,
+      available child observations, and raw-file digests without implying full primary-row coverage.
+- [x] The document states three verdicts, each backed by those rows:
   - delegation observed or not;
   - completed without a question or not;
   - maximum duration against the 3600 s cap.
-- [ ] Each failed verdict names its consequence: a WP2 fallback for the question criterion, or a
-      concept revision for delegation.
-- [ ] The document records every local-versus-guest difference observed, and the load behaviour
+- [x] The document records the failed baseline controls, the aborted-and-replaced child, the
+      guest plan's deferred decision, and consequences for WP2/WP5/WP6a. It does not equate a
+      question-free final message with implementation readiness or with all children completing.
+- [x] The document records every local-versus-guest difference observed, and the load behaviour
       (which skill files were read).
-- [ ] `docs/developer-guide/README.md` links the document under "See also".
-- [ ] No tracked file other than those two changes in effective-flow, and none changes in
-      llm-automatisator (`git status` in both checkouts).
-- [ ] The validation plan passes.
+- [x] `docs/developer-guide/README.md` links the document under "See also".
+- [x] PR #574 changes exactly the two declared documentation files; the spike changes no tracked
+      llm-automatisator file. This follow-up changes only the reconciled plan.
+- [x] The spike validation plan passed; the completion record below identifies its evidence.
 
 ## Validation plan
 
@@ -246,8 +272,11 @@ No other tracked file in either repository changes.
   accepted for this spike. The mitigations are: `HOME` and `CODEX_HOME` point into the scratch
   layout, the fixture holds no third-party text, and writes are checked before and after each
   run.
-- The results are bound to Codex 0.153.4. A later pin change in llm-automatisator makes the
-  document stale; the document says so. WP6a may add a pointer to it from llm-automatisator.
+- The primary results are bound to actual Codex `0.163.0`, a generated `0.153.4` contract,
+  Effective Flow `baa7474`, llm-automatisator `cc5eb3a`, and parent `gpt-5.6-sol` at `medium`
+  effort. Observed deep worker contexts include `gpt-6.1-sol` at high effort. The two original-pin
+  baselines do not establish full `0.153.4` behavior. Any changed binary, contract, or snapshot
+  needs fresh qualification before production use; WP6a may link the point-in-time record.
 - Deferred and out of scope: Forgejo, the Claude Code backend, any change to `src/`, any
   llm-automatisator change, and editing the concept file.
 
@@ -295,6 +324,51 @@ No other tracked file in either repository changes.
 - **Cross-plan alignment (2026-10-01):** the sibling list now states the binding roadmap order
   (WP1 → WP2 ∥ WP4 → WP3 → WP5 → WP6a → WP6b, WP7 after WP6a and WP6b). No interface of this
   spike changed.
+
+### Reconciliation — 2026-10-18
+
+**Result:** Approved
+
+The operator's version decision supersedes the original `0.153.4`-only matrix requirement for
+this completed documentation package. PR #574 merged the evidence record and its README link;
+the production pin remains unchanged. The original review above is retained as planning history.
+
+Verified completion evidence:
+
+- Five primary `0.163.0` runs and two supplementary `0.153.4` baselines are recorded. All three
+  unattended runs ended without a question after manual review. Maximum primary duration was
+  `180.629` seconds against the `3600`-second cap.
+- Delegation was observed through child rollouts. One initial child aborted and was replaced;
+  all observed children terminated before their parent, but not every child completed successfully.
+- The guest fixture retained a blocking decision with `Revision required`. That is a measured
+  fixture outcome, not unfinished work in this evidence package. WP2 must handle readiness separately.
+- Formatting, 2,625 passing tests with one platform skip, build, and merge-gate eval verification
+  passed for PR #574. Eight pre-existing stale eval scenarios were unchanged. The retained report
+  reproduced the table and all 14 published raw-file hashes matched.
+
+No new spike, production upgrade, or product change follows from marking this package implemented.
+The original `0.153.4` matrix remains unperformed beyond its two supplementary baselines.
+
+#### Summary
+
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    0 |
+
+#### Findings
+
+- **Testability, Important, incorporated:** the full classification-field criterion now applies
+  only to the five primary rows. Supplementary baselines have their own narrower evidence
+  criterion. The final independent plan review found no remaining findings.
+- **Deep retrospective plan review (2026-10-18):** requested by the operator after reconciliation;
+  no findings or blocking open points. The implemented status is retained; no follow-up execution
+  is required by this review.
 
 ## Open points
 
