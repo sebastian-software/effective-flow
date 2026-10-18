@@ -32,6 +32,7 @@ as given, never paraphrased.
 | `**Empfohlener Workflow:**`                                            | `**Recommended workflow:**`                                     |
 | `**Doku-Kategorie:**`                                                  | `**Doc category:**`                                             |
 | `**Ziel-Pfad:**`                                                       | `**Target path:**`                                              |
+| `**Issue:** #<N>`                                                      | `**Issue:** #<N>`                                               |
 | `## Anforderung`                                                       | `## Requirement`                                                |
 | `## Architekturentscheidungen`                                         | `## Architecture decisions`                                     |
 | `## Betroffene Dateien`                                                | `## Affected files`                                             |
@@ -46,6 +47,8 @@ as given, never paraphrased.
 Note: the German artifact fields stay valid (a plan may be authored in German). The mapping
 defines the equivalent English form. A writer selects one column for an entire artifact; it never
 mixes columns. Readers accept both columns and normalize them to the same internal meanings.
+The optional `**Issue:** #<N>` header is language-neutral: its label and positive-integer issue
+reference are identical in both languages and do not establish the artifact language.
 
 ## Language configuration terms
 
@@ -99,6 +102,8 @@ and references do not.
 | Rückwärtskompatibilität     | backward compatibility                 |
 | Vorbedingung                | precondition                           |
 | Statusmeldung               | status update                          |
+| Unbeaufsichtigter Lauf      | unattended run                         |
+| Planungsreife               | planning readiness                     |
 | Fortschrittsmeldung         | progress update                        |
 | Zusammenfassung             | summary                                |
 | Übersicht                   | overview                               |

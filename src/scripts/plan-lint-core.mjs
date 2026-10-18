@@ -48,6 +48,7 @@ export const PLAN_CONTRACT_MAPPING = deepFreeze([
   { meaning: 'Workflow', de: ['**Empfohlener Workflow:**'], en: ['**Recommended workflow:**'] },
   { meaning: 'Doc category', de: ['**Doku-Kategorie:**'], en: ['**Doc category:**'] },
   { meaning: 'Target path', de: ['**Ziel-Pfad:**'], en: ['**Target path:**'] },
+  { meaning: 'Issue', de: ['**Issue:**'], en: ['**Issue:**'] },
   { meaning: 'Requirement', de: ['## Anforderung'], en: ['## Requirement'] },
   {
     meaning: 'Architecture',
@@ -187,14 +188,18 @@ function fieldParts(cell) {
 
 // Every label a language contributes to detection: a field prefix, an exact heading, or an exact
 // list item. Only the first code span of a cell carries a label; a second one is a value, which
-// FIELD_VALUE_MATCHERS covers.
+// FIELD_VALUE_MATCHERS covers. Shared labels contribute no language evidence.
 function languageMatchers(language) {
   const fields = new Set();
   const lines = new Set();
   for (const row of PLAN_CONTRACT_MAPPING) {
     const cell = row[language][0];
-    if (FIELD_CELL.test(cell)) fields.add(fieldParts(cell).label);
-    else lines.add(cell);
+    const otherCell = row[language === 'de' ? 'en' : 'de'][0];
+    const label = FIELD_CELL.test(cell) ? fieldParts(cell).label : cell;
+    const otherLabel = FIELD_CELL.test(otherCell) ? fieldParts(otherCell).label : otherCell;
+    if (label === otherLabel) continue;
+    if (FIELD_CELL.test(cell)) fields.add(label);
+    else lines.add(label);
   }
   if (language === 'en') {
     lines.add(LEGACY_OPEN_POINTS_HEADING);

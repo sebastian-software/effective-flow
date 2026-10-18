@@ -25,7 +25,7 @@ for each and the consequence for the later packages.
 Sibling plans (Issue Buddy roadmap):
 
 - Depends on: none.
-- Depended on by: `docs/plan/2026-10-01-unattended-planning-and-readiness-contract.md` (WP2),
+- Depended on by: `docs/plan/archive/2026-10-01-unattended-planning-and-readiness-contract.md` (WP2),
   which uses the no-question result for its ask-site mapping and contract test, and
   `docs/plan/2026-10-01-issue-buddy-tool-stage-1.md` (WP5), which relies on the delegation
   result. The llm-automatisator plan `2026-10-01-issue-buddy-dry-run-auftrag.md` (WP6a) relies

@@ -237,6 +237,35 @@ test('language detects German, English, mixed, and unknown plans', () => {
   assert.equal(unknown.statusReason, 'missing');
 });
 
+test('the language-neutral Issue field does not change complete English or German plans', () => {
+  const english = classifyPlanText(
+    `${ENGLISH_PLAN.replace('**Source:** effective-flow plan', '**Source:** effective-flow plan\n**Issue:** #42')}`,
+  );
+  const german = classifyPlanText(
+    `${GERMAN_PLAN.replace('**Quelle:** effective-flow plan', '**Quelle:** effective-flow plan\n**Issue:** #42')}`,
+  );
+  assert.equal(english.language, 'en');
+  assert.equal(english.status, 'open');
+  assert.equal(english.workflow, 'Feature (`effective-flow build`)');
+  assert.equal(german.language, 'de');
+  assert.equal(german.status, 'implemented');
+  assert.equal(german.targetPath, 'docs/user-guide/widget.md');
+});
+
+test('an Issue-only input remains unknown and genuine mixed labels remain mixed', () => {
+  assert.equal(classifyPlanText('**Issue:** #42\n').language, 'unknown');
+  assert.equal(
+    classifyPlanText('**Issue:** #42\n**Plan status:** Not implemented\n**Quelle:** Quelle\n')
+      .language,
+    'mixed',
+  );
+  assert.equal(
+    classifyPlanText('**Issue:** #42\n**Planungsstatus:** Nicht umgesetzt\n**Source:** Quelle\n')
+      .language,
+    'mixed',
+  );
+});
+
 test('labels inside fenced code do not decide the language', () => {
   const text = `${GERMAN_PLAN}\n\`\`\`\n## Requirement\n**Plan status:** Implemented\n\`\`\`\n`;
   assert.equal(classifyPlanText(text).language, 'de');
