@@ -297,26 +297,21 @@ const DEPRECATED_TOOL_ALIASES = [{ alias: 'pr-review', replacement: 'merge-gate'
 // Declared tool-to-tool workflow edges: `from` runs `to` as part of its own run. The setup-status
 // ownership projection follows exactly these edges (and the deprecated aliases never), so the domain
 // owners of `to` are reported for `from` too; a plain `{{SKILL:X}}` mention is no edge. The workflow
-// edge guard checks each against a reference in the `from` source and requires every reference from
-// a tool source to an internal tool to be declared here or in WORKFLOW_POINTER_REFERENCES; a
-// reference to an exposed tool is not checked in reverse, so an edge into one must be added by hand.
-// The edges into exposed tools are `merge-gate -> iterate`, the per-item dispatch of `iterate` and of
-// the three apply sub-workflows into `build`, `fix`, `refactor` and `docs`, and `deliver -> commit`
-// and `deliver -> pr`. An optional `mode` says `from` runs `to` only in that resolver mode
+// edge guard checks each against the `from` source and its eager/lazy shared include closure, and
+// requires every internal-tool reference in that closure to be declared here or in
+// WORKFLOW_POINTER_REFERENCES. Exposed-tool references are not checked in reverse, so their actual
+// execution handoffs must be declared explicitly, including delivery and plan publication through
+// shared fragments. An optional `mode` says `from` runs `to` only in that resolver mode
 // (`MODE_TOOLS`); retired-row stops map per (tool, mode), owner reach ignores it.
-// Known gap: `build`, `fix`, `refactor`, `docs`, `maintain` and `iterate` also run `commit` and `pr`,
-// but only through the shared `worktree-integration` fragment; the forward guard matches an edge
-// against its `from` tool's own source only, so those edges are not declared. The stop mapping loses
-// nothing by it, since each of those hosts already stops on the retired row of `delivery.baseBranch`,
-// the only successor `pr` evaluates, through its own successor set (`iterate` in mode `local`); their
-// owner reach omits the owners of `commit` and `pr`.
 const WORKFLOW_EDGES = [
   { from: 'merge-gate', to: 'iterate', mode: 'pr' },
   ...['apply-plan', 'apply-issues', 'apply-review', 'iterate'].flatMap((from) =>
     ['build', 'fix', 'refactor', 'docs'].map((to) => ({ from, to })),
   ),
-  { from: 'deliver', to: 'commit' },
-  { from: 'deliver', to: 'pr' },
+  ...['build', 'fix', 'refactor', 'docs', 'maintain', 'iterate', 'deliver', 'plan'].flatMap(
+    (from) => ['commit', 'pr'].map((to) => ({ from, to })),
+  ),
+  { from: 'plan', to: 'plan-issue' },
   { from: 'apply', to: 'apply-plan' },
   { from: 'apply', to: 'apply-review' },
   { from: 'apply', to: 'apply-issues' },
@@ -347,6 +342,37 @@ const WORKFLOW_POINTER_REFERENCES = [
   { from: 'plan-issue', to: 'apply-issues' }, // the issue's later implementation
   { from: 'refactor', to: 'apply-review' }, // findings applied later by the user
   { from: 'setup', to: 'apply-review' }, // the owner of the `applyReview` config keys
+  { from: 'apply-review', to: 'apply-plan' }, // shared source classification, not execution
+  // Shared contracts describe their caller chains and later apply workflows without running them.
+  ...['build', 'fix', 'refactor', 'docs'].flatMap((from) =>
+    ['apply-plan', 'apply-issues', 'apply-review-remote'].map((to) => ({ from, to })),
+  ),
+  ...[
+    'build',
+    'fix',
+    'docs',
+    'cleanup',
+    'iterate',
+    'maintain',
+    'merge-gate',
+    'plan',
+    'plan-issue',
+    'review',
+  ].map((from) => ({ from, to: 'apply-review' })),
+  ...[
+    'apply-review',
+    'cleanup',
+    'iterate',
+    'maintain',
+    'merge-gate',
+    'plan',
+    'review',
+    'setup',
+  ].map((from) => ({ from, to: 'apply-issues' })),
+  ...['apply-issues', 'iterate', 'maintain', 'merge-gate', 'plan', 'review'].map((from) => ({
+    from,
+    to: 'apply-review-remote',
+  })),
 ];
 
 // Guard: an alias is reachable by name only. It must never be an exposed tool
@@ -956,6 +982,7 @@ try {
   assertWorkflowEdgeContract(
     {
       toolSources: toolOwnershipSources,
+      sharedSources: sharedOwnershipSources,
       exposedTools: EXPOSED_TOOLS,
       aliases: DEPRECATED_TOOL_ALIASES.map((entry) => entry.alias),
       workflowEdges: WORKFLOW_EDGES,

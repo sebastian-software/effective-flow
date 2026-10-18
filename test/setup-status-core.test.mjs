@@ -38,6 +38,7 @@ import {
   releaseSemver,
 } from '../src/scripts/setup-status-core.mjs';
 import { main } from '../src/scripts/setup-status.mjs';
+import { deriveSetupStatusProjection, parseSkillOwnershipManifest } from '../build-lib.mjs';
 
 const CLI = fileURLToPath(new URL('../src/scripts/setup-status.mjs', import.meta.url));
 // An empty HOME and XDG_CONFIG_HOME keep the developer's global Git configuration and excludes
@@ -799,6 +800,80 @@ test('a tool-scoped exclude disables the owner only for that tool', async (t) =>
   assert.deepEqual(writing.disabled, []);
   assert.equal(writing.remediation, null);
   assert.match(writing.missingRemediation, /install `effective-writing`/);
+});
+
+test('shared delivery and plan publication handoffs propagate commit exclusions and retired stops', async (t) => {
+  // Invariant: the shipped graph includes actual shared delivery handoffs, not merely their
+  // direct tool references; plan publication also inherits pr's retired base-branch stop.
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  const declaration = buildSource.match(/const WORKFLOW_EDGES = (\[[\s\S]*?\n\]);/);
+  assert.ok(declaration, 'build declares its execution edges');
+  const workflowEdges = Function(`return (${declaration[1]});`)();
+  const sources = (directory) => {
+    const url = new URL(`../src/${directory}/`, import.meta.url);
+    return new Map(
+      readdirSync(url)
+        .filter((name) => name.endsWith('.md'))
+        .map((name) => [name.slice(0, -3), readFileSync(new URL(name, url), 'utf8')]),
+    );
+  };
+  const projection = deriveSetupStatusProjection({
+    manifest: parseSkillOwnershipManifest(
+      readFileSync(
+        new URL('../docs/developer-guide/skill-ownership.json', import.meta.url),
+        'utf8',
+      ),
+    ),
+    toolSources: sources('tools'),
+    agentSources: sources('agents'),
+    sharedSources: sources('shared'),
+    exposedTools: [
+      ...PROJECTION.exposedTools,
+      'plan',
+      'plan-issue',
+      'concept',
+      'review',
+      'investigate',
+    ],
+    workflowEdges,
+    version: PROJECTION.version,
+  });
+  const disabled = domainOwnersFrom(projection, {
+    'skills.tools.commit.exclude': { state: 'set', items: ['effective-delivery'] },
+  }).find(({ skill }) => skill === 'effective-delivery').disabled;
+  const expected = [
+    'apply',
+    'build',
+    'commit',
+    'deliver',
+    'docs',
+    'fix',
+    'iterate',
+    'maintain',
+    'merge-gate',
+    'plan',
+    'refactor',
+  ];
+  assert.deepEqual(
+    disabled.map(({ tool }) => tool),
+    expected,
+  );
+  for (const entry of disabled) assert.deepEqual(entry.causes, ['skills.tools.commit.exclude']);
+  const { root } = repository(t, {
+    files: {
+      '.gitignore': '.effective-flow/\n',
+      [SETUP_ADR]: setupDocument({ 'worktree.baseBranch': 'origin/develop' }),
+    },
+  });
+  const base = retiredRow(
+    await status(t, root, { projectionPath: projectionFile(t, projection) }),
+    'worktree.baseBranch',
+  );
+  assert.ok(base.stop.includes('plan'), 'plan publication runs pr and stops on the retired base');
+  assert.ok(
+    workflowEdges.some(({ from, to }) => from === 'plan' && to === 'plan-issue'),
+    'explicit issue references execute plan-issue',
+  );
 });
 
 test('an owner disabled by the switch and an exclude carries both remediation texts', () => {

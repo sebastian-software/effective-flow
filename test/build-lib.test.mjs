@@ -1192,6 +1192,59 @@ test('the workflow edge guard checks declared edges forward and internal referen
   );
 });
 
+test('workflow edge references include the transitive eager and lazy shared closure', () => {
+  // Invariant: delivery handoffs in shared contracts validate as host edges, while references
+  // alone remain pointers and undeclared internal handoffs still fail closed.
+  const toolSources = new Map([
+    ['plan', '```lazy-include\npublication\nwhen: publishing\n```\n'],
+    ['commit', 'Commit.\n'],
+    ['pr', 'Open a PR.\n'],
+    ['internal', 'Internal workflow.\n'],
+  ]);
+  const sharedSources = new Map([
+    ['publication', '```include\nnested\n```\n'],
+    [
+      'nested',
+      'Run {{SKILL:commit}}. See tools/internal.md.\n```lazy-include\npublication\nwhen: again\n```\n',
+    ],
+    ['unrelated', 'Run {{SKILL:pr}}.\n'],
+  ]);
+  const input = {
+    toolSources,
+    sharedSources,
+    exposedTools: ['plan', 'commit', 'pr'],
+    workflowEdges: [{ from: 'plan', to: 'commit' }],
+    pointerReferences: [{ from: 'plan', to: 'internal' }],
+  };
+  assert.doesNotThrow(() => assertWorkflowEdgeContract(input));
+  assert.throws(
+    () => assertWorkflowEdgeContract({ ...input, pointerReferences: [] }),
+    /plan\.md.*internal tool "internal" without a declared workflow edge or pointer reference/,
+  );
+  assert.throws(
+    () =>
+      assertWorkflowEdgeContract({
+        ...input,
+        workflowEdges: [...input.workflowEdges, { from: 'plan', to: 'pr' }],
+      }),
+    /plan -> pr has no matching reference/,
+  );
+  const projection = deriveSetupStatusProjection({
+    ...input,
+    exposedTools: [...input.exposedTools, 'internal'],
+    agentSources: new Map(),
+    manifest: projectionManifest({ 'effective-delivery': [['commit'], ['internal']] }),
+    version: '1.68.0',
+  });
+  assert.deepEqual(projection.owners.find(({ consumer }) => consumer === 'commit').tools, [
+    'commit',
+    'plan',
+  ]);
+  assert.deepEqual(projection.owners.find(({ consumer }) => consumer === 'internal').tools, [
+    'internal',
+  ]);
+});
+
 test('the workflow edge guard accepts only resolver modes of the target on an edge', () => {
   // Invariant: an edge's mode decides which (tool, mode) retired-row evaluation maps onto its
   // source, so it must be a real resolver mode of the target, never on a pointer, and one pair

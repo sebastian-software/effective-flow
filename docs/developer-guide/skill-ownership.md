@@ -327,20 +327,21 @@ Reachability is explicit, never inferred from every `{{SKILL:X}}` mention. An ex
 itself, its eager and lazy include closure, the agents its source or that closure spawns
 (`{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`) with their own include closures, and every tool behind a
 declared `WORKFLOW_EDGES` entry in `build.mjs`, transitively, whatever the edge's mode (the edges
-into exposed tools are `merge-gate → iterate`, mode `pr`; `apply-plan`, `apply-issues`,
-`apply-review` and `iterate` → `build`, `fix`, `refactor`, `docs`; and `deliver` → `commit`, `pr`).
-The `commit` and `pr` runs that `build`, `fix`, `refactor`, `docs`, `maintain` and `iterate` start
-through the shared `worktree-integration` fragment are not declared, because an edge must match a
-reference in its `from` tool's own source; their owner reach therefore omits the owners of `commit`
-and `pr`, while the retired-row stops lose nothing, since each of those hosts stops on
-`worktree.baseBranch`, the only row `pr` stops on, through its own successor set. A tool consumer is reached through `tools.<consumer>`, an agent through
+into exposed tools include `merge-gate → iterate`, mode `pr`; `apply-plan`, `apply-issues`,
+`apply-review` and `iterate` → `build`, `fix`, `refactor`, `docs`; and `plan → plan-issue`). The
+`commit` and `pr` handoffs are also declared for `build`, `fix`, `refactor`, `docs`, `maintain`,
+`iterate` and `deliver`, plus `plan` through its publication contract. Their shared eager/lazy
+include closures supply the matching references. Consequently, an exclusion in
+`skills.tools.commit.exclude` affects every host that can run `commit`, including `apply` and
+`merge-gate` transitively; `plan` also inherits `pr`'s stop on retired `worktree.baseBranch`.
+A tool consumer is reached through `tools.<consumer>`, an agent through
 `agents.<consumer>`, and a shared fragment through each host's scope: `tools.<host tool>` or
 `agents.<host agent>`. Agents are leaves, so an agent's own `{{AGENT:X}}` mentions are not followed.
 
 The build fails when the projection's `delegate` rows differ from the manifest, when a `delegate`
 consumer reaches no exposed tool, when a declared edge or pointer has no matching reference in its
-`from` source (`{{SKILL:X}}`, a lazy-include fence, or a literal `tools/X.md` path), or when a tool
-source references an internal tool without a declared `WORKFLOW_EDGES` or
+`from` source or its transitive eager/lazy shared include closure (`{{SKILL:X}}`, a lazy-include
+fence, or a literal `tools/X.md` path), or when that closure references an internal tool without a declared `WORKFLOW_EDGES` or
 `WORKFLOW_POINTER_REFERENCES` entry. A reference to an exposed tool is not checked in reverse, so an
 in-run delegation into one is declared by hand; a pointer whitelists its whole `(from, to)` pair, so
 a later real delegation between a listed pair moves to `WORKFLOW_EDGES`. The build also fails when an

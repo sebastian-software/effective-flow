@@ -1597,9 +1597,10 @@ function edgeLabel(edge) {
   return edge.mode ? `${edgeKey(edge)} (mode ${edge.mode})` : edgeKey(edge);
 }
 
-// Guards the declared tool-to-tool lists against the tool sources.
+// Guards the declared tool-to-tool lists against tool sources and their shared include closures.
 //   forward: every declared workflow edge and pointer reference matches a reference in its `from`
-//            source, so a removed hand-off cannot leave a stale edge behind;
+//            source or its eager/lazy shared include closure, so a removed hand-off cannot leave
+//            a stale edge behind;
 //   reverse: every reference from a tool source to an internal tool (neither exposed nor a
 //            deprecated alias) is declared, either as a workflow edge the projection follows or as
 //            a pointer reference it deliberately does not follow. References to exposed tools are
@@ -1610,6 +1611,7 @@ function edgeLabel(edge) {
 export function assertWorkflowEdgeContract(
   {
     toolSources,
+    sharedSources = new Map(),
     exposedTools,
     aliases = [],
     workflowEdges,
@@ -1621,6 +1623,17 @@ export function assertWorkflowEdgeContract(
   const knownTools = new Set(toolSources.keys());
   const exposed = new Set(exposedTools);
   const aliasSet = new Set(aliases);
+  const references = new Map(
+    [...toolSources].map(([name, text]) => [
+      name,
+      new Set(
+        [
+          text,
+          ...[...includeClosure(text, sharedSources)].map((shared) => sharedSources.get(shared)),
+        ].flatMap((source) => [...collectToolReferences(source).keys()]),
+      ),
+    ]),
+  );
   const problems = [];
   const declared = new Map(); // pair key -> { kind, modes: Set<mode|null> }
   for (const [list, kind] of [
@@ -1651,22 +1664,19 @@ export function assertWorkflowEdgeContract(
         problems.push(`${kind} ${key} names a deprecated alias`);
       }
       if (edge.from === edge.to) problems.push(`${kind} ${key} is a self-reference`);
-      if (
-        knownTools.has(edge.from) &&
-        !collectToolReferences(toolSources.get(edge.from)).has(edge.to)
-      ) {
+      if (knownTools.has(edge.from) && !references.get(edge.from).has(edge.to)) {
         problems.push(
-          `${kind} ${key} has no matching reference ({{SKILL:${edge.to}}}, a lazy-include fence or tools/${edge.to}.md) in src/tools/${edge.from}.md`,
+          `${kind} ${key} has no matching reference ({{SKILL:${edge.to}}}, a lazy-include fence or tools/${edge.to}.md) in src/tools/${edge.from}.md or its shared include closure`,
         );
       }
     }
   }
-  for (const [from, text] of toolSources) {
-    for (const to of collectToolReferences(text).keys()) {
+  for (const [from, targets] of references) {
+    for (const to of targets) {
       if (to === from || !knownTools.has(to) || exposed.has(to) || aliasSet.has(to)) continue;
       if (!declared.has(edgeKey({ from, to }))) {
         problems.push(
-          `src/tools/${from}.md references the internal tool "${to}" without a declared workflow edge or pointer reference`,
+          `src/tools/${from}.md references the internal tool "${to}" without a declared workflow edge or pointer reference (including its shared include closure)`,
         );
       }
     }

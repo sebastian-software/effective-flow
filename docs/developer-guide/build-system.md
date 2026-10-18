@@ -425,13 +425,13 @@ The build aborts with an error message if any of these guards is violated:
   agent and shared sources, writes it beside the runtime scripts in all three targets, and checks
   each shipped copy. `assertWorkflowEdgeContract` checks the declared `WORKFLOW_EDGES` and
   `WORKFLOW_POINTER_REFERENCES` in `build.mjs` forward (each matches a `{{SKILL:X}}`, lazy-include or
-  `tools/X.md` reference in its `from` source) and in reverse (every reference from a tool source to
-  an internal tool is declared), and accepts an edge's optional `mode` only when it is a resolver
+  `tools/X.md` reference in its `from` source or transitive eager/lazy shared include closure) and
+  in reverse (every internal-tool reference in that closure is declared), and accepts an edge's optional `mode` only when it is a resolver
   mode of the target (`MODE_TOOLS`); `assertSuccessorSetsReachExposedTools` fails when a
   `SUCCESSOR_SETS` entry other than `setup` is run by no exposed tool in its mode;
   `deriveSetupStatusProjection` fails when the projected `delegate` rows differ from the manifest or
   a `delegate` consumer reaches no exposed tool. Reachability and
-  the row shape are described in [skill ownership](skill-ownership.md#shipped-ownership-projection).
+  the row shape, including shared delivery and plan-publication handoffs, are described in [skill ownership](skill-ownership.md#shipped-ownership-projection).
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
   Markdown file under `docs/user-guide/` are scanned for the retired
