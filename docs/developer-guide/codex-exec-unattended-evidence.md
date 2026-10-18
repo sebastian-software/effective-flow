@@ -125,7 +125,8 @@ referenced file was semantically consumed.
 
 For WP2, the prose preamble suppressed the observed deep-review ask in all three successful preamble
 runs, but it does not guarantee implementation-ready completion: the guest run retains a deferred
-decision. The matrix covers one fixture and one compiled ask site.
+decision. This prose preamble is not validation of WP2's formal unattended envelope. The matrix
+covers one fixture and one compiled ask site.
 WP2 should keep a service-side detector or equivalent fallback for indirect questions and should treat
 open-point readiness separately from question termination.
 
