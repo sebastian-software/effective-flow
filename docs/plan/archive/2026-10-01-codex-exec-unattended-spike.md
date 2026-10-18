@@ -6,9 +6,18 @@
 **Doc category:** developer-guide
 **Target path:** docs/developer-guide/codex-exec-unattended-evidence.md
 
-**Planned against:** effective-flow `e7117a36` and llm-automatisator `cc5eb3a4` on 2026-10-18.
-**Working state:** The planning checkout was clean. Preserve unrelated local plans in both
-repositories. The measured Effective Flow snapshot comes from `baa74743`, not this planning HEAD.
+**Completed:** 2026-10-18; [PR #574](https://github.com/sebastian-software/effective-flow/pull/574),
+merged into `develop` as `9043181`.
+**Reconciled:** 2026-10-18, against the merged
+[evidence record](../../developer-guide/codex-exec-unattended-evidence.md) and the operator's approved
+CLI substitution. This archived plan records completion; its execution steps are historical and
+leave no authorization for another run.
+
+**Original planning context:** effective-flow `e846936` and llm-automatisator `d800310` on
+2026-10-01. The untracked concept and plans in that checkout were outside the spike's scope.
+**Reconciliation planning context:** effective-flow `e7117a36` and llm-automatisator `cc5eb3a4`
+on 2026-10-18, in a clean planning checkout; unrelated local plans in both repositories remained
+out of scope. The measured Effective Flow snapshot comes from `baa74743`, not that planning HEAD.
 
 ## Requirement
 
@@ -27,8 +36,9 @@ Do not repeat those runs simply because the original plan still named only `0.15
 
 The deliverable remains a point-in-time developer-guide document and its index link. If the merged
 PR already meets this plan's acceptance criteria, retain both documents unchanged and complete the
-normal implementation workflow's plan verification and archival. This planning run revises only
-this plan and keeps its open status; it does not certify implementation or archive it.
+normal implementation workflow's plan verification and archival. The 2026-10-18 planning revision
+initially kept this plan open pending that verification. The completed verification and archival
+recorded below supersede that historical open status.
 
 Sibling plans (Issue Buddy roadmap):
 
@@ -90,6 +100,8 @@ model calls are authorized by this planning revision.
 ## Implementation details
 
 ### Approach
+
+These steps describe the evidence reconciliation that was completed on 2026-10-18.
 
 1. **Check delivery and drift.** Read PR #574 and compare the delivered document with its current
    version. If it is still open, leave its delivery to its existing merge-gate and keep this
@@ -201,8 +213,8 @@ model calls are authorized by this planning revision.
   a model experiment or repeating checks without a new change.
 - Compare `pnpm eval merge-gate verify` before/after any documentation correction. Existing
   stale evidence is reported as pre-existing; documentation must not create additional drift.
-- This plan-only revision runs only the plan formatter and `plan-lint`; it does not execute the
-  implementation validation or alter the recorded run artifacts.
+- The planning revision itself ran only the plan formatter and `plan-lint`. Subsequent
+  implementation validation is recorded below; neither phase altered the recorded run artifacts.
 
 ## Assumptions and open points
 
@@ -248,13 +260,28 @@ The one maintainability note is incorporated; there are no unresolved findings.
 
 The operator requested the deep review after the internal review. Its independent judgment found
 no further unknowns, contradictions or decisions requiring clarification. No critical findings or
-implementation-blocking open points remain. The plan is ready for Documentation, with evidence
-verification and any necessary corrections before normal plan completion; no new experiments are
-part of that handoff.
+implementation-blocking open points remain. At that review, the plan was ready for Documentation, with evidence
+verification and any necessary corrections before normal plan completion. That handoff is now
+closed by the completion record below; no new experiments were part of it.
+
+### Retrospective reconciliation review 2026-10-18
+
+The PR #576 reconciliation retained the original review and accepted the operator's `0.163.0`
+substitution for this completed documentation package. The full classification-field criterion
+applies to the five primary rows; the two supplementary baselines retain their narrower evidence
+scope. The independent final plan review found no remaining findings. The operator then requested
+a deep retrospective review, which found no blocking open points and retained Implemented status.
+
+The guest fixture's `Revision required` state is a measured outcome, not unfinished work in this
+evidence package. The original full `0.153.4` matrix remains unperformed beyond its two
+supplementary baselines. Completion authorizes no new spike, production upgrade, or product change.
 
 ### Original review 2026-10-01
 
-### Summary
+The original review is retained as planning history; later measured limits and reconciliation
+above govern the completed evidence package.
+
+#### Summary
 
 | Area            | Critical | Important | Note |
 | --------------- | -------: | --------: | ---: |
@@ -266,7 +293,7 @@ part of that handoff.
 | Scope           |        0 |         0 |    1 |
 | Maintainability |        0 |         0 |    1 |
 
-### Findings
+#### Findings
 
 - **Architecture, Important:** a hand-written argument list would make "pinned invocation" an
   unverifiable claim. Incorporated: the command is generated by llm-automatisator's own
@@ -297,7 +324,12 @@ part of that handoff.
 
 ## Test results
 
-Independent technical validation completed successfully: `pnpm test` exited 0 with 2,640 tests
+The PR #574 delivery validation recorded formatting, 2,625 passing tests with one platform skip,
+a successful build, and merge-gate eval verification. Its eight pre-existing stale scenarios were
+unchanged. The retained report reproduced the table and all 14 published raw-file hashes matched.
+This is the original delivery event, distinct from the later reconciliation validation below.
+
+The later reconciliation validation recorded in `develop` (`85e160a`) completed successfully: `pnpm test` exited 0 with 2,640 tests
 run, 2,639 passing, no failures and one skipped test; `pnpm agent:check`, `node build.mjs`, and
 `pnpm eval merge-gate verify` also exited 0. The merge-gate verification found five of five
 checks stale for each of the eight existing merge-gate scenarios because `SKILL.md`,
