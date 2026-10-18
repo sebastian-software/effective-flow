@@ -6,26 +6,24 @@
 
 ## Planning baseline
 
-- **Planned at:** `e846936`, 2026-10-01.
-- **Working state:** clean for every in-scope path. The only uncommitted entries are untracked
-  files: `docs/concept/` (which holds the source concept), two 2026-09-21 plans, and the sibling
-  2026-10-01 Issue Buddy plans that concurrent sessions are writing. None of them is in scope, and
-  this work touches none of them.
-- **Drift check before execution:** re-read the following and revise this plan if any of them no
-  longer matches its description here:
-  - the ask sites of `src/tools/plan.md` (fences `Revision` and `Plan review`, plus the prose sites
-    in Phases 1, 2, 5, 6 and Rules);
-  - the prose ask sites of `src/tools/plan-review.md`;
-  - the `Run state:` grammar in `src/tools/iterate.md` Phase 0 step 10;
-  - the `CONTEXT_BUDGET_LINES` entries for `plan` and `plan-review` in `build.mjs`.
+- **Originally planned at:** `e846936`, 2026-10-01.
+- **Revalidated at:** `e7d021e`, 2026-10-18.
+- **Working state:** clean before this revision; this run changes only this plan.
+- **Drift check before execution:** re-read the ask-site closure of `src/tools/plan.md` and
+  `src/tools/plan-review.md`, including `plan-publication`, `central-reasoning-delegation` and
+  `judgment-inline-fallback`; the run-state grammar in `src/tools/iterate.md` Phase 0 step 10;
+  the `CONTEXT_BUDGET_LINES` entries; and the WP3/WP5 handoff contracts. Harmless line movement
+  does not invalidate the plan. A changed control grammar, write boundary or consumer contract
+  requires reconciliation before implementation.
 
 ## Requirement
 
 This plan delivers work package 2 of the concept `docs/concept/2026-09-29-issue-buddy.md`, the
 unattended run-state and readiness contract. Planning and the deep plan review must be able to run
 when nobody is there to answer, and an issue must be judgeable as **ready for planning**. Under
-`codex exec` a stray question ends the pass silently. The concept therefore requires a contract
-test proving that no `ask` is reachable on the unattended path.
+`codex exec` a stray question ends the pass silently. The concept therefore requires complete ask-site coverage. Static contract tests protect the
+source mapping and rendering; a fresh behavioral smoke round against the changed portable build
+checks question-free execution. Neither layer alone proves every possible model execution.
 
 Three deliverables:
 
@@ -48,80 +46,80 @@ Sibling plans (all under `docs/plan/`):
   plan; WP1 records the fallback.
 - **Depended on by:**
   - `2026-10-01-issue-buddy-runtime-script.md` (WP3): the header field and the verdict shape.
-  - `2026-10-01-shared-plan-publication-core.md` (WP4): the `**Issue:**` field drives the
-    `plan/issue-<N>` branch. WP4 runs in parallel with this plan and builds against the agreed
-    literal, so it does not wait for it.
+  - `archive/2026-10-01-shared-plan-publication-core.md` (WP4, implemented): its parser already
+    accepts the agreed `**Issue:**` literal and its unattended publisher derives `plan/issue-<N>`.
+    This package preserves that shipped contract; publication remains WP5’s responsibility.
   - `2026-10-01-issue-buddy-tool-stage-1.md` (WP5): the envelope, both fragments, and the
     file-name rule.
-- **Order:** WP1 → this plan and WP4 in parallel → WP3 → WP5.
+- **Current dependency state:** WP1, WP3 and WP5 remain open; WP4 is implemented. WP2 can be
+  authored and checked against the agreed WP3 trusted-text fixture without a live WP3 script.
+  WP1 remains the runtime-evidence prerequisite; its documented no-question fallback does not
+  block authoring WP2. WP3 and then WP5 integrate the completed contracts. WP5’s separate
+  worktree-discard decision stays in WP5 and does not expand this package.
 
 **Why Feature:** the plan adds new, caller-selectable behavior and a new artifact field. It is not a
 behavior-preserving restructuring, so it is not a refactor.
 
 ## Verified context
 
-- `src/tools/plan.md` has two `ask` fences: `Revision` (line 158, revision mode only) and
-  `Plan review` (line 483, Phase 6b). Its prose ask sites are:
-  - Phase 1 step 4: revision mode, the unclear-status confirmation, and the
-    classification-change confirmation (lines 151–248);
-  - Phase 1 step 7: the documentation target-path collision;
-  - Phase 2: clarification until nothing is open (lines 278–279);
-  - Phase 5: missing information (line 443);
-  - Phase 6 step 5: critical findings remain (line 476);
-  - the rule "ask instead of guessing" (line 527).
-
-  Phase 1 step 3 runs a **bulk legacy migration** with `git mv`, which would add renames beside the
-  one plan file.
-
-- `src/tools/plan-review.md` has no fence. Its prose ask sites are:
-  - missing or ambiguous input (line 96);
-  - mixed artifact language (line 134);
-  - already-implemented status (line 136);
-  - Phase 3 decisions (lines 185–211), whose "Decide later" outcome becomes a blocking open point;
-  - the rule at line 277.
-- The transitive eager and lazy include closure adds only prose sites:
-  - `src/shared/plan-reference-routing.md` (revision only);
-  - `src/shared/apply-source-detection.md`, reached through `src/shared/plan-input-gateway.md`;
-  - the multi-match question in `src/shared/plan-numbering.md:77`.
-
-  `session-title` already declines in an unattended session. `config-migration`, `skill-discovery`
-  and `task-tracking` pose no question.
+- `src/tools/plan.md` has the direct `ask` fences `Revision` (Phase 1 step 4) and
+  `Plan review` (Phase 6b). Its prose sites cover revision/header confirmations, a doc-target
+  collision, Phase 2 clarification, Phase 5 missing information, Phase 6 remaining critical
+  findings and the final ask-instead-of-guessing rule. Phase 1 step 3 still migrates legacy
+  plans in bulk with `git mv`.
+- `src/tools/plan-review.md` has no direct fence. Its prose sites cover missing/ambiguous input,
+  mixed language, implemented status, Phase 3 decisions and the final clarification rule.
+- The current transitive eager/lazy include closure contains 42 files and six fences: the two
+  direct planning fences plus `Publish plan` (`plan-publication`), `Completion`
+  (`worktree-integration`), `PR review` (`pr-review-integration`) and `Security`
+  (`security-disclosure-gate`). The latter delivery branches are unreachable after publication
+  is skipped. The inventory must record that boundary rather than pretend these fences are absent.
+- `central-reasoning-delegation` now requires fresh-context judgment and reaches
+  `judgment-inline-fallback`. Unavailable/declined judgment uses a recorded inline fallback;
+  a terminal judgment `ABORT` records a skip and an implementation-blocking open point. Exhausted
+  completion-protocol escalation is a separate no-question outcome.
+- `session-title` already declines unattended title changes. The setup-language question in
+  `chat-language` is descriptive of setup, not a planning question; inventory exclusions need
+  similarly concrete reasons.
 
 - `src/shared/plan-input-gateway.md` runs Stage A detection on the whole argument and hands any issue
   reference to `plan-issue`. Text that contains `#N` would be rerouted, so the run-state check has to
   come before the gateway.
-- The existing run-state vocabulary is `Run state: gated|non-interactive`, with a strict parse in
-  `src/tools/iterate.md:459-480`: any other form aborts, and a duplicate aborts with
-  `ABORT: duplicated control line`. It also appears in
+- The current iterate vocabulary is `Run state: gated|non-interactive|relayed`, with a strict parse
+  in `src/tools/iterate.md` Phase 0 step 10: any other form aborts, and a duplicate aborts with
+  `ABORT: duplicated control line`. WP2 accepts only `non-interactive`; neither `gated` nor `relayed` is a planning-envelope mode.
+  The shared vocabulary also appears in
   `src/shared/documentation-sync-contract.md:59-75` and
   `src/shared/delegation-envelope-examples.md`.
 - `src/tools/plan-issue.md:270-273` already turns an unanswered clarification into a blocking open
   point, so the precedent exists.
-- These consumers parse only the status, workflow and doc fields:
+- Existing status/workflow consumers include:
   - `src/tools/open-plans.md:61`;
   - `src/shared/plan-reference-routing.md:31`;
   - `src/scripts/remote-tracker-core.mjs:1281`;
   - `src/tools/apply-plan.md:98`.
 
-  An added `**Issue:**` line is ignored by all of them. The `plan-numbering` slug rule (`a–z`, `0–9`,
+  An added `**Issue:**` line leaves those routes unchanged. The shipped
+  `src/scripts/plan-publication-core.mjs` separately validates one exact issue header before the
+  first `##` heading. `src/scripts/plan-lint-core.mjs` owns `PLAN_CONTRACT_MAPPING`;
+  `build.mjs` guards its projection into `plan-contract`’s marked Markdown tables. Update the
+  core mapping and its prose projection together. The current `languageMatchers` treats every
+  mapping label as evidence for its column language; an identical `**Issue:**` label in both
+  columns would classify otherwise valid plans as mixed unless neutral labels are excluded. The `plan-numbering` slug rule (`a–z`, `0–9`,
   hyphen) already admits `issue-<N>-<slug>`.
 
 - Test patterns already exist: `askContracts()` and `parseAskBlock` in
   `test/workflow-contracts.test.mjs:28`, and `resolveEagerIncludes`, `resolveLazyIncludes` and
   `LAZY_INCLUDE_RE` exported from `build-lib.mjs`. No build guard rejects a shared fragment that no
   host includes; such a fragment simply does not ship.
-- Context budget, measured on the current `dist` (a lazy pointer renders as two lines):
-
-  | Tool          | Built lines | Budget | Headroom |
-  | ------------- | ----------: | -----: | -------: |
-  | `plan`        |         656 |    665 |        9 |
-  | `plan-review` |         442 |    446 |        4 |
-  | `plan-issue`  |         754 |    754 |        0 |
-  | `apply-plan`  |         589 |    589 |        0 |
-
-- The merge-gate eval load closure (router, `merge-gate`, `iterate`, `merge-conflict-resolver`,
-  `code-validator`, and everything those reach through their pointers) contains no file this plan
-  edits.
+- Current body counts, reproduced read-only through the build transformations (not from stale
+  `dist`), are `plan`: Claude 733, Codex 723, portable 723, budget 733;
+  `plan-review`: 490 in every target, budget 490. Both maximums have no headroom. Execution
+  must use the actual `node build.mjs` report after edits, not these baseline counts.
+- Read-only `pnpm eval <suite> verify` baseline on 2026-10-18: `merge-gate` and `iterate` are
+  already stale through `SKILL.md` and `shared/model-tiers.md`; `next-steps` is current with its
+  version-stamp waiver. The scoped WP2 source changes do not add load-set drift to these suites;
+  compare changed-file diagnostics with this baseline instead of claiming existing evidence is fresh.
 
 ## Architecture decisions
 
@@ -161,7 +159,10 @@ behavior-preserving restructuring, so it is not a refactor.
     from `Issue:`; it must be a regular file, not a symlink, checked per `runtime-state-safety`; and
     the JSON `issue` field must equal `<N>`. This ties the text to the issue, so issue 12's plan can
     never be written from issue 13's text, and it excludes `.effective-flow/.worktrees/**`.
-- **Abort strings (complete list).** Unlike `iterate`, a malformed `Next steps:` line aborts here.
+- **New envelope/site abort strings (closed set).** Unlike `iterate`, a malformed `Next steps:`
+  line aborts here. Existing operational failures (for example configuration resolution or final
+  plan-lint) keep their diagnostics and terminate as `ABORT: <diagnostic>`; they are not new
+  envelope grammar errors and never fall back to asking.
   - `ABORT: duplicated control line`
   - `ABORT: incomplete unattended envelope`
   - `ABORT: misordered unattended envelope`
@@ -182,7 +183,13 @@ behavior-preserving restructuring, so it is not a refactor.
 - **One mapping fragment, loaded only on demand.** `src/shared/unattended-planning.md` holds the
   envelope grammar, the general rule ("unanswered → open point, never a guess"), and a site table
   keyed by stable site IDs. `plan.md` and `plan-review.md` reach it through one lazy pointer each, so
-  an interactive run pays two rendered lines per tool and nothing more.
+  an interactive run pays only the pointer and the minimal host precedence/handoff sentences.
+  The fragment has two entry contracts: `plan` validates the full five-line envelope;
+  `plan-review` accepts the exact generated plan file reference plus `Run state: non-interactive`,
+  `Next steps: suppressed` and the six-key concrete `Language context:`. Review never re-parses
+  that payload as a planning envelope or requires `Issue text:` again. It retains the verified
+  execution/runtime roots and artifact identity from its parent; invalid file-mode input uses
+  `ABORT: unattended review input invalid`.
 - **Readiness is its own fragment.** `src/shared/planning-readiness.md` is a lazy fragment for WP5's
   `issue-buddy` tool. It ships once WP5 points at it. Until then it is a source contract tested from
   `src/`. It is an Effective Flow gate in the manner of `apply-clarity-gate`, so the skill-ownership
@@ -194,6 +201,18 @@ behavior-preserving restructuring, so it is not a refactor.
   and English columns, as the **last** header line, after the Doc category and Target path fields
   (which `plan.md` requires directly below the workflow field). Interactive `plan` does not add the field in this package, but a person may
   add it by hand (WP4 relies on that).
+- **Language-neutral issue metadata.** Add `Issue` to the core-owned bilingual mapping and its
+  marked Markdown projection. Its identical label contributes no German or English language hit.
+  Keep genuine mixed-language detection and existing status/workflow/doc-field parsing intact;
+  an issue-only input remains `language: unknown`. The linter’s public response shape does not
+  gain an issue field: WP4 remains the issue-header parser for publication.
+- **Runtime bootstrap and publication boundary.** Before reading issue text, use the existing
+  config resolver to verify `RUNTIME_STATE_ROOT`, even though Stage A is skipped. Failure aborts
+  with its diagnostic. The child writes only its new plan: Phase 7 passes `non-interactive`
+  without `consent: given-by-caller` to `plan-publication`, whose existing gate skips publication
+  before forge or Git operations. No envelope field grants publication consent. The caller WP5
+  alone owns later publication through WP4. Map that gate and record downstream delivery asks
+  as unreachable with this named reason, without defining new delivery behavior.
 - **Hidden mode fails closed.** `visibility: hidden` returns
   `ABORT: unattended planning unavailable in hidden mode`, consistent with the concept's non-goals.
 
@@ -201,10 +220,13 @@ behavior-preserving restructuring, so it is not a refactor.
 
 | File                                         | Description                                                                                                                                                                                                                                                             |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/shared/unattended-planning.md`          | New lazy fragment: envelope grammar, abort strings, general rule, file-name rule, site-mapping table for `plan` and `plan-review`, structured result                                                                                                                    |
+| `src/shared/unattended-planning.md`          | New lazy fragment: envelope grammar, abort strings, general rule, file-name rule, site-mapping table for `plan` and `plan-review`, distinct entry contracts, structured result                                                                                          |
 | `src/shared/planning-readiness.md`           | New lazy fragment: criteria R1–R4, the doubt rule, the label ordering rule, the verdict shape, ready and not-ready examples                                                                                                                                             |
 | `src/tools/plan.md`                          | One ordering sentence and the lazy pointer **before** the gateway pointer; the gateway pointer's `when:` amended to exclude the envelope; the conditional `**Issue:**` template line; Phase 6b hands `Run state: non-interactive` to `plan-review` in an unattended run |
 | `src/tools/plan-review.md`                   | One lazy pointer that fires when the delegation payload carries `Run state: non-interactive`                                                                                                                                                                            |
+| `src/scripts/plan-lint-core.mjs`             | Add the owned Issue mapping and exclude language-neutral labels from language evidence; preserve the existing lint response schema                                                                                                                                      |
+| `test/build-lib.test.mjs`                    | Keep the missing-row projection guard tied to the owned mapping length when adding Issue                                                                                                                                                                                |
+| `test/plan-lint.test.mjs`                    | Regression cases for EN/DE plans with Issue, Issue-only input, genuine mixed language and existing field parsing                                                                                                                                                        |
 | `src/shared/plan-contract.md`                | New row `Issue` → `**Issue:**` in both columns, marked as a machine-stable label                                                                                                                                                                                        |
 | `build.mjs`                                  | Only if the build reports a budget overrun: raise `plan` / `plan-review` in `CONTEXT_BUDGET_LINES` to the reported built size plus at most ten lines                                                                                                                    |
 | `test/unattended-planning-contract.test.mjs` | New `node:test` suite (helpers copied per the suite convention)                                                                                                                                                                                                         |
@@ -216,30 +238,37 @@ behavior-preserving restructuring, so it is not a refactor.
 
 ### Approach
 
+0. Re-read the baseline and WP3/WP5 contracts, then derive the current question inventory.
+   Preserve the existing domain-ownership split: these fragments own orchestration gates and
+   result shapes, while `effective-delivery` retains generic plan judgment. The existing
+   ownership manifest and guide relationships remain sufficient; add no second domain playbook.
+
 1. **Write `unattended-planning.md`.** It covers the envelope, control lines, delimiter and abort
    strings from the architecture decisions, plus the general rule. The site table has columns
    `Site`, `File`, `Anchor`, `Outcome`, where `Anchor` is a short literal phrase from that file:
 
-   | Site    | Outcome                                                                                                                                                                                                                                 |
-   | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `P-GW`  | Gateway and Stage A: not loaded; the envelope replaces the argument.                                                                                                                                                                    |
-   | `P-MIG` | Legacy bulk migration, in `plan` Phase 1 and on any plan read by `plan-review`'s file adapter (`plan-numbering`): skipped; reported as `legacy plans present` in the result.                                                            |
-   | `P-REV` | Revision mode, the `Revision` fence, unclear-status and classification confirmations, plan-reference questions: unreachable, because the path always creates a new plan; reaching one aborts with `ABORT: unattended revision refused`. |
-   | `P-DOC` | Doc-target collision: choose a unique alternative slug; never overwrite.                                                                                                                                                                |
-   | `P-CLR` | Phase 2 clarification: a blocking open point with options, a recommendation and a re-entry note; unimportant points go to assumptions.                                                                                                  |
-   | `P-VAL` | Phase 5 missing information: a blocking open point.                                                                                                                                                                                     |
-   | `P-CRT` | Phase 6 step 5: complete the plan with `Revision required`; each remaining critical finding is also an open point.                                                                                                                      |
-   | `P-DPR` | The `Plan review` fence: always `Yes`, regardless of the Phase 6 precondition "no critical findings"; `P-CRT` findings are recorded as open points first. Delegate with `Run state: non-interactive` and `Next steps: suppressed`.      |
-   | `P-NUM` | Plan-reference multi-match: unreachable; `ABORT: unattended plan reference ambiguous` if reached.                                                                                                                                       |
-   | `P-ESC` | Sub-agent escalation exhausted (`completion-protocol`: clarify the options with the user after three failed retries): `ABORT: unattended sub-agent failed`.                                                                             |
-   | `P-RUL` | "Ask instead of guessing": a blocking open point.                                                                                                                                                                                       |
-   | `P-NXT` | The next-steps block: suppressed.                                                                                                                                                                                                       |
-   | `P-TTL` | Session title or rename: not applied.                                                                                                                                                                                                   |
-   | `R-IN`  | Missing or ambiguous `plan-review` input, or issue mode: `ABORT: unattended review input invalid`.                                                                                                                                      |
-   | `R-LNG` | Mixed language, or a language mismatch per `language-rules`: `ABORT: unattended language mismatch`.                                                                                                                                     |
-   | `R-STA` | Implemented status: `ABORT: unattended implemented plan`.                                                                                                                                                                               |
-   | `R-DEC` | Phase 3 decision: "Decide later". Record the options with pros and cons and the recommendation; choose nothing.                                                                                                                         |
-   | `R-RUL` | The `plan-review` rule "ask instead of guessing": "Decide later".                                                                                                                                                                       |
+   | Site    | Outcome                                                                                                                                                                                                                                                                                                                                                                         |
+   | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `P-GW`  | Gateway and Stage A: not loaded; the envelope replaces the argument.                                                                                                                                                                                                                                                                                                            |
+   | `P-MIG` | Legacy bulk migration, in `plan` Phase 1 and on any plan read by `plan-review`'s file adapter (`plan-numbering`): skipped; reported as `legacy plans present` in the result.                                                                                                                                                                                                    |
+   | `P-REV` | Revision mode, the `Revision` fence, unclear-status and classification confirmations, plan-reference questions: unreachable, because the path always creates a new plan; reaching one aborts with `ABORT: unattended revision refused`.                                                                                                                                         |
+   | `P-DOC` | Doc-target collision: choose a unique alternative slug; never overwrite.                                                                                                                                                                                                                                                                                                        |
+   | `P-CLR` | Phase 2 clarification: a blocking open point with options, a recommendation and a re-entry note; unimportant points go to assumptions.                                                                                                                                                                                                                                          |
+   | `P-VAL` | Phase 5 missing information: a blocking open point.                                                                                                                                                                                                                                                                                                                             |
+   | `P-CRT` | Phase 6 step 5: complete the plan with `Revision required`; each remaining critical finding is also an open point.                                                                                                                                                                                                                                                              |
+   | `P-DPR` | The `Plan review` fence: always `Yes`, regardless of the Phase 6 precondition "no critical findings"; `P-CRT` findings are recorded as open points first. Delegate the exact generated file reference with `Run state: non-interactive`, `Next steps: suppressed`, the six-key `Language context:` and the verified handoff roots. Do not send the five-line planning envelope. |
+   | `P-NUM` | Plan-reference multi-match: unreachable; `ABORT: unattended plan reference ambiguous` if reached.                                                                                                                                                                                                                                                                               |
+   | `P-JDG` | Judgment spawn unavailable or declined: use the existing inline fallback and record it. A terminal judgment `ABORT` records a skipped judgment, adds its blocking re-entry point and sets `Revision required`; reduced-scope results retain their record. No fallback asks for a choice.                                                                                        |
+   | `P-PUB` | Phase 7 publication: pass `non-interactive`, never caller consent; the existing gate skips publication before operations or questions. Its downstream worktree, PR-review and security questions are unreachable and are inventoried with this boundary as their reason.                                                                                                        |
+   | `P-ESC` | Sub-agent escalation exhausted (`completion-protocol`: clarify the options with the user after three failed retries): `ABORT: unattended sub-agent failed`.                                                                                                                                                                                                                     |
+   | `P-RUL` | "Ask instead of guessing": a blocking open point.                                                                                                                                                                                                                                                                                                                               |
+   | `P-NXT` | The next-steps block: suppressed.                                                                                                                                                                                                                                                                                                                                               |
+   | `P-TTL` | Session title or rename: not applied.                                                                                                                                                                                                                                                                                                                                           |
+   | `R-IN`  | Missing or ambiguous `plan-review` input, or issue mode: `ABORT: unattended review input invalid`.                                                                                                                                                                                                                                                                              |
+   | `R-LNG` | Mixed language, or a language mismatch per `language-rules`: `ABORT: unattended language mismatch`.                                                                                                                                                                                                                                                                             |
+   | `R-STA` | Implemented status: `ABORT: unattended implemented plan`.                                                                                                                                                                                                                                                                                                                       |
+   | `R-DEC` | Phase 3 decision: "Decide later". Record the options with pros and cons and the recommendation; choose nothing.                                                                                                                                                                                                                                                                 |
+   | `R-RUL` | The `plan-review` rule "ask instead of guessing": "Decide later".                                                                                                                                                                                                                                                                                                               |
 
    The general rule also covers questions raised by a loaded central skill (for example
    `effective-delivery`) and by `language-rules`: they become open points or the matching abort, never
@@ -247,8 +276,12 @@ behavior-preserving restructuring, so it is not a refactor.
 
    The run ends per `completion-protocol`, either `DONE` with the lines `Plan: <path>`,
    `Review result: Approved|Revision required`, `Blocking open points: <n>` and
-   `Notes: <comma list or none>`, or `ABORT: <reason>`. `Review result` is the plan file's final
-   `**Result:**` line. Writes stay limited to the one plan file; an abort leaves cleanup to the
+   `Notes: <comma list or none>`, or `ABORT: <reason>`. Read the final canonical review-result
+   field outside code fences in the artifact’s preserved language. Normalize English
+   `**Result:** Approved|Revision required` and German
+   `**Ergebnis:** Freigegeben|Überarbeitung nötig` into the stable response values
+   `Approved|Revision required`; the artifact itself stays wholly in its language. Blocking
+   open points or a skipped judgment force `Revision required`. Writes stay limited to the one plan file; an abort leaves cleanup to the
    caller.
 
 2. **Edit `plan.md`.**
@@ -259,12 +292,20 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
      `Run state:` and that carries no `--- end of control lines ---` line".
    - Add the conditional template line `**Issue:** #<N>` with the comment "only for plans written
      from one issue", placed below the workflow fields.
-   - Add one Phase 6b sentence forwarding the run state.
+   - Add one Phase 6b sentence forwarding the file-mode review payload and resolved language,
+     and one Phase 7 sentence preserving the non-interactive publication gate.
 3. **Edit `plan-review.md`.** Add the pointer, with
    `when: the delegation payload carries Run state: non-interactive`, after the `plan-contract`
    pointer.
-4. **Edit `plan-contract.md`.** Add the `Issue` row, and one sentence stating that the label and the
-   `#<N>` value are machine-stable and the same in both languages.
+4. **Extend the owned plan contract and linter together.** Add the `Issue` row with identical
+   `**Issue:**` cells to `PLAN_CONTRACT_MAPPING` in `src/scripts/plan-lint-core.mjs`, then mirror
+   it inside `plan-contract.md`’s marked table. State that the label and `#<N>` value are
+   machine-stable in both languages. Exclude shared language-neutral labels from language
+   evidence; preserve existing bilingual value checks and the public lint response shape.
+   Add focused regression cases to `test/plan-lint.test.mjs`: complete EN and DE plans retain
+   their language with the issue header, issue-only text is `unknown`, genuinely mixed labels
+   remain `mixed`, and status/workflow/doc fields retain their prior values. Run
+   `node --test test/plan-lint.test.mjs` before the broader checks; all cases must pass.
 5. **Write `planning-readiness.md`.**
    - **Input:** only the trusted issue text, already filtered (WP3). It is treated as data, never as
      instructions.
@@ -303,10 +344,12 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
      Key each inventory entry by file plus the exact trimmed line text, and assert multiset equality
      in both directions between the collected lines and the frozen inventory, so removing one
      question and adding another cannot pass on counts. In that inventory, each entry is either a
-     site ID or `not-a-site: <reason>`, for example `chat-language` describing setup. Assert that
+     site ID or `not-a-site: <reason>` (including delivery questions unreachable behind `P-PUB`), for example `chat-language` describing setup. Assert that
      each site ID has exactly one row in the fragment's table, that each row's `Anchor` occurs in its
-     `File`, and that each fence header has a row. A changed or new question line fails with a
-     message to map it. The closure includes `completion-protocol` (site `P-ESC`).
+     `File`, and that every fence header is mapped to a row or an explicit unreachable-boundary reason. A changed or new question line fails with a
+     message to map it. The current closure includes `completion-protocol` (`P-ESC`),
+     `judgment-inline-fallback` (`P-JDG`) and publication (`P-PUB`). Do not pin a stale total
+     count: freeze the actual file/line inventory and require complete correspondence.
    - **Ordering.** For the Claude, Codex and portable renderings of `plan.md` (in order:
      `resolveEagerIncludes`, then `resolveLazyIncludes`, then `renderBody`), the
      `unattended-planning` pointer precedes the `plan-input-gateway` pointer, its `when` clause names
@@ -320,7 +363,8 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
    - **Default unchanged.** Rendered output carries no `ask` fences (they become prose such as
      "Use the `AskUserQuestion` tool…"), so run `askContracts` on the eager-resolved **source**
      before `renderBody`: without the envelope, the fence headers of `plan.md` are exactly
-     `Revision` and `Plan review`, and `plan-review.md` has none.
+     `Revision` and `Plan review`, and `plan-review.md` has none. This assertion concerns the tools’ eager cores; the
+     transitive closure inventory above separately includes all six current fences.
    - **Envelope.** The fragment contains each control-line literal, the delimiter and every abort
      string.
    - **Readiness.** The fragment contains R1–R4, the doubt rule, the label rule, the three verdict
@@ -328,6 +372,9 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
    - **Header.** `plan-contract.md` has the `Issue` row with an identical label in both columns,
      `plan.md`'s template carries the conditional line, and the fragment states the
      `YYYY-MM-DD-issue-<N>-<slug>.md` rule.
+   - **Entry and completion contracts.** Check separate plan versus file-review entry rules,
+     all four EN/DE result normalizations, terminal operational failure propagation, judgment
+     skip/fallback outcomes and the publication gate before its downstream ask/write paths.
    - **ADR.** The file exists with `## Status` / `Active` and states the rule.
 
 ### Edge cases
@@ -357,38 +404,60 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
 
 ## Acceptance criteria
 
-- [ ] `test/unattended-planning-contract.test.mjs` passes. Its closure inventory maps every `ask`
+- [x] `test/unattended-planning-contract.test.mjs` passes. Its closure inventory maps every `ask`
       fence and every lexical question site of the `plan` and `plan-review` include closure, keyed by
       file and exact line text, to exactly one site row or a reasoned non-site entry. Adding an
       unmapped question line to `src/tools/plan.md` makes the test fail.
-- [ ] In all three rendered targets the `unattended-planning` pointer precedes the
+- [x] In all three rendered targets the `unattended-planning` pointer precedes the
       `plan-input-gateway` pointer, the gateway's `when:` excludes both a first line beginning with
       `Run state:` and an argument carrying a `--- end of control lines ---` line, an argument
       carrying the delimiter with a non-`Run state:` first line aborts with
       `ABORT: misordered unattended envelope`, and the eager-resolved `plan.md` source without the envelope still carries
       exactly the fences `Revision` and `Plan review`.
-- [ ] `src/shared/unattended-planning.md` states the five control lines with `Run state:` first, the
+- [x] `src/shared/unattended-planning.md` states the five control lines with `Run state:` first, the
       delimiter, the complete abort-string list of this plan, the general rule, the file-name rule,
-      the result lines, and all 18 site rows.
-- [ ] `src/shared/planning-readiness.md` states R1–R4, the doubt rule, the ordering-only label rule,
+      both entry contracts, bilingual result normalization and the complete current site mapping,
+      including judgment fallback and skipped publication.
+- [x] `src/shared/planning-readiness.md` states R1–R4, the doubt rule, the ordering-only label rule,
       the verdict shape, and at least three ready and three not-ready examples, each tagged with the
       R-ids it fails or passes.
-- [ ] `src/shared/plan-contract.md` carries the `Issue` row, and `docs/adr/unattended-run-state.md`
-      exists with status Active.
-- [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` (with no budget overrun) and
+- [x] The `Issue` row in `src/scripts/plan-lint-core.mjs` and its marked
+      `src/shared/plan-contract.md` projection agree. `node --test test/plan-lint.test.mjs` passes
+      EN/DE-plus-Issue, Issue-only, genuine-mixed and existing-field regressions, without changing
+      the lint response schema. `docs/adr/unattended-run-state.md` exists with status Active.
+- [ ] The fresh portable smoke cases in the validation plan terminate without a question,
+      return their expected `DONE`/`ABORT`, and preserve the one-plan-file write boundary.
+- [x] `pnpm agent:check`, `pnpm test`, `node build.mjs` (with no budget overrun) and
       `pnpm test:distribution` all exit 0.
 
 ## Validation plan
 
-- Before step 1, record the baseline verdict of `pnpm eval merge-gate verify`. After the change,
-  `pnpm eval merge-gate verify` must report no staleness that this change caused, because no edited
-  file is in the gate's load set.
+- Before step 1 and after completion, run `pnpm eval merge-gate verify`,
+  `pnpm eval iterate verify` and `pnpm eval next-steps verify`. Compare changed-file diagnostics
+  with the baseline above. WP2 must introduce no additional drift in these load sets; existing
+  merge-gate/iterate staleness is a pre-existing release-evidence debt, not a WP2 regression.
+- `node --test test/plan-lint.test.mjs`: exit 0 for the issue-header language regressions.
 - `pnpm agent:check`: exit 0.
-- `pnpm test`: exit 0, including the new suite and the existing plan tests in
-  `test/workflow-contracts.test.mjs` (for example the template test at line 3936).
+- `pnpm test`: exit 0, including the new suite and the existing template, plan-contract mapping
+  and publication-pointer guards in `test/workflow-contracts.test.mjs`.
 - `node build.mjs`: exit 0. Read the `Always-loaded core (lines/budget)` lines for `plan` and
   `plan-review`, and adjust `CONTEXT_BUDGET_LINES` only if they overrun.
 - `pnpm test:distribution`: exit 0.
+- Fresh behavioral smoke, after building the changed portable target: use local Codex 0.159.3
+  in disposable repositories and minimal WP3-schema trusted-text fixtures (user-authorized method
+  adjustment on 2026-10-18). WP1’s pinned Codex 0.153.4 and guest evidence remain a separate package.
+  Exercise (a) a valid English envelope that yields a blocking open point and ends with `DONE`,
+  `Review result: Revision required` and a nonzero count; (b) a delimiter-bearing misordered
+  envelope that ends with `ABORT: misordered unattended envelope` and creates no plan; and
+  (c) a valid German envelope whose complete German artifact yields the normalized English
+  response value. A ready fixture must also cover `Approved`; static cases cover both values
+  in both languages. Observe no user-input tool or prose question, the expected terminal lines,
+  final lint/result and the Git/filesystem delta confined to the one new plan. Runtime/bootstrap
+  data prepared by the fixture is excluded from that delta. Record commands, model/effort,
+  terminal observations and pass/fail evidence in the implementation PR; no new eval framework
+  is required. A question, missing terminal result or extra write fails acceptance. Record the exact local
+  command, requested model/effort, portable snapshot digest and observed outcomes; this evidence
+  satisfies only WP2 and does not claim WP1’s pinned-runtime or guest result.
 - Mutation check: temporarily add one "ask the user" line to `src/tools/plan.md` and confirm the new
   suite fails. Take a `cp` snapshot first and restore from it; do not use `git checkout --`.
 
@@ -401,12 +470,74 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
 - `planning-readiness.md` is not shipped until WP5 adds its pointer. This is intended.
 - Forgejo, external trackers, local trackers and hidden mode are out of scope (decision D3 and the
   concept's non-goals). `plan-issue`, `apply-issues`, `apply-plan` and `open-plans` stay unchanged;
-  two of them have 0 lines of budget headroom.
+  their budgets are not changed by this package.
 - Interactive `plan` does not write `**Issue:**` in this package.
+- The source-level inventory is a regression guard for known question instructions, not a proof
+  of all model behavior. The fresh portable smoke provides bounded execution evidence.
 - Prose that already reads "decide later" in plan-review keeps its wording. The fragment maps it and
   does not rewrite it.
 
+## Implementation progress (2026-10-18)
+
+The scoped source, documentation and automated regression coverage are implemented on
+`effective-flow/build/unattended-planning`. The full completion condition is not yet met:
+portable behavioral validation remains blocked. The status stays Not implemented; this plan
+has not been archived or delivered; an implementation checkpoint may precede base integration.
+
+- Runtime mapping and language-neutral Issue detection are synchronized with their marked
+  prose projection. The existing build-lib missing-row guard now derives its expected count from
+  the owned mapping instead of a fixed number.
+- The two prompt entries, twenty site outcomes, readiness criteria, four bilingual result
+  mappings and fresh-worker no-question handoffs are present. Measured context budgets are
+  `plan` 742/742 and `plan-review` 492/492.
+- Documentation sync: technical documentation updated in plan-conventions, terminology and the
+  Active unattended-run ADR. CLI help and in-code API documentation have no new surface or
+  response schema; README/user docs are unaffected by this internal caller contract.
+  Operations/runbooks and AGENTS remain unaffected; no new exposed tool or duplicated policy.
+
+## Test results
+
+| Check                              | Result                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm agent:check`                 | Passed after scoped formatting correction; 938 files checked                                                              |
+| `pnpm test`                        | Passed after fixing the mapping-count expectation; 539 TAP ok records, none failed                                        |
+| `node build.mjs`                   | Passed for Claude, Codex and portable targets, with no budget overrun                                                     |
+| `pnpm test:distribution`           | Passed                                                                                                                    |
+| Focused unattended contract suite  | 12/12 passed                                                                                                              |
+| Focused plan-lint suite            | 55/55 passed                                                                                                              |
+| Unmapped-question mutation         | Failed as expected; original source restored byte for byte                                                                |
+| Exact inventory negative cases     | Added, removed and same-count replaced lines are rejected                                                                 |
+| Existing behavioral eval freshness | merge-gate/iterate retain only baseline SKILL.md/model-tiers drift; next-steps current with existing version-stamp waiver |
+| Fresh portable behavioral smoke    | Pending: user authorized local Codex 0.159.3 for WP2; WP1 remains separate                                                |
+
+Repository checks used the pinned pnpm 12.5.1 outside the execution sandbox and reused the
+existing main-checkout formatter binary through PATH, without installing dependencies or changing
+configuration. The first full validation found one formatting error and one obsolete mapping-count
+expectation; both were corrected through the implementation worker and independently rechecked.
+
+The user authorized local Codex 0.159.3 for WP2 smoke on 2026-10-18, keeping WP1’s pinned-runtime
+and guest evidence separate. The local run is pending; no behavioral pass is claimed yet.
+
+## Review findings
+
+**Date:** 2026-10-18
+**Reviewer:** Backend/CLI review
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     1 |
+| Open / Not implemented |     0 |
+
+The fixed finding ensures that fresh-context analysis workers receive the non-interactive
+no-question policy explicitly. A targeted independent recheck confirmed the correction.
+No residual review report was needed. The runtime-smoke evidence gap above is a validation
+blocker, not an unimplemented review finding.
+
 ## Plan review
+
+### Initial review (2026-10-01)
 
 **Result:** Approved
 
@@ -483,6 +614,63 @@ decision was needed.
 - **Note (Error cases), incorporated.** `P-MIG` also covers the migration triggered when
   `plan-review` reads a plan.
 - **Note (Clarity), incorporated.** The broken ordering bullet in step 8 is one line again.
+
+### Revision review (2026-10-18)
+
+**Result:** Approved
+
+The gap analysis identified four important corrections and one note, all incorporated below.
+An independent final review found no remaining findings across architecture, security, data
+protection, error cases, testability, scope and maintainability. Earlier reviews above are historical.
+
+The scorecard passes: concrete paths and ordered steps; measurable acceptance evidence; verified
+context separated from assumptions; explicit purpose and Feature rationale; one-plan-file write
+boundary; no implementation snippets; no documentation-only target fields required.
+
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         2 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    1 |
+| Testability     |        0 |         1 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    0 |
+
+- **Important (Architecture), incorporated.** English and German artifact review fields now
+  normalize to the same stable result lines without mixing artifact languages.
+- **Important (Architecture), incorporated.** Planning and file-mode deep review have distinct
+  fragment entry contracts; a valid review delegation does not need the planning envelope again.
+- **Important (Maintainability), incorporated.** The current include closure, publication gate
+  and judgment fallback replace the obsolete fixed 18-row assumption. Unreachable delivery asks
+  retain their boundary reason in the inventory.
+- **Important (Testability), incorporated.** Static inventory/render assertions protect source
+  coverage. A fresh portable behavioral smoke round now checks the new envelope and write boundary.
+- **Note (Error cases), incorporated.** The closed set names new envelope/site errors; operational
+  failures keep their existing diagnostics and return `ABORT`.
+
+### Deep review after revision (2026-10-18)
+
+**Result:** Approved
+
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    0 |
+
+- **Important (Architecture), incorporated.** The core owns the bilingual mapping; adding only
+  its Markdown projection would fail the build guard. Adding the shared Issue label to both
+  language matchers would then classify otherwise valid plans as mixed. Scope now includes the
+  core mapping owner, neutral-label detection and focused plan-lint regressions; requirement,
+  approach, acceptance and validation agree. A read-only follow-up verified the correction.
+- No decision-requiring findings or implementation-blocking open points remain. The review
+  checked gateway precedence, envelope grammar, language and result handling, judgment and retry
+  paths, file/runtime limits, publication boundaries and WP1/WP3/WP5 contract compatibility.
 
 ## Open points
 

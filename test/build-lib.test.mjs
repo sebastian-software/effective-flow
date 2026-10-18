@@ -1736,7 +1736,9 @@ test('the plan-lint mapping guard fails on a drifted mapping table', () => {
     .join('\n');
   assert.throws(
     () => assertPlanContractProjection(planMappingRows(withoutRow), { context: 'drifted' }),
-    /^Error: plan-lint projection: mapping table has 27 rows; expected 28 \(missing row "Review findings"\)/,
+    new RegExp(
+      `^Error: plan-lint projection: mapping table has ${PLAN_CONTRACT_MAPPING.length - 1} rows; expected ${PLAN_CONTRACT_MAPPING.length} \\(missing row "Review findings"\\)`,
+    ),
   );
   assert.throws(
     () => planMappingRows(planContractSource.replace(PLAN_CONTRACT_MAPPING_END, '')),

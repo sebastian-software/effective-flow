@@ -53,6 +53,11 @@ plan-contract
 when: a plan artifact's fields, sections, or review prose are written or translated
 ```
 
+```lazy-include
+unattended-planning
+when: the delegation payload carries Run state: non-interactive
+```
+
 ## Recommended skills
 
 - `effective-delivery`

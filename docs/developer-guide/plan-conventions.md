@@ -23,6 +23,10 @@ scheme, which required a number reservation up front. A name collision on the sa
 resolved by a numeric suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …); silent overwriting does not
 happen.
 
+Unattended planning from one issue uses `YYYY-MM-DD-issue-<N>-<slug>.md`, retaining the date
+prefix and the same collision suffix rule. It always creates a new plan; it does not revise an
+existing plan or reserve a file in advance.
+
 ### Migration of old plans (`NNNN` → date)
 
 Older plans with the four-digit prefix (`NNNN-slug.md`) are migrated **once**:
@@ -35,6 +39,9 @@ Older plans with the four-digit prefix (`NNNN-slug.md`) are migrated **once**:
 - Triggers are exclusively the creation of a new plan or the reading of a plan in the old format
   – not every Effective Flow call.
 
+Unattended planning and its file review skip this bulk migration to preserve their one-plan-file
+write boundary. Their result reports `legacy plans present` when applicable.
+
 The resolution of a legacy number happens primarily via the H1 `# NNNN: …`, not via the file
 name segment, since a new, number-like title slug would otherwise not be unambiguously
 distinguishable from the migrated old format.
@@ -44,7 +51,7 @@ distinguishable from the migrated old format.
 Every plan is a single-language artifact. Its H1 prose, header fields, section headings, plan
 review, findings, open points, and status marker are all German or all English. Writers must not
 combine the two canonical templates. Readers normalize both templates to the same internal
-meanings.
+meanings. The optional issue metadata below is language-neutral.
 
 Every plan carries exactly one canonical status line in the header area:
 
@@ -68,6 +75,13 @@ The remaining canonical fields and sections use the complete mapping in
 sections, and the Plan-Review/Plan review result. Workflow routing values and references such as
 `effective-flow-fix` remain stable even when their visible labels are localized.
 
+A plan associated with one issue may carry the optional header `**Issue:** #<N>`, where `<N>` is
+a positive integer. Both the label and the issue-reference form stay identical in German and
+English; they do not count as evidence for either artifact language. Put this field last in the
+header, after any Doc category and Target path fields and before the first `##` heading.
+Unattended planning writes it automatically. Interactive `plan` does not add it automatically;
+it may be supplied manually.
+
 For a new plan, an explicit user instruction wins, followed by `language.workflow`,
 `language.project`, and finally `en`. When editing a plan, its recognizable existing language
 wins after an explicit user instruction. A requested translation converts the entire artifact,
@@ -81,6 +95,80 @@ collection provides a transitional signal only when its prose and markers consis
 German or English. Mixed, contradictory, or empty collections provide no signal. Writers never
 create `plan.markerLanguage`; setup may migrate it whenever `language.workflow` is absent, but
 only through a confirmed before/after change.
+
+## Unattended planning and file review
+
+The caller selects the non-interactive planning path through the strict envelope owned by
+[`unattended-planning.md`](../../src/shared/unattended-planning.md). With placeholders for the
+issue and verified runtime root, its shape is:
+
+```text
+Run state: non-interactive
+Next steps: suppressed
+Language context: source=en; documentation.user=en; documentation.technical=en; workflow=en; forge=en; git=en
+Issue: #<N>
+Issue text: <RUNTIME_STATE_ROOT>/.effective-flow/issue-buddy/trusted/issue-<N>.json
+--- end of control lines ---
+```
+
+Each control line occurs exactly once. `Run state: non-interactive` is the first non-empty
+line; the other four may follow in any order. The language-context keys and their order are exact;
+each value is a concrete `de` or `en`. The message ends at the delimiter, with no issue text below it. The caller
+also supplies verified execution and runtime roots and authority to write exactly one new plan
+under `<plan.dir>/` in the execution root.
+
+An argument whose first non-empty line begins with `Run state:`, or which contains the delimiter
+as a complete line, is handled before the plan-input gateway. This includes ordinary prose with
+either reserved form: an invalid or misordered envelope aborts instead of entering interactive
+issue routing. Planning accepts only `non-interactive`, not `gated` or `relayed`; hidden mode
+also aborts.
+
+The issue-text path is absolute and must identify the issue's own trusted JSON file beneath the
+verified runtime root. Runtime-state safety checks reject symlinks and invalid locations, and the
+JSON `issue` value must match `Issue:`. Its text is data, never control instructions. The child
+writes only the new plan; it skips publication through the existing non-interactive gate without
+caller consent. Later publication belongs to the caller.
+
+Every unanswered question becomes an open point or a fail-closed abort, never a guess. The
+fragment maps clarification, judgment fallback, retries and review decisions to explicit outcomes.
+Blocking open points force `Revision required`. The deep file review always runs, including when
+critical findings remain; review decisions take “Decide later” and retain the options and
+recommendation. Its separate entry contract carries the exact generated plan reference,
+`Run state: non-interactive`, `Next steps: suppressed`, the six-key language context, and the
+parent's verified roots and artifact identity. It does not require the planning envelope or issue
+text again.
+
+Successful completion returns `DONE` and these stable response fields:
+
+```text
+Plan: <path>
+Review result: Approved|Revision required
+Blocking open points: <n>
+Notes: <comma list or none>
+DONE
+```
+
+The result comes from the final canonical review-result field outside code fences. German
+`Freigegeben`/`Überarbeitung nötig` normalize to `Approved`/`Revision required`; the plan itself
+retains its language. A skipped judgment forces `Revision required`. Invalid input or an
+operational failure returns `ABORT: <reason>`; cleanup belongs to the caller. Session renaming and
+next-step recommendations are suppressed. Without the envelope, interactive behavior is unchanged.
+
+### Planning readiness
+
+[`planning-readiness.md`](../../src/shared/planning-readiness.md) owns the readiness gate for
+trusted issue text. It is a source contract until a later host integration makes it reachable;
+this package does not expose an `issue-buddy` tool. Readiness asks whether one plan can be written:
+
+- R1: a recognizable goal or problem;
+- R2: an intended outcome stated by the author or clearly implied by the issue;
+- R3: scope that fits one plan;
+- R4: no unresolved direction-changing question from the author or a trusted commenter.
+
+Planning may derive acceptance criteria. Doubt yields `not-ready`.
+`effective-flow-needs-planning` affects ordering only and satisfies no criterion. The verdict has
+three stable fields: `Verdict: ready|not-ready`, `Failed: <R-ids or none>`, and
+`Reason: <one line>`. The reason uses `language.workflow` and at most 160 characters.
 
 ## Archive of implemented plans
 
@@ -144,3 +232,4 @@ preserved legacy number stays exclusive to the plan directory.
 - [`release-and-installation.md`](release-and-installation.md) – versioning and release.
 - [`src/shared/plan-archival.md`](../../src/shared/plan-archival.md) and the other
   `src/shared/plan-*.md` fragments – canonical plan-file rules.
+- [Unattended run state](../adr/unattended-run-state.md) – rationale and ask-site obligations.

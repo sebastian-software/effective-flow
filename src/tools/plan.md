@@ -45,9 +45,16 @@ config-migration
 when: the Effective Flow configuration is read for the first time or an old config is migrated
 ```
 
+Recognize the unattended envelope before the gateway; its contract overrides interactive asks and the ordinary argument path.
+
+```lazy-include
+unattended-planning
+when: the first non-empty line of the argument begins with Run state:, or a line of the argument equals --- end of control lines ---
+```
+
 ```lazy-include
 plan-input-gateway
-when: the user supplied a non-empty argument, before the local planning workflow starts
+when: the user supplied a non-empty argument whose first non-empty line does not begin with `Run state:` and that carries no `--- end of control lines ---` line
 ```
 
 The gateway's handoff to `{{SKILL:plan-issue}}` deliberately carries **no** `Next steps: suppressed`
@@ -310,6 +317,8 @@ review prose, and the fixed German placeholder tokens from its placeholder table
 <!-- Only for Recommended workflow: Documentation: -->
 **Doc category:** user-guide | developer-guide | operations | runbooks
 **Target path:** docs/<category>/<topic-slug>.md
+<!-- Only for plans written from one issue: -->
+**Issue:** #<N>
 
 ## Requirement
 
@@ -411,7 +420,7 @@ Rules:
   Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
 - For a Documentation recommendation, place the matching German or English doc-category and
   target-path fields directly below it per `Doc categories`. Omit the HTML comment and the two
-  fields for the other workflows.
+  fields for the other workflows. Interactive runs also omit the Issue field and its comment.
 
 ### Phase 4: Gap analysis
 
@@ -487,6 +496,8 @@ Approach:
 
 ### Phase 6b: Deep interactive plan review
 
+In an unattended run always delegate the exact generated file to `{{SKILL:plan-review}}` with `Run state: non-interactive`, `Next steps: suppressed`, the concrete six-key `Language context:` and verified roots per `unattended-planning`; do not send the planning envelope.
+
 If the internal plan review from Phase 6 no longer contains any critical findings,
 ask the user whether the deep interactive plan review should be started now.
 
@@ -514,6 +525,7 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 3. **Publication.** When the `plan-publication` pointer below applies, run that contract, handing
    it the plan file's absolute and repository-relative paths, this run's state (`interactive` or
    `non-interactive`), and the calling workflow `plan`. Run the worktree-record exit self-check.
+   Unattended planning passes `non-interactive` without `consent: given-by-caller`, preserving the publication gate before any Git/forge operations or questions.
 4. Report to the user:
    - the path of the created plan file
    - a brief summary of the planned approach
