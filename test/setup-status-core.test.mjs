@@ -38,7 +38,13 @@ import {
   releaseSemver,
 } from '../src/scripts/setup-status-core.mjs';
 import { main } from '../src/scripts/setup-status.mjs';
-import { deriveSetupStatusProjection, parseSkillOwnershipManifest } from '../build-lib.mjs';
+import {
+  deriveSetupStatusProjection,
+  parseSkillOwnershipManifest,
+  parseSpawnSiteTable,
+  extractFrontmatter,
+  resolveAgentTier,
+} from '../build-lib.mjs';
 
 const CLI = fileURLToPath(new URL('../src/scripts/setup-status.mjs', import.meta.url));
 // An empty HOME and XDG_CONFIG_HOME keep the developer's global Git configuration and excludes
@@ -817,6 +823,16 @@ test('shared delivery and plan publication handoffs propagate commit exclusions 
         .map((name) => [name.slice(0, -3), readFileSync(new URL(name, url), 'utf8')]),
     );
   };
+  const agentSources = sources('agents');
+  const sharedSources = sources('shared');
+  const spawnSites = parseSpawnSiteTable(sharedSources.get('model-tiers'), {
+    agentTiers: new Map(
+      [...agentSources].map(([name, source]) => [
+        name,
+        resolveAgentTier(extractFrontmatter(source), { agentName: name }),
+      ]),
+    ),
+  });
   const projection = deriveSetupStatusProjection({
     manifest: parseSkillOwnershipManifest(
       readFileSync(
@@ -825,8 +841,9 @@ test('shared delivery and plan publication handoffs propagate commit exclusions 
       ),
     ),
     toolSources: sources('tools'),
-    agentSources: sources('agents'),
-    sharedSources: sources('shared'),
+    agentSources,
+    sharedSources,
+    spawnSites,
     exposedTools: [
       ...PROJECTION.exposedTools,
       'plan',
@@ -838,6 +855,25 @@ test('shared delivery and plan publication handoffs propagate commit exclusions 
     workflowEdges,
     version: PROJECTION.version,
   });
+  const engineering = domainOwnersFrom(projection, {}).find(
+    ({ skill }) => skill === 'effective-engineering',
+  );
+  for (const tool of ['commit', 'deliver', 'pr', 'setup']) {
+    assert.ok(!engineering.tools.includes(tool), `${tool} does not execute an engineering worker`);
+  }
+  const validatorExcluded = domainOwnersFrom(projection, {
+    'skills.agents.code-validator.exclude': { state: 'set', items: ['effective-delivery'] },
+  }).find(({ skill }) => skill === 'effective-delivery').disabled;
+  for (const tool of ['commit', 'deliver', 'pr', 'setup']) {
+    assert.ok(
+      !validatorExcluded.some((entry) => entry.tool === tool),
+      `${tool}'s validator prohibition creates no disabled owner`,
+    );
+  }
+  assert.ok(
+    validatorExcluded.some(({ tool }) => tool === 'build'),
+    'actual validation remains visible',
+  );
   const disabled = domainOwnersFrom(projection, {
     'skills.tools.commit.exclude': { state: 'set', items: ['effective-delivery'] },
   }).find(({ skill }) => skill === 'effective-delivery').disabled;

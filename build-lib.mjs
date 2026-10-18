@@ -1559,7 +1559,7 @@ export function assertDisjointConsumerNames(
 // scope (`tools.<name>` or `agents.<name>`) each reach goes through.
 //
 // Reachability is deliberately explicit: an exposed tool reaches itself, its eager and lazy include
-// closure, the agents its source or that closure spawns (`{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`)
+// closure, the named worker roles of marked spawn sites in that source or closure
 // with their own include closures, and every tool behind a declared workflow edge, transitively. A
 // `{{SKILL:X}}` mention alone is no edge: most name a neighbouring workflow for the user rather than
 // running it. The forward and reverse edge guards below keep the declared list honest.
@@ -1571,8 +1571,6 @@ const TOOL_REFERENCE_PATTERNS = Object.freeze([
   Object.freeze({ form: 'lazy-include', pattern: /```lazy-include\n([^\n]+)\n/g }),
   Object.freeze({ form: 'path', pattern: /\btools\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md\b/g }),
 ]);
-
-const AGENT_SPAWN_REF_RE = /\{\{AGENT(?:_PROFILE)?:([a-z0-9]+(?:-[a-z0-9]+)*)(?::[^}]+)?\}\}/g;
 
 // Every name a tool source refers to as a tool, with the forms it uses: `{{SKILL:<name>}}`, a
 // ```lazy-include fence naming it, or a literal `tools/<name>.md` path.
@@ -1700,14 +1698,24 @@ function includeClosure(text, sharedSources) {
   return closure;
 }
 
-function agentReferences(text) {
-  return new Set([...normalizeLineEndings(text).matchAll(AGENT_SPAWN_REF_RE)].map((m) => m[1]));
+function executedAgentRoles(text, spawnSites) {
+  const roles = new Set();
+  for (const { id } of collectSpawnSiteMarkers(text)) {
+    const site = spawnSites.get(id);
+    if (!site) throw new Error(`Unknown spawn-site "${id}" in setup-status ownership projection`);
+    // Literal-tier sites run generic analysis or another workflow, not a named worker role.
+    for (const { role } of site.clauses) if (role !== null) roles.add(role);
+  }
+  return roles;
 }
 
 // Every (consumer kind, consumer) one exposed tool reaches, each with the skills scopes it is
 // reached through. Returns Map<`${kind}:${name}`, Set<scope>>. Edges are followed whatever their
 // `mode`: a domain owner is loaded in every mode of the tool that consumes it.
-function reachOfExposedTool(tool, { toolSources, agentSources, sharedSources, workflowEdges }) {
+function reachOfExposedTool(
+  tool,
+  { toolSources, agentSources, sharedSources, workflowEdges, spawnSites },
+) {
   const reach = new Map();
   const add = (kind, name, scope) => {
     const key = `${kind}:${name}`;
@@ -1729,8 +1737,11 @@ function reachOfExposedTool(tool, { toolSources, agentSources, sharedSources, wo
     const closure = includeClosure(text, sharedSources);
     for (const name of closure) add('shared', name, `tools.${current}`);
     for (const source of [text, ...[...closure].map((name) => sharedSources.get(name))]) {
-      for (const agent of agentReferences(source)) {
-        if (agentSources.has(agent)) agents.add(agent);
+      for (const agent of executedAgentRoles(source, spawnSites)) {
+        if (!agentSources.has(agent)) {
+          throw new Error(`Unknown worker role "${agent}" in setup-status ownership projection`);
+        }
+        agents.add(agent);
       }
     }
   }
@@ -1744,9 +1755,20 @@ function reachOfExposedTool(tool, { toolSources, agentSources, sharedSources, wo
 }
 
 // Projects the manifest's `delegate` rows onto the exposed tools. Sources are raw texts keyed by
-// basename; `workflowEdges` is the declared tool-to-tool list; `version` the installed SemVer.
+// basename; `workflowEdges` is the declared tool-to-tool list; `spawnSites` are validated, resolved
+// rows of the model-tier execution table; `version` the installed SemVer. Agent mentions alone are
+// no execution: only a reached site's named role clauses contribute worker dependencies.
 export function deriveSetupStatusProjection(
-  { manifest, toolSources, agentSources, sharedSources, exposedTools, workflowEdges, version },
+  {
+    manifest,
+    toolSources,
+    agentSources,
+    sharedSources,
+    exposedTools,
+    workflowEdges,
+    spawnSites = [],
+    version,
+  },
   { context } = {},
 ) {
   const kindOf = (name) => {
@@ -1757,10 +1779,17 @@ export function deriveSetupStatusProjection(
       `Setup-status projection: manifest consumer "${name}" is no tool, agent or shared source${contextSuffix(context)}`,
     );
   };
+  const sites = new Map(spawnSites.map((site) => [site.id, site]));
   const reachByTool = new Map(
     exposedTools.map((tool) => [
       tool,
-      reachOfExposedTool(tool, { toolSources, agentSources, sharedSources, workflowEdges }),
+      reachOfExposedTool(tool, {
+        toolSources,
+        agentSources,
+        sharedSources,
+        workflowEdges,
+        spawnSites: sites,
+      }),
     ]),
   );
   const owners = [];

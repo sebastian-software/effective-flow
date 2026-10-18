@@ -324,8 +324,8 @@ and `reach`, one `{ tool, scope }` entry per exposed tool and `skills` scope it 
 `route-when-relevant` rows are optional routes and are not projected.
 
 Reachability is explicit, never inferred from every `{{SKILL:X}}` mention. An exposed tool reaches
-itself, its eager and lazy include closure, the agents its source or that closure spawns
-(`{{AGENT:X}}`, `{{AGENT_PROFILE:X:fast}}`) with their own include closures, and every tool behind a
+itself, its eager and lazy include closure, the named worker roles of the spawn-site markers in
+its source or that closure with their own include closures, and every tool behind a
 declared `WORKFLOW_EDGES` entry in `build.mjs`, transitively, whatever the edge's mode (the edges
 into exposed tools include `merge-gate → iterate`, mode `pr`; `apply-plan`, `apply-issues`,
 `apply-review` and `iterate` → `build`, `fix`, `refactor`, `docs`; and `plan → plan-issue`). The
@@ -334,6 +334,13 @@ into exposed tools include `merge-gate → iterate`, mode `pr`; `apply-plan`, `a
 include closures supply the matching references. Consequently, an exclusion in
 `skills.tools.commit.exclude` affects every host that can run `commit`, including `apply` and
 `merge-gate` transitively; `plan` also inherits `pr`'s stop on retired `worktree.baseBranch`.
+Worker roles come from the validated `role:<agent>[,<agent>…]` clauses of the marked site's row
+in `shared/model-tiers.md`, including every routed alternative and conditional role. A literal-tier
+site runs generic analysis or a delegated workflow and adds no named worker; workflow reach stays
+with `WORKFLOW_EDGES`. Bare `{{AGENT:X}}` or `{{AGENT_PROFILE:X:fast}}` mentions add no dependency,
+so prohibitions in `commit`, `pr` and `setup` cannot make them or `deliver` depend on validation
+workers. Unknown reached sites or named roles fail the projection.
+
 A tool consumer is reached through `tools.<consumer>`, an agent through
 `agents.<consumer>`, and a shared fragment through each host's scope: `tools.<host tool>` or
 `agents.<host agent>`. Agents are leaves, so an agent's own `{{AGENT:X}}` mentions are not followed.

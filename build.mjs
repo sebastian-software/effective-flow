@@ -974,8 +974,8 @@ try {
 
   // --- Setup-status ownership projection (#485) ---
   // The declared tool-to-tool edges are checked against the tool sources in both directions, then
-  // the manifest's `delegate` rows are projected onto the exposed tools that reach each consumer.
-  // The projection ships beside the runtime scripts; guards (a) and (b) run inside the derivation.
+  // the ownership projection below uses those edges and the validated spawn-site roles. It ships
+  // beside the runtime scripts; guards (a) and (b) run inside the derivation.
   const toolOwnershipSources = new Map(
     toolRecommendationSources.map((source) => [source.consumer, source.text]),
   );
@@ -1001,24 +1001,6 @@ try {
     },
     { context: 'setup-status workflow edges' },
   );
-  setupStatusProjectionJson = `${JSON.stringify(
-    deriveSetupStatusProjection(
-      {
-        manifest: ownershipManifest,
-        toolSources: toolOwnershipSources,
-        agentSources: new Map(
-          agentRecommendationSources.map((source) => [source.consumer, source.text]),
-        ),
-        sharedSources: sharedOwnershipSources,
-        exposedTools: EXPOSED_TOOLS,
-        workflowEdges: WORKFLOW_EDGES,
-        version: VERSION,
-      },
-      { context: 'setup-status ownership projection' },
-    ),
-    null,
-    2,
-  )}\n`;
 
   // --- Shared project-routing contract guard (#164) ---
   // All project-aware workflows load this runtime contract. Parse and validate
@@ -1622,6 +1604,27 @@ try {
     mappings: MODEL_TIER_MAPPINGS,
     agentTiers,
   };
+
+  // Project ownership only after the execution sites and their named roles are validated.
+  setupStatusProjectionJson = `${JSON.stringify(
+    deriveSetupStatusProjection(
+      {
+        manifest: ownershipManifest,
+        toolSources: toolOwnershipSources,
+        agentSources: new Map(
+          agentRecommendationSources.map((source) => [source.consumer, source.text]),
+        ),
+        sharedSources: sharedOwnershipSources,
+        exposedTools: EXPOSED_TOOLS,
+        workflowEdges: WORKFLOW_EDGES,
+        spawnSites,
+        version: VERSION,
+      },
+      { context: 'setup-status ownership projection' },
+    ),
+    null,
+    2,
+  )}\n`;
 
   if (tools.length === 0 || agents.length === 0) {
     throw new Error(`No tool or agent sources found under ${SOURCE_DIR}`);

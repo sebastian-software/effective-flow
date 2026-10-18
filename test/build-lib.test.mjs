@@ -1010,7 +1010,10 @@ test('a shared fragment named like a tool or agent fails the disjoint-name guard
 const projectionTools = () =>
   new Map([
     ['merge-gate', 'Evaluates notes through {{SKILL:iterate}}.\n'],
-    ['iterate', '```include\nwriting-rules\n```\nSpawn {{AGENT:docs-writer}}.\n'],
+    [
+      'iterate',
+      '```include\nwriting-rules\n```\nSpawn {{AGENT:docs-writer}}.\n<!-- spawn-site:iterate/docs -->\n',
+    ],
     ['build', '```lazy-include\nlazy-gate\nwhen: rarely\n```\nSee {{SKILL:iterate}} later.\n'],
     ['apply', 'Delegates to {{SKILL:apply-review}}.\n'],
     ['apply-review', 'Read `tools/apply-review-remote.md`.\n'],
@@ -1061,6 +1064,7 @@ function deriveProjection(manifest, overrides = {}) {
     sharedSources: projectionShared(),
     exposedTools: PROJECTION_EXPOSED,
     workflowEdges: PROJECTION_EDGES,
+    spawnSites: [{ id: 'iterate/docs', clauses: [{ role: 'docs-writer', tier: 'standard' }] }],
     version: '1.68.0',
     ...overrides,
   });
@@ -1118,6 +1122,60 @@ test('the projection follows declared edges, spawns and include closures onto ex
   assert.equal(row('marketing-writer'), undefined, 'route-when-relevant rows are not projected');
   // The shipped script accepts what the build writes.
   assert.doesNotThrow(() => validateOwnersProjection(JSON.parse(JSON.stringify(projection))));
+});
+
+test('the projection follows named spawn roles and ignores prohibition and descriptive agent tokens', () => {
+  // Invariant: named dependencies come from actual marked execution sites, including routed
+  // alternatives and shared sites; prohibition tokens and generic analysis spawn prose add none.
+  const toolSources = new Map([
+    [
+      'build',
+      '```lazy-include\nverification\nwhen: needed\n```\n<!-- spawn-site:build/routed -->\n',
+    ],
+    ['commit', 'Do not run {{AGENT:test-writer}} or {{AGENT:code-validator}}.\n'],
+    ['deliver', 'Runs {{SKILL:commit}}.\n'],
+    ['setup', 'Do not run {{AGENT:code-validator}}.\n'],
+    [
+      'concept',
+      'Reference {{AGENT:test-writer}}; generic analysis follows.\n<!-- spawn-site:concept/analysis -->\n',
+    ],
+  ]);
+  const agentSources = new Map([
+    ['test-writer', 'Tests.\n'],
+    ['code-validator', 'Checks.\n'],
+    ['docs-writer', 'Writes docs.\n'],
+  ]);
+  const sharedSources = new Map([['verification', '<!-- spawn-site:verification/check -->\n']]);
+  const spawnSites = parseSpawnSiteTable(
+    [
+      '## Spawn sites',
+      '| Site | Spawn | Tier | Down |',
+      '| --- | --- | --- | --- |',
+      '| `build/routed` | Routed implementation or tests | `role:test-writer,docs-writer` | `yes` |',
+      '| `verification/check` | Conditional validation | `role:code-validator` | `yes` |',
+      '| `concept/analysis` | Generic analysis | `deep` | `no` |',
+    ].join('\n'),
+    { agentTiers: new Map([...agentSources.keys()].map((name) => [name, 'standard'])) },
+  );
+  const input = {
+    manifest: projectionManifest({
+      'effective-engineering': [['test-writer']],
+      'effective-delivery': [['code-validator'], ['docs-writer']],
+    }),
+    toolSources,
+    agentSources,
+    sharedSources,
+    spawnSites,
+    exposedTools: [...toolSources.keys()],
+    workflowEdges: [{ from: 'deliver', to: 'commit' }],
+    version: '1.68.0',
+  };
+  const projection = deriveSetupStatusProjection(input);
+  for (const row of projection.owners) assert.deepEqual(row.tools, ['build']);
+  assert.throws(
+    () => deriveSetupStatusProjection({ ...input, spawnSites: [] }),
+    /Unknown spawn-site "build\/routed"/,
+  );
 });
 
 test('the projection guards reject a consumer no exposed tool reaches and diverging rows', () => {

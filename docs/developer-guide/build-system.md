@@ -430,7 +430,11 @@ The build aborts with an error message if any of these guards is violated:
   mode of the target (`MODE_TOOLS`); `assertSuccessorSetsReachExposedTools` fails when a
   `SUCCESSOR_SETS` entry other than `setup` is run by no exposed tool in its mode;
   `deriveSetupStatusProjection` fails when the projected `delegate` rows differ from the manifest or
-  a `delegate` consumer reaches no exposed tool. Reachability and
+  a `delegate` consumer reaches no exposed tool. The projection runs after spawn-site validation
+  and resolves named workers from reached markers and the table's `role:` clauses, including
+  shared, conditional and routed sites. Literal-tier sites add no named worker; incidental agent
+  tokens, including prohibitions, add no dependency. Unknown reached sites or roles fail closed.
+  Reachability and
   the row shape, including shared delivery and plan-publication handoffs, are described in [skill ownership](skill-ownership.md#shipped-ownership-projection).
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
