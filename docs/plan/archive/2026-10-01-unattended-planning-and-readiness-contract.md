@@ -1,6 +1,6 @@
 # Unattended planning run state and planning-readiness contract
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -41,9 +41,10 @@ an open point, never a guess.
 
 Sibling plans (all under `docs/plan/`):
 
-- **Depends on:** `2026-10-01-codex-exec-unattended-spike.md` (WP1) for evidence that no question
-  is reachable under `codex exec`. If WP1's no-question criterion fails, that does not block this
-  plan; WP1 records the fallback.
+- **Roadmap prerequisite:** `2026-10-01-codex-exec-unattended-spike.md` (WP1) owns the pinned
+  Codex 0.153.4 and guest evidence. The user-authorized local Codex 0.159.3 method below provides
+  WP2's bounded acceptance evidence without claiming that WP1 is complete. If WP1's no-question
+  criterion fails, WP1 records its fallback.
 - **Depended on by:**
   - `2026-10-01-issue-buddy-runtime-script.md` (WP3): the header field and the verdict shape.
   - `archive/2026-10-01-shared-plan-publication-core.md` (WP4, implemented): its parser already
@@ -53,8 +54,8 @@ Sibling plans (all under `docs/plan/`):
     file-name rule.
 - **Current dependency state:** WP1, WP3 and WP5 remain open; WP4 is implemented. WP2 can be
   authored and checked against the agreed WP3 trusted-text fixture without a live WP3 script.
-  WP1 remains the runtime-evidence prerequisite; its documented no-question fallback does not
-  block authoring WP2. WP3 and then WP5 integrate the completed contracts. WP5’s separate
+  WP1 remains a separate pinned-runtime and guest-evidence package; the authorized local smoke
+  method permits WP2 acceptance independently. WP3 and then WP5 integrate the completed contracts. WP5’s separate
   worktree-discard decision stays in WP5 and does not expand this package.
 
 **Why Feature:** the plan adds new, caller-selectable behavior and a new artifact field. It is not a
@@ -425,7 +426,7 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
       `src/shared/plan-contract.md` projection agree. `node --test test/plan-lint.test.mjs` passes
       EN/DE-plus-Issue, Issue-only, genuine-mixed and existing-field regressions, without changing
       the lint response schema. `docs/adr/unattended-run-state.md` exists with status Active.
-- [ ] The fresh portable smoke cases in the validation plan terminate without a question,
+- [x] The fresh portable smoke cases in the validation plan terminate without a question,
       return their expected `DONE`/`ABORT`, and preserve the one-plan-file write boundary.
 - [x] `pnpm agent:check`, `pnpm test`, `node build.mjs` (with no budget overrun) and
       `pnpm test:distribution` all exit 0.
@@ -480,9 +481,10 @@ or a line of the argument equals --- end of control lines ---`, and a one-line p
 ## Implementation progress (2026-10-18)
 
 The scoped source, documentation and automated regression coverage are implemented on
-`effective-flow/build/unattended-planning`. The full completion condition is not yet met:
-portable behavioral validation remains blocked. The status stays Not implemented; this plan
-has not been archived or delivered; an implementation checkpoint may precede base integration.
+`effective-flow/build/unattended-planning`, integrated at `e8dfe0a` with `origin/develop` at
+`baa7474`. Implementation and local validation are complete and ready for the implementation PR;
+the independent audit accepted all four portable smoke cases. The owning workflow marked this plan Implemented and archived it at the delivery point. No WP2 implementation or validation blocker
+remains; WP1's pinned-runtime and guest evidence remain separate.
 
 - Runtime mapping and language-neutral Issue detection are synchronized with their marked
   prose projection. The existing build-lib missing-row guard now derives its expected count from
@@ -497,26 +499,102 @@ has not been archived or delivered; an implementation checkpoint may precede bas
 
 ## Test results
 
-| Check                              | Result                                                                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm agent:check`                 | Passed after scoped formatting correction; 938 files checked                                                              |
-| `pnpm test`                        | Passed after fixing the mapping-count expectation; 539 TAP ok records, none failed                                        |
-| `node build.mjs`                   | Passed for Claude, Codex and portable targets, with no budget overrun                                                     |
-| `pnpm test:distribution`           | Passed                                                                                                                    |
-| Focused unattended contract suite  | 12/12 passed                                                                                                              |
-| Focused plan-lint suite            | 55/55 passed                                                                                                              |
-| Unmapped-question mutation         | Failed as expected; original source restored byte for byte                                                                |
-| Exact inventory negative cases     | Added, removed and same-count replaced lines are rejected                                                                 |
-| Existing behavioral eval freshness | merge-gate/iterate retain only baseline SKILL.md/model-tiers drift; next-steps current with existing version-stamp waiver |
-| Fresh portable behavioral smoke    | Pending: user authorized local Codex 0.159.3 for WP2; WP1 remains separate                                                |
+| Check                              | Result                                                                                                                           |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm agent:check`                 | Passed after base integration; 942 files checked                                                                                 |
+| `pnpm test`                        | Passed after base integration; 677 TAP ok records, none failed                                                                   |
+| `node build.mjs`                   | Passed for Claude, Codex and portable targets, with no budget overrun                                                            |
+| `pnpm test:distribution`           | Passed                                                                                                                           |
+| Focused unattended contract suite  | 12/12 passed                                                                                                                     |
+| Focused plan-lint suite            | 55/55 passed                                                                                                                     |
+| Unmapped-question mutation         | Failed as expected; original source restored byte for byte                                                                       |
+| Exact inventory negative cases     | Added, removed and same-count replaced lines are rejected                                                                        |
+| Existing behavioral eval freshness | merge-gate/iterate stale through SKILL.md, model-tiers and next-steps; next-steps stale through upstream #571 only; no WP2 drift |
+| Fresh portable behavioral smoke    | Four local Codex 0.159.3 cases completed and independently accepted; WP1 remains separate                                        |
 
 Repository checks used the pinned pnpm 12.5.1 outside the execution sandbox and reused the
 existing main-checkout formatter binary through PATH, without installing dependencies or changing
 configuration. The first full validation found one formatting error and one obsolete mapping-count
 expectation; both were corrected through the implementation worker and independently rechecked.
 
-The user authorized local Codex 0.159.3 for WP2 smoke on 2026-10-18, keeping WP1’s pinned-runtime
-and guest evidence separate. The local run is pending; no behavioral pass is claimed yet.
+### Local portable smoke evidence (2026-10-18)
+
+The user authorized local Codex 0.159.3 for WP2, keeping WP1's pinned Codex 0.153.4 invocation and
+guest evidence separate. Four disposable repositories used the same portable snapshot and one
+attempt per case. The requested root model was `gpt-6.1-sol`, reasoning effort `high`. The
+misordered case had a 600-second timeout; the other three had 900 seconds each. These local
+commands select the corresponding fixture and generate its
+strict envelope on stdin:
+
+```sh
+python3 /private/tmp/ef-wp2-smoke-6UhWhP/run.py --case misordered --timeout 600
+python3 /private/tmp/ef-wp2-smoke-6UhWhP/run.py --case valid-en-blocking --timeout 900
+python3 /private/tmp/ef-wp2-smoke-6UhWhP/run.py --case valid-de --timeout 900
+python3 /private/tmp/ef-wp2-smoke-6UhWhP/run.py --case ready-en --timeout 900
+```
+
+`run.py` launches the following CLI form from the selected case root. `smoke_case` is one of the
+four case names above, and stdin is exactly the envelope generated by its `envelope()` function:
+
+```sh
+smoke_root=/private/tmp/ef-wp2-smoke-6UhWhP
+smoke_case=misordered
+smoke_bootstrap="Read $smoke_root/skill/SKILL.md and $smoke_root/skill/tools/plan.md. Execute effective-flow plan using the entire user message verbatim as the argument. Follow the loaded Effective Flow contracts and preserve their planning and review behavior. End with DONE or ABORT: <reason>."
+/opt/homebrew/bin/codex exec --ignore-user-config --ephemeral --json \
+  -s workspace-write -m gpt-6.1-sol \
+  -c model_reasoning_effort=high -c approval_policy=never --enable multi_agent \
+  -C "$smoke_root/cases/$smoke_case" \
+  -o "$smoke_root/evidence/$smoke_case/attempt-001/last-message.txt" \
+  -c "developer_instructions=$smoke_bootstrap" -
+```
+
+The preserved fixture roots are evidence, not fresh inputs for another attempt. The harness and
+manifest retain the fixture construction, baseline file digests and pre-existing runtime files.
+The snapshot digest is SHA-256 over sorted relative file paths, a NUL separator and each file's
+bytes, as implemented by `run.py`'s `tree_digest()`:
+
+`4adfeea0cf7390040d2fa43dd646cea63e77df14e5ffc9aa15c78285b93d2148`.
+
+| Case                | Issue / language | Codex exit | Seconds | Terminal / review                       | Blocking points | Filesystem result | Final lint              |
+| ------------------- | ---------------- | ---------: | ------: | --------------------------------------- | --------------: | ----------------- | ----------------------- |
+| `misordered`        | #102 / en        |          0 |  15.138 | `ABORT: misordered unattended envelope` |               — | No writes         | Not applicable: no plan |
+| `valid-en-blocking` | #101 / en        |          0 | 251.008 | `DONE` / `Revision required`            |               3 | One new plan only | Exit 0, en              |
+| `valid-de`          | #103 / de        |          0 | 315.918 | `DONE` / `Revision required`            |               3 | One new plan only | Exit 0, de              |
+| `ready-en`          | #104 / en        |          0 | 271.752 | `DONE` / `Approved`                     |               0 | One new plan only | Exit 0, en              |
+
+The German artifact preserves `**Ergebnis:** Überarbeitung nötig` and returns the normalized
+English response value. All three plans have acceptance criteria, no placeholders or duplicate
+fields, and an open plan status. The independent audit found zero observed prose questions and
+zero actual user-input tool calls in every case. Each stream contains `turn.completed`; each
+fixture retains its one initial commit and unchanged index. Runtime files are unchanged in all
+four cases; the prepared bootstrap/runtime files are accounted for separately in the manifest.
+
+Raw evidence remains uncommitted under
+`/private/tmp/ef-wp2-smoke-6UhWhP/evidence/<case>/attempt-001/`: `events.jsonl`,
+`last-message.txt`, `summary.json` and `audit.json`. The bundle also retains `run.py`,
+`manifest.json`, the skill snapshot and fixtures. The independent acceptance record is
+`/private/tmp/ef-wp2-smoke-6UhWhP/wp2-independent-audit.json`.
+
+| Case                | `events.jsonl` SHA-256                                             | `last-message.txt` SHA-256                                         |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `misordered`        | `c85c13ec426fcd580e428eabf44566605881f1beff6911dbbb3731e04c50408b` | `adb936731fef9eae0d5938bd93329793c2d45d16254cca18a23c3818a1a1afcb` |
+| `valid-en-blocking` | `5f0ef84346096316e3cc3c2eb5493cefbc5cc1d3e790848b656eecc94a70c663` | `d31e0462ecf370f2613c2551f5b2ad9610c0555b4e618f5a80432b11993fe5ad` |
+| `valid-de`          | `f2bbf51b4207e4da02f1160b5937696c8c8df8ebac1cd5ae693cea527bf4009c` | `fbc87f9403674e5026d64e27e490c02547c1e7062487bcb5b06c0324786bc130` |
+| `ready-en`          | `fe6dfc8f3de3dd72751bf8f24e75539f2d83b97fd853cabd06bcd497073b324e` | `a49cee13cf19c4ec1dd35c36d1297ec896673c12a20ef146b496fe3d90bcc79f` |
+
+The original summaries are preserved with their measurement defects. The two blocking fixtures
+set `planLintPassed` and `openPointsMatch` to false because the harness expected exactly one open
+point; the acceptance contract requires a nonzero count, and the actual linter exits 0 with three
+blocking points. The original recursive event scan reports `userInputCalls: 2` in all four cases
+because it matches command/source text. The independent audit counted actual completed tool-call
+names and inspected agent messages instead; it found no user-input calls or prose questions. Its
+verdict accepts both blocking cases with the harness expectation defect explicitly recorded,
+rather than rewriting their original summaries as passed.
+
+This is bounded WP2 evidence. The JSONL exposes collaboration wait items with empty state maps,
+not complete child transcripts; it cannot establish every child's behavior or WP1's delegation
+criterion. It also does not establish behavior on Codex 0.153.4, under the llm-automatisator runner
+or on the guest. Those remain WP1's separate evidence obligations.
 
 ## Review findings
 
@@ -532,8 +610,8 @@ and guest evidence separate. The local run is pending; no behavioral pass is cla
 
 The fixed finding ensures that fresh-context analysis workers receive the non-interactive
 no-question policy explicitly. A targeted independent recheck confirmed the correction.
-No residual review report was needed. The runtime-smoke evidence gap above is a validation
-blocker, not an unimplemented review finding.
+No residual review report was needed. The independent local smoke audit subsequently accepted
+all four cases; no WP2 validation blocker remains.
 
 ## Plan review
 

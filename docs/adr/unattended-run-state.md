@@ -61,7 +61,7 @@ caller-owned authority boundary.
 
 - [Plan conventions](../developer-guide/plan-conventions.md#unattended-planning-and-file-review)
 - [Planning-readiness contract](../../src/shared/planning-readiness.md)
-- [Unattended planning plan](../plan/2026-10-01-unattended-planning-and-readiness-contract.md)
+- [Unattended planning plan](../plan/archive/2026-10-01-unattended-planning-and-readiness-contract.md)
 
 This is a living decision. Update this file in place when the current policy changes; repository
 history preserves earlier states.

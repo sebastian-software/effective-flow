@@ -20,7 +20,7 @@ The recommendation is **Feature**: this adds a new runtime capability plus addit
 
 Sibling plans:
 
-- **Depends on** [`2026-10-01-unattended-planning-and-readiness-contract.md`](2026-10-01-unattended-planning-and-readiness-contract.md) (WP2) for the `**Issue:** #<N>` plan header and the unattended plan file name `YYYY-MM-DD-issue-<N>-<slug>.md`. The script only parses that header; the parser can be built and tested against the agreed literal before WP2 lands.
+- **Depends on** [`2026-10-01-unattended-planning-and-readiness-contract.md`](archive/2026-10-01-unattended-planning-and-readiness-contract.md) (WP2) for the `**Issue:** #<N>` plan header and the unattended plan file name `YYYY-MM-DD-issue-<N>-<slug>.md`. The script only parses that header; the parser can be built and tested against the agreed literal before WP2 lands.
 - **Depends on** [`2026-10-01-shared-plan-publication-core.md`](2026-10-01-shared-plan-publication-core.md) (WP4) for the shared process runner `src/scripts/process-runner.mjs` and the plan-branch derivation (`branch-name`). This package imports both and neither copies nor re-derives them. WP4 must be re-derived first (see its Open points); the plan-branch name may change.
 - **Order:** WP1 → WP2 and WP4 (in parallel) → this package (WP3) → WP5.
 - **Used by** [`2026-10-01-issue-buddy-tool-stage-1.md`](2026-10-01-issue-buddy-tool-stage-1.md) (WP5). WP5 composes this script with the unattended planning and with WP4. WP5 completes branches that WP3 classifies as `orphan-branch` through WP4's `complete-branch`, which applies WP4's single-file assertion (`assert-changeset`).
