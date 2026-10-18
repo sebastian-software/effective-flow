@@ -12,7 +12,7 @@ Work package 5 of the concept `docs/concept/2026-09-29-issue-buddy.md`: build th
 - the unattended planning and readiness contract (WP2, `docs/plan/archive/2026-10-01-unattended-planning-and-readiness-contract.md`): the non-interactive run state of `plan` and `plan-review`, the planning-readiness check, the `**Issue:**` header and the unattended file name `YYYY-MM-DD-issue-<N>-<slug>.md`;
 - the shared plan publication core (WP4, `docs/plan/2026-10-01-shared-plan-publication-core.md`): single-file assertion, scan, create-only push of `<branchPrefix>/plan/issue-<N>`, pull-request lookup and creation with `Refs`. WP4 must be re-derived first (see its Open points); the plan-branch name may change.
 
-The Codex exec spike (WP1, `docs/plan/2026-10-01-codex-exec-unattended-spike.md`) supplies the evidence that delegation and no-question behaviour hold under `codex exec`. The scheduled jobs in `llm-automatisator` (WP6a `2026-10-01-issue-buddy-dry-run-auftrag.md`, WP6b `2026-10-01-issue-buddy-schreib-token-und-veroeffentlichung.md`) and operations (WP7 `2026-10-01-issue-buddy-betrieb-und-kalibrierung.md`) depend on this plan.
+The Codex exec spike (WP1, `docs/plan/archive/2026-10-01-codex-exec-unattended-spike.md`) supplies the evidence that delegation and no-question behaviour hold under `codex exec`. The scheduled jobs in `llm-automatisator` (WP6a `2026-10-01-issue-buddy-dry-run-auftrag.md`, WP6b `2026-10-01-issue-buddy-schreib-token-und-veroeffentlichung.md`) and operations (WP7 `2026-10-01-issue-buddy-betrieb-und-kalibrierung.md`) depend on this plan.
 
 Order across the roadmap: WP1 → WP2 and WP4 (in parallel) → WP3 → this package (WP5) → WP6a → WP6b. WP7's dry-run calibration follows WP6a, and its enabling of publication follows WP6b.
 
