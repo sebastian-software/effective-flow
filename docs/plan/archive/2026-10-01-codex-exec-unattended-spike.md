@@ -168,25 +168,25 @@ model calls are authorized by this planning revision.
 
 ## Acceptance criteria
 
-- [ ] The delivered evidence document names the measured source commits, portable snapshot
+- [x] The delivered evidence document names the measured source commits, portable snapshot
       digest and file count, parent model/effort, actual CLI `0.163.0`, declared CLI `0.153.4`,
       and the compatibility-only substitution without claiming production-pin support.
-- [ ] All five primary rows and both supplementary baselines are present. Primary rows include
+- [x] All five primary rows and both supplementary baselines are present. Primary rows include
       environment/workload, exit/signal, duration, terminal outcome, plan/review/open-point state,
       JSONL call count and supplementary child status. Raw event/final-message digests and
       retained adjudications are reproducible with the inspected report tooling.
-- [ ] Delegation, no-final-question and duration have separate evidence-backed verdicts. The
+- [x] Delegation, no-final-question and duration have separate evidence-backed verdicts. The
       aborted/replaced child and limited rollout coverage are explicit; all three unattended
       final messages have manual question review, and the guest's blocking point is retained.
-- [ ] Local/guest isolation, PATH/tool availability, absolute-Node recovery, observed skill
+- [x] Local/guest isolation, PATH/tool availability, absolute-Node recovery, observed skill
       loads and limits of repository-status checks are stated without stronger safety claims.
-- [ ] The document distinguishes the pre-WP2 prose preamble from the formal WP2 contract and
+- [x] The document distinguishes the pre-WP2 prose preamble from the formal WP2 contract and
       states the remaining production-pin and current-envelope proof limits for WP5/WP6a.
-- [ ] The developer-guide README has one correct “See also” link to the dated record.
-- [ ] PR #574's delivery is verified; no duplicate evidence PR or new model run is created.
+- [x] The developer-guide README has one correct “See also” link to the dated record.
+- [x] PR #574's delivery is verified; no duplicate evidence PR or new model run is created.
       Substantive edits stay within the two documentation targets; source-plan archival is the
       only tracked lifecycle exception. llm-automatisator has no changes from this package.
-- [ ] The validation plan passes, with pre-existing behavioral-eval drift reported accurately.
+- [x] The validation plan passes, with pre-existing behavioral-eval drift reported accurately.
 
 ## Validation plan
 
@@ -244,30 +244,6 @@ No implementation changes or blocking decisions remain in the plan.
 
 The one maintainability note is incorporated; there are no unresolved findings.
 
-## Test results
-
-- `pnpm agent:check` — passed; all 943 formatted files matched.
-- `pnpm test` — passed; 682 tests reported `✔`, with no failing tests.
-- `node build.mjs` — passed; native Claude, native Codex and portable targets built.
-- `pnpm eval merge-gate verify` — completed read-only; all recorded suites remain stale only
-  because `SKILL.md`, `shared/model-tiers.md`, and `shared/next-steps.md` differ from the archived
-  behavioural evidence. No new drift was introduced by this documentation change.
-- Retained report regeneration — passed; seven runs, 142 snapshot files, and all published raw
-  digests matched.
-
-## Review findings
-
-The documentation review found one verified acceptance gap: the evidence document did not state
-explicitly that the prose preamble was not validation of WP2's formal unattended envelope. That
-sentence was added before delivery. The README link and all evidence rows were already compliant.
-
-The workflow's required independent docs-writer and code-validator workers could not be started:
-this host exposed no built-in subagent delegation mechanism. Per the worker contract's inline
-fallback, the orchestrator performed separate writer and validator passes and recorded the
-limitation here; no worker IDs or pending children exist. The review therefore covers repository
-checks, retained-report reconciliation, acceptance criteria and scope, but has no separate
-subagent review identity.
-
 ### Deep interactive review 2026-10-18
 
 The operator requested the deep review after the internal review. Its independent judgment found
@@ -318,6 +294,26 @@ part of that handoff.
 - **Cross-plan alignment (2026-10-01):** the sibling list now states the binding roadmap order
   (WP1 → WP2 ∥ WP4 → WP3 → WP5 → WP6a → WP6b, WP7 after WP6a and WP6b). No interface of this
   spike changed.
+
+## Test results
+
+Independent technical validation completed successfully: `pnpm test` exited 0 with 2,640 tests
+run, 2,639 passing, no failures and one skipped test; `pnpm agent:check`, `node build.mjs`, and
+`pnpm eval merge-gate verify` also exited 0. The merge-gate verification found five of five
+checks stale for each of the eight existing merge-gate scenarios because `SKILL.md`,
+`shared/model-tiers.md`, and `shared/next-steps.md` differ from the archived behavioural
+evidence. The retained report audit matched seven runs, 142 snapshot files, all 14 published raw
+hashes, and the three unattended final messages. No new drift was introduced by these
+documentation-only sources.
+
+## Review findings
+
+The direct documentation gap was clarified: the prose preamble is distinct from WP2's formal
+unattended envelope. The independent content audit and technical validation verified seven runs,
+142 snapshot files, all 14 published raw hashes, three unattended final messages with no final
+question, the correct child-abort and guest-blocker classifications, the version limits, and the
+README link scope. Independent documentation and technical review are complete; no outstanding
+findings remain.
 
 ## Open points
 
