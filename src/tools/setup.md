@@ -1,5 +1,5 @@
 ---
-description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. A hidden mode (`setup hidden` or the Visibility question) instead keeps the whole configuration in a local, untracked `.effective-flow/project-setup.md`, ignored through the Git common directory's `info/exclude`, and writes no tracked file. Any other argument is a free-text Targeted request against an existing configuration: it changes only the named keys behind one confirmed before/after list, or answers read-only questions about the current values. Use this skill for the one-time setup, a targeted change, or a question about the Effective Flow configuration."
+description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. A hidden mode (`setup hidden` or the Visibility question) instead keeps the whole configuration in a local, untracked `.effective-flow/project-setup.md`, ignored through the Git common directory's `info/exclude`, and writes no tracked file. `setup status` writes nothing and asks nothing: a read-only diagnosis of the configuration, the ignore state, the central domain-owner skills, and the installed version. Any other argument is a free-text Targeted request against an existing configuration: it changes only the named keys behind one confirmed before/after list, or answers read-only questions about the current values. Use this skill for the one-time setup, a targeted change, or a question about the Effective Flow configuration."
 catalogHint: "Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard."
 ---
 
@@ -163,7 +163,10 @@ keyword mode:
 - `{{SKILL:setup}} express` selects **Express**;
 - `{{SKILL:setup}} guided` selects **Guided**;
 - `{{SKILL:setup}} hidden` selects **Express** with the visibility fixed to `hidden`, so the
-  Visibility question below is not asked.
+  Visibility question below is not asked;
+- `{{SKILL:setup}} status` selects **Status**: it follows the loaded `setup-status` fragment, whose
+  status call replaces the configuration and chat-language reads, and ends after its report, never
+  reaching the Visibility question or Step 1.
 
 Any other non-empty argument selects **Targeted**, its original text kept verbatim
 (`{{SKILL:setup}} guided tracker github` is Targeted, not Guided); load and follow the Targeted
@@ -181,10 +184,15 @@ when: the normalized invocation has no argument or its single argument is `profi
 
 ```lazy-include
 setup-targeted-change
-when: the normalized invocation is non-empty and is not exactly one of the five keyword forms
+when: the normalized invocation is non-empty and is not exactly one of the six keyword forms
 ```
 
-**Visibility.** Every mode except Targeted then resolves the visibility before Step 1, because
+```lazy-include
+setup-status
+when: the normalized invocation is exactly `status`
+```
+
+**Visibility.** Every mode except Targeted and Status then resolves the visibility before Step 1, because
 Step 1 already differs between the two values: Profile after its `Chat` and `Profile` asks, Express
 and Guided as their first question, `{{SKILL:setup}} hidden` not at all; Targeted keeps the
 visibility of the configuration it resolves. Pre-select `Hidden` when the locator's
@@ -200,7 +208,7 @@ are posted on pull requests, delivery branches carry a neutral prefix, and no tr
 Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
 
 ```ask
-when: the invocation is not `hidden`, the mode is not Targeted, and the setup mode's earlier questions are answered
+when: the invocation is not `hidden`, the mode is neither Targeted nor Status, and the setup mode's earlier questions are answered
 header: Visibility
 question: Should Effective Flow stay invisible in this repository's tracked files and on the forge?
 options:

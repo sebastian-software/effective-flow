@@ -1520,16 +1520,366 @@ function setDifference(left, right) {
 // instead of merely written down: the build fails on the collision that would
 // weaken the check, and whoever needs that collision is told what the manifest
 // has to grow first.
-export function assertDisjointConsumerNames({ toolNames, agentNames }, { context } = {}) {
+//
+// Shared fragments join the same namespace: the setup-status ownership projection derives each
+// manifest consumer's `consumerKind` (tool, agent, shared) from its bare name, so a fragment named
+// like a tool or an agent would make that kind, and the config scope derived from it, ambiguous.
+export function assertDisjointConsumerNames(
+  { toolNames, agentNames, sharedNames = [] },
+  { context } = {},
+) {
   const agents = new Set(agentNames);
   const collisions = [...new Set(toolNames)].filter((name) => agents.has(name)).sort();
-  if (collisions.length === 0) return;
+  if (collisions.length > 0) {
+    throw new Error(
+      `Tool and agent share the basename(s) ${collisions.join(', ')}: the skill-ownership manifest ` +
+        `identifies a consumer by bare name, so a colliding pair would cross-satisfy its "delegate" ` +
+        `obligation. Give the manifest a per-consumer kind and key the pair on it before introducing ` +
+        `this name${contextSuffix(context)}`,
+    );
+  }
+  const toolsAndAgents = new Set([...toolNames, ...agentNames]);
+  const sharedCollisions = [...new Set(sharedNames)]
+    .filter((name) => toolsAndAgents.has(name))
+    .sort();
+  if (sharedCollisions.length === 0) return;
   throw new Error(
-    `Tool and agent share the basename(s) ${collisions.join(', ')}: the skill-ownership manifest ` +
-      `identifies a consumer by bare name, so a colliding pair would cross-satisfy its "delegate" ` +
-      `obligation. Give the manifest a per-consumer kind and key the pair on it before introducing ` +
-      `this name${contextSuffix(context)}`,
+    `Shared fragment and tool or agent share the basename(s) ${sharedCollisions.join(', ')}: the ` +
+      `setup-status ownership projection derives a consumer's kind from its bare name, so the ` +
+      `consumerKind and the skills scope derived from it would be ambiguous. Rename the ` +
+      `fragment${contextSuffix(context)}`,
   );
+}
+
+// --- Setup-status ownership projection ---
+//
+// `setup status` reports, per exposed tool, which declared central domain owner the project's
+// `skills` configuration disables. The shipped script cannot read sources, so the build projects the
+// manifest's `delegate` rows onto the exposed tools that reach each consumer, with the skills config
+// scope (`tools.<name>` or `agents.<name>`) each reach goes through.
+//
+// Reachability is deliberately explicit: an exposed tool reaches itself, its eager and lazy include
+// closure, the named worker roles of marked spawn sites in that source or closure
+// with their own include closures, and every tool behind a declared workflow edge, transitively. A
+// `{{SKILL:X}}` mention alone is no edge: most name a neighbouring workflow for the user rather than
+// running it. The forward and reverse edge guards below keep the declared list honest.
+
+export const SETUP_STATUS_PROJECTION_SCHEMA_VERSION = 1;
+
+const TOOL_REFERENCE_PATTERNS = Object.freeze([
+  Object.freeze({ form: 'skill', pattern: /\{\{SKILL:([a-z0-9]+(?:-[a-z0-9]+)*)\}\}/g }),
+  Object.freeze({ form: 'lazy-include', pattern: /```lazy-include\n([^\n]+)\n/g }),
+  Object.freeze({ form: 'path', pattern: /\btools\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md\b/g }),
+]);
+
+// Every name a tool source refers to as a tool, with the forms it uses: `{{SKILL:<name>}}`, a
+// ```lazy-include fence naming it, or a literal `tools/<name>.md` path.
+export function collectToolReferences(text) {
+  const references = new Map();
+  const normalized = normalizeLineEndings(text);
+  for (const { form, pattern } of TOOL_REFERENCE_PATTERNS) {
+    for (const match of normalized.matchAll(pattern)) {
+      const name = match[1].trim();
+      if (!references.has(name)) references.set(name, new Set());
+      references.get(name).add(form);
+    }
+  }
+  return references;
+}
+
+function edgeKey(edge) {
+  return `${edge.from} -> ${edge.to}`;
+}
+
+function edgeLabel(edge) {
+  return edge.mode ? `${edgeKey(edge)} (mode ${edge.mode})` : edgeKey(edge);
+}
+
+// Guards the declared tool-to-tool lists against tool sources and their shared include closures.
+//   forward: every declared workflow edge and pointer reference matches a reference in its `from`
+//            source or its eager/lazy shared include closure, so a removed hand-off cannot leave
+//            a stale edge behind;
+//   reverse: every reference from a tool source to an internal tool (neither exposed nor a
+//            deprecated alias) is declared, either as a workflow edge the projection follows or as
+//            a pointer reference it deliberately does not follow. References to exposed tools are
+//            not checked in reverse: most name a neighbouring workflow for the user.
+//   modes:   an edge's optional `mode` (the target runs only in that mode) is one of the target's
+//            resolver modes in `toolModes`; one (from, to) pair carries either one mode-less edge or
+//            edges with distinct modes, and is never both an edge and a pointer reference.
+export function assertWorkflowEdgeContract(
+  {
+    toolSources,
+    sharedSources = new Map(),
+    exposedTools,
+    aliases = [],
+    workflowEdges,
+    pointerReferences = [],
+    toolModes = {},
+  },
+  { context } = {},
+) {
+  const knownTools = new Set(toolSources.keys());
+  const exposed = new Set(exposedTools);
+  const aliasSet = new Set(aliases);
+  const references = new Map(
+    [...toolSources].map(([name, text]) => [
+      name,
+      new Set(
+        [
+          text,
+          ...[...includeClosure(text, sharedSources)].map((shared) => sharedSources.get(shared)),
+        ].flatMap((source) => [...collectToolReferences(source).keys()]),
+      ),
+    ]),
+  );
+  const problems = [];
+  const declared = new Map(); // pair key -> { kind, modes: Set<mode|null> }
+  for (const [list, kind] of [
+    [workflowEdges, 'workflow edge'],
+    [pointerReferences, 'pointer reference'],
+  ]) {
+    for (const edge of list) {
+      const key = edgeKey(edge);
+      const mode = edge.mode ?? null;
+      const previous = declared.get(key);
+      if (previous && (previous.kind !== kind || previous.modes.has(mode))) {
+        problems.push(`${key} is declared more than once`);
+      } else if (previous && (mode === null || previous.modes.has(null))) {
+        problems.push(`${key} mixes a mode-less edge with mode-specific edges`);
+      }
+      if (previous) previous.modes.add(mode);
+      else declared.set(key, { kind, modes: new Set([mode]) });
+      if (mode !== null && kind === 'pointer reference') {
+        problems.push(`pointer reference ${key} carries a mode; only workflow edges do`);
+      } else if (mode !== null && !(toolModes[edge.to] ?? []).includes(mode)) {
+        problems.push(
+          `workflow edge ${edgeLabel(edge)}: "${mode}" is no resolver mode of ${edge.to} (${(toolModes[edge.to] ?? []).join(', ') || 'none'})`,
+        );
+      }
+      if (!knownTools.has(edge.from)) problems.push(`${kind} ${key}: no src/tools/${edge.from}.md`);
+      if (!knownTools.has(edge.to)) problems.push(`${kind} ${key}: no src/tools/${edge.to}.md`);
+      if (aliasSet.has(edge.to) || aliasSet.has(edge.from)) {
+        problems.push(`${kind} ${key} names a deprecated alias`);
+      }
+      if (edge.from === edge.to) problems.push(`${kind} ${key} is a self-reference`);
+      if (knownTools.has(edge.from) && !references.get(edge.from).has(edge.to)) {
+        problems.push(
+          `${kind} ${key} has no matching reference ({{SKILL:${edge.to}}}, a lazy-include fence or tools/${edge.to}.md) in src/tools/${edge.from}.md or its shared include closure`,
+        );
+      }
+    }
+  }
+  for (const [from, targets] of references) {
+    for (const to of targets) {
+      if (to === from || !knownTools.has(to) || exposed.has(to) || aliasSet.has(to)) continue;
+      if (!declared.has(edgeKey({ from, to }))) {
+        problems.push(
+          `src/tools/${from}.md references the internal tool "${to}" without a declared workflow edge or pointer reference (including its shared include closure)`,
+        );
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`Workflow edge guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`);
+  }
+}
+
+function includeClosure(text, sharedSources) {
+  const closure = new Set();
+  const pending = [text];
+  while (pending.length > 0) {
+    const { eager, lazy } = collectIncludeNames(normalizeLineEndings(pending.pop()));
+    for (const name of [...eager, ...lazy]) {
+      if (closure.has(name) || !sharedSources.has(name)) continue;
+      closure.add(name);
+      pending.push(sharedSources.get(name));
+    }
+  }
+  return closure;
+}
+
+function executedAgentRoles(text, spawnSites) {
+  const roles = new Set();
+  for (const { id } of collectSpawnSiteMarkers(text)) {
+    const site = spawnSites.get(id);
+    if (!site) throw new Error(`Unknown spawn-site "${id}" in setup-status ownership projection`);
+    // Literal-tier sites run generic analysis or another workflow, not a named worker role.
+    for (const { role } of site.clauses) if (role !== null) roles.add(role);
+  }
+  return roles;
+}
+
+// Every (consumer kind, consumer) one exposed tool reaches, each with the skills scopes it is
+// reached through. Returns Map<`${kind}:${name}`, Set<scope>>. Edges are followed whatever their
+// `mode`: a domain owner is loaded in every mode of the tool that consumes it.
+function reachOfExposedTool(
+  tool,
+  { toolSources, agentSources, sharedSources, workflowEdges, spawnSites },
+) {
+  const reach = new Map();
+  const add = (kind, name, scope) => {
+    const key = `${kind}:${name}`;
+    if (!reach.has(key)) reach.set(key, new Set());
+    reach.get(key).add(scope);
+  };
+  const tools = [];
+  const pending = [tool];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (tools.includes(current)) continue;
+    tools.push(current);
+    for (const edge of workflowEdges) if (edge.from === current) pending.push(edge.to);
+  }
+  const agents = new Set();
+  for (const current of tools) {
+    const text = toolSources.get(current) ?? '';
+    add('tool', current, `tools.${current}`);
+    const closure = includeClosure(text, sharedSources);
+    for (const name of closure) add('shared', name, `tools.${current}`);
+    for (const source of [text, ...[...closure].map((name) => sharedSources.get(name))]) {
+      for (const agent of executedAgentRoles(source, spawnSites)) {
+        if (!agentSources.has(agent)) {
+          throw new Error(`Unknown worker role "${agent}" in setup-status ownership projection`);
+        }
+        agents.add(agent);
+      }
+    }
+  }
+  for (const agent of agents) {
+    add('agent', agent, `agents.${agent}`);
+    for (const name of includeClosure(agentSources.get(agent), sharedSources)) {
+      add('shared', name, `agents.${agent}`);
+    }
+  }
+  return reach;
+}
+
+// Projects the manifest's `delegate` rows onto the exposed tools. Sources are raw texts keyed by
+// basename; `workflowEdges` is the declared tool-to-tool list; `spawnSites` are validated, resolved
+// rows of the model-tier execution table; `version` the installed SemVer. Agent mentions alone are
+// no execution: only a reached site's named role clauses contribute worker dependencies.
+export function deriveSetupStatusProjection(
+  {
+    manifest,
+    toolSources,
+    agentSources,
+    sharedSources,
+    exposedTools,
+    workflowEdges,
+    spawnSites = [],
+    version,
+  },
+  { context } = {},
+) {
+  const kindOf = (name) => {
+    if (toolSources.has(name)) return 'tool';
+    if (agentSources.has(name)) return 'agent';
+    if (sharedSources.has(name)) return 'shared';
+    throw new Error(
+      `Setup-status projection: manifest consumer "${name}" is no tool, agent or shared source${contextSuffix(context)}`,
+    );
+  };
+  const sites = new Map(spawnSites.map((site) => [site.id, site]));
+  const reachByTool = new Map(
+    exposedTools.map((tool) => [
+      tool,
+      reachOfExposedTool(tool, {
+        toolSources,
+        agentSources,
+        sharedSources,
+        workflowEdges,
+        spawnSites: sites,
+      }),
+    ]),
+  );
+  const owners = [];
+  for (const relationship of manifest.relationships) {
+    for (const { consumer, classification } of relationship.consumers) {
+      if (classification !== 'delegate') continue;
+      const consumerKind = kindOf(consumer);
+      const reach = [];
+      for (const tool of [...exposedTools].sort()) {
+        const scopes = reachByTool.get(tool).get(`${consumerKind}:${consumer}`);
+        for (const scope of [...(scopes ?? [])].sort()) reach.push({ tool, scope });
+      }
+      owners.push({
+        skill: relationship.skill,
+        consumer,
+        consumerKind,
+        classification,
+        tools: [...new Set(reach.map((entry) => entry.tool))].sort(),
+        reach,
+      });
+    }
+  }
+  const projection = {
+    schemaVersion: SETUP_STATUS_PROJECTION_SCHEMA_VERSION,
+    version,
+    exposedTools: [...exposedTools],
+    workflowEdges: workflowEdges.map(({ from, to, mode }) => ({ from, to, mode: mode ?? null })),
+    owners,
+  };
+  assertSetupStatusProjection(projection, manifest, { context });
+  return projection;
+}
+
+// Guards (a) and (b): the projection's delegate rows equal the manifest's, and every delegate
+// consumer reaches at least one exposed tool, so no declared owner silently drops out of the report.
+// Guard (a) holds by construction today, because the derivation iterates the manifest's own
+// relationships; it is a regression tripwire for a future derivation that filters, merges or
+// re-keys rows.
+export function assertSetupStatusProjection(projection, manifest, { context } = {}) {
+  const rowKey = (row) => `${row.skill} / ${row.consumer} / ${row.classification}`;
+  const expected = new Set(
+    manifest.relationships.flatMap((relationship) =>
+      relationship.consumers
+        .filter((consumer) => consumer.classification === 'delegate')
+        .map((consumer) => rowKey({ skill: relationship.skill, ...consumer })),
+    ),
+  );
+  const actual = new Set(projection.owners.map(rowKey));
+  const problems = [
+    ...setDifference(expected, actual).map((key) => `missing delegate row ${key}`),
+    ...setDifference(actual, expected).map((key) => `delegate row ${key} is not in the manifest`),
+  ];
+  if (actual.size !== projection.owners.length) problems.push('duplicate delegate rows');
+  for (const row of projection.owners) {
+    if (row.tools.length === 0) {
+      problems.push(
+        `delegate consumer "${row.consumer}" (${row.skill}) maps to no exposed tool: declare the workflow edge or spawn reference that reaches it`,
+      );
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Setup-status ownership projection guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`,
+    );
+  }
+}
+
+// Every resolver successor-set entry except the exempt tools (`setup`) must be run by at least one
+// exposed tool in its mode, through the declared workflow edges: otherwise `setup status` could
+// name no exposed tool that stops on a retired row. `reaching(tool, { exposedTools, workflowEdges },
+// mode)` is the shipped status script's own mapping, so build and runtime cannot disagree.
+export function assertSuccessorSetsReachExposedTools(
+  { successorSets, exemptTools = [], exposedTools, workflowEdges, reaching },
+  { context } = {},
+) {
+  const exempt = new Set(exemptTools);
+  const problems = successorSets
+    .filter((entry) => !exempt.has(entry.tool))
+    .filter(
+      (entry) => reaching(entry.tool, { exposedTools, workflowEdges }, entry.mode).length === 0,
+    )
+    .map(
+      (entry) =>
+        `${entry.tool}${entry.mode ? ` (mode ${entry.mode})` : ''} is run by no exposed tool: declare the workflow edge that runs it`,
+    );
+  if (problems.length > 0) {
+    throw new Error(
+      `Setup-status successor-set reach guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`,
+    );
+  }
 }
 
 export function assertSkillOwnershipContract(
