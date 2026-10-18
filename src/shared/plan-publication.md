@@ -37,7 +37,8 @@ when: the publication worktree, its lifecycle record, or its record lock below `
   the audience and the content-check findings under "Audience" and "Content check" below, and the
   user chose to republish. This fragment then poses no question and skips the completion-mode,
   non-interactive, and end-state gates, because the calling workflow already decided them; the
-  hidden-mode gate, the capability gate under "Availability", and verification still apply. It
+  hidden-mode gate, the capability gate under "Availability", the content check's blocking rule,
+  and verification still apply. It
   accepts only the republication arm of the three-way rule; any other outcome stops and is reported
   to the caller.
 
@@ -45,7 +46,8 @@ when: the publication worktree, its lifecycle record, or its record lock below `
 argument each — single-quoted, with every `'` inside written as `'\''` — behind `--` where the
 command takes one, and as `':(literal)<path>'` wherever Git reads a pathspec; they are never
 interpolated unquoted. The helper's path rule admits whatever `plan.dir` may hold, `&`, `;`, `$`,
-and quotes included, so this quoting is the only shell boundary.
+and quotes included, so this quoting, with the stdin rule under "Content check",
+is the only shell boundary.
 
 A candidate's head branch, `<head-branch>`, comes from `pr-list`, and Git admits branch names that
 carry `$(...)`, `;`, or quotes, so it follows the same rule: every command that receives it — the
@@ -180,25 +182,24 @@ visibility through a provider CLI directly.
 
 ### Content check
 
-Before the question, scan the plan file and, on a first publication, the pull-request body this run
-would publish, including its `Requirement` summary. These classes are findings:
+Before the question, scan the plan file and, on a first publication, the pull-request title and
+body rendered once under "Pull request shape", including its `Requirement` summary: run
+`node <skill-root>/scripts/plan-publication.mjs scan` with one JSON object on standard input —
+`cwd` the invocation checkout's root, `runState` `interactive`, `planFile` `P`, and on a first
+publication `title` and `body`. Pass that object through a here-document with a quoted delimiter
+(`<<'JSON'`) or a file, never inside `echo` or a double-quoted string. The script owns the finding
+classes and their confidence; this fragment lists none.
 
-- private-key and certificate headers: a `-----BEGIN` line naming a `PRIVATE KEY` or a
-  `CERTIFICATE`;
-- common token shapes: a provider prefix such as `ghp_`, `github_pat_`, `glpat-`, `sk-`, `xoxb-`,
-  or `AKIA` that starts at a word boundary and is followed by a run of at least 20 token characters
-  (letters, digits, `_`, `-`; 16 after `AKIA`), so `sk-` inside `task-tracking` is no finding;
-  JWTs, three dot-separated base64url segments starting with `eyJ`; and `Bearer` values;
-- `password`, `secret`, and `api_key` assignments that carry a literal value;
-- absolute paths rooted at `/Users/`, `/home/`, or a drive letter such as `C:\`.
+`data.blocking` and `data.acknowledgeable` are arrays of finding ids `<class>:<field>:<line>`. A
+high-confidence finding, listed in `blocking`, makes publication unavailable before the
+question, also under `consent: given-by-caller`. A failed scan — a nonzero exit, an envelope that
+does not parse, or `ok: false` — makes publication unavailable the same way, naming its error code.
+The lower-confidence findings, listed in `acknowledgeable`, go into the single question below.
 
-These are **not** findings: repository-relative paths such as `src/shared/…`, `docs/plan/…`, and
-`.effective-flow/…`, and an assignment whose value is an obvious placeholder such as `<token>`.
-
-Name each finding by its class and its line in the scanned text, never by the matched value, so
-the question never repeats a secret. State "no findings" explicitly when there are none. The
-findings go into the single question below. There is no second question, and answering "Publish"
-is the explicit acknowledgement of every finding it listed.
+Name each finding by its id — class, field and line — never by the matched value, so the question
+never repeats a secret. State "no findings" explicitly when there are none. There is
+no second question, and answering "Publish" is the explicit acknowledgement of every finding it
+listed.
 
 ### The single question
 
@@ -308,8 +309,8 @@ Run every step here from `RUNTIME_STATE_ROOT`, per "Rooted operations".
 
 **First publication.** Delegate to `{{SKILL:pr}}` as a returning committed handoff. Pass the
 execution root, the head branch, the resolved base ref and the resolved local base branch each named
-as such, the verified head OID, the verified commit receipt as commit-only evidence, the title and
-body from "Pull request shape", the title-type hint `docs`, and these lines, each on its own line:
+as such, the verified head OID, the verified commit receipt as commit-only evidence, the scanned
+title and body from "Pull request shape", unchanged, the title-type hint `docs`, and these lines, each on its own line:
 
 ```text
 Draft: requested

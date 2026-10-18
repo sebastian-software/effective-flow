@@ -73,6 +73,11 @@ reports are always local: they are never committed and never tracked as an issue
 target. Their prose follows `language.workflow`; the internal runtime/wisdom schema remains
 language-stable.
 
+Before the report is finalized, one independent read-only reviewer in a fresh context tries to
+refute the draft diagnosis. The report records the outcome in its section "Independent challenge"
+(German: "Unabhängige Gegenprüfung"); a refuted or skipped challenge downgrades the result to
+`unclear` with the follow-up "further investigation needed".
+
 **Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
 functionality or intentional behavior change), or `/effective-flow docs` (pure
@@ -158,11 +163,16 @@ is ignored and reported, never blocking.
 You get exactly **one question**. It names the remote, the base branch, the branch, that the pull
 request is a draft, and its audience, which is always "possibly public: everyone who can read
 `<remote>`", with the `origin` host and repository path as `<remote>`. It also lists the findings of a
-content check over the plan and the pull-request body: private-key or certificate headers, common
-token shapes, `password`/`secret`/`api_key` assignments with a literal value, and absolute paths
-under a home or drive root. Each finding is named by its class and line, never by the matched
-value, and "no findings" is stated explicitly. Answering **Publish** acknowledges every listed
-finding; **Keep local**, or no answer, publishes nothing.
+content check run by the shipped `plan-publication.mjs scan` helper, which holds the binding class
+table. It scans the plan and, on a first publication only, the pull-request title and body.
+High-confidence findings — private keys, provider tokens, credentials in URLs or authorization
+headers, and generation attribution — make publication unavailable before the question, also when
+an implementing run republishes after its own question; public certificates are not findings.
+Lower-confidence findings — credential assignments and absolute local paths — go into the question.
+A scan that fails to run or to answer also makes publication unavailable. Each finding is named by
+its class, field and line, never by the matched value, and "no findings" is stated explicitly.
+Answering **Publish** acknowledges every listed lower-confidence finding; **Keep local**, or no
+answer, publishes nothing.
 
 On **Publish**, `plan` commits the plan file alone in a temporary Effective Flow worktree (a sibling
 worktree in a Claude Code or Codex worktree session), pushes the branch
