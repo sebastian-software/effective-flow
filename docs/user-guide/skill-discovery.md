@@ -35,7 +35,9 @@ tool and no Effective Flow agent depends on a host skill for its base function.
    standards, specialist guidance) is owned by the central skills: if a recommended skill is the
    declared owner of a domain question and covers it, its guidance is **authoritative**, not
    merely optional advice. If the skill is missing, a deliberately **minimal fallback** takes
-   over – the tool stays functional, only with less depth. The exact assignment per skill is in
+   over – the tool stays functional, only with less depth;
+   [`/effective-flow setup status`](./tools-setup.md#status) lists the missing or disabled owners
+   and the tools that run their fallback. The exact assignment per skill is in
    the [Developer Guide → Skill ownership](../developer-guide/skill-ownership.md). In pure
    analysis/planning tools, the no-code boundary stays strict.
 6. **Report.** At the end, the tool briefly reports which skills were used – or that none

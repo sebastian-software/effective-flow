@@ -378,11 +378,13 @@ reading repository contents and writing issues.
 
 Every target's minimal skill payload includes `scripts/remote-tracker.mjs`,
 `scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`,
-`scripts/diff-baseline.mjs`, and `scripts/plan-publication.mjs`, each beside its importable
-`-core.mjs` sibling; the shared `scripts/process-runner.mjs` that the CLI entries import and
-inject into their cores; and the pilot
+`scripts/diff-baseline.mjs`, `scripts/plan-publication.mjs`, and `scripts/setup-status.mjs`, each
+beside its importable `-core.mjs` sibling; the shared `scripts/process-runner.mjs` that the CLI
+entries import and inject into their cores; and the pilot
 measurement family `scripts/pilot-measurement.mjs` with its `-core.mjs` and `-protocol.mjs`
-modules, next to the router, tools, and shared resources. The remote tracker ships five
+modules, next to the router, tools, and shared resources. The build also generates the read-only
+`setup status` ownership projection `scripts/setup-status-owners.json`, which is data, not a
+script. The remote tracker ships five
 further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`,
 `-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — which the same registration and byte-identity guards
 cover. Installed skills therefore
@@ -391,7 +393,10 @@ existing `gh` or `tea` installations remain the remote-tracker's credential and 
 The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
 messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. The
 diff-baseline pair makes no network call either: it runs local `git` against a private index and
-object directory below `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`. `plan-publication scan` makes no network call; `publish` and `complete-branch` reach the
+object directory below `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`. The
+setup-status pair writes nothing and makes a single anonymous `GET` to the published repository's
+`releases/latest` endpoint for the version comparison; a failed lookup is reported as `could not
+check`. `plan-publication scan` makes no network call; `publish` and `complete-branch` reach the
 network only through `git` and the in-process remote tracker, and stay a dry run without `--apply`. Session titles add no shipped
 runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
 current-task capability, Claude Code renames its own session through the host's session-management

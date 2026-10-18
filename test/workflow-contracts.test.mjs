@@ -1162,11 +1162,11 @@ function includeHostsOf(fragment) {
   return hosts;
 }
 
-// Invariant: setup classifies every invocation before mutation — the five keyword forms select
+// Invariant: setup classifies every invocation before mutation — the six keyword forms select
 // their modes, and any other non-empty argument is a free-text Targeted request rather than an
-// error; only Profile loads the profile fragment, only Targeted the Targeted fragment, and Targeted
-// is never asked the Visibility question.
-test('setup classifies the five keyword invocations and routes any other argument to Targeted before mutation', () => {
+// error; only Profile loads the profile fragment, only Targeted the Targeted fragment, only Status
+// the status fragment, and neither Targeted nor Status is asked the Visibility question.
+test('setup classifies the six keyword invocations and routes any other argument to Targeted before mutation', () => {
   const setup = source('src/tools/setup.md');
   const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
 
@@ -1180,6 +1180,22 @@ test('setup classifies the five keyword invocations and routes any other argumen
   assert.match(
     step0,
     /`\{\{SKILL:setup\}\} hidden` selects \*\*Express\*\* with the visibility fixed/,
+  );
+  // Status is the sixth keyword form: it ends after its own report, so no later step can mutate.
+  // Its status call is its only configuration read: a separate resolution call could stop the run
+  // on exit 3, which Status reports as a finding while every other section still renders.
+  assert.match(step0, /`\{\{SKILL:setup\}\} status` selects \*\*Status\*\*/);
+  assert.match(
+    prose(step0),
+    near('selects Status', 'status call replaces the configuration and chat-language reads', 80),
+  );
+  assert.match(
+    prose(step0),
+    near(
+      'selects Status',
+      'ends after its report, never reaching the Visibility question or Step 1',
+      200,
+    ),
   );
   assert.match(prose(step0), /Any other non-empty argument selects Targeted/);
   assert.match(prose(step0), near('selects Targeted', 'its original text kept verbatim', 40));
@@ -1199,19 +1215,26 @@ test('setup classifies the five keyword invocations and routes any other argumen
   const pointers = new Map(
     [...step0.matchAll(LAZY_INCLUDE_RE)].map((match) => [match[1].trim(), (match[2] ?? '').trim()]),
   );
-  assert.deepEqual([...pointers.keys()], ['setup-profiles', 'setup-targeted-change']);
+  assert.deepEqual(
+    [...pointers.keys()],
+    ['setup-profiles', 'setup-targeted-change', 'setup-status'],
+  );
   assert.match(
     pointers.get('setup-profiles'),
     /normalized invocation has no argument or its single argument is `profile`/,
   );
   assert.match(
     pointers.get('setup-targeted-change'),
-    /normalized invocation is non-empty and is not exactly one of the five keyword forms/,
+    /normalized invocation is non-empty and is not exactly one of the six keyword forms/,
   );
-  // Both mode fragments are loaded only by this Step 0 pointer: an eager copy anywhere would put a
+  // `setup status <more text>` stays Targeted: only the exact argument loads the status fragment,
+  // and the Targeted condition counts `status` among the keyword forms it excludes.
+  assert.match(pointers.get('setup-status'), /^the normalized invocation is exactly `status`$/);
+  assert.doesNotMatch(pointers.get('setup-targeted-change'), /five/);
+  // The mode fragments are loaded only by this Step 0 pointer: an eager copy anywhere would put a
   // mode contract into an always-loaded core, and a second lazy host would load it outside the
   // classification that selects its mode.
-  for (const fragment of ['setup-profiles', 'setup-targeted-change']) {
+  for (const fragment of ['setup-profiles', 'setup-targeted-change', 'setup-status']) {
     const hosts = includeHostsOf(fragment);
     assert.deepEqual(hosts.eager, [], `${fragment} must never be included eagerly`);
     assert.deepEqual(hosts.lazy, ['tools/setup.md'], `${fragment} must load only from setup`);
@@ -1223,13 +1246,119 @@ test('setup classifies the five keyword invocations and routes any other argumen
   }
 
   // Targeted keeps the visibility of the configuration it resolves; asking would invite a switch
-  // that the Targeted fragment redirects to the full setup.
-  assert.match(prose(step0), /Every mode except Targeted then resolves the visibility/);
+  // that the Targeted fragment redirects to the full setup. Status asks nothing at all.
+  assert.match(prose(step0), /Every mode except Targeted and Status then resolves the visibility/);
   const visibility = askContracts(step0, 'tools/setup.md Step 0').filter(
     (ask) => ask.header === 'Visibility',
   );
   assert.equal(visibility.length, 1, 'Step 0 must carry exactly one Visibility ask');
-  assert.match(visibility[0].when, /the mode is not Targeted/);
+  assert.match(visibility[0].when, /the mode is neither Targeted nor Status/);
+});
+
+// Invariant: `setup status` is a read-only diagnosis. Its fragment is the whole Status branch, so a
+// question or a mutating instruction in it would be the first one a Status run reaches: it carries
+// no `ask` fence, loads no other fragment (none of the write-owning setup fragments can follow),
+// and names no write, staging, commit, migration, marker, ignore-file or runtime-directory
+// operation. It renders the remediation the status envelope carries rather than its own, takes its
+// chat language from the envelope instead of a second resolution call (falling back through the
+// conversation language and the envelope's project language to `en`, never straight to mirroring),
+// renders a non-null ignore-note `detail`, reports a missing or disabled domain owner once per owner
+// and cause (a missing owner suppresses its disabled lines), and recommends setup only for a
+// setup-fixable finding with one option per setup form, at most two: bare setup is Profile mode and
+// applies neither a Targeted request nor `setup hidden`/`setup guided`, so it is offered only for
+// the `setup` form itself. The next-steps table carries that recommendation as a `setup` row whose
+// `<...>` placeholders the fragment fills.
+test('setup status renders the read-only status envelope and never asks or mutates', () => {
+  const status = source('src/shared/setup-status.md');
+
+  assert.doesNotMatch(status, /```ask/, 'setup-status must pose no question');
+  assert.doesNotMatch(status, /```(?:lazy-)?include/, 'setup-status must load no other fragment');
+  const mutation =
+    /\b(?:write|writes|written|writing|stage|staged|staging|commit|commits|migrat\w*|marker|mkdir|untrack\w*)\b|git (?:add|rm|config|update-index)|\.gitignore|info\/exclude|\.effective-flow\/|RUNTIME_STATE_ROOT|runtime-state-safety/i;
+  assert.doesNotMatch(status, mutation, 'setup-status must carry no mutating instruction');
+  // Shipped text never links into this repository's own docs/ tree.
+  assert.doesNotMatch(status, /docs\//);
+
+  assert.match(
+    status,
+    /`node <skill-root>\/scripts\/setup-status\.mjs status`[\s\S]{0,120}`\{"cwd": "<absolute path of the checkout setup was invoked in>"\}`/,
+  );
+  assert.match(prose(status), /A non-interactive run produces the same report/);
+  assert.match(
+    prose(status),
+    near('`ok: false`', 'the run ends there with no next-steps block', 120),
+  );
+  ordered(status, '**Configuration**', '**Ignore state**', '**Domain owners**', '**Version**');
+  assert.match(prose(status), /add no remediation of your own/);
+  assert.match(prose(status), /while every other section still renders/);
+  assert.match(prose(status), /"not installed \(according to this session's skill list\)"/);
+  assert.match(prose(status), /one line per owner and cause, never one per tool/);
+  assert.match(prose(status), /"`<tool>` runs its minimal fallback"/);
+  assert.match(
+    prose(status),
+    near(
+      'Status makes no separate `config-resolve` call',
+      '`data\\.configuration\\.chatLanguage`',
+      60,
+    ),
+  );
+  assert.match(
+    prose(status),
+    /`data\.configuration\.chatLanguage` when set, otherwise the conversation language, otherwise `data\.configuration\.projectLanguage`, otherwise `en`/,
+  );
+  assert.doesNotMatch(prose(status), /mirror the user's language/);
+  assert.match(prose(status), /`detail` when not `null`/);
+  assert.match(prose(status), /every row of `data\.retired\[\]` \(beside `data\.configuration`/);
+  assert.match(
+    prose(status),
+    near('its `missingRemediation`', 'no line of its `disabled\\[\\]` renders', 40),
+  );
+  assert.match(prose(status), near('installed and enabled', 'with an empty `disabled\\[\\]`', 40));
+  assert.match(
+    prose(status),
+    /The options follow `data\.setupForms` in order, one per form and at most two/,
+  );
+  for (const [form, invocation] of [
+    ['setup', 'bare `\\{\\{SKILL:setup\\}\\}` \\(an empty setup argument\\)'],
+    ['setup guided', '`\\{\\{SKILL:setup\\}\\} guided`'],
+    ['setup hidden', '`\\{\\{SKILL:setup\\}\\} hidden`'],
+    ['targeted', '`\\{\\{SKILL:setup\\}\\} <request>` with the first Targeted request'],
+  ]) {
+    assert.match(prose(status), new RegExp(`\`${form}\` is ${invocation}`));
+  }
+  ordered(
+    prose(status),
+    '`setup` is bare',
+    '`setup guided` is',
+    '`setup hidden` is',
+    '`targeted` is',
+  );
+  assert.match(prose(status), /the second line also says that the report's remaining forms follow/);
+  assert.match(prose(status), /Bare `\{\{SKILL:setup\}\}` is an option only for the `setup` form/);
+  assert.doesNotMatch(prose(status), /setup forms named above/);
+  // Status sits behind Step 0's routing; the fragment keeps no second copy of that decision.
+  assert.doesNotMatch(prose(status), /Visibility question|Step 1/);
+  assert.match(prose(status), /`could not check` never fails the run/);
+  assert.match(
+    prose(status),
+    near(
+      'recommends `\\{\\{SKILL:setup\\}\\}` only when `data\\.setupFixable` is true',
+      'otherwise the run emits no block',
+      40,
+    ),
+  );
+
+  const setupEdges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  }).filter((edge) => edge.tool === 'setup');
+  const statusEdge = setupEdges.find((edge) => /setup-fixable/.test(edge.condition));
+  assert.ok(statusEdge, 'next-steps must carry a setup row for a setup-fixable status report');
+  assert.equal(statusEdge.then, '{{SKILL:setup}} <setup argument>');
+  assert.equal(statusEdge.or, '{{SKILL:setup}} <second setup argument>');
+  assert.match(
+    prose(source('src/shared/next-steps.md')),
+    /a `setup` run with nothing staged, unless it is a `setup status` report that found a setup-fixable problem/,
+  );
 });
 
 // Invariant: each setup lazy pointer fires at the decision point that owns its text, and that
@@ -2111,13 +2240,13 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
   // Unrecognized text, a typo of a keyword included, lists the accepted forms and mutates nothing.
   assert.match(
     interpretation,
-    near('When nothing is recognized', 'list the five keyword forms', 80),
+    near('When nothing is recognized', 'list the six keyword forms', 80),
   );
-  assert.match(interpretation, near('list the five keyword forms', 'stop without mutation', 80));
+  assert.match(interpretation, near('list the six keyword forms', 'stop without mutation', 80));
   assert.match(interpretation, near('nothing is recognized', 'a typo such as', 10));
   assert.match(
     interpretation,
-    near('list the five keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
+    near('list the six keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
   );
 
   // Redirects: the two keys that stay with the full setup.
