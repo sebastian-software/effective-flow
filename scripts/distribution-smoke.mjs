@@ -49,6 +49,9 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement-protocol.mjs',
   'plan-lint.mjs',
   'plan-lint-core.mjs',
+  'plan-publication.mjs',
+  'plan-publication-core.mjs',
+  'process-runner.mjs',
   'config-resolve.mjs',
   'config-resolve-core.mjs',
 ];
@@ -188,6 +191,38 @@ function assertPlanLintSmoke(target, helper) {
       file.duplicates.join() !== 'docs/plan/archive/smoke.md'
     ) {
       fail(`${target} plan-lint failed\n${result.stdout}${result.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+// Scans a throwaway plan through the shipped copy of the helper, which proves the CLI resolves its
+// core and the shared process runner beside it inside the target and reports a clean plan as such.
+function assertPlanPublicationScanSmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-plan-publication-smoke-')));
+  try {
+    mkdirSync(join(cwd, 'docs', 'plan'), { recursive: true });
+    writeFileSync(
+      join(cwd, 'docs', 'plan', 'smoke.md'),
+      '# Smoke\n\n**Plan status:** Not implemented\n\nEdit `src/shared/smoke.md`.\n',
+    );
+    const result = spawnSync(process.execPath, [helper, 'scan'], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, CI: '1', NO_COLOR: '1' },
+      input: JSON.stringify({ cwd, runState: 'unattended', planFile: 'docs/plan/smoke.md' }),
+    });
+    const envelope = parseJson(result.stdout.trim(), `${target} plan-publication scan`);
+    if (
+      result.status !== 0 ||
+      envelope.ok !== true ||
+      envelope.operation !== 'scan' ||
+      envelope.data.planFile !== 'docs/plan/smoke.md' ||
+      envelope.data.findings.length !== 0 ||
+      envelope.data.blocking.length !== 0
+    ) {
+      fail(`${target} plan-publication scan failed\n${result.stdout}${result.stderr}`);
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -415,6 +450,7 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       fail(`${target} pilot protocol failed\n${protocolHelper.stdout}${protocolHelper.stderr}`);
     }
     assertPlanLintSmoke(target, join(scripts, 'plan-lint.mjs'));
+    assertPlanPublicationScanSmoke(target, join(scripts, 'plan-publication.mjs'));
     assertConfigResolveSmoke(target, join(scripts, 'config-resolve.mjs'));
   }
 

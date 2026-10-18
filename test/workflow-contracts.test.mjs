@@ -20384,6 +20384,7 @@ test('plan publication maps the completion mode and gates before any Git operati
       'end-state',
       'hidden-mode gate',
       'capability gate',
+      "content check's blocking rule",
       'verification still apply',
       'only the republication arm',
     ],
@@ -20440,65 +20441,92 @@ test('plan publication asks exactly once, naming a possibly public audience, and
   assert.equal(publication.includes('everyone with read access to'), false);
 });
 
-test('plan publication checks content by class, at token boundaries, and never repeats a value', () => {
+test('plan publication checks content through the shipped scan and never repeats a value', () => {
   const publication = source('src/shared/plan-publication.md');
   const check = prose(section(publication, '### Content check'));
 
-  // Invariant: both published texts — the plan and, on a first publication, the body with its
-  // requirement summary — are scanned before the single question.
+  // Invariant: the published texts — the plan and, on a first publication, the title and the body
+  // with its requirement summary — are scanned before the single question, by the one shipped scan
+  // the unattended publication core runs too.
   assert.match(check, near('scan the plan file', '`Requirement` summary', 200));
   ordered(publication, '### Content check', '```ask\n');
-
-  // Invariant: the finding classes are fixed literals, so the check cannot quietly shrink.
   includesAll(
     check,
     [
-      '`-----BEGIN`',
-      '`PRIVATE KEY`',
-      '`CERTIFICATE`',
-      '`ghp_`',
-      '`github_pat_`',
-      '`glpat-`',
-      '`sk-`',
-      '`xoxb-`',
-      '`AKIA`',
-      '`eyJ`',
-      '`Bearer`',
-      '`password`',
-      '`secret`',
-      '`api_key`',
-      '`/Users/`',
-      '`/home/`',
-      '`C:\\`',
+      '`node <skill-root>/scripts/plan-publication.mjs scan`',
+      '`runState` `interactive`',
+      '`planFile` `P`',
+      '`title` and `body`',
     ],
-    'the content check',
+    'the scan call',
   );
-
-  // Invariant (F27): a token prefix counts only at a word boundary followed by a long token run,
-  // so ordinary words that contain a prefix are no finding.
+  // Invariant: the scan input carries model-written title and body text, so it reaches the script
+  // only as standard input that no shell expands.
   includesAll(
     check,
-    [
-      'word boundary',
-      'at least 20 token characters',
-      '16 after `AKIA`',
-      '`sk-` inside `task-tracking` is no finding',
-    ],
-    'the token-shape rule',
+    ["`<<'JSON'`", 'never inside `echo` or a double-quoted string'],
+    'the stdin rule',
   );
 
-  // Invariant: the ordinary contents of a plan are not findings, or every plan would warn.
-  const nonFindings = check.slice(check.indexOf('not findings'));
-  includesAll(
-    nonFindings,
-    ['`src/shared/…`', '`docs/plan/…`', '`.effective-flow/…`', '`<token>`'],
-    'the non-findings',
-  );
+  // Invariant: the finding classes live in the script alone, so the prose keeps no second list
+  // that could drift from the scan's class table.
+  for (const literal of [
+    '`-----BEGIN`',
+    '`PRIVATE KEY`',
+    '`CERTIFICATE`',
+    '`ghp_`',
+    '`github_pat_`',
+    '`glpat-`',
+    '`sk-`',
+    '`xoxb-`',
+    '`AKIA`',
+    '`eyJ`',
+    '`Bearer`',
+    '`/Users/`',
+    '`/home/`',
+    '`C:\\`',
+  ]) {
+    assert.equal(check.includes(literal), false, `the content check still lists ${literal}`);
+  }
+
+  // Invariant: a high-confidence finding makes publication unavailable before the question, even
+  // under caller consent; a failed scan fails closed the same way; only lower-confidence findings
+  // reach the single question as acknowledgeable.
+  assert.match(check, near('high-confidence finding', 'unavailable before the question', 120));
+  assert.match(check, near('unavailable before the question', '`consent: given-by-caller`', 80));
+  assert.match(check, near('failed scan', 'makes publication unavailable', 160));
+  includesAll(check, ['a nonzero exit', 'does not parse', '`ok: false`'], 'the failed scan');
+  assert.match(check, near('lower-confidence findings', 'the single question', 120));
 
   // Invariant: the question never repeats a secret, and "no findings" is said explicitly.
-  assert.match(check, near('its class and its line', 'never by the matched value', 60));
+  assert.match(check, near('by its id', 'never by the matched value', 60));
+  assert.ok(check.includes('`<class>:<field>:<line>`'));
   assert.ok(check.includes('"no findings"'));
   assert.ok(check.includes('no second question'));
+});
+
+test('the plan continuation stops before its question on a blocking or failed scan', () => {
+  const continuation = source('src/shared/plan-pr-continuation.md');
+  const local = prose(section(continuation, '### Local and published plan'));
+
+  // Invariant: a scan that blocks or fails stops the run before the "Plan differs" ask, so the
+  // question never offers a "Republish" that publication would then refuse; the stop names the
+  // findings by their ids (class, field and line), never by value, and the ask is reached only
+  // when the content check blocked nothing.
+  assert.match(
+    local,
+    near(
+      'blocking or failed scan of the local plan',
+      'stops the run before the "Plan differs" ask',
+      40,
+    ),
+  );
+  assert.match(local, near('"Plan differs" ask', 'by its id', 80));
+  ordered(continuation, 'blocking or failed scan', 'header: Plan differs');
+  const differs = askContracts(continuation, 'plan-pr-continuation').find(
+    (ask) => ask.header === 'Plan differs',
+  );
+  assert.match(differs.when, /the content check blocked nothing/);
 });
 
 test('plan publication commits only the plan, in a temporary worktree, and opens a new draft', () => {
@@ -20947,7 +20975,7 @@ test('a plan pull request head branch is validated and reaches every command sin
       "A candidate's head branch, `<head-branch>`, comes from",
     ).block;
     // The statement sits next to the plan-path quoting rule it extends.
-    ordered(text, 'so this quoting is the only shell boundary.', rule);
+    ordered(text, 'is the only shell boundary.', rule);
     return rule;
   });
   assert.equal(rules[0], rules[1], 'the head-branch quoting rule must be byte-identical');

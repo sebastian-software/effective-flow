@@ -130,6 +130,9 @@ const RUNTIME_SCRIPT_FILES = [
   'pilot-measurement-protocol.mjs',
   'plan-lint.mjs',
   'plan-lint-core.mjs',
+  'plan-publication.mjs',
+  'plan-publication-core.mjs',
+  'process-runner.mjs',
   'config-resolve.mjs',
   'config-resolve-core.mjs',
 ];

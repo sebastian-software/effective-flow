@@ -402,15 +402,20 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Seven subsystems carry this today: the pairs `config-resolve.mjs`/
+  misread as one. Eight subsystems carry this today: the pairs `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
-  `diff-baseline.mjs`/`diff-baseline-core.mjs` and `plan-lint.mjs`/`plan-lint-core.mjs`; the
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs` and
+  `plan-publication.mjs`/`plan-publication-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
   `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
   `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
   processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
-  `pilot-measurement-protocol.mjs`. The remote-tracker's runtime prompts are
+  `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
+  `createProcessRunner`, belongs to no subsystem and carries the same guard. That only CLI entries
+  (`remote-tracker.mjs`, `plan-publication.mjs`) import it and inject the runner into their cores is
+  no build guard: the unit test "no core imports the shared process runner" in
+  `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
@@ -643,10 +648,10 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Seven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains twenty files: five two-file subsystems, the remote tracker's seven-file family,
-and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
-core or protocol modules:
+Eight dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains twenty-three files: six two-file subsystems, the remote tracker's seven-file
+family, the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
+point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
   JSON object on standard input: `cwd` (an absolute path in the checkout the calling tool runs
@@ -769,6 +774,28 @@ core or protocol modules:
   `assertPlanPlaceholderProjection` fail on any drift against the marked mapping and placeholder
   tables in `src/shared/plan-contract.md`, and against the bracketed tokens of the English template
   in `plan.md` Phase 3.
+- **Plan-publication.** Invoke it as `node <skill-root>/scripts/plan-publication.mjs <operation>`
+  with one closed-schema JSON object on standard input; the operations are `scan`, `branch-name`,
+  `assert-changeset`, `publish` and `complete-branch`. Every operation takes an absolute `cwd`;
+  `scan` and `branch-name` accept any directory, and the Git operations require the repository
+  root. An unknown key is `INVALID_INPUT` before any Git or forge call. It emits
+  one JSON envelope and exits nonzero with `ok: false` on failure. `publish` and `complete-branch`
+  are the unattended draft-pull-request core: they require `runState: unattended` and a GitHub
+  remote, refuse hidden mode, and stay a dry run unless `--apply` is passed. A passing `publish` builds
+  the single-file commit in a temporary index, pushes it without force to
+  `<branchPrefix>/plan/issue-<N>` so the remote branch is the lock, and opens a draft pull request
+  whose body ends with the shipped plan marker line and the non-closing `Refs #<N>`; it then
+  reads the pull request back to confirm draft and marker. `complete-branch` instead adopts an
+  existing pushed plan branch: it asserts its changeset, scans the plan blob read back from Git, and
+  opens the draft pull request. `scan` is read-only and also serves the
+  interactive content check in `src/shared/plan-publication.md`: it reports findings by class,
+  field and line, never by value, in two confidence levels. A high-confidence finding is always
+  `blocking`; a lower one is `blocking` on an unattended run and `acknowledgeable` on an
+  interactive one. The core also exports the pure `planBranchName` and `parsePlanBranch`.
+  `process-runner.mjs` supplies the injected runner; the core spawns nothing itself. The runner
+  has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
+  returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
+  transport helpers, forge CLI calls).
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
@@ -780,9 +807,9 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all twenty identical, usable scripts,
+checks prove that all three installed payloads contain all twenty-three identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
-`plan-lint lint` runs against a fixture plan directory in every target, and that
+`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
 (`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`).
 
