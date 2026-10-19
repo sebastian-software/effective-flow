@@ -37,6 +37,8 @@ const RUNTIME_SCRIPT_FILES = [
   'diff-baseline-core.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
+  'issue-buddy.mjs',
+  'issue-buddy-core.mjs',
   'remote-tracker.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-shared-core.mjs',

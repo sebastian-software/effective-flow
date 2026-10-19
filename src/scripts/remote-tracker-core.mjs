@@ -129,6 +129,7 @@ const REMOTE_OPERATIONS = new Set([
   'repository-resolve',
   'probe',
   'viewer-read',
+  'collaborator-permission-read',
   'label-create',
   'issue-read',
   'issue-state-wait',
@@ -165,6 +166,7 @@ const REMOTE_OPERATIONS = new Set([
 
 const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
+  'collaborator-permission-read': 'collaboratorPermissionRead',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
   'issue-state-wait': 'issueRead',
@@ -2222,6 +2224,12 @@ async function runChecked(runner, plan, label) {
     }
   }
   if (!result || result.status !== 0) {
+    if (
+      label === 'collaborator-permission-read' &&
+      /\bHTTP[ /]404\b/i.test(`${result?.stderr ?? ''}\n${result?.stdout ?? ''}`)
+    ) {
+      fail('TARGET_NOT_FOUND', 'collaborator permission was not found');
+    }
     // The tolerance is keyed on the plan's own metadata rather than on the step label, because a
     // label is display text: the moment a caller renames its step — which `label-create` now does,
     // since it runs two commands — a string comparison would silently stop tolerating the race it
@@ -2424,6 +2432,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         // `gh api user` needs no flag beyond the ones every 2.x line has and no scope beyond the
         // ones an authenticated gh already holds, so it is not tied to the gate's version floor.
         viewerRead: true,
+        collaboratorPermissionRead: true,
         issues: true,
         issueRead: true,
         issueCommentsRead: true,
@@ -2578,6 +2587,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // from the locally configured login `tea logins list` reports. It rides on the same transport
       // probe as the gate reads.
       viewerRead: teaApiTransport,
+      collaboratorPermissionRead: false,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -2723,7 +2733,9 @@ function normalizeAuthor(author) {
   const inferredBot = typeof login === 'string' && /\[bot\]$/i.test(login) ? true : undefined;
   const isBot = explicitBot ?? inferredBot;
   return {
-    login,
+    // An absent login stays absent in process as well as across JSON serialization. Consumers
+    // still read undefined, and the CLI's serialized output remains exactly the same.
+    ...(login === undefined ? {} : { login }),
     isBot: isBot ?? null,
     authorType: isBot === true ? 'bot' : isBot === false ? 'human' : 'unknown',
   };
@@ -2756,6 +2768,13 @@ function normalizeIssue(item, repository, metadata = {}) {
     ...(typeof item.state_reason === 'string' && item.state_reason.length > 0
       ? { stateReason: item.state_reason.toLowerCase() }
       : {}),
+    author: normalizeAuthor(item.user ?? item.author ?? item.poster),
+    ...(normalizeTimestamp(item.created_at, item.createdAt) === undefined
+      ? {}
+      : { createdAt: normalizeTimestamp(item.created_at, item.createdAt) }),
+    ...(normalizeTimestamp(item.updated_at, item.updatedAt) === undefined
+      ? {}
+      : { updatedAt: normalizeTimestamp(item.updated_at, item.updatedAt) }),
     labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
@@ -2804,6 +2823,12 @@ function normalizePullRequest(item, repository, metadata = {}) {
     head: normalizeBranchRef(item.head) ?? item.headRefName ?? item.head_branch ?? item.head,
     base: normalizeBranchRef(item.base) ?? item.baseRefName ?? item.base_branch ?? item.base,
     draft: item.draft ?? item.isDraft ?? false,
+    ...(normalizeTimestamp(item.merged_at, item.mergedAt) === undefined
+      ? {}
+      : { mergedAt: normalizeTimestamp(item.merged_at, item.mergedAt) }),
+    ...(normalizeTimestamp(item.closed_at, item.closedAt) === undefined
+      ? {}
+      : { closedAt: normalizeTimestamp(item.closed_at, item.closedAt) }),
   };
 }
 
@@ -3033,9 +3058,48 @@ function normalizePullRequestRecord(item, repository, metadata = {}) {
 // without canonicalization an ordinary string comparison of two instants would order them wrongly.
 // An unusable or absent value yields no field at all — the caller reads a missing timestamp as
 // "cannot prove this is current", which blocks a merge instead of waving a stale run through.
+// Date's ISO parser rolls February 30 and 24:00 into another instant. Provider evidence
+// must name a real calendar date and clock reading before timezone conversion can occur.
+function validProviderTimestamp(value) {
+  // GitHub and Gitea/Forgejo expose RFC3339 timestamps (Go may include nanoseconds).
+  // Require the complete date, clock and explicit zone; Date's legacy human/numeric
+  // string heuristics cannot establish a provider instant.
+  const parts = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/,
+  );
+  if (!parts) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHour,
+    offsetMinute,
+  ] = parts;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1] &&
+    Number(hourText) < 24 &&
+    Number(minuteText) < 60 &&
+    Number(secondText) < 60 &&
+    (offsetHour === undefined || (Number(offsetHour) < 24 && Number(offsetMinute) < 60))
+  );
+}
 function normalizeTimestamp(...values) {
   for (const value of values) {
     if (typeof value !== 'string' || value.trim() === '') continue;
+    if (!validProviderTimestamp(value.trim())) continue;
     const parsed = new Date(value.trim());
     if (Number.isNaN(parsed.getTime())) continue;
     return parsed.toISOString();
@@ -3760,9 +3824,29 @@ function normalizeSubIssueCreate(raw, repository, input) {
 
 function normalizeRemoteData(operation, raw, repository, input = {}, metadata = {}) {
   const flattened = flattenPages(raw);
+  // GitHub's paginated REST reads must be arrays, including an empty collection. Treat an
+  // error object or mixed/incomplete page container as a failed read rather than empty evidence.
+  if (
+    repository.provider === 'github' &&
+    ['issue-list', 'pr-list', 'issue-comments-read'].includes(operation) &&
+    (!Array.isArray(flattened) ||
+      flattened.some((item) => !item || typeof item !== 'object' || Array.isArray(item)))
+  ) {
+    fail('INVALID_PAYLOAD', 'provider returned an incomplete collection');
+  }
   switch (operation) {
     case 'viewer-read':
       return normalizeViewer(flattened);
+    case 'collaborator-permission-read': {
+      requireObject(flattened, 'provider permission');
+      const login = requireString(input.login, 'login').toLowerCase();
+      return {
+        login,
+        permission:
+          typeof flattened.permission === 'string' ? flattened.permission.toLowerCase() : null,
+        roleName: typeof flattened.role_name === 'string' ? flattened.role_name : null,
+      };
+    }
     // Both providers answer this endpoint with the full updated issue, and `issue-close` is the
     // same resource under a different field, so it shares the branch its sibling mutation already
     // uses. A consumer confirming the transition then reads one normalized lowercase `state`
@@ -3834,7 +3918,17 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       const planPath = input.planPath === undefined ? undefined : requirePlanPath(input.planPath);
       const items = (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
         .map((item) => normalizePullRequestRecord(item, repository))
-        .filter((pullRequest) => !input.head || pullRequest.head === input.head);
+        .filter((pullRequest) => {
+          if (!input.head) return true;
+          if (repository.provider !== 'github' || !input.head.includes(':'))
+            return pullRequest.head === input.head;
+          const [owner, ...parts] = input.head.split(':');
+          return (
+            pullRequest.head === parts.join(':') &&
+            typeof pullRequest.headRepository === 'string' &&
+            pullRequest.headRepository.split('/')[0].toLowerCase() === owner.toLowerCase()
+          );
+        });
       if (planPath === undefined) return items;
       return items
         .filter((pullRequest) => pullRequest.planPrMarker === planPath)

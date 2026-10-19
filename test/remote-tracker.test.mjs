@@ -8888,6 +8888,7 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(probe.capabilities.pullRequestStatus, true);
   assert.equal(probe.capabilities.pullRequestMerge, true);
   assert.equal(probe.capabilities.viewerRead, true);
+  assert.equal(probe.capabilities.collaboratorPermissionRead, probe.executable === 'gh');
   // The one genuine provider limitation: `tea` has no `checks` subcommand and Forgejo offers no
   // server-side blocking watch, so the documented no-watch degradation carries it.
   assert.equal(probe.capabilities.pullRequestChecksWait, false);
@@ -9643,6 +9644,7 @@ test('the GitHub probe reports the identity read independently of the gate versi
   for (const version of ['2.0.0', '2.49.2', '2.70.0']) {
     const probe = await probeAt(version);
     assert.equal(probe.capabilities.viewerRead, true);
+    assert.equal(probe.capabilities.collaboratorPermissionRead, probe.executable === 'gh');
   }
   assert.equal((await probeAt('2.49.2')).capabilities.pullRequestMerge, false);
 });
@@ -11598,6 +11600,7 @@ test('issue-close previews without apply and performs exactly one call with it, 
     // Normalized like its sibling `issue-update-body`, so a caller confirming the transition reads
     // one lowercase `state` rather than knowing which provider spells the issue which way.
     assert.deepEqual(applied.data.result, {
+      author: { isBot: null, authorType: 'unknown' },
       number: 7,
       title: 'Ship the offer',
       body: '',
@@ -12358,6 +12361,7 @@ test('Forgejo pr-read reads the raw API object, which states the head repository
   const own = await read(forgejoPlanPull());
   assert.equal(own.ok, true);
   assert.deepEqual(own.data.result, {
+    author: { isBot: null, authorType: 'unknown' },
     number: 7,
     title: 'WIP: docs: plan publication',
     body: planBody(),
@@ -12553,6 +12557,7 @@ test('the planPath filter keeps only exact marker matches and never returns a bo
   );
   for (const item of github.data.result) assert.equal(Object.hasOwn(item, 'body'), false);
   assert.deepEqual(Object.keys(github.data.result[0]).sort(), [
+    'author',
     'base',
     'draft',
     'head',
@@ -13453,4 +13458,297 @@ test('gh pr ready confirms on stderr, so a successful mark-ready carries an empt
     output: '',
   });
   assert.equal(runner.calls.length, 1);
+});
+
+test('collaborator-permission-read is a read-only capability with normalized permission and 404 failures', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({ permission: 'write', role_name: 'maintain' }),
+      stderr: '',
+    },
+  ]);
+  const result = await executeOperation(
+    'collaborator-permission-read',
+    { repository: githubRepository, login: 'Owner' },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.result, {
+    login: 'owner',
+    permission: 'write',
+    roleName: 'maintain',
+  });
+  assert.deepEqual(runner.calls[0].args, [
+    'api',
+    'repos/example/flow/collaborators/Owner/permission',
+  ]);
+  const missing = await executeOperation(
+    'collaborator-permission-read',
+    { repository: githubRepository, login: 'ghost' },
+    {
+      runner: fakeRunner([{ status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(missing.error.code, 'TARGET_NOT_FOUND');
+  const malformed = await executeOperation(
+    'collaborator-permission-read',
+    { repository: githubRepository, login: '../bad' },
+    { runner: fakeRunner([]), skipProbe: true },
+  );
+  assert.equal(malformed.error.code, 'INVALID_PAYLOAD');
+  const unsupported = await executeOperation(
+    'collaborator-permission-read',
+    {
+      repository: forgejoRepository,
+      login: 'owner',
+      probe: { capabilities: { collaboratorPermissionRead: false } },
+    },
+    { runner: fakeRunner([]), skipProbe: true },
+  );
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+});
+
+test('GitHub issue and PR list/read paths carry actual author/timestamps across two pagination pages', async () => {
+  const instant = '2026-10-19T12:00:00Z';
+  const item = {
+    number: 7,
+    title: 'Title',
+    body: 'Body',
+    state: 'open',
+    user: { login: 'Owner', type: 'User' },
+    created_at: instant,
+    updated_at: instant,
+    html_url: 'https://github.com/example/flow/issues/7',
+    labels: [],
+  };
+  for (const operation of ['issue-list', 'issue-read', 'pr-list', 'pr-read']) {
+    const isList = operation.endsWith('list');
+    const isPr = operation.startsWith('pr');
+    const providerItem = isPr
+      ? {
+          ...item,
+          head: { ref: 'topic', repo: { full_name: 'example/flow' } },
+          base: { ref: 'develop', repo: { full_name: 'example/flow' } },
+          merged_at: instant,
+          closed_at: instant,
+        }
+      : item;
+    const runner = fakeRunner([
+      {
+        status: 0,
+        stdout: JSON.stringify(
+          isList ? [[providerItem], [{ ...providerItem, number: 8 }]] : providerItem,
+        ),
+        stderr: '',
+      },
+    ]);
+    const result = await executeOperation(
+      operation,
+      { repository: githubRepository, number: 7 },
+      { runner, skipProbe: true },
+    );
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const normalized = isList ? result.data.result[0] : result.data.result;
+    assert.deepEqual(normalized.author, { login: 'Owner', isBot: false, authorType: 'human' });
+    assert.equal(normalized.createdAt, '2026-10-19T12:00:00.000Z');
+    assert.equal(normalized.updatedAt, '2026-10-19T12:00:00.000Z');
+    assert.equal(normalized.title, 'Title');
+    assert.equal(normalized.body, 'Body');
+    assert.equal(normalized.repository, 'example/flow');
+    if (isPr) {
+      assert.equal(normalized.mergedAt, '2026-10-19T12:00:00.000Z');
+      assert.equal(normalized.closedAt, '2026-10-19T12:00:00.000Z');
+    }
+    if (isList) {
+      assert.equal(result.data.result.length, 2);
+      assert.equal(runner.calls[0].args.includes('--paginate'), true);
+      assert.equal(runner.calls[0].args.includes('--slurp'), true);
+    } else assert.equal(runner.calls[0].args.includes('--include'), true);
+  }
+});
+
+test('qualified PR heads match owner plus bare branch, retain REST query and exclude forks or missing head identity', async () => {
+  const ref = 'effective-flow/plan/issue-7';
+  const pulls = [
+    githubPlanPull({ head: { ref, repo: { full_name: 'EXAMPLE/flow' } } }),
+    githubPlanPull({ number: 8, head: { ref, repo: { full_name: 'stranger/flow' } } }),
+    githubPlanPull({ number: 9, head: { ref } }),
+    githubPlanPull({
+      number: 10,
+      state: 'closed',
+      closed_at: '2026-10-19T12:00:00Z',
+      head: { ref, repo: { full_name: 'example/flow' } },
+    }),
+  ];
+  const runner = fakeRunner([{ status: 0, stdout: JSON.stringify(pulls), stderr: '' }]);
+  const qualified = await executeOperation(
+    'pr-list',
+    { repository: githubRepository, state: 'all', head: `example:${ref}` },
+    { runner, skipProbe: true },
+  );
+  assert.deepEqual(
+    qualified.data.result.map((entry) => entry.number),
+    [7, 10],
+  );
+  assert.equal(
+    new URL(runner.calls[0].args.at(-1), 'https://api.github.com/').searchParams.get('head'),
+    `example:${ref}`,
+  );
+  const bare = await executeOperation(
+    'pr-list',
+    { repository: githubRepository, head: ref },
+    {
+      runner: fakeRunner([{ status: 0, stdout: JSON.stringify(pulls), stderr: '' }]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(bare.data.result.length, 4);
+});
+
+test('incomplete GitHub collection payloads fail instead of silently becoming empty lists', async () => {
+  for (const operation of ['issue-list', 'pr-list', 'issue-comments-read'])
+    for (const raw of [{ message: 'truncated' }, [[], { incomplete: true }]]) {
+      const result = await executeOperation(
+        operation,
+        { repository: githubRepository, number: 7 },
+        {
+          runner: fakeRunner([{ status: 0, stdout: JSON.stringify(raw), stderr: '' }]),
+          skipProbe: true,
+        },
+      );
+      assert.equal(result.error.code, 'INVALID_PAYLOAD');
+    }
+});
+
+test('missing and ghost issue authors normalize without undefined own properties or invented identities', async () => {
+  for (const authorFields of [{}, { user: null }, { user: {} }]) {
+    const provider = {
+      number: 7,
+      title: 'Title',
+      body: '',
+      state: 'open',
+      labels: [],
+      ...authorFields,
+    };
+    const result = await executeOperation(
+      'issue-read',
+      { repository: githubRepository, number: 7 },
+      {
+        runner: fakeRunner([{ status: 0, stdout: JSON.stringify(provider), stderr: '' }]),
+        skipProbe: true,
+      },
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.data.result.author, { isBot: null, authorType: 'unknown' });
+    assert.equal(Object.hasOwn(result.data.result.author, 'login'), false);
+    assert.equal(result.data.result.author.login, undefined);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(result.data.result.author)),
+      result.data.result.author,
+    );
+    // Dropping an undefined own property changes no existing serialized output.
+    assert.equal(
+      JSON.stringify(result.data.result.author),
+      JSON.stringify({ login: undefined, isBot: null, authorType: 'unknown' }),
+    );
+  }
+});
+
+test('provider ordering timestamps reject impossible calendar dates and clock rollover without inventing an instant', async (t) => {
+  const invalid = [
+    '2026-02-30T12:00:00Z',
+    '2025-02-29T12:00:00Z',
+    '2026-10-19T24:00:00Z',
+    '2026-04-31T12:00:00+02:00',
+  ];
+  for (const value of invalid)
+    await t.test(value, async () => {
+      const provider = {
+        number: 7,
+        title: 'Title',
+        body: '',
+        state: 'open',
+        user: { login: 'owner' },
+        created_at: value,
+        updated_at: value,
+      };
+      const result = await executeOperation(
+        'issue-read',
+        { repository: githubRepository, number: 7 },
+        {
+          runner: fakeRunner([{ status: 0, stdout: JSON.stringify(provider), stderr: '' }]),
+          skipProbe: true,
+        },
+      );
+      assert.equal(result.ok, true);
+      assert.equal(Object.hasOwn(result.data.result, 'createdAt'), false);
+      assert.equal(Object.hasOwn(result.data.result, 'updatedAt'), false);
+    });
+});
+
+test('provider ordering timestamps retain valid leap dates and timezone-offset instants', async (t) => {
+  for (const [value, expected] of [
+    ['2024-02-29T12:00:00Z', '2024-02-29T12:00:00.000Z'],
+    ['2024-02-29T23:30:00-02:00', '2024-03-01T01:30:00.000Z'],
+    ['2026-10-19T12:00:00+02:00', '2026-10-19T10:00:00.000Z'],
+    ['0001-01-01T00:00:00+00:00', '0001-01-01T00:00:00.000Z'],
+  ])
+    await t.test(value, async () => {
+      const provider = {
+        number: 7,
+        title: 'Title',
+        body: '',
+        state: 'open',
+        created_at: value,
+        updated_at: value,
+      };
+      const result = await executeOperation(
+        'issue-read',
+        { repository: githubRepository, number: 7 },
+        {
+          runner: fakeRunner([{ status: 0, stdout: JSON.stringify(provider), stderr: '' }]),
+          skipProbe: true,
+        },
+      );
+      assert.equal(result.ok, true);
+      assert.equal(result.data.result.createdAt, expected);
+      assert.equal(result.data.result.updatedAt, expected);
+    });
+});
+
+test('provider timestamps require complete RFC3339 syntax instead of Date string heuristics', async (t) => {
+  for (const value of [
+    'February 30, 2026 12:00:00 GMT',
+    '2026/02/30 12:00:00 GMT',
+    '0',
+    '2026-02-28T12:00:00Z trailing',
+    '2026-02-28T12:00:00',
+    '2026-02-28',
+    '2026-2-28T12:00:00Z',
+    '2026-02-28T12:00:00+24:00',
+    '2026-02-28T12:00:00+01:60',
+  ])
+    await t.test(value, async () => {
+      const provider = {
+        number: 7,
+        title: 'Title',
+        body: '',
+        state: 'open',
+        created_at: value,
+        updated_at: value,
+      };
+      const result = await executeOperation(
+        'issue-read',
+        { repository: githubRepository, number: 7 },
+        {
+          runner: fakeRunner([{ status: 0, stdout: JSON.stringify(provider), stderr: '' }]),
+          skipProbe: true,
+        },
+      );
+      assert.equal(result.ok, true);
+      assert.equal(Object.hasOwn(result.data.result, 'updatedAt'), false);
+      assert.equal(Object.hasOwn(result.data.result, 'createdAt'), false);
+    });
 });
