@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1",
+  "roundId": "mvfujf1w-e8f4090d-0ec2-4df5-9a66-f739a6a9ac78",
   "scenario": "configured-reviewer-set-aside-blocks",
   "slot": 3,
   "attempt": 1,
-  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/configured-reviewer-set-aside-blocks/slot-3/attempt-1/project",
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfujf1w-e8f4090d-0ec2-4df5-9a66-f739a6a9ac78/slots/configured-reviewer-set-aside-blocks/slot-3/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
   },
-  "promptDigest": "sha256:24a4121e566b14b3a546b0dc95fca632fca9111ae8e53b9e61949f4728bf1298",
-  "fixtureDigest": "sha256:69a79bb815bd2e1379900eb87be82f4abcdbadc849072413f9f9cb25033d6743",
-  "buildDigest": "sha256:fcfff4c376630ebe601362a2c6af931447757ae00be5b68c0f0875b8d59b9a25",
+  "promptDigest": "sha256:7bdc87ab77f3a0e85f8eb2f8859f529b06be43d53e7512b9a48aae203ee7e469",
+  "fixtureDigest": "sha256:f50df4b026c87b6bfa1931f6f89f3c5831b2549baf6bd4bc2832a8832c9aeec6",
+  "buildDigest": "sha256:a3c8e92c315cdb49537726b384581af7b15d00e1801a792a8d0788104b756b5d",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/configured-reviewer-set-aside-blocks/slot-3/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfujf1w-e8f4090d-0ec2-4df5-9a66-f739a6a9ac78/slots/configured-reviewer-set-aside-blocks/slot-3/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
     }
   }
 }

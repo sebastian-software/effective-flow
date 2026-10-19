@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1",
+  "roundId": "mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1",
   "scenario": "nested-spawn-abort-runs-inline",
   "slot": 4,
   "attempt": 1,
-  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/nested-spawn-abort-runs-inline/slot-4/attempt-1/project",
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1/slots/nested-spawn-abort-runs-inline/slot-4/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
   },
-  "promptDigest": "sha256:4f82d4e699f99b3790525141b2e0ff8bb82ef1d28dc30e59ca9f2975a2a6e0d1",
-  "fixtureDigest": "sha256:15848d8ec357ad83db9489c0fe8bd2980b8618c53317ff9c7e3efd71f6221430",
-  "buildDigest": "sha256:422b282f2b44bab6191dadcc1e21573050de969fd1c5c9c244b2a52771769e9a",
+  "promptDigest": "sha256:c9131c2035c0bf946d9cfe7ccf0f274d8ec4e42ce36ff81d62888c39d9ff73f5",
+  "fixtureDigest": "sha256:859a883d105fb651d6876ae740f6350e52166106e9ad7e60701222390153474f",
+  "buildDigest": "sha256:382a6e8951632b5d4c9ba27f4ef9d2bc405cf605452e78b8da0812ee9ef343c6",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvcbb51f-35be9776-3de8-4219-9c6a-4fb4d8f554c1/slots/nested-spawn-abort-runs-inline/slot-4/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1/slots/nested-spawn-abort-runs-inline/slot-4/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home,nesting-by-scenario"
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
     }
   }
 }
