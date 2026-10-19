@@ -36,6 +36,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'merge-gate',
   'apply-review',
   'apply-issues',
+  'issue-buddy',
   'plan',
   'plan-issue',
   'investigate',

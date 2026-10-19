@@ -332,6 +332,38 @@ stored in each canonical parent record is authoritative and must match exactly o
 language-appropriate workflow field in the child body. `apply` does not reclassify it: `Feature`
 routes to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to `docs`.
 
+## `/effective-flow issue-buddy`
+
+**Purpose:** Reviews a bounded set of trusted GitHub issues and turns eligible issues into
+implementation plans. The default mode is a local dry run: it records readiness and planning
+decisions without creating plan files, branches, commits, or pull requests. Add `--publish` to
+publish draft, plan-only pull requests for ready issues.
+
+**Typical calls:**
+
+```text
+/effective-flow issue-buddy
+/effective-flow issue-buddy --max-judgments 5 --max-plans 2
+/effective-flow issue-buddy --publish --max-plans 1
+```
+
+The pass runs in the primary checkout and requires the configured remote tracker to be GitHub.
+Publication is allowed only for a public repository. Private and unknown repositories remain
+dry-run-only. The pass stops when configuration, the repository root, the whole-pass lock, the
+visibility read, the Git state, or the required built-in subagent mechanism cannot be verified.
+It never asks a question during the pass and never implements code, changes configuration, closes
+issues, writes issue comments or labels, or creates a worktree.
+
+Issue-derived text stays inside the delegated planning context. The publication title, commit
+message, and body use fixed templates; the body reports only the issue number, review result, and
+open-point count. A published plan pull request is a draft and must be continued through
+`/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
+The report names preserved plan leftovers and the operator action required before a retry. A
+completed dry run recommends `--publish` only when the repository is public.
+
+**Arguments:** `--publish`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
+numeric limits are positive decimal integers without leading zeroes.
+
 ## Further reading
 
 - [Configuration](configuration.md) – `language.workflow`, `language.forge`, `plan.dir`, and

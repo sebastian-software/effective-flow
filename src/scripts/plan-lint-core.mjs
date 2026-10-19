@@ -10,9 +10,10 @@
 // in `shared/plan-contract.md`; a build guard fails on any drift between the two.
 
 import nodeFs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-export const PLAN_LINT_OPERATIONS = Object.freeze(['lint']);
+export const PLAN_LINT_OPERATIONS = Object.freeze(['lint', 'publication-metadata']);
 
 const EXIT_CODES = Object.freeze({
   INVALID_PAYLOAD: 2,
@@ -416,6 +417,27 @@ function countOpenPoints(inventory) {
   return count;
 }
 
+// Only one canonical result in one review section is authoritative. A label outside that
+// section cannot supply publication metadata; duplicate labels (even equal ones) are ambiguous.
+function classifyReviewResult(inventory) {
+  const found = sections(
+    inventory,
+    new Set([...mappingRow('Plan review').de, ...mappingRow('Plan review').en]),
+  );
+  if (found.length !== 1) return null;
+  const results = inventory.filter(
+    (entry) => !entry.inFence && REVIEW_RESULT_LABELS.some((label) => entry.text.startsWith(label)),
+  );
+  if (results.length !== 1 || !found[0].includes(results[0])) return null;
+  const row = mappingRow('Review result');
+  for (const language of ['de', 'en']) {
+    const { label, value } = fieldParts(row[language][0]);
+    if (results[0].text.trimEnd() === `${label} ${value}`) return 'approved';
+    if (results[0].text.trimEnd() === `${label} ${row[language][1]}`) return 'revision-required';
+  }
+  return null;
+}
+
 // The [start, end) ranges of the inline code spans on one line, backticks included. A backtick
 // run opens a span that the next run of the same length closes; an unmatched run is literal text.
 function codeSpanRanges(text) {
@@ -529,12 +551,44 @@ export function classifyPlanText(text) {
     statusReason,
     language: classifyLanguage(outside),
     openPoints: countOpenPoints(inventory),
+    reviewResult: classifyReviewResult(inventory),
     acceptanceCriteria: classifyAcceptanceCriteria(inventory),
     placeholders: findPlaceholders(outside),
     title: extractTitle(outside),
     workflow: headerField(outside, HEADER_FIELD_LABELS.workflow),
     docCategory: headerField(outside, HEADER_FIELD_LABELS.docCategory),
     targetPath: headerField(outside, HEADER_FIELD_LABELS.targetPath),
+  };
+}
+
+function validateExpectedLanguage(expectedLanguage) {
+  if (expectedLanguage !== undefined && !['de', 'en'].includes(expectedLanguage)) {
+    fail('INVALID_PAYLOAD', 'expectedLanguage must be de or en');
+  }
+}
+
+// Validate every mechanical publication gate before projecting the only text-derived values
+// allowed across the unattended boundary. Never return or echo the classified plan prose.
+export function publicationMetadataFromText(text, { expectedLanguage } = {}) {
+  validateExpectedLanguage(expectedLanguage);
+  const classification = classifyPlanText(text);
+  if (
+    classification.status !== 'open' ||
+    !['de', 'en'].includes(classification.language) ||
+    (expectedLanguage !== undefined && classification.language !== expectedLanguage) ||
+    classification.acceptanceCriteria !== 'present' ||
+    classification.placeholders.length !== 0 ||
+    classification.workflow === null ||
+    (/^Documentation(?:\s|$)/.test(classification.workflow) &&
+      classification.targetPath === null) ||
+    classification.reviewResult === null ||
+    classification.openPoints === null
+  ) {
+    fail('PUBLICATION_METADATA_INVALID', 'plan does not satisfy the publication contract');
+  }
+  return {
+    reviewResult: classification.reviewResult,
+    openPointCount: classification.openPoints,
   };
 }
 
@@ -557,11 +611,13 @@ function isInside(root, candidate) {
   );
 }
 
-function validatePayload(input) {
+function validatePayload(input, extraKeys = []) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     fail('INVALID_PAYLOAD', 'the lint input must be a JSON object');
   }
-  const unknown = Object.keys(input).filter((key) => !PAYLOAD_KEYS.includes(key));
+  const unknown = Object.keys(input).filter(
+    (key) => !PAYLOAD_KEYS.includes(key) && !extraKeys.includes(key),
+  );
   if (unknown.length > 0) fail('INVALID_PAYLOAD', `unknown input keys: ${unknown.join(', ')}`);
   if (typeof input.cwd !== 'string' || input.cwd === '') {
     fail('INVALID_PAYLOAD', 'cwd must be a non-empty string');
@@ -740,7 +796,7 @@ const READ_FLAGS =
 
 // Reads a plan through one descriptor that is proven to be the regular file the containment check
 // saw: no symlink at the last component, same device and inode, so a swap in between fails closed.
-function readPlanFile(file, fs) {
+function readPlanFile(file, fs, { publication = false } = {}) {
   let descriptor;
   try {
     descriptor = fs.openSync(file.real, READ_FLAGS);
@@ -756,7 +812,18 @@ function readPlanFile(file, fs) {
     if (!stat.isFile() || stat.dev !== file.identity.dev || stat.ino !== file.identity.ino) {
       fail('UNSAFE_PATH', `plan file changed after its containment check: ${file.path}`);
     }
-    return fs.readFileSync(descriptor, 'utf8');
+    if (!publication) return fs.readFileSync(descriptor, 'utf8');
+    const limit = 512 * 1024;
+    if (stat.size > limit) fail('PUBLICATION_METADATA_INVALID', 'plan exceeds 512 KiB');
+    const buffer = Buffer.alloc(limit + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = fs.readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    if (length > limit) fail('PUBLICATION_METADATA_INVALID', 'plan exceeds 512 KiB');
+    return buffer.subarray(0, length);
   } finally {
     fs.closeSync(descriptor);
   }
@@ -802,6 +869,51 @@ export function lintPlans(input, { fs = nodeFs } = {}) {
   return { files };
 }
 
+// One descriptor supplies both the classified text and its Git blob identity. Never reread the
+// pathname after classification: the caller binds this identity with publish.expectedBlobOid.
+export async function publicationMetadata(input, { fs = nodeFs, runner } = {}) {
+  validatePayload(input, ['expectedLanguage']);
+  validateExpectedLanguage(input.expectedLanguage);
+  if (input.files?.length !== 1)
+    fail('INVALID_PAYLOAD', 'publication-metadata needs exactly one files entry');
+  const roots = resolveRoots(input, fs);
+  const file = resolveFileEntry(input.files[0], roots, fs);
+  if (file.location !== 'top') fail('UNSAFE_PATH', 'publication metadata needs a top-level plan');
+  const original = fs.lstatSync(path.resolve(roots.cwdReal, file.path));
+  if (!original.isFile())
+    fail('UNSAFE_PATH', 'publication metadata needs a regular file without a symbolic link');
+  const bytes = readPlanFile(file, fs, { publication: true });
+  if (bytes.includes(0)) fail('PUBLICATION_METADATA_INVALID', 'plan contains a NUL byte');
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    fail('PUBLICATION_METADATA_INVALID', 'plan is not valid UTF-8');
+  }
+  const metadata = publicationMetadataFromText(text, { expectedLanguage: input.expectedLanguage });
+  if (duplicatesFor(file, roots, fs).length !== 0) {
+    fail('PUBLICATION_METADATA_INVALID', 'plan has an archive-name duplicate');
+  }
+  if (typeof runner !== 'function')
+    fail('INVALID_PAYLOAD', 'publication-metadata requires a process runner');
+  const result = await runner({
+    executable: 'git',
+    args: ['rev-parse', '--show-object-format'],
+    cwd: roots.cwdReal,
+    timeoutMs: 10_000,
+    processGroup: true,
+  });
+  const format = String(result?.stdout ?? '').trim();
+  if (result?.error || result?.status !== 0 || !['sha1', 'sha256'].includes(format)) {
+    fail('COMMAND_FAILED', 'cannot determine the repository object format');
+  }
+  const blobOid = createHash(format)
+    .update(Buffer.from(`blob ${bytes.length}\0`))
+    .update(bytes)
+    .digest('hex');
+  return { planFile: file.path, blobOid, ...metadata };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Envelope
 
@@ -809,6 +921,11 @@ export function executeOperation(operation, input = {}, deps = {}) {
   try {
     if (!PLAN_LINT_OPERATIONS.includes(operation)) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`);
+    }
+    if (operation === 'publication-metadata') {
+      return publicationMetadata(input, deps)
+        .then((data) => ({ ok: true, operation, data }))
+        .catch((error) => errorEnvelope(operation, error));
     }
     return { ok: true, operation, data: lintPlans(input, deps) };
   } catch (error) {

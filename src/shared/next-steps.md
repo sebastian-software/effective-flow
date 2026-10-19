@@ -130,6 +130,8 @@ backstop for one that carries open points.
 | open-plans  | at least one open plan                                       | {{SKILL:apply}}                      | —                                       |
 | plan-issue  | released                                                     | {{SKILL:apply}} #<issue>             | {{SKILL:plan-issue}} <issue>            |
 | plan-issue  | retained for planning                                        | {{SKILL:plan-issue}} <issue>         | —                                       |
+| issue-buddy | dry run; would-publish issue in public repository            | {{SKILL:issue-buddy}} --publish      | —                                       |
+| issue-buddy | draft plan PR published; restore plan file from branch first | {{SKILL:build}} <plan-file>          | —                                       |
 | apply       | plan clarity gate failed                                     | {{SKILL:plan}} <plan-file>           | {{SKILL:review}} <plan-file>            |
 | apply       | findings applied, PR opened                                  | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <remaining source>      |
 | apply       | findings applied, delivery branch retained, no PR            | {{SKILL:pr}}                         | {{SKILL:apply}} <remaining source>      |

@@ -181,6 +181,8 @@ export function buildGithubCommandPlan(operation, input, repository) {
     // is selected per host, so the identity has to be read against the same one.
     case 'viewer-read':
       return mutationPlan('gh', ['api', ...hostArgs, 'user']);
+    case 'repository-visibility-read':
+      return mutationPlan('gh', ['api', ...hostArgs, '--method', 'GET', `repos/${owner}/${repo}`]);
     case 'collaborator-permission-read': {
       const login = requireString(input.login, 'login');
       if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(login) || login.includes('--'))

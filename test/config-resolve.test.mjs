@@ -1544,6 +1544,7 @@ const RETIRED_CASES = [
   { tool: 'maintain', stops: DELIVERY_ALL },
   { tool: 'deliver', stops: DELIVERY_BASE_PREFIX, reports: ['worktree.completion'] },
   { tool: 'apply-issues', stops: DELIVERY_BASE_PREFIX },
+  { tool: 'issue-buddy', stops: DELIVERY_BASE_PREFIX },
   { tool: 'apply-review', mode: 'remote', stops: DELIVERY_BASE_PREFIX },
   { tool: 'apply-review', mode: 'local', stops: [] },
   { tool: 'pr', stops: ['worktree.baseBranch'] },

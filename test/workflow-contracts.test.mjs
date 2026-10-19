@@ -2543,6 +2543,7 @@ test('the retired-key contract detects at the first configuration read and names
       ['maintain', null, delivery],
       ['deliver', null, delivery.slice(0, 2)],
       ['apply-issues', null, delivery.slice(0, 2)],
+      ['issue-buddy', null, delivery.slice(0, 2)],
       ['apply-review', 'remote', delivery.slice(0, 2)],
       ['apply-review', 'local', []],
       ['pr', null, ['delivery.baseBranch']],
@@ -2695,12 +2696,12 @@ test('every prose call site of the configuration resolver names tool, and mode w
       const text = flat(block);
       assert.match(
         text,
-        /`tool`|"tool": "[a-z-]+"|`tool: "[a-z-]+"`/,
+        /`tool`|"tool": "[a-z-]+"|`tool: "[a-z-]+"`|tool: "[a-z-]+"/,
         `${path}: a resolver call site must name tool: ${text.slice(0, 160)}`,
       );
-      const named = [...text.matchAll(/"tool": "([a-z-]+)"|`tool: "([a-z-]+)"`/g)].map(
-        (match) => match[1] ?? match[2],
-      );
+      const named = [
+        ...text.matchAll(/"tool": "([a-z-]+)"|`tool: "([a-z-]+)"`|tool: "([a-z-]+)"/g),
+      ].map((match) => match[1] ?? match[2] ?? match[3]);
       if (named.length === 0) {
         for (const [tool, modes] of Object.entries(MODE_TOOLS)) {
           const listed = new RegExp(`\`${tool}\` \\(([^)]*)\\)`).exec(text);

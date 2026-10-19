@@ -167,6 +167,7 @@ export const SUCCESSOR_SETS = deepFreeze([
   },
   { tool: 'deliver', mode: null, successors: [DELIVERY_BASE, DELIVERY_PREFIX] },
   { tool: 'apply-issues', mode: null, successors: [DELIVERY_BASE, DELIVERY_PREFIX] },
+  { tool: 'issue-buddy', mode: null, successors: [DELIVERY_BASE, DELIVERY_PREFIX] },
   { tool: 'apply-review', mode: 'remote', successors: [DELIVERY_BASE, DELIVERY_PREFIX] },
   { tool: 'apply-review', mode: 'local', successors: [] },
   { tool: 'pr', mode: null, successors: [DELIVERY_BASE] },

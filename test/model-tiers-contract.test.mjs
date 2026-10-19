@@ -109,6 +109,11 @@ function isSpawnCandidate(text) {
 // Candidate paragraphs that are not spawn instructions, keyed by source and a substring unique to
 // the block among that source's candidates. A stale entry fails as loudly as a missing one.
 const SPAWN_MENTION_ALLOWLIST = [
+  [
+    'tools/issue-buddy.md',
+    '10. **Subagent capability.** Require a built-in subagent mechanism.',
+    'capability check, not a spawn site',
+  ],
   // Handoff, return format or result handling of a spawn marked elsewhere in the same source.
   [
     'tools/apply-issues.md',

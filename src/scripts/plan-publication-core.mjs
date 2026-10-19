@@ -1,11 +1,12 @@
 // Deterministic plan publication: the core behind `plan-publication.mjs`.
 //
-// Five operations, each with a closed input schema and one JSON envelope:
+// Six operations, each with a closed input schema and one JSON envelope:
 // - `scan` (read-only, no network): the one content scan of a plan file and the texts published
 //   with it. Interactive publication (`shared/plan-publication.md`) and the unattended path share
 //   it, so both apply one class table.
 // - `branch-name` (read-only): the plan branch `<branchPrefix>/plan/issue-<N>`.
 // - `assert-changeset` (read-only): a commit adds exactly one plan file and nothing else.
+// - `inspect-branch` (read-only): bounded recovery metadata from a verified plan branch.
 // - `publish` and `complete-branch` (mutations, dry run unless `apply`): an unattended pass commits
 //   the plan with plumbing in a temporary index, pushes it without force so the remote branch is
 //   the lock, and opens a draft pull request carrying the shipped plan marker and `Refs #<N>`.
@@ -16,7 +17,7 @@
 //
 // `cwd` rule: `scan` and `branch-name` accept any existing directory as `cwd` and need no
 // repository, deliberately — `scan` judges files only (the distribution smoke runs it outside a
-// repository), and `branch-name` only asks `git check-ref-format`. The other three operations
+// repository), and `branch-name` only asks `git check-ref-format`. The other four operations
 // require `cwd` to be the repository root.
 //
 // Every caller-supplied text is size-bounded before any scan (`INPUT_TOO_LARGE`; the plan file
@@ -31,6 +32,7 @@ import {
   inspectPlanPrMarker,
 } from './remote-tracker-core.mjs';
 import { assertPublishable } from './remote-tracker-shared-core.mjs';
+import { publicationMetadataFromText, PlanLintError } from './plan-lint-core.mjs';
 import {
   SENSITIVE_CHILD_ASSIGNMENT,
   isLegitimateCredentialProse,
@@ -47,6 +49,7 @@ export const PLAN_PUBLICATION_OPERATIONS = Object.freeze([
   'assert-changeset',
   'publish',
   'complete-branch',
+  'inspect-branch',
 ]);
 
 // The operations that stay a dry run without `apply`; the CLI reads this list too, so an envelope it
@@ -108,7 +111,7 @@ const SCHEMAS = Object.freeze({
       'body',
       'commitMessage',
     ],
-    optional: [],
+    optional: ['expectedBaseOid', 'expectedBlobOid'],
   },
   'complete-branch': {
     required: [
@@ -124,7 +127,21 @@ const SCHEMAS = Object.freeze({
       'title',
       'body',
     ],
-    optional: [],
+    optional: ['expectedBaseOid', 'expectedTipOid'],
+  },
+  'inspect-branch': {
+    required: [
+      'cwd',
+      'runState',
+      'visibility',
+      'issue',
+      'planDir',
+      'branch',
+      'branchPrefix',
+      'remote',
+      'baseBranch',
+    ],
+    optional: ['expectedBaseOid'],
   },
 });
 
@@ -247,9 +264,24 @@ function requireRefPath(value, field) {
 
 function requireOid(value, field) {
   if (typeof value !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)) {
-    fail('INVALID_INPUT', `${field} must be a full lowercase commit object id`, { field });
+    fail('INVALID_INPUT', `${field} must be a full lowercase object id`, { field });
   }
   return value;
+}
+
+function expectedOids(input) {
+  for (const field of ['expectedBaseOid', 'expectedTipOid', 'expectedBlobOid']) {
+    if (input[field] !== undefined) requireOid(input[field], field);
+  }
+}
+
+function requireExpectedOid(expected, actual, code, field) {
+  if (expected !== undefined && expected !== actual) {
+    fail(code, `${field} changed since authorization`, {
+      expectedOid: expected,
+      actualOid: actual,
+    });
+  }
 }
 
 function toPosix(value) {
@@ -1359,6 +1391,7 @@ async function assertChangesetOperation(input, context) {
 function mutatingInput(operation, input) {
   closedSchema(operation, input);
   unattendedRules(input);
+  expectedOids(input);
   const checked = {
     issue: normalizeIssueNumber(input.issue),
     planDir: requireRelativePath(input.planDir, 'planDir'),
@@ -1539,6 +1572,7 @@ async function publishOperation(input, context) {
     });
   }
   const baseOid = await fetchBase(git, base.remote, base.baseBranch, network);
+  requireExpectedOid(input.expectedBaseOid, baseOid, 'BASE_CHANGED', 'base');
   const tracked = await git.run(['cat-file', '-e', `${baseOid}:${planPath}`]);
   if (tracked?.status === 0) {
     fail('CHANGESET_INVALID', 'the base already tracks the plan path', {
@@ -1570,6 +1604,7 @@ async function publishOperation(input, context) {
     const blobId = await git.text(['hash-object', '--no-filters', '--stdin'], {
       stdin: plan.bytes,
     });
+    requireExpectedOid(input.expectedBlobOid, blobId, 'BLOB_CHANGED', 'plan blob');
     return {
       state: 'dry-run',
       repository,
@@ -1636,6 +1671,20 @@ async function publishOperation(input, context) {
     });
   }
 
+  // The hook and commit construction have finished. Bind the body to the blob actually named
+  // by the publication commit, not merely the earlier pathname read or hash-object response.
+  requireExpectedOid(input.expectedBlobOid, changeset.blobOid, 'BLOB_CHANGED', 'plan blob');
+  const committedBytes = await readBlob(git, changeset.blobOid);
+  if (changeset.blobOid !== blobOid || !committedBytes.equals(plan.bytes)) {
+    fail('INVALID_CONTENT', 'the committed blob differs from the verified plan', {
+      reason: 'blob',
+    });
+  }
+  requireUnblocked(
+    scanEntries([{ field: 'plan', bytes: committedBytes }], 'unattended'),
+    'commit-blob',
+  );
+
   const state = { branch, baseOid, commitOid };
   await pushBranch(git, { remote: base.remote, branch, commitOid }, network, state);
   // The push succeeded, so from here on every failure carries the run state.
@@ -1664,31 +1713,29 @@ function commitMessageOf(raw) {
   return separator === -1 ? '' : raw.slice(separator + 2);
 }
 
-async function completeBranchOperation(input, context) {
-  const base = mutatingInput('complete-branch', input);
+function requirePlanBranch(input, issue) {
   const parsed = parsePlanBranch(input.branch);
   if (!parsed || parsed.branchPrefix !== input.branchPrefix) {
     fail('BRANCH_INVALID', 'branch is not the plan branch of branchPrefix', { field: 'branch' });
   }
-  if (parsed.issue !== base.issue) {
+  if (parsed.issue !== issue) {
     fail('ISSUE_MISMATCH', 'the branch issue differs from the input issue', {
-      issue: base.issue,
+      issue,
       branch: parsed.issue,
     });
   }
-  const branch = input.branch;
-  const cwdReal = resolveCwd(input.cwd, context.fs);
+}
 
-  const git = createGit({ ...context, cwd: cwdReal });
-  await verifyRepositoryRoot(git, cwdReal, context.fs);
-  const { forge, repository } = await prepareRemote({ ...context, cwd: cwdReal }, git, base.remote);
-  const gitVersion = await requireGitVersion(git);
-  const network = await networkOptions(git, context);
+// Shared recovery inspection never checks out a branch or writes a local plan copy. Both callers
+// scan the same fetched commit and plan bytes before any pull-request operation.
+async function inspectBranchContents(input, base, branch, git, network, stage = 'complete-branch') {
   const baseOid = await fetchBase(git, base.remote, base.baseBranch, network);
+  requireExpectedOid(input.expectedBaseOid, baseOid, 'BASE_CHANGED', 'base');
 
   const tipOid = await remoteBranchOid(git, base.remote, branch, network);
   if (tipOid === null)
     fail('BRANCH_MISSING', 'the plan branch does not exist on the remote', { branch });
+  requireExpectedOid(input.expectedTipOid, tipOid, 'TIP_CHANGED', 'branch tip');
   const fetched = await git.run(
     ['fetch', ...FETCH_FLAGS, '--refmap=', base.remote, `refs/heads/${branch}`],
     network,
@@ -1698,6 +1745,12 @@ async function completeBranchOperation(input, context) {
       reason: timedOut(fetched) ? 'timeout' : 'failed',
       stderr: diagnosticText(fetched?.stderr ?? ''),
     });
+  }
+  if (input.expectedTipOid !== undefined) {
+    // A branch may move during fetch even when its previous commit was already present locally.
+    // Reconfirm the remote, then inspect only the exact commit authorized by the earlier metadata.
+    const fetchedTip = await remoteBranchOid(git, base.remote, branch, network);
+    requireExpectedOid(input.expectedTipOid, fetchedTip, 'TIP_CHANGED', 'branch tip');
   }
   // `FETCH_HEAD` is shared by every fetch in the repository, so it is never read: the commit the
   // lock query named must now exist locally, and everything below works on that OID.
@@ -1736,6 +1789,72 @@ async function completeBranchOperation(input, context) {
   );
   const commitMessage = requireBounded(commitMessageOf(rawCommit), 'commitMessage');
   refuseClosingKeyword(commitMessage, 'commitMessage');
+  const scan = scanEntries(
+    [
+      { field: 'plan', bytes: blobBytes },
+      { field: 'commitMessage', text: commitMessage },
+    ],
+    'unattended',
+  );
+  requireUnblocked(scan, stage);
+  return { baseOid, tipOid, changeset, planPath, blobBytes, commitMessage };
+}
+
+async function inspectBranchOperation(input, context) {
+  closedSchema('inspect-branch', input);
+  unattendedRules(input);
+  expectedOids(input);
+  const base = {
+    issue: normalizeIssueNumber(input.issue),
+    planDir: requireRelativePath(input.planDir, 'planDir'),
+    remote: requireRemoteName(input.remote),
+    baseBranch: requireRefPath(input.baseBranch, 'baseBranch'),
+  };
+  requirePlanBranch(input, base.issue);
+  const cwdReal = resolveCwd(input.cwd, context.fs);
+  const git = createGit({ ...context, cwd: cwdReal });
+  await verifyRepositoryRoot(git, cwdReal, context.fs);
+  await requireGitVersion(git);
+  // Validate the remote just as completion does; inspection needs no forge capability or identity.
+  await remoteUrl(git, base.remote);
+  const network = await networkOptions(git, context);
+  const inspected = await inspectBranchContents(
+    input,
+    base,
+    input.branch,
+    git,
+    network,
+    'inspect-branch',
+  );
+  let metadata;
+  try {
+    metadata = publicationMetadataFromText(decodePlanBytes(inspected.blobBytes));
+  } catch (error) {
+    if (!(error instanceof PlanLintError)) throw error;
+    fail(error.code, error.message, { field: 'plan' });
+  }
+  return {
+    baseOid: inspected.baseOid,
+    branchTip: inspected.tipOid,
+    planFile: inspected.planPath,
+    blobOid: inspected.changeset.blobOid,
+    ...metadata,
+  };
+}
+
+async function completeBranchOperation(input, context) {
+  const base = mutatingInput('complete-branch', input);
+  requirePlanBranch(input, base.issue);
+  const branch = input.branch;
+  const cwdReal = resolveCwd(input.cwd, context.fs);
+
+  const git = createGit({ ...context, cwd: cwdReal });
+  await verifyRepositoryRoot(git, cwdReal, context.fs);
+  const { forge, repository } = await prepareRemote({ ...context, cwd: cwdReal }, git, base.remote);
+  const gitVersion = await requireGitVersion(git);
+  const network = await networkOptions(git, context);
+  const { baseOid, tipOid, changeset, planPath, blobBytes, commitMessage } =
+    await inspectBranchContents(input, base, branch, git, network);
   const body = buildPullRequestBody(base.body, planPath, base.issue);
   const scan = scanEntries(
     [
@@ -1793,6 +1912,7 @@ const HANDLERS = Object.freeze({
   'assert-changeset': assertChangesetOperation,
   publish: publishOperation,
   'complete-branch': completeBranchOperation,
+  'inspect-branch': inspectBranchOperation,
 });
 
 // ---------------------------------------------------------------------------------------------

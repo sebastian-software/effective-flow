@@ -727,6 +727,23 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 
 ## Plan pull-request operations
 
+## Issue Buddy and repository visibility
+
+`/effective-flow issue-buddy` uses the remote tracker in a controlled, unattended path. Before it
+collects issues, it performs one read-only `repository-visibility-read` operation and records
+`public`, `private`, or `unknown` in the pass report. The operation requires the tracker capability
+`repositoryVisibilityRead`; a failed or incomplete read stops the pass.
+
+The default `dry-run` mode works with any reported visibility and creates no plan artifact. The
+`--publish` mode requires `public`. A private or unknown repository therefore stays dry-run-only;
+the pass does not try to infer visibility from a URL or from a failed provider response. On a
+public repository, stage 1 uses the operator's existing forge credential and treats the single-file
+plan assertion and content scan as advisory. Credential isolation and verified bot branch rules
+belong to the later scheduled-publication work.
+
+Issue Buddy's publication uses the same GitHub and plan-publication helpers documented below. It
+opens draft plan pull requests and does not close issues or write issue comments or labels.
+
 [Plan publication](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) and the
 [continuation on a plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
 use the same remote-tracker helper as every other pull-request step. Like all PR work, they are

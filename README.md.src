@@ -12,6 +12,9 @@ Not a grab-bag of individual prompts, but a coherent set of tools that know one 
 share the same conventions for tests, review and completion; `deliver` turns confirmed local
 session changes into coherent commits on a fresh branch and opens a pull request; staged-only
 `commit`, commit-only `pr` and `merge-gate` remain focused tools for the steps through to the merge.
+`issue-buddy` reviews trusted GitHub issues into implementation plans, defaults to a local dry run,
+and publishes draft, plan-only pull requests with `--publish` only for public repositories; private
+and unknown repositories remain dry-run-only. See the [Issue Buddy guide](docs/user-guide/tools-understand.md#effective-flow-issue-buddy).
 
 ## Why Effective Flow
 

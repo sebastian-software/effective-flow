@@ -839,6 +839,15 @@ point is an I/O boundary over testable core or protocol modules:
   returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
   transport helpers, forge CLI calls).
 
+- **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
+  closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
+  verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
+  on invalid input, unsafe runtime state, lock conflicts, visibility mismatches, or inconsistent
+  publication records. The core keeps report v1 compatible and accepts opt-in report v2 metadata
+  for repository visibility and preserved plan leftovers. Leftover metadata is filtered before
+  judgment limits and recovery. The issue-buddy source tool owns unattended orchestration;
+  plan-publication owns inspection and publication of the single plan file.
+
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
 once per run from authenticated login JSON plus documented `tea ... --help` command/flag surfaces;

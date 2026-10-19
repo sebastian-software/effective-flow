@@ -312,6 +312,28 @@ worktree without a tracked `.gitignore` line.
 
 ## Delivery orchestration boundaries
 
+## Issue Buddy runtime boundary
+
+Issue Buddy is an unattended workflow edge that judges trusted GitHub issues and delegates plan
+creation to a built-in planning worker. The orchestrator owns the pass, retry budget, report and
+publication authority; it never reads issue, comment, plan, or commit prose itself. Issue-derived
+content is confined to the delegated planning context and publication text is generated from fixed
+templates.
+
+The pass runs in the primary checkout and does not create or use a worktree. It keeps the existing
+runtime-state guard, loopback TCP mutation mutex, and whole-pass lock. A held lock is an operator
+stop; the pass never breaks it or releases it after an unrelated process. Before collection it
+reads repository visibility once through the remote tracker. Dry runs accept public, private, or
+unknown visibility; publication is public-only in stage 1. Public operator runs use the operator's
+forge credential, so scheduled publication waits for the later credential-isolation and bot-rule
+work.
+
+Issue Buddy reports use opt-in `reportVersion: 2` metadata for repository visibility and preserved
+plan leftovers. New readers accept versions 1 and 2; version 1 behavior and schema remain
+unchanged. Collection filters leftover metadata before judgment limits, slicing, and recovery.
+Plan publication binds the collected base OID, the inspected branch tip, and the plan blob OID
+before it records a result, so drift stops the pass without spending an issue retry.
+
 Delivery is split across one orchestrator and two narrow leaf tools:
 
 - `deliver` owns candidate discovery from current-session file-operation evidence, mandatory
