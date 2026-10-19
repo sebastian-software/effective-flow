@@ -2189,6 +2189,55 @@ test('complete-branch is a dry run without apply', async (t) => {
   );
 });
 
+test('publication bindings refuse a moved base or branch tip before forge mutation', async (t) => {
+  const publishWorld = createWorld(t);
+  const baseMismatch = await publish(publishWorld, { expectedBaseOid: '0'.repeat(40) });
+  assert.equal(baseMismatch.ok, false);
+  assert.equal(baseMismatch.error.code, 'BASE_CHANGED');
+  assert.equal(gitCalls(publishWorld, 'push').length, 0);
+  assert.equal(publishWorld.forge.creates.length, 0);
+
+  const completeWorld = createWorld(t);
+  const orphan = createOrphanBranch(completeWorld);
+  const tipMismatch = await completeBranch(completeWorld, { expectedTipOid: '0'.repeat(40) });
+  assert.equal(tipMismatch.ok, false);
+  assert.equal(tipMismatch.error.code, 'TIP_CHANGED');
+  assert.equal(tipMismatch.error.details.actualOid, orphan.tip);
+  assert.equal(completeWorld.forge.creates.length, 0);
+});
+
+test('expectedTipOid is rechecked after fetch when the remote advances during fetch', async (t) => {
+  const world = createWorld(t);
+  const orphan = createOrphanBranch(world);
+  world.intercept = async (call, next) => {
+    if (isGit(call, 'fetch') && call.args.includes('--refmap=')) {
+      const result = await next();
+      advanceRemoteBranch(world);
+      return result;
+    }
+    return undefined;
+  };
+  const envelope = await completeBranch(world, { expectedTipOid: orphan.tip });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'TIP_CHANGED');
+  assert.equal(envelope.error.details.expectedOid, orphan.tip);
+  assert.notEqual(envelope.error.details.actualOid, orphan.tip);
+  assert.equal(world.forge.creates.length, 0);
+});
+
+test('expectedBlobOid refuses a changed publication blob before push or pull-request creation', async (t) => {
+  const world = createWorld(t);
+  const expected = world.git('hash-object', '--no-filters', PLAN_FILE);
+  assert.match(expected, /^[0-9a-f]{40}$/);
+  const envelope = await publish(world, { expectedBlobOid: '0'.repeat(40) });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'BLOB_CHANGED');
+  assert.equal(envelope.error.details.expectedOid, '0'.repeat(40));
+  assert.equal(envelope.error.details.actualOid, expected);
+  assert.equal(gitCalls(world, 'push').length, 0);
+  assert.equal(world.forge.creates.length, 0);
+});
+
 test('complete-branch refuses a branch with a second file or a second commit', async (t) => {
   const secondFile = createWorld(t);
   createOrphanBranch(secondFile, (second) => {

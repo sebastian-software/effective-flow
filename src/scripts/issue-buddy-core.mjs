@@ -179,6 +179,36 @@ function baseBranch(value) {
 function mode(value) {
   return enumeration(value, ['dry-run', 'publish']);
 }
+function repositoryVisibility(value = 'unknown') {
+  return enumeration(value, ['public', 'private', 'unknown']);
+}
+function leftoverPlanFiles(value = [], planDir, { deduplicate = false } = {}) {
+  if (!Array.isArray(value)) invalid('leftoverPlanFiles must be an array');
+  const entries = new Map();
+  for (const entry of value) {
+    exact(entry, ['issue', 'path', 'action']);
+    positive(entry.issue);
+    safePath(entry.path);
+    enumeration(entry.action, ['remove']);
+    const filename = path.posix
+      .basename(entry.path)
+      .match(/^\d{4}-\d{2}-\d{2}-issue-([1-9]\d*)-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.md$/);
+    if (
+      !filename ||
+      Number(filename[1]) !== entry.issue ||
+      (planDir !== undefined && path.posix.dirname(entry.path) !== planDir)
+    )
+      invalid('leftover path does not match its plan directory and issue');
+    const previous = entries.get(entry.path);
+    if (previous && (!deduplicate || !same(previous, entry)))
+      invalid('duplicate or conflicting leftover path');
+    entries.set(entry.path, { issue: entry.issue, path: entry.path, action: entry.action });
+  }
+  return [...entries.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+function reportVersion(value = 1) {
+  return enumeration(value, [1, 2]);
+}
 function same(a, b) {
   return isDeepStrictEqual(a, b);
 }
@@ -245,7 +275,7 @@ function validateInput(operation, input) {
     'pass-lock-release': [['passId'], []],
     'pass-collect': [
       ['passId', 'mode', 'baseBranch', 'planDir', 'branchPrefix', 'visibility'],
-      ['limits', 'staleAttempts'],
+      ['limits', 'staleAttempts', 'repositoryVisibility', 'leftoverPlanFiles'],
     ],
     'verdict-record': [
       ['passId', 'issue', 'fingerprint', 'verdict', 'mode', 'reason'],
@@ -261,7 +291,15 @@ function validateInput(operation, input) {
         'pullRequestsRecovered',
         'failures',
       ],
-      ['collect', 'mode', 'limits', 'counts'],
+      [
+        'collect',
+        'mode',
+        'limits',
+        'counts',
+        'reportVersion',
+        'repositoryVisibility',
+        'leftoverPlanFiles',
+      ],
     ],
     fingerprint: [['trustedTextPath', 'issueAuthor'], []],
   }[operation];
@@ -280,6 +318,8 @@ function validateInput(operation, input) {
     } catch {
       invalid('invalid plan branch prefix');
     }
+    repositoryVisibility(input.repositoryVisibility);
+    leftoverPlanFiles(input.leftoverPlanFiles, input.planDir);
     if (input.visibility !== 'standard') invalid('Issue Buddy requires standard visibility');
     if (input.staleAttempts !== undefined && !Array.isArray(input.staleAttempts))
       invalid('staleAttempts must be an array');
@@ -309,6 +349,16 @@ function validateInput(operation, input) {
       invalid('verdict and publication mode mismatch');
   }
   if (operation === 'pass-report') {
+    const version = reportVersion(input.reportVersion);
+    if (
+      version === 1 &&
+      (input.repositoryVisibility !== undefined || input.leftoverPlanFiles !== undefined)
+    )
+      invalid('report metadata requires version 2');
+    if (version === 2) {
+      repositoryVisibility(input.repositoryVisibility);
+      leftoverPlanFiles(input.leftoverPlanFiles, undefined, { deduplicate: true });
+    }
     enumeration(input.outcome, ['completed', 'failed']);
     enumeration(input.cutOff, ['none', 'judgment-limit', 'publish-limit']);
     for (const field of ['verdicts', 'pullRequestsOpened', 'pullRequestsRecovered', 'failures'])
@@ -1009,6 +1059,8 @@ async function collect(context, input, lock) {
     visibility: input.visibility,
     limits: limits(input.limits),
     staleAttempts: input.staleAttempts ?? [],
+    repositoryVisibility: repositoryVisibility(input.repositoryVisibility),
+    leftoverPlanFiles: leftoverPlanFiles(input.leftoverPlanFiles, input.planDir),
   };
   const requestDigest = hash(request);
   if (lock.collection) {
@@ -1027,6 +1079,9 @@ async function collect(context, input, lock) {
   lock.collection = {
     status: 'collecting',
     requestDigest,
+    planDir: request.planDir,
+    repositoryVisibility: request.repositoryVisibility,
+    leftoverPlanFiles: request.leftoverPlanFiles,
     mode: input.mode,
     limits: request.limits,
     repository: null,
@@ -1040,6 +1095,7 @@ async function collect(context, input, lock) {
     const repositoryKey = ledgerRepository(repository);
     const cache = await loadCache(context, repositoryKey);
     const before = JSON.stringify(cache.value);
+    const excluded = new Set(request.leftoverPlanFiles.map((entry) => entry.issue));
     const reads = await currentReads(context, input, repository);
     // Independent closed-PR observations survive every later verdict and input reset.
     for (const candidate of reads.candidates) {
@@ -1070,6 +1126,7 @@ async function collect(context, input, lock) {
         const candidate = reads.candidates.find((item) => item.issue === attempt.issue);
         if (
           !candidate ||
+          excluded.has(candidate.issue) ||
           candidate.skip ||
           candidate.fingerprint !== attempt.originalFingerprint ||
           cacheSkip(cache.value, candidate.issue, candidate.fingerprint, input.mode)
@@ -1100,7 +1157,7 @@ async function collect(context, input, lock) {
       if (candidate.orphan) {
         const entry = { issue: candidate.issue, headRef: candidate.headRef };
         recovery.orphanBranches.push(entry);
-        if (!cachedSkip && input.mode === 'publish')
+        if (!excluded.has(candidate.issue) && !cachedSkip && input.mode === 'publish')
           authorizedRecovery.push({
             ...entry,
             fingerprint: candidate.fingerprint,
@@ -1113,7 +1170,7 @@ async function collect(context, input, lock) {
         if (record?.verdict === 'published' && record.pullRequest === pr.number) continue;
         const entry = prIdentity(pr, candidate.issue, candidate.headRef, repository);
         recovery.unrecordedPullRequests.push(entry);
-        if (!cachedSkip && input.mode === 'publish')
+        if (!excluded.has(candidate.issue) && !cachedSkip && input.mode === 'publish')
           authorizedRecovery.push({
             ...entry,
             fingerprint: candidate.fingerprint,
@@ -1123,7 +1180,7 @@ async function collect(context, input, lock) {
       }
       const reason = candidate.skip ?? cachedSkip;
       if (reason) skipped.push({ issue: candidate.issue, reason });
-      else eligible.push(candidate);
+      else if (!excluded.has(candidate.issue)) eligible.push(candidate);
     }
     eligible.sort(
       (a, b) =>
@@ -1155,6 +1212,8 @@ async function collect(context, input, lock) {
     const result = {
       passId: input.passId,
       mode: input.mode,
+      repositoryVisibility: request.repositoryVisibility,
+      leftoverPlanFiles: request.leftoverPlanFiles,
       repository: repositoryKey,
       limits: request.limits,
       baseOid: reads.oid,
@@ -1166,7 +1225,13 @@ async function collect(context, input, lock) {
       issueClosedPlanPrOpen: reads.closedIssuePulls,
       cacheDegradation: cache.degradation,
     };
-    lock.collection = { status: 'collected', requestDigest, result, outcomes: {} };
+    lock.collection = {
+      status: 'collected',
+      requestDigest,
+      planDir: request.planDir,
+      result,
+      outcomes: {},
+    };
     await atomic(context, lockPath(context), lock);
     return result;
   } catch (error) {
@@ -1176,6 +1241,9 @@ async function collect(context, input, lock) {
     lock.collection = {
       status: 'failed',
       requestDigest,
+      planDir: request.planDir,
+      repositoryVisibility: request.repositoryVisibility,
+      leftoverPlanFiles: request.leftoverPlanFiles,
       mode: input.mode,
       limits: request.limits,
       repository: repository ? ledgerRepository(repository) : null,
@@ -1421,8 +1489,16 @@ function uniqueEntries(entries, key) {
   }
 }
 export function validatePassReport(report) {
-  exact(report, reportKeys);
-  if (report.schemaVersion !== 1) invalid('unsupported report version');
+  const version = enumeration(report?.schemaVersion, [1, 2]);
+  exact(
+    report,
+    version === 1 ? reportKeys : [...reportKeys, 'repositoryVisibility', 'leftoverPlanFiles'],
+  );
+  if (version === 2) {
+    enumeration(report.repositoryVisibility, ['public', 'private', 'unknown']);
+    if (!same(leftoverPlanFiles(report.leftoverPlanFiles), report.leftoverPlanFiles))
+      invalid('report leftovers must be normalized');
+  }
   match(report.passId, PASS_ID);
   mode(report.mode);
   match(report.repository, REPOSITORY);
@@ -1494,9 +1570,12 @@ export function validatePassReport(report) {
   }
   uniqueEntries(report.failures, (entry) => entry.issue);
   if (
-    report.outcome === 'completed' &&
+    (report.outcome === 'completed' || version === 2) &&
     !same(
-      report.failures.map((entry) => entry.issue).sort((a, b) => a - b),
+      report.failures
+        .filter((entry) => version === 1 || entry.issue !== null)
+        .map((entry) => entry.issue)
+        .sort((a, b) => a - b),
       report.verdicts
         .filter((entry) => entry.verdict === 'failed')
         .map((entry) => entry.issue)
@@ -1532,11 +1611,13 @@ export function validatePassReport(report) {
     invalid('publication limit exceeded');
   if (report.outcome === 'failed') {
     if (
-      report.verdicts.length ||
-      prs.length ||
-      report.failures.length !== 1 ||
-      report.failures[0].issue !== null ||
-      !['preflight', 'collect'].includes(report.failures[0].stage) ||
+      (version === 1 &&
+        (report.verdicts.length ||
+          prs.length ||
+          report.failures.length !== 1 ||
+          report.failures[0].issue !== null ||
+          !['preflight', 'collect'].includes(report.failures[0].stage))) ||
+      (version === 2 && report.failures.filter((entry) => entry.issue === null).length !== 1) ||
       report.cutOff !== 'none'
     )
       invalid('invalid failed-pass report');
@@ -1546,6 +1627,7 @@ export function validatePassReport(report) {
 }
 async function report(context, input, lock) {
   const collection = lock.collection;
+  const version = reportVersion(input.reportVersion);
   let repository;
   let currentMode;
   let currentLimits;
@@ -1557,7 +1639,7 @@ async function report(context, input, lock) {
     currentLimits = collected.limits;
     if (!input.collect || !same(input.collect, collected))
       invalid('report collection differs from persisted authority');
-    if (input.outcome !== 'completed')
+    if (version === 1 && input.outcome !== 'completed')
       invalid('collected pass must report issue failures individually');
     const expected = Object.values(collection.outcomes)
       .map(({ issue, verdict, reason }) => ({ issue, verdict, reason }))
@@ -1606,13 +1688,22 @@ async function report(context, input, lock) {
       .sort((a, b) => a - b);
     if (
       !same(
-        input.failures.map((entry) => entry.issue).sort((a, b) => a - b),
+        input.failures
+          .filter((entry) => version === 1 || entry.issue !== null)
+          .map((entry) => entry.issue)
+          .sort((a, b) => a - b),
         failed,
       )
     )
       invalid('issue failures do not match verdicts');
   } else {
-    if (input.collect !== undefined || input.outcome !== 'failed')
+    if (
+      input.collect !== undefined ||
+      input.outcome !== 'failed' ||
+      input.verdicts.length ||
+      input.pullRequestsOpened.length ||
+      input.pullRequestsRecovered.length
+    )
       invalid('pass has no successful collection');
     if (collection?.status === 'failed') {
       repository = collection.repository;
@@ -1642,8 +1733,34 @@ async function report(context, input, lock) {
   for (const verdict of input.verdicts)
     counts[verdict.verdict] = (counts[verdict.verdict] ?? 0) + 1;
   if (input.counts !== undefined && !same(input.counts, counts)) invalid('report counts mismatch');
+  let metadata = {};
+  if (version === 2) {
+    const initialVisibility = repositoryVisibility(collected?.repositoryVisibility);
+    if (
+      collected &&
+      input.repositoryVisibility !== undefined &&
+      input.repositoryVisibility !== initialVisibility
+    )
+      invalid('report visibility differs from persisted collection');
+    const initial = leftoverPlanFiles(collected?.leftoverPlanFiles, collection?.planDir);
+    const final =
+      input.leftoverPlanFiles === undefined
+        ? initial
+        : leftoverPlanFiles(input.leftoverPlanFiles, collected ? collection.planDir : undefined, {
+            deduplicate: true,
+          });
+    if (initial.some((entry) => !final.some((item) => same(item, entry))))
+      invalid('report must preserve initial leftovers');
+    metadata = {
+      repositoryVisibility: collected
+        ? initialVisibility
+        : repositoryVisibility(input.repositoryVisibility),
+      leftoverPlanFiles: final,
+    };
+  }
   const value = validatePassReport({
-    schemaVersion: 1,
+    schemaVersion: version,
+    ...metadata,
     passId: input.passId,
     mode: currentMode,
     outcome: input.outcome,
@@ -1661,8 +1778,12 @@ async function report(context, input, lock) {
     issueClosedPlanPrOpen: collected?.issueClosedPlanPrOpen ?? [],
     cacheDegradation: collected?.cacheDegradation ?? null,
   });
+  const target = path.join(context.directory, 'reports', `${input.passId}.json`);
+  const previous = await readJson(context, target);
+  if (previous !== undefined && previous?.schemaVersion !== version)
+    fail('REPORT_VERSION_CONFLICT', 'stored report version cannot change within a pass');
   const bytes = `${JSON.stringify(value)}\n`;
-  await atomic(context, path.join(context.directory, 'reports', `${input.passId}.json`), bytes);
+  await atomic(context, target, bytes);
   await atomic(context, path.join(context.directory, 'last-pass.json'), bytes);
   const entries = await context.fs.readdir(path.join(context.directory, 'reports'), {
     withFileTypes: true,

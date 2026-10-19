@@ -131,6 +131,7 @@ const REMOTE_OPERATIONS = new Set([
   'probe',
   'viewer-read',
   'collaborator-permission-read',
+  'repository-visibility-read',
   'label-create',
   'issue-read',
   'issue-state-wait',
@@ -168,6 +169,7 @@ const REMOTE_OPERATIONS = new Set([
 const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
   'collaborator-permission-read': 'collaboratorPermissionRead',
+  'repository-visibility-read': 'repositoryVisibilityRead',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
   'issue-state-wait': 'issueRead',
@@ -2434,6 +2436,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         // ones an authenticated gh already holds, so it is not tied to the gate's version floor.
         viewerRead: true,
         collaboratorPermissionRead: true,
+        repositoryVisibilityRead: true,
         issues: true,
         issueRead: true,
         issueCommentsRead: true,
@@ -2595,6 +2598,7 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // probe as the gate reads.
       viewerRead: teaApiTransport,
       collaboratorPermissionRead: false,
+      repositoryVisibilityRead: false,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -3841,6 +3845,17 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
   switch (operation) {
     case 'viewer-read':
       return normalizeViewer(flattened);
+    case 'repository-visibility-read': {
+      requireObject(flattened, 'provider repository');
+      let visibility = 'unknown';
+      if (['public', 'private'].includes(flattened.visibility)) {
+        const expectedPrivate = flattened.visibility === 'private';
+        if (flattened.private === undefined || flattened.private === expectedPrivate)
+          visibility = flattened.visibility;
+      } else if (flattened.visibility === undefined && typeof flattened.private === 'boolean')
+        visibility = flattened.private ? 'private' : 'public';
+      return { visibility };
+    }
     case 'collaborator-permission-read': {
       requireObject(flattened, 'provider permission');
       const login = requireString(input.login, 'login').toLowerCase();

@@ -248,7 +248,7 @@ const TOOL_GROUPS = [
   {
     title: 'Understand what to do',
     when: 'Analysis & planning before code',
-    tools: ['concept', 'investigate', 'plan', 'open-plans', 'plan-issue'],
+    tools: ['concept', 'investigate', 'plan', 'open-plans', 'plan-issue', 'issue-buddy'],
   },
   {
     title: 'Implement a change',
@@ -314,6 +314,7 @@ const WORKFLOW_EDGES = [
     (from) => ['commit', 'pr'].map((to) => ({ from, to })),
   ),
   { from: 'plan', to: 'plan-issue' },
+  { from: 'issue-buddy', to: 'plan' },
   { from: 'apply', to: 'apply-plan' },
   { from: 'apply', to: 'apply-review' },
   { from: 'apply', to: 'apply-issues' },
@@ -2379,6 +2380,7 @@ try {
     refactor: 943,
     deliver: 796,
     'plan-issue': 760,
+    'issue-buddy': 477,
     review: 772,
     plan: 742,
     'apply-review-commit-mechanics': 656,

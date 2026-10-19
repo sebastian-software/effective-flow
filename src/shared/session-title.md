@@ -22,7 +22,7 @@ subject, propose a better title — once.
 - **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
   `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
   `review`, `iterate`, `investigate`, and `deliver`. `version`, `open-plans`, `setup`, `cleanup`,
-  `commit`, `pr`, and `merge-gate` stay silent. Every exposed tool sits in exactly one of those two
+  `commit`, `pr`, `merge-gate`, and `issue-buddy` stay silent. Every exposed tool sits in exactly one of those two
   lists, and internal sub-agents and workers never emit. One carve-out: `setup`'s capability probe
   renames the session once with its own fixed probe title, as the observable proof that the path
   works. That is a capability check, not a work title — `setup` still derives, emits and applies none.

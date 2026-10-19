@@ -120,6 +120,8 @@ that does not suppress a valid candidate from the associated plan or issue.
 | `open-plans`  | at least one open plan                                       | `/effective-flow apply`                      | —                                               |
 | `plan-issue`  | released                                                     | `/effective-flow apply #<issue>`             | `/effective-flow plan-issue <issue>`            |
 | `plan-issue`  | retained for planning                                        | `/effective-flow plan-issue <issue>`         | —                                               |
+| `issue-buddy` | dry run; would-publish issue in public repository            | `/effective-flow issue-buddy --publish`      | —                                               |
+| `issue-buddy` | draft plan PR published; restore plan file from branch first | `/effective-flow build <plan-file>`          | —                                               |
 | `apply`       | plan clarity gate failed                                     | `/effective-flow plan <plan-file>`           | `/effective-flow review <plan-file>`            |
 | `apply`       | findings applied, PR opened                                  | `/effective-flow merge-gate <PR>`            | `/effective-flow apply <remaining source>`      |
 | `apply`       | findings applied, delivery branch retained, no PR            | `/effective-flow pr`                         | `/effective-flow apply <remaining source>`      |

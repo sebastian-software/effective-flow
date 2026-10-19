@@ -2,8 +2,10 @@
 
 // Thin JSON CLI over plan-publication-core.mjs:
 //   node plan-publication.mjs <operation> [--apply]   (one JSON object on stdin)
-// Operations: scan, branch-name, assert-changeset, publish, complete-branch. `publish` and
-// `complete-branch` stay a dry run unless `--apply` is passed. Writes exactly one JSON envelope
+// Operations: scan, branch-name, assert-changeset, publish, complete-branch, inspect-branch. `inspect-branch`
+// is read-only and may bind its result to `expectedBaseOid`; `publish` accepts `expectedBaseOid`
+// and `expectedBlobOid`, while `complete-branch` accepts `expectedBaseOid` and `expectedTipOid`.
+// `publish` and `complete-branch` stay a dry run unless `--apply` is passed. Writes exactly one JSON envelope
 // line to stdout and exits non-zero on failure. Input never travels as command-line arguments;
 // only the operation name and `--apply` do.
 
@@ -21,7 +23,7 @@ import {
 } from './plan-publication-core.mjs';
 
 const USAGE =
-  'usage: plan-publication.mjs <scan|branch-name|assert-changeset|publish|complete-branch> [--apply] (input as one JSON object on stdin)';
+  'usage: plan-publication.mjs <scan|branch-name|assert-changeset|publish|complete-branch|inspect-branch> [--apply] (input as one JSON object on stdin)';
 
 async function readStdin(stream = process.stdin) {
   let value = '';

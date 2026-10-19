@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import nodeFs, {
   mkdirSync,
@@ -1018,4 +1019,188 @@ test('main() rejects an unknown operation without waiting on stdin', async () =>
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(stdout.length, 1);
+});
+
+test('publication-metadata binds one canonical file to review metadata and its Git blob', async () => {
+  await withTempDirAsync(async (root) => {
+    const plan = write(root, 'docs/plan/2026-10-19-issue-12-plan.md', `${ENGLISH_PLAN}\n`);
+    const runner = async ({ executable, args }) => {
+      assert.equal(executable, 'git');
+      assert.deepEqual(args, ['rev-parse', '--show-object-format']);
+      return { status: 0, stdout: 'sha1\n', stderr: '' };
+    };
+    const envelope = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/2026-10-19-issue-12-plan.md'] },
+      { runner },
+    );
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    const expectedBlob = createHash('sha1')
+      .update(Buffer.from(`blob ${Buffer.byteLength(`${ENGLISH_PLAN}\n`)}\0`))
+      .update(Buffer.from(`${ENGLISH_PLAN}\n`))
+      .digest('hex');
+    assert.deepEqual(envelope.data, {
+      planFile: 'docs/plan/2026-10-19-issue-12-plan.md',
+      blobOid: expectedBlob,
+      reviewResult: 'approved',
+      openPointCount: 0,
+    });
+    assert.equal(plan.endsWith('.md'), true);
+  });
+});
+
+test('publication-metadata refuses ambiguous review/open-point metadata and multiple files', async () => {
+  await withTempDirAsync(async (root) => {
+    write(root, 'docs/plan/a.md', '# A\n\n**Plan status:** Not implemented\n');
+    const runner = async () => ({ status: 0, stdout: 'sha1\n', stderr: '' });
+    for (const input of [
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/a.md', 'docs/plan/a.md'] },
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/a.md'] },
+    ]) {
+      const envelope = await executeOperation('publication-metadata', input, { runner });
+      assert.equal(envelope.ok, false);
+      assert.equal(
+        envelope.error.code,
+        input.files.length === 2 ? 'INVALID_PAYLOAD' : 'PUBLICATION_METADATA_INVALID',
+      );
+    }
+  });
+});
+
+test('publication-metadata fails closed for malformed bytes, unsafe paths, and noncanonical review/count metadata', async () => {
+  await withTempDirAsync(async (root) => {
+    const runner = async () => ({ status: 0, stdout: 'sha256\n', stderr: '' });
+    const cases = [
+      ['duplicate.md', `${ENGLISH_PLAN}\n**Result:** Approved\n`, 'PUBLICATION_METADATA_INVALID'],
+      [
+        'cross-language.md',
+        `${ENGLISH_PLAN.replace('**Result:** Approved', '**Result:** Freigegeben')}\n`,
+        'PUBLICATION_METADATA_INVALID',
+      ],
+      [
+        'unknown-count.md',
+        ENGLISH_PLAN.replace('## Open points\n\n- No open points.\n', ''),
+        'PUBLICATION_METADATA_INVALID',
+      ],
+    ];
+    for (const [name, content, code] of cases) {
+      write(root, `docs/plan/${name}`, content);
+      const envelope = await executeOperation(
+        'publication-metadata',
+        { cwd: root, planDir: 'docs/plan', files: [`docs/plan/${name}`] },
+        { runner },
+      );
+      assert.equal(envelope.error.code, code, name);
+    }
+    writeFileSync(join(root, 'docs/plan/nul.md'), Buffer.from(`${ENGLISH_PLAN}\0`, 'utf8'));
+    writeFileSync(join(root, 'docs/plan/invalid.md'), Buffer.from([0x23, 0x20, 0xff]));
+    for (const name of ['nul.md', 'invalid.md']) {
+      const envelope = await executeOperation(
+        'publication-metadata',
+        { cwd: root, planDir: 'docs/plan', files: [`docs/plan/${name}`] },
+        { runner },
+      );
+      assert.equal(envelope.error.code, 'PUBLICATION_METADATA_INVALID', name);
+    }
+    const outside = write(root, 'outside.md', `${ENGLISH_PLAN}\n`);
+    symlinkSync(outside, join(root, 'docs/plan/link.md'));
+    const symlinked = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/link.md'] },
+      { runner },
+    );
+    assert.equal(symlinked.error.code, 'UNSAFE_PATH');
+  });
+});
+
+test('publication-metadata computes the same SHA-256 blob identity Git uses', async () => {
+  await withTempDirAsync(async (root) => {
+    const content = `${ENGLISH_PLAN}\n`;
+    write(root, 'docs/plan/2026-10-19-issue-12-sha.md', content);
+    const envelope = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: ['docs/plan/2026-10-19-issue-12-sha.md'] },
+      { runner: async () => ({ status: 0, stdout: 'sha256\n', stderr: '' }) },
+    );
+    const expected = createHash('sha256')
+      .update(Buffer.from(`blob ${Buffer.byteLength(content)}\0`))
+      .update(Buffer.from(content))
+      .digest('hex');
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.data.blobOid, expected);
+    assert.equal(envelope.data.blobOid.length, 64);
+  });
+});
+
+test('publication-metadata applies structural gates, expected language, and returns only bounded fields', async () => {
+  await withTempDirAsync(async (root) => {
+    const pathName = 'docs/plan/2026-10-19-issue-12-gates.md';
+    write(root, pathName, `${ENGLISH_PLAN}\n`);
+    const runner = async () => ({ status: 0, stdout: 'sha1\n', stderr: '' });
+    const valid = await executeOperation(
+      'publication-metadata',
+      { cwd: root, planDir: 'docs/plan', files: [pathName], expectedLanguage: 'en' },
+      { runner },
+    );
+    assert.equal(valid.ok, true, JSON.stringify(valid));
+    assert.deepEqual(Object.keys(valid.data).sort(), [
+      'blobOid',
+      'openPointCount',
+      'planFile',
+      'reviewResult',
+    ]);
+
+    for (const [label, changed] of [
+      [
+        'bad status',
+        `${ENGLISH_PLAN.replace('**Plan status:** Not implemented', '**Plan status:** Open')}\n`,
+      ],
+      [
+        'missing acceptance',
+        `${ENGLISH_PLAN.replace('## Acceptance criteria\n\n- [ ] The widget renders.\n\n', '')}\n`,
+      ],
+      [
+        'placeholder',
+        `${ENGLISH_PLAN.replace('Ship the widget.', '[Requirement, goal, and rationale for the workflow recommendation]')}\n`,
+      ],
+      [
+        'missing workflow',
+        `${ENGLISH_PLAN.replace('**Recommended workflow:** Feature (\`effective-flow build\`)\n', '')}\n`,
+      ],
+    ]) {
+      write(root, pathName, changed);
+      const refused = await executeOperation(
+        'publication-metadata',
+        { cwd: root, planDir: 'docs/plan', files: [pathName], expectedLanguage: 'en' },
+        { runner },
+      );
+      assert.equal(refused.ok, false, label);
+      assert.equal(refused.error.code, 'PUBLICATION_METADATA_INVALID', label);
+    }
+
+    write(root, pathName, `${ENGLISH_PLAN}\n`);
+    for (const expectedLanguage of ['de', 'fr']) {
+      const input = {
+        cwd: root,
+        planDir: 'docs/plan',
+        files: [pathName],
+        expectedLanguage,
+      };
+      const result = await executeOperation('publication-metadata', input, { runner });
+      assert.equal(result.ok, false, expectedLanguage);
+      assert.equal(
+        result.error.code,
+        expectedLanguage === 'fr' ? 'INVALID_PAYLOAD' : 'PUBLICATION_METADATA_INVALID',
+        expectedLanguage,
+      );
+    }
+
+    const lintWithExtra = executeOperation(
+      'lint',
+      { cwd: root, planDir: 'docs/plan', files: [pathName], expectedLanguage: 'en' },
+      { runner },
+    );
+    assert.equal(lintWithExtra.ok, false);
+    assert.equal(lintWithExtra.error.code, 'INVALID_PAYLOAD');
+  });
 });

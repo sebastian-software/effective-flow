@@ -110,6 +110,7 @@ const EXPECTED_TOOLS = [
   'docs',
   'fix',
   'investigate',
+  'issue-buddy',
   'iterate',
   'maintain',
   'merge-gate',

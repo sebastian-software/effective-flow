@@ -13,7 +13,7 @@ New to Effective Flow? Read in this order:
    and the typical flow from planning to pull request.
 2. Tool reference, grouped by intent:
    - [Understand what needs doing](tools-understand.md) – `concept`, `investigate`,
-     `plan`, `open-plans`, `plan-issue`.
+     `plan`, `open-plans`, `plan-issue`, `issue-buddy`.
    - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
      `refactor`, `docs`, `maintain`, `iterate`.
    - [Ensure quality](tools-quality.md) – `review`.

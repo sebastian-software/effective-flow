@@ -443,6 +443,188 @@ test('closed payloads reject malformed values before forge reads and hidden mode
   );
 });
 
+test('v2 collection binds visibility and leftovers before eligibility and preserves them in reports', async (t) => {
+  const f = await fixture(t);
+  const leftover = {
+    issue: 1,
+    path: 'docs/plan/2026-10-19-issue-1-plan.md',
+    action: 'remove',
+  };
+  const c = await collected(f, { repositoryVisibility: 'public', leftoverPlanFiles: [leftover] });
+  assert.equal(c.repositoryVisibility, 'public');
+  assert.deepEqual(c.leftoverPlanFiles, [leftover]);
+  assert.deepEqual(c.eligible, []);
+  assert.deepEqual(c.skipped, []);
+
+  const report = await f.report(c, {
+    reportVersion: 2,
+    repositoryVisibility: 'private',
+    leftoverPlanFiles: [leftover],
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.error.code, 'INVALID_PAYLOAD');
+  const accepted = await f.report(c, {
+    reportVersion: 2,
+    repositoryVisibility: 'public',
+    leftoverPlanFiles: [leftover],
+  });
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  assert.equal(accepted.data.schemaVersion, 2);
+  assert.equal(accepted.data.repositoryVisibility, 'public');
+  assert.deepEqual(accepted.data.leftoverPlanFiles, [leftover]);
+});
+
+test('leftover exclusion precedes recovery authorization and replay binds metadata', async (t) => {
+  const f = await fixture(t, { branches: [branch(1)] });
+  const leftover = {
+    issue: 1,
+    path: 'docs/plan/2026-10-19-issue-1-plan.md',
+    action: 'remove',
+  };
+  const c = await collected(f, { repositoryVisibility: 'public', leftoverPlanFiles: [leftover] });
+  assert.deepEqual(c.authorizedRecovery, []);
+  assert.deepEqual(c.eligible, []);
+  assert.deepEqual(c.leftoverPlanFiles, [leftover]);
+  assert.equal(
+    (await f.collect({ repositoryVisibility: 'private', leftoverPlanFiles: [leftover] })).error
+      .code,
+    'INVALID_PAYLOAD',
+  );
+  assert.equal(
+    (
+      await f.collect({
+        repositoryVisibility: 'public',
+        leftoverPlanFiles: [{ ...leftover, path: 'docs/plan/2026-10-19-issue-1-other.md' }],
+      })
+    ).error.code,
+    'INVALID_PAYLOAD',
+  );
+});
+
+test('report schema version is immutable within a pass and v2 keeps a pass-level failure separate', async (t) => {
+  const f = await fixture(t);
+  const c = await collected(f);
+  const v1 = await f.report(c);
+  assert.equal(v1.ok, true, JSON.stringify(v1));
+  const conflict = await f.report(c, {
+    reportVersion: 2,
+    repositoryVisibility: 'unknown',
+    leftoverPlanFiles: [],
+  });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.error.code, 'REPORT_VERSION_CONFLICT');
+
+  await f.next();
+  const c2 = await collected(f);
+  assert.equal((await f.record(c2, 'failed')).ok, true);
+  const partial = await f.report(c2, {
+    reportVersion: 2,
+    outcome: 'failed',
+    repositoryVisibility: 'unknown',
+    leftoverPlanFiles: [],
+    verdicts: [{ issue: 1, verdict: 'failed', reason: 'Bounded reason' }],
+    failures: [
+      { issue: 1, stage: 'judgment', code: 'MODEL_FAILED' },
+      { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
+    ],
+  });
+  assert.equal(partial.ok, true, JSON.stringify(partial));
+  assert.equal(partial.data.outcome, 'failed');
+  assert.deepEqual(partial.data.failures, [
+    { issue: 1, stage: 'judgment', code: 'MODEL_FAILED' },
+    { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
+  ]);
+  assert.equal(partial.data.cutOff, 'none');
+});
+
+test('v2 failed report retains reconciled published and failed outcomes with one null failure', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const c = await collected(f);
+  const first = c.eligible.find((entry) => entry.issue === 1);
+  const second = c.eligible.find((entry) => entry.issue === 2);
+  assert.ok(first && second);
+  assert.equal(
+    (
+      await f.record(c, 'published', {
+        issue: 1,
+        fingerprint: first.fingerprint,
+        pullRequest: { number: 30, url: 'https://github.com/example/flow/pull/30' },
+        headRef: first.headRef,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    (await f.record(c, 'failed', { issue: 2, fingerprint: second.fingerprint })).ok,
+    true,
+  );
+  const before = await f.cache();
+  const report = await f.report(c, {
+    reportVersion: 2,
+    outcome: 'failed',
+    repositoryVisibility: 'unknown',
+    leftoverPlanFiles: [],
+    verdicts: [
+      { issue: 1, verdict: 'published', reason: 'Bounded reason' },
+      { issue: 2, verdict: 'failed', reason: 'Bounded reason' },
+    ],
+    pullRequestsOpened: [
+      {
+        issue: 1,
+        number: 30,
+        headRef: first.headRef,
+        url: 'https://github.com/example/flow/pull/30',
+      },
+    ],
+    failures: [
+      { issue: 2, stage: 'judgment', code: 'MODEL_FAILED' },
+      { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
+    ],
+  });
+  assert.equal(report.ok, true, JSON.stringify(report));
+  assert.equal(report.data.outcome, 'failed');
+  assert.deepEqual(report.data.pullRequestsOpened[0].issue, 1);
+  assert.deepEqual(report.data.failures, [
+    { issue: 2, stage: 'judgment', code: 'MODEL_FAILED' },
+    { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
+  ]);
+  assert.deepEqual(
+    await f.cache(),
+    before,
+    'reporting null failure does not alter retry/cache state',
+  );
+  for (const mutation of [
+    { verdicts: [{ issue: 1, verdict: 'published', reason: 'Bounded reason' }] },
+    { pullRequestsOpened: [] },
+    { failures: [{ issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' }] },
+  ]) {
+    const refused = await f.report(c, {
+      reportVersion: 2,
+      outcome: 'failed',
+      repositoryVisibility: 'unknown',
+      leftoverPlanFiles: [],
+      verdicts: mutation.verdicts ?? [
+        { issue: 1, verdict: 'published', reason: 'Bounded reason' },
+        { issue: 2, verdict: 'failed', reason: 'Bounded reason' },
+      ],
+      pullRequestsOpened: mutation.pullRequestsOpened ?? [
+        {
+          issue: 1,
+          number: 30,
+          headRef: first.headRef,
+          url: 'https://github.com/example/flow/pull/30',
+        },
+      ],
+      failures: mutation.failures ?? [
+        { issue: 2, stage: 'judgment', code: 'MODEL_FAILED' },
+        { issue: null, stage: 'handoff', code: 'NESTED_SPAWN_UNAVAILABLE' },
+      ],
+    });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.error.code, 'INVALID_PAYLOAD');
+  }
+});
+
 test('permission failures and invalid/ghost logins are untrusted, incomplete pagination stops collection', async (t) => {
   const f = await fixture(t, {
     issues: [

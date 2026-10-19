@@ -10098,6 +10098,71 @@ test('the GitHub probe reports the identity read independently of the gate versi
   assert.equal((await probeAt('2.49.2')).capabilities.pullRequestMerge, false);
 });
 
+test('repository visibility is a GET-only normalized read and contradictions fail closed', async () => {
+  const read = async (payload) => {
+    const runner = fakeRunner([{ status: 0, stdout: JSON.stringify(payload), stderr: '' }]);
+    const envelope = await executeOperation(
+      'repository-visibility-read',
+      {
+        repository: gateRepository,
+        probe: { executable: 'gh', capabilities: { repositoryVisibilityRead: true } },
+      },
+      {
+        runner,
+        skipProbe: true,
+      },
+    );
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(runner.calls.length, 1);
+    assert.deepEqual(runner.calls[0].args, ['api', '--method', 'GET', 'repos/example/flow']);
+    return envelope.data.result;
+  };
+  assert.deepEqual(await read({ visibility: 'public' }), { visibility: 'public' });
+  assert.deepEqual(await read({ private: true }), { visibility: 'private' });
+  assert.deepEqual(await read({ visibility: 'public', private: true }), { visibility: 'unknown' });
+  assert.deepEqual(await read({ visibility: 'internal' }), { visibility: 'unknown' });
+
+  const forgejoCalls = [];
+  const forgejo = await executeOperation(
+    'repository-visibility-read',
+    {
+      repository: forgejoRepository,
+      probe: { executable: 'tea', capabilities: { repositoryVisibilityRead: false } },
+    },
+    {
+      runner: async (call) => {
+        forgejoCalls.push(call);
+        return { status: 0, stdout: '{}', stderr: '' };
+      },
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.ok, false);
+  assert.equal(forgejo.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(forgejo.error.details.capability, 'repositoryVisibilityRead');
+  assert.equal(forgejoCalls.length, 0);
+
+  const githubCalls = [];
+  const githubRefused = await executeOperation(
+    'repository-visibility-read',
+    {
+      repository: gateRepository,
+      probe: { executable: 'gh', capabilities: { repositoryVisibilityRead: false } },
+    },
+    {
+      runner: async (call) => {
+        githubCalls.push(call);
+        return { status: 0, stdout: '{}', stderr: '' };
+      },
+      skipProbe: true,
+    },
+  );
+  assert.equal(githubRefused.ok, false);
+  assert.equal(githubRefused.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(githubRefused.error.details.capability, 'repositoryVisibilityRead');
+  assert.equal(githubCalls.length, 0);
+});
+
 async function viewerEnvelope(stdout) {
   return executeOperation(
     'viewer-read',
