@@ -1,6 +1,6 @@
 # Bounded Forgejo check polling
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -40,6 +40,7 @@ Scope is one helper operation, its consumer contracts, regression evidence, and 
 | `src/shared/merge-gate-delegated-run.md`                | Update Phase 2's wait description while retaining timeout, failed-check repair, fresh-status, and once-per-run gates.                                   |
 | `src/shared/merge-gate-check-list-waiver.md`            | Replace the claim that Forgejo wait is unsupported; preserve the separate empty/unreported-list handling.                                               |
 | `src/shared/review-bot-state.md`                        | Correct the reference to unsupported Forgejo check waits without changing bot observation mechanics.                                                    |
+| `test/remote-tracker-polling-cli.test.mjs`              | Isolated real-CLI deadline, descendant termination, SIGINT/SIGTERM and handler-lifecycle regressions.                                                   |
 | `test/remote-tracker.test.mjs`                          | Cover capability, pure command planning, state transitions, budgets, head movement, API failures, and shipped CLI termination.                          |
 | `test/workflow-contracts.test.mjs`                      | Update assertions for the provider-neutral wait contract; retain the ban on prompt-driven loops and all merge barriers.                                 |
 | `test/unattended-planning-contract.test.mjs`            | Update the embedded source assertion that currently freezes the Forgejo no-watch wording.                                                               |
@@ -76,16 +77,16 @@ Scope is one helper operation, its consumer contracts, regression evidence, and 
 
 ## Acceptance criteria
 
-- [ ] A supported `tea api` probe advertises `pullRequestChecksWait: true`; an insufficient transport remains false and fails with `UNSUPPORTED_CAPABILITY`.
-- [ ] One helper invocation polls pending Gitea/Forgejo statuses internally and returns the existing normalized result when they finish. Already-completed nonempty checks return without sleeping, including completed failures.
-- [ ] Empty/unreported checks never produce completion; delayed check registration is observed, and a timeout preserves the latest valid list or explicitly reports that no list was obtained.
-- [ ] Injected-clock tests prove one absolute bound across probing, all API reads, head confirmations, and sleeps, with no post-deadline command and no deadline reset on head changes. The shipped CLI proves bounded termination of a hanging provider child, including existing cleanup grace.
-- [ ] Head-change fixtures prove that checks from an earlier head cannot produce completion after a newer head was observed, including movement during terminal confirmation. Repeated movement retains the polling cadence, bounded command trace, and original deadline.
-- [ ] Structured API/auth/JSON/truncation/process errors remain failures; deadline expiry is a normal incomplete timeout result. External cancellation leaves no active provider child.
-- [ ] Pure command-planning tests prove no reads or sleeps and preserve the existing preview contract; read execution remains immediate and invalid settings fail before provider calls. Extreme interval values cannot produce an overflowing timer or busy loop.
-- [ ] Requiredness, status identity/completeness, fresh-status evaluation, CI repair, review checks, and merge-head protection retain their existing behavior. GitHub watch regressions remain green.
-- [ ] The built merge-gate contract supports Forgejo polling and does not request continuation merely because native watch is absent when the helper supports the transport. Actual timeouts retain the once-per-run question.
-- [ ] Current docs and source-contract tests contain no blanket claim that Forgejo `pr-checks-wait` is unsupported. All required repository checks pass; affected behavioral evidence is verified and any new recording obligation is explicit before release.
+- [x] A supported `tea api` probe advertises `pullRequestChecksWait: true`; an insufficient transport remains false and fails with `UNSUPPORTED_CAPABILITY`.
+- [x] One helper invocation polls pending Gitea/Forgejo statuses internally and returns the existing normalized result when they finish. Already-completed nonempty checks return without sleeping, including completed failures.
+- [x] Empty/unreported checks never produce completion; delayed check registration is observed, and a timeout preserves the latest valid list or explicitly reports that no list was obtained.
+- [x] Injected-clock tests prove one absolute bound across probing, all API reads, head confirmations, and sleeps, with no post-deadline command and no deadline reset on head changes. The shipped CLI proves bounded termination of a hanging provider child, including existing cleanup grace.
+- [x] Head-change fixtures prove that checks from an earlier head cannot produce completion after a newer head was observed, including movement during terminal confirmation. Repeated movement retains the polling cadence, bounded command trace, and original deadline.
+- [x] Structured API/auth/JSON/truncation/process errors remain failures; deadline expiry is a normal incomplete timeout result. External cancellation leaves no active provider child.
+- [x] Pure command-planning tests prove no reads or sleeps and preserve the existing preview contract; read execution remains immediate and invalid settings fail before provider calls. Extreme interval values cannot produce an overflowing timer or busy loop.
+- [x] Requiredness, status identity/completeness, fresh-status evaluation, CI repair, review checks, and merge-head protection retain their existing behavior. GitHub watch regressions remain green.
+- [x] The built merge-gate contract supports Forgejo polling and does not request continuation merely because native watch is absent when the helper supports the transport. Actual timeouts retain the once-per-run question.
+- [x] Current docs and source-contract tests contain no blanket claim that Forgejo `pr-checks-wait` is unsupported. All required repository checks pass; affected behavioral evidence is verified and any new recording obligation is explicit before release.
 
 ## Validation plan
 
@@ -129,3 +130,36 @@ Review emphasis: deadline composition across nested reads and probes; head-bound
 ## Open points
 
 - No open points.
+
+## Implementation outcome
+
+**Date:** 2026-10-19
+
+The Forgejo adapter now advertises checks waiting when the status-aware tea API transport is available. One monotonic deadline covers probing, status snapshots, terminal-head confirmation and sleeps after repository bootstrap. Every provider subprocess receives the remaining budget. Completed red checks finish the wait and remain subject to the independent fresh-status and merge gates; empty checks keep waiting. Observed head changes immediately discard older snapshots, including when the new snapshot cannot finish before expiry. Operational errors remain structured failures. The CLI terminates active process groups on SIGINT/SIGTERM and removes its scoped handlers after the operation. GitHub watch behavior and the shared process runner remain unchanged.
+
+Current user documentation and consumer contracts describe deterministic helper polling and retain the prohibition on model-driven polling. The documentation sync found no impact on README entry points, technical guides, runbooks or repository conventions; no ownership relationship changed.
+
+The implementation continues the published plan branch and PR #578. A dedicated owned sibling worktree isolated the work; the invocation checkout and unrelated work were preserved.
+
+## Test results
+
+- Focused tracker/workflow/unattended contract suites: 810 passed before the final test-only review correction.
+- Real CLI regressions: 7 passed, including TERM-resistant provider descendants, both cancellation signals during API calls and polling sleeps, and handler cleanup. No fixture processes remained. POSIX process cases explicitly skip Windows; Windows was not exercised here.
+- Required CI order: pnpm agent:check, pnpm test, node build.mjs, pnpm test:distribution all exited 0. The full suite reported 2,850 tests, 2,849 passed and one intentional existing skip: archived behavioral freshness is checked separately by the eval verifier. All three distribution targets and context budgets passed; offline distribution smoke passed.
+- The final test-only correction passed 24 targeted cases. Independent final verification then passed the whole current tracker suite (382/382, no skips) and formatting. All four reviewed runtime blob hashes were identical to the green full-suite state, so the broad suite was not repeated for test additions alone.
+- Durable injected-clock tests consume time in probes, status reads and head confirmation; they cover late success, no post-deadline start, partial new-head expiry, actual forced termination, and operational errors at the deadline.
+- Behavioral verifiers for merge-gate, iterate and next-steps all exited 0. Evidence was already fully stale at the immutable pre-implementation commit: 8/8 scenarios (40 runs), 7/7 (35), and 11/11 (55), respectively. The implementation adds affected source/instrument hashes without changing those stale counts. All three suites require re-recording in fresh sessions before the next release; no new model run is claimed here, and ordinary merge does not require one.
+
+## Review findings
+
+**Date:** 2026-10-19
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     1 |
+| Open / Not implemented |     0 |
+
+The review found one Important testability gap: the first stored deadline fixture advanced time only during sleep. One Quality correction added provider-time and deadline-edge regressions. Independent re-review confirmed the gap fixed, with no remaining Critical, Important or Note findings. Complexity: Medium (1).

@@ -699,10 +699,11 @@ run can push an unbounded number of commits onto someone's pull request.
      edits.
    - Both stops retain the worktree and its branch for inspection.
 2. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
-   the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
+   the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
-   - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
+   - On a **timeout result** or when the provider has no **`pullRequestChecksWait` capability**: do
+     **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
      per run, not once per round** – with `mergeGate.maxRounds` at 10 and a 20-minute
      `mergeGate.checkWaitMinutes` a per-round reading would interrupt a human ten times, each after

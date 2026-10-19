@@ -229,7 +229,7 @@ what supersedes a standing verdict, so neither tool restates that rule.
 ### Wait for pending checks
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
-inside the provider CLI until the checks are complete or the supplied timeout elapses and returns
+inside the provider watch or deterministic helper poller until the checks are complete or the supplied timeout elapses and returns
 the normalized check list, not deduplicated and without timestamps; a timeout is a normalized timeout result, not an error. It is a read
 operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
@@ -238,10 +238,9 @@ turn per interval for no additional information. On a timeout, or on `UNSUPPORTE
 report the still-pending checks and ask the user instead – **once per run**, not once per repeated
 wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
-**Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
-`UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
-blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+**Forgejo:** `pr-checks-wait` is supported when the existing `tea api --include` transport is
+available. Because `tea` has no native checks watch, the helper polls the same status reader within
+the supplied deadline. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 — `review-create`, `review-thread-reply` and `review-thread-resolve` — belong to the sibling

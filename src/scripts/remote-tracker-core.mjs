@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import {
   FORGEJO_PAGE_LIMIT,
   ISSUE_STATE_READ_TIMEOUT_MS,
@@ -2526,7 +2527,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     apiInclude,
     pullEditTitle,
     pullCreateDraftWip,
-  ] = await Promise.all([
+    // A bounded probe must await every sibling's termination before returning its one envelope.
+  ] = await Promise.allSettled([
     probeTeaHelp(runner, ['issues'], ['--output']),
     probeTeaHelp(runner, ['issues'], ['--comments']),
     probeTeaHelp(runner, ['issues', 'create'], ['--title', '--description']),
@@ -2558,7 +2560,12 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     // very flag that a draft is a `WIP: ` title prefix. See `pr-mark-ready` in
     // `remote-tracker-forgejo-core.mjs` for why that decides the mapping.
     probeTeaHelp(runner, ['pulls', 'create'], ['--draft', 'WIP']),
-  ]);
+  ]).then((results) =>
+    results.map((result) => {
+      if (result.status === 'rejected') throw result.reason;
+      return result.value;
+    }),
+  );
   const labelCreateSupported = labelCreate && labelList;
   // The `tea api` transport probe the three gate capabilities are gated on: the reads need
   // `--include`, and the merge needs `--method` and `--data` on top of it. It attests transport
@@ -2622,14 +2629,11 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // login and no timestamp — the same reason the thread walk left it.
       prReviewsRead: teaApiTransport,
       pullRequestList: pulls && apiInclude,
-      // Two of the three gate operations ride on the `tea api` transport: the status read composes
-      // the pull-request object, the combined commit status and the head commit's date, and the
-      // merge sends `head_commit_id` as the server-side head guard. The watch is the one genuine
-      // provider limitation — `tea` has no `checks` subcommand and Forgejo offers no server-side
-      // blocking watch — and stays `false` rather than becoming the poll loop the gate rejects; the
-      // documented no-watch degradation reports the pending checks and asks once instead.
+      // The status read, bounded helper polling, and merge all ride the same `tea api` transport.
+      // The helper owns the wait because `tea` has no native checks watch; the capability means
+      // deterministic adapter support, not a provider-side watch command.
       pullRequestStatus: teaApiTransport,
-      pullRequestChecksWait: false,
+      pullRequestChecksWait: teaApiTransport,
       pullRequestMerge: teaApiTransport,
       pullRequestCreate: pullCreate,
       pullRequestDraftCreate: pullCreate && pullCreateDraft,
@@ -4430,7 +4434,7 @@ const FULL_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 // SHA, the combined commit status supplies the checks, and the head commit supplies the committer
 // date the automatic-reviewer fallback compares against. Only the first is knowable in advance, so
 // `buildCommandPlan` answers with that one and this reader publishes all three previews.
-async function readForgejoPullRequestStatus(input, repository, runner) {
+async function readForgejoPullRequestStatus(input, repository, runner, options = {}) {
   const pullPlan = buildCommandPlan('pr-status-read', input, repository);
   const commands = [redact(pullPlan)];
   const pull = teaApiSuccess(
@@ -4438,6 +4442,9 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
     'pr-status-read',
   ).body;
   const headSha = typeof pull?.head?.sha === 'string' ? pull.head.sha.trim() : '';
+  // A wait must discard the previous head as soon as the PR read observes a new one, even if
+  // the remaining status/commit reads exhaust its budget before yielding another snapshot.
+  options.onHead?.(headSha);
   const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
   let statuses;
   let headCommittedAt;
@@ -4527,9 +4534,9 @@ async function readForgejoReviewThreads(input, repository, runner) {
 // One status reader for both providers, used by `pr-status-read` and by `mergeHeadGuard` alike, so
 // the merge precondition and the status the caller sees can never be read through two code paths
 // that drifted apart.
-async function readPullRequestStatus(input, repository, runner) {
+async function readPullRequestStatus(input, repository, runner, options = {}) {
   if (repository.provider === 'forgejo') {
-    return await readForgejoPullRequestStatus(input, repository, runner);
+    return await readForgejoPullRequestStatus(input, repository, runner, options);
   }
   const readPlan = buildCommandPlan('pr-status-read', input, repository);
   const readResult = await runChecked(runner, readPlan, 'pr-status-read');
@@ -4538,6 +4545,122 @@ async function readPullRequestStatus(input, repository, runner) {
     result: normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed),
     commands: [redact(readPlan)],
   };
+}
+
+function waitClock(clock) {
+  const read =
+    typeof clock === 'function'
+      ? clock
+      : clock && typeof clock.now === 'function'
+        ? () => clock.now()
+        : () => performance.now();
+  return () => {
+    const value = read();
+    if (!Number.isFinite(value))
+      fail('INVALID_PAYLOAD', 'pr-checks-wait clock returned invalid time');
+    return value;
+  };
+}
+
+function waitDeadlineError() {
+  return new RemoteTrackerError('WAIT_DEADLINE', 'pr-checks-wait deadline elapsed');
+}
+
+// One wrapper owns the probe and every later provider read. Record at launch so a partially read
+// snapshot or a timed-out subprocess remains visible without retaining any API response body.
+function boundedWaitRunner(runner, deadline, now, state) {
+  return async (plan) => {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw waitDeadlineError();
+    const call = {
+      ...plan,
+      timeoutMs: Math.min(plan.timeoutMs ?? remaining, remaining),
+      processGroup: true,
+    };
+    state.commands.push(redact(call));
+    const result = await runner(call);
+    if (result?.forcedKill === true) state.forcedKill = true;
+    if (
+      result?.timedOut === true ||
+      result?.error?.code === 'ETIMEDOUT' ||
+      // Windows uses the runner's direct mode, whose timeout reports a terminating signal.
+      (result?.status === null &&
+        ['SIGTERM', 'SIGKILL'].includes(result?.signal) &&
+        now() >= deadline)
+    ) {
+      throw waitDeadlineError();
+    }
+    // Let the reader classify HTTP, JSON and command failures before checking the clock again.
+    // An operational error at the boundary must not be hidden by a simultaneously elapsed bound.
+    return result;
+  };
+}
+
+function forgejoChecksWaitResult(input, repository, state, snapshot, timedOut) {
+  return {
+    result: normalizeRemoteData(
+      'pr-checks-wait',
+      { checks: snapshot?.checksReported === true ? snapshot.checks : undefined },
+      repository,
+      input,
+      { timedOut, forcedKill: state.forcedKill },
+    ),
+    commands: state.commands,
+  };
+}
+
+async function readForgejoWaitHead(input, repository, runner) {
+  const plan = buildCommandPlan('pr-status-read', input, repository);
+  const response = teaApiSuccess(
+    await runChecked(runner, plan, 'pr-checks-wait head confirmation'),
+    'pr-checks-wait head confirmation',
+  );
+  return response.body?.head?.sha;
+}
+
+async function executeForgejoChecksWait(input, repository, runner, options) {
+  const { deadline, now, settings, state } = options;
+  const sleeper =
+    options.sleeper ?? ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
+  let snapshot;
+  let headSha;
+  const observeHead = (value) => {
+    const currentHead = typeof value === 'string' ? value.trim() : '';
+    if (!FULL_OBJECT_NAME.test(currentHead)) {
+      fail('INVALID_PAYLOAD', 'provider returned no usable pull-request head SHA');
+    }
+    if (headSha !== undefined && currentHead.toLowerCase() !== headSha.toLowerCase()) {
+      snapshot = undefined;
+    }
+    headSha = currentHead;
+  };
+  const timeoutResult = () => forgejoChecksWaitResult(input, repository, state, snapshot, true);
+  while (true) {
+    if (now() >= deadline) return timeoutResult();
+    try {
+      const read = await readPullRequestStatus(input, repository, runner, { onHead: observeHead });
+      if (now() >= deadline) return timeoutResult();
+      snapshot = read.result;
+      const checks = snapshot.checks;
+      const complete =
+        snapshot.checksReported === true &&
+        checks.length > 0 &&
+        checks.every((check) => check.status === 'COMPLETED');
+      if (complete) {
+        observeHead(await readForgejoWaitHead(input, repository, runner));
+        if (now() >= deadline) return timeoutResult();
+        if (snapshot !== undefined) {
+          return forgejoChecksWaitResult(input, repository, state, snapshot, false);
+        }
+      }
+    } catch (error) {
+      if (error?.code === 'WAIT_DEADLINE') return timeoutResult();
+      throw error;
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) return timeoutResult();
+    await sleeper(Math.min(settings.intervalSeconds * 1000, remaining));
+  }
 }
 
 // The merge is the most irreversible mutation of the set, so the head the caller verified is
@@ -4819,6 +4942,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
   requireObject(input);
   const dryRun = MUTATIONS.has(operation) && options.apply !== true;
   try {
+    if (operation === 'pr-checks-wait') checksWaitSettings(input.payload ?? input);
     const runLocal = localOperation(operation, input, options);
     if (runLocal !== undefined) {
       if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
@@ -4859,16 +4983,42 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
-    const probe =
-      options.skipProbe === true
-        ? (input.probe ?? {
-            executable: repository.provider === 'github' ? 'gh' : 'tea',
-            capabilities: {},
-          })
-        : await probeProvider(repository, runner, {
-            issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
-            reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
-          });
+    const forgejoWait = operation === 'pr-checks-wait' && repository.provider === 'forgejo';
+    const waitSettings = forgejoWait ? checksWaitSettings(input.payload ?? input) : undefined;
+    if (forgejoWait && options.sleeper !== undefined && typeof options.sleeper !== 'function') {
+      fail('INVALID_PAYLOAD', 'pr-checks-wait requires a callable sleeper');
+    }
+    const now = forgejoWait ? waitClock(options.clock) : undefined;
+    const deadline = forgejoWait ? now() + waitSettings.timeoutMs : undefined;
+    const waitState = { commands: [], forcedKill: false };
+    const probeRunner = forgejoWait ? boundedWaitRunner(runner, deadline, now, waitState) : runner;
+    let probe;
+    try {
+      probe =
+        options.skipProbe === true
+          ? (input.probe ?? {
+              executable: repository.provider === 'github' ? 'gh' : 'tea',
+              capabilities: {},
+            })
+          : await probeProvider(repository, probeRunner, {
+              issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
+              reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
+            });
+    } catch (error) {
+      if (forgejoWait && error?.code === 'WAIT_DEADLINE') {
+        return {
+          ok: true,
+          operation,
+          provider: repository.provider,
+          data: {
+            ...forgejoChecksWaitResult(input, repository, waitState, undefined, true),
+            conditionalWriteAvailable: false,
+          },
+          dryRun: false,
+        };
+      }
+      throw error;
+    }
     if (operation === 'probe') {
       return {
         ok: true,
@@ -4882,6 +5032,18 @@ export async function executeOperation(operation, input = {}, options = {}) {
       repository.provider === 'forgejo' && probe.login
         ? { ...repository, login: probe.login }
         : repository;
+    if (forgejoWait && now() >= deadline) {
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          ...forgejoChecksWaitResult(input, activeRepository, waitState, undefined, true),
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
     const capability = CAPABILITY_BY_OPERATION[operation];
     if (probe.capabilities?.[capability] === false) {
       fail('UNSUPPORTED_CAPABILITY', `${repository.provider} does not support ${operation}`, {
@@ -4922,6 +5084,26 @@ export async function executeOperation(operation, input = {}, options = {}) {
         provider: activeRepository.provider,
         data: {
           ...observed,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    if (operation === 'pr-checks-wait' && activeRepository.provider === 'forgejo') {
+      const observed = await executeForgejoChecksWait(input, activeRepository, probeRunner, {
+        sleeper: options.sleeper,
+        deadline,
+        now,
+        settings: waitSettings,
+        state: waitState,
+      });
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: observed.result,
+          commands: observed.commands,
           conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
         },
         dryRun: false,

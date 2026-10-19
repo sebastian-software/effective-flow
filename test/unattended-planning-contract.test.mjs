@@ -227,10 +227,6 @@ const QUESTION_INVENTORY = Object.freeze(
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'wait, so a consumer that waits again later reports the pending checks and asks nothing.',
       ],
-      [
-        'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
-        'ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:',
-      ],
     ],
     'shared/pr-review-integration.md': [
       [

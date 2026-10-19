@@ -8883,15 +8883,465 @@ async function forgejoStatus(results, input = {}) {
   return { envelope, runner };
 }
 
+test('Forgejo pr-checks-wait polls through tea api and returns completed red checks without sleeping', async () => {
+  const statuses = [{ context: 'unit', status: 'failure', created_at: '2026-10-19T10:00:00Z' }];
+  const runner = fakeRunner([
+    ...forgejoStatusResults({ statuses }),
+    teaApiResult(200, forgejoPull()),
+  ]);
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    {
+      repository: forgejoRepository,
+      number: 12,
+      payload: { timeoutMs: 1000, intervalSeconds: 10 },
+    },
+    {
+      runner,
+      skipProbe: true,
+      clock: () => 0,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+      sleeper: async () => assert.fail('completed checks must not sleep'),
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.complete, true);
+  assert.equal(envelope.data.result.timedOut, false);
+  assert.equal(envelope.data.result.checks[0].conclusion, 'FAILURE');
+  assert.equal(runner.calls.length, 4);
+});
+
+test('Forgejo pr-checks-wait keeps one deadline across pending polls and empty checks', async () => {
+  let now = 0;
+  const pending = forgejoStatusResults({ statuses: [] });
+  const runner = fakeRunner([...pending, ...pending, ...pending]);
+  const sleeps = [];
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    { repository: forgejoRepository, number: 12, payload: { timeoutMs: 2500, intervalSeconds: 1 } },
+    {
+      runner,
+      skipProbe: true,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+      clock: () => now,
+      sleeper: async (duration) => {
+        sleeps.push(duration);
+        now += duration;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.timedOut, true);
+  assert.equal(envelope.data.result.complete, false);
+  assert.equal(envelope.data.result.checksReported, false);
+  assert.deepEqual(sleeps, [1000, 1000, 500]);
+  assert.equal(runner.calls.length, 9);
+});
+
+test('Forgejo pr-checks-wait observes delayed check registration within the same bound', async () => {
+  let now = 0;
+  const empty = forgejoStatusResults({ statuses: [] });
+  const completed = forgejoStatusResults({
+    statuses: [{ context: 'unit', status: 'success', created_at: '2026-10-19T10:00:00Z' }],
+  });
+  const runner = fakeRunner([...empty, ...completed, teaApiResult(200, forgejoPull())]);
+  const sleeps = [];
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    { repository: forgejoRepository, number: 12, payload: { timeoutMs: 2500, intervalSeconds: 1 } },
+    {
+      runner,
+      skipProbe: true,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+      clock: () => now,
+      sleeper: async (duration) => {
+        sleeps.push(duration);
+        now += duration;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.complete, true);
+  assert.equal(envelope.data.result.timedOut, false);
+  assert.deepEqual(sleeps, [1000]);
+  assert.equal(runner.calls.length, 7);
+});
+
+test('Forgejo pr-checks-wait preserves cadence and the original deadline across head changes', async () => {
+  let now = 0;
+  const headA = 'b'.repeat(40);
+  const headB = 'c'.repeat(40);
+  const pendingA = forgejoStatusResults({
+    pull: forgejoPull({ head: { sha: headA, ref: 'topic' } }),
+  });
+  const pendingB = forgejoStatusResults({
+    pull: forgejoPull({ head: { sha: headB, ref: 'topic' } }),
+  });
+  const runner = fakeRunner([...pendingA, ...pendingB, ...pendingB]);
+  const sleeps = [];
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    { repository: forgejoRepository, number: 12, payload: { timeoutMs: 2500, intervalSeconds: 1 } },
+    {
+      runner,
+      skipProbe: true,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+      clock: () => now,
+      sleeper: async (duration) => {
+        sleeps.push(duration);
+        now += duration;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.complete, false);
+  assert.equal(envelope.data.result.timedOut, true);
+  assert.deepEqual(sleeps, [1000, 1000, 500]);
+  assert.equal(runner.calls.length, 9);
+  assert.ok(runner.calls.every((call) => call.processGroup === true));
+  assert.ok(runner.calls.some((call) => call.timeoutMs === 500));
+});
+
+test('Forgejo pr-checks-wait discards a completed snapshot when confirmation sees a new head', async () => {
+  let now = 0;
+  const headA = 'b'.repeat(40);
+  const headB = 'c'.repeat(40);
+  const completedA = forgejoStatusResults({
+    pull: forgejoPull({ head: { sha: headA, ref: 'topic' } }),
+    statuses: [{ context: 'unit', status: 'success' }],
+  });
+  const confirmationB = teaApiResult(200, forgejoPull({ head: { sha: headB, ref: 'topic' } }));
+  const pendingB = forgejoStatusResults({
+    pull: forgejoPull({ head: { sha: headB, ref: 'topic' } }),
+    statuses: [],
+  });
+  const runner = fakeRunner([...completedA, confirmationB, ...pendingB]);
+  const sleeps = [];
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    { repository: forgejoRepository, number: 12, payload: { timeoutMs: 1500, intervalSeconds: 1 } },
+    {
+      runner,
+      skipProbe: true,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+      clock: () => now,
+      sleeper: async (duration) => {
+        sleeps.push(duration);
+        now += duration;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.complete, false);
+  assert.equal(envelope.data.result.timedOut, true);
+  assert.deepEqual(sleeps, [1000, 500]);
+  assert.equal(runner.calls.length, 7);
+});
+
+test('Forgejo pr-checks-wait validates interval settings before any provider call', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    { repository: forgejoRepository, number: 12, payload: { timeoutMs: 1000, intervalSeconds: 0 } },
+    {
+      runner,
+      skipProbe: true,
+      probe: { executable: 'tea', capabilities: { pullRequestChecksWait: true } },
+    },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(runner.calls.length, 0);
+});
+
+test('Forgejo pr-checks-wait applies the same deadline to the probe, reads, and sleeps', async () => {
+  let now = 0;
+  const deadline = 2500;
+  const probeResults = teaProbeResults();
+  const responses = [
+    ...probeResults,
+    ...forgejoStatusResults({ statuses: [{ context: 'unit', status: 'pending' }] }),
+    ...forgejoStatusResults({ statuses: [{ context: 'unit', status: 'success' }] }),
+    teaApiResult(200, forgejoPull()),
+  ];
+  const startedAt = [];
+  const runner = fakeRunner(
+    responses.map((response, index) => (plan) => {
+      startedAt.push(now);
+      assert.ok(now < deadline, 'no provider command starts after the original deadline');
+      assert.ok(plan.timeoutMs > 0 && plan.timeoutMs <= deadline - now);
+      assert.equal(plan.timeoutMs, deadline - now);
+      now += index < probeResults.length ? 10 : 100;
+      return response;
+    }),
+  );
+  const sleeps = [];
+  const envelope = await executeOperation(
+    'pr-checks-wait',
+    {
+      repository: forgejoRepository,
+      number: 12,
+      payload: { timeoutMs: deadline, intervalSeconds: 1 },
+    },
+    {
+      runner,
+      clock: () => now,
+      sleeper: async (duration) => {
+        sleeps.push(duration);
+        now += duration;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.complete, true);
+  assert.equal(envelope.data.result.timedOut, false);
+  assert.deepEqual(sleeps, [1000]);
+  // The probe, both complete three-read snapshots, and the terminal head confirmation all
+  // consume the same budget; neither the sleep nor the completed snapshot starts another one.
+  assert.equal(runner.calls.length, probeResults.length + 7);
+  assert.equal(now, probeResults.length * 10 + 1700);
+  assert.ok(runner.calls.every((call) => call.processGroup === true));
+  assert.ok(runner.calls.every((call, index) => call.timeoutMs === deadline - startedAt[index]));
+  assert.equal(envelope.data.commands.length, runner.calls.length);
+  assert.match(runner.calls.at(-1).args[1], /pulls\/12$/);
+  assert.ok(runner.calls.at(-1).timeoutMs < runner.calls[probeResults.length].timeoutMs);
+});
+
+test('Forgejo pr-checks-wait never completes on a late successful snapshot or head confirmation', async (t) => {
+  for (const phase of ['snapshot', 'confirmation']) {
+    await t.test(phase, async () => {
+      let now = 0;
+      const deadline = 1000;
+      const results = forgejoStatusResults({ statuses: [{ context: 'unit', status: 'success' }] });
+      if (phase === 'confirmation') results.push(teaApiResult(200, forgejoPull()));
+      const runner = fakeRunner(
+        results.map((result, index) => (plan) => {
+          assert.ok(now < deadline);
+          assert.ok(plan.timeoutMs > 0 && plan.timeoutMs <= deadline - now);
+          now = index === results.length - 1 ? deadline : now + 10;
+          return result;
+        }),
+      );
+      const envelope = await executeOperation(
+        'pr-checks-wait',
+        { repository: forgejoRepository, number: 12, payload: { timeoutMs: deadline } },
+        {
+          runner,
+          skipProbe: true,
+          clock: () => now,
+          sleeper: async () => assert.fail('a late response must terminate without sleeping'),
+        },
+      );
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.data.result.complete, false);
+      assert.equal(envelope.data.result.timedOut, true);
+      assert.equal(runner.calls.length, phase === 'snapshot' ? 3 : 4);
+      assert.equal(envelope.data.commands.length, runner.calls.length);
+      assert.equal(envelope.data.result.checkCount, phase === 'snapshot' ? 0 : 1);
+      // A late snapshot never earns an extra confirmation, and a late confirmation never
+      // launches another poll. Only a snapshot completed inside the budget may be retained.
+      assert.equal(envelope.data.result.checksReported, phase === 'confirmation');
+    });
+  }
+});
+
+test('Forgejo pr-checks-wait expires during probing without starting a status read', async (t) => {
+  for (const outcome of ['late success', 'killed provider']) {
+    await t.test(outcome, async () => {
+      let now = 0;
+      const runner = fakeRunner([
+        (plan) => {
+          assert.equal(plan.timeoutMs, 1000);
+          now = 1000;
+          return outcome === 'late success'
+            ? teaProbeResults()[0]
+            : {
+                status: null,
+                signal: 'SIGKILL',
+                timedOut: true,
+                forcedKill: true,
+                stdout: '',
+                stderr: '',
+              };
+        },
+      ]);
+      const envelope = await executeOperation(
+        'pr-checks-wait',
+        { repository: forgejoRepository, number: 12, payload: { timeoutMs: 1000 } },
+        {
+          runner,
+          clock: () => now,
+          sleeper: async () => assert.fail('an expired probe must not sleep'),
+        },
+      );
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.data.result.complete, false);
+      assert.equal(envelope.data.result.timedOut, true);
+      assert.equal(envelope.data.result.checksReported, false);
+      assert.equal(runner.calls.length, 1);
+      assert.equal(envelope.data.commands.length, 1);
+      assert.equal(
+        envelope.data.result.forcedKill,
+        outcome === 'killed provider' ? true : undefined,
+      );
+    });
+  }
+});
+
+test('Forgejo pr-checks-wait discards the old list when a changed head has only a partial snapshot', async (t) => {
+  for (const phase of ['status response', 'commit read']) {
+    await t.test(phase, async () => {
+      let now = 0;
+      const deadline = 1500;
+      const changedHead = 'c'.repeat(40);
+      const next = forgejoStatusResults({
+        pull: forgejoPull({ head: { sha: changedHead, ref: 'topic' } }),
+        statuses: [{ context: 'new-head-unit', status: 'success' }],
+      });
+      const results = [
+        ...forgejoStatusResults({ statuses: [{ context: 'old-head-unit', status: 'pending' }] }),
+        ...next.slice(0, phase === 'status response' ? 2 : 3),
+      ];
+      const runner = fakeRunner(
+        results.map((result, index) => (plan) => {
+          assert.ok(now < deadline);
+          assert.equal(plan.timeoutMs, deadline - now);
+          if (index === results.length - 1) {
+            now = deadline;
+            // The status response can arrive at expiry before the commit read starts; the
+            // commit subprocess can instead exhaust its bound after the status was read.
+            return phase === 'status response'
+              ? result
+              : { status: null, signal: 'SIGTERM', timedOut: true, stdout: '', stderr: '' };
+          }
+          now += 20;
+          return result;
+        }),
+      );
+      const sleeps = [];
+      const envelope = await executeOperation(
+        'pr-checks-wait',
+        {
+          repository: forgejoRepository,
+          number: 12,
+          payload: { timeoutMs: deadline, intervalSeconds: 1 },
+        },
+        {
+          runner,
+          skipProbe: true,
+          clock: () => now,
+          sleeper: async (duration) => {
+            sleeps.push(duration);
+            now += duration;
+          },
+        },
+      );
+      assert.equal(envelope.ok, true);
+      assert.equal(envelope.data.result.timedOut, true);
+      assert.equal(envelope.data.result.complete, false);
+      assert.equal(envelope.data.result.checksReported, false);
+      assert.equal(envelope.data.result.checkCount, 0);
+      assert.deepEqual(envelope.data.result.checks, []);
+      assert.deepEqual(sleeps, [1000]);
+      assert.equal(runner.calls.length, phase === 'status response' ? 5 : 6);
+      assert.equal(envelope.data.commands.length, runner.calls.length);
+      assert.ok(runner.calls.at(-1).args[1].includes(changedHead));
+    });
+  }
+});
+
+test('Forgejo pr-checks-wait preserves operational errors that arrive at the deadline', async (t) => {
+  const cases = [
+    [
+      'HTTP authentication',
+      teaApiResult(401, { message: 'authentication required' }),
+      'COMMAND_FAILED',
+    ],
+    ['HTTP rate limit', teaApiResult(429, { message: 'rate limited' }), 'COMMAND_FAILED'],
+    ['HTTP server failure', teaApiResult(503, { message: 'unavailable' }), 'COMMAND_FAILED'],
+    ['malformed JSON', { ...teaApiResult(200, {}), stdout: '{' }, 'INVALID_PAYLOAD'],
+    [
+      'invalid status entry',
+      teaApiResult(200, { statuses: [{ context: 'unit' }] }),
+      'INVALID_PAYLOAD',
+    ],
+    ['process failure', { status: 1, stdout: '', stderr: 'connection refused' }, 'COMMAND_FAILED'],
+  ];
+  for (const [label, failure, code] of cases) {
+    await t.test(label, async () => {
+      let now = 0;
+      const deadline = 1200;
+      const results = [
+        ...forgejoStatusResults({ statuses: [{ context: 'unit', status: 'pending' }] }),
+        teaApiResult(200, forgejoPull()),
+        failure,
+      ];
+      const runner = fakeRunner(
+        results.map((result, index) => (plan) => {
+          assert.ok(now < deadline);
+          assert.equal(plan.timeoutMs, deadline - now);
+          now = index === results.length - 1 ? deadline : now + 10;
+          return result;
+        }),
+      );
+      const envelope = await executeOperation(
+        'pr-checks-wait',
+        {
+          repository: forgejoRepository,
+          number: 12,
+          payload: { timeoutMs: deadline, intervalSeconds: 1 },
+        },
+        {
+          runner,
+          skipProbe: true,
+          clock: () => now,
+          sleeper: async (duration) => {
+            now += duration;
+          },
+        },
+      );
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, code);
+      assert.equal(runner.calls.length, 5);
+      if (label.startsWith('HTTP'))
+        assert.equal(
+          envelope.error.details.status,
+          Number(failure.stderr.match(/HTTP\/1\.1 (\d+)/)[1]),
+        );
+    });
+  }
+  await t.test('probe authentication', async () => {
+    let now = 0;
+    const runner = fakeRunner([
+      () => {
+        now = 10;
+        return teaProbeResults()[0];
+      },
+      (plan) => {
+        assert.equal(plan.timeoutMs, 990);
+        now = 1000;
+        return { status: 1, stdout: '', stderr: 'no usable login' };
+      },
+    ]);
+    const envelope = await executeOperation(
+      'pr-checks-wait',
+      { repository: forgejoRepository, number: 12, payload: { timeoutMs: 1000 } },
+      { runner, clock: () => now },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'AUTH_FAILED');
+    assert.equal(runner.calls.length, 2);
+  });
+});
+
 test('the Forgejo probe gates the pull-request operations on the tea api transport', async () => {
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   assert.equal(probe.capabilities.pullRequestStatus, true);
   assert.equal(probe.capabilities.pullRequestMerge, true);
   assert.equal(probe.capabilities.viewerRead, true);
   assert.equal(probe.capabilities.collaboratorPermissionRead, probe.executable === 'gh');
-  // The one genuine provider limitation: `tea` has no `checks` subcommand and Forgejo offers no
-  // server-side blocking watch, so the documented no-watch degradation carries it.
-  assert.equal(probe.capabilities.pullRequestChecksWait, false);
+  // The helper polls through the same status-aware `tea api` transport; no native watch is needed.
+  assert.equal(probe.capabilities.pullRequestChecksWait, true);
   // The reads the adapter already supported stay untouched.
   assert.equal(probe.capabilities.pullRequestRead, true);
 
@@ -8906,14 +9356,13 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(withoutInclude.capabilities.viewerRead, false);
 });
 
-test('the Forgejo adapter keeps the watch and review creation refused, and thread writes without a declaring probe', async () => {
+test('the Forgejo adapter keeps review creation refused, and thread writes without a declaring probe', async () => {
   // Invariant: no tea command exists for an operation the forge was not shown to serve. The watch
   // and review creation have no tea surface on any flavor; the two thread writes are refused
   // whenever the active probe does not declare their route — here a probe that read no API
   // description at all.
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   for (const [operation, capability] of [
-    ['pr-checks-wait', 'pullRequestChecksWait'],
     ['review-create', 'reviewCreate'],
     ['review-thread-reply', 'reviewThreadReplies'],
     ['review-thread-resolve', 'reviewThreadResolution'],
@@ -8944,7 +9393,7 @@ test('the Forgejo adapter keeps the watch and review creation refused, and threa
     );
   }
 
-  // A probe declaring both thread writes leaves the watch and review creation exactly as refused.
+  // A probe declaring both thread writes leaves review creation exactly as refused.
   const declaring = {
     ...probe,
     capabilities: {
@@ -8953,7 +9402,7 @@ test('the Forgejo adapter keeps the watch and review creation refused, and threa
       reviewThreadResolution: true,
     },
   };
-  for (const operation of ['pr-checks-wait', 'review-create']) {
+  for (const operation of ['review-create']) {
     assert.throws(
       () =>
         buildCommandPlan(

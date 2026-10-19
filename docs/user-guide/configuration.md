@@ -384,17 +384,17 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
 
-| Key                    | Values                              | Default   | Meaning                                                                  |
-| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------ |
-| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness             |
-| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base      |
-| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones |
-| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks                      |
-| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                       |
-| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer |
-| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers       |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale |
-| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run            |
+| Key                    | Values                              | Default   | Meaning                                                                               |
+| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                          |
+| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                   |
+| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones              |
+| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling |
+| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                    |
+| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer              |
+| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                    |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale              |
+| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                         |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your

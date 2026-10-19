@@ -11057,7 +11057,7 @@ test('the forge preflight probes issueClose, degrades without it, and never call
   // what Forgejo supports.
   assert.match(
     phase0,
-    /Forgejo supports `pullRequestStatus`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueCommentsRead`/,
+    /Forgejo supports `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueCommentsRead`/,
   );
   // And it is supported on a different footing from `issueClose`: the close rides the probed
   // `tea api` transport, the comment read rides `tea`'s issue support, so a `tea` built without
@@ -14546,11 +14546,7 @@ test('thread-write support on a tea-backed forge is stated per instance, not per
   );
   assert.match(
     gate,
-    near(
-      'unsupported there is `pr-checks-wait` and `review-create`',
-      'routes the instance declares',
-      120,
-    ),
+    near('What stays unsupported there is `review-create`', 'routes the instance declares', 120),
     "merge-gate's support list must make the thread writes instance-dependent",
   );
 });
