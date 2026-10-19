@@ -181,6 +181,16 @@ export function buildGithubCommandPlan(operation, input, repository) {
     // is selected per host, so the identity has to be read against the same one.
     case 'viewer-read':
       return mutationPlan('gh', ['api', ...hostArgs, 'user']);
+    case 'collaborator-permission-read': {
+      const login = requireString(input.login, 'login');
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(login) || login.includes('--'))
+        fail('INVALID_PAYLOAD', 'login must be a valid GitHub login');
+      return mutationPlan('gh', [
+        'api',
+        ...hostArgs,
+        ghEndpoint(`collaborators/${login}/permission`),
+      ]);
+    }
     // `label-list` is an internal plan, deliberately absent from `REMOTE_OPERATIONS`,
     // `MUTATIONS`, and `CAPABILITY_BY_OPERATION` in `remote-tracker-core.mjs`. It exists because
     // the `label-create` pre-check and `executeTeaPaginatedList` there both build every plan

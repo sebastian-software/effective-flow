@@ -402,11 +402,13 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Nine subsystems carry this today: the pairs `config-resolve.mjs`/
+  misread as one. Ten subsystems and 27 runtime scripts carry this today: the pairs
+  `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs` and
   `setup-status.mjs`/`setup-status-core.mjs`; the
+  Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
   `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
@@ -666,9 +668,9 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Nine dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains twenty-five files: seven two-file subsystems, the remote tracker's seven-file
-family, the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
+Ten dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 27 files: eight two-file subsystems, the remote tracker's seven-file family,
+the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
@@ -847,7 +849,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all twenty-five identical, usable scripts,
+checks prove that all three installed payloads contain all 27 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target

@@ -145,7 +145,15 @@
             "number": 42,
             "title": "feat: report the recorded open points of a linked issue after the merge",
             "body": "## Summary\n\nPhase 5.5 now reads the canonical planning comment of every still-open linked issue and reports\nits recorded open points. The report names the observation once per assessed issue.\n\nThe gate keeps the observation report-only: it stays out of the completion verdict.\n\n## Issue implementation lifecycle\n\n<!-- effective-flow-issue-lifecycle:v1 {\"target\":\"forge\",\"repository\":\"example/flow\",\"externalTool\":null,\"items\":[{\"issue\":\"#17\",\"relationship\":\"refs\",\"container\":null,\"containerMechanism\":null}]} -->\n",
+            "author": {
+              "login": "flow-gate",
+              "isBot": false,
+              "authorType": "human"
+            },
+            "createdAt": "2026-09-08T08:00:00.000Z",
+            "updatedAt": "2026-09-08T11:20:00.000Z",
             "state": "closed",
+            "mergedAt": "2026-09-08T11:20:00.000Z",
             "labels": [],
             "url": "https://github.com/example/flow/pull/42",
             "repository": "example/flow",
@@ -568,6 +576,10 @@
               "number": 17,
               "title": "Report the recorded open points of a linked issue after the merge",
               "body": "The merge gate should surface what a linked issue still has open once its pull request is merged.\n\n## Acceptance criteria\n\n- The post-merge observation reads the canonical planning comment of every still-open linked issue.\n- The report names the recorded open points once per assessed issue.\n\n## Notes\n\nThe child issue tracking the external-target half is still open.",
+              "author": {
+                "isBot": null,
+                "authorType": "unknown"
+              },
               "state": "open",
               "labels": ["effective-flow-issue-in-progress", "effective-flow-issue-done"],
               "url": "https://github.com/example/flow/issues/17",
@@ -630,7 +642,11 @@
             "state": "open",
             "labels": ["effective-flow-issue-in-progress", "effective-flow-issue-done"],
             "url": "https://github.com/example/flow/issues/17",
-            "repository": "example/flow"
+            "repository": "example/flow",
+            "author": {
+              "isBot": null,
+              "authorType": "unknown"
+            }
           },
           "command": {
             "executable": "gh",
@@ -676,6 +692,10 @@
               "parent": {
                 "number": 17,
                 "repository": "example/flow"
+              },
+              "author": {
+                "isBot": null,
+                "authorType": "unknown"
               }
             }
           ],

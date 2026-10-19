@@ -376,7 +376,11 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes `scripts/remote-tracker.mjs`,
+Every target's minimal skill payload includes 27 dependency-free runtime scripts. The Issue Buddy
+pair is shipped as `scripts/issue-buddy.mjs` and `scripts/issue-buddy-core.mjs`; the thin CLI
+entry point accepts one JSON object on standard input and delegates deterministic collection,
+trust filtering, fingerprinting and pass-state operations to its core. The remaining named
+families include `scripts/remote-tracker.mjs`,
 `scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`,
 `scripts/diff-baseline.mjs`, `scripts/plan-publication.mjs`, and `scripts/setup-status.mjs`, each
 beside its importable `-core.mjs` sibling; the shared `scripts/process-runner.mjs` that the CLI
@@ -390,6 +394,17 @@ further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposi
 cover. Installed skills therefore
 require Node.js 22 or newer at runtime. None of them has third-party runtime dependencies;
 existing `gh` or `tea` installations remain the remote-tracker's credential and transport boundary.
+Issue Buddy serializes every mutating operation, including retention and cleanup, through a
+dependency-free loopback mutex in `issue-buddy-core.mjs`. Its endpoint is exclusively
+`127.0.0.1:49152 + (first32bits(SHA-256(canonical physical common Git directory)) mod 16384)`;
+all processes that share the runtime state must therefore use the same host and network namespace
+and have local listen permission. Bind failures stop before any directory creation or write, with
+no alternate port, file fallback, invented holder identity, or trusted-payload service.
+Initial `pass.lock` publication uses a fully written temporary file and create-only same-directory
+hardlink; later replacements use temporary-file-plus-rename. The runtime therefore requires
+same-directory hardlink support. The durable `pass.lock` still requires an explicit matching pass ID
+for operator release. Unknown legacy operation or per-write locks remain refusal conditions with an
+operator hint and are never broken automatically.
 The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
 messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. The
 diff-baseline pair makes no network call either: it runs local `git` against a private index and
