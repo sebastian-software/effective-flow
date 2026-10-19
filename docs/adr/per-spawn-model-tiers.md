@@ -77,15 +77,17 @@ points to it. Sites are:
 
 - worker spawns (implementers, reviewers, validators, test and documentation writers, the conflict
   resolver), resolved through their role;
-- read-only exploration and analysis sub-agents: `standard`;
+- read-only exploration and analysis sub-agents: `standard`, unless they meet the `mechanical`
+  eligibility criteria ([Build system: Model tiers](../developer-guide/build-system.md#model-tiers));
 - fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`;
 - the read-only skeptic that tries to refute the draft diagnosis of `investigate`
   (`investigate/skeptic`): `deep`, never moves down.
 
 The `concept-review` fan-out is `deep` by analogy with the `plan-review` fan-out. The three
 delegated implementation workflow runs (`apply-issues`, `apply-review`, `iterate`) are `deep`
-because each orchestrates its own `deep` workers. No `mechanical` site exists yet; the tier is
-defined for cleanup and inventory scans.
+because each orchestrates its own `deep` workers. A site is `mechanical` only under the
+eligibility criteria in [Build system: Model tiers](../developer-guide/build-system.md#model-tiers);
+`pr/body-draft` is the first such site.
 
 **Every spawn carries a tier, in every target.** Claude passes `model` and `effort` on the Agent
 tool, Codex `model` and `reasoning_effort` on the spawn, and native targets pass them as well, so
@@ -201,6 +203,33 @@ showed a host default (`gpt-6.1-sol`) newer than the mapped `deep` model; moving
 such a `deep` mapping change and is recorded under "Status". It landed while protocol `1.2.0` was
 unreleased, so the Quality-mapping identity changed within `1.2.0`: no released generation spans
 the old and new value, and the `1.1.0` migration stays the only generation boundary.
+
+## Review notes
+
+**2026-10-17: a `mechanical` site is added.** This exercises the review trigger above.
+
+- **Decision:** issue #531 is re-scoped from extending the Fast execution profile to a real
+  `mechanical` site, because `commit`, `pr`, `deliver` and `cleanup` carry no spawn site a profile
+  could switch. The Fast profile stays untouched.
+- **Criteria:** the five eligibility conditions live in
+  [Build system: Model tiers](../developer-guide/build-system.md#model-tiers).
+- **Site:** `pr/body-draft`, the PR body draft in `pr` step 9.
+- **Dropped candidates:** none of them moves work out of the orchestrator.
+  - Commit message: `commit` reads the full staged diff and derives the type itself, so a spawn
+    would re-read the diff and take over a release-relevant judgment.
+  - PR title: its type is the same release-relevant judgment and may need a question to the user.
+  - Cleanup inventory: a raw-facts spawn returns roughly what it reads, and parts of `cleanup`
+    Phase 1 are safety checks.
+- **Host check, Claude Code 2.1.292:** the implementing pull request #569 was created by following
+  the branch build's `dist/claude/effective-flow/tools/pr.md`, read from the implementing worktree
+  rather than installed, because the installed skill is DALO-managed. The top-level `apply`
+  orchestrator ran it inline as a committed handoff, on a branch with two commits.
+  - The subagent transcript shows the body draft on `claude-haiku-5-5` with effort `low`; its only
+    commands were `git -C <root> diff <base>...<head OID>`.
+  - The orchestrator accepted the draft unchanged: nothing was stripped, the supplied `Closes #531`
+    was present, and the lifecycle receipt was appended after the check.
+  - The orchestrator's own reads stayed at the commit messages, `--stat` and `--name-only`.
+  - The nested path, `pr` inside a delegated run, is unverified.
 
 ## References
 

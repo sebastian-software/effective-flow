@@ -19644,10 +19644,29 @@ test('pr in hidden mode references no plan file, no .effective-flow/ path, and n
   );
   assert.match(
     step9,
-    /Hidden mode \(`visibility: hidden` .*?\): reference no plan file, and let neither the title nor the body contain a path under `\.effective-flow\/` or name Effective Flow \(`effective-flow`, `Effective Flow`\)\. Derive both from the changes alone/,
+    /Hidden mode \(`visibility: hidden` .*?\): reference no plan file, and let neither the title nor the body contain a path under `\.effective-flow\/` or name Effective Flow \(`effective-flow`, `Effective Flow`\)\. The body draft gets no plan path\./,
   );
+  // The delegated body draft receives no plan path in hidden mode, so it cannot read the plan.
+  assert.match(prose(pr), /the resolved title, the plan path \(none in hidden mode\)/);
   // The hidden rule follows the plan-reference rule it overrides.
   ordered(step9, 'reference an associated plan file', 'Hidden mode');
+  // Invariant: on the delegated body-draft path the orchestrator's own read set is the commit
+  // messages, the stat and the name list, so the full diff stays out of its context.
+  assert.match(
+    step9,
+    /The orchestrator reads the full commit messages of step 4's range .*?`git -C <execution-root> diff --stat <remote-tracking-base>\.\.\.<head OID>` and its `--name-only -z --diff-filter=AMR` list; on the delegated path it never reads the full diff or a plan file's content\./,
+  );
+  // Invariant: a derived body reaches the helper only after effectful tokens are stripped, the
+  // supplied references are required and forbidden content is rejected; only a body that still
+  // fails is replaced inline.
+  const bodyCheck = prose(boundedSlice(pr, '**Body check,**', '10. **Create the PR:**'));
+  ordered(
+    bodyCheck,
+    'first strip effectful tokens',
+    'Then require every supplied reference verbatim',
+    'reject internal tracking IDs',
+    'replaced by one derived inline',
+  );
   assert.match(
     prose(pr),
     /In hidden mode, never reference a plan file, a path under `\.effective-flow\/`, or Effective Flow by name in the PR title or description/,
@@ -19663,6 +19682,77 @@ test('pr in hidden mode references no plan file, no .effective-flow/ path, and n
   assert.match(
     step2,
     /In hidden mode \(`visibility: hidden`\), the exact head branch name must not name Effective Flow .*?On a match, stop before any fetch or push, name the branch, and tell the user to rename it/,
+  );
+});
+
+// Invariant: only actual Release-As footers in the verified commit range authorize a squash
+// override; quoted examples, body drafts and conflicting versions cannot invent that authority.
+test('pr captures release overrides from verified source footer blocks before drafting', () => {
+  const pr = source('src/tools/pr.md');
+  const step9 = prose(
+    boundedSlice(pr, '9. **Derive the PR title and description', '10. **Create the PR:**'),
+  );
+  assert.match(
+    step9,
+    /full commit messages of step 4's range as NUL-terminated records \(`git -C <execution-root> log --format=%H%n%B%x00 <remote-tracking-base>\.\.<head OID>`\)/,
+    'footer authority comes from complete messages in the verified source range',
+  );
+  const capture = prose(boundedSlice(pr, '**Release footer authority:**', '**Hidden mode**'));
+  assert.match(
+    capture,
+    /Before drafting, capture actual `Release-As: <version>` footer lines from the footer blocks of those verified commit messages, verbatim and in source order/,
+  );
+  assert.match(capture, /quoted examples and prose are not footers/);
+  assert.match(capture, /never inferred from the diff, plan or draft/);
+  assert.match(capture, /an absent footer means an empty set/);
+  assert.match(
+    capture,
+    /If distinct source versions conflict, stop and report them instead of choosing one/,
+  );
+  ordered(step9, 'Release footer authority:', 'Description:', 'Body check,');
+});
+
+// Invariant: every derived-body path strips invented release directives and restores only the
+// captured source footer verbatim after prose checks, including fallback retries and plan finish.
+test('pr restores only source-backed release footers on every body path before publication', () => {
+  const pr = source('src/tools/pr.md');
+  const description = prose(boundedSlice(pr, '**Description:**', '**Body check,**'));
+  assert.match(
+    description,
+    /only missing supplied references, captured release footers and the machine lines are appended/,
+  );
+  const check = prose(boundedSlice(pr, '**Body check,**', '10. **Create the PR:**'));
+  assert.match(
+    check,
+    /for every derived body — the spawned draft, the single-commit inline body and the inline fallback — before step 10 and before the plan draft finish's body update/,
+    'the shared check covers delegated, single-commit, fallback and plan-finish publication',
+  );
+  assert.match(
+    check,
+    /first strip effectful tokens — issue-reference keywords outside the supplied set, `@`-mentions, `BREAKING CHANGE:`, `BREAKING-CHANGE:` and `Release-As:` lines/,
+    'draft-invented release and breaking directives are still stripped',
+  );
+  assert.match(
+    check,
+    /for every description, including a supplied one, append any missing captured release footers verbatim as trailing footer lines after the prose check, without translation/,
+    'source footer spelling, value and placement survive language conversion',
+  );
+  assert.match(
+    check,
+    /the strip removes all draft `Release-As:` lines, and only this source-backed restoration may put one back \(an empty set adds none\)/,
+    'without a source footer no release override reaches publication',
+  );
+  assert.match(
+    check,
+    /Repeat the complete strip\/check\/restore sequence after every inline fallback or correction, before step 10 or the plan draft finish's body update/,
+    'a retry cannot bypass restoration or the invented-token filter',
+  );
+  ordered(
+    check,
+    'first strip effectful tokens',
+    'Then require every supplied reference verbatim',
+    'reject internal tracking IDs',
+    'Finally, for every description',
   );
 });
 

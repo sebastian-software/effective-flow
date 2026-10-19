@@ -115,6 +115,7 @@ const SPAWN_MENTION_ALLOWLIST = [
     'Each analysis sub-agent receives',
     'handoff of apply-issues/issue-analysis',
   ],
+  ['tools/pr.md', '**Bounds:** it starts no sub-agent', 'handoff of pr/body-draft'],
   [
     'tools/apply-review.md',
     'Each pre-analysis sub-agent receives',
@@ -652,6 +653,32 @@ test('the iterate round dispatch is a deep, no-downward-move site marked in the 
   );
 });
 
+// The PR body draft reads a branch diff and writes nothing, so it is mechanical and may move down.
+// Its marker sits in the step 9 description paragraph, so the rendered tier line reaches the
+// delegation instruction in every target.
+test('the PR body draft is a mechanical site marked in the step 9 description paragraph', () => {
+  const site = spawnSites().find(({ id }) => id === 'pr/body-draft');
+  assert.ok(site, 'missing spawn site pr/body-draft');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['mechanical'],
+  );
+  assert.equal(site.downAllowed, true);
+  const pr = readSource('tools/pr.md');
+  const markers = collectSpawnSiteMarkers(pr, { owner: 'pr', context: 'tools/pr.md' }).map(
+    ({ id }) => id,
+  );
+  assert.ok(markers.includes('pr/body-draft'), 'the pr/body-draft marker is missing');
+  const start = pr.indexOf('   **Description:** use a supplied description as is');
+  const end = pr.indexOf('   **Body check,**');
+  assert.ok(start >= 0 && end >= 0, 'both step 9 paragraph anchors exist');
+  const description = pr.slice(start, end);
+  assert.ok(
+    description.includes('<!-- spawn-site:pr/body-draft -->'),
+    'the marker sits inside the step 9 description paragraph',
+  );
+});
+
 function walk(dir) {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
@@ -851,6 +878,25 @@ test('the initial-implementation tier line renders right after its Quality-only 
       assert.match(lines[at + 1], /^ {3}Tier `deep`: /, `${where}: ${lines[at + 1]}`);
       assert.match(lines[at + 2], /^ {3}- Frontend: /, `${where}: ${lines[at + 2]}`);
     }
+  }
+});
+
+// The PR body draft renders its mechanical tier line right after the delegation sentence in every
+// target, with the values the tier mapping assigns to each provider.
+test('the PR body draft renders the mechanical tier line below its delegation sentence', () => {
+  const { claude, codex } = MODEL_TIER_MAPPINGS.mechanical;
+  const expected = {
+    claude: `Tier \`mechanical\`: pass \`model: ${claude.model}\` and \`effort: ${claude.effort}\` on the Agent tool`,
+    codex: `Tier \`mechanical\`: pass \`model: ${codex.model}\` and \`reasoning_effort: ${codex.reasoning_effort}\` on the spawn`,
+    portable: `Tier \`mechanical\`: Claude Code Agent tool \`model: ${claude.model}\`, \`effort: ${claude.effort}\`; Codex spawn \`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\``,
+  };
+  for (const target of TARGETS) {
+    const lines = readFileSync(join(distRoot, target, 'effective-flow/tools/pr.md'), 'utf8').split(
+      '\n',
+    );
+    const at = lines.findIndex((line) => line.includes('delegate the draft to the host'));
+    assert.ok(at >= 0, `${target}: the body-draft delegation sentence renders`);
+    assert.ok(lines[at + 1].trim().startsWith(expected[target]), `${target}: ${lines[at + 1]}`);
   }
 });
 
