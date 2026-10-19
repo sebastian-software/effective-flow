@@ -139,6 +139,9 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'pilot-measurement.mjs',
   'plan-lint-core.mjs',
   'plan-lint.mjs',
+  'plan-publication-core.mjs',
+  'plan-publication.mjs',
+  'process-runner.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
@@ -146,6 +149,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'remote-tracker-ledger-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker.mjs',
+  'setup-status-core.mjs',
+  'setup-status.mjs',
 ];
 
 function cloneContract() {
@@ -890,11 +895,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 20);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 25);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 20 approved runtime scripts',
+    'build.mjs must register exactly the 25 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));
@@ -1019,9 +1024,11 @@ test('an isolated build ships Fast only through the adopted build and refactor p
       EXPECTED_TOOLS,
       `${target} tool inventory changed`,
     );
+    // Besides the copied scripts, `scripts/` holds only the build-generated setup-status ownership
+    // projection the status script reads beside itself.
     assert.deepEqual(
       readdirSync(join(root, 'scripts')).sort(),
-      EXPECTED_RUNTIME_SCRIPTS,
+      [...EXPECTED_RUNTIME_SCRIPTS, 'setup-status-owners.json'].sort(),
       `${target} runtime-script inventory changed`,
     );
     for (const file of EXPECTED_RUNTIME_SCRIPTS) {

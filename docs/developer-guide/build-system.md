@@ -402,17 +402,40 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Seven subsystems carry this today: the pairs `config-resolve.mjs`/
+  misread as one. Nine subsystems carry this today: the pairs `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
-  `diff-baseline.mjs`/`diff-baseline-core.mjs` and `plan-lint.mjs`/`plan-lint-core.mjs`; the
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
+  `plan-publication.mjs`/`plan-publication-core.mjs` and
+  `setup-status.mjs`/`setup-status-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
   `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
   `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
   processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
-  `pilot-measurement-protocol.mjs`. The remote-tracker's runtime prompts are
+  `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
+  `createProcessRunner`, belongs to no subsystem and carries the same guard. That only CLI entries
+  (`remote-tracker.mjs`, `plan-publication.mjs`) import it and inject the runner into their cores is
+  no build guard: the unit test "no core imports the shared process runner" in
+  `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
+
+- **Setup-status ownership projection (#485):** the build derives
+  `scripts/setup-status-owners.json` from `docs/developer-guide/skill-ownership.json` and the tool,
+  agent and shared sources, writes it beside the runtime scripts in all three targets, and checks
+  each shipped copy. `assertWorkflowEdgeContract` checks the declared `WORKFLOW_EDGES` and
+  `WORKFLOW_POINTER_REFERENCES` in `build.mjs` forward (each matches a `{{SKILL:X}}`, lazy-include or
+  `tools/X.md` reference in its `from` source or transitive eager/lazy shared include closure) and
+  in reverse (every internal-tool reference in that closure is declared), and accepts an edge's optional `mode` only when it is a resolver
+  mode of the target (`MODE_TOOLS`); `assertSuccessorSetsReachExposedTools` fails when a
+  `SUCCESSOR_SETS` entry other than `setup` is run by no exposed tool in its mode;
+  `deriveSetupStatusProjection` fails when the projected `delegate` rows differ from the manifest or
+  a `delegate` consumer reaches no exposed tool. The projection runs after spawn-site validation
+  and resolves named workers from reached markers and the table's `role:` clauses, including
+  shared, conditional and routed sites. Literal-tier sites add no named worker; incidental agent
+  tokens, including prohibitions, add no dependency. Unknown reached sites or roles fail closed.
+  Reachability and
+  the row shape, including shared delivery and plan-publication handoffs, are described in [skill ownership](skill-ownership.md#shipped-ownership-projection).
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
   Markdown file under `docs/user-guide/` are scanned for the retired
@@ -643,10 +666,10 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Seven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains twenty files: five two-file subsystems, the remote tracker's seven-file family,
-and the pilot measurement three-file family. Each entry point is an I/O boundary over testable
-core or protocol modules:
+Nine dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains twenty-five files: seven two-file subsystems, the remote tracker's seven-file
+family, the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
+point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
   JSON object on standard input: `cwd` (an absolute path in the checkout the calling tool runs
@@ -678,6 +701,28 @@ core or protocol modules:
   `src/tools/<name>.md`, so a renamed tool cannot silently lose its retired-row stop. Both the
   `merge-gate` and `iterate` eval suites list the pair in their `LOAD_SET_SEEDS`, because their
   runs execute it at the first configuration read and no load pointer names it.
+- **Setup-status.** Invoke it as `node <skill-root>/scripts/setup-status.mjs status` with one JSON
+  object `{ "cwd": "<directory>" }` on standard input; `setup status` runs it. It imports
+  `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
+  the source and diagnostics, and one further call per `SUCCESSOR_SETS` entry classifies the
+  retired rows, all through one process runner with the lock-free `gitBaseEnv`. It adds read-only
+  ignore predicates per visibility, applies the `skills` scopes to the generated
+  `setup-status-owners.json` it locates through `import.meta.url`, and compares the installed SemVer
+  from that projection with one anonymous `GET` to the published repository's
+  `releases/latest` (fixed `User-Agent`, short timeout, capped body). It emits one
+  `{ ok, operation, data }` envelope with the sections `configuration`, `retired`, `ignore`,
+  `domainOwners` and `version` plus a top-level `setupFixable` and `setupForms` (the distinct
+  `setupForm` of every setup-fixable finding: `setup`, `setup guided`, `setup hidden` or
+  `targeted`); an invalid source (setup Step 2 item 5) and a key a Targeted request refuses never
+  name `targeted`; the field schema is the header comment of
+  `setup-status-core.mjs`. Retired-row stops map per `(tool, mode)` onto the exposed tools through
+  the projection's mode-aware workflow edges; a resolver tool no exposed tool reaches keeps its own
+  name and is listed in `unmappedTools`. A resolver failure is a finding inside `data.configuration`,
+  not an envelope failure; only invalid input (exit 2) and an internal failure (exit 1) fail the
+  envelope. It writes nothing, and its frozen `REMEDIATIONS` map names a setup invocation form or a
+  manual step for every `DIAGNOSTIC_CODES`, `CONFIG_RESOLVE_ERROR_CODES`, `ROOT_CHECKS` and
+  `UNSAFE_REASONS` value; `test/setup-status-core.test.mjs` fails when the map and those exports
+  diverge and proves byte-identical repositories, `.git/` included, after a run.
 - **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
 <build|validate>` with one JSON object on standard input whose `cwd` is the verified
   `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
@@ -769,6 +814,28 @@ core or protocol modules:
   `assertPlanPlaceholderProjection` fail on any drift against the marked mapping and placeholder
   tables in `src/shared/plan-contract.md`, and against the bracketed tokens of the English template
   in `plan.md` Phase 3.
+- **Plan-publication.** Invoke it as `node <skill-root>/scripts/plan-publication.mjs <operation>`
+  with one closed-schema JSON object on standard input; the operations are `scan`, `branch-name`,
+  `assert-changeset`, `publish` and `complete-branch`. Every operation takes an absolute `cwd`;
+  `scan` and `branch-name` accept any directory, and the Git operations require the repository
+  root. An unknown key is `INVALID_INPUT` before any Git or forge call. It emits
+  one JSON envelope and exits nonzero with `ok: false` on failure. `publish` and `complete-branch`
+  are the unattended draft-pull-request core: they require `runState: unattended` and a GitHub
+  remote, refuse hidden mode, and stay a dry run unless `--apply` is passed. A passing `publish` builds
+  the single-file commit in a temporary index, pushes it without force to
+  `<branchPrefix>/plan/issue-<N>` so the remote branch is the lock, and opens a draft pull request
+  whose body ends with the shipped plan marker line and the non-closing `Refs #<N>`; it then
+  reads the pull request back to confirm draft and marker. `complete-branch` instead adopts an
+  existing pushed plan branch: it asserts its changeset, scans the plan blob read back from Git, and
+  opens the draft pull request. `scan` is read-only and also serves the
+  interactive content check in `src/shared/plan-publication.md`: it reports findings by class,
+  field and line, never by value, in two confidence levels. A high-confidence finding is always
+  `blocking`; a lower one is `blocking` on an unattended run and `acknowledgeable` on an
+  interactive one. The core also exports the pure `planBranchName` and `parsePlanBranch`.
+  `process-runner.mjs` supplies the injected runner; the core spawns nothing itself. The runner
+  has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
+  returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
+  transport helpers, forge CLI calls).
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
@@ -780,11 +847,14 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all twenty identical, usable scripts,
+checks prove that all three installed payloads contain all twenty-five identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
-`plan-lint lint` runs against a fixture plan directory in every target, and that
+`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
-(`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`).
+(`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`), and that `setup-status status`
+reads its generated projection in every target with the release lookup stubbed offline
+(`assertSetupStatusSmoke`); the delivery layout check requires both scripts and the projection
+under `effective-flow/scripts/`.
 
 Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
 current-task capability directly, and Claude Code renames its own session through the host's
@@ -839,7 +909,7 @@ and directive syntax").
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
-  `setup-targeted-change`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
+  `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
@@ -848,7 +918,10 @@ and directive syntax").
   The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
   external-only connection/context/state interview. Express and Guided runs never pay that context
   cost. `setup-targeted-change` sits at the same decision point with the complementary trigger: a
-  non-empty argument that is not exactly one of the five keyword forms. Keeping the argument router
+  non-empty argument that is not exactly one of the six keyword forms. `setup-status` is the third
+  pointer there, loaded only for the exact `status` argument: the read-only diagnosis renders the
+  `setup-status.mjs` envelope, carries no `ask` fence and no write instruction, and ends after its
+  report. Keeping the argument router
   in `tools/setup.md` classifies keyword modes versus Targeted before any fragment or mutating setup
   step can run; a Targeted request that names no configuration key then stops in the fragment's
   interpretation, still before any mutation. The Targeted fragment holds the whole Targeted
@@ -1072,7 +1145,7 @@ would give the largest tools the most unchecked growth. Ten is the ceiling, not 
 most entries carry less.
 
 The current report makes that policy visible without a separate budget class:
-`iterate` is 1572/1572, `setup` 1558/1560, `apply-review` 1025/1025, `apply-issues` 937/937,
+`iterate` is 1572/1572, `setup` 1563/1564, `apply-review` 1025/1025, `apply-issues` 937/937,
 `merge-gate` 873/873 (the gate moved into the lazy `merge-gate-delegated-run`), and `cleanup`
 833/833. The four tools that formerly shared a 700-line allowance now carry individual ratchets:
 `plan` 713/713, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every

@@ -18,8 +18,8 @@ New to Effective Flow? Read in this order:
      `refactor`, `docs`, `maintain`, `iterate`.
    - [Ensure quality](tools-quality.md) – `review`.
    - [Deliver changes](tools-deliver.md) – `deliver`, `commit`, `pr`, `merge-gate`.
-   - [Set up & info](tools-setup.md) – profile-first `setup`, explicit Express/Guided modes,
-     `cleanup`, and `version`.
+   - [Set up & info](tools-setup.md) – profile-first `setup`, explicit Express/Guided modes, the read-only
+     `setup status` diagnosis, `cleanup`, and `version`.
 3. In-depth guides:
    - [Tool flow](tool-flow.md) – how a completed run follows its associated plan and selects a
      valid next step, with the generic fallback table.

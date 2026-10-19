@@ -324,8 +324,11 @@ request, because the run never merges locally around an open draft. An explicit 
 continues and is reported as an override of a configured or missing `merge` or `branch` row. A
 `null` or invalid row is overridden, and both values are reported.
 
-If your local plan differs from the one on the pull request's branch, the run asks once, naming the
-audience and the content-check findings exactly as `plan`'s publication question does: **Republish**
+If your local plan differs from the one on the pull request's branch, the run first scans the local
+plan with the same content check as `plan`'s publication. A high-confidence finding, or a scan that
+fails, stops the run before any question and names the findings by class, field and line, so
+**Republish** is never offered when it could only fail. Otherwise the run asks once, naming the
+audience and the remaining content-check findings exactly as `plan`'s publication question does: **Republish**
 commits your local version onto the plan branch as a new commit and continues, **Stop** ends the
 run and leaves both versions unchanged. A non-interactive run stops without asking. After
 **Republish**, the run requires the publication to report the pull request as updated, fetches the

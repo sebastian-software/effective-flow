@@ -161,6 +161,7 @@ backstop for one that carries open points.
 | merge-gate  | merged but at least one linked issue is open or unobservable | {{SKILL:merge-gate}} <PR>            | —                                       |
 | merge-gate  | merged                                                       | {{SKILL:open-plans}}                 | —                                       |
 | setup       | staged changes exist                                         | {{SKILL:commit}}                     | —                                       |
+| setup       | status report found a setup-fixable problem                  | {{SKILL:setup}} <setup argument>     | {{SKILL:setup}} <second setup argument> |
 | cleanup     | staged removals exist                                        | {{SKILL:commit}}                     | {{SKILL:setup}}                         |
 | cleanup     | config values referred to setup                              | {{SKILL:setup}}                      | —                                       |
 
@@ -168,7 +169,8 @@ backstop for one that carries open points.
 
 These end states carry no generic fallback row:
 
-- a `setup` run with nothing staged;
+- a `setup` run with nothing staged, unless it is a `setup status` report that found a
+  setup-fixable problem;
 - a `cleanup` run whose mandatory report found nothing to carry over, delete, or refer on;
 - an `investigate` run that ends in no bug, deliberately no action, or a pending product decision —
   the documentation row covers a documentation gap, never a non-finding;
