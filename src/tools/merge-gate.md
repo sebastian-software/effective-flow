@@ -198,12 +198,9 @@ input object's top-level `cwd`; setting only the process or tool working directo
      with the missing capability named. Nothing else degrades — no merge decision, no check round and
      no observation depends on it, and an unavailable offer is not the same result as an issue the
      assessment found incomplete.
-   - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`,
-     and `issueCommentsRead`, and declares only `pullRequestChecksWait` unsupported among those:
-     `tea` has no `checks` subcommand and
-     Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
-     Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait` and `review-create`; the
+   - **Forgejo** supports `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`,
+     and `issueCommentsRead`. The helper performs bounded polling inside Phase 2 because `tea`
+     has no native checks watch. What stays unsupported there is `review-create`; the
      two thread writes are served only together, when both are among the routes the instance declares (Forgejo today none, Gitea both). `issueClose` is supported on **Forgejo**
      only where the probed `tea api` transport the operation rides is available: a `tea` built
      without `--include` reports `issue-close` unsupported, which makes the Phase-5.5 offer
