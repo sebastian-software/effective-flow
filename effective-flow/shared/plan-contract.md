@@ -13,6 +13,7 @@ use it consistently throughout the artifact:
 | Workflow             | `**Empfohlener Workflow:**`                         | `**Recommended workflow:**`                  |
 | Doc category         | `**Doku-Kategorie:**`                               | `**Doc category:**`                          |
 | Target path          | `**Ziel-Pfad:**`                                    | `**Target path:**`                           |
+| Issue                | `**Issue:**`                                        | `**Issue:**`                                 |
 | Requirement          | `## Anforderung`                                    | `## Requirement`                             |
 | Architecture         | `## Architekturentscheidungen`                      | `## Architecture decisions`                  |
 | Affected files       | `## Betroffene Dateien`                             | `## Affected files`                          |
@@ -71,6 +72,9 @@ Workflow routing values and skill references remain stable: `Feature`, `Bugfix`,
 `Documentation`, and the referenced `effective-flow build`/`effective-flow fix`/`effective-flow refactor`/
 `effective-flow docs` token are not translated. Doc-category values and target paths likewise remain
 `user-guide`, `developer-guide`, `operations`, `runbooks`, and their stable paths.
+The optional `**Issue:** #<N>` header uses a machine-stable label and issue reference in both
+languages; it contributes no language evidence and is the last header line, after any Doc category
+and Target path fields.
 
 - A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
   not automatically rewritten. A requested translation converts the complete plan contract.

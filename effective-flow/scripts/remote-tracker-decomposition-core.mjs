@@ -70,10 +70,10 @@ export const ACTIVE_DECOMPOSITION_STATUSES = new Set([
   'missing',
 ]);
 
-const SENSITIVE_CHILD_FIELD =
+export const SENSITIVE_CHILD_FIELD =
   '(?:(?:[A-Z][A-Z0-9]*_)+(?:TOKEN|PASSWORD|SECRET|API_KEY|ACCESS_KEY_ID|SECRET_ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET|SESSION_ID)|access[ _-]?token|refresh[ _-]?token|api[ _-]?key|client[ _-]?secret|password|private[ _-]?key|secret|session[ _-]?id|aws[ _-]?access[ _-]?key[ _-]?id|aws[ _-]?secret[ _-]?access[ _-]?key|token)';
 
-const SENSITIVE_CHILD_ASSIGNMENT = `(?<![A-Za-z0-9_])["']?${SENSITIVE_CHILD_FIELD}["']?(?![A-Za-z0-9_])\\s*[:=]\\s*`;
+export const SENSITIVE_CHILD_ASSIGNMENT = `(?<![A-Za-z0-9_])["']?${SENSITIVE_CHILD_FIELD}["']?(?![A-Za-z0-9_])\\s*[:=]\\s*`;
 
 export function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -465,7 +465,7 @@ function redactChildAssignments(text, field) {
   });
 }
 
-function isLegitimateCredentialProse(prefix, value) {
+export function isLegitimateCredentialProse(prefix, value) {
   if (!/:\s*$/.test(prefix)) return false;
   const prose = value.trim();
   if (!/^\p{Ll}[\p{L}\p{N}._,'’()\/-]*(?:\s+[^\s]+)+[.!?]?$/u.test(prose)) return false;

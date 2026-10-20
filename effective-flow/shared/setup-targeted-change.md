@@ -1,7 +1,7 @@
 ## Targeted setup change
 
 This fragment is loaded only when Step 0 of `effective-flow setup` classified the invocation as
-**Targeted**: a non-empty argument that is not exactly one of the five keyword forms, kept verbatim.
+**Targeted**: a non-empty argument that is not exactly one of the six keyword forms, kept verbatim.
 It holds the whole Targeted contract; the setup core keeps only that classification and the
 exception clauses that override its own steps.
 
@@ -52,7 +52,7 @@ Map the free text, in any language, to operations on known schema keys (the conf
 One request may hold several operations. Give each ambiguity one focused question offering only
 valid readings or values ("prReview off" may mean `delivery.prReview` or `mergeGate.*`); never
 guess. A key outside the schema is not written; existing unknown rows are preserved, never created
-or removed. When nothing is recognized, a typo such as `exprss` included, say so, list the five
+or removed. When nothing is recognized, a typo such as `exprss` included, say so, list the six
 keyword forms and `effective-flow setup <free text>`, and stop without mutation.
 
 ### Refusals and redirects

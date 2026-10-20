@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, apply, build, fix, refactor, docs, maintain, iterate, review, deliver, commit, pr, merge-gate, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|deliver|commit|pr|merge-gate|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, deliver, commit, pr, merge-gate, setup, cleanup, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.68.0 (f05ff2e)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.69.0 (b575bee)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -43,6 +43,7 @@ _Analysis & planning before code_
 - `effective-flow plan` — Routes issue references to issue planning or writes an actionable local plan – without code – and can publish it.
 - `effective-flow open-plans` — Shows which plans are still open when you pick the thread back up.
 - `effective-flow plan-issue` — Completes the planning for issues that still need clarification.
+- `effective-flow issue-buddy` — Checks trusted issues and optionally publishes draft plans.
 
 ### Implement a change
 _from a clarified plan/issue to code_

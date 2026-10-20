@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import {
   FORGEJO_PAGE_LIMIT,
   ISSUE_STATE_READ_TIMEOUT_MS,
@@ -129,6 +130,8 @@ const REMOTE_OPERATIONS = new Set([
   'repository-resolve',
   'probe',
   'viewer-read',
+  'collaborator-permission-read',
+  'repository-visibility-read',
   'label-create',
   'issue-read',
   'issue-state-wait',
@@ -165,6 +168,8 @@ const REMOTE_OPERATIONS = new Set([
 
 const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
+  'collaborator-permission-read': 'collaboratorPermissionRead',
+  'repository-visibility-read': 'repositoryVisibilityRead',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
   'issue-state-wait': 'issueRead',
@@ -2222,6 +2227,12 @@ async function runChecked(runner, plan, label) {
     }
   }
   if (!result || result.status !== 0) {
+    if (
+      label === 'collaborator-permission-read' &&
+      /\bHTTP[ /]404\b/i.test(`${result?.stderr ?? ''}\n${result?.stdout ?? ''}`)
+    ) {
+      fail('TARGET_NOT_FOUND', 'collaborator permission was not found');
+    }
     // The tolerance is keyed on the plan's own metadata rather than on the step label, because a
     // label is display text: the moment a caller renames its step — which `label-create` now does,
     // since it runs two commands — a string comparison would silently stop tolerating the race it
@@ -2424,6 +2435,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
         // `gh api user` needs no flag beyond the ones every 2.x line has and no scope beyond the
         // ones an authenticated gh already holds, so it is not tied to the gate's version floor.
         viewerRead: true,
+        collaboratorPermissionRead: true,
+        repositoryVisibilityRead: true,
         issues: true,
         issueRead: true,
         issueCommentsRead: true,
@@ -2517,7 +2530,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     apiInclude,
     pullEditTitle,
     pullCreateDraftWip,
-  ] = await Promise.all([
+    // A bounded probe must await every sibling's termination before returning its one envelope.
+  ] = await Promise.allSettled([
     probeTeaHelp(runner, ['issues'], ['--output']),
     probeTeaHelp(runner, ['issues'], ['--comments']),
     probeTeaHelp(runner, ['issues', 'create'], ['--title', '--description']),
@@ -2549,7 +2563,12 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     // very flag that a draft is a `WIP: ` title prefix. See `pr-mark-ready` in
     // `remote-tracker-forgejo-core.mjs` for why that decides the mapping.
     probeTeaHelp(runner, ['pulls', 'create'], ['--draft', 'WIP']),
-  ]);
+  ]).then((results) =>
+    results.map((result) => {
+      if (result.status === 'rejected') throw result.reason;
+      return result.value;
+    }),
+  );
   const labelCreateSupported = labelCreate && labelList;
   // The `tea api` transport probe the three gate capabilities are gated on: the reads need
   // `--include`, and the merge needs `--method` and `--data` on top of it. It attests transport
@@ -2578,6 +2597,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // from the locally configured login `tea logins list` reports. It rides on the same transport
       // probe as the gate reads.
       viewerRead: teaApiTransport,
+      collaboratorPermissionRead: false,
+      repositoryVisibilityRead: false,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -2612,14 +2633,11 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // login and no timestamp — the same reason the thread walk left it.
       prReviewsRead: teaApiTransport,
       pullRequestList: pulls && apiInclude,
-      // Two of the three gate operations ride on the `tea api` transport: the status read composes
-      // the pull-request object, the combined commit status and the head commit's date, and the
-      // merge sends `head_commit_id` as the server-side head guard. The watch is the one genuine
-      // provider limitation — `tea` has no `checks` subcommand and Forgejo offers no server-side
-      // blocking watch — and stays `false` rather than becoming the poll loop the gate rejects; the
-      // documented no-watch degradation reports the pending checks and asks once instead.
+      // The status read, bounded helper polling, and merge all ride the same `tea api` transport.
+      // The helper owns the wait because `tea` has no native checks watch; the capability means
+      // deterministic adapter support, not a provider-side watch command.
       pullRequestStatus: teaApiTransport,
-      pullRequestChecksWait: false,
+      pullRequestChecksWait: teaApiTransport,
       pullRequestMerge: teaApiTransport,
       pullRequestCreate: pullCreate,
       pullRequestDraftCreate: pullCreate && pullCreateDraft,
@@ -2723,7 +2741,9 @@ function normalizeAuthor(author) {
   const inferredBot = typeof login === 'string' && /\[bot\]$/i.test(login) ? true : undefined;
   const isBot = explicitBot ?? inferredBot;
   return {
-    login,
+    // An absent login stays absent in process as well as across JSON serialization. Consumers
+    // still read undefined, and the CLI's serialized output remains exactly the same.
+    ...(login === undefined ? {} : { login }),
     isBot: isBot ?? null,
     authorType: isBot === true ? 'bot' : isBot === false ? 'human' : 'unknown',
   };
@@ -2756,6 +2776,13 @@ function normalizeIssue(item, repository, metadata = {}) {
     ...(typeof item.state_reason === 'string' && item.state_reason.length > 0
       ? { stateReason: item.state_reason.toLowerCase() }
       : {}),
+    author: normalizeAuthor(item.user ?? item.author ?? item.poster),
+    ...(normalizeTimestamp(item.created_at, item.createdAt) === undefined
+      ? {}
+      : { createdAt: normalizeTimestamp(item.created_at, item.createdAt) }),
+    ...(normalizeTimestamp(item.updated_at, item.updatedAt) === undefined
+      ? {}
+      : { updatedAt: normalizeTimestamp(item.updated_at, item.updatedAt) }),
     labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
@@ -2804,6 +2831,12 @@ function normalizePullRequest(item, repository, metadata = {}) {
     head: normalizeBranchRef(item.head) ?? item.headRefName ?? item.head_branch ?? item.head,
     base: normalizeBranchRef(item.base) ?? item.baseRefName ?? item.base_branch ?? item.base,
     draft: item.draft ?? item.isDraft ?? false,
+    ...(normalizeTimestamp(item.merged_at, item.mergedAt) === undefined
+      ? {}
+      : { mergedAt: normalizeTimestamp(item.merged_at, item.mergedAt) }),
+    ...(normalizeTimestamp(item.closed_at, item.closedAt) === undefined
+      ? {}
+      : { closedAt: normalizeTimestamp(item.closed_at, item.closedAt) }),
   };
 }
 
@@ -3033,9 +3066,48 @@ function normalizePullRequestRecord(item, repository, metadata = {}) {
 // without canonicalization an ordinary string comparison of two instants would order them wrongly.
 // An unusable or absent value yields no field at all — the caller reads a missing timestamp as
 // "cannot prove this is current", which blocks a merge instead of waving a stale run through.
+// Date's ISO parser rolls February 30 and 24:00 into another instant. Provider evidence
+// must name a real calendar date and clock reading before timezone conversion can occur.
+function validProviderTimestamp(value) {
+  // GitHub and Gitea/Forgejo expose RFC3339 timestamps (Go may include nanoseconds).
+  // Require the complete date, clock and explicit zone; Date's legacy human/numeric
+  // string heuristics cannot establish a provider instant.
+  const parts = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/,
+  );
+  if (!parts) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHour,
+    offsetMinute,
+  ] = parts;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1] &&
+    Number(hourText) < 24 &&
+    Number(minuteText) < 60 &&
+    Number(secondText) < 60 &&
+    (offsetHour === undefined || (Number(offsetHour) < 24 && Number(offsetMinute) < 60))
+  );
+}
 function normalizeTimestamp(...values) {
   for (const value of values) {
     if (typeof value !== 'string' || value.trim() === '') continue;
+    if (!validProviderTimestamp(value.trim())) continue;
     const parsed = new Date(value.trim());
     if (Number.isNaN(parsed.getTime())) continue;
     return parsed.toISOString();
@@ -3760,9 +3832,40 @@ function normalizeSubIssueCreate(raw, repository, input) {
 
 function normalizeRemoteData(operation, raw, repository, input = {}, metadata = {}) {
   const flattened = flattenPages(raw);
+  // GitHub's paginated REST reads must be arrays, including an empty collection. Treat an
+  // error object or mixed/incomplete page container as a failed read rather than empty evidence.
+  if (
+    repository.provider === 'github' &&
+    ['issue-list', 'pr-list', 'issue-comments-read'].includes(operation) &&
+    (!Array.isArray(flattened) ||
+      flattened.some((item) => !item || typeof item !== 'object' || Array.isArray(item)))
+  ) {
+    fail('INVALID_PAYLOAD', 'provider returned an incomplete collection');
+  }
   switch (operation) {
     case 'viewer-read':
       return normalizeViewer(flattened);
+    case 'repository-visibility-read': {
+      requireObject(flattened, 'provider repository');
+      let visibility = 'unknown';
+      if (['public', 'private'].includes(flattened.visibility)) {
+        const expectedPrivate = flattened.visibility === 'private';
+        if (flattened.private === undefined || flattened.private === expectedPrivate)
+          visibility = flattened.visibility;
+      } else if (flattened.visibility === undefined && typeof flattened.private === 'boolean')
+        visibility = flattened.private ? 'private' : 'public';
+      return { visibility };
+    }
+    case 'collaborator-permission-read': {
+      requireObject(flattened, 'provider permission');
+      const login = requireString(input.login, 'login').toLowerCase();
+      return {
+        login,
+        permission:
+          typeof flattened.permission === 'string' ? flattened.permission.toLowerCase() : null,
+        roleName: typeof flattened.role_name === 'string' ? flattened.role_name : null,
+      };
+    }
     // Both providers answer this endpoint with the full updated issue, and `issue-close` is the
     // same resource under a different field, so it shares the branch its sibling mutation already
     // uses. A consumer confirming the transition then reads one normalized lowercase `state`
@@ -3834,7 +3937,17 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       const planPath = input.planPath === undefined ? undefined : requirePlanPath(input.planPath);
       const items = (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
         .map((item) => normalizePullRequestRecord(item, repository))
-        .filter((pullRequest) => !input.head || pullRequest.head === input.head);
+        .filter((pullRequest) => {
+          if (!input.head) return true;
+          if (repository.provider !== 'github' || !input.head.includes(':'))
+            return pullRequest.head === input.head;
+          const [owner, ...parts] = input.head.split(':');
+          return (
+            pullRequest.head === parts.join(':') &&
+            typeof pullRequest.headRepository === 'string' &&
+            pullRequest.headRepository.split('/')[0].toLowerCase() === owner.toLowerCase()
+          );
+        });
       if (planPath === undefined) return items;
       return items
         .filter((pullRequest) => pullRequest.planPrMarker === planPath)
@@ -4336,7 +4449,7 @@ const FULL_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 // SHA, the combined commit status supplies the checks, and the head commit supplies the committer
 // date the automatic-reviewer fallback compares against. Only the first is knowable in advance, so
 // `buildCommandPlan` answers with that one and this reader publishes all three previews.
-async function readForgejoPullRequestStatus(input, repository, runner) {
+async function readForgejoPullRequestStatus(input, repository, runner, options = {}) {
   const pullPlan = buildCommandPlan('pr-status-read', input, repository);
   const commands = [redact(pullPlan)];
   const pull = teaApiSuccess(
@@ -4344,6 +4457,9 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
     'pr-status-read',
   ).body;
   const headSha = typeof pull?.head?.sha === 'string' ? pull.head.sha.trim() : '';
+  // A wait must discard the previous head as soon as the PR read observes a new one, even if
+  // the remaining status/commit reads exhaust its budget before yielding another snapshot.
+  options.onHead?.(headSha);
   const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
   let statuses;
   let headCommittedAt;
@@ -4433,9 +4549,9 @@ async function readForgejoReviewThreads(input, repository, runner) {
 // One status reader for both providers, used by `pr-status-read` and by `mergeHeadGuard` alike, so
 // the merge precondition and the status the caller sees can never be read through two code paths
 // that drifted apart.
-async function readPullRequestStatus(input, repository, runner) {
+async function readPullRequestStatus(input, repository, runner, options = {}) {
   if (repository.provider === 'forgejo') {
-    return await readForgejoPullRequestStatus(input, repository, runner);
+    return await readForgejoPullRequestStatus(input, repository, runner, options);
   }
   const readPlan = buildCommandPlan('pr-status-read', input, repository);
   const readResult = await runChecked(runner, readPlan, 'pr-status-read');
@@ -4444,6 +4560,122 @@ async function readPullRequestStatus(input, repository, runner) {
     result: normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed),
     commands: [redact(readPlan)],
   };
+}
+
+function waitClock(clock) {
+  const read =
+    typeof clock === 'function'
+      ? clock
+      : clock && typeof clock.now === 'function'
+        ? () => clock.now()
+        : () => performance.now();
+  return () => {
+    const value = read();
+    if (!Number.isFinite(value))
+      fail('INVALID_PAYLOAD', 'pr-checks-wait clock returned invalid time');
+    return value;
+  };
+}
+
+function waitDeadlineError() {
+  return new RemoteTrackerError('WAIT_DEADLINE', 'pr-checks-wait deadline elapsed');
+}
+
+// One wrapper owns the probe and every later provider read. Record at launch so a partially read
+// snapshot or a timed-out subprocess remains visible without retaining any API response body.
+function boundedWaitRunner(runner, deadline, now, state) {
+  return async (plan) => {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw waitDeadlineError();
+    const call = {
+      ...plan,
+      timeoutMs: Math.min(plan.timeoutMs ?? remaining, remaining),
+      processGroup: true,
+    };
+    state.commands.push(redact(call));
+    const result = await runner(call);
+    if (result?.forcedKill === true) state.forcedKill = true;
+    if (
+      result?.timedOut === true ||
+      result?.error?.code === 'ETIMEDOUT' ||
+      // Windows uses the runner's direct mode, whose timeout reports a terminating signal.
+      (result?.status === null &&
+        ['SIGTERM', 'SIGKILL'].includes(result?.signal) &&
+        now() >= deadline)
+    ) {
+      throw waitDeadlineError();
+    }
+    // Let the reader classify HTTP, JSON and command failures before checking the clock again.
+    // An operational error at the boundary must not be hidden by a simultaneously elapsed bound.
+    return result;
+  };
+}
+
+function forgejoChecksWaitResult(input, repository, state, snapshot, timedOut) {
+  return {
+    result: normalizeRemoteData(
+      'pr-checks-wait',
+      { checks: snapshot?.checksReported === true ? snapshot.checks : undefined },
+      repository,
+      input,
+      { timedOut, forcedKill: state.forcedKill },
+    ),
+    commands: state.commands,
+  };
+}
+
+async function readForgejoWaitHead(input, repository, runner) {
+  const plan = buildCommandPlan('pr-status-read', input, repository);
+  const response = teaApiSuccess(
+    await runChecked(runner, plan, 'pr-checks-wait head confirmation'),
+    'pr-checks-wait head confirmation',
+  );
+  return response.body?.head?.sha;
+}
+
+async function executeForgejoChecksWait(input, repository, runner, options) {
+  const { deadline, now, settings, state } = options;
+  const sleeper =
+    options.sleeper ?? ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
+  let snapshot;
+  let headSha;
+  const observeHead = (value) => {
+    const currentHead = typeof value === 'string' ? value.trim() : '';
+    if (!FULL_OBJECT_NAME.test(currentHead)) {
+      fail('INVALID_PAYLOAD', 'provider returned no usable pull-request head SHA');
+    }
+    if (headSha !== undefined && currentHead.toLowerCase() !== headSha.toLowerCase()) {
+      snapshot = undefined;
+    }
+    headSha = currentHead;
+  };
+  const timeoutResult = () => forgejoChecksWaitResult(input, repository, state, snapshot, true);
+  while (true) {
+    if (now() >= deadline) return timeoutResult();
+    try {
+      const read = await readPullRequestStatus(input, repository, runner, { onHead: observeHead });
+      if (now() >= deadline) return timeoutResult();
+      snapshot = read.result;
+      const checks = snapshot.checks;
+      const complete =
+        snapshot.checksReported === true &&
+        checks.length > 0 &&
+        checks.every((check) => check.status === 'COMPLETED');
+      if (complete) {
+        observeHead(await readForgejoWaitHead(input, repository, runner));
+        if (now() >= deadline) return timeoutResult();
+        if (snapshot !== undefined) {
+          return forgejoChecksWaitResult(input, repository, state, snapshot, false);
+        }
+      }
+    } catch (error) {
+      if (error?.code === 'WAIT_DEADLINE') return timeoutResult();
+      throw error;
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) return timeoutResult();
+    await sleeper(Math.min(settings.intervalSeconds * 1000, remaining));
+  }
 }
 
 // The merge is the most irreversible mutation of the set, so the head the caller verified is
@@ -4725,6 +4957,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
   requireObject(input);
   const dryRun = MUTATIONS.has(operation) && options.apply !== true;
   try {
+    if (operation === 'pr-checks-wait') checksWaitSettings(input.payload ?? input);
     const runLocal = localOperation(operation, input, options);
     if (runLocal !== undefined) {
       if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
@@ -4765,16 +4998,42 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
-    const probe =
-      options.skipProbe === true
-        ? (input.probe ?? {
-            executable: repository.provider === 'github' ? 'gh' : 'tea',
-            capabilities: {},
-          })
-        : await probeProvider(repository, runner, {
-            issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
-            reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
-          });
+    const forgejoWait = operation === 'pr-checks-wait' && repository.provider === 'forgejo';
+    const waitSettings = forgejoWait ? checksWaitSettings(input.payload ?? input) : undefined;
+    if (forgejoWait && options.sleeper !== undefined && typeof options.sleeper !== 'function') {
+      fail('INVALID_PAYLOAD', 'pr-checks-wait requires a callable sleeper');
+    }
+    const now = forgejoWait ? waitClock(options.clock) : undefined;
+    const deadline = forgejoWait ? now() + waitSettings.timeoutMs : undefined;
+    const waitState = { commands: [], forcedKill: false };
+    const probeRunner = forgejoWait ? boundedWaitRunner(runner, deadline, now, waitState) : runner;
+    let probe;
+    try {
+      probe =
+        options.skipProbe === true
+          ? (input.probe ?? {
+              executable: repository.provider === 'github' ? 'gh' : 'tea',
+              capabilities: {},
+            })
+          : await probeProvider(repository, probeRunner, {
+              issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
+              reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
+            });
+    } catch (error) {
+      if (forgejoWait && error?.code === 'WAIT_DEADLINE') {
+        return {
+          ok: true,
+          operation,
+          provider: repository.provider,
+          data: {
+            ...forgejoChecksWaitResult(input, repository, waitState, undefined, true),
+            conditionalWriteAvailable: false,
+          },
+          dryRun: false,
+        };
+      }
+      throw error;
+    }
     if (operation === 'probe') {
       return {
         ok: true,
@@ -4788,6 +5047,18 @@ export async function executeOperation(operation, input = {}, options = {}) {
       repository.provider === 'forgejo' && probe.login
         ? { ...repository, login: probe.login }
         : repository;
+    if (forgejoWait && now() >= deadline) {
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          ...forgejoChecksWaitResult(input, activeRepository, waitState, undefined, true),
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
     const capability = CAPABILITY_BY_OPERATION[operation];
     if (probe.capabilities?.[capability] === false) {
       fail('UNSUPPORTED_CAPABILITY', `${repository.provider} does not support ${operation}`, {
@@ -4828,6 +5099,26 @@ export async function executeOperation(operation, input = {}, options = {}) {
         provider: activeRepository.provider,
         data: {
           ...observed,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    if (operation === 'pr-checks-wait' && activeRepository.provider === 'forgejo') {
+      const observed = await executeForgejoChecksWait(input, activeRepository, probeRunner, {
+        sleeper: options.sleeper,
+        deadline,
+        now,
+        settings: waitSettings,
+        state: waitState,
+      });
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: observed.result,
+          commands: observed.commands,
           conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
         },
         dryRun: false,

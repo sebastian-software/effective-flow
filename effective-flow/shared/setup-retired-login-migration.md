@@ -48,7 +48,7 @@ login no longer matches a configured `X[bot]` entry and that reviewer stays **no
 recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
 forces `isBot: true`. **On Forgejo a gate can merge**, so what the strict comparison costs there is
 a blocked merge rather than a noisier report: `pr-status-read` and `pr-merge` are supported and only
-`pr-checks-wait` is not. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
+`pr-checks-wait` is supported by the deterministic helper when its API transport is available. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
 login the forge reports, without a `[bot]` suffix. An entry spelled `X[bot]` matches no bare Forgejo
 login at all, leaves that reviewer permanently **not started**, and blocks the gate's merge
 precondition on it forever. The failure direction is still the safe one; on Forgejo it is simply the

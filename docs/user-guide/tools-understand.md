@@ -73,6 +73,11 @@ reports are always local: they are never committed and never tracked as an issue
 target. Their prose follows `language.workflow`; the internal runtime/wisdom schema remains
 language-stable.
 
+Before the report is finalized, one independent read-only reviewer in a fresh context tries to
+refute the draft diagnosis. The report records the outcome in its section "Independent challenge"
+(German: "Unabhängige Gegenprüfung"); a refuted or skipped challenge downgrades the result to
+`unclear` with the follow-up "further investigation needed".
+
 **Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
 functionality or intentional behavior change), or `/effective-flow docs` (pure
@@ -158,11 +163,16 @@ is ignored and reported, never blocking.
 You get exactly **one question**. It names the remote, the base branch, the branch, that the pull
 request is a draft, and its audience, which is always "possibly public: everyone who can read
 `<remote>`", with the `origin` host and repository path as `<remote>`. It also lists the findings of a
-content check over the plan and the pull-request body: private-key or certificate headers, common
-token shapes, `password`/`secret`/`api_key` assignments with a literal value, and absolute paths
-under a home or drive root. Each finding is named by its class and line, never by the matched
-value, and "no findings" is stated explicitly. Answering **Publish** acknowledges every listed
-finding; **Keep local**, or no answer, publishes nothing.
+content check run by the shipped `plan-publication.mjs scan` helper, which holds the binding class
+table. It scans the plan and, on a first publication only, the pull-request title and body.
+High-confidence findings — private keys, provider tokens, credentials in URLs or authorization
+headers, and generation attribution — make publication unavailable before the question, also when
+an implementing run republishes after its own question; public certificates are not findings.
+Lower-confidence findings — credential assignments and absolute local paths — go into the question.
+A scan that fails to run or to answer also makes publication unavailable. Each finding is named by
+its class, field and line, never by the matched value, and "no findings" is stated explicitly.
+Answering **Publish** acknowledges every listed lower-confidence finding; **Keep local**, or no
+answer, publishes nothing.
 
 On **Publish**, `plan` commits the plan file alone in a temporary Effective Flow worktree (a sibling
 worktree in a Claude Code or Codex worktree session), pushes the branch
@@ -321,6 +331,38 @@ and expands its open native children without implementing the parent a second ti
 stored in each canonical parent record is authoritative and must match exactly one
 language-appropriate workflow field in the child body. `apply` does not reclassify it: `Feature`
 routes to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to `docs`.
+
+## `/effective-flow issue-buddy`
+
+**Purpose:** Reviews a bounded set of trusted GitHub issues and turns eligible issues into
+implementation plans. The default mode is a local dry run: it records readiness and planning
+decisions without creating plan files, branches, commits, or pull requests. Add `--publish` to
+publish draft, plan-only pull requests for ready issues.
+
+**Typical calls:**
+
+```text
+/effective-flow issue-buddy
+/effective-flow issue-buddy --max-judgments 5 --max-plans 2
+/effective-flow issue-buddy --publish --max-plans 1
+```
+
+The pass runs in the primary checkout and requires the configured remote tracker to be GitHub.
+Publication is allowed only for a public repository. Private and unknown repositories remain
+dry-run-only. The pass stops when configuration, the repository root, the whole-pass lock, the
+visibility read, the Git state, or the required built-in subagent mechanism cannot be verified.
+It never asks a question during the pass and never implements code, changes configuration, closes
+issues, writes issue comments or labels, or creates a worktree.
+
+Issue-derived text stays inside the delegated planning context. The publication title, commit
+message, and body use fixed templates; the body reports only the issue number, review result, and
+open-point count. A published plan pull request is a draft and must be continued through
+`/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
+The report names preserved plan leftovers and the operator action required before a retry. A
+completed dry run recommends `--publish` only when the repository is public.
+
+**Arguments:** `--publish`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
+numeric limits are positive decimal integers without leading zeroes.
 
 ## Further reading
 

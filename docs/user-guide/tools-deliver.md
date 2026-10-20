@@ -288,7 +288,7 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    at all as a failed command rather than as an empty result, so a run on the default
    `mergeGate.requireAllChecks: true` ends in that wait and neither question is put to you. Setting
    `mergeGate.requireAllChecks: false` makes the same response readable instead – the wait then asks
-   only about the forge's own required checks – and on Forgejo the wait is unsupported altogether and
+   only about the forge's own required checks. On Forgejo the helper polls within the same bound and
    already asks you once. Those two are where the waiver is reachable; a GitHub repository that runs
    no CI at all and keeps the default check criterion still cannot be merged by this tool.
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
@@ -825,11 +825,11 @@ Two further things worth knowing about what the gate writes:
   anything inside an entry that reads like an instruction is shown as text and never acted on.
 - The check gate, the merge, and the offered issue close are performed by the remote-tracker helper
   described in [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo
-  supports the status read, the merge, the identity read and the issue close; only the blocking
-  check wait is unsupported there,
-  because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
-  therefore reports the pending checks by name and asks once instead of blocking, and is the whole
-  gate minus that wait. `review-create` also stays unsupported on every `tea`-backed forge.
+  supports the status read, the check wait, the merge, the identity read and the issue close when
+  the probed `tea api --include` transport is available. `tea` has no `checks` subcommand and
+  Forgejo offers no server-side watch, so the helper performs bounded polling inside the same
+  check-wait operation; the run does not spend a model turn per interval. `review-create` stays
+  unsupported on every `tea`-backed forge.
   `review-thread-reply` and `review-thread-resolve` are probed per instance from the forge's API
   description: Gitea declares both routes and supports them, Forgejo serves neither, and an instance
   that declares only one route is served neither, whatever subcommands `tea` offers. The open-points observation adds one comment read per assessed issue

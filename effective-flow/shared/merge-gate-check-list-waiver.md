@@ -48,9 +48,8 @@ consumer, and "this section" below means that Phase-4 section.
   it.** With `mergeGate.requireAllChecks: false` step 2 restricts that read to the forge's own
   required checks, and the helper turns the identical response into a **successful** result carrying
   `requiredChecksDefined: false`, so the loop runs on to step 4's own unreported-list question and
-  Phase 4 follows it. On **Forgejo** `pr-checks-wait` is unsupported outright and
-  returns `UNSUPPORTED_CAPABILITY`, which step 2 already answers by reporting and asking once, so the
-  waiver is reachable there under either setting. This is a scope statement, not a second gate: a
+  Phase 4 follows it. On **Forgejo** the helper keeps polling until the same bound expires, so an
+  empty list reaches this waiver only after the wait timeout. This is a scope statement, not a second gate: a
   GitHub repository with no CI and the default check criterion is still unmergeable from this tool,
   and closing that is a change to the helper's error discrimination rather than to anything here.
 - **The operator was already asked once in Phase 2, and asking again here is accepted.** Phase 2

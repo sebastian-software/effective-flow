@@ -71,7 +71,11 @@ deduplicated, or eligible-but-not-written observation produces no recursive subs
 Aborted runs name their blocker instead. These end states also stay silent, even with an associated
 plan; they read no optional planning context:
 
-- **`/effective-flow setup`** with nothing staged – there is nothing for `commit` to pick up.
+- **`/effective-flow setup`** with nothing staged – there is nothing for `commit` to pick up. A
+  `/effective-flow setup status` report is the exception when it found a problem setup can fix: it
+  names one setup form per line, at most two, in the order `setup`, `setup guided`, `setup hidden`,
+  then a Targeted request; further forms or requests follow the same way, and bare `setup` appears
+  only when the plain setup form is among them.
 - **`/effective-flow cleanup`** with an empty report – nothing was found to carry over, delete, or
   refer on to `setup`.
 - **`/effective-flow investigate`** that found no bug, deliberately no action, or a pending product
@@ -116,6 +120,8 @@ that does not suppress a valid candidate from the associated plan or issue.
 | `open-plans`  | at least one open plan                                       | `/effective-flow apply`                      | —                                               |
 | `plan-issue`  | released                                                     | `/effective-flow apply #<issue>`             | `/effective-flow plan-issue <issue>`            |
 | `plan-issue`  | retained for planning                                        | `/effective-flow plan-issue <issue>`         | —                                               |
+| `issue-buddy` | dry run; would-publish issue in public repository            | `/effective-flow issue-buddy --publish`      | —                                               |
+| `issue-buddy` | draft plan PR published; restore plan file from branch first | `/effective-flow build <plan-file>`          | —                                               |
 | `apply`       | plan clarity gate failed                                     | `/effective-flow plan <plan-file>`           | `/effective-flow review <plan-file>`            |
 | `apply`       | findings applied, PR opened                                  | `/effective-flow merge-gate <PR>`            | `/effective-flow apply <remaining source>`      |
 | `apply`       | findings applied, delivery branch retained, no PR            | `/effective-flow pr`                         | `/effective-flow apply <remaining source>`      |
@@ -147,6 +153,7 @@ that does not suppress a valid candidate from the associated plan or issue.
 | `merge-gate`  | merged but at least one linked issue is open or unobservable | `/effective-flow merge-gate <PR>`            | —                                               |
 | `merge-gate`  | merged                                                       | `/effective-flow open-plans`                 | —                                               |
 | `setup`       | staged changes exist                                         | `/effective-flow commit`                     | —                                               |
+| `setup`       | status report found a setup-fixable problem                  | `/effective-flow setup <setup argument>`     | `/effective-flow setup <second setup argument>` |
 | `cleanup`     | staged removals exist                                        | `/effective-flow commit`                     | `/effective-flow setup`                         |
 | `cleanup`     | config values referred to setup                              | `/effective-flow setup`                      | —                                               |
 

@@ -13,15 +13,17 @@ only for the chat language and the profile. **Express** and **Guided** remain av
 modes. **Hidden mode** instead keeps the whole configuration local and untracked; see
 [Hidden mode](#hidden-mode). Once a configuration exists, **Targeted** mode takes a free-text
 request and changes only the settings it names, or answers questions about them; see
-[Targeted changes and questions](#targeted-changes-and-questions).
+[Targeted changes and questions](#targeted-changes-and-questions). **Status** is a read-only
+diagnosis of an existing or missing setup; see [Status](#status).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to switch its common
 planning/tracking and delivery topology. To change or check one or a few settings of an existing
 configuration, describe the change in free text. Use Guided when you want to walk through the
 individual settings with explanations (project and surface languages, worktree, completion action,
 tracker details, advanced review/apply-review values, skill discovery, or the `build`/`refactor`
-Fast pilot), and Express when you intentionally want the safe base without an interview. Any mode
-except Targeted may offer the optional session-rename capability check described below.
+Fast pilot), and Express when you intentionally want the safe base without an interview. Use
+`status` to check whether the setup is healthy without changing anything. Any mode
+except Targeted and Status may offer the optional session-rename capability check described below.
 
 **Typical call:** `/effective-flow setup`
 
@@ -33,13 +35,15 @@ The accepted invocations are:
 /effective-flow setup express
 /effective-flow setup guided
 /effective-flow setup hidden
+/effective-flow setup status
 /effective-flow setup <free text>
 ```
 
 The first two forms enter Profile mode. `hidden` enters Express with the visibility already set to
-hidden. Surrounding whitespace and letter case do not matter for these keywords. Any other argument
+hidden. `status` runs the read-only [Status](#status) diagnosis. Surrounding whitespace and letter case do not matter for these keywords. Any other argument
 is a free-text request for [Targeted mode](#targeted-changes-and-questions), even one that starts
-with a keyword: `/effective-flow setup guided tracker github` is a targeted request, not Guided.
+with a keyword: `/effective-flow setup guided tracker github` is a targeted request, not Guided, and
+`/effective-flow setup status of the tracker` is a targeted question, not Status.
 With an existing configuration, a request in which setup recognizes no configuration setting, such
 as the typo `exprss`, lists the accepted forms and stops before changing `.gitignore`,
 configuration, convention files, or runtime state. Without a configuration, the
@@ -191,9 +195,49 @@ route to take and still offers the remaining changes:
   `effective-flow` are refused; answering `Standard` in `/effective-flow setup` leaves hidden mode.
 - **Unknown keys** are not written. Existing unknown rows stay as they are.
 
+### Status
+
+`/effective-flow setup status` diagnoses the setup of the current checkout and changes nothing. It
+asks no question, writes no file, changes neither Git state nor `.effective-flow/`, and offers no inline
+fix; a non-interactive run produces the same report. The report has four sections:
+
+- **Configuration:** where the configuration comes from (the project-setup ADR or the hidden local
+  file) and its visibility, or that the project is not set up yet; every problem the configuration
+  resolver reports, such as a dead or diverging marker, a legacy ADR name, or an invalid or
+  ambiguous value; and every retired row, with the tools that would stop on it and those that would
+  only report it. When the runtime-state directory cannot be verified, that is the configuration
+  finding, and the other sections still appear.
+- **Ignore state:** whether `.effective-flow/` is ignored the way the visibility requires — through
+  `.gitignore` with nothing tracked below it in standard mode, through `info/exclude` in the Git
+  common directory without an outranking `.gitignore` rule in hidden mode. Outside a Git repository
+  this section is not applicable.
+- **Domain owners:** the central `effective-*` skills that Effective Flow tools delegate their domain
+  craft to, when one of them is missing from your agent's skill list or disabled through the
+  `skills` configuration. Each line names one skill and its cause and lists the affected tools,
+  each of which then runs its minimal fallback. Availability is judged from the skill list of the
+  current agent session: a skill missing from it is reported as not installed, whatever the
+  configuration says, and the closing count includes only skills that are both installed and
+  enabled.
+- **Version:** the installed Effective Flow version compared with the latest published release:
+  `current`, `outdated`, `ahead`, or `could not check`. The comparison makes one anonymous `GET`
+  request to the public GitHub releases endpoint of the Effective Flow repository and sends no
+  repository, branch, or configuration data; the report names the request. When the lookup fails,
+  for example offline or rate-limited, the section says `could not check` and the report is still
+  complete.
+
+Every problem comes with the setup form that would fix it, such as `/effective-flow setup` or
+`/effective-flow setup hidden`, or with the manual step when setup cannot fix it; a missing domain
+owner comes with its install step, a disabled one with the targeted request that re-enables it.
+Status runs none of them. When at least one problem can be fixed by setup, the report ends with a
+recommendation with one line per setup form the problems need, at most two, in the order
+`/effective-flow setup`, `/effective-flow setup guided`, `/effective-flow setup hidden`, then the
+first targeted request; further requests or forms follow the same way, and plain
+`/effective-flow setup` appears only when that form itself is needed. A deliberate `skills` exclusion or a missing skill never triggers that
+recommendation; without a setup-fixable problem the report suggests no next step.
+
 ### Visibility question
 
-Every mode except Targeted asks **Visibility** before it touches `.gitignore` or any
+Every mode except Targeted and Status asks **Visibility** before it touches `.gitignore` or any
 configuration: Profile after Chat and Profile, Express and Guided as their first question.
 `/effective-flow setup hidden` skips the question. `Standard` is the tracked ADR, marker, and `.gitignore` setup described on this
 page. `Hidden` switches the run to [hidden mode](#hidden-mode). The question pre-selects `Hidden`
@@ -322,7 +366,7 @@ ignores it. The values set here
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
-reliably present. The offer is a question in every mode except Targeted, Express included, and a
+reliably present. The offer is a question in every mode except Targeted and Status, Express included, and a
 run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
 file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a
@@ -516,6 +560,8 @@ report or after an update.
 **Typical call:** `/effective-flow version`
 
 **Input/output:** No input. The output is a single-line version string; no files are changed.
+To compare the installed version with the latest published release, run
+[`/effective-flow setup status`](#status).
 
 **Interplay:** The displayed version comes from `.release-please-manifest.json` and is
 maintained via release-please (versions and `CHANGELOG.md` are generated automatically from

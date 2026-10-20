@@ -1,0 +1,3122 @@
+{
+  "schemaVersion": 1,
+  "version": "1.69.0",
+  "exposedTools": [
+    "concept",
+    "investigate",
+    "plan",
+    "open-plans",
+    "plan-issue",
+    "issue-buddy",
+    "apply",
+    "build",
+    "fix",
+    "refactor",
+    "docs",
+    "maintain",
+    "iterate",
+    "review",
+    "deliver",
+    "commit",
+    "pr",
+    "merge-gate",
+    "setup",
+    "cleanup",
+    "version"
+  ],
+  "workflowEdges": [
+    {
+      "from": "merge-gate",
+      "to": "iterate",
+      "mode": "pr"
+    },
+    {
+      "from": "apply-plan",
+      "to": "build",
+      "mode": null
+    },
+    {
+      "from": "apply-plan",
+      "to": "fix",
+      "mode": null
+    },
+    {
+      "from": "apply-plan",
+      "to": "refactor",
+      "mode": null
+    },
+    {
+      "from": "apply-plan",
+      "to": "docs",
+      "mode": null
+    },
+    {
+      "from": "apply-issues",
+      "to": "build",
+      "mode": null
+    },
+    {
+      "from": "apply-issues",
+      "to": "fix",
+      "mode": null
+    },
+    {
+      "from": "apply-issues",
+      "to": "refactor",
+      "mode": null
+    },
+    {
+      "from": "apply-issues",
+      "to": "docs",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "build",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "fix",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "refactor",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "docs",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "build",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "fix",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "refactor",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "docs",
+      "mode": null
+    },
+    {
+      "from": "build",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "build",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "fix",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "fix",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "refactor",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "refactor",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "docs",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "docs",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "maintain",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "maintain",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "iterate",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "deliver",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "deliver",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "plan",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "plan",
+      "to": "pr",
+      "mode": null
+    },
+    {
+      "from": "plan",
+      "to": "plan-issue",
+      "mode": null
+    },
+    {
+      "from": "issue-buddy",
+      "to": "plan",
+      "mode": null
+    },
+    {
+      "from": "apply",
+      "to": "apply-plan",
+      "mode": null
+    },
+    {
+      "from": "apply",
+      "to": "apply-review",
+      "mode": null
+    },
+    {
+      "from": "apply",
+      "to": "apply-issues",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "apply-review-remote",
+      "mode": null
+    },
+    {
+      "from": "apply-review",
+      "to": "apply-review-commit-mechanics",
+      "mode": null
+    },
+    {
+      "from": "concept",
+      "to": "concept-review",
+      "mode": null
+    },
+    {
+      "from": "review",
+      "to": "concept-review",
+      "mode": null
+    },
+    {
+      "from": "plan",
+      "to": "plan-review",
+      "mode": null
+    },
+    {
+      "from": "plan-issue",
+      "to": "plan-review",
+      "mode": null
+    },
+    {
+      "from": "review",
+      "to": "plan-review",
+      "mode": null
+    }
+  ],
+  "owners": [
+    {
+      "skill": "effective-delivery",
+      "consumer": "maintain",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "maintain"
+      ],
+      "reach": [
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "deliver",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "deliver"
+      ],
+      "reach": [
+        {
+          "tool": "deliver",
+          "scope": "tools.deliver"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "docs",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "docs",
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "docs-writer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.docs-writer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "code-documenter",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.code-documenter"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "documentation-sync-contract",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "durable-follow-up-gate",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "plan",
+        "plan-issue",
+        "refactor",
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "review",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "refactor",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "iterate",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "iterate",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "worktree-integration",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "plan",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "apply-review-remote",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "apply-issues",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "build",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "fix",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "fix",
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "code-validator",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor",
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.code-validator"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "investigate",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "investigate"
+      ],
+      "reach": [
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "investigation-method",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "fix",
+        "investigate",
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "commit",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "commit",
+        "deliver",
+        "docs",
+        "fix",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "plan",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "commit-message-rules",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "commit",
+        "deliver",
+        "docs",
+        "fix",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "plan",
+        "pr",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "pr",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        }
+      ]
+    },
+    {
+      "skill": "effective-web",
+      "consumer": "frontend-reviewer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor",
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.frontend-reviewer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-web",
+      "consumer": "ui-implementer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.ui-implementer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-engineering",
+      "consumer": "test-writer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.test-writer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-engineering",
+      "consumer": "rust-implementer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.rust-implementer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-engineering",
+      "consumer": "nodejs-implementer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.nodejs-implementer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumer": "language-rules",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "cleanup",
+        "commit",
+        "concept",
+        "deliver",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "open-plans",
+        "plan",
+        "plan-issue",
+        "pr",
+        "refactor",
+        "review",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.e2e-tester"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "apply",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-plan"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.e2e-tester"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "cleanup",
+          "scope": "tools.cleanup"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept-review"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.deliver"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.e2e-tester"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.e2e-tester"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.merge-conflict-resolver"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "open-plans",
+          "scope": "tools.open-plans"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "pr",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.concept-review"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumer": "chat-language",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "cleanup",
+        "commit",
+        "concept",
+        "deliver",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "open-plans",
+        "plan",
+        "plan-issue",
+        "pr",
+        "refactor",
+        "review",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-plan"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-commit-mechanics"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "cleanup",
+          "scope": "tools.cleanup"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept-review"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.deliver"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "open-plans",
+          "scope": "tools.open-plans"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "pr",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.concept-review"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumer": "code-documenter",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.code-documenter"
+        }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumer": "docs-writer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.docs-writer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumer": "marketing-writer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.marketing-writer"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "apply-review",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "concept-review",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "concept",
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "concept",
+          "scope": "tools.concept-review"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.concept-review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "concept",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "concept"
+      ],
+      "reach": [
+        {
+          "tool": "concept",
+          "scope": "tools.concept"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "durable-follow-up-gate",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "plan",
+        "plan-issue",
+        "refactor",
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "setup",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "adr-convention",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "project-adr-convention",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-marketing",
+      "consumer": "marketing-writer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "docs",
+        "fix",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "refactor"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "build",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "docs",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "fix",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "iterate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "maintain",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "refactor",
+          "scope": "agents.marketing-writer"
+        }
+      ]
+    }
+  ]
+}

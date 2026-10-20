@@ -140,7 +140,7 @@ spawn never moves down, and a retry or correction runs at least on the role or s
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` fixes the subagent model, so the workflow passes only the tier's
 effort, and
 `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
-[Getting started](getting-started.md#recommended-calling-model).
+[Getting started](getting-started.md#recommended-calling-model). When `effective-flow pr` has to draft the PR body, it does so on the `mechanical` tier.
 
 **Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
 Quality/Fast pilot; `refactor`'s differences are listed in its section below.

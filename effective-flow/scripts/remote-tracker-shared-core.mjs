@@ -475,6 +475,7 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 // caller's bound travels with the plan as `timeoutMs` and the process runner enforces it. Without
 // that bound a stuck check would hold a run open indefinitely. `--required` is passed only when the
 // caller asks for the required-checks-only criterion; the default watches every check.
+// Forgejo polling shares these settings and bounds all provider calls after repository resolution.
 export function checksWaitSettings(payload) {
   const timeoutMs =
     payload.timeoutMs === undefined
@@ -490,12 +491,20 @@ export function checksWaitSettings(payload) {
       maximum: MAX_TIMEOUT_MS,
     });
   }
+  const intervalSeconds = payloadInteger(
+    payload.intervalSeconds ?? DEFAULT_CHECKS_INTERVAL_SECONDS,
+    'payload.intervalSeconds',
+  );
+  if (intervalSeconds > Math.floor(MAX_TIMEOUT_MS / 1000)) {
+    fail('INVALID_PAYLOAD', 'payload.intervalSeconds exceeds the supported timer ceiling', {
+      field: 'payload.intervalSeconds',
+      value: intervalSeconds,
+      maximum: Math.floor(MAX_TIMEOUT_MS / 1000),
+    });
+  }
   return {
     timeoutMs,
-    intervalSeconds: payloadInteger(
-      payload.intervalSeconds ?? DEFAULT_CHECKS_INTERVAL_SECONDS,
-      'payload.intervalSeconds',
-    ),
+    intervalSeconds,
     requiredOnly: payload.requiredOnly === true,
   };
 }

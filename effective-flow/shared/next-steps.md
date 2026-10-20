@@ -78,7 +78,9 @@ instead of relying on the receiving tool to notice.
 3. **Reconcile with the observed outcome, then choose.** Compare packages, dependencies, review/open
    points and approvals with verified completed work. Explicit user instructions and unfinished
    delivery/review or real post-merge reconciliation for this package lead before a later package;
-   an open PR is not bypassed. Otherwise the next applicable unfinished package normally leads,
+   an open PR is not bypassed. If the current package still needs delivery or review, omit execution
+   options for packages that depend on that completion; describing an option as “after delivery”
+   does not make it independently applicable now. Otherwise the next applicable unfinished package normally leads,
    mapped to an existing exposed tool with actual arguments, even without a matching table row.
    Require established readiness and authority before suggesting execution. Missing preparation or
    a recoverably stale record leads to `effective-flow plan <known-plan-path>` or
@@ -130,6 +132,8 @@ backstop for one that carries open points.
 | open-plans  | at least one open plan                                       | effective-flow apply                      | —                                       |
 | plan-issue  | released                                                     | effective-flow apply #<issue>             | effective-flow plan-issue <issue>            |
 | plan-issue  | retained for planning                                        | effective-flow plan-issue <issue>         | —                                       |
+| issue-buddy | dry run; would-publish issue in public repository            | effective-flow issue-buddy --publish      | —                                       |
+| issue-buddy | draft plan PR published; restore plan file from branch first | effective-flow build <plan-file>          | —                                       |
 | apply       | plan clarity gate failed                                     | effective-flow plan <plan-file>           | effective-flow review <plan-file>            |
 | apply       | findings applied, PR opened                                  | effective-flow merge-gate <PR>            | effective-flow apply <remaining source>      |
 | apply       | findings applied, delivery branch retained, no PR            | effective-flow pr                         | effective-flow apply <remaining source>      |
@@ -161,6 +165,7 @@ backstop for one that carries open points.
 | merge-gate  | merged but at least one linked issue is open or unobservable | effective-flow merge-gate <PR>            | —                                       |
 | merge-gate  | merged                                                       | effective-flow open-plans                 | —                                       |
 | setup       | staged changes exist                                         | effective-flow commit                     | —                                       |
+| setup       | status report found a setup-fixable problem                  | effective-flow setup <setup argument>     | effective-flow setup <second setup argument> |
 | cleanup     | staged removals exist                                        | effective-flow commit                     | effective-flow setup                         |
 | cleanup     | config values referred to setup                              | effective-flow setup                      | —                                       |
 
@@ -168,7 +173,8 @@ backstop for one that carries open points.
 
 These end states carry no generic fallback row:
 
-- a `setup` run with nothing staged;
+- a `setup` run with nothing staged, unless it is a `setup status` report that found a
+  setup-fixable problem;
 - a `cleanup` run whose mandatory report found nothing to carry over, delete, or refer on;
 - an `investigate` run that ends in no bug, deliberately no action, or a pending product decision —
   the documentation row covers a documentation gap, never a non-finding;

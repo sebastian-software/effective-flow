@@ -571,7 +571,7 @@ what supersedes a standing verdict, so neither tool restates that rule.
 ### Wait for pending checks
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
-inside the provider CLI until the checks are complete or the supplied timeout elapses and returns
+inside the provider watch or deterministic helper poller until the checks are complete or the supplied timeout elapses and returns
 the normalized check list, not deduplicated and without timestamps; a timeout is a normalized timeout result, not an error. It is a read
 operation and needs an explicit timeout so it cannot hang a run indefinitely.
 
@@ -580,10 +580,9 @@ turn per interval for no additional information. On a timeout, or on `UNSUPPORTE
 report the still-pending checks and ask the user instead – **once per run**, not once per repeated
 wait, so a consumer that waits again later reports the pending checks and asks nothing.
 
-**Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
-`UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
-blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
-ask once per run) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+**Forgejo:** `pr-checks-wait` is supported when the existing `tea api --include` transport is
+available. Because `tea` has no native checks watch, the helper polls the same status reader within
+the supplied deadline. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 — `review-create`, `review-thread-reply` and `review-thread-resolve` — belong to the sibling
@@ -782,12 +781,9 @@ input object's top-level `cwd`; setting only the process or tool working directo
      with the missing capability named. Nothing else degrades — no merge decision, no check round and
      no observation depends on it, and an unavailable offer is not the same result as an issue the
      assessment found incomplete.
-   - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`,
-     and `issueCommentsRead`, and declares only `pullRequestChecksWait` unsupported among those:
-     `tea` has no `checks` subcommand and
-     Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
-     Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait` and `review-create`; the
+   - **Forgejo** supports `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`,
+     and `issueCommentsRead`. The helper performs bounded polling inside Phase 2 because `tea`
+     has no native checks watch. What stays unsupported there is `review-create`; the
      two thread writes are served only together, when both are among the routes the instance declares (Forgejo today none, Gitea both). `issueClose` is supported on **Forgejo**
      only where the probed `tea api` transport the operation rides is available: a `tea` built
      without `--include` reports `issue-close` unsupported, which makes the Phase-5.5 offer

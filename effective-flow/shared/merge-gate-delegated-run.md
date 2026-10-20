@@ -296,7 +296,7 @@ login no longer matches a configured `X[bot]` entry and that reviewer stays **no
 recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
 forces `isBot: true`. **On Forgejo a gate can merge**, so what the strict comparison costs there is
 a blocked merge rather than a noisier report: `pr-status-read` and `pr-merge` are supported and only
-`pr-checks-wait` is not. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
+`pr-checks-wait` is supported by the deterministic helper when its API transport is available. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
 login the forge reports, without a `[bot]` suffix. An entry spelled `X[bot]` matches no bare Forgejo
 login at all, leaves that reviewer permanently **not started**, and blocks the gate's merge
 precondition on it forever. The failure direction is still the safe one; on Forgejo it is simply the
@@ -888,10 +888,11 @@ run can push an unbounded number of commits onto someone's pull request.
      edits.
    - Both stops retain the worktree and its branch for inspection.
 2. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
-   the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
+   the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
-   - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
+   - On a **timeout result** or when the provider has no **`pullRequestChecksWait` capability**: do
+     **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
      per run, not once per round** – with `mergeGate.maxRounds` at 10 and a 20-minute
      `mergeGate.checkWaitMinutes` a per-round reading would interrupt a human ten times, each after

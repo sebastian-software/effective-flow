@@ -14,6 +14,7 @@ import {
   assertNoIssueCloseStateOverride,
   assertPublishable,
   buildThreadReplyBody,
+  checksWaitSettings,
   expectedHeadSha,
   fail,
   forgejoIssueListEndpoint,
@@ -582,13 +583,14 @@ export function buildForgejoCommandPlan(operation, input, repository) {
         '--include',
         ...teaTarget,
       ]);
-    // These two stay refused on every tea-backed forge. `tea` has no `checks` subcommand and
-    // Forgejo offers no server-side blocking watch comparable to `gh pr checks --watch`, so
-    // `pr-checks-wait` would have to become the poll loop the gate explicitly rejects; the
-    // documented no-watch degradation carries it instead. Review creation has no verified tea
-    // surface either.
-    case 'review-create':
+    // `tea` has no native checks watch. The helper performs a bounded poll over the same raw API
+    // status read as `pr-status-read`; this plan is the first PR read and is returned as the pure
+    // preview because the head SHA needed for the following status/commit reads is not knowable
+    // until execution.
     case 'pr-checks-wait':
+      checksWaitSettings(payload);
+      return teaApiReadPlan(repository, apiEndpoint(`pulls/${prNumber(input)}`));
+    case 'review-create':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
         provider: 'forgejo',

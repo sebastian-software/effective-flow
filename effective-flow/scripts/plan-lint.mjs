@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 
 // Thin JSON CLI over plan-lint-core.mjs:
-//   node plan-lint.mjs lint   (one JSON object on stdin: { cwd, planDir, files? })
+//   node plan-lint.mjs <lint|publication-metadata> (stdin: { cwd, planDir, files? })
+// `publication-metadata` requires exactly one Markdown file in `files` and returns that path,
+// its Git blob id, the canonical review result, and the open-point count. Its optional
+// `expectedLanguage: de|en` binds the full mechanical contract to the resolved plan language.
 // Writes exactly one JSON envelope line to stdout and exits non-zero on failure. Input never
 // travels as command-line arguments; only the operation name does.
 
 import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { createProcessRunner } from './process-runner.mjs';
 import {
   PLAN_LINT_OPERATIONS,
   PlanLintError,
@@ -41,7 +45,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     if (argv.length !== 1 || !operation) {
       throw new PlanLintError(
         'INVALID_PAYLOAD',
-        'usage: plan-lint.mjs lint (input as one JSON object on stdin)',
+        'usage: plan-lint.mjs <lint|publication-metadata> (input as one JSON object on stdin)',
       );
     }
     // Reject an unknown operation before waiting on stdin, so `--help` cannot block on a tty.
@@ -49,7 +53,10 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       throw new PlanLintError('INVALID_PAYLOAD', `unknown operation: ${operation}`);
     }
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
-    envelope = executeOperation(operation, input, io.deps ?? {});
+    envelope = await executeOperation(operation, input, {
+      runner: io.runner ?? createProcessRunner(),
+      ...io.deps,
+    });
   } catch (error) {
     envelope = errorEnvelope(operation, error);
   }

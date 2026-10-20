@@ -694,7 +694,10 @@ keyword mode:
 - `effective-flow setup express` selects **Express**;
 - `effective-flow setup guided` selects **Guided**;
 - `effective-flow setup hidden` selects **Express** with the visibility fixed to `hidden`, so the
-  Visibility question below is not asked.
+  Visibility question below is not asked;
+- `effective-flow setup status` selects **Status**: it follows the loaded `setup-status` fragment, whose
+  status call replaces the configuration and chat-language reads, and ends after its report, never
+  reaching the Visibility question or Step 1.
 
 Any other non-empty argument selects **Targeted**, its original text kept verbatim
 (`effective-flow setup guided tracker github` is Targeted, not Guided); load and follow the Targeted
@@ -707,9 +710,11 @@ load it; they go on to the Visibility question and then to Step 1.
 
 **Load on demand:** Read `shared/setup-profiles.md`, when the normalized invocation has no argument or its single argument is `profile`.
 
-**Load on demand:** Read `shared/setup-targeted-change.md`, when the normalized invocation is non-empty and is not exactly one of the five keyword forms.
+**Load on demand:** Read `shared/setup-targeted-change.md`, when the normalized invocation is non-empty and is not exactly one of the six keyword forms.
 
-**Visibility.** Every mode except Targeted then resolves the visibility before Step 1, because
+**Load on demand:** Read `shared/setup-status.md`, when the normalized invocation is exactly `status`.
+
+**Visibility.** Every mode except Targeted and Status then resolves the visibility before Step 1, because
 Step 1 already differs between the two values: Profile after its `Chat` and `Profile` asks, Express
 and Guided as their first question, `effective-flow setup hidden` not at all; Targeted keeps the
 visibility of the configuration it resolves. Pre-select `Hidden` when the locator's
@@ -724,7 +729,7 @@ concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, 
 are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names
 Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
 
-If the invocation is not `hidden`, the mode is not Targeted, and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
+If the invocation is not `hidden`, the mode is neither Targeted nor Status, and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
 - Standard -- visibility = standard (default) — tracked project setup ADR, AGENTS.md marker, and a .gitignore entry
 - Hidden -- visibility = hidden — local configuration in .effective-flow/project-setup.md, ignored through info/exclude; no tracked file is written
 

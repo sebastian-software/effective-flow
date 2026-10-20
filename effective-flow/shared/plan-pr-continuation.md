@@ -146,11 +146,13 @@ plan's source file in its source checkout, `plan-archival`'s `SOURCE_ROOT`, agai
 `git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`. Any failure of either command stops
 the run before provisioning. Equal hashes continue. On a difference, load `plan-publication` before
 asking: its read-only resolution supplies the audience, and its content check supplies the findings
-for the local version. Neither writes anything.
+for the local version. Neither writes anything. A blocking or failed scan of the local plan stops
+the run before the "Plan differs" ask, naming each blocking finding by its id — class, field and
+line — or the failed scan's error code.
 
 **Load on demand:** Read `shared/plan-publication.md`, when the local plan differs from the plan on the verified plan pull request's head branch.
 
-If The local plan file differs from the plan on the verified plan pull request's head branch: Ask the user: **The local plan <absolute local path> differs from <head-branch>:<P> on <PR URL>, readable by <audience>. Content check: <findings, or none>. Republish the local version onto the plan branch as a new commit and continue, or stop?**
+If The local plan file differs from the plan on the verified plan pull request's head branch and the content check blocked nothing: Ask the user: **The local plan <absolute local path> differs from <head-branch>:<P> on <PR URL>, readable by <audience>. Content check: <findings, or none>. Republish the local version onto the plan branch as a new commit and continue, or stop?**
 - Republish -- Commit the local plan onto the plan branch as a new commit, push it, then continue
 - Stop -- End the run and leave both versions unchanged
 
